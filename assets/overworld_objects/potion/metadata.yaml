@@ -1,0 +1,10 @@
+name: Potion
+description: A small blue potion flask.
+colliding: false
+collectible: true
+render:
+  z_index: 0.24
+  debug_color: [58, 109, 201]
+  debug_size: 0.45
+  sprite_path: overworld_objects/potion/sprite.png
+sound_paths: []

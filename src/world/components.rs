@@ -25,3 +25,11 @@ pub struct Collider;
 pub struct WorldVisual {
     pub z_index: f32,
 }
+
+#[derive(Component)]
+pub struct Collectible;
+
+#[derive(Component)]
+pub struct Container {
+    pub slots: Vec<Option<String>>,
+}

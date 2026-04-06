@@ -13,6 +13,10 @@ pub struct OverworldObjectDefinition {
     pub name: String,
     pub description: String,
     pub colliding: bool,
+    #[serde(default)]
+    pub collectible: bool,
+    #[serde(default)]
+    pub container_capacity: Option<usize>,
     pub render: RenderMetadata,
     #[serde(default)]
     pub sound_paths: Vec<String>,

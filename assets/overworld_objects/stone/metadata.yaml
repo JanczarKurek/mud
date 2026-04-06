@@ -5,5 +5,5 @@ render:
   z_index: 0.2
   debug_color: [96, 101, 107]
   debug_size: 0.56
-  sprite_path: null
+  sprite_path: overworld_objects/stone/sprite.png
 sound_paths: []

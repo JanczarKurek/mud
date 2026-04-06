@@ -1,0 +1,10 @@
+name: Scroll
+description: A rolled parchment scroll.
+colliding: false
+collectible: true
+render:
+  z_index: 0.24
+  debug_color: [201, 187, 132]
+  debug_size: 0.45
+  sprite_path: overworld_objects/scroll/sprite.png
+sound_paths: []

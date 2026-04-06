@@ -1,6 +1,7 @@
 mod app;
 mod game;
 mod player;
+mod ui;
 mod world;
 
 use app::plugin::GameAppPlugin;

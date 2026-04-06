@@ -1,9 +1,10 @@
 name: Barrel
-description: A heavy wooden barrel. For now it simply blocks movement.
+description: A heavy wooden barrel that can be opened as a simple container.
 colliding: true
+container_capacity: 8
 render:
   z_index: 0.25
   debug_color: [134, 83, 42]
   debug_size: 0.62
-  sprite_path: null
+  sprite_path: overworld_objects/barrel/sprite.png
 sound_paths: []
