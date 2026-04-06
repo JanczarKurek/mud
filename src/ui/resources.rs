@@ -4,7 +4,7 @@ use crate::world::components::TilePosition;
 
 #[derive(Resource)]
 pub struct InventoryState {
-    pub backpack_slots: Vec<Option<String>>,
+    pub backpack_slots: Vec<Option<u64>>,
 }
 
 impl Default for InventoryState {
@@ -29,6 +29,6 @@ pub struct OpenContainerState {
 #[derive(Resource, Default)]
 pub struct DragState {
     pub source: Option<DragSource>,
-    pub definition_id: Option<String>,
+    pub object_id: Option<u64>,
     pub world_origin: Option<TilePosition>,
 }

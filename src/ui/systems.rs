@@ -9,8 +9,9 @@ use crate::ui::components::{
 };
 use crate::ui::resources::{DragSource, DragState, InventoryState, OpenContainerState};
 use crate::world::components::{Collectible, Collider, Container, OverworldObject, TilePosition};
+use crate::world::map_layout::MapLayout;
 use crate::world::object_definitions::OverworldObjectDefinitions;
-use crate::world::setup::spawn_overworld_object;
+use crate::world::setup::spawn_overworld_object_instance;
 use crate::world::WorldConfig;
 
 pub fn manage_open_containers(
@@ -95,6 +96,7 @@ pub fn sync_vital_bars(
 pub fn sync_active_container_slots(
     inventory_state: Res<InventoryState>,
     open_container_state: Res<OpenContainerState>,
+    map_layout: Res<MapLayout>,
     container_query: Query<(&Container, &OverworldObject)>,
     asset_server: Res<AssetServer>,
     definitions: Res<OverworldObjectDefinitions>,
@@ -146,12 +148,17 @@ pub fn sync_active_container_slots(
     };
 
     for (slot, mut image_node, mut visibility) in &mut image_query {
-        let Some(item_id) = active_slots.get(slot.index).and_then(|item| item.as_ref()) else {
+        let Some(object_id) = active_slots.get(slot.index).and_then(|item| *item) else {
             *visibility = Visibility::Hidden;
             continue;
         };
 
-        let Some(definition) = definitions.get(item_id) else {
+        let Some(type_id) = map_layout.object_type_id(object_id) else {
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+
+        let Some(definition) = definitions.get(type_id) else {
             *visibility = Visibility::Hidden;
             continue;
         };
@@ -170,6 +177,7 @@ pub fn handle_collectible_dragging(
     mouse_input: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     world_config: Res<WorldConfig>,
+    map_layout: Res<MapLayout>,
     definitions: Res<OverworldObjectDefinitions>,
     mut inventory_state: ResMut<InventoryState>,
     open_container_state: Res<OpenContainerState>,
@@ -195,7 +203,7 @@ pub fn handle_collectible_dragging(
 
     if mouse_input.just_pressed(MouseButton::Left) && drag_state.source.is_none() {
         if let Some(slot_index) = hovered_slot_index {
-            if let Some(item_id) = take_item_from_active_container(
+            if let Some(object_id) = take_item_from_active_container(
                 &mut inventory_state,
                 &mut container_query,
                 open_container_state.entity,
@@ -205,7 +213,7 @@ pub fn handle_collectible_dragging(
                     Some(entity) => DragSource::OpenContainer(entity, slot_index),
                     None => DragSource::Backpack(slot_index),
                 });
-                drag_state.definition_id = Some(item_id);
+                drag_state.object_id = Some(object_id);
                 drag_state.world_origin = None;
                 return;
             }
@@ -223,7 +231,7 @@ pub fn handle_collectible_dragging(
             }
 
             drag_state.source = Some(DragSource::World(entity));
-            drag_state.definition_id = Some(object.definition_id.clone());
+            drag_state.object_id = Some(object.object_id);
             drag_state.world_origin = Some(*tile_position);
             break;
         }
@@ -235,7 +243,7 @@ pub fn handle_collectible_dragging(
 
     let target_tile = cursor_to_tile(window, cursor_position, player_position, &world_config);
     let drag_source = drag_state.source.take();
-    let Some(definition_id) = drag_state.definition_id.take() else {
+    let Some(object_id) = drag_state.object_id.take() else {
         drag_state.world_origin = None;
         return;
     };
@@ -249,7 +257,7 @@ pub fn handle_collectible_dragging(
                     &mut container_query,
                     open_container_state.entity,
                     slot_index,
-                    definition_id.clone(),
+                    object_id,
                 ) {
                     commands.entity(item_entity).despawn();
                     return;
@@ -273,7 +281,7 @@ pub fn handle_collectible_dragging(
         Some(DragSource::Backpack(source_slot)) => {
             if let Some(slot_index) = hovered_slot_index {
                 if open_container_state.entity.is_none() && slot_index == source_slot {
-                    restore_backpack_slot(&mut inventory_state, source_slot, definition_id);
+                    restore_backpack_slot(&mut inventory_state, source_slot, object_id);
                     return;
                 }
 
@@ -282,47 +290,41 @@ pub fn handle_collectible_dragging(
                     &mut container_query,
                     open_container_state.entity,
                     slot_index,
-                    definition_id.clone(),
+                    object_id,
                 ) {
                     return;
                 }
             }
 
-            if definitions.get(&definition_id).is_some() {
-                let world_drop_tile = find_nearest_valid_world_drop_tile(
-                    target_tile,
-                    None,
-                    player_position,
-                    Entity::PLACEHOLDER,
-                    &collider_query,
-                    &collectible_query,
-                    &world_config,
-                );
-
-                if let Some(world_drop_tile) = world_drop_tile {
-                    spawn_overworld_object(
+            if let Some(world_drop_tile) = find_nearest_valid_world_drop_tile(
+                target_tile,
+                None,
+                player_position,
+                Entity::PLACEHOLDER,
+                &collider_query,
+                &collectible_query,
+                &world_config,
+            ) {
+                if let Some(object) = map_layout.get_object(object_id) {
+                    spawn_overworld_object_instance(
                         &mut commands,
                         &asset_server,
+                        &map_layout,
                         &definitions,
                         &world_config,
-                        &definition_id,
+                        object,
                         world_drop_tile,
                     );
                     return;
                 }
             }
 
-            restore_backpack_slot(&mut inventory_state, source_slot, definition_id);
+            restore_backpack_slot(&mut inventory_state, source_slot, object_id);
         }
         Some(DragSource::OpenContainer(entity, source_slot)) => {
             if let Some(slot_index) = hovered_slot_index {
                 if open_container_state.entity == Some(entity) && slot_index == source_slot {
-                    restore_container_slot(
-                        &mut container_query,
-                        entity,
-                        source_slot,
-                        definition_id,
-                    );
+                    restore_container_slot(&mut container_query, entity, source_slot, object_id);
                     return;
                 }
 
@@ -331,37 +333,36 @@ pub fn handle_collectible_dragging(
                     &mut container_query,
                     open_container_state.entity,
                     slot_index,
-                    definition_id.clone(),
+                    object_id,
                 ) {
                     return;
                 }
             }
 
-            if definitions.get(&definition_id).is_some() {
-                let world_drop_tile = find_nearest_valid_world_drop_tile(
-                    target_tile,
-                    None,
-                    player_position,
-                    Entity::PLACEHOLDER,
-                    &collider_query,
-                    &collectible_query,
-                    &world_config,
-                );
-
-                if let Some(world_drop_tile) = world_drop_tile {
-                    spawn_overworld_object(
+            if let Some(world_drop_tile) = find_nearest_valid_world_drop_tile(
+                target_tile,
+                None,
+                player_position,
+                Entity::PLACEHOLDER,
+                &collider_query,
+                &collectible_query,
+                &world_config,
+            ) {
+                if let Some(object) = map_layout.get_object(object_id) {
+                    spawn_overworld_object_instance(
                         &mut commands,
                         &asset_server,
+                        &map_layout,
                         &definitions,
                         &world_config,
-                        &definition_id,
+                        object,
                         world_drop_tile,
                     );
                     return;
                 }
             }
 
-            restore_container_slot(&mut container_query, entity, source_slot, definition_id);
+            restore_container_slot(&mut container_query, entity, source_slot, object_id);
         }
         None => {}
     }
@@ -369,6 +370,7 @@ pub fn handle_collectible_dragging(
 
 pub fn sync_drag_preview(
     drag_state: Res<DragState>,
+    map_layout: Res<MapLayout>,
     definitions: Res<OverworldObjectDefinitions>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     mut preview_query: Query<(&mut Node, &mut Visibility), With<DragPreviewRoot>>,
@@ -381,7 +383,7 @@ pub fn sync_drag_preview(
         return;
     };
 
-    let Some(definition_id) = &drag_state.definition_id else {
+    let Some(object_id) = drag_state.object_id else {
         *visibility = Visibility::Hidden;
         label.0.clear();
         return;
@@ -400,11 +402,14 @@ pub fn sync_drag_preview(
     preview_node.left = px(cursor_position.x + 14.0);
     preview_node.top = px(cursor_position.y + 14.0);
 
-    if let Some(definition) = definitions.get(definition_id) {
-        label.0 = definition.name.clone();
-    } else {
-        label.0 = definition_id.clone();
+    if let Some(type_id) = map_layout.object_type_id(object_id) {
+        if let Some(definition) = definitions.get(type_id) {
+            label.0 = definition.name.clone();
+            return;
+        }
     }
+
+    label.0 = object_id.to_string();
 }
 
 fn normalized_ratio(current: f32, maximum: f32) -> f32 {
@@ -461,7 +466,7 @@ fn take_item_from_active_container(
     container_query: &mut Query<&mut Container>,
     open_container_entity: Option<Entity>,
     slot_index: usize,
-) -> Option<String> {
+) -> Option<u64> {
     if let Some(entity) = open_container_entity {
         return container_query
             .get_mut(entity)
@@ -477,7 +482,7 @@ fn place_item_in_active_container(
     container_query: &mut Query<&mut Container>,
     open_container_entity: Option<Entity>,
     slot_index: usize,
-    definition_id: String,
+    object_id: u64,
 ) -> bool {
     if let Some(entity) = open_container_entity {
         let Ok(mut container) = container_query.get_mut(entity) else {
@@ -489,7 +494,7 @@ fn place_item_in_active_container(
         if slot.is_some() {
             return false;
         }
-        *slot = Some(definition_id);
+        *slot = Some(object_id);
         return true;
     }
 
@@ -499,17 +504,13 @@ fn place_item_in_active_container(
     if slot.is_some() {
         return false;
     }
-    *slot = Some(definition_id);
+    *slot = Some(object_id);
     true
 }
 
-fn restore_backpack_slot(
-    inventory_state: &mut InventoryState,
-    slot_index: usize,
-    definition_id: String,
-) {
+fn restore_backpack_slot(inventory_state: &mut InventoryState, slot_index: usize, object_id: u64) {
     if let Some(slot) = inventory_state.backpack_slots.get_mut(slot_index) {
-        *slot = Some(definition_id);
+        *slot = Some(object_id);
     }
 }
 
@@ -517,11 +518,11 @@ fn restore_container_slot(
     container_query: &mut Query<&mut Container>,
     entity: Entity,
     slot_index: usize,
-    definition_id: String,
+    object_id: u64,
 ) {
     if let Ok(mut container) = container_query.get_mut(entity) {
         if let Some(slot) = container.slots.get_mut(slot_index) {
-            *slot = Some(definition_id);
+            *slot = Some(object_id);
         }
     }
 }

@@ -15,6 +15,7 @@ impl TilePosition {
 #[derive(Component)]
 #[allow(dead_code)]
 pub struct OverworldObject {
+    pub object_id: u64,
     pub definition_id: String,
 }
 
@@ -31,5 +32,5 @@ pub struct Collectible;
 
 #[derive(Component)]
 pub struct Container {
-    pub slots: Vec<Option<String>>,
+    pub slots: Vec<Option<u64>>,
 }

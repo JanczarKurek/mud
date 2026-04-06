@@ -34,6 +34,7 @@ pub fn spawn_player(
         VitalStats::default(),
         MovementCooldown::default(),
         OverworldObject {
+            object_id: 0,
             definition_id: "player".to_owned(),
         },
         TilePosition::new(world_config.map_width / 2, world_config.map_height / 2),

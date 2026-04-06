@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use crate::world::components::{
     Collectible, Collider, Container, OverworldObject, TilePosition, WorldVisual,
 };
-use crate::world::map_layout::MapLayout;
+use crate::world::map_layout::{MapLayout, MapObjectInstance};
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::WorldConfig;
 
@@ -21,24 +21,61 @@ pub fn spawn_world(
                 &asset_server,
                 &definitions,
                 &world_config,
-                &map_layout.fill_object,
+                0,
+                &map_layout.fill_object_type,
+                None,
                 TilePosition::new(x, y),
             );
         }
     }
 
-    for placement_group in &map_layout.placements {
-        for tile in &placement_group.tiles {
-            spawn_overworld_object(
-                &mut commands,
-                &asset_server,
-                &definitions,
-                &world_config,
-                &placement_group.object_id,
-                tile.to_tile_position(),
-            );
+    for object in &map_layout.resolved_objects {
+        if map_layout.is_contained(object.id) {
+            continue;
         }
+
+        let Some(placement) = object.placement else {
+            continue;
+        };
+
+        spawn_overworld_object_instance(
+            &mut commands,
+            &asset_server,
+            &map_layout,
+            &definitions,
+            &world_config,
+            object,
+            placement.to_tile_position(),
+        );
     }
+}
+
+pub fn spawn_overworld_object_instance(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    map_layout: &MapLayout,
+    definitions: &OverworldObjectDefinitions,
+    world_config: &WorldConfig,
+    object: &MapObjectInstance,
+    tile_position: TilePosition,
+) {
+    let container_contents = if object.contents.is_empty() {
+        None
+    } else {
+        Some(object.contents.clone())
+    };
+
+    spawn_overworld_object(
+        commands,
+        asset_server,
+        definitions,
+        world_config,
+        object.id,
+        &object.type_id,
+        container_contents,
+        tile_position,
+    );
+    let _ = map_layout;
 }
 
 pub fn spawn_overworld_object(
@@ -46,7 +83,9 @@ pub fn spawn_overworld_object(
     asset_server: &AssetServer,
     definitions: &OverworldObjectDefinitions,
     world_config: &WorldConfig,
+    object_id: u64,
     definition_id: &str,
+    container_contents: Option<Vec<u64>>,
     tile_position: TilePosition,
 ) {
     let definition = definitions
@@ -69,6 +108,7 @@ pub fn spawn_overworld_object(
 
     let mut entity = commands.spawn((
         OverworldObject {
+            object_id,
             definition_id: definition_id.to_owned(),
         },
         tile_position,
@@ -88,8 +128,19 @@ pub fn spawn_overworld_object(
     }
 
     if let Some(container_capacity) = definition.container_capacity {
-        entity.insert(Container {
-            slots: vec![None; container_capacity],
-        });
+        let mut slots = vec![None; container_capacity];
+        if let Some(contents) = container_contents {
+            assert!(
+                contents.len() <= container_capacity,
+                "Container object {} exceeds capacity {}",
+                object_id,
+                container_capacity
+            );
+            for (index, contained_object_id) in contents.into_iter().enumerate() {
+                slots[index] = Some(contained_object_id);
+            }
+        }
+
+        entity.insert(Container { slots });
     }
 }

@@ -1,9 +1,9 @@
 width: 40
 height: 30
-fill_object: grass
-placements:
-  - object_id: water
-    tiles:
+fill_object_type: grass
+objects:
+  - type: water
+    placement:
       - { x: 10, y: 4 }
       - { x: 11, y: 4 }
       - { x: 10, y: 5 }
@@ -15,8 +15,6 @@ placements:
       - { x: 10, y: 8 }
       - { x: 11, y: 8 }
       - { x: 10, y: 9 }
-      - { x: 11, y: 9 }
-      - { x: 11, y: 8 }
       - { x: 11, y: 9 }
       - { x: 12, y: 8 }
       - { x: 12, y: 9 }
@@ -65,8 +63,8 @@ placements:
       - { x: 28, y: 18 }
       - { x: 28, y: 19 }
       - { x: 28, y: 20 }
-  - object_id: tree
-    tiles:
+  - type: tree
+    placement:
       - { x: 6, y: 7 }
       - { x: 7, y: 7 }
       - { x: 8, y: 8 }
@@ -81,8 +79,8 @@ placements:
       - { x: 28, y: 6 }
       - { x: 29, y: 8 }
       - { x: 30, y: 7 }
-  - object_id: wall
-    tiles:
+  - type: wall
+    placement:
       - { x: 18, y: 11 }
       - { x: 19, y: 11 }
       - { x: 20, y: 11 }
@@ -105,15 +103,8 @@ placements:
       - { x: 24, y: 14 }
       - { x: 24, y: 15 }
       - { x: 24, y: 16 }
-  - object_id: barrel
-    tiles:
-      - { x: 20, y: 13 }
-      - { x: 21, y: 13 }
-      - { x: 22, y: 15 }
-      - { x: 19, y: 16 }
-      - { x: 25, y: 12 }
-  - object_id: flowers
-    tiles:
+  - type: flowers
+    placement:
       - { x: 4, y: 4 }
       - { x: 5, y: 4 }
       - { x: 4, y: 5 }
@@ -122,24 +113,49 @@ placements:
       - { x: 31, y: 12 }
       - { x: 12, y: 22 }
       - { x: 13, y: 23 }
-  - object_id: stone
-    tiles:
+  - type: stone
+    placement:
       - { x: 3, y: 19 }
       - { x: 4, y: 20 }
       - { x: 5, y: 19 }
       - { x: 34, y: 24 }
       - { x: 35, y: 24 }
       - { x: 36, y: 23 }
-  - object_id: apple
-    tiles:
+  - id: 300
+    type: barrel
+    placement: { x: 20, y: 13 }
+    contents: [600, 601]
+  - id: 301
+    type: barrel
+    placement: { x: 21, y: 13 }
+    contents: [602]
+  - id: 302
+    type: barrel
+    placement: { x: 22, y: 15 }
+  - id: 303
+    type: barrel
+    placement: { x: 19, y: 16 }
+  - id: 304
+    type: barrel
+    placement: { x: 25, y: 12 }
+    contents: [603, 604]
+  - id: 600
+    type: apple
+  - id: 601
+    type: potion
+  - id: 602
+    type: scroll
+  - id: 603
+    type: apple
+  - id: 604
+    type: scroll
+  - type: apple
+    placement:
       - { x: 18, y: 18 }
       - { x: 11, y: 14 }
-      - { x: 29, y: 12 }
-  - object_id: potion
-    tiles:
+  - type: potion
+    placement:
       - { x: 21, y: 18 }
-      - { x: 9, y: 16 }
-  - object_id: scroll
-    tiles:
-      - { x: 20, y: 18 }
+  - type: scroll
+    placement:
       - { x: 30, y: 12 }
