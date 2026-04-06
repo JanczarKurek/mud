@@ -1,0 +1,11 @@
+name: Canvas Backpack
+description: A roomy canvas backpack with leather straps.
+colliding: false
+collectible: true
+equipment_slot: backpack
+render:
+  z_index: 0.24
+  debug_color: [160, 122, 74]
+  debug_size: 0.60
+  sprite_path: overworld_objects/canvas_backpack/sprite.png
+sound_paths: []

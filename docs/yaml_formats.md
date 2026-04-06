@@ -157,6 +157,21 @@ Top-level fields:
 - Default: `false`
 - Meaning: whether the object can be picked up and dragged into inventory/container slots
 
+### `equipment_slot`
+- Type: string or `null`
+- Optional: yes
+- Meaning: if present, the collectible is recognized as equippable gear for that paperdoll slot
+- Valid values:
+  - `amulet`
+  - `helmet`
+  - `weapon`
+  - `armor`
+  - `shield`
+  - `legs`
+  - `backpack`
+  - `ring`
+  - `boots`
+
 ### `container_capacity`
 - Type: integer
 - Optional: yes
@@ -212,6 +227,6 @@ sound_paths: []
 
 Notes:
 - The object ID is the folder name, not a field inside the YAML file.
-- `collectible` and `container_capacity` can both exist on the same object type if needed.
+- `collectible`, `equipment_slot`, and `container_capacity` can coexist if needed.
 - If `sprite_path` is omitted or `null`, the object falls back to colored debug rendering.
 - The current runtime uses these fields directly for world spawning, collision, pickup behavior, and container creation.

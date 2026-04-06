@@ -1,0 +1,11 @@
+name: Leather Armor
+description: A sturdy leather cuirass with shoulder guards.
+colliding: false
+collectible: true
+equipment_slot: armor
+render:
+  z_index: 0.24
+  debug_color: [122, 78, 49]
+  debug_size: 0.62
+  sprite_path: overworld_objects/leather_armor/sprite.png
+sound_paths: []

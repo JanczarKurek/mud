@@ -1,0 +1,11 @@
+name: Leather Helmet
+description: A stitched leather cap with a reinforced brow.
+colliding: false
+collectible: true
+equipment_slot: helmet
+render:
+  z_index: 0.24
+  debug_color: [129, 85, 53]
+  debug_size: 0.56
+  sprite_path: overworld_objects/leather_helmet/sprite.png
+sound_paths: []

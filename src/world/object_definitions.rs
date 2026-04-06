@@ -16,10 +16,55 @@ pub struct OverworldObjectDefinition {
     #[serde(default)]
     pub collectible: bool,
     #[serde(default)]
+    pub equipment_slot: Option<EquipmentSlot>,
+    #[serde(default)]
     pub container_capacity: Option<usize>,
     pub render: RenderMetadata,
     #[serde(default)]
     pub sound_paths: Vec<String>,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum EquipmentSlot {
+    Amulet,
+    Helmet,
+    Weapon,
+    Armor,
+    Shield,
+    Legs,
+    Backpack,
+    Ring,
+    Boots,
+}
+
+impl EquipmentSlot {
+    pub const ALL: [Self; 9] = [
+        Self::Amulet,
+        Self::Helmet,
+        Self::Weapon,
+        Self::Armor,
+        Self::Shield,
+        Self::Legs,
+        Self::Backpack,
+        Self::Ring,
+        Self::Boots,
+    ];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Amulet => "Amulet",
+            Self::Helmet => "Helmet",
+            Self::Weapon => "Weapon",
+            Self::Armor => "Armor",
+            Self::Shield => "Shield",
+            Self::Legs => "Legs",
+            Self::Backpack => "Backpack",
+            Self::Ring => "Ring",
+            Self::Boots => "Boots",
+        }
+    }
 }
 
 #[allow(dead_code)]

@@ -4,12 +4,12 @@ use bevy::window::PrimaryWindow;
 
 use crate::player::components::{Player, VitalStats};
 use crate::ui::components::{
-    CloseContainerButton, ContainerSlot, ContainerSlotImage, DragPreviewLabel, DragPreviewRoot,
-    HealthFill, ManaFill, OpenContainerTitle,
+    CloseContainerButton, DragPreviewLabel, DragPreviewRoot, HealthFill, ItemSlotButton,
+    ItemSlotImage, ItemSlotKind, ManaFill, OpenContainerTitle,
 };
 use crate::ui::resources::{DragSource, DragState, InventoryState, OpenContainerState};
 use crate::world::components::{Collectible, Collider, Container, OverworldObject, TilePosition};
-use crate::world::object_definitions::OverworldObjectDefinitions;
+use crate::world::object_definitions::{EquipmentSlot, OverworldObjectDefinitions};
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::setup::spawn_overworld_object;
 use crate::world::WorldConfig;
@@ -103,8 +103,8 @@ pub fn sync_active_container_slots(
     mut title_query: Query<&mut Text, With<OpenContainerTitle>>,
     mut close_button_query: Query<&mut Visibility, With<CloseContainerButton>>,
     mut image_query: Query<
-        (&ContainerSlotImage, &mut ImageNode, &mut Visibility),
-        (Without<ContainerSlot>, Without<CloseContainerButton>),
+        (&ItemSlotImage, &mut ImageNode, &mut Visibility),
+        Without<CloseContainerButton>,
     >,
 ) {
     let Ok(mut title_text) = title_query.single_mut() else {
@@ -148,7 +148,11 @@ pub fn sync_active_container_slots(
     };
 
     for (slot, mut image_node, mut visibility) in &mut image_query {
-        let Some(object_id) = active_slots.get(slot.index).and_then(|item| *item) else {
+        let object_id = match slot.kind {
+            ItemSlotKind::ActiveContainer(index) => active_slots.get(index).and_then(|item| *item),
+            ItemSlotKind::Equipment(slot) => inventory_state.equipment_item(slot),
+        };
+        let Some(object_id) = object_id else {
             *visibility = Visibility::Hidden;
             continue;
         };
@@ -185,7 +189,7 @@ pub fn handle_collectible_dragging(
     player_query: Query<&TilePosition, With<Player>>,
     collider_query: Query<&TilePosition, (With<Collider>, Without<Player>)>,
     collectible_query: Query<(Entity, &TilePosition, &OverworldObject), With<Collectible>>,
-    slot_query: Query<(&ContainerSlot, &ComputedNode, &UiGlobalTransform), With<Button>>,
+    slot_query: Query<(&ItemSlotButton, &ComputedNode, &UiGlobalTransform), With<Button>>,
     mut container_query: Query<&mut Container>,
     asset_server: Res<AssetServer>,
     mut commands: Commands,
@@ -199,20 +203,17 @@ pub fn handle_collectible_dragging(
     let Ok(player_position) = player_query.single() else {
         return;
     };
-    let hovered_slot_index = hovered_slot_index(cursor_position, &slot_query);
+    let hovered_slot = hovered_slot_kind(cursor_position, &slot_query);
 
     if mouse_input.just_pressed(MouseButton::Left) && drag_state.source.is_none() {
-        if let Some(slot_index) = hovered_slot_index {
-            if let Some(object_id) = take_item_from_active_container(
+        if let Some(slot_kind) = hovered_slot {
+            if let Some(object_id) = take_item_from_slot_kind(
                 &mut inventory_state,
                 &mut container_query,
                 open_container_state.entity,
-                slot_index,
+                slot_kind,
             ) {
-                drag_state.source = Some(match open_container_state.entity {
-                    Some(entity) => DragSource::OpenContainer(entity, slot_index),
-                    None => DragSource::Backpack(slot_index),
-                });
+                drag_state.source = Some(DragSource::UiSlot(slot_kind));
                 drag_state.object_id = Some(object_id);
                 drag_state.world_origin = None;
                 return;
@@ -251,13 +252,15 @@ pub fn handle_collectible_dragging(
 
     match drag_source {
         Some(DragSource::World(item_entity)) => {
-            if let Some(slot_index) = hovered_slot_index {
-                if place_item_in_active_container(
+            if let Some(slot_kind) = hovered_slot {
+                if place_item_in_slot_kind(
                     &mut inventory_state,
                     &mut container_query,
                     open_container_state.entity,
-                    slot_index,
                     object_id,
+                    slot_kind,
+                    &object_registry,
+                    &definitions,
                 ) {
                     commands.entity(item_entity).despawn();
                     return;
@@ -278,19 +281,27 @@ pub fn handle_collectible_dragging(
                 }
             }
         }
-        Some(DragSource::Backpack(source_slot)) => {
-            if let Some(slot_index) = hovered_slot_index {
-                if open_container_state.entity.is_none() && slot_index == source_slot {
-                    restore_backpack_slot(&mut inventory_state, source_slot, object_id);
+        Some(DragSource::UiSlot(source_slot)) => {
+            if let Some(slot_kind) = hovered_slot {
+                if slot_kind == source_slot {
+                    restore_item_to_slot(
+                        &mut inventory_state,
+                        &mut container_query,
+                        open_container_state.entity,
+                        source_slot,
+                        object_id,
+                    );
                     return;
                 }
 
-                if place_item_in_active_container(
+                if place_item_in_slot_kind(
                     &mut inventory_state,
                     &mut container_query,
                     open_container_state.entity,
-                    slot_index,
                     object_id,
+                    slot_kind,
+                    &object_registry,
+                    &definitions,
                 ) {
                     return;
                 }
@@ -320,51 +331,13 @@ pub fn handle_collectible_dragging(
                 }
             }
 
-            restore_backpack_slot(&mut inventory_state, source_slot, object_id);
-        }
-        Some(DragSource::OpenContainer(entity, source_slot)) => {
-            if let Some(slot_index) = hovered_slot_index {
-                if open_container_state.entity == Some(entity) && slot_index == source_slot {
-                    restore_container_slot(&mut container_query, entity, source_slot, object_id);
-                    return;
-                }
-
-                if place_item_in_active_container(
-                    &mut inventory_state,
-                    &mut container_query,
-                    open_container_state.entity,
-                    slot_index,
-                    object_id,
-                ) {
-                    return;
-                }
-            }
-
-            if let Some(world_drop_tile) = find_nearest_valid_world_drop_tile(
-                target_tile,
-                None,
-                player_position,
-                Entity::PLACEHOLDER,
-                &collider_query,
-                &collectible_query,
-                &world_config,
-            ) {
-                if let Some(type_id) = object_registry.type_id(object_id) {
-                    spawn_overworld_object(
-                        &mut commands,
-                        &asset_server,
-                        &definitions,
-                        &world_config,
-                        object_id,
-                        type_id,
-                        None,
-                        world_drop_tile,
-                    );
-                    return;
-                }
-            }
-
-            restore_container_slot(&mut container_query, entity, source_slot, object_id);
+            restore_item_to_slot(
+                &mut inventory_state,
+                &mut container_query,
+                open_container_state.entity,
+                source_slot,
+                object_id,
+            );
         }
         None => {}
     }
@@ -433,14 +406,14 @@ fn is_cursor_over_close_button(
     point_in_ui_node(cursor_position, computed_node, global_transform)
 }
 
-fn hovered_slot_index(
+fn hovered_slot_kind(
     cursor_position: Vec2,
-    slot_query: &Query<(&ContainerSlot, &ComputedNode, &UiGlobalTransform), With<Button>>,
-) -> Option<usize> {
+    slot_query: &Query<(&ItemSlotButton, &ComputedNode, &UiGlobalTransform), With<Button>>,
+) -> Option<ItemSlotKind> {
     slot_query
         .iter()
         .find_map(|(slot, computed_node, global_transform)| {
-            point_in_ui_node(cursor_position, computed_node, global_transform).then_some(slot.index)
+            point_in_ui_node(cursor_position, computed_node, global_transform).then_some(slot.kind)
         })
 }
 
@@ -463,57 +436,116 @@ fn point_in_ui_node(
         && local_point.y <= size.y
 }
 
-fn take_item_from_active_container(
+fn take_item_from_slot_kind(
     inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
     open_container_entity: Option<Entity>,
-    slot_index: usize,
+    slot_kind: ItemSlotKind,
 ) -> Option<u64> {
-    if let Some(entity) = open_container_entity {
-        return container_query
-            .get_mut(entity)
-            .ok()
-            .and_then(|mut container| container.slots.get_mut(slot_index)?.take());
-    }
+    match slot_kind {
+        ItemSlotKind::ActiveContainer(slot_index) => {
+            if let Some(entity) = open_container_entity {
+                return container_query
+                    .get_mut(entity)
+                    .ok()
+                    .and_then(|mut container| container.slots.get_mut(slot_index)?.take());
+            }
 
-    inventory_state.backpack_slots.get_mut(slot_index)?.take()
+            inventory_state.backpack_slots.get_mut(slot_index)?.take()
+        }
+        ItemSlotKind::Equipment(slot) => inventory_state.take_equipment_item(slot),
+    }
 }
 
-fn place_item_in_active_container(
+fn place_item_in_slot_kind(
     inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
     open_container_entity: Option<Entity>,
-    slot_index: usize,
     object_id: u64,
+    slot_kind: ItemSlotKind,
+    object_registry: &ObjectRegistry,
+    definitions: &OverworldObjectDefinitions,
 ) -> bool {
-    if let Some(entity) = open_container_entity {
-        let Ok(mut container) = container_query.get_mut(entity) else {
-            return false;
-        };
-        let Some(slot) = container.slots.get_mut(slot_index) else {
-            return false;
-        };
-        if slot.is_some() {
-            return false;
+    match slot_kind {
+        ItemSlotKind::ActiveContainer(slot_index) => {
+            if let Some(entity) = open_container_entity {
+                let Ok(mut container) = container_query.get_mut(entity) else {
+                    return false;
+                };
+                let Some(slot) = container.slots.get_mut(slot_index) else {
+                    return false;
+                };
+                if slot.is_some() {
+                    return false;
+                }
+                *slot = Some(object_id);
+                true
+            } else {
+                let Some(slot) = inventory_state.backpack_slots.get_mut(slot_index) else {
+                    return false;
+                };
+                if slot.is_some() {
+                    return false;
+                }
+                *slot = Some(object_id);
+                true
+            }
         }
-        *slot = Some(object_id);
-        return true;
+        ItemSlotKind::Equipment(slot) => place_item_in_equipment_slot(
+            inventory_state,
+            object_registry,
+            definitions,
+            slot,
+            object_id,
+        ),
     }
-
-    let Some(slot) = inventory_state.backpack_slots.get_mut(slot_index) else {
-        return false;
-    };
-    if slot.is_some() {
-        return false;
-    }
-    *slot = Some(object_id);
-    true
 }
 
 fn restore_backpack_slot(inventory_state: &mut InventoryState, slot_index: usize, object_id: u64) {
     if let Some(slot) = inventory_state.backpack_slots.get_mut(slot_index) {
         *slot = Some(object_id);
     }
+}
+
+fn restore_item_to_slot(
+    inventory_state: &mut InventoryState,
+    container_query: &mut Query<&mut Container>,
+    open_container_entity: Option<Entity>,
+    slot_kind: ItemSlotKind,
+    object_id: u64,
+) {
+    match slot_kind {
+        ItemSlotKind::ActiveContainer(slot_index) => {
+            if let Some(entity) = open_container_entity {
+                restore_container_slot(container_query, entity, slot_index, object_id);
+            } else {
+                restore_backpack_slot(inventory_state, slot_index, object_id);
+            }
+        }
+        ItemSlotKind::Equipment(slot) => {
+            inventory_state.restore_equipment_item(slot, object_id);
+        }
+    }
+}
+
+fn place_item_in_equipment_slot(
+    inventory_state: &mut InventoryState,
+    object_registry: &ObjectRegistry,
+    definitions: &OverworldObjectDefinitions,
+    slot: EquipmentSlot,
+    object_id: u64,
+) -> bool {
+    let Some(type_id) = object_registry.type_id(object_id) else {
+        return false;
+    };
+    let Some(definition) = definitions.get(type_id) else {
+        return false;
+    };
+    if definition.equipment_slot != Some(slot) {
+        return false;
+    }
+
+    inventory_state.place_equipment_item(slot, object_id)
 }
 
 fn restore_container_slot(

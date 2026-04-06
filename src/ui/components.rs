@@ -1,5 +1,7 @@
 use bevy::prelude::*;
 
+use crate::world::object_definitions::EquipmentSlot;
+
 #[derive(Component)]
 pub struct HealthFill;
 
@@ -7,13 +9,13 @@ pub struct HealthFill;
 pub struct ManaFill;
 
 #[derive(Component)]
-pub struct ContainerSlot {
-    pub index: usize,
+pub struct ItemSlotButton {
+    pub kind: ItemSlotKind,
 }
 
 #[derive(Component)]
-pub struct ContainerSlotImage {
-    pub index: usize,
+pub struct ItemSlotImage {
+    pub kind: ItemSlotKind,
 }
 
 #[derive(Component)]
@@ -42,3 +44,9 @@ pub struct PythonConsoleOutputViewport;
 
 #[derive(Component)]
 pub struct PythonConsoleScrollbarThumb;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ItemSlotKind {
+    ActiveContainer(usize),
+    Equipment(EquipmentSlot),
+}

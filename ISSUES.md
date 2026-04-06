@@ -35,6 +35,7 @@
 - Expanded the overworld object catalog with grass, walls, barrels, flowers, and stones, with collision driven by metadata.
 - Moved the default map layout into YAML so object placement is no longer hardcoded in Rust.
 - Added an embedded Python console with world listing and object spawning commands exposed in-game.
+- Added data-driven equippable gear definitions with typed equipment slots for future paperdoll logic.
 
 ## Later Ideas
 

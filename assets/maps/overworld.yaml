@@ -128,17 +128,18 @@ objects:
   - id: 301
     type: barrel
     placement: { x: 21, y: 13 }
-    contents: [602]
+    contents: [602, 605, 606]
   - id: 302
     type: barrel
     placement: { x: 22, y: 15 }
   - id: 303
     type: barrel
     placement: { x: 19, y: 16 }
+    contents: [607, 608]
   - id: 304
     type: barrel
     placement: { x: 25, y: 12 }
-    contents: [603, 604]
+    contents: [603, 604, 609, 610]
   - id: 600
     type: apple
   - id: 601
@@ -149,6 +150,18 @@ objects:
     type: apple
   - id: 604
     type: scroll
+  - id: 605
+    type: bronze_sword
+  - id: 606
+    type: wooden_shield
+  - id: 607
+    type: leather_helmet
+  - id: 608
+    type: leather_armor
+  - id: 609
+    type: leather_legs
+  - id: 610
+    type: traveler_boots
   - type: apple
     placement:
       - { x: 18, y: 18 }
@@ -159,3 +172,12 @@ objects:
   - type: scroll
     placement:
       - { x: 30, y: 12 }
+  - type: silver_ring
+    placement:
+      - { x: 7, y: 20 }
+  - type: copper_amulet
+    placement:
+      - { x: 9, y: 21 }
+  - type: canvas_backpack
+    placement:
+      - { x: 28, y: 10 }

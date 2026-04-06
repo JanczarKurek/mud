@@ -2,10 +2,12 @@ use bevy::prelude::*;
 use bevy::text::{Justify, LineBreak, TextLayout};
 
 use crate::ui::components::{
-    CloseContainerButton, ContainerSlot, ContainerSlotImage, DragPreviewLabel, DragPreviewRoot,
-    HealthFill, ManaFill, OpenContainerTitle, PythonConsoleInput, PythonConsoleOutput,
-    PythonConsoleOutputViewport, PythonConsolePanel, PythonConsoleScrollbarThumb,
+    CloseContainerButton, DragPreviewLabel, DragPreviewRoot, HealthFill, ItemSlotButton,
+    ItemSlotImage, ItemSlotKind, ManaFill, OpenContainerTitle, PythonConsoleInput,
+    PythonConsoleOutput, PythonConsoleOutputViewport, PythonConsolePanel,
+    PythonConsoleScrollbarThumb,
 };
+use crate::world::object_definitions::EquipmentSlot;
 
 pub fn spawn_hud(mut commands: Commands) {
     commands
@@ -452,14 +454,23 @@ fn spawn_slot_row(parent: &mut ChildSpawnerCommands, labels: &[&str]) {
         ))
         .with_children(|row| {
             for label in labels {
-                spawn_item_slot(row, Some(label));
+                spawn_equipment_slot(row, Some(label));
             }
         });
 }
 
-fn spawn_item_slot(parent: &mut ChildSpawnerCommands, label: Option<&str>) {
+fn spawn_equipment_slot(parent: &mut ChildSpawnerCommands, label: Option<&str>) {
+    let slot = EquipmentSlot::ALL
+        .into_iter()
+        .find(|slot| Some(slot.label()) == label)
+        .expect("Unknown equipment slot label");
+
     parent
         .spawn((
+            Button,
+            ItemSlotButton {
+                kind: ItemSlotKind::Equipment(slot),
+            },
             Node {
                 width: px(58.0),
                 height: px(58.0),
@@ -471,9 +482,23 @@ fn spawn_item_slot(parent: &mut ChildSpawnerCommands, label: Option<&str>) {
             BorderColor::all(Color::srgb(0.38, 0.34, 0.22)),
             BackgroundColor(Color::srgb(0.16, 0.15, 0.12)),
         ))
-        .with_children(|slot| {
+        .with_children(|slot_node| {
+            slot_node.spawn((
+                Node {
+                    width: px(42.0),
+                    height: px(42.0),
+                    position_type: PositionType::Absolute,
+                    ..default()
+                },
+                ImageNode::default(),
+                ItemSlotImage {
+                    kind: ItemSlotKind::Equipment(slot),
+                },
+                Visibility::Hidden,
+            ));
+
             if let Some(label) = label {
-                slot.spawn((
+                slot_node.spawn((
                     Text::new(label),
                     TextFont {
                         font_size: 11.0,
@@ -489,7 +514,9 @@ fn spawn_container_slot(parent: &mut ChildSpawnerCommands, index: usize) {
     parent
         .spawn((
             Button,
-            ContainerSlot { index },
+            ItemSlotButton {
+                kind: ItemSlotKind::ActiveContainer(index),
+            },
             Node {
                 width: px(58.0),
                 height: px(58.0),
@@ -509,7 +536,9 @@ fn spawn_container_slot(parent: &mut ChildSpawnerCommands, index: usize) {
                     ..default()
                 },
                 ImageNode::default(),
-                ContainerSlotImage { index },
+                ItemSlotImage {
+                    kind: ItemSlotKind::ActiveContainer(index),
+                },
                 Visibility::Hidden,
             ));
         });
