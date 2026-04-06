@@ -2,6 +2,7 @@ use bevy::input::keyboard::KeyCode;
 use bevy::prelude::*;
 
 use crate::player::components::{MovementCooldown, Player};
+use crate::scripting::resources::PythonConsoleState;
 use crate::world::components::{Collider, TilePosition};
 use crate::world::WorldConfig;
 
@@ -9,9 +10,14 @@ pub fn move_player_on_grid(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     world_config: Res<WorldConfig>,
+    console_state: Option<Res<PythonConsoleState>>,
     collider_query: Query<&TilePosition, (With<Collider>, Without<Player>)>,
     mut player_query: Query<(&mut TilePosition, &mut MovementCooldown), With<Player>>,
 ) {
+    if console_state.as_ref().is_some_and(|state| state.is_open) {
+        return;
+    }
+
     let Ok((mut tile_position, mut movement_cooldown)) = player_query.single_mut() else {
         return;
     };

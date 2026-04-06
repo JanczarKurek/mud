@@ -1,6 +1,7 @@
 mod app;
 mod game;
 mod player;
+mod scripting;
 mod ui;
 mod world;
 

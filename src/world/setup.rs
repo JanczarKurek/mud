@@ -16,14 +16,12 @@ pub fn spawn_world(
 ) {
     for y in 0..world_config.map_height {
         for x in 0..world_config.map_width {
-            spawn_overworld_object(
+            spawn_ground_tile(
                 &mut commands,
                 &asset_server,
                 &definitions,
                 &world_config,
-                0,
                 &map_layout.fill_object_type,
-                None,
                 TilePosition::new(x, y),
             );
         }
@@ -76,6 +74,42 @@ pub fn spawn_overworld_object_instance(
         tile_position,
     );
     let _ = map_layout;
+}
+
+fn spawn_ground_tile(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    definitions: &OverworldObjectDefinitions,
+    world_config: &WorldConfig,
+    definition_id: &str,
+    tile_position: TilePosition,
+) {
+    let definition = definitions
+        .get(definition_id)
+        .unwrap_or_else(|| panic!("Missing overworld object definition for id '{definition_id}'"));
+
+    let mut sprite = if let Some(sprite_path) = &definition.render.sprite_path {
+        let mut sprite = Sprite::from_image(asset_server.load(sprite_path));
+        sprite.custom_size = Some(Vec2::splat(
+            world_config.tile_size * definition.render.debug_size,
+        ));
+        sprite
+    } else {
+        Sprite::from_color(
+            definition.debug_color(),
+            Vec2::splat(world_config.tile_size * definition.render.debug_size),
+        )
+    };
+    sprite.image_mode = SpriteImageMode::Auto;
+
+    commands.spawn((
+        tile_position,
+        WorldVisual {
+            z_index: definition.render.z_index,
+        },
+        sprite,
+        Transform::from_xyz(0.0, 0.0, definition.render.z_index),
+    ));
 }
 
 pub fn spawn_overworld_object(

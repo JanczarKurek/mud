@@ -1,8 +1,10 @@
 use bevy::prelude::*;
+use bevy::text::{Justify, LineBreak, TextLayout};
 
 use crate::ui::components::{
     CloseContainerButton, ContainerSlot, ContainerSlotImage, DragPreviewLabel, DragPreviewRoot,
-    HealthFill, ManaFill, OpenContainerTitle,
+    HealthFill, ManaFill, OpenContainerTitle, PythonConsoleInput, PythonConsoleOutput,
+    PythonConsoleOutputViewport, PythonConsolePanel, PythonConsoleScrollbarThumb,
 };
 
 pub fn spawn_hud(mut commands: Commands) {
@@ -90,7 +92,7 @@ pub fn spawn_hud(mut commands: Commands) {
         .spawn((
             Node {
                 width: percent(100.0),
-                height: px(170.0),
+                height: px(360.0),
                 position_type: PositionType::Absolute,
                 bottom: px(0.0),
                 left: px(0.0),
@@ -103,27 +105,118 @@ pub fn spawn_hud(mut commands: Commands) {
             parent
                 .spawn((
                     Node {
-                        width: percent(72.0),
+                        width: percent(88.0),
                         height: percent(100.0),
                         flex_direction: FlexDirection::Column,
                         row_gap: px(10.0),
                         padding: UiRect::all(px(12.0)),
                         ..default()
                     },
+                    PythonConsolePanel,
                     BackgroundColor(Color::srgba(0.07, 0.08, 0.10, 0.90)),
                 ))
                 .with_children(|chat_panel| {
-                    spawn_panel_label(chat_panel, "Chat");
+                    spawn_panel_label(chat_panel, "Python Console");
+
+                    chat_panel
+                        .spawn((
+                            Node {
+                                width: percent(100.0),
+                                flex_grow: 1.0,
+                                min_height: px(0.0),
+                                column_gap: px(8.0),
+                                ..default()
+                            },
+                            BackgroundColor(Color::NONE),
+                        ))
+                        .with_children(|output_row| {
+                            output_row
+                                .spawn((
+                                    Node {
+                                        flex_grow: 1.0,
+                                        min_height: px(0.0),
+                                        overflow: Overflow::clip(),
+                                        padding: UiRect {
+                                            left: px(8.0),
+                                            right: px(8.0),
+                                            top: px(8.0),
+                                            bottom: px(14.0),
+                                        },
+                                        ..default()
+                                    },
+                                    PythonConsoleOutputViewport,
+                                    BackgroundColor(Color::srgba(0.04, 0.05, 0.07, 0.92)),
+                                ))
+                                .with_children(|output_viewport| {
+                                    output_viewport.spawn((
+                                        Text::new(""),
+                                        PythonConsoleOutput,
+                                        TextFont {
+                                            font_size: 16.0,
+                                            ..default()
+                                        },
+                                        TextColor(Color::srgb(0.82, 0.83, 0.85)),
+                                        TextLayout::new(Justify::Left, LineBreak::WordOrCharacter),
+                                        Node {
+                                            width: percent(100.0),
+                                            ..default()
+                                        },
+                                    ));
+                                });
+
+                            output_row
+                                .spawn((
+                                    Node {
+                                        width: px(10.0),
+                                        height: percent(100.0),
+                                        padding: UiRect::vertical(px(2.0)),
+                                        ..default()
+                                    },
+                                    BackgroundColor(Color::srgba(0.10, 0.10, 0.11, 0.95)),
+                                ))
+                                .with_children(|track| {
+                                    track
+                                        .spawn((
+                                            Node {
+                                                width: percent(100.0),
+                                                height: percent(100.0),
+                                                position_type: PositionType::Relative,
+                                                ..default()
+                                            },
+                                            BackgroundColor(Color::NONE),
+                                        ))
+                                        .with_children(|thumb_parent| {
+                                            thumb_parent.spawn((
+                                                Node {
+                                                    width: percent(100.0),
+                                                    height: percent(100.0),
+                                                    min_height: px(20.0),
+                                                    position_type: PositionType::Absolute,
+                                                    top: px(0.0),
+                                                    ..default()
+                                                },
+                                                PythonConsoleScrollbarThumb,
+                                                BackgroundColor(Color::srgb(0.66, 0.60, 0.38)),
+                                            ));
+                                        });
+                                });
+                        });
 
                     chat_panel.spawn((
-                        Text::new(
-                            "[Local] Welcome to Mud 2.0\n[System] Use arrow keys or WASD to move\n[Hint] Water, walls, trees, barrels, and stones block movement",
-                        ),
+                        Node {
+                            width: percent(100.0),
+                            min_height: px(34.0),
+                            padding: UiRect::axes(px(6.0), px(4.0)),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.11, 0.10, 0.09, 0.96)),
+                        Text::new(">>> "),
+                        PythonConsoleInput,
                         TextFont {
                             font_size: 18.0,
                             ..default()
                         },
-                        TextColor(Color::srgb(0.82, 0.83, 0.85)),
+                        TextColor(Color::srgb(0.96, 0.92, 0.72)),
                     ));
                 });
         });

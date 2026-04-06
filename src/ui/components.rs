@@ -27,3 +27,18 @@ pub struct DragPreviewRoot;
 
 #[derive(Component)]
 pub struct DragPreviewLabel;
+
+#[derive(Component)]
+pub struct PythonConsolePanel;
+
+#[derive(Component)]
+pub struct PythonConsoleOutput;
+
+#[derive(Component)]
+pub struct PythonConsoleInput;
+
+#[derive(Component)]
+pub struct PythonConsoleOutputViewport;
+
+#[derive(Component)]
+pub struct PythonConsoleScrollbarThumb;

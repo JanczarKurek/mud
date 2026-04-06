@@ -74,17 +74,6 @@ impl MapLayout {
         layout
     }
 
-    pub fn get_object(&self, object_id: u64) -> Option<&MapObjectInstance> {
-        self.object_indices
-            .get(&object_id)
-            .and_then(|index| self.resolved_objects.get(*index))
-    }
-
-    pub fn object_type_id(&self, object_id: u64) -> Option<&str> {
-        self.get_object(object_id)
-            .map(|object| object.type_id.as_str())
-    }
-
     pub fn is_contained(&self, object_id: u64) -> bool {
         self.resolved_objects
             .iter()

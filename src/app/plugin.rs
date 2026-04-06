@@ -4,6 +4,7 @@ use bevy::window::Window;
 use crate::app::setup::setup_camera;
 use crate::game::GamePlugin;
 use crate::player::PlayerPlugin;
+use crate::scripting::ScriptingPlugin;
 use crate::ui::UiPlugin;
 use crate::world::WorldPlugin;
 
@@ -19,6 +20,12 @@ impl Plugin for GameAppPlugin {
             ..default()
         }))
         .add_systems(Startup, setup_camera)
-        .add_plugins((GamePlugin, WorldPlugin, PlayerPlugin, UiPlugin));
+        .add_plugins((
+            GamePlugin,
+            WorldPlugin,
+            PlayerPlugin,
+            UiPlugin,
+            ScriptingPlugin,
+        ));
     }
 }

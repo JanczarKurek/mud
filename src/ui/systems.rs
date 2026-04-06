@@ -9,9 +9,9 @@ use crate::ui::components::{
 };
 use crate::ui::resources::{DragSource, DragState, InventoryState, OpenContainerState};
 use crate::world::components::{Collectible, Collider, Container, OverworldObject, TilePosition};
-use crate::world::map_layout::MapLayout;
 use crate::world::object_definitions::OverworldObjectDefinitions;
-use crate::world::setup::spawn_overworld_object_instance;
+use crate::world::object_registry::ObjectRegistry;
+use crate::world::setup::spawn_overworld_object;
 use crate::world::WorldConfig;
 
 pub fn manage_open_containers(
@@ -96,7 +96,7 @@ pub fn sync_vital_bars(
 pub fn sync_active_container_slots(
     inventory_state: Res<InventoryState>,
     open_container_state: Res<OpenContainerState>,
-    map_layout: Res<MapLayout>,
+    object_registry: Res<ObjectRegistry>,
     container_query: Query<(&Container, &OverworldObject)>,
     asset_server: Res<AssetServer>,
     definitions: Res<OverworldObjectDefinitions>,
@@ -153,7 +153,7 @@ pub fn sync_active_container_slots(
             continue;
         };
 
-        let Some(type_id) = map_layout.object_type_id(object_id) else {
+        let Some(type_id) = object_registry.type_id(object_id) else {
             *visibility = Visibility::Hidden;
             continue;
         };
@@ -177,7 +177,7 @@ pub fn handle_collectible_dragging(
     mouse_input: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     world_config: Res<WorldConfig>,
-    map_layout: Res<MapLayout>,
+    object_registry: Res<ObjectRegistry>,
     definitions: Res<OverworldObjectDefinitions>,
     mut inventory_state: ResMut<InventoryState>,
     open_container_state: Res<OpenContainerState>,
@@ -305,14 +305,15 @@ pub fn handle_collectible_dragging(
                 &collectible_query,
                 &world_config,
             ) {
-                if let Some(object) = map_layout.get_object(object_id) {
-                    spawn_overworld_object_instance(
+                if let Some(type_id) = object_registry.type_id(object_id) {
+                    spawn_overworld_object(
                         &mut commands,
                         &asset_server,
-                        &map_layout,
                         &definitions,
                         &world_config,
-                        object,
+                        object_id,
+                        type_id,
+                        None,
                         world_drop_tile,
                     );
                     return;
@@ -348,14 +349,15 @@ pub fn handle_collectible_dragging(
                 &collectible_query,
                 &world_config,
             ) {
-                if let Some(object) = map_layout.get_object(object_id) {
-                    spawn_overworld_object_instance(
+                if let Some(type_id) = object_registry.type_id(object_id) {
+                    spawn_overworld_object(
                         &mut commands,
                         &asset_server,
-                        &map_layout,
                         &definitions,
                         &world_config,
-                        object,
+                        object_id,
+                        type_id,
+                        None,
                         world_drop_tile,
                     );
                     return;
@@ -370,7 +372,7 @@ pub fn handle_collectible_dragging(
 
 pub fn sync_drag_preview(
     drag_state: Res<DragState>,
-    map_layout: Res<MapLayout>,
+    object_registry: Res<ObjectRegistry>,
     definitions: Res<OverworldObjectDefinitions>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     mut preview_query: Query<(&mut Node, &mut Visibility), With<DragPreviewRoot>>,
@@ -402,7 +404,7 @@ pub fn sync_drag_preview(
     preview_node.left = px(cursor_position.x + 14.0);
     preview_node.top = px(cursor_position.y + 14.0);
 
-    if let Some(type_id) = map_layout.object_type_id(object_id) {
+    if let Some(type_id) = object_registry.type_id(object_id) {
         if let Some(definition) = definitions.get(type_id) {
             label.0 = definition.name.clone();
             return;

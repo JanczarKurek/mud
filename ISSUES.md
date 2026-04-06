@@ -19,6 +19,7 @@
 - Start referencing real sprite assets from metadata.
 - Introduce richer collision semantics than a single blocking flag.
 - Add validation for map YAML so invalid object IDs or out-of-bounds placements fail clearly.
+- Decide how much scripting authority the embedded Python console should keep once server-authoritative logic exists.
 
 ## Completed
 
@@ -33,6 +34,7 @@
 - Added ECS-based collider components and used them to make water block player movement.
 - Expanded the overworld object catalog with grass, walls, barrels, flowers, and stones, with collision driven by metadata.
 - Moved the default map layout into YAML so object placement is no longer hardcoded in Rust.
+- Added an embedded Python console with world listing and object spawning commands exposed in-game.
 
 ## Later Ideas
 

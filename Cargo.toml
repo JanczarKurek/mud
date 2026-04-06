@@ -5,5 +5,7 @@ edition = "2021"
 
 [dependencies]
 bevy = "0.18"
+rustpython = "0.4"
+rustpython-vm = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"

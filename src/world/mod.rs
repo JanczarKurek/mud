@@ -1,6 +1,7 @@
 pub mod components;
 pub mod map_layout;
 pub mod object_definitions;
+pub mod object_registry;
 pub mod setup;
 pub mod systems;
 
@@ -8,6 +9,7 @@ use bevy::prelude::*;
 
 use crate::world::map_layout::MapLayout;
 use crate::world::object_definitions::OverworldObjectDefinitions;
+use crate::world::object_registry::ObjectRegistry;
 use crate::world::setup::spawn_world;
 use crate::world::systems::sync_tile_transforms;
 
@@ -21,9 +23,11 @@ impl Plugin for WorldPlugin {
             map_height: map_layout.height,
             tile_size: 48.0,
         };
+        let object_registry = ObjectRegistry::from_map_layout(&map_layout);
 
         app.insert_resource(world_config)
             .insert_resource(map_layout)
+            .insert_resource(object_registry)
             .insert_resource(OverworldObjectDefinitions::load_from_disk())
             .add_systems(Startup, spawn_world)
             .add_systems(Update, sync_tile_transforms);

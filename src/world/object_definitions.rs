@@ -95,4 +95,8 @@ impl OverworldObjectDefinitions {
     pub fn get(&self, id: &str) -> Option<&OverworldObjectDefinition> {
         self.definitions.get(id)
     }
+
+    pub fn ids(&self) -> impl Iterator<Item = &str> {
+        self.definitions.keys().map(String::as_str)
+    }
 }
