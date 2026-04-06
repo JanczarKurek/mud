@@ -1,0 +1,9 @@
+name: Stone
+description: A rough stone lying on the ground.
+colliding: true
+render:
+  z_index: 0.2
+  debug_color: [96, 101, 107]
+  debug_size: 0.56
+  sprite_path: null
+sound_paths: []

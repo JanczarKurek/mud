@@ -1,0 +1,9 @@
+name: Flowers
+description: Decorative flowers scattered across the ground.
+colliding: false
+render:
+  z_index: 0.15
+  debug_color: [212, 83, 144]
+  debug_size: 0.38
+  sprite_path: null
+sound_paths: []

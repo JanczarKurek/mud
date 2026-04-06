@@ -1,0 +1,9 @@
+name: Grass
+description: Open grassland that forms the default walkable ground.
+colliding: false
+render:
+  z_index: 0.0
+  debug_color: [47, 76, 43]
+  debug_size: 0.96
+  sprite_path: null
+sound_paths: []
