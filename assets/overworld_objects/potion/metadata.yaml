@@ -1,10 +1,14 @@
+extends: consumable
 name: Potion
 description: A small blue potion flask.
-colliding: false
-collectible: true
+use_effects:
+  restore_mana: 20
+use_texts:
+  - You drink the potion.
+  - The potion tingles as your mana returns.
+  - A cool blue draft restores some mana.
 render:
   z_index: 0.24
   debug_color: [58, 109, 201]
   debug_size: 0.45
   sprite_path: overworld_objects/potion/sprite.png
-sound_paths: []

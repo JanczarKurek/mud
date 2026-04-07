@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use crate::world::components::{
-    Collectible, Collider, Container, OverworldObject, TilePosition, WorldVisual,
+    Collider, Container, Movable, OverworldObject, Storable, TilePosition, WorldVisual,
 };
 use crate::world::map_layout::{MapLayout, MapObjectInstance};
 use crate::world::object_definitions::OverworldObjectDefinitions;
@@ -157,8 +157,12 @@ pub fn spawn_overworld_object(
         entity.insert(Collider);
     }
 
-    if definition.collectible {
-        entity.insert(Collectible);
+    if definition.movable {
+        entity.insert(Movable);
+    }
+
+    if definition.storable {
+        entity.insert(Storable);
     }
 
     if let Some(container_capacity) = definition.container_capacity {

@@ -1,11 +1,8 @@
+extends: equipment
 name: Wooden Shield
 description: A rough round shield reinforced with a metal boss.
-colliding: false
-collectible: true
 equipment_slot: shield
 render:
-  z_index: 0.24
   debug_color: [132, 90, 48]
   debug_size: 0.58
   sprite_path: overworld_objects/wooden_shield/sprite.png
-sound_paths: []

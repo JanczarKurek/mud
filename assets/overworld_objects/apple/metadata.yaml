@@ -1,10 +1,14 @@
+extends: consumable
 name: Apple
 description: A simple red apple that can be picked up.
-colliding: false
-collectible: true
+use_effects:
+  restore_health: 15
+use_texts:
+  - You eat the apple.
+  - Crunch. The apple restores a little health.
+  - The apple tastes fresh enough.
 render:
   z_index: 0.24
   debug_color: [188, 48, 41]
   debug_size: 0.45
   sprite_path: overworld_objects/apple/sprite.png
-sound_paths: []

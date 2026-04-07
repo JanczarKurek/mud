@@ -28,7 +28,10 @@ pub struct WorldVisual {
 }
 
 #[derive(Component)]
-pub struct Collectible;
+pub struct Movable;
+
+#[derive(Component)]
+pub struct Storable;
 
 #[derive(Component)]
 pub struct Container {

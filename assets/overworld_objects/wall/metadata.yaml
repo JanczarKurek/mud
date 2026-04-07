@@ -1,9 +1,8 @@
+extends: obstacle
 name: Wall
 description: A solid wall segment that blocks movement.
-colliding: true
 render:
   z_index: 0.3
   debug_color: [120, 114, 103]
   debug_size: 0.94
   sprite_path: overworld_objects/wall/sprite.png
-sound_paths: []

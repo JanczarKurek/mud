@@ -1,0 +1,5 @@
+extends: static_world
+movable: true
+storable: true
+render:
+  z_index: 0.24

@@ -1,15 +1,26 @@
+use bevy::ecs::query::QueryFilter;
+use bevy::log::{info, warn};
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, UiGlobalTransform};
 use bevy::window::PrimaryWindow;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::player::components::{Player, VitalStats};
+use crate::player::components::{DerivedStats, Player, VitalStats};
 use crate::ui::components::{
-    CloseContainerButton, DragPreviewLabel, DragPreviewRoot, HealthFill, ItemSlotButton,
-    ItemSlotImage, ItemSlotKind, ManaFill, OpenContainerTitle,
+    ChatLogText, CloseContainerButton, ContainerSlotButton, ContainerSlotImage,
+    ContextMenuInspectButton, ContextMenuOpenButton, ContextMenuRoot, ContextMenuUseButton,
+    DragPreviewLabel, DragPreviewRoot, EquipmentSlotButton, EquipmentSlotImage, HealthFill,
+    HealthLabel, ItemSlotButton, ItemSlotImage, ItemSlotKind, ManaFill, ManaLabel,
+    OpenContainerTitle,
 };
-use crate::ui::resources::{DragSource, DragState, InventoryState, OpenContainerState};
-use crate::world::components::{Collectible, Collider, Container, OverworldObject, TilePosition};
-use crate::world::object_definitions::{EquipmentSlot, OverworldObjectDefinitions};
+use crate::ui::resources::{
+    ChatLogState, ContextMenuState, ContextMenuTarget, DragSource, DragState, InventoryState,
+    OpenContainerState,
+};
+use crate::world::components::{Collider, Container, Movable, OverworldObject, TilePosition};
+use crate::world::object_definitions::{
+    EquipmentSlot, OverworldObjectDefinition, OverworldObjectDefinitions,
+};
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::setup::spawn_overworld_object;
 use crate::world::WorldConfig;
@@ -52,30 +63,15 @@ pub fn manage_open_containers(
         return;
     }
 
-    if !mouse_input.just_pressed(MouseButton::Right) {
-        return;
-    }
-
-    let target_tile = cursor_to_tile(window, cursor_position, player_position, &world_config);
-
-    for (entity, tile_position, _) in &container_query {
-        if *tile_position != target_tile {
-            continue;
-        }
-
-        if !is_near_player(player_position, tile_position) {
-            continue;
-        }
-
-        open_container_state.entity = Some(entity);
-        break;
-    }
+    let _ = world_config;
 }
 
 pub fn sync_vital_bars(
     player_query: Query<&VitalStats, With<Player>>,
     mut health_query: Query<&mut Node, With<HealthFill>>,
     mut mana_query: Query<&mut Node, (With<ManaFill>, Without<HealthFill>)>,
+    mut health_label_query: Query<&mut Text, (With<HealthLabel>, Without<ManaLabel>)>,
+    mut mana_label_query: Query<&mut Text, (With<ManaLabel>, Without<HealthLabel>)>,
 ) {
     let Ok(vital_stats) = player_query.single() else {
         return;
@@ -91,66 +87,356 @@ pub fn sync_vital_bars(
     for mut node in &mut mana_query {
         node.width = percent(mana_ratio * 100.0);
     }
+
+    let health_text = format!(
+        "{}/{}",
+        vital_stats.health.round() as i32,
+        vital_stats.max_health.round() as i32
+    );
+    let mana_text = format!(
+        "{}/{}",
+        vital_stats.mana.round() as i32,
+        vital_stats.max_mana.round() as i32
+    );
+
+    for mut label in &mut health_label_query {
+        label.0 = health_text.clone();
+    }
+
+    for mut label in &mut mana_label_query {
+        label.0 = mana_text.clone();
+    }
 }
 
-pub fn sync_active_container_slots(
-    inventory_state: Res<InventoryState>,
-    open_container_state: Res<OpenContainerState>,
-    object_registry: Res<ObjectRegistry>,
-    container_query: Query<(&Container, &OverworldObject)>,
-    asset_server: Res<AssetServer>,
-    definitions: Res<OverworldObjectDefinitions>,
-    mut title_query: Query<&mut Text, With<OpenContainerTitle>>,
-    mut close_button_query: Query<&mut Visibility, With<CloseContainerButton>>,
-    mut image_query: Query<
-        (&ItemSlotImage, &mut ImageNode, &mut Visibility),
-        Without<CloseContainerButton>,
-    >,
+pub fn sync_chat_log(
+    chat_log_state: Res<ChatLogState>,
+    mut chat_query: Query<&mut Text, With<ChatLogText>>,
 ) {
-    let Ok(mut title_text) = title_query.single_mut() else {
-        return;
-    };
-    let Ok(mut close_visibility) = close_button_query.single_mut() else {
+    let Ok(mut chat_text) = chat_query.single_mut() else {
         return;
     };
 
-    let (title, active_slots, show_close) = if let Some(entity) = open_container_state.entity {
-        if let Ok((container, object)) = container_query.get(entity) {
-            let title = definitions
-                .get(&object.definition_id)
-                .map(|definition| definition.name.clone())
-                .unwrap_or_else(|| "Container".to_owned());
-            (title, Some(&container.slots), true)
-        } else {
-            (
-                "Backpack".to_owned(),
-                Some(&inventory_state.backpack_slots),
-                false,
-            )
-        }
-    } else {
-        (
-            "Backpack".to_owned(),
-            Some(&inventory_state.backpack_slots),
-            false,
-        )
+    chat_text.0 = chat_log_state.lines.join("\n");
+}
+
+pub fn sync_context_menu_root(
+    context_menu_state: Res<ContextMenuState>,
+    mut root_query: Query<(&mut Node, &mut Visibility), With<ContextMenuRoot>>,
+) {
+    let Ok((mut root_node, mut root_visibility)) = root_query.single_mut() else {
+        return;
     };
 
-    title_text.0 = title;
-    *close_visibility = if show_close {
+    *root_visibility = if context_menu_state.is_visible() {
         Visibility::Visible
     } else {
         Visibility::Hidden
     };
+    root_node.left = px(context_menu_state.position.x);
+    root_node.top = px(context_menu_state.position.y);
+}
 
-    let Some(active_slots) = active_slots else {
+pub fn sync_context_menu_open_button(
+    context_menu_state: Res<ContextMenuState>,
+    mut open_button_query: Query<&mut Visibility, With<ContextMenuOpenButton>>,
+) {
+    let Ok(mut open_visibility) = open_button_query.single_mut() else {
         return;
     };
 
+    *open_visibility = if context_menu_state.can_open {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
+    };
+}
+
+pub fn sync_context_menu_use_button(
+    context_menu_state: Res<ContextMenuState>,
+    mut use_button_query: Query<&mut Visibility, With<ContextMenuUseButton>>,
+) {
+    let Ok(mut use_visibility) = use_button_query.single_mut() else {
+        return;
+    };
+
+    *use_visibility = if context_menu_state.can_use {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
+    };
+}
+
+pub fn handle_context_menu_actions(
+    mouse_input: Res<ButtonInput<MouseButton>>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    object_registry: Res<ObjectRegistry>,
+    definitions: Res<OverworldObjectDefinitions>,
+    mut inventory_state: ResMut<InventoryState>,
+    mut chat_log_state: ResMut<ChatLogState>,
+    mut context_menu_state: ResMut<ContextMenuState>,
+    mut open_container_state: ResMut<OpenContainerState>,
+    mut player_query: Query<&mut VitalStats, With<Player>>,
+    inspect_button_query: Query<
+        (&ComputedNode, &UiGlobalTransform),
+        With<ContextMenuInspectButton>,
+    >,
+    open_button_query: Query<
+        (&ComputedNode, &UiGlobalTransform, &Visibility),
+        With<ContextMenuOpenButton>,
+    >,
+    use_button_query: Query<
+        (&ComputedNode, &UiGlobalTransform, &Visibility),
+        With<ContextMenuUseButton>,
+    >,
+    mut container_query: Query<&mut Container>,
+    mut commands: Commands,
+) {
+    let Ok(window) = window_query.single() else {
+        return;
+    };
+    let Some(cursor_position) = window.cursor_position() else {
+        return;
+    };
+
+    if !mouse_input.just_pressed(MouseButton::Left) || !context_menu_state.is_visible() {
+        return;
+    }
+
+    if is_cursor_over_button(cursor_position, &inspect_button_query) {
+        if let Some(target) = context_menu_state.target {
+            inspect_context_target(target, &object_registry, &definitions, &mut chat_log_state);
+        }
+        context_menu_state.hide();
+        return;
+    }
+
+    if is_cursor_over_visible_button(cursor_position, &use_button_query) {
+        if let Some(target) = context_menu_state.target {
+            use_context_target(
+                target,
+                &mut inventory_state,
+                &mut container_query,
+                open_container_state.entity,
+                &object_registry,
+                &definitions,
+                &mut player_query,
+                &mut chat_log_state,
+                &mut commands,
+            );
+        }
+        context_menu_state.hide();
+        return;
+    }
+
+    if is_cursor_over_visible_button(cursor_position, &open_button_query) {
+        if let Some(ContextMenuTarget::World(entity, _)) = context_menu_state.target {
+            open_container_state.entity = Some(entity);
+        }
+        context_menu_state.hide();
+        return;
+    }
+
+    context_menu_state.hide();
+}
+
+pub fn handle_context_menu_opening(
+    mouse_input: Res<ButtonInput<MouseButton>>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    world_config: Res<WorldConfig>,
+    object_registry: Res<ObjectRegistry>,
+    definitions: Res<OverworldObjectDefinitions>,
+    inventory_state: Res<InventoryState>,
+    mut context_menu_state: ResMut<ContextMenuState>,
+    open_container_state: Res<OpenContainerState>,
+    player_query: Query<&TilePosition, With<Player>>,
+    object_query: Query<(Entity, &TilePosition, &OverworldObject, Has<Container>)>,
+    equipment_slot_query: Query<
+        (
+            &ItemSlotButton,
+            &ComputedNode,
+            &UiGlobalTransform,
+            Option<&Visibility>,
+        ),
+        (With<Button>, With<EquipmentSlotButton>),
+    >,
+    container_slot_query: Query<
+        (
+            &ItemSlotButton,
+            &ComputedNode,
+            &UiGlobalTransform,
+            Option<&Visibility>,
+        ),
+        (With<Button>, With<ContainerSlotButton>),
+    >,
+    container_query: Query<&Container>,
+) {
+    let Ok(window) = window_query.single() else {
+        return;
+    };
+    let Some(cursor_position) = window.cursor_position() else {
+        return;
+    };
+    let Ok(player_position) = player_query.single() else {
+        return;
+    };
+
+    if !mouse_input.just_pressed(MouseButton::Right) {
+        return;
+    }
+
+    let hovered_slot = hovered_slot_kind(
+        cursor_position,
+        &equipment_slot_query,
+        &container_slot_query,
+    );
+    if let Some(slot_kind) = hovered_slot {
+        if let Some(object_id) = object_id_in_slot_kind(
+            &inventory_state,
+            &container_query,
+            open_container_state.entity,
+            slot_kind,
+        ) {
+            let can_use = object_is_usable(object_id, &object_registry, &definitions);
+            context_menu_state.show(
+                cursor_position,
+                ContextMenuTarget::Slot(slot_kind, object_id),
+                false,
+                can_use,
+            );
+            return;
+        }
+    }
+
+    let target_tile = cursor_to_tile(window, cursor_position, player_position, &world_config);
+    for (entity, tile_position, object, has_container) in &object_query {
+        if *tile_position != target_tile {
+            continue;
+        }
+        if !is_near_player(player_position, tile_position) {
+            continue;
+        }
+
+        let can_use = object_is_usable(object.object_id, &object_registry, &definitions);
+        context_menu_state.show(
+            cursor_position,
+            ContextMenuTarget::World(entity, object.object_id),
+            has_container,
+            can_use,
+        );
+        return;
+    }
+
+    context_menu_state.hide();
+}
+
+pub fn sync_open_container_title(
+    open_container_state: Res<OpenContainerState>,
+    container_query: Query<(&Container, &OverworldObject)>,
+    definitions: Res<OverworldObjectDefinitions>,
+    mut title_query: Query<&mut Text, With<OpenContainerTitle>>,
+) {
+    let Ok(mut title_text) = title_query.single_mut() else {
+        return;
+    };
+
+    let title = if let Some(entity) = open_container_state.entity {
+        if let Ok((_, object)) = container_query.get(entity) {
+            definitions
+                .get(&object.definition_id)
+                .map(|definition| definition.name.clone())
+                .unwrap_or_else(|| "Container".to_owned())
+        } else {
+            "Backpack".to_owned()
+        }
+    } else {
+        "Backpack".to_owned()
+    };
+
+    title_text.0 = title;
+}
+
+pub fn sync_close_container_button(
+    open_container_state: Res<OpenContainerState>,
+    mut close_button_query: Query<&mut Visibility, With<CloseContainerButton>>,
+) {
+    let Ok(mut close_visibility) = close_button_query.single_mut() else {
+        return;
+    };
+
+    *close_visibility = if open_container_state.entity.is_some() {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
+    };
+}
+
+pub fn sync_item_slot_button_visibility(
+    inventory_state: Res<InventoryState>,
+    open_container_state: Res<OpenContainerState>,
+    derived_stats_query: Query<&DerivedStats, With<Player>>,
+    container_query: Query<&Container>,
+    mut slot_button_query: Query<(&ItemSlotButton, &mut Visibility), With<ContainerSlotButton>>,
+) {
+    let Ok(derived_stats) = derived_stats_query.single() else {
+        return;
+    };
+
+    let active_container_capacity = open_container_state
+        .entity
+        .and_then(|entity| container_query.get(entity).ok())
+        .map(|container| container.slots.len())
+        .unwrap_or(inventory_state.backpack_slots.len());
+    let occupied_backpack_slots = inventory_state
+        .backpack_slots
+        .iter()
+        .rposition(Option::is_some)
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    let visible_backpack_capacity = if open_container_state.entity.is_some() {
+        active_container_capacity
+    } else {
+        occupied_backpack_slots.max(
+            derived_stats
+                .storage_slots
+                .min(inventory_state.backpack_slots.len()),
+        )
+    };
+
+    for (slot, mut visibility) in &mut slot_button_query {
+        let should_show = match slot.kind {
+            ItemSlotKind::ActiveContainer(index) => index < visible_backpack_capacity,
+            ItemSlotKind::Equipment(_) => true,
+        };
+
+        *visibility = if should_show {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
+}
+
+pub fn sync_container_slot_images(
+    inventory_state: Res<InventoryState>,
+    open_container_state: Res<OpenContainerState>,
+    object_registry: Res<ObjectRegistry>,
+    container_query: Query<&Container>,
+    asset_server: Res<AssetServer>,
+    definitions: Res<OverworldObjectDefinitions>,
+    mut image_query: Query<
+        (&ItemSlotImage, &mut ImageNode, &mut Visibility),
+        With<ContainerSlotImage>,
+    >,
+) {
     for (slot, mut image_node, mut visibility) in &mut image_query {
         let object_id = match slot.kind {
-            ItemSlotKind::ActiveContainer(index) => active_slots.get(index).and_then(|item| *item),
-            ItemSlotKind::Equipment(slot) => inventory_state.equipment_item(slot),
+            ItemSlotKind::ActiveContainer(index) => active_object_id_in_container_view(
+                &inventory_state,
+                &container_query,
+                open_container_state.entity,
+                index,
+            ),
+            ItemSlotKind::Equipment(_) => None,
         };
         let Some(object_id) = object_id else {
             *visibility = Visibility::Hidden;
@@ -177,10 +463,51 @@ pub fn sync_active_container_slots(
     }
 }
 
-pub fn handle_collectible_dragging(
+pub fn sync_equipment_slot_images(
+    inventory_state: Res<InventoryState>,
+    object_registry: Res<ObjectRegistry>,
+    asset_server: Res<AssetServer>,
+    definitions: Res<OverworldObjectDefinitions>,
+    mut image_query: Query<
+        (&ItemSlotImage, &mut ImageNode, &mut Visibility),
+        With<EquipmentSlotImage>,
+    >,
+) {
+    for (slot, mut image_node, mut visibility) in &mut image_query {
+        let object_id = match slot.kind {
+            ItemSlotKind::Equipment(slot) => inventory_state.equipment_item(slot),
+            ItemSlotKind::ActiveContainer(_) => None,
+        };
+        let Some(object_id) = object_id else {
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+
+        let Some(type_id) = object_registry.type_id(object_id) else {
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+
+        let Some(definition) = definitions.get(type_id) else {
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+
+        let Some(sprite_path) = &definition.render.sprite_path else {
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+
+        image_node.image = asset_server.load(sprite_path);
+        *visibility = Visibility::Visible;
+    }
+}
+
+pub fn handle_movable_dragging(
     mouse_input: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     world_config: Res<WorldConfig>,
+    context_menu_state: Res<ContextMenuState>,
     object_registry: Res<ObjectRegistry>,
     definitions: Res<OverworldObjectDefinitions>,
     mut inventory_state: ResMut<InventoryState>,
@@ -188,8 +515,27 @@ pub fn handle_collectible_dragging(
     mut drag_state: ResMut<DragState>,
     player_query: Query<&TilePosition, With<Player>>,
     collider_query: Query<&TilePosition, (With<Collider>, Without<Player>)>,
-    collectible_query: Query<(Entity, &TilePosition, &OverworldObject), With<Collectible>>,
-    slot_query: Query<(&ItemSlotButton, &ComputedNode, &UiGlobalTransform), With<Button>>,
+    movable_query: Query<(Entity, &TilePosition, &OverworldObject), With<Movable>>,
+    mut slot_queries: ParamSet<(
+        Query<
+            (
+                &ItemSlotButton,
+                &ComputedNode,
+                &UiGlobalTransform,
+                Option<&Visibility>,
+            ),
+            (With<Button>, With<EquipmentSlotButton>),
+        >,
+        Query<
+            (
+                &ItemSlotButton,
+                &ComputedNode,
+                &UiGlobalTransform,
+                Option<&Visibility>,
+            ),
+            (With<Button>, With<ContainerSlotButton>),
+        >,
+    )>,
     mut container_query: Query<&mut Container>,
     asset_server: Res<AssetServer>,
     mut commands: Commands,
@@ -203,7 +549,14 @@ pub fn handle_collectible_dragging(
     let Ok(player_position) = player_query.single() else {
         return;
     };
-    let hovered_slot = hovered_slot_kind(cursor_position, &slot_query);
+    let hovered_slot = {
+        let equipment_hovered = hovered_slot_in_family(cursor_position, &slot_queries.p0());
+        equipment_hovered.or_else(|| hovered_slot_in_family(cursor_position, &slot_queries.p1()))
+    };
+
+    if context_menu_state.is_visible() {
+        return;
+    }
 
     if mouse_input.just_pressed(MouseButton::Left) && drag_state.source.is_none() {
         if let Some(slot_kind) = hovered_slot {
@@ -213,6 +566,14 @@ pub fn handle_collectible_dragging(
                 open_container_state.entity,
                 slot_kind,
             ) {
+                info!(
+                    "drag_start ui_slot={slot_kind:?} object_id={object_id} open_container={:?}",
+                    open_container_state.entity
+                );
+                info!(
+                    "equipment_state_after_take {}",
+                    equipment_state_summary(&inventory_state)
+                );
                 drag_state.source = Some(DragSource::UiSlot(slot_kind));
                 drag_state.object_id = Some(object_id);
                 drag_state.world_origin = None;
@@ -222,7 +583,7 @@ pub fn handle_collectible_dragging(
 
         let target_tile = cursor_to_tile(window, cursor_position, player_position, &world_config);
 
-        for (entity, tile_position, object) in &collectible_query {
+        for (entity, tile_position, object) in &movable_query {
             if *tile_position != target_tile {
                 continue;
             }
@@ -231,6 +592,10 @@ pub fn handle_collectible_dragging(
                 continue;
             }
 
+            info!(
+                "drag_start world_entity={entity:?} object_id={} origin=({}, {})",
+                object.object_id, tile_position.x, tile_position.y
+            );
             drag_state.source = Some(DragSource::World(entity));
             drag_state.object_id = Some(object.object_id);
             drag_state.world_origin = Some(*tile_position);
@@ -250,6 +615,17 @@ pub fn handle_collectible_dragging(
     };
     let world_origin = drag_state.world_origin.take();
 
+    info!(
+        "drag_release source={:?} object_id={} hovered_slot={hovered_slot:?} target_tile=({}, {})",
+        drag_source.as_ref().map(drag_source_name),
+        object_id,
+        target_tile.x,
+        target_tile.y
+    );
+    if hovered_slot.is_none() {
+        log_equipment_slot_bounds(cursor_position, &slot_queries.p0());
+    }
+
     match drag_source {
         Some(DragSource::World(item_entity)) => {
             if let Some(slot_kind) = hovered_slot {
@@ -262,6 +638,10 @@ pub fn handle_collectible_dragging(
                     &object_registry,
                     &definitions,
                 ) {
+                    info!(
+                        "equipment_state_after_world_to_slot {}",
+                        equipment_state_summary(&inventory_state)
+                    );
                     commands.entity(item_entity).despawn();
                     return;
                 }
@@ -274,7 +654,7 @@ pub fn handle_collectible_dragging(
                     player_position,
                     item_entity,
                     &collider_query,
-                    &collectible_query,
+                    &movable_query,
                     &world_config,
                 ) {
                     commands.entity(item_entity).insert(target_tile);
@@ -303,6 +683,10 @@ pub fn handle_collectible_dragging(
                     &object_registry,
                     &definitions,
                 ) {
+                    info!(
+                        "equipment_state_after_ui_to_slot {}",
+                        equipment_state_summary(&inventory_state)
+                    );
                     return;
                 }
             }
@@ -313,7 +697,7 @@ pub fn handle_collectible_dragging(
                 player_position,
                 Entity::PLACEHOLDER,
                 &collider_query,
-                &collectible_query,
+                &movable_query,
                 &world_config,
             ) {
                 if let Some(type_id) = object_registry.type_id(object_id) {
@@ -327,6 +711,10 @@ pub fn handle_collectible_dragging(
                         None,
                         world_drop_tile,
                     );
+                    info!(
+                        "equipment_state_after_ui_to_world {}",
+                        equipment_state_summary(&inventory_state)
+                    );
                     return;
                 }
             }
@@ -337,6 +725,10 @@ pub fn handle_collectible_dragging(
                 open_container_state.entity,
                 source_slot,
                 object_id,
+            );
+            info!(
+                "equipment_state_after_restore {}",
+                equipment_state_summary(&inventory_state)
             );
         }
         None => {}
@@ -406,13 +798,75 @@ fn is_cursor_over_close_button(
     point_in_ui_node(cursor_position, computed_node, global_transform)
 }
 
+fn is_cursor_over_button<M: Component>(
+    cursor_position: Vec2,
+    button_query: &Query<(&ComputedNode, &UiGlobalTransform), With<M>>,
+) -> bool {
+    let Ok((computed_node, global_transform)) = button_query.single() else {
+        return false;
+    };
+
+    point_in_ui_node(cursor_position, computed_node, global_transform)
+}
+
+fn is_cursor_over_visible_button<M: Component>(
+    cursor_position: Vec2,
+    button_query: &Query<(&ComputedNode, &UiGlobalTransform, &Visibility), With<M>>,
+) -> bool {
+    let Ok((computed_node, global_transform, visibility)) = button_query.single() else {
+        return false;
+    };
+    if *visibility == Visibility::Hidden {
+        return false;
+    }
+
+    point_in_ui_node(cursor_position, computed_node, global_transform)
+}
+
 fn hovered_slot_kind(
     cursor_position: Vec2,
-    slot_query: &Query<(&ItemSlotButton, &ComputedNode, &UiGlobalTransform), With<Button>>,
+    equipment_slot_query: &Query<
+        (
+            &ItemSlotButton,
+            &ComputedNode,
+            &UiGlobalTransform,
+            Option<&Visibility>,
+        ),
+        (With<Button>, With<EquipmentSlotButton>),
+    >,
+    container_slot_query: &Query<
+        (
+            &ItemSlotButton,
+            &ComputedNode,
+            &UiGlobalTransform,
+            Option<&Visibility>,
+        ),
+        (With<Button>, With<ContainerSlotButton>),
+    >,
+) -> Option<ItemSlotKind> {
+    hovered_slot_in_family(cursor_position, equipment_slot_query)
+        .or_else(|| hovered_slot_in_family(cursor_position, container_slot_query))
+}
+
+fn hovered_slot_in_family<F: QueryFilter>(
+    cursor_position: Vec2,
+    slot_query: &Query<
+        (
+            &ItemSlotButton,
+            &ComputedNode,
+            &UiGlobalTransform,
+            Option<&Visibility>,
+        ),
+        F,
+    >,
 ) -> Option<ItemSlotKind> {
     slot_query
         .iter()
-        .find_map(|(slot, computed_node, global_transform)| {
+        .find_map(|(slot, computed_node, global_transform, visibility)| {
+            if visibility.is_some_and(|visibility| *visibility == Visibility::Hidden) {
+                return None;
+            }
+
             point_in_ui_node(cursor_position, computed_node, global_transform).then_some(slot.kind)
         })
 }
@@ -422,18 +876,7 @@ fn point_in_ui_node(
     computed_node: &ComputedNode,
     global_transform: &UiGlobalTransform,
 ) -> bool {
-    let Some(local_point) = global_transform
-        .try_inverse()
-        .map(|transform| transform.transform_point2(cursor_position) + 0.5 * computed_node.size())
-    else {
-        return false;
-    };
-
-    let size = computed_node.size();
-    local_point.x >= 0.0
-        && local_point.y >= 0.0
-        && local_point.x <= size.x
-        && local_point.y <= size.y
+    computed_node.contains_point(*global_transform, cursor_position)
 }
 
 fn take_item_from_slot_kind(
@@ -457,6 +900,51 @@ fn take_item_from_slot_kind(
     }
 }
 
+fn object_id_in_slot_kind(
+    inventory_state: &InventoryState,
+    container_query: &Query<&Container>,
+    open_container_entity: Option<Entity>,
+    slot_kind: ItemSlotKind,
+) -> Option<u64> {
+    match slot_kind {
+        ItemSlotKind::ActiveContainer(slot_index) => {
+            if let Some(entity) = open_container_entity {
+                return container_query
+                    .get(entity)
+                    .ok()
+                    .and_then(|container| container.slots.get(slot_index).copied().flatten());
+            }
+
+            inventory_state
+                .backpack_slots
+                .get(slot_index)
+                .copied()
+                .flatten()
+        }
+        ItemSlotKind::Equipment(slot) => inventory_state.equipment_item(slot),
+    }
+}
+
+fn active_object_id_in_container_view(
+    inventory_state: &InventoryState,
+    container_query: &Query<&Container>,
+    open_container_entity: Option<Entity>,
+    slot_index: usize,
+) -> Option<u64> {
+    if let Some(entity) = open_container_entity {
+        return container_query
+            .get(entity)
+            .ok()
+            .and_then(|container| container.slots.get(slot_index).copied().flatten());
+    }
+
+    inventory_state
+        .backpack_slots
+        .get(slot_index)
+        .copied()
+        .flatten()
+}
+
 fn place_item_in_slot_kind(
     inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
@@ -466,6 +954,10 @@ fn place_item_in_slot_kind(
     object_registry: &ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
 ) -> bool {
+    if !object_is_storable(object_id, object_registry, definitions) {
+        return false;
+    }
+
     match slot_kind {
         ItemSlotKind::ActiveContainer(slot_index) => {
             if let Some(entity) = open_container_entity {
@@ -536,16 +1028,247 @@ fn place_item_in_equipment_slot(
     object_id: u64,
 ) -> bool {
     let Some(type_id) = object_registry.type_id(object_id) else {
+        warn!(
+            "equip_reject object_id={} reason=missing_type_id",
+            object_id
+        );
+        return false;
+    };
+    let Some(definition) = definitions.get(type_id) else {
+        warn!(
+            "equip_reject object_id={} type_id={} reason=missing_definition",
+            object_id, type_id
+        );
+        return false;
+    };
+    if definition.equipment_slot != Some(slot) {
+        warn!(
+            "equip_reject object_id={} type_id={} target_slot={slot:?} item_slot={:?} reason=slot_mismatch",
+            object_id,
+            type_id,
+            definition.equipment_slot
+        );
+        return false;
+    }
+
+    let placed = inventory_state.place_equipment_item(slot, object_id);
+    if placed {
+        info!(
+            "equip_accept object_id={} type_id={} slot={slot:?}",
+            object_id, type_id
+        );
+    } else {
+        warn!(
+            "equip_reject object_id={} type_id={} slot={slot:?} reason=slot_occupied",
+            object_id, type_id
+        );
+    }
+
+    placed
+}
+
+fn drag_source_name(source: &DragSource) -> &'static str {
+    match source {
+        DragSource::World(_) => "world",
+        DragSource::UiSlot(_) => "ui_slot",
+    }
+}
+
+fn equipment_state_summary(inventory_state: &InventoryState) -> String {
+    inventory_state
+        .equipment_slots
+        .iter()
+        .map(|(slot, object_id)| format!("{slot:?}={object_id:?}"))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn log_equipment_slot_bounds(
+    cursor_position: Vec2,
+    equipment_query: &Query<
+        (
+            &ItemSlotButton,
+            &ComputedNode,
+            &UiGlobalTransform,
+            Option<&Visibility>,
+        ),
+        impl QueryFilter,
+    >,
+) {
+    for (slot, computed_node, global_transform, visibility) in equipment_query {
+        let center = global_transform.transform_point2(Vec2::ZERO);
+        let visible = visibility.is_none_or(|visibility| *visibility != Visibility::Hidden);
+        let contains_cursor = point_in_ui_node(cursor_position, computed_node, global_transform);
+
+        info!(
+            "equipment_slot_debug kind={:?} center=({:.1}, {:.1}) size=({:.1}, {:.1}) visible={} contains_cursor={}",
+            slot.kind,
+            center.x,
+            center.y,
+            computed_node.size().x,
+            computed_node.size().y,
+            visible,
+            contains_cursor
+        );
+    }
+}
+
+fn object_description(
+    object_id: u64,
+    object_registry: &ObjectRegistry,
+    definitions: &OverworldObjectDefinitions,
+) -> Option<String> {
+    let type_id = object_registry.type_id(object_id)?;
+    let definition = definitions.get(type_id)?;
+    let mut parts = Vec::new();
+    let description = definition.description.trim();
+    if description.is_empty() {
+        parts.push(format!("Just a {}.", definition.name.to_lowercase()));
+    } else {
+        parts.push(description.to_owned());
+    }
+
+    let stat_lines = stat_bonus_lines(definition);
+    if !stat_lines.is_empty() {
+        parts.push(format!("Bonuses: {}", stat_lines.join(", ")));
+    }
+
+    Some(parts.join(" "))
+}
+
+fn inspect_context_target(
+    target: ContextMenuTarget,
+    object_registry: &ObjectRegistry,
+    definitions: &OverworldObjectDefinitions,
+    chat_log_state: &mut ChatLogState,
+) {
+    let object_id = match target {
+        ContextMenuTarget::World(_, object_id) | ContextMenuTarget::Slot(_, object_id) => object_id,
+    };
+
+    if let Some(description) = object_description(object_id, object_registry, definitions) {
+        chat_log_state.push_narrator(description);
+    }
+}
+
+fn use_context_target(
+    target: ContextMenuTarget,
+    inventory_state: &mut InventoryState,
+    container_query: &mut Query<&mut Container>,
+    open_container_entity: Option<Entity>,
+    object_registry: &ObjectRegistry,
+    definitions: &OverworldObjectDefinitions,
+    player_query: &mut Query<&mut VitalStats, With<Player>>,
+    chat_log_state: &mut ChatLogState,
+    commands: &mut Commands,
+) {
+    let (object_id, consume_source) = match target {
+        ContextMenuTarget::World(entity, object_id) => {
+            (object_id, Some(UseConsumeSource::World(entity)))
+        }
+        ContextMenuTarget::Slot(slot_kind, object_id) => {
+            (object_id, Some(UseConsumeSource::Slot(slot_kind)))
+        }
+    };
+
+    let Some(type_id) = object_registry.type_id(object_id) else {
+        return;
+    };
+    let Some(definition) = definitions.get(type_id) else {
+        return;
+    };
+    if !definition.is_usable() {
+        return;
+    }
+
+    let Ok(mut vital_stats) = player_query.single_mut() else {
+        return;
+    };
+
+    vital_stats.health = (vital_stats.health + definition.use_effects.restore_health)
+        .clamp(0.0, vital_stats.max_health);
+    vital_stats.mana =
+        (vital_stats.mana + definition.use_effects.restore_mana).clamp(0.0, vital_stats.max_mana);
+
+    match consume_source {
+        Some(UseConsumeSource::World(entity)) => {
+            commands.entity(entity).despawn();
+        }
+        Some(UseConsumeSource::Slot(slot_kind)) => {
+            let _ = take_item_from_slot_kind(
+                inventory_state,
+                container_query,
+                open_container_entity,
+                slot_kind,
+            );
+        }
+        None => {}
+    }
+
+    chat_log_state.push_narrator(use_text(definition));
+}
+
+fn object_is_usable(
+    object_id: u64,
+    object_registry: &ObjectRegistry,
+    definitions: &OverworldObjectDefinitions,
+) -> bool {
+    let Some(type_id) = object_registry.type_id(object_id) else {
         return false;
     };
     let Some(definition) = definitions.get(type_id) else {
         return false;
     };
-    if definition.equipment_slot != Some(slot) {
+
+    definition.is_usable()
+}
+
+fn object_is_storable(
+    object_id: u64,
+    object_registry: &ObjectRegistry,
+    definitions: &OverworldObjectDefinitions,
+) -> bool {
+    let Some(type_id) = object_registry.type_id(object_id) else {
         return false;
+    };
+    let Some(definition) = definitions.get(type_id) else {
+        return false;
+    };
+
+    definition.storable
+}
+
+fn use_text(definition: &OverworldObjectDefinition) -> String {
+    if definition.use_texts.is_empty() {
+        return format!("{} used.", definition.name);
     }
 
-    inventory_state.place_equipment_item(slot, object_id)
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.subsec_nanos() as usize)
+        .unwrap_or(0);
+    definition.use_texts[nanos % definition.use_texts.len()].clone()
+}
+
+enum UseConsumeSource {
+    World(Entity),
+    Slot(ItemSlotKind),
+}
+
+fn stat_bonus_lines(definition: &OverworldObjectDefinition) -> Vec<String> {
+    let mut bonuses = Vec::new();
+
+    if definition.stats.max_health != 0 {
+        bonuses.push(format!("{:+} hp", definition.stats.max_health));
+    }
+    if definition.stats.max_mana != 0 {
+        bonuses.push(format!("{:+} mana", definition.stats.max_mana));
+    }
+    if definition.stats.storage_slots != 0 {
+        bonuses.push(format!("{:+} storage", definition.stats.storage_slots));
+    }
+
+    bonuses
 }
 
 fn restore_container_slot(
@@ -591,7 +1314,7 @@ fn is_valid_world_drop(
     player_position: &TilePosition,
     dragged_entity: Entity,
     collider_query: &Query<&TilePosition, (With<Collider>, Without<Player>)>,
-    collectible_query: &Query<(Entity, &TilePosition, &OverworldObject), With<Collectible>>,
+    movable_query: &Query<(Entity, &TilePosition, &OverworldObject), With<Movable>>,
     world_config: &WorldConfig,
 ) -> bool {
     if target_tile.x < 0
@@ -618,7 +1341,7 @@ fn is_valid_world_drop(
         return false;
     }
 
-    !collectible_query
+    !movable_query
         .iter()
         .any(|(entity, tile, _)| entity != dragged_entity && *tile == target_tile)
 }
@@ -629,7 +1352,7 @@ fn find_nearest_valid_world_drop_tile(
     player_position: &TilePosition,
     dragged_entity: Entity,
     collider_query: &Query<&TilePosition, (With<Collider>, Without<Player>)>,
-    collectible_query: &Query<(Entity, &TilePosition, &OverworldObject), With<Collectible>>,
+    movable_query: &Query<(Entity, &TilePosition, &OverworldObject), With<Movable>>,
     world_config: &WorldConfig,
 ) -> Option<TilePosition> {
     let mut candidates = Vec::new();
@@ -651,7 +1374,7 @@ fn find_nearest_valid_world_drop_tile(
             player_position,
             dragged_entity,
             collider_query,
-            collectible_query,
+            movable_query,
             world_config,
         ) {
             return Some(candidate);

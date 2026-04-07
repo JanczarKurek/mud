@@ -1,9 +1,8 @@
+extends: obstacle
 name: Tree
 description: A placeholder tree object used for early overworld layout tests.
-colliding: true
 render:
   z_index: 0.35
   debug_color: [31, 115, 46]
   debug_size: 1.0
   sprite_path: overworld_objects/tree/sprite.png
-sound_paths: []

@@ -4,7 +4,9 @@ use std::path::Path;
 
 use bevy::prelude::*;
 use serde::Deserialize;
+use serde_yaml::{Mapping, Value};
 
+const OBJECT_BASES_PATH: &str = "assets/object_bases";
 const OBJECT_DEFINITIONS_PATH: &str = "assets/overworld_objects";
 
 #[allow(dead_code)]
@@ -13,15 +15,39 @@ pub struct OverworldObjectDefinition {
     pub name: String,
     pub description: String,
     pub colliding: bool,
-    #[serde(default)]
-    pub collectible: bool,
+    pub movable: bool,
+    pub storable: bool,
     #[serde(default)]
     pub equipment_slot: Option<EquipmentSlot>,
+    #[serde(default)]
+    pub stats: StatModifiers,
+    #[serde(default)]
+    pub use_effects: UseEffects,
+    #[serde(default)]
+    pub use_texts: Vec<String>,
     #[serde(default)]
     pub container_capacity: Option<usize>,
     pub render: RenderMetadata,
     #[serde(default)]
     pub sound_paths: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct StatModifiers {
+    #[serde(default)]
+    pub max_health: i32,
+    #[serde(default)]
+    pub max_mana: i32,
+    #[serde(default)]
+    pub storage_slots: i32,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct UseEffects {
+    #[serde(default)]
+    pub restore_health: f32,
+    #[serde(default)]
+    pub restore_mana: f32,
 }
 
 #[allow(dead_code)]
@@ -85,6 +111,10 @@ impl OverworldObjectDefinition {
             self.render.debug_color[2],
         )
     }
+
+    pub fn is_usable(&self) -> bool {
+        self.use_effects.restore_health > 0.0 || self.use_effects.restore_mana > 0.0
+    }
 }
 
 #[derive(Resource, Default)]
@@ -94,17 +124,18 @@ pub struct OverworldObjectDefinitions {
 
 impl OverworldObjectDefinitions {
     pub fn load_from_disk() -> Self {
-        let base_path = Path::new(OBJECT_DEFINITIONS_PATH);
-        let entries = fs::read_dir(base_path).unwrap_or_else(|error| {
+        let object_definitions_path = Path::new(OBJECT_DEFINITIONS_PATH);
+        let object_entries = fs::read_dir(object_definitions_path).unwrap_or_else(|error| {
             panic!(
                 "Failed to read overworld object definitions from {}: {error}",
-                base_path.display()
+                object_definitions_path.display()
             )
         });
 
-        let mut definitions = HashMap::new();
+        let base_values = load_base_values();
+        let mut raw_definition_values = HashMap::new();
 
-        for entry in entries {
+        for entry in object_entries {
             let entry = entry.expect("Failed to read overworld object directory entry");
             let path = entry.path();
 
@@ -117,21 +148,33 @@ impl OverworldObjectDefinitions {
             };
 
             let metadata_path = path.join("metadata.yaml");
-            let metadata_yaml = fs::read_to_string(&metadata_path).unwrap_or_else(|error| {
-                panic!(
-                    "Failed to read overworld object metadata {}: {error}",
-                    metadata_path.display()
-                )
-            });
-            let definition = serde_yaml::from_str::<OverworldObjectDefinition>(&metadata_yaml)
+            raw_definition_values.insert(
+                directory_name.to_owned(),
+                load_yaml_value(&metadata_path, "overworld object metadata"),
+            );
+        }
+
+        let mut resolved_definition_values = HashMap::new();
+        for definition_id in raw_definition_values.keys() {
+            resolve_extends_chain(
+                definition_id,
+                &raw_definition_values,
+                &base_values,
+                &mut resolved_definition_values,
+                &mut Vec::new(),
+            );
+        }
+
+        let mut definitions = HashMap::new();
+        for (definition_id, value) in resolved_definition_values {
+            let definition = serde_yaml::from_value::<OverworldObjectDefinition>(value)
                 .unwrap_or_else(|error| {
                     panic!(
-                        "Failed to parse overworld object metadata {}: {error}",
-                        metadata_path.display()
+                        "Failed to deserialize resolved overworld object definition '{}': {error}",
+                        definition_id
                     )
                 });
-
-            definitions.insert(directory_name.to_owned(), definition);
+            definitions.insert(definition_id, definition);
         }
 
         Self { definitions }
@@ -143,5 +186,209 @@ impl OverworldObjectDefinitions {
 
     pub fn ids(&self) -> impl Iterator<Item = &str> {
         self.definitions.keys().map(String::as_str)
+    }
+}
+
+fn load_base_values() -> HashMap<String, Value> {
+    let base_path = Path::new(OBJECT_BASES_PATH);
+    let Ok(entries) = fs::read_dir(base_path) else {
+        return HashMap::new();
+    };
+
+    let mut base_values = HashMap::new();
+    for entry in entries {
+        let entry = entry.expect("Failed to read object base directory entry");
+        let path = entry.path();
+
+        if !path.is_file() || path.extension().and_then(|ext| ext.to_str()) != Some("yaml") {
+            continue;
+        }
+
+        let Some(base_id) = path.file_stem().and_then(|stem| stem.to_str()) else {
+            continue;
+        };
+
+        base_values.insert(
+            base_id.to_owned(),
+            load_yaml_value(&path, "object base metadata"),
+        );
+    }
+
+    base_values
+}
+
+fn load_yaml_value(path: &Path, kind: &str) -> Value {
+    let yaml = fs::read_to_string(path)
+        .unwrap_or_else(|error| panic!("Failed to read {kind} {}: {error}", path.display()));
+
+    serde_yaml::from_str::<Value>(&yaml)
+        .unwrap_or_else(|error| panic!("Failed to parse {kind} {}: {error}", path.display()))
+}
+
+fn resolve_extends_chain(
+    id: &str,
+    object_values: &HashMap<String, Value>,
+    base_values: &HashMap<String, Value>,
+    resolved_values: &mut HashMap<String, Value>,
+    stack: &mut Vec<String>,
+) -> Value {
+    if let Some(value) = resolved_values.get(id) {
+        return value.clone();
+    }
+
+    assert!(
+        !stack.iter().any(|ancestor| ancestor == id),
+        "Circular 'extends' chain detected while resolving '{}': {:?}",
+        id,
+        stack
+    );
+
+    let raw_value = object_values
+        .get(id)
+        .unwrap_or_else(|| panic!("Missing raw overworld object definition value for '{}'", id));
+
+    stack.push(id.to_owned());
+    let resolved_value = resolve_value_with_extends(
+        id,
+        raw_value,
+        object_values,
+        base_values,
+        resolved_values,
+        stack,
+    );
+    stack.pop();
+
+    resolved_values.insert(id.to_owned(), resolved_value.clone());
+    resolved_value
+}
+
+fn resolve_value_with_extends(
+    current_id: &str,
+    raw_value: &Value,
+    object_values: &HashMap<String, Value>,
+    base_values: &HashMap<String, Value>,
+    resolved_values: &mut HashMap<String, Value>,
+    stack: &mut Vec<String>,
+) -> Value {
+    let mut child_mapping = as_mapping_clone(raw_value, current_id);
+    let extends = child_mapping
+        .remove(Value::String("extends".to_owned()))
+        .and_then(|value| value.as_str().map(str::to_owned));
+
+    if let Some(parent_id) = extends {
+        let parent_value = if object_values.contains_key(&parent_id) {
+            resolve_extends_chain(
+                &parent_id,
+                object_values,
+                base_values,
+                resolved_values,
+                stack,
+            )
+        } else if let Some(parent_base_value) = base_values.get(&parent_id) {
+            assert!(
+                !stack.iter().any(|ancestor| ancestor == &parent_id),
+                "Circular 'extends' chain detected while resolving '{}': {:?}",
+                current_id,
+                stack
+            );
+            stack.push(parent_id.clone());
+            let resolved = resolve_base_value_with_extends(
+                &parent_id,
+                parent_base_value,
+                object_values,
+                base_values,
+                resolved_values,
+                stack,
+            );
+            stack.pop();
+            resolved
+        } else {
+            panic!(
+                "Object '{}' extends missing parent definition/base '{}'",
+                current_id, parent_id
+            );
+        };
+
+        merge_yaml_values(parent_value, Value::Mapping(child_mapping))
+    } else {
+        Value::Mapping(child_mapping)
+    }
+}
+
+fn resolve_base_value_with_extends(
+    current_id: &str,
+    raw_value: &Value,
+    object_values: &HashMap<String, Value>,
+    base_values: &HashMap<String, Value>,
+    resolved_values: &mut HashMap<String, Value>,
+    stack: &mut Vec<String>,
+) -> Value {
+    let mut child_mapping = as_mapping_clone(raw_value, current_id);
+    let extends = child_mapping
+        .remove(Value::String("extends".to_owned()))
+        .and_then(|value| value.as_str().map(str::to_owned));
+
+    if let Some(parent_id) = extends {
+        assert!(
+            !stack.iter().any(|ancestor| ancestor == &parent_id),
+            "Circular 'extends' chain detected while resolving '{}': {:?}",
+            current_id,
+            stack
+        );
+
+        let parent_value = if let Some(parent_object_value) = object_values.get(&parent_id) {
+            let _ = parent_object_value;
+            resolve_extends_chain(
+                &parent_id,
+                object_values,
+                base_values,
+                resolved_values,
+                stack,
+            )
+        } else if let Some(parent_base_value) = base_values.get(&parent_id) {
+            stack.push(parent_id.clone());
+            let resolved = resolve_base_value_with_extends(
+                &parent_id,
+                parent_base_value,
+                object_values,
+                base_values,
+                resolved_values,
+                stack,
+            );
+            stack.pop();
+            resolved
+        } else {
+            panic!(
+                "Base '{}' extends missing parent definition/base '{}'",
+                current_id, parent_id
+            );
+        };
+
+        merge_yaml_values(parent_value, Value::Mapping(child_mapping))
+    } else {
+        Value::Mapping(child_mapping)
+    }
+}
+
+fn as_mapping_clone(value: &Value, id: &str) -> Mapping {
+    value
+        .as_mapping()
+        .cloned()
+        .unwrap_or_else(|| panic!("Resolved YAML for '{}' must be a mapping", id))
+}
+
+fn merge_yaml_values(parent: Value, child: Value) -> Value {
+    match (parent, child) {
+        (Value::Mapping(mut parent_map), Value::Mapping(child_map)) => {
+            for (key, child_value) in child_map {
+                if let Some(parent_value) = parent_map.remove(&key) {
+                    parent_map.insert(key, merge_yaml_values(parent_value, child_value));
+                } else {
+                    parent_map.insert(key, child_value);
+                }
+            }
+            Value::Mapping(parent_map)
+        }
+        (_, child) => child,
     }
 }

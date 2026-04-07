@@ -2,10 +2,12 @@ use bevy::prelude::*;
 use bevy::text::{Justify, LineBreak, TextLayout};
 
 use crate::ui::components::{
-    CloseContainerButton, DragPreviewLabel, DragPreviewRoot, HealthFill, ItemSlotButton,
-    ItemSlotImage, ItemSlotKind, ManaFill, OpenContainerTitle, PythonConsoleInput,
-    PythonConsoleOutput, PythonConsoleOutputViewport, PythonConsolePanel,
-    PythonConsoleScrollbarThumb,
+    ChatLogText, CloseContainerButton, ContainerSlotButton, ContainerSlotImage,
+    ContextMenuInspectButton, ContextMenuOpenButton, ContextMenuRoot, ContextMenuUseButton,
+    DragPreviewLabel, DragPreviewRoot, EquipmentSlotButton, EquipmentSlotImage, HealthFill,
+    HealthLabel, ItemSlotButton, ItemSlotImage, ItemSlotKind, ManaFill, ManaLabel,
+    OpenContainerTitle, PythonConsoleInput, PythonConsoleOutput, PythonConsoleOutputViewport,
+    PythonConsolePanel, PythonConsoleScrollbarThumb,
 };
 use crate::world::object_definitions::EquipmentSlot;
 
@@ -63,12 +65,14 @@ pub fn spawn_hud(mut commands: Commands) {
                                 "Health",
                                 Color::srgb(0.70, 0.16, 0.18),
                                 HealthFill,
+                                HealthLabel,
                             );
                             spawn_vital_bar(
                                 top_panel,
                                 "Mana",
                                 Color::srgb(0.14, 0.35, 0.78),
                                 ManaFill,
+                                ManaLabel,
                             );
                         });
 
@@ -107,7 +111,37 @@ pub fn spawn_hud(mut commands: Commands) {
             parent
                 .spawn((
                     Node {
-                        width: percent(88.0),
+                        width: percent(30.0),
+                        height: percent(100.0),
+                        flex_direction: FlexDirection::Column,
+                        row_gap: px(10.0),
+                        padding: UiRect::all(px(12.0)),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.07, 0.08, 0.10, 0.90)),
+                ))
+                .with_children(|chat_panel| {
+                    spawn_panel_label(chat_panel, "Chat");
+                    chat_panel.spawn((
+                        Text::new(""),
+                        ChatLogText,
+                        TextFont {
+                            font_size: 16.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.82, 0.83, 0.85)),
+                        TextLayout::new(Justify::Left, LineBreak::WordOrCharacter),
+                        Node {
+                            width: percent(100.0),
+                            ..default()
+                        },
+                    ));
+                });
+
+            parent
+                .spawn((
+                    Node {
+                        width: percent(58.0),
                         height: percent(100.0),
                         flex_direction: FlexDirection::Column,
                         row_gap: px(10.0),
@@ -252,6 +286,29 @@ pub fn spawn_hud(mut commands: Commands) {
                 TextColor(Color::srgb(0.96, 0.92, 0.72)),
             ));
         });
+
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                width: px(140.0),
+                left: px(-300.0),
+                top: px(-300.0),
+                flex_direction: FlexDirection::Column,
+                padding: UiRect::all(px(6.0)),
+                row_gap: px(4.0),
+                ..default()
+            },
+            ContextMenuRoot,
+            Visibility::Hidden,
+            BackgroundColor(Color::srgba(0.09, 0.08, 0.07, 0.97)),
+            BorderColor::all(Color::srgb(0.52, 0.44, 0.22)),
+        ))
+        .with_children(|menu| {
+            spawn_context_button(menu, "Use", ContextMenuUseButton);
+            spawn_context_button(menu, "Inspect", ContextMenuInspectButton);
+            spawn_context_button(menu, "Open", ContextMenuOpenButton);
+        });
 }
 
 fn spawn_equipment_panel(parent: &mut ChildSpawnerCommands) {
@@ -362,7 +419,7 @@ fn spawn_open_container_panel(parent: &mut ChildSpawnerCommands) {
                     BackgroundColor(Color::NONE),
                 ))
                 .with_children(|grid| {
-                    for row_index in 0..2 {
+                    for row_index in 0..4 {
                         grid.spawn((
                             Node {
                                 width: percent(100.0),
@@ -398,6 +455,7 @@ fn spawn_vital_bar<T: Component>(
     label: &str,
     fill_color: Color,
     marker: T,
+    value_marker: impl Component,
 ) {
     parent
         .spawn((
@@ -425,6 +483,7 @@ fn spawn_vital_bar<T: Component>(
                         width: percent(100.0),
                         height: px(24.0),
                         padding: UiRect::all(px(3.0)),
+                        align_items: AlignItems::Center,
                         ..default()
                     },
                     BackgroundColor(Color::srgb(0.18, 0.18, 0.20)),
@@ -438,6 +497,20 @@ fn spawn_vital_bar<T: Component>(
                         },
                         marker,
                         BackgroundColor(fill_color),
+                    ));
+                    bar_container.spawn((
+                        Text::new(""),
+                        value_marker,
+                        TextFont {
+                            font_size: 14.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.96, 0.95, 0.92)),
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: percent(50.0),
+                            ..default()
+                        },
                     ));
                 });
         });
@@ -468,6 +541,7 @@ fn spawn_equipment_slot(parent: &mut ChildSpawnerCommands, label: Option<&str>) 
     parent
         .spawn((
             Button,
+            EquipmentSlotButton,
             ItemSlotButton {
                 kind: ItemSlotKind::Equipment(slot),
             },
@@ -494,6 +568,7 @@ fn spawn_equipment_slot(parent: &mut ChildSpawnerCommands, label: Option<&str>) 
                 ItemSlotImage {
                     kind: ItemSlotKind::Equipment(slot),
                 },
+                EquipmentSlotImage,
                 Visibility::Hidden,
             ));
 
@@ -514,6 +589,7 @@ fn spawn_container_slot(parent: &mut ChildSpawnerCommands, index: usize) {
     parent
         .spawn((
             Button,
+            ContainerSlotButton,
             ItemSlotButton {
                 kind: ItemSlotKind::ActiveContainer(index),
             },
@@ -539,7 +615,34 @@ fn spawn_container_slot(parent: &mut ChildSpawnerCommands, index: usize) {
                 ItemSlotImage {
                     kind: ItemSlotKind::ActiveContainer(index),
                 },
+                ContainerSlotImage,
                 Visibility::Hidden,
+            ));
+        });
+}
+
+fn spawn_context_button<T: Component>(parent: &mut ChildSpawnerCommands, label: &str, marker: T) {
+    parent
+        .spawn((
+            Button,
+            marker,
+            Node {
+                width: percent(100.0),
+                min_height: px(28.0),
+                padding: UiRect::axes(px(8.0), px(4.0)),
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            BackgroundColor(Color::srgb(0.18, 0.15, 0.11)),
+        ))
+        .with_children(|button| {
+            button.spawn((
+                Text::new(label),
+                TextFont {
+                    font_size: 16.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.94, 0.88, 0.72)),
             ));
         });
 }

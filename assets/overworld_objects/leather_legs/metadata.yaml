@@ -1,11 +1,8 @@
+extends: equipment
 name: Leather Legs
 description: A pair of practical leather leggings.
-colliding: false
-collectible: true
 equipment_slot: legs
 render:
-  z_index: 0.24
   debug_color: [118, 76, 45]
   debug_size: 0.58
   sprite_path: overworld_objects/leather_legs/sprite.png
-sound_paths: []

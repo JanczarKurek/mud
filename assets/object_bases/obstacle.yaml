@@ -1,0 +1,2 @@
+extends: static_world
+colliding: true

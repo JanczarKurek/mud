@@ -132,10 +132,12 @@ Notes:
 
 Path:
 - `assets/overworld_objects/<object_id>/metadata.yaml`
+- reusable parents live under `assets/object_bases/*.yaml`
 
 Purpose:
 - Defines object type behavior and rendering metadata.
 - The directory name acts as the object ID used in map files and runtime data.
+- Supports single-parent inheritance through `extends`.
 
 Top-level fields:
 
@@ -147,20 +149,39 @@ Top-level fields:
 - Type: string
 - Meaning: human-readable description of the object
 
+### `extends`
+- Type: string
+- Optional: yes
+- Meaning: parent object/base ID to inherit from before applying local overrides
+- Parent IDs may refer to:
+  - another object definition directory under `assets/overworld_objects/`
+  - a base definition file under `assets/object_bases/`
+- Inheritance is single-parent only
+- Merge rules:
+  - mappings are deep-merged
+  - scalars are overridden by the child
+  - lists are replaced by the child
+
 ### `colliding`
 - Type: boolean
 - Meaning: whether the object blocks movement
 
-### `collectible`
+### `movable`
 - Type: boolean
 - Optional: yes
 - Default: `false`
-- Meaning: whether the object can be picked up and dragged into inventory/container slots
+- Meaning: whether the object can be dragged or repositioned in the game world
+
+### `storable`
+- Type: boolean
+- Optional: yes
+- Default: `false`
+- Meaning: whether the object can be placed into backpack, container, or equipment slots
 
 ### `equipment_slot`
 - Type: string or `null`
 - Optional: yes
-- Meaning: if present, the collectible is recognized as equippable gear for that paperdoll slot
+- Meaning: if present, the storable item is recognized as equippable gear for that paperdoll slot
 - Valid values:
   - `amulet`
   - `helmet`
@@ -171,6 +192,59 @@ Top-level fields:
   - `backpack`
   - `ring`
   - `boots`
+
+### `stats`
+- Type: mapping
+- Optional: yes
+- Default: empty mapping with zero bonuses
+- Meaning: additive stat modifiers granted by the object, typically while equipped
+
+`stats` fields:
+
+### `max_health`
+- Type: integer
+- Optional: yes
+- Default: `0`
+- Meaning: increases or decreases the holder's maximum health
+
+### `max_mana`
+- Type: integer
+- Optional: yes
+- Default: `0`
+- Meaning: increases or decreases the holder's maximum mana
+
+### `storage_slots`
+- Type: integer
+- Optional: yes
+- Default: `0`
+- Meaning: increases or decreases available backpack storage slots
+
+### `use_effects`
+- Type: mapping
+- Optional: yes
+- Default: empty mapping with no effect
+- Meaning: consumable on-use effects applied to the player when the item is used
+
+`use_effects` fields:
+
+### `restore_health`
+- Type: float
+- Optional: yes
+- Default: `0.0`
+- Meaning: health restored immediately on use
+
+### `restore_mana`
+- Type: float
+- Optional: yes
+- Default: `0.0`
+- Meaning: mana restored immediately on use
+
+### `use_texts`
+- Type: list of strings
+- Optional: yes
+- Default: empty list
+- Meaning: possible narrator texts shown when the item is used; one is chosen per use
+- If omitted or empty, the runtime falls back to `<Item name> used.`
 
 ### `container_capacity`
 - Type: integer
@@ -212,10 +286,9 @@ Top-level fields:
 Example:
 
 ```yaml
+extends: movable_obstacle
 name: Barrel
 description: A heavy wooden barrel that can be opened as a simple container.
-colliding: true
-collectible: false
 container_capacity: 8
 render:
   z_index: 0.25
@@ -227,6 +300,53 @@ sound_paths: []
 
 Notes:
 - The object ID is the folder name, not a field inside the YAML file.
-- `collectible`, `equipment_slot`, and `container_capacity` can coexist if needed.
+- `movable`, `storable`, `equipment_slot`, `stats`, `use_effects`, `use_texts`, and `container_capacity` can coexist if needed.
+- `extends` is resolved before deserializing the final object definition.
 - If `sprite_path` is omitted or `null`, the object falls back to colored debug rendering.
 - The current runtime uses these fields directly for world spawning, collision, pickup behavior, and container creation.
+
+Equippable item example:
+
+```yaml
+extends: equipment
+name: Silver Ring
+description: A tarnished silver ring with a faint blue sheen.
+equipment_slot: ring
+stats:
+  max_mana: 25
+render:
+  z_index: 0.24
+  debug_color: [170, 174, 196]
+  debug_size: 0.42
+  sprite_path: overworld_objects/silver_ring/sprite.png
+sound_paths: []
+```
+
+Usable item example:
+
+```yaml
+extends: consumable
+name: Potion
+description: A small blue potion flask.
+use_effects:
+  restore_mana: 20
+use_texts:
+  - You drink the potion.
+  - The potion tingles as your mana returns.
+render:
+  z_index: 0.24
+  debug_color: [58, 109, 201]
+  debug_size: 0.45
+  sprite_path: overworld_objects/potion/sprite.png
+sound_paths: []
+```
+
+Base definition example:
+
+```yaml
+extends: static_world
+movable: true
+storable: true
+render:
+  z_index: 0.24
+```

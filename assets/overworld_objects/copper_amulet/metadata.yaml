@@ -1,11 +1,10 @@
+extends: equipment
 name: Copper Amulet
 description: A cheap amulet hanging from a braided cord.
-colliding: false
-collectible: true
 equipment_slot: amulet
+stats:
+  max_health: 20
 render:
-  z_index: 0.24
   debug_color: [176, 102, 58]
   debug_size: 0.46
   sprite_path: overworld_objects/copper_amulet/sprite.png
-sound_paths: []

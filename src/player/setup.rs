@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::player::components::{MovementCooldown, Player, VitalStats};
+use crate::player::components::{BaseStats, DerivedStats, MovementCooldown, Player, VitalStats};
 use crate::world::components::{OverworldObject, TilePosition, WorldVisual};
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::WorldConfig;
@@ -31,7 +31,9 @@ pub fn spawn_player(
 
     commands.spawn((
         Player,
-        VitalStats::default(),
+        BaseStats::default(),
+        DerivedStats::default(),
+        VitalStats::new(100.0, 100.0, 65.0, 100.0),
         MovementCooldown::default(),
         OverworldObject {
             object_id: 0,

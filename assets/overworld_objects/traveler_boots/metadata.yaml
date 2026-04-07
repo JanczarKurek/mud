@@ -1,11 +1,8 @@
+extends: equipment
 name: Traveler Boots
 description: Worn boots made for roads, mud, and shallow marshes.
-colliding: false
-collectible: true
 equipment_slot: boots
 render:
-  z_index: 0.24
   debug_color: [96, 64, 38]
   debug_size: 0.55
   sprite_path: overworld_objects/traveler_boots/sprite.png
-sound_paths: []

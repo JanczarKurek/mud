@@ -1,11 +1,10 @@
+extends: equipment
 name: Silver Ring
 description: A plain silver band that catches the light.
-colliding: false
-collectible: true
 equipment_slot: ring
+stats:
+  max_mana: 25
 render:
-  z_index: 0.24
   debug_color: [184, 188, 198]
   debug_size: 0.42
   sprite_path: overworld_objects/silver_ring/sprite.png
-sound_paths: []

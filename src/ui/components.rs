@@ -9,6 +9,12 @@ pub struct HealthFill;
 pub struct ManaFill;
 
 #[derive(Component)]
+pub struct HealthLabel;
+
+#[derive(Component)]
+pub struct ManaLabel;
+
+#[derive(Component)]
 pub struct ItemSlotButton {
     pub kind: ItemSlotKind,
 }
@@ -17,6 +23,18 @@ pub struct ItemSlotButton {
 pub struct ItemSlotImage {
     pub kind: ItemSlotKind,
 }
+
+#[derive(Component)]
+pub struct EquipmentSlotButton;
+
+#[derive(Component)]
+pub struct ContainerSlotButton;
+
+#[derive(Component)]
+pub struct EquipmentSlotImage;
+
+#[derive(Component)]
+pub struct ContainerSlotImage;
 
 #[derive(Component)]
 pub struct OpenContainerTitle;
@@ -44,6 +62,21 @@ pub struct PythonConsoleOutputViewport;
 
 #[derive(Component)]
 pub struct PythonConsoleScrollbarThumb;
+
+#[derive(Component)]
+pub struct ChatLogText;
+
+#[derive(Component)]
+pub struct ContextMenuRoot;
+
+#[derive(Component)]
+pub struct ContextMenuInspectButton;
+
+#[derive(Component)]
+pub struct ContextMenuOpenButton;
+
+#[derive(Component)]
+pub struct ContextMenuUseButton;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ItemSlotKind {
