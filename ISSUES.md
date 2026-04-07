@@ -40,6 +40,9 @@
 - Added basic player stats with equipment-driven health, mana, and storage bonuses.
 - Added metadata-driven usable consumables with context-menu use actions and randomized use text.
 - Added instance-authored roaming NPC behavior with bounded random movement.
+- Added a first combat loop with per-character targets, a global battle tick, and melee hit log messages.
+- Added a first attribute system with strength, agility, constitution, willpower, charisma, and focus driving derived health, mana, and carrying capacity.
+- Added first-pass melee damage so combat turns reduce hit points, kill NPCs, and can defeat the player.
 
 ## Later Ideas
 

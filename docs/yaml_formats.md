@@ -221,6 +221,42 @@ Top-level fields:
 
 `stats` fields:
 
+### `strength`
+- Type: integer
+- Optional: yes
+- Default: `0`
+- Meaning: modifies physical power, contributing to melee-oriented derived stats and carrying capacity
+
+### `agility`
+- Type: integer
+- Optional: yes
+- Default: `0`
+- Meaning: modifies dexterity and speed-oriented character aptitude
+
+### `constitution`
+- Type: integer
+- Optional: yes
+- Default: `0`
+- Meaning: modifies endurance, contributing heavily to maximum health
+
+### `willpower`
+- Type: integer
+- Optional: yes
+- Default: `0`
+- Meaning: modifies resolve and magical endurance, contributing to maximum mana
+
+### `charisma`
+- Type: integer
+- Optional: yes
+- Default: `0`
+- Meaning: modifies presence and social aptitude for future interaction systems
+
+### `focus`
+- Type: integer
+- Optional: yes
+- Default: `0`
+- Meaning: modifies precision and spell control, contributing to maximum mana
+
 ### `max_health`
 - Type: integer
 - Optional: yes
@@ -343,7 +379,8 @@ name: Silver Ring
 description: A tarnished silver ring with a faint blue sheen.
 equipment_slot: ring
 stats:
-  max_mana: 25
+  willpower: 2
+  focus: 1
 render:
   z_index: 0.24
   debug_color: [170, 174, 196]

@@ -28,6 +28,13 @@ pub struct WorldVisual {
 }
 
 #[derive(Component)]
+pub struct CombatHealthBar {
+    pub root_entity: Entity,
+    pub fill_entity: Entity,
+    pub fill_width: f32,
+}
+
+#[derive(Component)]
 pub struct Movable;
 
 #[derive(Component)]

@@ -1,8 +1,10 @@
 use bevy::prelude::*;
 
+use crate::combat::components::AttackProfile;
 use crate::player::components::{BaseStats, DerivedStats, MovementCooldown, Player, VitalStats};
 use crate::world::components::{OverworldObject, TilePosition, WorldVisual};
 use crate::world::object_definitions::OverworldObjectDefinitions;
+use crate::world::setup::attach_combat_health_bar;
 use crate::world::WorldConfig;
 
 pub fn spawn_player(
@@ -29,21 +31,31 @@ pub fn spawn_player(
     };
     sprite.image_mode = SpriteImageMode::Auto;
 
-    commands.spawn((
-        Player,
-        BaseStats::default(),
-        DerivedStats::default(),
-        VitalStats::new(100.0, 100.0, 65.0, 100.0),
-        MovementCooldown::default(),
-        OverworldObject {
-            object_id: 0,
-            definition_id: "player".to_owned(),
-        },
-        TilePosition::new(world_config.map_width / 2, world_config.map_height / 2),
-        WorldVisual {
-            z_index: definition.render.z_index,
-        },
-        sprite,
-        Transform::from_xyz(0.0, 0.0, definition.render.z_index),
-    ));
+    let base_stats = BaseStats::default();
+    let derived_stats = DerivedStats::from_base(&base_stats);
+    let max_health = derived_stats.max_health as f32;
+    let max_mana = derived_stats.max_mana as f32;
+
+    let entity = commands
+        .spawn((
+            Player,
+            base_stats,
+            derived_stats,
+            VitalStats::full(max_health, max_mana),
+            MovementCooldown::default(),
+            AttackProfile::melee(),
+            OverworldObject {
+                object_id: 0,
+                definition_id: "player".to_owned(),
+            },
+            TilePosition::new(world_config.map_width / 2, world_config.map_height / 2),
+            WorldVisual {
+                z_index: definition.render.z_index,
+            },
+            sprite,
+            Transform::from_xyz(0.0, 0.0, definition.render.z_index),
+        ))
+        .id();
+
+    attach_combat_health_bar(&mut commands, entity, world_config.tile_size);
 }

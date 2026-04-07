@@ -93,12 +93,16 @@ impl Default for ChatLogState {
 }
 
 impl ChatLogState {
-    pub fn push_narrator(&mut self, message: impl Into<String>) {
-        self.lines.push(format!("[Narrator]: {}", message.into()));
+    pub fn push_line(&mut self, message: impl Into<String>) {
+        self.lines.push(message.into());
         if self.lines.len() > self.max_lines {
             let overflow = self.lines.len() - self.max_lines;
             self.lines.drain(0..overflow);
         }
+    }
+
+    pub fn push_narrator(&mut self, message: impl Into<String>) {
+        self.push_line(format!("[Narrator]: {}", message.into()));
     }
 }
 
@@ -114,6 +118,7 @@ pub struct ContextMenuState {
     pub position: Vec2,
     pub can_open: bool,
     pub can_use: bool,
+    pub can_attack: bool,
 }
 
 impl ContextMenuState {
@@ -123,17 +128,20 @@ impl ContextMenuState {
         target: ContextMenuTarget,
         can_open: bool,
         can_use: bool,
+        can_attack: bool,
     ) {
         self.position = position;
         self.target = Some(target);
         self.can_open = can_open;
         self.can_use = can_use;
+        self.can_attack = can_attack;
     }
 
     pub fn hide(&mut self) {
         self.target = None;
         self.can_open = false;
         self.can_use = false;
+        self.can_attack = false;
     }
 
     pub fn is_visible(&self) -> bool {

@@ -2,12 +2,13 @@ use bevy::prelude::*;
 use bevy::text::{Justify, LineBreak, TextLayout};
 
 use crate::ui::components::{
-    ChatLogText, CloseContainerButton, ContainerSlotButton, ContainerSlotImage,
-    ContextMenuInspectButton, ContextMenuOpenButton, ContextMenuRoot, ContextMenuUseButton,
-    ContextMenuUseOnButton, DragPreviewLabel, DragPreviewRoot, EquipmentSlotButton,
-    EquipmentSlotImage, HealthFill, HealthLabel, ItemSlotButton, ItemSlotImage, ItemSlotKind,
-    ManaFill, ManaLabel, OpenContainerTitle, PythonConsoleInput, PythonConsoleOutput,
-    PythonConsoleOutputViewport, PythonConsolePanel, PythonConsoleScrollbarThumb,
+    ChatLogText, ClearCombatTargetButton, CloseContainerButton, ContainerSlotButton,
+    ContainerSlotImage, ContextMenuAttackButton, ContextMenuInspectButton, ContextMenuOpenButton,
+    ContextMenuRoot, ContextMenuUseButton, ContextMenuUseOnButton, CurrentCombatTargetLabel,
+    DragPreviewLabel, DragPreviewRoot, EquipmentSlotButton, EquipmentSlotImage, HealthFill,
+    HealthLabel, ItemSlotButton, ItemSlotImage, ItemSlotKind, ManaFill, ManaLabel,
+    OpenContainerTitle, PythonConsoleInput, PythonConsoleOutput, PythonConsoleOutputViewport,
+    PythonConsolePanel, PythonConsoleScrollbarThumb,
 };
 use crate::world::object_definitions::EquipmentSlot;
 
@@ -306,6 +307,7 @@ pub fn spawn_hud(mut commands: Commands) {
             BorderColor::all(Color::srgb(0.52, 0.44, 0.22)),
         ))
         .with_children(|menu| {
+            spawn_context_button(menu, "Attack", ContextMenuAttackButton);
             spawn_context_button(menu, "Use", ContextMenuUseButton);
             spawn_context_button(menu, "Use On", ContextMenuUseOnButton);
             spawn_context_button(menu, "Inspect", ContextMenuInspectButton);
@@ -345,6 +347,58 @@ fn spawn_equipment_panel(parent: &mut ChildSpawnerCommands) {
                     spawn_slot_row(paperdoll, &["Weapon", "Armor", "Shield"]);
                     spawn_slot_row(paperdoll, &["Legs", "Backpack", "Ring"]);
                     spawn_slot_row(paperdoll, &["Boots"]);
+                });
+
+            equipment_panel
+                .spawn((
+                    Node {
+                        width: percent(100.0),
+                        min_height: px(34.0),
+                        padding: UiRect::axes(px(8.0), px(6.0)),
+                        justify_content: JustifyContent::SpaceBetween,
+                        align_items: AlignItems::Center,
+                        column_gap: px(8.0),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgb(0.13, 0.12, 0.10)),
+                ))
+                .with_children(|target_row| {
+                    target_row.spawn((
+                        Text::new("Target: none"),
+                        CurrentCombatTargetLabel,
+                        TextFont {
+                            font_size: 16.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.86, 0.84, 0.78)),
+                    ));
+
+                    target_row
+                        .spawn((
+                            Button,
+                            ClearCombatTargetButton,
+                            Node {
+                                width: px(24.0),
+                                height: px(24.0),
+                                border: UiRect::all(px(1.0)),
+                                align_items: AlignItems::Center,
+                                justify_content: JustifyContent::Center,
+                                ..default()
+                            },
+                            Visibility::Hidden,
+                            BorderColor::all(Color::srgb(0.52, 0.30, 0.20)),
+                            BackgroundColor(Color::srgb(0.22, 0.11, 0.10)),
+                        ))
+                        .with_children(|button| {
+                            button.spawn((
+                                Text::new("x"),
+                                TextFont {
+                                    font_size: 16.0,
+                                    ..default()
+                                },
+                                TextColor(Color::srgb(0.94, 0.82, 0.74)),
+                            ));
+                        });
                 });
         });
 }

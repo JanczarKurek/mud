@@ -5,14 +5,17 @@ use bevy::ui::{ComputedNode, UiGlobalTransform};
 use bevy::window::{CursorIcon, CustomCursor, CustomCursorImage, PrimaryWindow};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::combat::components::CombatTarget;
+use crate::npc::components::Npc;
 use crate::player::components::{DerivedStats, Player, VitalStats};
 use crate::scripting::resources::PythonConsoleState;
 use crate::ui::components::{
-    ChatLogText, CloseContainerButton, ContainerSlotButton, ContainerSlotImage,
-    ContextMenuInspectButton, ContextMenuOpenButton, ContextMenuRoot, ContextMenuUseButton,
-    ContextMenuUseOnButton, DragPreviewLabel, DragPreviewRoot, EquipmentSlotButton,
-    EquipmentSlotImage, HealthFill, HealthLabel, ItemSlotButton, ItemSlotImage, ItemSlotKind,
-    ManaFill, ManaLabel, OpenContainerTitle,
+    ChatLogText, ClearCombatTargetButton, CloseContainerButton, ContainerSlotButton,
+    ContainerSlotImage, ContextMenuAttackButton, ContextMenuInspectButton, ContextMenuOpenButton,
+    ContextMenuRoot, ContextMenuUseButton, ContextMenuUseOnButton, CurrentCombatTargetLabel,
+    DragPreviewLabel, DragPreviewRoot, EquipmentSlotButton, EquipmentSlotImage, HealthFill,
+    HealthLabel, ItemSlotButton, ItemSlotImage, ItemSlotKind, ManaFill, ManaLabel,
+    OpenContainerTitle,
 };
 use crate::ui::resources::{
     ChatLogState, ContextMenuState, ContextMenuTarget, CursorMode, CursorState, DragSource,
@@ -130,6 +133,48 @@ pub fn manage_open_containers(
     let _ = world_config;
 }
 
+pub fn sync_current_combat_target(
+    player_query: Query<&CombatTarget, With<Player>>,
+    object_query: Query<&OverworldObject>,
+    definitions: Res<OverworldObjectDefinitions>,
+    mut label_query: Query<&mut Text, With<CurrentCombatTargetLabel>>,
+) {
+    let Ok(mut label) = label_query.single_mut() else {
+        return;
+    };
+
+    let text = if let Ok(combat_target) = player_query.single() {
+        if let Ok(object) = object_query.get(combat_target.entity) {
+            let name = definitions
+                .get(&object.definition_id)
+                .map(|definition| definition.name.clone())
+                .unwrap_or_else(|| object.definition_id.clone());
+            format!("Target: {name}")
+        } else {
+            "Target: none".to_owned()
+        }
+    } else {
+        "Target: none".to_owned()
+    };
+
+    label.0 = text;
+}
+
+pub fn sync_clear_combat_target_button(
+    player_query: Query<&CombatTarget, With<Player>>,
+    mut button_query: Query<&mut Visibility, With<ClearCombatTargetButton>>,
+) {
+    let Ok(mut visibility) = button_query.single_mut() else {
+        return;
+    };
+
+    *visibility = if player_query.single().is_ok() {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
+    };
+}
+
 pub fn sync_vital_bars(
     player_query: Query<&VitalStats, With<Player>>,
     mut health_query: Query<&mut Node, With<HealthFill>>,
@@ -226,6 +271,21 @@ pub fn sync_context_menu_open_button(
     };
 }
 
+pub fn sync_context_menu_attack_button(
+    context_menu_state: Res<ContextMenuState>,
+    mut attack_button_query: Query<&mut Visibility, With<ContextMenuAttackButton>>,
+) {
+    let Ok(mut attack_visibility) = attack_button_query.single_mut() else {
+        return;
+    };
+
+    *attack_visibility = if context_menu_state.can_attack {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
+    };
+}
+
 pub fn sync_context_menu_use_button(
     context_menu_state: Res<ContextMenuState>,
     mut use_button_query: Query<&mut Visibility, With<ContextMenuUseButton>>,
@@ -268,6 +328,7 @@ pub fn handle_context_menu_actions(
         ResMut<UseOnState>,
     ),
     mut menu_queries: ParamSet<(
+        Query<(&ComputedNode, &UiGlobalTransform, &Visibility), With<ContextMenuAttackButton>>,
         Query<(&ComputedNode, &UiGlobalTransform), With<ContextMenuInspectButton>>,
         Query<(&ComputedNode, &UiGlobalTransform, &Visibility), With<ContextMenuOpenButton>>,
         Query<(&ComputedNode, &UiGlobalTransform, &Visibility), With<ContextMenuUseButton>>,
@@ -275,6 +336,7 @@ pub fn handle_context_menu_actions(
     )>,
     mut inventory_state: ResMut<InventoryState>,
     mut container_query: Query<&mut Container>,
+    player_entity_query: Query<Entity, With<Player>>,
     mut player_query: Query<&mut VitalStats, With<Player>>,
     mut commands: Commands,
 ) {
@@ -297,7 +359,24 @@ pub fn handle_context_menu_actions(
         return;
     }
 
-    if is_cursor_over_button(cursor_position, &menu_queries.p0()) {
+    if is_cursor_over_visible_button(cursor_position, &menu_queries.p0()) {
+        if let Some(ContextMenuTarget::World(target_entity, object_id)) = context_menu_state.target
+        {
+            if let Ok(player_entity) = player_entity_query.single() {
+                commands.entity(player_entity).insert(CombatTarget {
+                    entity: target_entity,
+                });
+
+                if let Some(target_name) = object_name(object_id, &object_registry, &definitions) {
+                    chat_log_state.push_narrator(format!("Targeting {target_name}."));
+                }
+            }
+        }
+        context_menu_state.hide();
+        return;
+    }
+
+    if is_cursor_over_button(cursor_position, &menu_queries.p1()) {
         if let Some(target) = context_menu_state.target {
             inspect_context_target(target, &object_registry, &definitions, &mut chat_log_state);
         }
@@ -305,7 +384,7 @@ pub fn handle_context_menu_actions(
         return;
     }
 
-    if is_cursor_over_visible_button(cursor_position, &menu_queries.p2()) {
+    if is_cursor_over_visible_button(cursor_position, &menu_queries.p3()) {
         if let Some(target) = context_menu_state.target {
             use_on_player_target(
                 target,
@@ -323,7 +402,7 @@ pub fn handle_context_menu_actions(
         return;
     }
 
-    if is_cursor_over_visible_button(cursor_position, &menu_queries.p3()) {
+    if is_cursor_over_visible_button(cursor_position, &menu_queries.p4()) {
         if let Some(target) = context_menu_state.target {
             let object_id = context_target_object_id(target);
             if object_is_usable(object_id, &object_registry, &definitions) {
@@ -335,7 +414,7 @@ pub fn handle_context_menu_actions(
         return;
     }
 
-    if is_cursor_over_visible_button(cursor_position, &menu_queries.p1()) {
+    if is_cursor_over_visible_button(cursor_position, &menu_queries.p2()) {
         if let Some(ContextMenuTarget::World(entity, _)) = context_menu_state.target {
             open_container_state.entity = Some(entity);
         }
@@ -344,6 +423,38 @@ pub fn handle_context_menu_actions(
     }
 
     context_menu_state.hide();
+}
+
+pub fn handle_clear_combat_target(
+    mouse_input: Res<ButtonInput<MouseButton>>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    mut player_query: Query<Entity, (With<Player>, With<CombatTarget>)>,
+    button_query: Query<
+        (&ComputedNode, &UiGlobalTransform, &Visibility),
+        With<ClearCombatTargetButton>,
+    >,
+    mut commands: Commands,
+) {
+    if !mouse_input.just_pressed(MouseButton::Left) {
+        return;
+    }
+
+    let Ok(window) = window_query.single() else {
+        return;
+    };
+    let Some(cursor_position) = window.cursor_position() else {
+        return;
+    };
+
+    if !is_cursor_over_visible_button(cursor_position, &button_query) {
+        return;
+    }
+
+    let Ok(player_entity) = player_query.single_mut() else {
+        return;
+    };
+
+    commands.entity(player_entity).remove::<CombatTarget>();
 }
 
 pub fn handle_use_on_targeting(
@@ -448,7 +559,13 @@ pub fn handle_context_menu_opening(
     mut use_on_state: ResMut<UseOnState>,
     mut cursor_state: ResMut<CursorState>,
     player_query: Query<&TilePosition, With<Player>>,
-    object_query: Query<(Entity, &TilePosition, &OverworldObject, Has<Container>)>,
+    object_query: Query<(
+        Entity,
+        &TilePosition,
+        &OverworldObject,
+        Has<Container>,
+        Has<Npc>,
+    )>,
     mut slot_queries: ParamSet<(
         Query<
             (
@@ -535,6 +652,7 @@ pub fn handle_context_menu_opening(
                 ContextMenuTarget::Slot(slot_kind, object_id),
                 false,
                 can_use,
+                false,
             );
             info!(
                 "context_open_slot_success slot={slot_kind:?} object_id={object_id} can_use={can_use}"
@@ -548,7 +666,7 @@ pub fn handle_context_menu_opening(
         "context_open_world_probe target_tile=({}, {})",
         target_tile.x, target_tile.y
     );
-    for (entity, tile_position, object, has_container) in &object_query {
+    for (entity, tile_position, object, has_container, has_npc) in &object_query {
         if *tile_position != target_tile {
             continue;
         }
@@ -562,10 +680,11 @@ pub fn handle_context_menu_opening(
             ContextMenuTarget::World(entity, object.object_id),
             has_container,
             can_use,
+            has_npc,
         );
         info!(
-            "context_open_world_success entity={entity:?} object_id={} has_container={} can_use={}",
-            object.object_id, has_container, can_use
+            "context_open_world_success entity={entity:?} object_id={} has_container={} can_use={} can_attack={}",
+            object.object_id, has_container, can_use, has_npc
         );
         return;
     }
@@ -1525,6 +1644,16 @@ fn use_on_world_target(
     chat_log_state.push_narrator(use_on_text(source_definition, &target_definition.name));
 }
 
+fn object_name(
+    object_id: u64,
+    object_registry: &ObjectRegistry,
+    definitions: &OverworldObjectDefinitions,
+) -> Option<String> {
+    let type_id = object_registry.type_id(object_id)?;
+    let definition = definitions.get(type_id)?;
+    Some(definition.name.clone())
+}
+
 fn object_is_usable(
     object_id: u64,
     object_registry: &ObjectRegistry,
@@ -1591,6 +1720,24 @@ fn random_text(texts: &[String]) -> String {
 fn stat_bonus_lines(definition: &OverworldObjectDefinition) -> Vec<String> {
     let mut bonuses = Vec::new();
 
+    if definition.stats.strength != 0 {
+        bonuses.push(format!("{:+} str", definition.stats.strength));
+    }
+    if definition.stats.agility != 0 {
+        bonuses.push(format!("{:+} agi", definition.stats.agility));
+    }
+    if definition.stats.constitution != 0 {
+        bonuses.push(format!("{:+} con", definition.stats.constitution));
+    }
+    if definition.stats.willpower != 0 {
+        bonuses.push(format!("{:+} wil", definition.stats.willpower));
+    }
+    if definition.stats.charisma != 0 {
+        bonuses.push(format!("{:+} cha", definition.stats.charisma));
+    }
+    if definition.stats.focus != 0 {
+        bonuses.push(format!("{:+} foc", definition.stats.focus));
+    }
     if definition.stats.max_health != 0 {
         bonuses.push(format!("{:+} hp", definition.stats.max_health));
     }

@@ -1,7 +1,9 @@
 use bevy::input::keyboard::KeyCode;
 use bevy::prelude::*;
 
-use crate::player::components::{BaseStats, DerivedStats, MovementCooldown, Player, VitalStats};
+use crate::player::components::{
+    AttributeSet, BaseStats, DerivedStats, MovementCooldown, Player, VitalStats,
+};
 use crate::scripting::resources::PythonConsoleState;
 use crate::ui::resources::InventoryState;
 use crate::world::components::{Collider, TilePosition};
@@ -19,9 +21,10 @@ pub fn refresh_derived_player_stats(
         return;
     };
 
+    let mut attributes = base_stats.attributes;
     let mut max_health = base_stats.max_health;
     let mut max_mana = base_stats.max_mana;
-    let mut storage_slots = base_stats.storage_slots as i32;
+    let mut storage_slots = base_stats.storage_slots;
 
     for (_, equipped_item) in &inventory_state.equipment_slots {
         let Some(object_id) = equipped_item else {
@@ -34,14 +37,26 @@ pub fn refresh_derived_player_stats(
             continue;
         };
 
+        attributes.add_assign(AttributeSet {
+            strength: definition.stats.strength,
+            agility: definition.stats.agility,
+            constitution: definition.stats.constitution,
+            willpower: definition.stats.willpower,
+            charisma: definition.stats.charisma,
+            focus: definition.stats.focus,
+        });
         max_health += definition.stats.max_health;
         max_mana += definition.stats.max_mana;
         storage_slots += definition.stats.storage_slots;
     }
 
-    derived_stats.max_health = max_health.max(1);
-    derived_stats.max_mana = max_mana.max(0);
-    derived_stats.storage_slots = storage_slots.max(0) as usize;
+    let effective_base = BaseStats {
+        attributes,
+        max_health,
+        max_mana,
+        storage_slots,
+    };
+    *derived_stats = DerivedStats::from_base(&effective_base);
 
     vital_stats.max_health = derived_stats.max_health as f32;
     vital_stats.max_mana = derived_stats.max_mana as f32;

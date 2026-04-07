@@ -1,4 +1,5 @@
 mod app;
+mod combat;
 mod game;
 mod npc;
 mod player;

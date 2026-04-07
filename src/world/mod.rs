@@ -11,7 +11,7 @@ use crate::world::map_layout::MapLayout;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::setup::spawn_world;
-use crate::world::systems::sync_tile_transforms;
+use crate::world::systems::{sync_combat_health_bars, sync_tile_transforms};
 
 pub struct WorldPlugin;
 
@@ -30,7 +30,7 @@ impl Plugin for WorldPlugin {
             .insert_resource(object_registry)
             .insert_resource(OverworldObjectDefinitions::load_from_disk())
             .add_systems(Startup, spawn_world)
-            .add_systems(Update, sync_tile_transforms);
+            .add_systems(Update, (sync_tile_transforms, sync_combat_health_bars));
     }
 }
 

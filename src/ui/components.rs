@@ -40,6 +40,12 @@ pub struct ContainerSlotImage;
 pub struct OpenContainerTitle;
 
 #[derive(Component)]
+pub struct CurrentCombatTargetLabel;
+
+#[derive(Component)]
+pub struct ClearCombatTargetButton;
+
+#[derive(Component)]
 pub struct CloseContainerButton;
 
 #[derive(Component)]
@@ -80,6 +86,9 @@ pub struct ContextMenuUseButton;
 
 #[derive(Component)]
 pub struct ContextMenuUseOnButton;
+
+#[derive(Component)]
+pub struct ContextMenuAttackButton;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ItemSlotKind {

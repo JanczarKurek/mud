@@ -3,7 +3,8 @@ name: Silver Ring
 description: A plain silver band that catches the light.
 equipment_slot: ring
 stats:
-  max_mana: 25
+  willpower: 2
+  focus: 1
 render:
   debug_color: [184, 188, 198]
   debug_size: 0.42

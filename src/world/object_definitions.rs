@@ -37,6 +37,18 @@ pub struct OverworldObjectDefinition {
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct StatModifiers {
     #[serde(default)]
+    pub strength: i32,
+    #[serde(default)]
+    pub agility: i32,
+    #[serde(default)]
+    pub constitution: i32,
+    #[serde(default)]
+    pub willpower: i32,
+    #[serde(default)]
+    pub charisma: i32,
+    #[serde(default)]
+    pub focus: i32,
+    #[serde(default)]
     pub max_health: i32,
     #[serde(default)]
     pub max_mana: i32,
