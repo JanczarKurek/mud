@@ -78,6 +78,9 @@ pub struct ContextMenuOpenButton;
 #[derive(Component)]
 pub struct ContextMenuUseButton;
 
+#[derive(Component)]
+pub struct ContextMenuUseOnButton;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ItemSlotKind {
     ActiveContainer(usize),

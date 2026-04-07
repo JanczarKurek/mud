@@ -26,6 +26,8 @@ pub struct OverworldObjectDefinition {
     #[serde(default)]
     pub use_texts: Vec<String>,
     #[serde(default)]
+    pub use_on_texts: Vec<String>,
+    #[serde(default)]
     pub container_capacity: Option<usize>,
     pub render: RenderMetadata,
     #[serde(default)]

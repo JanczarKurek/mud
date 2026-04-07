@@ -10,13 +10,13 @@ use crate::scripting::resources::PythonConsoleState;
 use crate::ui::components::{
     ChatLogText, CloseContainerButton, ContainerSlotButton, ContainerSlotImage,
     ContextMenuInspectButton, ContextMenuOpenButton, ContextMenuRoot, ContextMenuUseButton,
-    DragPreviewLabel, DragPreviewRoot, EquipmentSlotButton, EquipmentSlotImage, HealthFill,
-    HealthLabel, ItemSlotButton, ItemSlotImage, ItemSlotKind, ManaFill, ManaLabel,
-    OpenContainerTitle,
+    ContextMenuUseOnButton, DragPreviewLabel, DragPreviewRoot, EquipmentSlotButton,
+    EquipmentSlotImage, HealthFill, HealthLabel, ItemSlotButton, ItemSlotImage, ItemSlotKind,
+    ManaFill, ManaLabel, OpenContainerTitle,
 };
 use crate::ui::resources::{
     ChatLogState, ContextMenuState, ContextMenuTarget, CursorMode, CursorState, DragSource,
-    DragState, InventoryState, OpenContainerState,
+    DragState, InventoryState, OpenContainerState, UseOnState,
 };
 use crate::world::components::{Collider, Container, Movable, OverworldObject, TilePosition};
 use crate::world::object_definitions::{
@@ -29,9 +29,13 @@ use crate::world::WorldConfig;
 pub fn toggle_cursor_mode(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     console_state: Option<Res<PythonConsoleState>>,
+    use_on_state: Res<UseOnState>,
     mut cursor_state: ResMut<CursorState>,
 ) {
     if console_state.as_ref().is_some_and(|state| state.is_open) {
+        return;
+    }
+    if use_on_state.source.is_some() {
         return;
     }
 
@@ -181,9 +185,13 @@ pub fn sync_chat_log(
 
 pub fn sync_context_menu_root(
     context_menu_state: Res<ContextMenuState>,
-    mut root_query: Query<(&mut Node, &mut Visibility), With<ContextMenuRoot>>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    mut root_query: Query<(&mut Node, &mut Visibility, &ComputedNode), With<ContextMenuRoot>>,
 ) {
-    let Ok((mut root_node, mut root_visibility)) = root_query.single_mut() else {
+    let Ok(window) = window_query.single() else {
+        return;
+    };
+    let Ok((mut root_node, mut root_visibility, computed_node)) = root_query.single_mut() else {
         return;
     };
 
@@ -192,8 +200,15 @@ pub fn sync_context_menu_root(
     } else {
         Visibility::Hidden
     };
-    root_node.left = px(context_menu_state.position.x);
-    root_node.top = px(context_menu_state.position.y);
+
+    let menu_size = computed_node.size();
+    let max_left = (window.width() - menu_size.x).max(0.0);
+    let max_top = (window.height() - menu_size.y).max(0.0);
+    let clamped_left = context_menu_state.position.x.clamp(0.0, max_left);
+    let clamped_top = context_menu_state.position.y.clamp(0.0, max_top);
+
+    root_node.left = px(clamped_left);
+    root_node.top = px(clamped_top);
 }
 
 pub fn sync_context_menu_open_button(
@@ -226,31 +241,51 @@ pub fn sync_context_menu_use_button(
     };
 }
 
+pub fn sync_context_menu_use_on_button(
+    context_menu_state: Res<ContextMenuState>,
+    mut use_on_button_query: Query<&mut Visibility, With<ContextMenuUseOnButton>>,
+) {
+    let Ok(mut use_on_visibility) = use_on_button_query.single_mut() else {
+        return;
+    };
+
+    *use_on_visibility = if context_menu_state.can_use {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
+    };
+}
+
 pub fn handle_context_menu_actions(
     mouse_input: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
-    object_registry: Res<ObjectRegistry>,
-    definitions: Res<OverworldObjectDefinitions>,
+    static_resources: (Res<ObjectRegistry>, Res<OverworldObjectDefinitions>),
+    ui_state: (
+        ResMut<ChatLogState>,
+        ResMut<ContextMenuState>,
+        ResMut<OpenContainerState>,
+        ResMut<CursorState>,
+        ResMut<UseOnState>,
+    ),
+    mut menu_queries: ParamSet<(
+        Query<(&ComputedNode, &UiGlobalTransform), With<ContextMenuInspectButton>>,
+        Query<(&ComputedNode, &UiGlobalTransform, &Visibility), With<ContextMenuOpenButton>>,
+        Query<(&ComputedNode, &UiGlobalTransform, &Visibility), With<ContextMenuUseButton>>,
+        Query<(&ComputedNode, &UiGlobalTransform, &Visibility), With<ContextMenuUseOnButton>>,
+    )>,
     mut inventory_state: ResMut<InventoryState>,
-    mut chat_log_state: ResMut<ChatLogState>,
-    mut context_menu_state: ResMut<ContextMenuState>,
-    mut open_container_state: ResMut<OpenContainerState>,
-    mut player_query: Query<&mut VitalStats, With<Player>>,
-    inspect_button_query: Query<
-        (&ComputedNode, &UiGlobalTransform),
-        With<ContextMenuInspectButton>,
-    >,
-    open_button_query: Query<
-        (&ComputedNode, &UiGlobalTransform, &Visibility),
-        With<ContextMenuOpenButton>,
-    >,
-    use_button_query: Query<
-        (&ComputedNode, &UiGlobalTransform, &Visibility),
-        With<ContextMenuUseButton>,
-    >,
     mut container_query: Query<&mut Container>,
+    mut player_query: Query<&mut VitalStats, With<Player>>,
     mut commands: Commands,
 ) {
+    let (object_registry, definitions) = static_resources;
+    let (
+        mut chat_log_state,
+        mut context_menu_state,
+        mut open_container_state,
+        mut cursor_state,
+        mut use_on_state,
+    ) = ui_state;
     let Ok(window) = window_query.single() else {
         return;
     };
@@ -262,7 +297,7 @@ pub fn handle_context_menu_actions(
         return;
     }
 
-    if is_cursor_over_button(cursor_position, &inspect_button_query) {
+    if is_cursor_over_button(cursor_position, &menu_queries.p0()) {
         if let Some(target) = context_menu_state.target {
             inspect_context_target(target, &object_registry, &definitions, &mut chat_log_state);
         }
@@ -270,9 +305,9 @@ pub fn handle_context_menu_actions(
         return;
     }
 
-    if is_cursor_over_visible_button(cursor_position, &use_button_query) {
+    if is_cursor_over_visible_button(cursor_position, &menu_queries.p2()) {
         if let Some(target) = context_menu_state.target {
-            use_context_target(
+            use_on_player_target(
                 target,
                 &mut inventory_state,
                 &mut container_query,
@@ -288,7 +323,19 @@ pub fn handle_context_menu_actions(
         return;
     }
 
-    if is_cursor_over_visible_button(cursor_position, &open_button_query) {
+    if is_cursor_over_visible_button(cursor_position, &menu_queries.p3()) {
+        if let Some(target) = context_menu_state.target {
+            let object_id = context_target_object_id(target);
+            if object_is_usable(object_id, &object_registry, &definitions) {
+                use_on_state.source = Some(target);
+                cursor_state.mode = CursorMode::UseOn;
+            }
+        }
+        context_menu_state.hide();
+        return;
+    }
+
+    if is_cursor_over_visible_button(cursor_position, &menu_queries.p1()) {
         if let Some(ContextMenuTarget::World(entity, _)) = context_menu_state.target {
             open_container_state.entity = Some(entity);
         }
@@ -297,6 +344,96 @@ pub fn handle_context_menu_actions(
     }
 
     context_menu_state.hide();
+}
+
+pub fn handle_use_on_targeting(
+    mouse_input: Res<ButtonInput<MouseButton>>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    world_config: Res<WorldConfig>,
+    state_resources: (
+        Res<ContextMenuState>,
+        Res<ObjectRegistry>,
+        Res<OverworldObjectDefinitions>,
+        Res<OpenContainerState>,
+    ),
+    mut inventory_state: ResMut<InventoryState>,
+    mut container_query: Query<&mut Container>,
+    mut player_queries: ParamSet<(
+        Query<&mut VitalStats, With<Player>>,
+        Query<&TilePosition, With<Player>>,
+    )>,
+    object_query: Query<(Entity, &TilePosition, &OverworldObject)>,
+    mut chat_log_state: ResMut<ChatLogState>,
+    mut cursor_state: ResMut<CursorState>,
+    mut use_on_state: ResMut<UseOnState>,
+    mut commands: Commands,
+) {
+    let (context_menu_state, object_registry, definitions, open_container_state) = state_resources;
+    let Some(source_target) = use_on_state.source else {
+        return;
+    };
+
+    if keyboard_input.just_pressed(KeyCode::Escape) || mouse_input.just_pressed(MouseButton::Right)
+    {
+        use_on_state.source = None;
+        cursor_state.mode = CursorMode::Default;
+        return;
+    }
+
+    if context_menu_state.is_visible() || !mouse_input.just_pressed(MouseButton::Left) {
+        return;
+    }
+
+    let Ok(window) = window_query.single() else {
+        return;
+    };
+    let Some(cursor_position) = window.cursor_position() else {
+        return;
+    };
+    let player_position_query = player_queries.p1();
+    let Ok(player_position) = player_position_query.single() else {
+        return;
+    };
+
+    let target_tile = cursor_to_tile(window, cursor_position, player_position, &world_config);
+
+    if target_tile == *player_position {
+        use_on_player_target(
+            source_target,
+            &mut inventory_state,
+            &mut container_query,
+            open_container_state.entity,
+            &object_registry,
+            &definitions,
+            &mut player_queries.p0(),
+            &mut chat_log_state,
+            &mut commands,
+        );
+        use_on_state.source = None;
+        cursor_state.mode = CursorMode::Default;
+        return;
+    }
+
+    for (_, tile_position, object) in &object_query {
+        if *tile_position != target_tile {
+            continue;
+        }
+        if !is_near_player(player_position, tile_position) {
+            continue;
+        }
+
+        use_on_world_target(
+            source_target,
+            object.object_id,
+            &object_registry,
+            &definitions,
+            &mut chat_log_state,
+        );
+        use_on_state.source = None;
+        cursor_state.mode = CursorMode::Default;
+        return;
+    }
 }
 
 pub fn handle_context_menu_opening(
@@ -308,26 +445,48 @@ pub fn handle_context_menu_opening(
     inventory_state: Res<InventoryState>,
     mut context_menu_state: ResMut<ContextMenuState>,
     open_container_state: Res<OpenContainerState>,
+    mut use_on_state: ResMut<UseOnState>,
+    mut cursor_state: ResMut<CursorState>,
     player_query: Query<&TilePosition, With<Player>>,
     object_query: Query<(Entity, &TilePosition, &OverworldObject, Has<Container>)>,
-    equipment_slot_query: Query<
-        (
-            &ItemSlotButton,
-            &ComputedNode,
-            &UiGlobalTransform,
-            Option<&Visibility>,
-        ),
-        (With<Button>, With<EquipmentSlotButton>),
-    >,
-    container_slot_query: Query<
-        (
-            &ItemSlotButton,
-            &ComputedNode,
-            &UiGlobalTransform,
-            Option<&Visibility>,
-        ),
-        (With<Button>, With<ContainerSlotButton>),
-    >,
+    mut slot_queries: ParamSet<(
+        Query<
+            (
+                &ItemSlotButton,
+                &ComputedNode,
+                &UiGlobalTransform,
+                Option<&Visibility>,
+            ),
+            (With<Button>, With<EquipmentSlotButton>),
+        >,
+        Query<
+            (
+                &ItemSlotButton,
+                &ComputedNode,
+                &UiGlobalTransform,
+                Option<&Visibility>,
+            ),
+            (With<Button>, With<ContainerSlotButton>),
+        >,
+        Query<
+            (
+                &ItemSlotImage,
+                &ComputedNode,
+                &UiGlobalTransform,
+                Option<&Visibility>,
+            ),
+            With<EquipmentSlotImage>,
+        >,
+        Query<
+            (
+                &ItemSlotImage,
+                &ComputedNode,
+                &UiGlobalTransform,
+                Option<&Visibility>,
+            ),
+            With<ContainerSlotImage>,
+        >,
+    )>,
     container_query: Query<&Container>,
 ) {
     let Ok(window) = window_query.single() else {
@@ -344,18 +503,32 @@ pub fn handle_context_menu_opening(
         return;
     }
 
-    let hovered_slot = hovered_slot_kind(
-        cursor_position,
-        &equipment_slot_query,
-        &container_slot_query,
+    if use_on_state.source.is_some() {
+        use_on_state.source = None;
+        cursor_state.mode = CursorMode::Default;
+        context_menu_state.hide();
+        return;
+    }
+
+    let hovered_slot = hovered_slot_kind_from_ui(cursor_position, &mut slot_queries);
+    info!(
+        "context_open_attempt cursor=({:.1}, {:.1}) open_container={:?} hovered_slot={hovered_slot:?}",
+        cursor_position.x,
+        cursor_position.y,
+        open_container_state.entity
     );
     if let Some(slot_kind) = hovered_slot {
-        if let Some(object_id) = object_id_in_slot_kind(
+        let slot_object_id = object_id_in_slot_kind(
             &inventory_state,
             &container_query,
             open_container_state.entity,
             slot_kind,
-        ) {
+        );
+        info!(
+            "context_open_slot slot={slot_kind:?} resolved_object_id={slot_object_id:?} open_container={:?}",
+            open_container_state.entity
+        );
+        if let Some(object_id) = slot_object_id {
             let can_use = object_is_usable(object_id, &object_registry, &definitions);
             context_menu_state.show(
                 cursor_position,
@@ -363,11 +536,18 @@ pub fn handle_context_menu_opening(
                 false,
                 can_use,
             );
+            info!(
+                "context_open_slot_success slot={slot_kind:?} object_id={object_id} can_use={can_use}"
+            );
             return;
         }
     }
 
     let target_tile = cursor_to_tile(window, cursor_position, player_position, &world_config);
+    info!(
+        "context_open_world_probe target_tile=({}, {})",
+        target_tile.x, target_tile.y
+    );
     for (entity, tile_position, object, has_container) in &object_query {
         if *tile_position != target_tile {
             continue;
@@ -383,9 +563,14 @@ pub fn handle_context_menu_opening(
             has_container,
             can_use,
         );
+        info!(
+            "context_open_world_success entity={entity:?} object_id={} has_container={} can_use={}",
+            object.object_id, has_container, can_use
+        );
         return;
     }
 
+    info!("context_open_no_target");
     context_menu_state.hide();
 }
 
@@ -567,7 +752,7 @@ pub fn handle_movable_dragging(
     mouse_input: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     world_config: Res<WorldConfig>,
-    context_menu_state: Res<ContextMenuState>,
+    interaction_state: (Res<ContextMenuState>, Res<UseOnState>),
     object_registry: Res<ObjectRegistry>,
     definitions: Res<OverworldObjectDefinitions>,
     mut inventory_state: ResMut<InventoryState>,
@@ -600,6 +785,7 @@ pub fn handle_movable_dragging(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
 ) {
+    let (context_menu_state, use_on_state) = interaction_state;
     let Ok(window) = window_query.single() else {
         return;
     };
@@ -615,6 +801,10 @@ pub fn handle_movable_dragging(
     };
 
     if context_menu_state.is_visible() {
+        return;
+    }
+
+    if use_on_state.source.is_some() {
         return;
     }
 
@@ -883,29 +1073,80 @@ fn is_cursor_over_visible_button<M: Component>(
     point_in_ui_node(cursor_position, computed_node, global_transform)
 }
 
-fn hovered_slot_kind(
+fn hovered_slot_kind_from_ui(
     cursor_position: Vec2,
-    equipment_slot_query: &Query<
+    slot_queries: &mut ParamSet<(
+        Query<
+            (
+                &ItemSlotButton,
+                &ComputedNode,
+                &UiGlobalTransform,
+                Option<&Visibility>,
+            ),
+            (With<Button>, With<EquipmentSlotButton>),
+        >,
+        Query<
+            (
+                &ItemSlotButton,
+                &ComputedNode,
+                &UiGlobalTransform,
+                Option<&Visibility>,
+            ),
+            (With<Button>, With<ContainerSlotButton>),
+        >,
+        Query<
+            (
+                &ItemSlotImage,
+                &ComputedNode,
+                &UiGlobalTransform,
+                Option<&Visibility>,
+            ),
+            With<EquipmentSlotImage>,
+        >,
+        Query<
+            (
+                &ItemSlotImage,
+                &ComputedNode,
+                &UiGlobalTransform,
+                Option<&Visibility>,
+            ),
+            With<ContainerSlotImage>,
+        >,
+    )>,
+) -> Option<ItemSlotKind> {
+    if let Some(kind) = hovered_slot_in_family(cursor_position, &slot_queries.p0()) {
+        return Some(kind);
+    }
+    if let Some(kind) = hovered_slot_in_family(cursor_position, &slot_queries.p1()) {
+        return Some(kind);
+    }
+    if let Some(kind) = hovered_slot_image_in_family(cursor_position, &slot_queries.p2()) {
+        return Some(kind);
+    }
+    hovered_slot_image_in_family(cursor_position, &slot_queries.p3())
+}
+
+fn hovered_slot_image_in_family<F: QueryFilter>(
+    cursor_position: Vec2,
+    slot_query: &Query<
         (
-            &ItemSlotButton,
+            &ItemSlotImage,
             &ComputedNode,
             &UiGlobalTransform,
             Option<&Visibility>,
         ),
-        (With<Button>, With<EquipmentSlotButton>),
-    >,
-    container_slot_query: &Query<
-        (
-            &ItemSlotButton,
-            &ComputedNode,
-            &UiGlobalTransform,
-            Option<&Visibility>,
-        ),
-        (With<Button>, With<ContainerSlotButton>),
+        F,
     >,
 ) -> Option<ItemSlotKind> {
-    hovered_slot_in_family(cursor_position, equipment_slot_query)
-        .or_else(|| hovered_slot_in_family(cursor_position, container_slot_query))
+    slot_query
+        .iter()
+        .find_map(|(slot, computed_node, global_transform, visibility)| {
+            if visibility.is_some_and(|visibility| *visibility == Visibility::Hidden) {
+                return None;
+            }
+
+            point_in_ui_node(cursor_position, computed_node, global_transform).then_some(slot.kind)
+        })
 }
 
 fn hovered_slot_in_family<F: QueryFilter>(
@@ -1211,8 +1452,8 @@ fn inspect_context_target(
     }
 }
 
-fn use_context_target(
-    target: ContextMenuTarget,
+fn use_on_player_target(
+    source_target: ContextMenuTarget,
     inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
     open_container_entity: Option<Entity>,
@@ -1222,14 +1463,7 @@ fn use_context_target(
     chat_log_state: &mut ChatLogState,
     commands: &mut Commands,
 ) {
-    let (object_id, consume_source) = match target {
-        ContextMenuTarget::World(entity, object_id) => {
-            (object_id, Some(UseConsumeSource::World(entity)))
-        }
-        ContextMenuTarget::Slot(slot_kind, object_id) => {
-            (object_id, Some(UseConsumeSource::Slot(slot_kind)))
-        }
-    };
+    let object_id = context_target_object_id(source_target);
 
     let Some(type_id) = object_registry.type_id(object_id) else {
         return;
@@ -1250,11 +1484,11 @@ fn use_context_target(
     vital_stats.mana =
         (vital_stats.mana + definition.use_effects.restore_mana).clamp(0.0, vital_stats.max_mana);
 
-    match consume_source {
-        Some(UseConsumeSource::World(entity)) => {
+    match source_target {
+        ContextMenuTarget::World(entity, _) => {
             commands.entity(entity).despawn();
         }
-        Some(UseConsumeSource::Slot(slot_kind)) => {
+        ContextMenuTarget::Slot(slot_kind, _) => {
             let _ = take_item_from_slot_kind(
                 inventory_state,
                 container_query,
@@ -1262,10 +1496,33 @@ fn use_context_target(
                 slot_kind,
             );
         }
-        None => {}
     }
 
     chat_log_state.push_narrator(use_text(definition));
+}
+
+fn use_on_world_target(
+    source_target: ContextMenuTarget,
+    target_object_id: u64,
+    object_registry: &ObjectRegistry,
+    definitions: &OverworldObjectDefinitions,
+    chat_log_state: &mut ChatLogState,
+) {
+    let source_object_id = context_target_object_id(source_target);
+    let Some(source_type_id) = object_registry.type_id(source_object_id) else {
+        return;
+    };
+    let Some(source_definition) = definitions.get(source_type_id) else {
+        return;
+    };
+    let Some(target_type_id) = object_registry.type_id(target_object_id) else {
+        return;
+    };
+    let Some(target_definition) = definitions.get(target_type_id) else {
+        return;
+    };
+
+    chat_log_state.push_narrator(use_on_text(source_definition, &target_definition.name));
 }
 
 fn object_is_usable(
@@ -1298,21 +1555,37 @@ fn object_is_storable(
     definition.storable
 }
 
+fn context_target_object_id(target: ContextMenuTarget) -> u64 {
+    match target {
+        ContextMenuTarget::World(_, object_id) | ContextMenuTarget::Slot(_, object_id) => object_id,
+    }
+}
+
 fn use_text(definition: &OverworldObjectDefinition) -> String {
     if definition.use_texts.is_empty() {
         return format!("{} used.", definition.name);
     }
 
+    random_text(&definition.use_texts)
+}
+
+fn use_on_text(definition: &OverworldObjectDefinition, target_name: &str) -> String {
+    if definition.use_on_texts.is_empty() {
+        return format!("Used {} on {}.", definition.name, target_name);
+    }
+
+    let template = random_text(&definition.use_on_texts);
+    template
+        .replace("{target}", target_name)
+        .replace("{item}", &definition.name)
+}
+
+fn random_text(texts: &[String]) -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.subsec_nanos() as usize)
         .unwrap_or(0);
-    definition.use_texts[nanos % definition.use_texts.len()].clone()
-}
-
-enum UseConsumeSource {
-    World(Entity),
-    Slot(ItemSlotKind),
+    texts[nanos % texts.len()].clone()
 }
 
 fn stat_bonus_lines(definition: &OverworldObjectDefinition) -> Vec<String> {

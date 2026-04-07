@@ -158,6 +158,11 @@ pub struct DragState {
     pub world_origin: Option<TilePosition>,
 }
 
+#[derive(Resource, Default)]
+pub struct UseOnState {
+    pub source: Option<ContextMenuTarget>,
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum CursorMode {
     #[default]

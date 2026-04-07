@@ -4,10 +4,10 @@ use bevy::text::{Justify, LineBreak, TextLayout};
 use crate::ui::components::{
     ChatLogText, CloseContainerButton, ContainerSlotButton, ContainerSlotImage,
     ContextMenuInspectButton, ContextMenuOpenButton, ContextMenuRoot, ContextMenuUseButton,
-    DragPreviewLabel, DragPreviewRoot, EquipmentSlotButton, EquipmentSlotImage, HealthFill,
-    HealthLabel, ItemSlotButton, ItemSlotImage, ItemSlotKind, ManaFill, ManaLabel,
-    OpenContainerTitle, PythonConsoleInput, PythonConsoleOutput, PythonConsoleOutputViewport,
-    PythonConsolePanel, PythonConsoleScrollbarThumb,
+    ContextMenuUseOnButton, DragPreviewLabel, DragPreviewRoot, EquipmentSlotButton,
+    EquipmentSlotImage, HealthFill, HealthLabel, ItemSlotButton, ItemSlotImage, ItemSlotKind,
+    ManaFill, ManaLabel, OpenContainerTitle, PythonConsoleInput, PythonConsoleOutput,
+    PythonConsoleOutputViewport, PythonConsolePanel, PythonConsoleScrollbarThumb,
 };
 use crate::world::object_definitions::EquipmentSlot;
 
@@ -301,11 +301,13 @@ pub fn spawn_hud(mut commands: Commands) {
             },
             ContextMenuRoot,
             Visibility::Hidden,
+            GlobalZIndex(i32::MAX - 10),
             BackgroundColor(Color::srgba(0.09, 0.08, 0.07, 0.97)),
             BorderColor::all(Color::srgb(0.52, 0.44, 0.22)),
         ))
         .with_children(|menu| {
             spawn_context_button(menu, "Use", ContextMenuUseButton);
+            spawn_context_button(menu, "Use On", ContextMenuUseOnButton);
             spawn_context_button(menu, "Inspect", ContextMenuInspectButton);
             spawn_context_button(menu, "Open", ContextMenuOpenButton);
         });

@@ -7,6 +7,10 @@ use_texts:
   - You eat the apple.
   - Crunch. The apple restores a little health.
   - The apple tastes fresh enough.
+use_on_texts:
+  - You offer the apple to {target}.
+  - You hold the apple out toward {target}.
+  - You try to share the apple with {target}.
 render:
   z_index: 0.24
   debug_color: [188, 48, 41]

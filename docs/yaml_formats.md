@@ -266,6 +266,16 @@ Top-level fields:
 - Meaning: possible narrator texts shown when the item is used; one is chosen per use
 - If omitted or empty, the runtime falls back to `<Item name> used.`
 
+### `use_on_texts`
+- Type: list of strings
+- Optional: yes
+- Default: empty list
+- Meaning: possible narrator texts shown when the item is used on a non-player target
+- Supports simple placeholders:
+  - `{target}` inserts the target's display name
+  - `{item}` inserts the used item's display name
+- If omitted or empty, the runtime falls back to `Used <Item name> on <Target name>.`
+
 ### `container_capacity`
 - Type: integer
 - Optional: yes
@@ -320,7 +330,7 @@ sound_paths: []
 
 Notes:
 - The object ID is the folder name, not a field inside the YAML file.
-- `movable`, `storable`, `equipment_slot`, `stats`, `use_effects`, `use_texts`, and `container_capacity` can coexist if needed.
+- `movable`, `storable`, `equipment_slot`, `stats`, `use_effects`, `use_texts`, `use_on_texts`, and `container_capacity` can coexist if needed.
 - `extends` is resolved before deserializing the final object definition.
 - If `sprite_path` is omitted or `null`, the object falls back to colored debug rendering.
 - The current runtime uses these fields directly for world spawning, collision, pickup behavior, and container creation.

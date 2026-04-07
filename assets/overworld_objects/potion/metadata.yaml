@@ -7,6 +7,10 @@ use_texts:
   - You drink the potion.
   - The potion tingles as your mana returns.
   - A cool blue draft restores some mana.
+use_on_texts:
+  - You splash the potion on {target}.
+  - You wave the potion at {target}.
+  - You consider pouring the potion over {target}.
 render:
   z_index: 0.24
   debug_color: [58, 109, 201]
