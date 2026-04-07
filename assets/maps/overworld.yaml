@@ -181,3 +181,25 @@ objects:
   - type: canvas_backpack
     placement:
       - { x: 28, y: 10 }
+  - id: 900
+    type: villager
+    placement: { x: 8, y: 23 }
+    behavior:
+      kind: roam
+      step_interval_seconds: 1.2
+      bounds:
+        min_x: 5
+        min_y: 21
+        max_x: 11
+        max_y: 25
+  - id: 901
+    type: villager
+    placement: { x: 31, y: 7 }
+    behavior:
+      kind: roam
+      step_interval_seconds: 1.6
+      bounds:
+        min_x: 28
+        min_y: 5
+        max_x: 35
+        max_y: 10

@@ -1,0 +1,5 @@
+extends: npc
+name: Villager
+description: Just a wandering villager.
+render:
+  sprite_path: overworld_objects/player/sprite.png

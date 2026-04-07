@@ -1,0 +1,8 @@
+extends: static_world
+name: NPC
+description: A non-player character.
+colliding: true
+render:
+  z_index: 1.0
+  debug_color: [188, 138, 88]
+  debug_size: 0.95

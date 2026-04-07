@@ -31,6 +31,8 @@ pub struct MapObjectInstance {
     pub placement: Option<TileCoordinate>,
     #[serde(default)]
     pub contents: Vec<u64>,
+    #[serde(default)]
+    pub behavior: Option<MapBehavior>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -47,10 +49,27 @@ pub struct AnonymousObjectPlacements {
     pub placement: Vec<TileCoordinate>,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum MapBehavior {
+    Roam {
+        step_interval_seconds: f32,
+        bounds: TileRectangle,
+    },
+}
+
 #[derive(Clone, Copy, Debug, Deserialize)]
 pub struct TileCoordinate {
     pub x: i32,
     pub y: i32,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+pub struct TileRectangle {
+    pub min_x: i32,
+    pub min_y: i32,
+    pub max_x: i32,
+    pub max_y: i32,
 }
 
 impl TileCoordinate {
@@ -154,6 +173,7 @@ impl MapLayout {
                             type_id: group.type_id.clone(),
                             placement: Some(*tile),
                             contents: Vec::new(),
+                            behavior: None,
                         });
                         next_generated_id += 1;
                     }

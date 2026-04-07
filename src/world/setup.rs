@@ -1,9 +1,12 @@
 use bevy::prelude::*;
 
+use crate::npc::components::{
+    Npc, RoamBounds, RoamingBehavior, RoamingRandomState, RoamingStepTimer,
+};
 use crate::world::components::{
     Collider, Container, Movable, OverworldObject, Storable, TilePosition, WorldVisual,
 };
-use crate::world::map_layout::{MapLayout, MapObjectInstance};
+use crate::world::map_layout::{MapBehavior, MapLayout, MapObjectInstance};
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::WorldConfig;
 
@@ -63,7 +66,7 @@ pub fn spawn_overworld_object_instance(
         Some(object.contents.clone())
     };
 
-    spawn_overworld_object(
+    let entity = spawn_overworld_object(
         commands,
         asset_server,
         definitions,
@@ -73,6 +76,37 @@ pub fn spawn_overworld_object_instance(
         container_contents,
         tile_position,
     );
+
+    if let Some(behavior) = &object.behavior {
+        let mut entity_commands = commands.entity(entity);
+        entity_commands.insert(Npc);
+
+        match behavior {
+            MapBehavior::Roam {
+                step_interval_seconds,
+                bounds,
+            } => {
+                entity_commands.insert((
+                    RoamingBehavior {
+                        bounds: RoamBounds {
+                            min_x: bounds.min_x,
+                            min_y: bounds.min_y,
+                            max_x: bounds.max_x,
+                            max_y: bounds.max_y,
+                        },
+                        step_interval_seconds: (*step_interval_seconds).max(0.05),
+                    },
+                    RoamingStepTimer {
+                        remaining_seconds: *step_interval_seconds,
+                    },
+                    RoamingRandomState {
+                        seed: object.id.wrapping_mul(1_103_515_245).wrapping_add(12_345),
+                    },
+                ));
+            }
+        }
+    }
+
     let _ = map_layout;
 }
 
@@ -121,7 +155,7 @@ pub fn spawn_overworld_object(
     definition_id: &str,
     container_contents: Option<Vec<u64>>,
     tile_position: TilePosition,
-) {
+) -> Entity {
     let definition = definitions
         .get(definition_id)
         .unwrap_or_else(|| panic!("Missing overworld object definition for id '{definition_id}'"));
@@ -181,4 +215,6 @@ pub fn spawn_overworld_object(
 
         entity.insert(Container { slots });
     }
+
+    entity.id()
 }

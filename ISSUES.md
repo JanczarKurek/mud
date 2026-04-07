@@ -16,10 +16,10 @@
 
 ## Near-Term Next Features
 
-- Start referencing real sprite assets from metadata.
 - Introduce richer collision semantics than a single blocking flag.
 - Add validation for map YAML so invalid object IDs or out-of-bounds placements fail clearly.
 - Decide how much scripting authority the embedded Python console should keep once server-authoritative logic exists.
+- Generalize the new NPC behavior system so mobs/NPCs can share the same behavior component layer.
 
 ## Completed
 
@@ -38,6 +38,7 @@
 - Added data-driven equippable gear definitions with typed equipment slots for future paperdoll logic.
 - Added basic player stats with equipment-driven health, mana, and storage bonuses.
 - Added metadata-driven usable consumables with context-menu use actions and randomized use text.
+- Added instance-authored roaming NPC behavior with bounded random movement.
 
 ## Later Ideas
 

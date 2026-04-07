@@ -3,6 +3,7 @@ use bevy::window::Window;
 
 use crate::app::setup::setup_camera;
 use crate::game::GamePlugin;
+use crate::npc::NpcPlugin;
 use crate::player::PlayerPlugin;
 use crate::scripting::ScriptingPlugin;
 use crate::ui::UiPlugin;
@@ -23,6 +24,7 @@ impl Plugin for GameAppPlugin {
         .add_plugins((
             GamePlugin,
             WorldPlugin,
+            NpcPlugin,
             PlayerPlugin,
             UiPlugin,
             ScriptingPlugin,

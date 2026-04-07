@@ -67,6 +67,14 @@ Fields:
 - Meaning: IDs of other objects stored inside this object
 - Intended for container objects such as barrels
 
+### `behavior`
+- Type: mapping or `null`
+- Optional: yes
+- Meaning: behavior assigned to this specific object instance
+- Intended for authored NPCs and future mobs
+- Current supported behavior kinds:
+  - `roam`
+
 ### Anonymous placement group
 - Use this when you just want to place many objects of the same type and do not need to refer to them elsewhere in the map file.
 - Runtime object IDs are generated automatically during map loading.
@@ -104,6 +112,17 @@ Explicit instance example:
   type: apple
 - id: 601
   type: potion
+- id: 900
+  type: villager
+  placement: { x: 8, y: 23 }
+  behavior:
+    kind: roam
+    step_interval_seconds: 1.4
+    bounds:
+      min_x: 5
+      min_y: 21
+      max_x: 11
+      max_y: 25
 ```
 
 Anonymous placement group example:
@@ -125,6 +144,7 @@ Notes:
 - Anonymous placement groups cannot be referenced by `contents` because they do not declare stable map IDs.
 - Anonymous placement groups are expanded into generated object instances during map loading.
 - Container contents are ordered by the list order in `contents`.
+- Behaviors are authored per explicit object instance, not in object metadata.
 - The map loader validates duplicate IDs, missing content references, self-containment, and multi-location conflicts.
 - Rendering order is controlled by object metadata `render.z_index`, not by object order in the map file.
 
