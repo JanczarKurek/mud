@@ -1,3 +1,4 @@
+use std::mem::ManuallyDrop;
 use std::sync::{Mutex, OnceLock};
 
 use rustpython::InterpreterConfig;
@@ -53,8 +54,8 @@ fn bridge_state() -> &'static Mutex<PythonBridgeState> {
 }
 
 pub struct PythonConsoleHost {
-    interpreter: Interpreter,
-    scope: Scope,
+    interpreter: ManuallyDrop<Interpreter>,
+    scope: ManuallyDrop<Scope>,
 }
 
 impl PythonConsoleHost {
@@ -71,7 +72,10 @@ impl PythonConsoleHost {
             scope
         });
 
-        Self { interpreter, scope }
+        Self {
+            interpreter: ManuallyDrop::new(interpreter),
+            scope: ManuallyDrop::new(scope),
+        }
     }
 
     pub fn execute(
@@ -89,7 +93,7 @@ impl PythonConsoleHost {
 
         let result = self
             .interpreter
-            .enter(|vm| vm.run_code_string(self.scope.clone(), command, "<mud-console>".into()));
+            .enter(|vm| vm.run_code_string((*self.scope).clone(), command, "<mud-console>".into()));
 
         match result {
             Ok(_) => {}
@@ -104,6 +108,14 @@ impl PythonConsoleHost {
         }
         bridge.snapshot = None;
         bridge.spawn_requests.drain(..).collect()
+    }
+}
+
+impl Drop for PythonConsoleHost {
+    fn drop(&mut self) {
+        // RustPython teardown currently hangs or crashes on application shutdown.
+        // Intentionally leaking the VM state is acceptable here because the process
+        // is already exiting and the OS will reclaim the memory.
     }
 }
 
