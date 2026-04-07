@@ -157,3 +157,17 @@ pub struct DragState {
     pub object_id: Option<u64>,
     pub world_origin: Option<TilePosition>,
 }
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum CursorMode {
+    #[default]
+    Default,
+    UseOn,
+}
+
+impl CursorMode {}
+
+#[derive(Resource, Default)]
+pub struct CursorState {
+    pub mode: CursorMode,
+}

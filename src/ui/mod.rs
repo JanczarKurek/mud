@@ -6,15 +6,16 @@ pub mod systems;
 use bevy::prelude::*;
 
 use crate::ui::resources::{
-    ChatLogState, ContextMenuState, DragState, InventoryState, OpenContainerState,
+    ChatLogState, ContextMenuState, CursorState, DragState, InventoryState, OpenContainerState,
 };
 use crate::ui::setup::spawn_hud;
 use crate::ui::systems::{
     handle_context_menu_actions, handle_context_menu_opening, handle_movable_dragging,
-    manage_open_containers, sync_chat_log, sync_close_container_button, sync_container_slot_images,
-    sync_context_menu_open_button, sync_context_menu_root, sync_context_menu_use_button,
-    sync_drag_preview, sync_equipment_slot_images, sync_item_slot_button_visibility,
-    sync_open_container_title, sync_vital_bars,
+    manage_open_containers, setup_native_custom_cursor, sync_chat_log, sync_close_container_button,
+    sync_container_slot_images, sync_context_menu_open_button, sync_context_menu_root,
+    sync_context_menu_use_button, sync_drag_preview, sync_equipment_slot_images,
+    sync_item_slot_button_visibility, sync_native_custom_cursor, sync_open_container_title,
+    sync_vital_bars, toggle_cursor_mode,
 };
 
 pub struct UiPlugin;
@@ -26,10 +27,13 @@ impl Plugin for UiPlugin {
             .insert_resource(ContextMenuState::default())
             .insert_resource(OpenContainerState::default())
             .insert_resource(DragState::default())
-            .add_systems(Startup, spawn_hud)
+            .insert_resource(CursorState::default())
+            .add_systems(Startup, (spawn_hud, setup_native_custom_cursor))
             .add_systems(
                 Update,
                 (
+                    toggle_cursor_mode,
+                    sync_native_custom_cursor,
                     manage_open_containers,
                     sync_vital_bars,
                     sync_chat_log,

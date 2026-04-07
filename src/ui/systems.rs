@@ -2,10 +2,11 @@ use bevy::ecs::query::QueryFilter;
 use bevy::log::{info, warn};
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, UiGlobalTransform};
-use bevy::window::PrimaryWindow;
+use bevy::window::{CursorIcon, CustomCursor, CustomCursorImage, PrimaryWindow};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::player::components::{DerivedStats, Player, VitalStats};
+use crate::scripting::resources::PythonConsoleState;
 use crate::ui::components::{
     ChatLogText, CloseContainerButton, ContainerSlotButton, ContainerSlotImage,
     ContextMenuInspectButton, ContextMenuOpenButton, ContextMenuRoot, ContextMenuUseButton,
@@ -14,8 +15,8 @@ use crate::ui::components::{
     OpenContainerTitle,
 };
 use crate::ui::resources::{
-    ChatLogState, ContextMenuState, ContextMenuTarget, DragSource, DragState, InventoryState,
-    OpenContainerState,
+    ChatLogState, ContextMenuState, ContextMenuTarget, CursorMode, CursorState, DragSource,
+    DragState, InventoryState, OpenContainerState,
 };
 use crate::world::components::{Collider, Container, Movable, OverworldObject, TilePosition};
 use crate::world::object_definitions::{
@@ -24,6 +25,65 @@ use crate::world::object_definitions::{
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::setup::spawn_overworld_object;
 use crate::world::WorldConfig;
+
+pub fn toggle_cursor_mode(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    console_state: Option<Res<PythonConsoleState>>,
+    mut cursor_state: ResMut<CursorState>,
+) {
+    if console_state.as_ref().is_some_and(|state| state.is_open) {
+        return;
+    }
+
+    if keyboard_input.just_pressed(KeyCode::KeyU) {
+        cursor_state.mode = match cursor_state.mode {
+            CursorMode::Default => CursorMode::UseOn,
+            CursorMode::UseOn => CursorMode::Default,
+        };
+    }
+}
+
+pub fn setup_native_custom_cursor(
+    asset_server: Res<AssetServer>,
+    window_entity: Single<Entity, With<PrimaryWindow>>,
+    mut commands: Commands,
+) {
+    commands
+        .entity(*window_entity)
+        .insert(cursor_icon_for_mode(CursorMode::Default, &asset_server));
+}
+
+pub fn sync_native_custom_cursor(
+    cursor_state: Res<CursorState>,
+    asset_server: Res<AssetServer>,
+    mut window_query: Query<&mut CursorIcon, With<PrimaryWindow>>,
+) {
+    if !cursor_state.is_changed() {
+        return;
+    }
+
+    let Ok(mut cursor_icon) = window_query.single_mut() else {
+        return;
+    };
+
+    *cursor_icon = cursor_icon_for_mode(cursor_state.mode, &asset_server);
+}
+
+fn cursor_icon_for_mode(cursor_mode: CursorMode, asset_server: &AssetServer) -> CursorIcon {
+    let asset_path = match cursor_mode {
+        CursorMode::Default => "cursors/default_cursor.png",
+        CursorMode::UseOn => "cursors/use_on_cursor.png",
+    };
+
+    CursorIcon::Custom(CustomCursor::Image(CustomCursorImage {
+        handle: asset_server.load(asset_path),
+        texture_atlas: None,
+        flip_x: false,
+        flip_y: false,
+        rect: None,
+        hotspot: (0, 0),
+    }))
+}
 
 pub fn manage_open_containers(
     mouse_input: Res<ButtonInput<MouseButton>>,
