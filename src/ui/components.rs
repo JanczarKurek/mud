@@ -37,16 +37,29 @@ pub struct EquipmentSlotImage;
 pub struct ContainerSlotImage;
 
 #[derive(Component)]
-pub struct OpenContainerTitle;
+pub struct DockedPanelRoot {
+    pub panel_id: usize,
+}
 
 #[derive(Component)]
-pub struct CurrentCombatTargetLabel;
+pub struct DockedPanelTitle {
+    pub panel_id: usize,
+}
 
 #[derive(Component)]
-pub struct ClearCombatTargetButton;
+pub struct DockedPanelCloseButton {
+    pub panel_id: usize,
+}
 
 #[derive(Component)]
-pub struct CloseContainerButton;
+pub struct DockedPanelBody {
+    pub panel_id: usize,
+}
+
+#[derive(Component)]
+pub struct DockedPanelResizeHandle {
+    pub panel_id: usize,
+}
 
 #[derive(Component)]
 pub struct DragPreviewRoot;
@@ -90,8 +103,18 @@ pub struct ContextMenuUseOnButton;
 #[derive(Component)]
 pub struct ContextMenuAttackButton;
 
+#[derive(Component)]
+pub struct CurrentTargetPanelContent;
+
+#[derive(Component)]
+pub struct ContainerPanelContent;
+
+#[derive(Component)]
+pub struct CurrentCombatTargetLabel;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ItemSlotKind {
-    ActiveContainer(usize),
+    Backpack(usize),
+    OpenContainer { panel_id: usize, slot_index: usize },
     Equipment(EquipmentSlot),
 }

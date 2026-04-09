@@ -6,19 +6,20 @@ pub mod systems;
 use bevy::prelude::*;
 
 use crate::ui::resources::{
-    ChatLogState, ContextMenuState, CursorState, DragState, InventoryState, OpenContainerState,
-    SpellTargetingState, UseOnState,
+    ChatLogState, ContextMenuState, CursorState, DockedPanelResizeState, DockedPanelState,
+    DragState, InventoryState, SpellTargetingState, UseOnState,
 };
 use crate::ui::setup::spawn_hud;
 use crate::ui::systems::{
-    handle_clear_combat_target, handle_context_menu_actions, handle_context_menu_opening,
-    handle_movable_dragging, handle_spell_targeting, handle_use_on_targeting,
-    manage_open_containers, setup_native_custom_cursor, sync_chat_log,
-    sync_clear_combat_target_button, sync_close_container_button, sync_container_slot_images,
+    handle_context_menu_actions, handle_context_menu_opening, handle_docked_panel_close_buttons,
+    handle_docked_panel_resizing, handle_docked_panel_scrolling, handle_movable_dragging,
+    handle_spell_targeting, handle_use_on_targeting, manage_open_containers,
+    setup_native_custom_cursor, sync_chat_log, sync_container_slot_images,
     sync_context_menu_attack_button, sync_context_menu_open_button, sync_context_menu_root,
     sync_context_menu_use_button, sync_context_menu_use_on_button, sync_current_combat_target,
-    sync_drag_preview, sync_equipment_slot_images, sync_item_slot_button_visibility,
-    sync_native_custom_cursor, sync_open_container_title, sync_vital_bars, toggle_cursor_mode,
+    sync_docked_panel_layout, sync_docked_panel_titles, sync_drag_preview,
+    sync_equipment_slot_images, sync_item_slot_button_visibility, sync_native_custom_cursor,
+    sync_vital_bars, toggle_cursor_mode,
 };
 
 pub struct UiPlugin;
@@ -28,7 +29,8 @@ impl Plugin for UiPlugin {
         app.insert_resource(InventoryState::default())
             .insert_resource(ChatLogState::default())
             .insert_resource(ContextMenuState::default())
-            .insert_resource(OpenContainerState::default())
+            .insert_resource(DockedPanelState::default())
+            .insert_resource(DockedPanelResizeState::default())
             .insert_resource(DragState::default())
             .insert_resource(CursorState::default())
             .insert_resource(UseOnState::default())
@@ -47,21 +49,19 @@ impl Plugin for UiPlugin {
                     sync_context_menu_use_button,
                     sync_context_menu_use_on_button,
                     sync_current_combat_target,
-                    sync_clear_combat_target_button,
-                    sync_open_container_title,
+                    sync_docked_panel_layout,
+                    sync_docked_panel_titles,
                 ),
             )
             .add_systems(
                 Update,
-                (
-                    sync_close_container_button,
-                    sync_item_slot_button_visibility,
-                    sync_container_slot_images,
-                ),
+                (sync_item_slot_button_visibility, sync_container_slot_images),
             )
             .add_systems(Update, sync_equipment_slot_images)
             .add_systems(Update, handle_context_menu_actions)
-            .add_systems(Update, handle_clear_combat_target)
+            .add_systems(Update, handle_docked_panel_close_buttons)
+            .add_systems(Update, handle_docked_panel_resizing)
+            .add_systems(Update, handle_docked_panel_scrolling)
             .add_systems(Update, handle_context_menu_opening)
             .add_systems(Update, handle_use_on_targeting)
             .add_systems(Update, handle_spell_targeting)

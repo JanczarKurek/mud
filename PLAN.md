@@ -521,6 +521,154 @@ Subtasks:
 Risks:
 - UI can become a bottleneck if built before interaction/state flows are stable.
 
+### 6.9.1 Docked Right-Panel Window System
+
+Problem statement:
+- The current right sidebar UI is already becoming too special-cased.
+- Container panels and target information are implemented as bespoke layouts with bespoke state.
+- This will not scale once more small right-side tools appear, such as inspect panels, spellbook, quest notes, equipment detail, crafting, or debug/info windows.
+
+Desired direction:
+- Treat all small right-side panels as the same class of UI object.
+- Conceptually they should be docked windows mounted inside the right sidebar rather than one-off HUD fragments.
+- Each panel should have:
+  - a title bar
+  - close button
+  - future minimize button
+  - scrollable content region
+  - resizable height
+  - reorderable position within the sidebar stack
+
+Initial candidates to migrate:
+- Current target panel
+- Opened container panels
+
+Recommended architecture:
+- Introduce a generic right-panel manager resource instead of separate UI state per panel type.
+- Distinguish:
+  - panel chrome and layout behavior
+  - panel runtime state
+  - panel-specific content rendering
+
+Recommended runtime model:
+- `DockedPanelState` resource
+  - owns ordered list of open right-side panels
+- `DockedPanel`
+  - `id`
+  - `kind`
+  - `title`
+  - `order`
+  - `height`
+  - `minimized`
+  - `closable`
+  - `resizable`
+  - optional future fields:
+    - `scroll_offset`
+    - `pinned`
+    - `focus`
+    - `last_interaction_time`
+- `DockedPanelKind`
+  - `CurrentTarget`
+  - `Container { entity: Entity }`
+  - future examples:
+    - `Inspect { object_id: u64 }`
+    - `Spellbook`
+    - `QuestLog`
+    - `CharacterStats`
+    - `Crafting`
+    - `AdminDebug`
+
+Recommended ECS/UI component split:
+- Generic chrome components:
+  - `DockedPanelRoot { panel_id }`
+  - `DockedPanelHeader { panel_id }`
+  - `DockedPanelTitle { panel_id }`
+  - `DockedPanelCloseButton { panel_id }`
+  - `DockedPanelMinimizeButton { panel_id }`
+  - `DockedPanelBody { panel_id }`
+  - `DockedPanelResizeHandle { panel_id }`
+- Content marker components:
+  - `CurrentTargetPanelContent { panel_id }`
+  - `ContainerPanelContent { panel_id, entity }`
+
+System responsibilities:
+- Panel manager systems:
+  - open panel
+  - close panel
+  - minimize/restore panel
+  - bring to front or reorder
+  - resize
+  - persist and restore layout later if desired
+- Chrome/layout systems:
+  - sync panel order into sidebar stack
+  - sync title text
+  - sync visibility/minimized state
+  - sync resize handle visuals
+  - provide scrollable body viewport
+- Content systems:
+  - render current target content
+  - render container contents
+  - future panel kinds render themselves through dedicated systems
+
+Important design rule:
+- A right-side tool should not get its own bespoke top-level HUD state unless it is fundamentally different from a docked panel.
+- "Current target" should stop being a permanently hardcoded row under equipment.
+- "Open container" should stop being a special inventory mode.
+- Both should become instances of the same docked panel system.
+
+Recommended layout behavior:
+- The right sidebar contains:
+  - compact fixed player status area
+  - compact fixed equipment/backpack area, unless those too are later migrated into docked windows
+  - docked panel canvas/stack
+- The docked panel canvas should behave like a constrained window area:
+  - panels stack vertically
+  - order can change
+  - each panel can have its own height
+  - body scroll is internal to the panel, not the whole sidebar
+- Hidden or closed panels must fully collapse out of layout and not reserve space.
+
+Recommended first implementation scope:
+- Not full drag-and-drop floating windows.
+- Only docked windows inside the right sidebar.
+- Vertical reordering is enough.
+- Height resizing is enough.
+- Scrollable content body is enough.
+- Minimize can be optional in the first pass, but the model should leave room for it.
+
+Incremental migration plan:
+1. Introduce `DockedPanelState` and generic panel chrome.
+2. Add a right-panel canvas in the sidebar for dynamically managed docked windows.
+3. Migrate container panels first:
+   - `DockedPanelKind::Container { entity }`
+   - opening a container opens or focuses its corresponding docked panel
+4. Migrate current target second:
+   - `DockedPanelKind::CurrentTarget`
+   - target info renders through panel content systems rather than a fixed row
+5. Delete the old dedicated open-container stack and old dedicated target row.
+6. Add resize and reorder behavior once the generic panel life cycle is stable.
+
+Why this is the right abstraction:
+- The current issue is not just spacing bugs.
+- The deeper problem is that the UI state model is too specific to the first two panel types.
+- A generic docked panel system reduces future rewrites when more tools are added.
+- It also improves consistency:
+  - one close interaction model
+  - one title bar model
+  - one scroll model
+  - one resize model
+
+Known risks:
+- If panel state is encoded only in Bevy UI entities, later reordering and persistence will be painful.
+- If container content logic stays tightly coupled to "active container" assumptions, migration will stall.
+- If scroll behavior is bolted on panel-by-panel, future panels will diverge unnecessarily.
+
+Pragmatic recommendation for next implementation session:
+- Build the generic docked panel state and rendering skeleton first.
+- Migrate container windows onto it before touching resize/reorder.
+- Only after container migration is solid, move current target into the same system.
+- Avoid partial special-cases that keep both the old and new abstractions alive longer than necessary.
+
 ## 7. Suggested Milestone Sequence
 
 ### Milestone A: Blank App to Walkable Map

@@ -158,9 +158,152 @@ pub enum DragSource {
     UiSlot(ItemSlotKind),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DockedPanelKind {
+    CurrentTarget,
+    Container { entity: Entity },
+}
+
+#[derive(Clone, Debug)]
+pub struct DockedPanel {
+    pub id: usize,
+    pub kind: DockedPanelKind,
+    pub title: String,
+    pub height: f32,
+    pub closable: bool,
+    pub resizable: bool,
+}
+
 #[derive(Resource, Default)]
-pub struct OpenContainerState {
-    pub entity: Option<Entity>,
+pub struct DockedPanelState {
+    pub panels: Vec<DockedPanel>,
+}
+
+impl DockedPanelState {
+    pub const MAX_OPEN_CONTAINERS: usize = 4;
+    pub const CURRENT_TARGET_PANEL_ID: usize = 0;
+    pub const FIRST_CONTAINER_PANEL_ID: usize = 1;
+    pub const DEFAULT_TARGET_PANEL_HEIGHT: f32 = 88.0;
+    pub const DEFAULT_CONTAINER_PANEL_HEIGHT: f32 = 182.0;
+    pub const MIN_PANEL_HEIGHT: f32 = 84.0;
+    pub const MAX_PANEL_HEIGHT: f32 = 360.0;
+
+    pub fn open_current_target(&mut self) {
+        let panel = DockedPanel {
+            id: Self::CURRENT_TARGET_PANEL_ID,
+            kind: DockedPanelKind::CurrentTarget,
+            title: "Current Target".to_owned(),
+            height: Self::DEFAULT_TARGET_PANEL_HEIGHT,
+            closable: true,
+            resizable: false,
+        };
+        self.upsert_panel(panel);
+    }
+
+    pub fn close_current_target(&mut self) {
+        self.close_panel(Self::CURRENT_TARGET_PANEL_ID);
+    }
+
+    pub fn open(&mut self, entity: Entity) {
+        let panel = DockedPanel {
+            id: self.next_container_panel_id(),
+            kind: DockedPanelKind::Container { entity },
+            title: "Container".to_owned(),
+            height: Self::DEFAULT_CONTAINER_PANEL_HEIGHT,
+            closable: true,
+            resizable: true,
+        };
+
+        if let Some(existing_index) = self
+            .panels
+            .iter()
+            .position(|panel| panel.kind == DockedPanelKind::Container { entity })
+        {
+            let existing_panel = self.panels.remove(existing_index);
+            self.panels.push(existing_panel);
+            return;
+        }
+
+        self.close_oldest_container_if_needed();
+        self.upsert_panel(panel);
+    }
+
+    pub fn close_panel(&mut self, panel_id: usize) {
+        if let Some(index) = self.panels.iter().position(|panel| panel.id == panel_id) {
+            self.panels.remove(index);
+        }
+    }
+
+    pub fn panel(&self, panel_id: usize) -> Option<&DockedPanel> {
+        self.panels.iter().find(|panel| panel.id == panel_id)
+    }
+
+    pub fn panel_mut(&mut self, panel_id: usize) -> Option<&mut DockedPanel> {
+        self.panels.iter_mut().find(|panel| panel.id == panel_id)
+    }
+
+    pub fn container_entity_for_panel(&self, panel_id: usize) -> Option<Entity> {
+        match self.panel(panel_id).map(|panel| panel.kind) {
+            Some(DockedPanelKind::Container { entity }) => Some(entity),
+            Some(DockedPanelKind::CurrentTarget) | None => None,
+        }
+    }
+
+    pub fn is_open(&self, panel_id: usize) -> bool {
+        self.panel(panel_id).is_some()
+    }
+
+    fn upsert_panel(&mut self, panel: DockedPanel) {
+        if let Some(index) = self
+            .panels
+            .iter()
+            .position(|existing| existing.id == panel.id)
+        {
+            self.panels.remove(index);
+        }
+        self.panels.push(panel);
+    }
+
+    fn next_container_panel_id(&self) -> usize {
+        for panel_id in
+            (0..Self::MAX_OPEN_CONTAINERS).map(|index| Self::FIRST_CONTAINER_PANEL_ID + index)
+        {
+            if !self.is_open(panel_id) {
+                return panel_id;
+            }
+        }
+
+        self.oldest_container_panel_id()
+            .unwrap_or(Self::FIRST_CONTAINER_PANEL_ID)
+    }
+
+    fn oldest_container_panel_id(&self) -> Option<usize> {
+        self.panels.iter().find_map(|panel| match panel.kind {
+            DockedPanelKind::Container { .. } => Some(panel.id),
+            DockedPanelKind::CurrentTarget => None,
+        })
+    }
+
+    fn close_oldest_container_if_needed(&mut self) {
+        let open_container_count = self
+            .panels
+            .iter()
+            .filter(|panel| matches!(panel.kind, DockedPanelKind::Container { .. }))
+            .count();
+
+        if open_container_count >= Self::MAX_OPEN_CONTAINERS {
+            if let Some(panel_id) = self.oldest_container_panel_id() {
+                self.close_panel(panel_id);
+            }
+        }
+    }
+}
+
+#[derive(Resource, Default)]
+pub struct DockedPanelResizeState {
+    pub panel_id: Option<usize>,
+    pub start_cursor_y: f32,
+    pub start_height: f32,
 }
 
 #[derive(Resource, Default)]

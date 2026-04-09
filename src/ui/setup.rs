@@ -2,14 +2,16 @@ use bevy::prelude::*;
 use bevy::text::{Justify, LineBreak, TextLayout};
 
 use crate::ui::components::{
-    ChatLogText, ClearCombatTargetButton, CloseContainerButton, ContainerSlotButton,
-    ContainerSlotImage, ContextMenuAttackButton, ContextMenuInspectButton, ContextMenuOpenButton,
-    ContextMenuRoot, ContextMenuUseButton, ContextMenuUseOnButton, CurrentCombatTargetLabel,
-    DragPreviewLabel, DragPreviewRoot, EquipmentSlotButton, EquipmentSlotImage, HealthFill,
-    HealthLabel, ItemSlotButton, ItemSlotImage, ItemSlotKind, ManaFill, ManaLabel,
-    OpenContainerTitle, PythonConsoleInput, PythonConsoleOutput, PythonConsoleOutputViewport,
+    ChatLogText, ContainerPanelContent, ContainerSlotButton, ContainerSlotImage,
+    ContextMenuAttackButton, ContextMenuInspectButton, ContextMenuOpenButton, ContextMenuRoot,
+    ContextMenuUseButton, ContextMenuUseOnButton, CurrentCombatTargetLabel,
+    CurrentTargetPanelContent, DockedPanelBody, DockedPanelCloseButton, DockedPanelResizeHandle,
+    DockedPanelRoot, DockedPanelTitle, DragPreviewLabel, DragPreviewRoot, EquipmentSlotButton,
+    EquipmentSlotImage, HealthFill, HealthLabel, ItemSlotButton, ItemSlotImage, ItemSlotKind,
+    ManaFill, ManaLabel, PythonConsoleInput, PythonConsoleOutput, PythonConsoleOutputViewport,
     PythonConsolePanel, PythonConsoleScrollbarThumb,
 };
+use crate::ui::resources::DockedPanelState;
 use crate::world::object_definitions::EquipmentSlot;
 
 pub fn spawn_hud(mut commands: Commands) {
@@ -38,12 +40,12 @@ pub fn spawn_hud(mut commands: Commands) {
             parent
                 .spawn((
                     Node {
-                        width: px(320.0),
+                        width: px(272.0),
                         height: percent(100.0),
                         flex_direction: FlexDirection::Column,
                         justify_content: JustifyContent::SpaceBetween,
-                        padding: UiRect::axes(px(16.0), px(16.0)),
-                        row_gap: px(16.0),
+                        padding: UiRect::axes(px(10.0), px(10.0)),
+                        row_gap: px(10.0),
                         ..default()
                     },
                     BackgroundColor(Color::srgba(0.06, 0.06, 0.08, 0.88)),
@@ -54,7 +56,7 @@ pub fn spawn_hud(mut commands: Commands) {
                             Node {
                                 width: percent(100.0),
                                 flex_direction: FlexDirection::Column,
-                                row_gap: px(12.0),
+                                row_gap: px(8.0),
                                 ..default()
                             },
                             BackgroundColor(Color::NONE),
@@ -63,14 +65,14 @@ pub fn spawn_hud(mut commands: Commands) {
                             spawn_panel_label(top_panel, "Status");
                             spawn_vital_bar(
                                 top_panel,
-                                "Health",
+                                "HP",
                                 Color::srgb(0.70, 0.16, 0.18),
                                 HealthFill,
                                 HealthLabel,
                             );
                             spawn_vital_bar(
                                 top_panel,
-                                "Mana",
+                                "MP",
                                 Color::srgb(0.14, 0.35, 0.78),
                                 ManaFill,
                                 ManaLabel,
@@ -81,16 +83,32 @@ pub fn spawn_hud(mut commands: Commands) {
                         .spawn((
                             Node {
                                 width: percent(100.0),
-                                flex_grow: 1.0,
                                 flex_direction: FlexDirection::Column,
-                                row_gap: px(12.0),
+                                row_gap: px(8.0),
                                 ..default()
                             },
                             BackgroundColor(Color::NONE),
                         ))
-                        .with_children(|inventory_panel| {
-                            spawn_equipment_panel(inventory_panel);
-                            spawn_open_container_panel(inventory_panel);
+                        .with_children(|fixed_panels| {
+                            spawn_equipment_panel(fixed_panels);
+                            spawn_backpack_panel(fixed_panels);
+                        });
+
+                    sidebar
+                        .spawn((
+                            Node {
+                                width: percent(100.0),
+                                flex_grow: 1.0,
+                                min_height: px(0.0),
+                                flex_direction: FlexDirection::Column,
+                                row_gap: px(8.0),
+                                overflow: Overflow::clip(),
+                                ..default()
+                            },
+                            BackgroundColor(Color::NONE),
+                        ))
+                        .with_children(|panel_canvas| {
+                            spawn_docked_panel_canvas(panel_canvas);
                         });
                 });
         });
@@ -321,8 +339,8 @@ fn spawn_equipment_panel(parent: &mut ChildSpawnerCommands) {
             Node {
                 width: percent(100.0),
                 flex_direction: FlexDirection::Column,
-                row_gap: px(12.0),
-                padding: UiRect::all(px(12.0)),
+                row_gap: px(8.0),
+                padding: UiRect::all(px(8.0)),
                 ..default()
             },
             BackgroundColor(Color::srgba(0.10, 0.10, 0.12, 0.92)),
@@ -335,7 +353,7 @@ fn spawn_equipment_panel(parent: &mut ChildSpawnerCommands) {
                     Node {
                         width: percent(100.0),
                         flex_direction: FlexDirection::Column,
-                        row_gap: px(8.0),
+                        row_gap: px(6.0),
                         align_items: AlignItems::Center,
                         ..default()
                     },
@@ -348,69 +366,17 @@ fn spawn_equipment_panel(parent: &mut ChildSpawnerCommands) {
                     spawn_slot_row(paperdoll, &["Legs", "Backpack", "Ring"]);
                     spawn_slot_row(paperdoll, &["Boots"]);
                 });
-
-            equipment_panel
-                .spawn((
-                    Node {
-                        width: percent(100.0),
-                        min_height: px(34.0),
-                        padding: UiRect::axes(px(8.0), px(6.0)),
-                        justify_content: JustifyContent::SpaceBetween,
-                        align_items: AlignItems::Center,
-                        column_gap: px(8.0),
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgb(0.13, 0.12, 0.10)),
-                ))
-                .with_children(|target_row| {
-                    target_row.spawn((
-                        Text::new("Target: none"),
-                        CurrentCombatTargetLabel,
-                        TextFont {
-                            font_size: 16.0,
-                            ..default()
-                        },
-                        TextColor(Color::srgb(0.86, 0.84, 0.78)),
-                    ));
-
-                    target_row
-                        .spawn((
-                            Button,
-                            ClearCombatTargetButton,
-                            Node {
-                                width: px(24.0),
-                                height: px(24.0),
-                                border: UiRect::all(px(1.0)),
-                                align_items: AlignItems::Center,
-                                justify_content: JustifyContent::Center,
-                                ..default()
-                            },
-                            Visibility::Hidden,
-                            BorderColor::all(Color::srgb(0.52, 0.30, 0.20)),
-                            BackgroundColor(Color::srgb(0.22, 0.11, 0.10)),
-                        ))
-                        .with_children(|button| {
-                            button.spawn((
-                                Text::new("x"),
-                                TextFont {
-                                    font_size: 16.0,
-                                    ..default()
-                                },
-                                TextColor(Color::srgb(0.94, 0.82, 0.74)),
-                            ));
-                        });
-                });
         });
 }
 
-fn spawn_open_container_panel(parent: &mut ChildSpawnerCommands) {
+fn spawn_backpack_panel(parent: &mut ChildSpawnerCommands) {
     parent
         .spawn((
             Node {
                 width: percent(100.0),
                 flex_direction: FlexDirection::Column,
-                row_gap: px(12.0),
-                padding: UiRect::all(px(12.0)),
+                row_gap: px(8.0),
+                padding: UiRect::all(px(8.0)),
                 ..default()
             },
             BackgroundColor(Color::srgba(0.10, 0.10, 0.12, 0.92)),
@@ -429,9 +395,160 @@ fn spawn_open_container_panel(parent: &mut ChildSpawnerCommands) {
                 .with_children(|title_row| {
                     title_row.spawn((
                         Text::new("Backpack"),
-                        OpenContainerTitle,
                         TextFont {
-                            font_size: 24.0,
+                            font_size: 18.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.95, 0.89, 0.72)),
+                    ));
+                });
+
+            container_panel
+                .spawn((
+                    Node {
+                        width: percent(100.0),
+                        flex_direction: FlexDirection::Column,
+                        row_gap: px(6.0),
+                        ..default()
+                    },
+                    BackgroundColor(Color::NONE),
+                ))
+                .with_children(|grid| {
+                    for row_index in 0..4 {
+                        grid.spawn((
+                            Node {
+                                width: percent(100.0),
+                                column_gap: px(6.0),
+                                ..default()
+                            },
+                            BackgroundColor(Color::NONE),
+                        ))
+                        .with_children(|row| {
+                            for column in 0..4 {
+                                let index = row_index * 4 + column;
+                                spawn_backpack_slot(row, index);
+                            }
+                        });
+                    }
+                });
+        });
+}
+
+fn spawn_docked_panel_canvas(parent: &mut ChildSpawnerCommands) {
+    parent
+        .spawn((
+            Node {
+                width: percent(100.0),
+                flex_grow: 1.0,
+                min_height: px(0.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: px(8.0),
+                overflow: Overflow::clip(),
+                ..default()
+            },
+            BackgroundColor(Color::NONE),
+        ))
+        .with_children(|canvas| {
+            spawn_current_target_panel(canvas);
+
+            for offset in 0..DockedPanelState::MAX_OPEN_CONTAINERS {
+                spawn_container_panel(canvas, DockedPanelState::FIRST_CONTAINER_PANEL_ID + offset);
+            }
+        });
+}
+
+fn spawn_current_target_panel(parent: &mut ChildSpawnerCommands) {
+    spawn_docked_panel(parent, DockedPanelState::CURRENT_TARGET_PANEL_ID, |body| {
+        body.spawn((
+            Text::new("Target: none"),
+            CurrentCombatTargetLabel,
+            CurrentTargetPanelContent,
+            TextFont {
+                font_size: 14.0,
+                ..default()
+            },
+            TextColor(Color::srgb(0.86, 0.84, 0.78)),
+            Node {
+                width: percent(100.0),
+                ..default()
+            },
+        ));
+    });
+}
+
+fn spawn_container_panel(parent: &mut ChildSpawnerCommands, panel_id: usize) {
+    spawn_docked_panel(parent, panel_id, |body| {
+        body.spawn((
+            Node {
+                width: percent(100.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: px(6.0),
+                ..default()
+            },
+            ContainerPanelContent,
+            BackgroundColor(Color::NONE),
+        ))
+        .with_children(|grid| {
+            for row_index in 0..4 {
+                grid.spawn((
+                    Node {
+                        width: percent(100.0),
+                        column_gap: px(6.0),
+                        ..default()
+                    },
+                    BackgroundColor(Color::NONE),
+                ))
+                .with_children(|row| {
+                    for column in 0..4 {
+                        let slot_index = row_index * 4 + column;
+                        spawn_open_container_slot(row, panel_id, slot_index);
+                    }
+                });
+            }
+        });
+    });
+}
+
+fn spawn_docked_panel(
+    parent: &mut ChildSpawnerCommands,
+    panel_id: usize,
+    spawn_body: impl FnOnce(&mut ChildSpawnerCommands),
+) {
+    parent
+        .spawn((
+            Node {
+                width: percent(100.0),
+                height: px(DockedPanelState::DEFAULT_CONTAINER_PANEL_HEIGHT),
+                min_height: px(0.0),
+                flex_direction: FlexDirection::Column,
+                border: UiRect::all(px(1.0)),
+                ..default()
+            },
+            DockedPanelRoot { panel_id },
+            Visibility::Hidden,
+            BackgroundColor(Color::srgba(0.10, 0.10, 0.12, 0.92)),
+            BorderColor::all(Color::srgb(0.38, 0.34, 0.22)),
+        ))
+        .with_children(|panel| {
+            panel
+                .spawn((
+                    Node {
+                        width: percent(100.0),
+                        min_height: px(30.0),
+                        padding: UiRect::axes(px(8.0), px(6.0)),
+                        justify_content: JustifyContent::SpaceBetween,
+                        align_items: AlignItems::Center,
+                        column_gap: px(6.0),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgb(0.13, 0.12, 0.10)),
+                ))
+                .with_children(|title_row| {
+                    title_row.spawn((
+                        Text::new(""),
+                        DockedPanelTitle { panel_id },
+                        TextFont {
+                            font_size: 16.0,
                             ..default()
                         },
                         TextColor(Color::srgb(0.95, 0.89, 0.72)),
@@ -440,10 +557,10 @@ fn spawn_open_container_panel(parent: &mut ChildSpawnerCommands) {
                     title_row
                         .spawn((
                             Button,
-                            CloseContainerButton,
+                            DockedPanelCloseButton { panel_id },
                             Node {
-                                width: px(28.0),
-                                height: px(28.0),
+                                width: px(22.0),
+                                height: px(22.0),
                                 border: UiRect::all(px(1.0)),
                                 align_items: AlignItems::Center,
                                 justify_content: JustifyContent::Center,
@@ -456,7 +573,7 @@ fn spawn_open_container_panel(parent: &mut ChildSpawnerCommands) {
                             button.spawn((
                                 Text::new("x"),
                                 TextFont {
-                                    font_size: 18.0,
+                                    font_size: 14.0,
                                     ..default()
                                 },
                                 TextColor(Color::srgb(0.94, 0.82, 0.74)),
@@ -464,34 +581,31 @@ fn spawn_open_container_panel(parent: &mut ChildSpawnerCommands) {
                         });
                 });
 
-            container_panel
+            panel
                 .spawn((
                     Node {
                         width: percent(100.0),
-                        flex_direction: FlexDirection::Column,
-                        row_gap: px(8.0),
+                        flex_grow: 1.0,
+                        min_height: px(0.0),
+                        padding: UiRect::all(px(8.0)),
+                        overflow: Overflow::scroll_y(),
                         ..default()
                     },
+                    ScrollPosition::default(),
+                    DockedPanelBody { panel_id },
                     BackgroundColor(Color::NONE),
                 ))
-                .with_children(|grid| {
-                    for row_index in 0..4 {
-                        grid.spawn((
-                            Node {
-                                width: percent(100.0),
-                                column_gap: px(8.0),
-                                ..default()
-                            },
-                            BackgroundColor(Color::NONE),
-                        ))
-                        .with_children(|row| {
-                            for column in 0..4 {
-                                let index = row_index * 4 + column;
-                                spawn_container_slot(row, index);
-                            }
-                        });
-                    }
-                });
+                .with_children(spawn_body);
+
+            panel.spawn((
+                Node {
+                    width: percent(100.0),
+                    height: px(8.0),
+                    ..default()
+                },
+                DockedPanelResizeHandle { panel_id },
+                BackgroundColor(Color::srgb(0.18, 0.16, 0.12)),
+            ));
         });
 }
 
@@ -499,7 +613,7 @@ fn spawn_panel_label(parent: &mut ChildSpawnerCommands, label: &str) {
     parent.spawn((
         Text::new(label),
         TextFont {
-            font_size: 24.0,
+            font_size: 18.0,
             ..default()
         },
         TextColor(Color::srgb(0.95, 0.89, 0.72)),
@@ -517,28 +631,35 @@ fn spawn_vital_bar<T: Component>(
         .spawn((
             Node {
                 width: percent(100.0),
-                flex_direction: FlexDirection::Column,
-                row_gap: px(6.0),
+                min_height: px(18.0),
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                column_gap: px(6.0),
                 ..default()
             },
             BackgroundColor(Color::NONE),
         ))
         .with_children(|bar_group| {
             bar_group.spawn((
-                Text::new(label),
+                Text::new(format!("{label}:")),
+                value_marker,
                 TextFont {
-                    font_size: 18.0,
+                    font_size: 13.0,
                     ..default()
                 },
                 TextColor(Color::srgb(0.86, 0.84, 0.78)),
+                Node {
+                    width: px(28.0),
+                    ..default()
+                },
             ));
 
             bar_group
                 .spawn((
                     Node {
-                        width: percent(100.0),
-                        height: px(24.0),
-                        padding: UiRect::all(px(3.0)),
+                        flex_grow: 1.0,
+                        height: px(16.0),
+                        padding: UiRect::all(px(2.0)),
                         align_items: AlignItems::Center,
                         ..default()
                     },
@@ -554,20 +675,6 @@ fn spawn_vital_bar<T: Component>(
                         marker,
                         BackgroundColor(fill_color),
                     ));
-                    bar_container.spawn((
-                        Text::new(""),
-                        value_marker,
-                        TextFont {
-                            font_size: 14.0,
-                            ..default()
-                        },
-                        TextColor(Color::srgb(0.96, 0.95, 0.92)),
-                        Node {
-                            position_type: PositionType::Absolute,
-                            left: percent(50.0),
-                            ..default()
-                        },
-                    ));
                 });
         });
 }
@@ -576,7 +683,7 @@ fn spawn_slot_row(parent: &mut ChildSpawnerCommands, labels: &[&str]) {
     parent
         .spawn((
             Node {
-                column_gap: px(8.0),
+                column_gap: px(6.0),
                 ..default()
             },
             BackgroundColor(Color::NONE),
@@ -602,9 +709,9 @@ fn spawn_equipment_slot(parent: &mut ChildSpawnerCommands, label: Option<&str>) 
                 kind: ItemSlotKind::Equipment(slot),
             },
             Node {
-                width: px(58.0),
-                height: px(58.0),
-                border: UiRect::all(px(2.0)),
+                width: px(44.0),
+                height: px(44.0),
+                border: UiRect::all(px(1.0)),
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
                 ..default()
@@ -615,8 +722,8 @@ fn spawn_equipment_slot(parent: &mut ChildSpawnerCommands, label: Option<&str>) 
         .with_children(|slot_node| {
             slot_node.spawn((
                 Node {
-                    width: px(42.0),
-                    height: px(42.0),
+                    width: px(30.0),
+                    height: px(30.0),
                     position_type: PositionType::Absolute,
                     ..default()
                 },
@@ -632,7 +739,7 @@ fn spawn_equipment_slot(parent: &mut ChildSpawnerCommands, label: Option<&str>) 
                 slot_node.spawn((
                     Text::new(label),
                     TextFont {
-                        font_size: 11.0,
+                        font_size: 9.0,
                         ..default()
                     },
                     TextColor(Color::srgb(0.80, 0.77, 0.69)),
@@ -641,18 +748,18 @@ fn spawn_equipment_slot(parent: &mut ChildSpawnerCommands, label: Option<&str>) 
         });
 }
 
-fn spawn_container_slot(parent: &mut ChildSpawnerCommands, index: usize) {
+fn spawn_backpack_slot(parent: &mut ChildSpawnerCommands, index: usize) {
     parent
         .spawn((
             Button,
             ContainerSlotButton,
             ItemSlotButton {
-                kind: ItemSlotKind::ActiveContainer(index),
+                kind: ItemSlotKind::Backpack(index),
             },
             Node {
-                width: px(58.0),
-                height: px(58.0),
-                border: UiRect::all(px(2.0)),
+                width: px(44.0),
+                height: px(44.0),
+                border: UiRect::all(px(1.0)),
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
                 ..default()
@@ -663,13 +770,59 @@ fn spawn_container_slot(parent: &mut ChildSpawnerCommands, index: usize) {
         .with_children(|slot| {
             slot.spawn((
                 Node {
-                    width: px(42.0),
-                    height: px(42.0),
+                    width: px(30.0),
+                    height: px(30.0),
                     ..default()
                 },
                 ImageNode::default(),
                 ItemSlotImage {
-                    kind: ItemSlotKind::ActiveContainer(index),
+                    kind: ItemSlotKind::Backpack(index),
+                },
+                ContainerSlotImage,
+                Visibility::Hidden,
+            ));
+        });
+}
+
+fn spawn_open_container_slot(
+    parent: &mut ChildSpawnerCommands,
+    panel_id: usize,
+    slot_index: usize,
+) {
+    parent
+        .spawn((
+            Button,
+            ContainerSlotButton,
+            ItemSlotButton {
+                kind: ItemSlotKind::OpenContainer {
+                    panel_id,
+                    slot_index,
+                },
+            },
+            Node {
+                width: px(42.0),
+                height: px(42.0),
+                border: UiRect::all(px(1.0)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            BorderColor::all(Color::srgb(0.38, 0.34, 0.22)),
+            BackgroundColor(Color::srgb(0.16, 0.15, 0.12)),
+        ))
+        .with_children(|slot| {
+            slot.spawn((
+                Node {
+                    width: px(28.0),
+                    height: px(28.0),
+                    ..default()
+                },
+                ImageNode::default(),
+                ItemSlotImage {
+                    kind: ItemSlotKind::OpenContainer {
+                        panel_id,
+                        slot_index,
+                    },
                 },
                 ContainerSlotImage,
                 Visibility::Hidden,

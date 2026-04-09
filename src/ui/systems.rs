@@ -1,7 +1,8 @@
 use bevy::ecs::query::QueryFilter;
+use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::log::{info, warn};
 use bevy::prelude::*;
-use bevy::ui::{ComputedNode, UiGlobalTransform};
+use bevy::ui::{ComputedNode, ScrollPosition, UiGlobalTransform};
 use bevy::window::{CursorIcon, CustomCursor, CustomCursorImage, PrimaryWindow};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -11,16 +12,17 @@ use crate::npc::components::Npc;
 use crate::player::components::{DerivedStats, Player, VitalStats};
 use crate::scripting::resources::PythonConsoleState;
 use crate::ui::components::{
-    ChatLogText, ClearCombatTargetButton, CloseContainerButton, ContainerSlotButton,
-    ContainerSlotImage, ContextMenuAttackButton, ContextMenuInspectButton, ContextMenuOpenButton,
-    ContextMenuRoot, ContextMenuUseButton, ContextMenuUseOnButton, CurrentCombatTargetLabel,
-    DragPreviewLabel, DragPreviewRoot, EquipmentSlotButton, EquipmentSlotImage, HealthFill,
-    HealthLabel, ItemSlotButton, ItemSlotImage, ItemSlotKind, ManaFill, ManaLabel,
-    OpenContainerTitle,
+    ChatLogText, ContainerSlotButton, ContainerSlotImage, ContextMenuAttackButton,
+    ContextMenuInspectButton, ContextMenuOpenButton, ContextMenuRoot, ContextMenuUseButton,
+    ContextMenuUseOnButton, CurrentCombatTargetLabel, DockedPanelBody, DockedPanelCloseButton,
+    DockedPanelResizeHandle, DockedPanelRoot, DockedPanelTitle, DragPreviewLabel, DragPreviewRoot,
+    EquipmentSlotButton, EquipmentSlotImage, HealthFill, ItemSlotButton, ItemSlotImage,
+    ItemSlotKind, ManaFill,
 };
 use crate::ui::resources::{
-    ChatLogState, ContextMenuState, ContextMenuTarget, CursorMode, CursorState, DragSource,
-    DragState, InventoryState, OpenContainerState, SpellTargetingState, UseOnState,
+    ChatLogState, ContextMenuState, ContextMenuTarget, CursorMode, CursorState, DockedPanelKind,
+    DockedPanelResizeState, DockedPanelState, DragSource, DragState, InventoryState,
+    SpellTargetingState, UseOnState,
 };
 use crate::world::components::{Collider, Container, Movable, OverworldObject, TilePosition};
 use crate::world::object_definitions::{
@@ -100,44 +102,73 @@ fn cursor_icon_for_mode(cursor_mode: CursorMode, asset_server: &AssetServer) -> 
 }
 
 pub fn manage_open_containers(
-    mouse_input: Res<ButtonInput<MouseButton>>,
-    window_query: Query<&Window, With<PrimaryWindow>>,
-    world_config: Res<WorldConfig>,
-    mut open_container_state: ResMut<OpenContainerState>,
+    mut docked_panel_state: ResMut<DockedPanelState>,
     player_query: Query<&TilePosition, With<Player>>,
     container_query: Query<(Entity, &TilePosition, &OverworldObject), With<Container>>,
-    close_button_query: Query<(&ComputedNode, &UiGlobalTransform), With<CloseContainerButton>>,
 ) {
+    let Ok(player_position) = player_query.single() else {
+        return;
+    };
+
+    docked_panel_state.panels.retain(|panel| match panel.kind {
+        DockedPanelKind::CurrentTarget => true,
+        DockedPanelKind::Container { entity } => container_query
+            .get(entity)
+            .map(|(_, tile_position, _)| is_near_player(player_position, tile_position))
+            .unwrap_or(false),
+    });
+}
+
+pub fn handle_docked_panel_close_buttons(
+    mouse_input: Res<ButtonInput<MouseButton>>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    mut docked_panel_state: ResMut<DockedPanelState>,
+    player_query: Query<Entity, (With<Player>, With<CombatTarget>)>,
+    button_query: Query<
+        (
+            &DockedPanelCloseButton,
+            &ComputedNode,
+            &UiGlobalTransform,
+            &Visibility,
+        ),
+        With<DockedPanelCloseButton>,
+    >,
+    mut commands: Commands,
+) {
+    if !mouse_input.just_pressed(MouseButton::Left) {
+        return;
+    }
+
     let Ok(window) = window_query.single() else {
         return;
     };
     let Some(cursor_position) = window.cursor_position() else {
         return;
     };
-    let Ok(player_position) = player_query.single() else {
-        return;
-    };
 
-    if let Some(entity) = open_container_state.entity {
-        let should_close = container_query
-            .get(entity)
-            .map(|(_, tile_position, _)| !is_near_player(player_position, tile_position))
-            .unwrap_or(true);
-
-        if should_close {
-            open_container_state.entity = None;
+    for (button, computed_node, global_transform, visibility) in &button_query {
+        if *visibility == Visibility::Hidden {
+            continue;
+        }
+        if point_in_ui_node(cursor_position, computed_node, global_transform) {
+            match docked_panel_state
+                .panel(button.panel_id)
+                .map(|panel| panel.kind)
+            {
+                Some(DockedPanelKind::CurrentTarget) => {
+                    if let Ok(player_entity) = player_query.single() {
+                        commands.entity(player_entity).remove::<CombatTarget>();
+                    }
+                    docked_panel_state.close_current_target();
+                }
+                Some(DockedPanelKind::Container { .. }) => {
+                    docked_panel_state.close_panel(button.panel_id);
+                }
+                None => {}
+            }
+            return;
         }
     }
-
-    if mouse_input.just_pressed(MouseButton::Left)
-        && open_container_state.entity.is_some()
-        && is_cursor_over_close_button(cursor_position, &close_button_query)
-    {
-        open_container_state.entity = None;
-        return;
-    }
-
-    let _ = world_config;
 }
 
 pub fn sync_current_combat_target(
@@ -146,6 +177,7 @@ pub fn sync_current_combat_target(
     object_registry: Res<ObjectRegistry>,
     definitions: Res<OverworldObjectDefinitions>,
     spell_definitions: Res<SpellDefinitions>,
+    mut docked_panel_state: ResMut<DockedPanelState>,
     mut label_query: Query<&mut Text, With<CurrentCombatTargetLabel>>,
 ) {
     let Ok(mut label) = label_query.single_mut() else {
@@ -153,6 +185,7 @@ pub fn sync_current_combat_target(
     };
 
     let text = if let Ok(combat_target) = player_query.single() {
+        docked_panel_state.open_current_target();
         if let Ok(object) = object_query.get(combat_target.entity) {
             let name = object_registry
                 .display_name(object.object_id, &definitions, &spell_definitions)
@@ -162,33 +195,17 @@ pub fn sync_current_combat_target(
             "Target: none".to_owned()
         }
     } else {
+        docked_panel_state.close_current_target();
         "Target: none".to_owned()
     };
 
     label.0 = text;
 }
 
-pub fn sync_clear_combat_target_button(
-    player_query: Query<&CombatTarget, With<Player>>,
-    mut button_query: Query<&mut Visibility, With<ClearCombatTargetButton>>,
-) {
-    let Ok(mut visibility) = button_query.single_mut() else {
-        return;
-    };
-
-    *visibility = if player_query.single().is_ok() {
-        Visibility::Visible
-    } else {
-        Visibility::Hidden
-    };
-}
-
 pub fn sync_vital_bars(
     player_query: Query<&VitalStats, With<Player>>,
     mut health_query: Query<&mut Node, With<HealthFill>>,
     mut mana_query: Query<&mut Node, (With<ManaFill>, Without<HealthFill>)>,
-    mut health_label_query: Query<&mut Text, (With<HealthLabel>, Without<ManaLabel>)>,
-    mut mana_label_query: Query<&mut Text, (With<ManaLabel>, Without<HealthLabel>)>,
 ) {
     let Ok(vital_stats) = player_query.single() else {
         return;
@@ -203,25 +220,6 @@ pub fn sync_vital_bars(
 
     for mut node in &mut mana_query {
         node.width = percent(mana_ratio * 100.0);
-    }
-
-    let health_text = format!(
-        "{}/{}",
-        vital_stats.health.round() as i32,
-        vital_stats.max_health.round() as i32
-    );
-    let mana_text = format!(
-        "{}/{}",
-        vital_stats.mana.round() as i32,
-        vital_stats.max_mana.round() as i32
-    );
-
-    for mut label in &mut health_label_query {
-        label.0 = health_text.clone();
-    }
-
-    for mut label in &mut mana_label_query {
-        label.0 = mana_text.clone();
     }
 }
 
@@ -335,7 +333,7 @@ pub fn handle_context_menu_actions(
     ui_state: (
         ResMut<ChatLogState>,
         ResMut<ContextMenuState>,
-        ResMut<OpenContainerState>,
+        ResMut<DockedPanelState>,
         ResMut<CursorState>,
         ResMut<UseOnState>,
         ResMut<SpellTargetingState>,
@@ -357,7 +355,7 @@ pub fn handle_context_menu_actions(
     let (
         mut chat_log_state,
         mut context_menu_state,
-        mut open_container_state,
+        mut docked_panel_state,
         mut cursor_state,
         mut use_on_state,
         mut spell_targeting_state,
@@ -415,7 +413,7 @@ pub fn handle_context_menu_actions(
                 target,
                 &mut inventory_state,
                 &mut container_query,
-                open_container_state.entity,
+                &docked_panel_state,
                 &object_registry,
                 &definitions,
                 &spell_definitions,
@@ -444,45 +442,13 @@ pub fn handle_context_menu_actions(
 
     if is_cursor_over_visible_button(cursor_position, &menu_queries.p2()) {
         if let Some(ContextMenuTarget::World(entity, _)) = context_menu_state.target {
-            open_container_state.entity = Some(entity);
+            docked_panel_state.open(entity);
         }
         context_menu_state.hide();
         return;
     }
 
     context_menu_state.hide();
-}
-
-pub fn handle_clear_combat_target(
-    mouse_input: Res<ButtonInput<MouseButton>>,
-    window_query: Query<&Window, With<PrimaryWindow>>,
-    mut player_query: Query<Entity, (With<Player>, With<CombatTarget>)>,
-    button_query: Query<
-        (&ComputedNode, &UiGlobalTransform, &Visibility),
-        With<ClearCombatTargetButton>,
-    >,
-    mut commands: Commands,
-) {
-    if !mouse_input.just_pressed(MouseButton::Left) {
-        return;
-    }
-
-    let Ok(window) = window_query.single() else {
-        return;
-    };
-    let Some(cursor_position) = window.cursor_position() else {
-        return;
-    };
-
-    if !is_cursor_over_visible_button(cursor_position, &button_query) {
-        return;
-    }
-
-    let Ok(player_entity) = player_query.single_mut() else {
-        return;
-    };
-
-    commands.entity(player_entity).remove::<CombatTarget>();
 }
 
 pub fn handle_use_on_targeting(
@@ -495,7 +461,7 @@ pub fn handle_use_on_targeting(
         Res<ObjectRegistry>,
         Res<OverworldObjectDefinitions>,
         Res<SpellDefinitions>,
-        Res<OpenContainerState>,
+        Res<DockedPanelState>,
     ),
     mut inventory_state: ResMut<InventoryState>,
     mut container_query: Query<&mut Container>,
@@ -509,7 +475,7 @@ pub fn handle_use_on_targeting(
     mut use_on_state: ResMut<UseOnState>,
     mut commands: Commands,
 ) {
-    let (context_menu_state, object_registry, definitions, spell_definitions, open_container_state) =
+    let (context_menu_state, object_registry, definitions, spell_definitions, docked_panel_state) =
         state_resources;
     let Some(source_target) = use_on_state.source else {
         return;
@@ -544,7 +510,7 @@ pub fn handle_use_on_targeting(
             source_target,
             &mut inventory_state,
             &mut container_query,
-            open_container_state.entity,
+            &docked_panel_state,
             &object_registry,
             &definitions,
             &spell_definitions,
@@ -589,7 +555,7 @@ pub fn handle_spell_targeting(
         Res<ObjectRegistry>,
         Res<OverworldObjectDefinitions>,
         Res<SpellDefinitions>,
-        Res<OpenContainerState>,
+        Res<DockedPanelState>,
     ),
     mut inventory_state: ResMut<InventoryState>,
     mut container_query: Query<&mut Container>,
@@ -603,7 +569,7 @@ pub fn handle_spell_targeting(
     mut spell_targeting_state: ResMut<SpellTargetingState>,
     mut commands: Commands,
 ) {
-    let (context_menu_state, object_registry, definitions, spell_definitions, open_container_state) =
+    let (context_menu_state, object_registry, definitions, spell_definitions, docked_panel_state) =
         static_resources;
     let (Some(source_target), Some(spell_id)) = (
         spell_targeting_state.source,
@@ -709,7 +675,7 @@ pub fn handle_spell_targeting(
             source_target,
             &mut inventory_state,
             &mut container_query,
-            open_container_state.entity,
+            &docked_panel_state,
             &mut commands,
         );
         chat_log_state.push_line(format!("[Player]: \"{}\"", spell.incantation));
@@ -735,7 +701,7 @@ pub fn handle_context_menu_opening(
     spell_definitions: Res<SpellDefinitions>,
     inventory_state: Res<InventoryState>,
     mut context_menu_state: ResMut<ContextMenuState>,
-    open_container_state: Res<OpenContainerState>,
+    docked_panel_state: Res<DockedPanelState>,
     mut use_on_state: ResMut<UseOnState>,
     mut spell_targeting_state: ResMut<SpellTargetingState>,
     mut cursor_state: ResMut<CursorState>,
@@ -818,21 +784,29 @@ pub fn handle_context_menu_opening(
 
     let hovered_slot = hovered_slot_kind_from_ui(cursor_position, &mut slot_queries);
     info!(
-        "context_open_attempt cursor=({:.1}, {:.1}) open_container={:?} hovered_slot={hovered_slot:?}",
+        "context_open_attempt cursor=({:.1}, {:.1}) open_containers={} hovered_slot={hovered_slot:?}",
         cursor_position.x,
         cursor_position.y,
-        open_container_state.entity
+        docked_panel_state
+            .panels
+            .iter()
+            .filter(|panel| matches!(panel.kind, DockedPanelKind::Container { .. }))
+            .count()
     );
     if let Some(slot_kind) = hovered_slot {
         let slot_object_id = object_id_in_slot_kind(
             &inventory_state,
             &container_query,
-            open_container_state.entity,
+            &docked_panel_state,
             slot_kind,
         );
         info!(
-            "context_open_slot slot={slot_kind:?} resolved_object_id={slot_object_id:?} open_container={:?}",
-            open_container_state.entity
+            "context_open_slot slot={slot_kind:?} resolved_object_id={slot_object_id:?} open_containers={}",
+            docked_panel_state
+                .panels
+                .iter()
+                .filter(|panel| matches!(panel.kind, DockedPanelKind::Container { .. }))
+                .count()
         );
         if let Some(object_id) = slot_object_id {
             let can_use = object_is_usable(object_id, &object_registry, &definitions);
@@ -894,51 +868,85 @@ pub fn handle_context_menu_opening(
     context_menu_state.hide();
 }
 
-pub fn sync_open_container_title(
-    open_container_state: Res<OpenContainerState>,
+pub fn sync_docked_panel_layout(
+    docked_panel_state: Res<DockedPanelState>,
+    mut panel_queries: ParamSet<(
+        Query<(&DockedPanelRoot, &mut Node, &mut Visibility), With<DockedPanelRoot>>,
+        Query<(&DockedPanelCloseButton, &mut Visibility), With<DockedPanelCloseButton>>,
+        Query<(&DockedPanelResizeHandle, &mut Visibility), With<DockedPanelResizeHandle>>,
+    )>,
+) {
+    for (panel_root, mut node, mut visibility) in &mut panel_queries.p0() {
+        if let Some(panel) = docked_panel_state.panel(panel_root.panel_id) {
+            node.display = Display::Flex;
+            node.height = px(panel.height);
+            *visibility = Visibility::Visible;
+        } else {
+            node.display = Display::None;
+            *visibility = Visibility::Hidden;
+        }
+    }
+
+    for (close_button, mut visibility) in &mut panel_queries.p1() {
+        *visibility = if docked_panel_state
+            .panel(close_button.panel_id)
+            .is_some_and(|panel| panel.closable)
+        {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
+
+    for (resize_handle, mut visibility) in &mut panel_queries.p2() {
+        *visibility = if docked_panel_state
+            .panel(resize_handle.panel_id)
+            .is_some_and(|panel| panel.resizable)
+        {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
+}
+
+pub fn sync_docked_panel_titles(
+    docked_panel_state: ResMut<DockedPanelState>,
     object_registry: Res<ObjectRegistry>,
     container_query: Query<(&Container, &OverworldObject)>,
     definitions: Res<OverworldObjectDefinitions>,
     spell_definitions: Res<SpellDefinitions>,
-    mut title_query: Query<&mut Text, With<OpenContainerTitle>>,
+    mut title_query: Query<(&DockedPanelTitle, &mut Text), With<DockedPanelTitle>>,
 ) {
-    let Ok(mut title_text) = title_query.single_mut() else {
-        return;
-    };
+    let mut docked_panel_state = docked_panel_state;
 
-    let title = if let Some(entity) = open_container_state.entity {
-        if let Ok((_, object)) = container_query.get(entity) {
-            object_registry
-                .display_name(object.object_id, &definitions, &spell_definitions)
-                .unwrap_or_else(|| "Container".to_owned())
-        } else {
-            "Backpack".to_owned()
+    for (title, mut text) in &mut title_query {
+        let resolved_title = match docked_panel_state
+            .panel(title.panel_id)
+            .map(|panel| panel.kind)
+        {
+            Some(DockedPanelKind::CurrentTarget) => "Current Target".to_owned(),
+            Some(DockedPanelKind::Container { entity }) => container_query
+                .get(entity)
+                .ok()
+                .and_then(|(_, object)| {
+                    object_registry.display_name(object.object_id, &definitions, &spell_definitions)
+                })
+                .unwrap_or_else(|| "Container".to_owned()),
+            None => String::new(),
+        };
+
+        if let Some(panel) = docked_panel_state.panel_mut(title.panel_id) {
+            panel.title = resolved_title.clone();
         }
-    } else {
-        "Backpack".to_owned()
-    };
 
-    title_text.0 = title;
-}
-
-pub fn sync_close_container_button(
-    open_container_state: Res<OpenContainerState>,
-    mut close_button_query: Query<&mut Visibility, With<CloseContainerButton>>,
-) {
-    let Ok(mut close_visibility) = close_button_query.single_mut() else {
-        return;
-    };
-
-    *close_visibility = if open_container_state.entity.is_some() {
-        Visibility::Visible
-    } else {
-        Visibility::Hidden
-    };
+        text.0 = resolved_title;
+    }
 }
 
 pub fn sync_item_slot_button_visibility(
     inventory_state: Res<InventoryState>,
-    open_container_state: Res<OpenContainerState>,
+    docked_panel_state: Res<DockedPanelState>,
     derived_stats_query: Query<&DerivedStats, With<Player>>,
     container_query: Query<&Container>,
     mut slot_button_query: Query<(&ItemSlotButton, &mut Visibility), With<ContainerSlotButton>>,
@@ -947,30 +955,24 @@ pub fn sync_item_slot_button_visibility(
         return;
     };
 
-    let active_container_capacity = open_container_state
-        .entity
-        .and_then(|entity| container_query.get(entity).ok())
-        .map(|container| container.slots.len())
-        .unwrap_or(inventory_state.backpack_slots.len());
-    let occupied_backpack_slots = inventory_state
-        .backpack_slots
-        .iter()
-        .rposition(Option::is_some)
-        .map(|index| index + 1)
-        .unwrap_or(0);
-    let visible_backpack_capacity = if open_container_state.entity.is_some() {
-        active_container_capacity
-    } else {
-        occupied_backpack_slots.max(
-            derived_stats
-                .storage_slots
-                .min(inventory_state.backpack_slots.len()),
-        )
-    };
+    let visible_backpack_capacity = inventory_state.backpack_slots.len().min(
+        derived_stats
+            .storage_slots
+            .max(0)
+            .try_into()
+            .unwrap_or(0usize),
+    );
 
     for (slot, mut visibility) in &mut slot_button_query {
         let should_show = match slot.kind {
-            ItemSlotKind::ActiveContainer(index) => index < visible_backpack_capacity,
+            ItemSlotKind::Backpack(index) => index < visible_backpack_capacity,
+            ItemSlotKind::OpenContainer {
+                panel_id,
+                slot_index,
+            } => docked_panel_state
+                .container_entity_for_panel(panel_id)
+                .and_then(|entity| container_query.get(entity).ok())
+                .is_some_and(|container| slot_index < container.slots.len()),
             ItemSlotKind::Equipment(_) => true,
         };
 
@@ -984,7 +986,7 @@ pub fn sync_item_slot_button_visibility(
 
 pub fn sync_container_slot_images(
     inventory_state: Res<InventoryState>,
-    open_container_state: Res<OpenContainerState>,
+    docked_panel_state: Res<DockedPanelState>,
     object_registry: Res<ObjectRegistry>,
     container_query: Query<&Container>,
     asset_server: Res<AssetServer>,
@@ -996,12 +998,16 @@ pub fn sync_container_slot_images(
 ) {
     for (slot, mut image_node, mut visibility) in &mut image_query {
         let object_id = match slot.kind {
-            ItemSlotKind::ActiveContainer(index) => active_object_id_in_container_view(
-                &inventory_state,
-                &container_query,
-                open_container_state.entity,
-                index,
-            ),
+            ItemSlotKind::Backpack(index) => {
+                inventory_state.backpack_slots.get(index).copied().flatten()
+            }
+            ItemSlotKind::OpenContainer {
+                panel_id,
+                slot_index,
+            } => docked_panel_state
+                .container_entity_for_panel(panel_id)
+                .and_then(|entity| container_query.get(entity).ok())
+                .and_then(|container| container.slots.get(slot_index).copied().flatten()),
             ItemSlotKind::Equipment(_) => None,
         };
         let Some(object_id) = object_id else {
@@ -1042,7 +1048,7 @@ pub fn sync_equipment_slot_images(
     for (slot, mut image_node, mut visibility) in &mut image_query {
         let object_id = match slot.kind {
             ItemSlotKind::Equipment(slot) => inventory_state.equipment_item(slot),
-            ItemSlotKind::ActiveContainer(_) => None,
+            ItemSlotKind::Backpack(_) | ItemSlotKind::OpenContainer { .. } => None,
         };
         let Some(object_id) = object_id else {
             *visibility = Visibility::Hidden;
@@ -1077,7 +1083,7 @@ pub fn handle_movable_dragging(
     object_registry: Res<ObjectRegistry>,
     definitions: Res<OverworldObjectDefinitions>,
     mut inventory_state: ResMut<InventoryState>,
-    open_container_state: Res<OpenContainerState>,
+    docked_panel_state: Res<DockedPanelState>,
     mut drag_state: ResMut<DragState>,
     player_query: Query<&TilePosition, With<Player>>,
     collider_query: Query<&TilePosition, (With<Collider>, Without<Player>)>,
@@ -1134,12 +1140,16 @@ pub fn handle_movable_dragging(
             if let Some(object_id) = take_item_from_slot_kind(
                 &mut inventory_state,
                 &mut container_query,
-                open_container_state.entity,
+                &docked_panel_state,
                 slot_kind,
             ) {
                 info!(
-                    "drag_start ui_slot={slot_kind:?} object_id={object_id} open_container={:?}",
-                    open_container_state.entity
+                    "drag_start ui_slot={slot_kind:?} object_id={object_id} open_containers={}",
+                    docked_panel_state
+                        .panels
+                        .iter()
+                        .filter(|panel| matches!(panel.kind, DockedPanelKind::Container { .. }))
+                        .count()
                 );
                 info!(
                     "equipment_state_after_take {}",
@@ -1203,7 +1213,7 @@ pub fn handle_movable_dragging(
                 if place_item_in_slot_kind(
                     &mut inventory_state,
                     &mut container_query,
-                    open_container_state.entity,
+                    &docked_panel_state,
                     object_id,
                     slot_kind,
                     &object_registry,
@@ -1238,7 +1248,7 @@ pub fn handle_movable_dragging(
                     restore_item_to_slot(
                         &mut inventory_state,
                         &mut container_query,
-                        open_container_state.entity,
+                        &docked_panel_state,
                         source_slot,
                         object_id,
                     );
@@ -1248,7 +1258,7 @@ pub fn handle_movable_dragging(
                 if place_item_in_slot_kind(
                     &mut inventory_state,
                     &mut container_query,
-                    open_container_state.entity,
+                    &docked_panel_state,
                     object_id,
                     slot_kind,
                     &object_registry,
@@ -1293,7 +1303,7 @@ pub fn handle_movable_dragging(
             restore_item_to_slot(
                 &mut inventory_state,
                 &mut container_query,
-                open_container_state.entity,
+                &docked_panel_state,
                 source_slot,
                 object_id,
             );
@@ -1349,23 +1359,139 @@ pub fn sync_drag_preview(
     label.0 = object_id.to_string();
 }
 
+pub fn handle_docked_panel_scrolling(
+    mut mouse_wheel_reader: MessageReader<MouseWheel>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    mut body_query: Query<
+        (
+            &DockedPanelBody,
+            &Node,
+            &ComputedNode,
+            &UiGlobalTransform,
+            &mut ScrollPosition,
+            &Visibility,
+        ),
+        With<DockedPanelBody>,
+    >,
+) {
+    let Ok(window) = window_query.single() else {
+        return;
+    };
+    let Some(cursor_position) = window.cursor_position() else {
+        return;
+    };
+
+    for mouse_wheel in mouse_wheel_reader.read() {
+        let mut delta_y = -mouse_wheel.y;
+        if mouse_wheel.unit == MouseScrollUnit::Line {
+            delta_y *= 21.0;
+        }
+
+        for (body, node, computed, global_transform, mut scroll_position, visibility) in
+            &mut body_query
+        {
+            if *visibility == Visibility::Hidden {
+                continue;
+            }
+            if !point_in_ui_node(cursor_position, computed, global_transform) {
+                continue;
+            }
+            if node.overflow.y != bevy::ui::OverflowAxis::Scroll || delta_y == 0.0 {
+                continue;
+            }
+
+            let max_offset =
+                (computed.content_size() - computed.size()) * computed.inverse_scale_factor();
+            if max_offset.y <= 0.0 {
+                break;
+            }
+
+            scroll_position.y = (scroll_position.y + delta_y).clamp(0.0, max_offset.y);
+            info!(
+                "panel_scroll panel_id={} scroll_y={:.1}/{:.1}",
+                body.panel_id, scroll_position.y, max_offset.y
+            );
+            break;
+        }
+    }
+}
+
+pub fn handle_docked_panel_resizing(
+    mouse_input: Res<ButtonInput<MouseButton>>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    mut resize_state: ResMut<DockedPanelResizeState>,
+    mut docked_panel_state: ResMut<DockedPanelState>,
+    resize_handle_query: Query<
+        (
+            &DockedPanelResizeHandle,
+            &ComputedNode,
+            &UiGlobalTransform,
+            &Visibility,
+        ),
+        With<DockedPanelResizeHandle>,
+    >,
+) {
+    let Ok(window) = window_query.single() else {
+        return;
+    };
+    let Some(cursor_position) = window.cursor_position() else {
+        if mouse_input.just_released(MouseButton::Left) {
+            resize_state.panel_id = None;
+        }
+        return;
+    };
+
+    if mouse_input.just_pressed(MouseButton::Left) {
+        for (handle, computed_node, global_transform, visibility) in &resize_handle_query {
+            if *visibility == Visibility::Hidden {
+                continue;
+            }
+            if !point_in_ui_node(cursor_position, computed_node, global_transform) {
+                continue;
+            }
+
+            let Some(panel) = docked_panel_state.panel(handle.panel_id) else {
+                continue;
+            };
+            if !panel.resizable {
+                continue;
+            }
+
+            resize_state.panel_id = Some(handle.panel_id);
+            resize_state.start_cursor_y = cursor_position.y;
+            resize_state.start_height = panel.height;
+            break;
+        }
+    }
+
+    let Some(panel_id) = resize_state.panel_id else {
+        return;
+    };
+
+    if mouse_input.just_released(MouseButton::Left) {
+        resize_state.panel_id = None;
+        return;
+    }
+
+    if !mouse_input.pressed(MouseButton::Left) {
+        return;
+    }
+
+    let delta_y = cursor_position.y - resize_state.start_cursor_y;
+    if let Some(panel) = docked_panel_state.panel_mut(panel_id) {
+        panel.height = (resize_state.start_height + delta_y).clamp(
+            DockedPanelState::MIN_PANEL_HEIGHT,
+            DockedPanelState::MAX_PANEL_HEIGHT,
+        );
+    }
+}
+
 fn normalized_ratio(current: f32, maximum: f32) -> f32 {
     if maximum <= 0.0 {
         return 0.0;
     }
 
     (current / maximum).clamp(0.0, 1.0)
-}
-
-fn is_cursor_over_close_button(
-    cursor_position: Vec2,
-    close_button_query: &Query<(&ComputedNode, &UiGlobalTransform), With<CloseContainerButton>>,
-) -> bool {
-    let Ok((computed_node, global_transform)) = close_button_query.single() else {
-        return false;
-    };
-
-    point_in_ui_node(cursor_position, computed_node, global_transform)
 }
 
 fn is_cursor_over_button<M: Component>(
@@ -1503,20 +1629,24 @@ fn point_in_ui_node(
 fn take_item_from_slot_kind(
     inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
-    open_container_entity: Option<Entity>,
+    docked_panel_state: &DockedPanelState,
     slot_kind: ItemSlotKind,
 ) -> Option<u64> {
     match slot_kind {
-        ItemSlotKind::ActiveContainer(slot_index) => {
-            if let Some(entity) = open_container_entity {
-                return container_query
-                    .get_mut(entity)
-                    .ok()
-                    .and_then(|mut container| container.slots.get_mut(slot_index)?.take());
-            }
-
+        ItemSlotKind::Backpack(slot_index) => {
             inventory_state.backpack_slots.get_mut(slot_index)?.take()
         }
+        ItemSlotKind::OpenContainer {
+            panel_id,
+            slot_index,
+        } => docked_panel_state
+            .container_entity_for_panel(panel_id)
+            .and_then(|entity| {
+                container_query
+                    .get_mut(entity)
+                    .ok()
+                    .and_then(|mut container| container.slots.get_mut(slot_index)?.take())
+            }),
         ItemSlotKind::Equipment(slot) => inventory_state.take_equipment_item(slot),
     }
 }
@@ -1524,52 +1654,30 @@ fn take_item_from_slot_kind(
 fn object_id_in_slot_kind(
     inventory_state: &InventoryState,
     container_query: &Query<&Container>,
-    open_container_entity: Option<Entity>,
+    docked_panel_state: &DockedPanelState,
     slot_kind: ItemSlotKind,
 ) -> Option<u64> {
     match slot_kind {
-        ItemSlotKind::ActiveContainer(slot_index) => {
-            if let Some(entity) = open_container_entity {
-                return container_query
-                    .get(entity)
-                    .ok()
-                    .and_then(|container| container.slots.get(slot_index).copied().flatten());
-            }
-
-            inventory_state
-                .backpack_slots
-                .get(slot_index)
-                .copied()
-                .flatten()
-        }
+        ItemSlotKind::Backpack(slot_index) => inventory_state
+            .backpack_slots
+            .get(slot_index)
+            .copied()
+            .flatten(),
+        ItemSlotKind::OpenContainer {
+            panel_id,
+            slot_index,
+        } => docked_panel_state
+            .container_entity_for_panel(panel_id)
+            .and_then(|entity| container_query.get(entity).ok())
+            .and_then(|container| container.slots.get(slot_index).copied().flatten()),
         ItemSlotKind::Equipment(slot) => inventory_state.equipment_item(slot),
     }
-}
-
-fn active_object_id_in_container_view(
-    inventory_state: &InventoryState,
-    container_query: &Query<&Container>,
-    open_container_entity: Option<Entity>,
-    slot_index: usize,
-) -> Option<u64> {
-    if let Some(entity) = open_container_entity {
-        return container_query
-            .get(entity)
-            .ok()
-            .and_then(|container| container.slots.get(slot_index).copied().flatten());
-    }
-
-    inventory_state
-        .backpack_slots
-        .get(slot_index)
-        .copied()
-        .flatten()
 }
 
 fn place_item_in_slot_kind(
     inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
-    open_container_entity: Option<Entity>,
+    docked_panel_state: &DockedPanelState,
     object_id: u64,
     slot_kind: ItemSlotKind,
     object_registry: &ObjectRegistry,
@@ -1580,29 +1688,34 @@ fn place_item_in_slot_kind(
     }
 
     match slot_kind {
-        ItemSlotKind::ActiveContainer(slot_index) => {
-            if let Some(entity) = open_container_entity {
-                let Ok(mut container) = container_query.get_mut(entity) else {
-                    return false;
-                };
-                let Some(slot) = container.slots.get_mut(slot_index) else {
-                    return false;
-                };
-                if slot.is_some() {
-                    return false;
-                }
-                *slot = Some(object_id);
-                true
-            } else {
-                let Some(slot) = inventory_state.backpack_slots.get_mut(slot_index) else {
-                    return false;
-                };
-                if slot.is_some() {
-                    return false;
-                }
-                *slot = Some(object_id);
-                true
+        ItemSlotKind::Backpack(slot_index) => {
+            let Some(slot) = inventory_state.backpack_slots.get_mut(slot_index) else {
+                return false;
+            };
+            if slot.is_some() {
+                return false;
             }
+            *slot = Some(object_id);
+            true
+        }
+        ItemSlotKind::OpenContainer {
+            panel_id,
+            slot_index,
+        } => {
+            let Some(entity) = docked_panel_state.container_entity_for_panel(panel_id) else {
+                return false;
+            };
+            let Ok(mut container) = container_query.get_mut(entity) else {
+                return false;
+            };
+            let Some(slot) = container.slots.get_mut(slot_index) else {
+                return false;
+            };
+            if slot.is_some() {
+                return false;
+            }
+            *slot = Some(object_id);
+            true
         }
         ItemSlotKind::Equipment(slot) => place_item_in_equipment_slot(
             inventory_state,
@@ -1623,16 +1736,20 @@ fn restore_backpack_slot(inventory_state: &mut InventoryState, slot_index: usize
 fn restore_item_to_slot(
     inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
-    open_container_entity: Option<Entity>,
+    docked_panel_state: &DockedPanelState,
     slot_kind: ItemSlotKind,
     object_id: u64,
 ) {
     match slot_kind {
-        ItemSlotKind::ActiveContainer(slot_index) => {
-            if let Some(entity) = open_container_entity {
+        ItemSlotKind::Backpack(slot_index) => {
+            restore_backpack_slot(inventory_state, slot_index, object_id)
+        }
+        ItemSlotKind::OpenContainer {
+            panel_id,
+            slot_index,
+        } => {
+            if let Some(entity) = docked_panel_state.container_entity_for_panel(panel_id) {
                 restore_container_slot(container_query, entity, slot_index, object_id);
-            } else {
-                restore_backpack_slot(inventory_state, slot_index, object_id);
             }
         }
         ItemSlotKind::Equipment(slot) => {
@@ -1786,7 +1903,7 @@ fn handle_use_action(
     source_target: ContextMenuTarget,
     inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
-    open_container_entity: Option<Entity>,
+    docked_panel_state: &DockedPanelState,
     object_registry: &ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
@@ -1814,7 +1931,7 @@ fn handle_use_action(
             source_target,
             inventory_state,
             container_query,
-            open_container_entity,
+            docked_panel_state,
             object_registry,
             definitions,
             spell_definitions,
@@ -1837,7 +1954,7 @@ fn handle_use_action(
             cast_untargeted_spell(
                 source_target,
                 spell,
-                open_container_entity,
+                docked_panel_state,
                 inventory_state,
                 container_query,
                 player_query,
@@ -1858,7 +1975,7 @@ fn use_on_player_target(
     source_target: ContextMenuTarget,
     inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
-    open_container_entity: Option<Entity>,
+    docked_panel_state: &DockedPanelState,
     object_registry: &ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
@@ -1898,7 +2015,7 @@ fn use_on_player_target(
             let _ = take_item_from_slot_kind(
                 inventory_state,
                 container_query,
-                open_container_entity,
+                docked_panel_state,
                 slot_kind,
             );
         }
@@ -1910,7 +2027,7 @@ fn use_on_player_target(
 fn cast_untargeted_spell(
     source_target: ContextMenuTarget,
     spell: &SpellDefinition,
-    open_container_entity: Option<Entity>,
+    docked_panel_state: &DockedPanelState,
     inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
     player_query: &mut Query<&mut VitalStats, With<Player>>,
@@ -1933,7 +2050,7 @@ fn cast_untargeted_spell(
         source_target,
         inventory_state,
         container_query,
-        open_container_entity,
+        docked_panel_state,
         commands,
     );
 
@@ -1945,7 +2062,7 @@ fn consume_source_target(
     source_target: ContextMenuTarget,
     inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
-    open_container_entity: Option<Entity>,
+    docked_panel_state: &DockedPanelState,
     commands: &mut Commands,
 ) {
     match source_target {
@@ -1956,7 +2073,7 @@ fn consume_source_target(
             let _ = take_item_from_slot_kind(
                 inventory_state,
                 container_query,
-                open_container_entity,
+                docked_panel_state,
                 slot_kind,
             );
         }
