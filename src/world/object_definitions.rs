@@ -20,6 +20,8 @@ pub struct OverworldObjectDefinition {
     #[serde(default)]
     pub equipment_slot: Option<EquipmentSlot>,
     #[serde(default)]
+    pub fillable_properties: Vec<String>,
+    #[serde(default)]
     pub stats: StatModifiers,
     #[serde(default)]
     pub use_effects: UseEffects,
@@ -27,6 +29,8 @@ pub struct OverworldObjectDefinition {
     pub use_texts: Vec<String>,
     #[serde(default)]
     pub use_on_texts: Vec<String>,
+    #[serde(default)]
+    pub spell_id: Option<String>,
     #[serde(default)]
     pub container_capacity: Option<usize>,
     pub render: RenderMetadata,
@@ -127,7 +131,9 @@ impl OverworldObjectDefinition {
     }
 
     pub fn is_usable(&self) -> bool {
-        self.use_effects.restore_health > 0.0 || self.use_effects.restore_mana > 0.0
+        self.use_effects.restore_health > 0.0
+            || self.use_effects.restore_mana > 0.0
+            || self.spell_id.is_some()
     }
 }
 

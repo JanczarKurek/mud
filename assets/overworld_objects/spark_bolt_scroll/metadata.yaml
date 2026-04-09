@@ -1,0 +1,8 @@
+extends: pickup
+name: Spark Bolt Scroll
+description: A charged scroll that crackles with bottled force.
+spell_id: spark_bolt
+render:
+  debug_color: [224, 171, 108]
+  debug_size: 0.45
+  sprite_path: overworld_objects/scroll/sprite.png

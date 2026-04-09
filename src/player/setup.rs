@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::combat::components::AttackProfile;
+use crate::combat::components::{AttackProfile, CombatLeash};
 use crate::player::components::{BaseStats, DerivedStats, MovementCooldown, Player, VitalStats};
 use crate::world::components::{OverworldObject, TilePosition, WorldVisual};
 use crate::world::object_definitions::OverworldObjectDefinitions;
@@ -44,6 +44,9 @@ pub fn spawn_player(
             VitalStats::full(max_health, max_mana),
             MovementCooldown::default(),
             AttackProfile::melee(),
+            CombatLeash {
+                max_distance_tiles: 6,
+            },
             OverworldObject {
                 object_id: 0,
                 definition_id: "player".to_owned(),

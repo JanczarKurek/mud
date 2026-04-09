@@ -6,6 +6,7 @@ use bevy::window::{CursorIcon, CustomCursor, CustomCursorImage, PrimaryWindow};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::combat::components::CombatTarget;
+use crate::magic::resources::{SpellDefinition, SpellDefinitions, SpellTargeting};
 use crate::npc::components::Npc;
 use crate::player::components::{DerivedStats, Player, VitalStats};
 use crate::scripting::resources::PythonConsoleState;
@@ -19,7 +20,7 @@ use crate::ui::components::{
 };
 use crate::ui::resources::{
     ChatLogState, ContextMenuState, ContextMenuTarget, CursorMode, CursorState, DragSource,
-    DragState, InventoryState, OpenContainerState, UseOnState,
+    DragState, InventoryState, OpenContainerState, SpellTargetingState, UseOnState,
 };
 use crate::world::components::{Collider, Container, Movable, OverworldObject, TilePosition};
 use crate::world::object_definitions::{
@@ -33,6 +34,7 @@ pub fn toggle_cursor_mode(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     console_state: Option<Res<PythonConsoleState>>,
     use_on_state: Res<UseOnState>,
+    spell_targeting_state: Res<SpellTargetingState>,
     mut cursor_state: ResMut<CursorState>,
 ) {
     if console_state.as_ref().is_some_and(|state| state.is_open) {
@@ -41,11 +43,15 @@ pub fn toggle_cursor_mode(
     if use_on_state.source.is_some() {
         return;
     }
+    if spell_targeting_state.source.is_some() {
+        return;
+    }
 
     if keyboard_input.just_pressed(KeyCode::KeyU) {
         cursor_state.mode = match cursor_state.mode {
             CursorMode::Default => CursorMode::UseOn,
             CursorMode::UseOn => CursorMode::Default,
+            CursorMode::SpellTarget => CursorMode::SpellTarget,
         };
     }
 }
@@ -80,6 +86,7 @@ fn cursor_icon_for_mode(cursor_mode: CursorMode, asset_server: &AssetServer) -> 
     let asset_path = match cursor_mode {
         CursorMode::Default => "cursors/default_cursor.png",
         CursorMode::UseOn => "cursors/use_on_cursor.png",
+        CursorMode::SpellTarget => "cursors/spell_target_cursor.png",
     };
 
     CursorIcon::Custom(CustomCursor::Image(CustomCursorImage {
@@ -136,7 +143,9 @@ pub fn manage_open_containers(
 pub fn sync_current_combat_target(
     player_query: Query<&CombatTarget, With<Player>>,
     object_query: Query<&OverworldObject>,
+    object_registry: Res<ObjectRegistry>,
     definitions: Res<OverworldObjectDefinitions>,
+    spell_definitions: Res<SpellDefinitions>,
     mut label_query: Query<&mut Text, With<CurrentCombatTargetLabel>>,
 ) {
     let Ok(mut label) = label_query.single_mut() else {
@@ -145,9 +154,8 @@ pub fn sync_current_combat_target(
 
     let text = if let Ok(combat_target) = player_query.single() {
         if let Ok(object) = object_query.get(combat_target.entity) {
-            let name = definitions
-                .get(&object.definition_id)
-                .map(|definition| definition.name.clone())
+            let name = object_registry
+                .display_name(object.object_id, &definitions, &spell_definitions)
                 .unwrap_or_else(|| object.definition_id.clone());
             format!("Target: {name}")
         } else {
@@ -309,7 +317,7 @@ pub fn sync_context_menu_use_on_button(
         return;
     };
 
-    *use_on_visibility = if context_menu_state.can_use {
+    *use_on_visibility = if context_menu_state.can_use_on {
         Visibility::Visible
     } else {
         Visibility::Hidden
@@ -319,13 +327,18 @@ pub fn sync_context_menu_use_on_button(
 pub fn handle_context_menu_actions(
     mouse_input: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
-    static_resources: (Res<ObjectRegistry>, Res<OverworldObjectDefinitions>),
+    static_resources: (
+        Res<ObjectRegistry>,
+        Res<OverworldObjectDefinitions>,
+        Res<SpellDefinitions>,
+    ),
     ui_state: (
         ResMut<ChatLogState>,
         ResMut<ContextMenuState>,
         ResMut<OpenContainerState>,
         ResMut<CursorState>,
         ResMut<UseOnState>,
+        ResMut<SpellTargetingState>,
     ),
     mut menu_queries: ParamSet<(
         Query<(&ComputedNode, &UiGlobalTransform, &Visibility), With<ContextMenuAttackButton>>,
@@ -340,13 +353,14 @@ pub fn handle_context_menu_actions(
     mut player_query: Query<&mut VitalStats, With<Player>>,
     mut commands: Commands,
 ) {
-    let (object_registry, definitions) = static_resources;
+    let (object_registry, definitions, spell_definitions) = static_resources;
     let (
         mut chat_log_state,
         mut context_menu_state,
         mut open_container_state,
         mut cursor_state,
         mut use_on_state,
+        mut spell_targeting_state,
     ) = ui_state;
     let Ok(window) = window_query.single() else {
         return;
@@ -367,7 +381,12 @@ pub fn handle_context_menu_actions(
                     entity: target_entity,
                 });
 
-                if let Some(target_name) = object_name(object_id, &object_registry, &definitions) {
+                if let Some(target_name) = object_name(
+                    object_id,
+                    &object_registry,
+                    &definitions,
+                    &spell_definitions,
+                ) {
                     chat_log_state.push_narrator(format!("Targeting {target_name}."));
                 }
             }
@@ -378,7 +397,13 @@ pub fn handle_context_menu_actions(
 
     if is_cursor_over_button(cursor_position, &menu_queries.p1()) {
         if let Some(target) = context_menu_state.target {
-            inspect_context_target(target, &object_registry, &definitions, &mut chat_log_state);
+            inspect_context_target(
+                target,
+                &object_registry,
+                &definitions,
+                &spell_definitions,
+                &mut chat_log_state,
+            );
         }
         context_menu_state.hide();
         return;
@@ -386,15 +411,18 @@ pub fn handle_context_menu_actions(
 
     if is_cursor_over_visible_button(cursor_position, &menu_queries.p3()) {
         if let Some(target) = context_menu_state.target {
-            use_on_player_target(
+            handle_use_action(
                 target,
                 &mut inventory_state,
                 &mut container_query,
                 open_container_state.entity,
                 &object_registry,
                 &definitions,
+                &spell_definitions,
                 &mut player_query,
                 &mut chat_log_state,
+                &mut cursor_state,
+                &mut spell_targeting_state,
                 &mut commands,
             );
         }
@@ -466,6 +494,7 @@ pub fn handle_use_on_targeting(
         Res<ContextMenuState>,
         Res<ObjectRegistry>,
         Res<OverworldObjectDefinitions>,
+        Res<SpellDefinitions>,
         Res<OpenContainerState>,
     ),
     mut inventory_state: ResMut<InventoryState>,
@@ -480,7 +509,8 @@ pub fn handle_use_on_targeting(
     mut use_on_state: ResMut<UseOnState>,
     mut commands: Commands,
 ) {
-    let (context_menu_state, object_registry, definitions, open_container_state) = state_resources;
+    let (context_menu_state, object_registry, definitions, spell_definitions, open_container_state) =
+        state_resources;
     let Some(source_target) = use_on_state.source else {
         return;
     };
@@ -517,6 +547,7 @@ pub fn handle_use_on_targeting(
             open_container_state.entity,
             &object_registry,
             &definitions,
+            &spell_definitions,
             &mut player_queries.p0(),
             &mut chat_log_state,
             &mut commands,
@@ -539,6 +570,7 @@ pub fn handle_use_on_targeting(
             object.object_id,
             &object_registry,
             &definitions,
+            &spell_definitions,
             &mut chat_log_state,
         );
         use_on_state.source = None;
@@ -547,16 +579,165 @@ pub fn handle_use_on_targeting(
     }
 }
 
+pub fn handle_spell_targeting(
+    mouse_input: Res<ButtonInput<MouseButton>>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    world_config: Res<WorldConfig>,
+    static_resources: (
+        Res<ContextMenuState>,
+        Res<ObjectRegistry>,
+        Res<OverworldObjectDefinitions>,
+        Res<SpellDefinitions>,
+        Res<OpenContainerState>,
+    ),
+    mut inventory_state: ResMut<InventoryState>,
+    mut container_query: Query<&mut Container>,
+    mut player_queries: ParamSet<(
+        Query<(&mut VitalStats, &TilePosition), With<Player>>,
+        Query<(Entity, &TilePosition, &OverworldObject), (With<Npc>, Without<Player>)>,
+        Query<(&mut VitalStats, &OverworldObject), (With<Npc>, Without<Player>)>,
+    )>,
+    mut chat_log_state: ResMut<ChatLogState>,
+    mut cursor_state: ResMut<CursorState>,
+    mut spell_targeting_state: ResMut<SpellTargetingState>,
+    mut commands: Commands,
+) {
+    let (context_menu_state, object_registry, definitions, spell_definitions, open_container_state) =
+        static_resources;
+    let (Some(source_target), Some(spell_id)) = (
+        spell_targeting_state.source,
+        spell_targeting_state.spell_id.as_deref(),
+    ) else {
+        return;
+    };
+
+    if keyboard_input.just_pressed(KeyCode::Escape) || mouse_input.just_pressed(MouseButton::Right)
+    {
+        spell_targeting_state.source = None;
+        spell_targeting_state.spell_id = None;
+        cursor_state.mode = CursorMode::Default;
+        return;
+    }
+
+    if context_menu_state.is_visible() || !mouse_input.just_pressed(MouseButton::Left) {
+        return;
+    }
+
+    let Some(spell) = spell_definitions.get(spell_id) else {
+        spell_targeting_state.source = None;
+        spell_targeting_state.spell_id = None;
+        cursor_state.mode = CursorMode::Default;
+        return;
+    };
+
+    let Ok(window) = window_query.single() else {
+        return;
+    };
+    let Some(cursor_position) = window.cursor_position() else {
+        return;
+    };
+
+    let target_tile = {
+        let player_query = player_queries.p0();
+        let Ok((_, player_position)) = player_query.single() else {
+            return;
+        };
+        cursor_to_tile(window, cursor_position, player_position, &world_config)
+    };
+
+    let mut selected_target = None;
+    {
+        let npc_query = player_queries.p1();
+        for (target_entity, target_position, target_object) in &npc_query {
+            if *target_position != target_tile {
+                continue;
+            }
+
+            selected_target = Some((target_entity, *target_position, target_object.object_id));
+            break;
+        }
+    }
+
+    let Some((target_entity, target_position, target_object_id)) = selected_target else {
+        chat_log_state.push_narrator(format!("{} needs a valid target.", spell.name));
+        return;
+    };
+
+    let player_position = {
+        let mut player_query = player_queries.p0();
+        let Ok((_, player_position)) = player_query.single_mut() else {
+            return;
+        };
+        *player_position
+    };
+
+    if chebyshev_distance_tiles(player_position, target_position) > spell.range_tiles.max(1) {
+        let target_name = object_registry
+            .display_name(target_object_id, &definitions, &spell_definitions)
+            .unwrap_or_else(|| target_object_id.to_string());
+        chat_log_state.push_narrator(format!(
+            "{} is out of range for {}.",
+            target_name, spell.name
+        ));
+        return;
+    }
+
+    {
+        let mut player_query = player_queries.p0();
+        let Ok((mut player_vitals, _)) = player_query.single_mut() else {
+            return;
+        };
+        if player_vitals.mana < spell.mana_cost {
+            chat_log_state.push_narrator(format!("Not enough mana to cast {}.", spell.name));
+            return;
+        }
+        player_vitals.mana = (player_vitals.mana - spell.mana_cost).max(0.0);
+    }
+
+    {
+        let mut npc_query = player_queries.p2();
+        let Ok((mut target_vitals, target_object)) = npc_query.get_mut(target_entity) else {
+            return;
+        };
+        let target_name = object_registry
+            .display_name(target_object.object_id, &definitions, &spell_definitions)
+            .unwrap_or_else(|| target_object.definition_id.clone());
+
+        apply_spell_effects(spell, &mut target_vitals);
+        consume_source_target(
+            source_target,
+            &mut inventory_state,
+            &mut container_query,
+            open_container_state.entity,
+            &mut commands,
+        );
+        chat_log_state.push_line(format!("[Player]: \"{}\"", spell.incantation));
+        chat_log_state.push_narrator(format!("Cast {} on {}.", spell.name, target_name));
+
+        if target_vitals.health <= 0.0 {
+            commands.entity(target_entity).despawn();
+            chat_log_state.push_line(format!("[{target_name} dies]"));
+        }
+    }
+
+    spell_targeting_state.source = None;
+    spell_targeting_state.spell_id = None;
+    cursor_state.mode = CursorMode::Default;
+}
+
 pub fn handle_context_menu_opening(
     mouse_input: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     world_config: Res<WorldConfig>,
     object_registry: Res<ObjectRegistry>,
     definitions: Res<OverworldObjectDefinitions>,
+    spell_definitions: Res<SpellDefinitions>,
     inventory_state: Res<InventoryState>,
     mut context_menu_state: ResMut<ContextMenuState>,
     open_container_state: Res<OpenContainerState>,
     mut use_on_state: ResMut<UseOnState>,
+    mut spell_targeting_state: ResMut<SpellTargetingState>,
     mut cursor_state: ResMut<CursorState>,
     player_query: Query<&TilePosition, With<Player>>,
     object_query: Query<(
@@ -620,6 +801,14 @@ pub fn handle_context_menu_opening(
         return;
     }
 
+    if spell_targeting_state.source.is_some() {
+        spell_targeting_state.source = None;
+        spell_targeting_state.spell_id = None;
+        cursor_state.mode = CursorMode::Default;
+        context_menu_state.hide();
+        return;
+    }
+
     if use_on_state.source.is_some() {
         use_on_state.source = None;
         cursor_state.mode = CursorMode::Default;
@@ -652,6 +841,12 @@ pub fn handle_context_menu_opening(
                 ContextMenuTarget::Slot(slot_kind, object_id),
                 false,
                 can_use,
+                can_use_on(
+                    object_id,
+                    &object_registry,
+                    &definitions,
+                    &spell_definitions,
+                ),
                 false,
             );
             info!(
@@ -680,6 +875,12 @@ pub fn handle_context_menu_opening(
             ContextMenuTarget::World(entity, object.object_id),
             has_container,
             can_use,
+            can_use_on(
+                object.object_id,
+                &object_registry,
+                &definitions,
+                &spell_definitions,
+            ),
             has_npc,
         );
         info!(
@@ -695,8 +896,10 @@ pub fn handle_context_menu_opening(
 
 pub fn sync_open_container_title(
     open_container_state: Res<OpenContainerState>,
+    object_registry: Res<ObjectRegistry>,
     container_query: Query<(&Container, &OverworldObject)>,
     definitions: Res<OverworldObjectDefinitions>,
+    spell_definitions: Res<SpellDefinitions>,
     mut title_query: Query<&mut Text, With<OpenContainerTitle>>,
 ) {
     let Ok(mut title_text) = title_query.single_mut() else {
@@ -705,9 +908,8 @@ pub fn sync_open_container_title(
 
     let title = if let Some(entity) = open_container_state.entity {
         if let Ok((_, object)) = container_query.get(entity) {
-            definitions
-                .get(&object.definition_id)
-                .map(|definition| definition.name.clone())
+            object_registry
+                .display_name(object.object_id, &definitions, &spell_definitions)
                 .unwrap_or_else(|| "Container".to_owned())
         } else {
             "Backpack".to_owned()
@@ -1108,6 +1310,7 @@ pub fn sync_drag_preview(
     drag_state: Res<DragState>,
     object_registry: Res<ObjectRegistry>,
     definitions: Res<OverworldObjectDefinitions>,
+    spell_definitions: Res<SpellDefinitions>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     mut preview_query: Query<(&mut Node, &mut Visibility), With<DragPreviewRoot>>,
     mut label_query: Query<&mut Text, (With<DragPreviewLabel>, Without<DragPreviewRoot>)>,
@@ -1138,11 +1341,9 @@ pub fn sync_drag_preview(
     preview_node.left = px(cursor_position.x + 14.0);
     preview_node.top = px(cursor_position.y + 14.0);
 
-    if let Some(type_id) = object_registry.type_id(object_id) {
-        if let Some(definition) = definitions.get(type_id) {
-            label.0 = definition.name.clone();
-            return;
-        }
+    if let Some(name) = object_registry.display_name(object_id, &definitions, &spell_definitions) {
+        label.0 = name;
+        return;
     }
 
     label.0 = object_id.to_string();
@@ -1537,13 +1738,20 @@ fn object_description(
     object_id: u64,
     object_registry: &ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
+    spell_definitions: &SpellDefinitions,
 ) -> Option<String> {
     let type_id = object_registry.type_id(object_id)?;
     let definition = definitions.get(type_id)?;
     let mut parts = Vec::new();
-    let description = definition.description.trim();
+    let display_name = object_registry
+        .display_name(object_id, definitions, spell_definitions)
+        .unwrap_or_else(|| definition.name.clone());
+    let description_text = object_registry
+        .description(object_id, definitions, spell_definitions)
+        .unwrap_or_else(|| definition.description.clone());
+    let description = description_text.trim();
     if description.is_empty() {
-        parts.push(format!("Just a {}.", definition.name.to_lowercase()));
+        parts.push(format!("Just a {}.", display_name.to_lowercase()));
     } else {
         parts.push(description.to_owned());
     }
@@ -1560,14 +1768,89 @@ fn inspect_context_target(
     target: ContextMenuTarget,
     object_registry: &ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
+    spell_definitions: &SpellDefinitions,
     chat_log_state: &mut ChatLogState,
 ) {
     let object_id = match target {
         ContextMenuTarget::World(_, object_id) | ContextMenuTarget::Slot(_, object_id) => object_id,
     };
 
-    if let Some(description) = object_description(object_id, object_registry, definitions) {
+    if let Some(description) =
+        object_description(object_id, object_registry, definitions, spell_definitions)
+    {
         chat_log_state.push_narrator(description);
+    }
+}
+
+fn handle_use_action(
+    source_target: ContextMenuTarget,
+    inventory_state: &mut InventoryState,
+    container_query: &mut Query<&mut Container>,
+    open_container_entity: Option<Entity>,
+    object_registry: &ObjectRegistry,
+    definitions: &OverworldObjectDefinitions,
+    spell_definitions: &SpellDefinitions,
+    player_query: &mut Query<&mut VitalStats, With<Player>>,
+    chat_log_state: &mut ChatLogState,
+    cursor_state: &mut CursorState,
+    spell_targeting_state: &mut SpellTargetingState,
+    commands: &mut Commands,
+) {
+    let object_id = context_target_object_id(source_target);
+    let Some(type_id) = object_registry.type_id(object_id) else {
+        return;
+    };
+    let Some(definition) = definitions.get(type_id) else {
+        return;
+    };
+    let source_name = object_registry
+        .display_name(object_id, definitions, spell_definitions)
+        .unwrap_or_else(|| definition.name.clone());
+
+    let Some(spell_id) =
+        object_registry.resolved_spell_id(object_id, definitions, spell_definitions)
+    else {
+        use_on_player_target(
+            source_target,
+            inventory_state,
+            container_query,
+            open_container_entity,
+            object_registry,
+            definitions,
+            spell_definitions,
+            player_query,
+            chat_log_state,
+            commands,
+        );
+        return;
+    };
+    let Some(spell) = spell_definitions.get(&spell_id) else {
+        chat_log_state.push_narrator(format!(
+            "{} is inscribed with an unknown spell.",
+            source_name
+        ));
+        return;
+    };
+
+    match spell.targeting {
+        SpellTargeting::Untargeted => {
+            cast_untargeted_spell(
+                source_target,
+                spell,
+                open_container_entity,
+                inventory_state,
+                container_query,
+                player_query,
+                chat_log_state,
+                commands,
+            );
+        }
+        SpellTargeting::Targeted => {
+            spell_targeting_state.source = Some(source_target);
+            spell_targeting_state.spell_id = Some(spell_id);
+            cursor_state.mode = CursorMode::SpellTarget;
+            chat_log_state.push_narrator(format!("Select a target for {}.", spell.name));
+        }
     }
 }
 
@@ -1578,6 +1861,7 @@ fn use_on_player_target(
     open_container_entity: Option<Entity>,
     object_registry: &ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
+    spell_definitions: &SpellDefinitions,
     player_query: &mut Query<&mut VitalStats, With<Player>>,
     chat_log_state: &mut ChatLogState,
     commands: &mut Commands,
@@ -1590,6 +1874,9 @@ fn use_on_player_target(
     let Some(definition) = definitions.get(type_id) else {
         return;
     };
+    let source_name = object_registry
+        .display_name(object_id, definitions, spell_definitions)
+        .unwrap_or_else(|| definition.name.clone());
     if !definition.is_usable() {
         return;
     }
@@ -1617,7 +1904,76 @@ fn use_on_player_target(
         }
     }
 
-    chat_log_state.push_narrator(use_text(definition));
+    chat_log_state.push_narrator(use_text(definition, &source_name));
+}
+
+fn cast_untargeted_spell(
+    source_target: ContextMenuTarget,
+    spell: &SpellDefinition,
+    open_container_entity: Option<Entity>,
+    inventory_state: &mut InventoryState,
+    container_query: &mut Query<&mut Container>,
+    player_query: &mut Query<&mut VitalStats, With<Player>>,
+    chat_log_state: &mut ChatLogState,
+    commands: &mut Commands,
+) {
+    let Ok(mut player_vitals) = player_query.single_mut() else {
+        return;
+    };
+
+    if player_vitals.mana < spell.mana_cost {
+        chat_log_state.push_narrator(format!("Not enough mana to cast {}.", spell.name));
+        return;
+    }
+
+    player_vitals.mana = (player_vitals.mana - spell.mana_cost).max(0.0);
+    apply_spell_effects(spell, &mut player_vitals);
+
+    consume_source_target(
+        source_target,
+        inventory_state,
+        container_query,
+        open_container_entity,
+        commands,
+    );
+
+    chat_log_state.push_line(format!("[Player]: \"{}\"", spell.incantation));
+    chat_log_state.push_narrator(format!("Cast {}.", spell.name));
+}
+
+fn consume_source_target(
+    source_target: ContextMenuTarget,
+    inventory_state: &mut InventoryState,
+    container_query: &mut Query<&mut Container>,
+    open_container_entity: Option<Entity>,
+    commands: &mut Commands,
+) {
+    match source_target {
+        ContextMenuTarget::World(entity, _) => {
+            commands.entity(entity).despawn();
+        }
+        ContextMenuTarget::Slot(slot_kind, _) => {
+            let _ = take_item_from_slot_kind(
+                inventory_state,
+                container_query,
+                open_container_entity,
+                slot_kind,
+            );
+        }
+    }
+}
+
+fn apply_spell_effects(spell: &SpellDefinition, vital_stats: &mut VitalStats) {
+    vital_stats.health =
+        (vital_stats.health - spell.effects.damage).clamp(0.0, vital_stats.max_health);
+    vital_stats.health =
+        (vital_stats.health + spell.effects.restore_health).clamp(0.0, vital_stats.max_health);
+    vital_stats.mana =
+        (vital_stats.mana + spell.effects.restore_mana).clamp(0.0, vital_stats.max_mana);
+}
+
+fn chebyshev_distance_tiles(a: TilePosition, b: TilePosition) -> i32 {
+    (a.x - b.x).abs().max((a.y - b.y).abs())
 }
 
 fn use_on_world_target(
@@ -1625,6 +1981,7 @@ fn use_on_world_target(
     target_object_id: u64,
     object_registry: &ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
+    spell_definitions: &SpellDefinitions,
     chat_log_state: &mut ChatLogState,
 ) {
     let source_object_id = context_target_object_id(source_target);
@@ -1640,18 +1997,23 @@ fn use_on_world_target(
     let Some(target_definition) = definitions.get(target_type_id) else {
         return;
     };
+    let source_name = object_registry
+        .display_name(source_object_id, definitions, spell_definitions)
+        .unwrap_or_else(|| source_definition.name.clone());
+    let target_name = object_registry
+        .display_name(target_object_id, definitions, spell_definitions)
+        .unwrap_or_else(|| target_definition.name.clone());
 
-    chat_log_state.push_narrator(use_on_text(source_definition, &target_definition.name));
+    chat_log_state.push_narrator(use_on_text(source_definition, &source_name, &target_name));
 }
 
 fn object_name(
     object_id: u64,
     object_registry: &ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
+    spell_definitions: &SpellDefinitions,
 ) -> Option<String> {
-    let type_id = object_registry.type_id(object_id)?;
-    let definition = definitions.get(type_id)?;
-    Some(definition.name.clone())
+    object_registry.display_name(object_id, definitions, spell_definitions)
 }
 
 fn object_is_usable(
@@ -1684,29 +2046,52 @@ fn object_is_storable(
     definition.storable
 }
 
+fn can_use_on(
+    object_id: u64,
+    object_registry: &ObjectRegistry,
+    definitions: &OverworldObjectDefinitions,
+    spell_definitions: &SpellDefinitions,
+) -> bool {
+    let Some(type_id) = object_registry.type_id(object_id) else {
+        return false;
+    };
+    let Some(definition) = definitions.get(type_id) else {
+        return false;
+    };
+
+    definition.is_usable()
+        && object_registry
+            .resolved_spell_id(object_id, definitions, spell_definitions)
+            .is_none()
+}
+
 fn context_target_object_id(target: ContextMenuTarget) -> u64 {
     match target {
         ContextMenuTarget::World(_, object_id) | ContextMenuTarget::Slot(_, object_id) => object_id,
     }
 }
 
-fn use_text(definition: &OverworldObjectDefinition) -> String {
+fn use_text(definition: &OverworldObjectDefinition, item_name: &str) -> String {
     if definition.use_texts.is_empty() {
-        return format!("{} used.", definition.name);
+        return format!("{item_name} used.");
     }
 
-    random_text(&definition.use_texts)
+    random_text(&definition.use_texts).replace("{item}", item_name)
 }
 
-fn use_on_text(definition: &OverworldObjectDefinition, target_name: &str) -> String {
+fn use_on_text(
+    definition: &OverworldObjectDefinition,
+    item_name: &str,
+    target_name: &str,
+) -> String {
     if definition.use_on_texts.is_empty() {
-        return format!("Used {} on {}.", definition.name, target_name);
+        return format!("Used {} on {}.", item_name, target_name);
     }
 
     let template = random_text(&definition.use_on_texts);
     template
         .replace("{target}", target_name)
-        .replace("{item}", &definition.name)
+        .replace("{item}", item_name)
 }
 
 fn random_text(texts: &[String]) -> String {

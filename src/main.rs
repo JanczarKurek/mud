@@ -1,6 +1,7 @@
 mod app;
 mod combat;
 mod game;
+mod magic;
 mod npc;
 mod player;
 mod scripting;

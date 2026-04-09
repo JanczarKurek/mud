@@ -1,8 +1,8 @@
 use bevy::prelude::*;
 
-use crate::combat::components::AttackProfile;
+use crate::combat::components::{AttackProfile, CombatLeash};
 use crate::npc::components::{
-    Npc, RoamBounds, RoamingBehavior, RoamingRandomState, RoamingStepTimer,
+    HostileBehavior, Npc, RoamBounds, RoamingBehavior, RoamingRandomState, RoamingStepTimer,
 };
 use crate::player::components::{BaseStats, DerivedStats, VitalStats};
 use crate::world::components::{
@@ -109,6 +109,39 @@ pub fn spawn_overworld_object_instance(
                                 max_y: bounds.max_y,
                             },
                             step_interval_seconds: (*step_interval_seconds).max(0.05),
+                        },
+                        RoamingStepTimer {
+                            remaining_seconds: *step_interval_seconds,
+                        },
+                        RoamingRandomState {
+                            seed: object.id.wrapping_mul(1_103_515_245).wrapping_add(12_345),
+                        },
+                    ));
+                }
+                MapBehavior::RoamAndChase {
+                    step_interval_seconds,
+                    bounds,
+                    detect_distance_tiles,
+                    disengage_distance_tiles,
+                } => {
+                    entity_commands.insert((
+                        RoamingBehavior {
+                            bounds: RoamBounds {
+                                min_x: bounds.min_x,
+                                min_y: bounds.min_y,
+                                max_x: bounds.max_x,
+                                max_y: bounds.max_y,
+                            },
+                            step_interval_seconds: (*step_interval_seconds).max(0.05),
+                        },
+                        HostileBehavior {
+                            detect_distance_tiles: (*detect_distance_tiles).max(1),
+                            disengage_distance_tiles: (*disengage_distance_tiles)
+                                .max(*detect_distance_tiles),
+                        },
+                        CombatLeash {
+                            max_distance_tiles: (*disengage_distance_tiles)
+                                .max(*detect_distance_tiles),
                         },
                         RoamingStepTimer {
                             remaining_seconds: *step_interval_seconds,

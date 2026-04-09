@@ -1,0 +1,8 @@
+extends: pickup
+name: Lesser Heal Scroll
+description: A scroll inscribed with a simple healing charm.
+spell_id: lesser_heal
+render:
+  debug_color: [158, 196, 226]
+  debug_size: 0.45
+  sprite_path: overworld_objects/scroll/sprite.png

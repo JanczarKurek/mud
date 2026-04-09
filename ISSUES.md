@@ -43,6 +43,8 @@
 - Added a first combat loop with per-character targets, a global battle tick, and melee hit log messages.
 - Added a first attribute system with strength, agility, constitution, willpower, charisma, and focus driving derived health, mana, and carrying capacity.
 - Added first-pass melee damage so combat turns reduce hit points, kill NPCs, and can defeat the player.
+- Added a hostile roam-and-chase NPC behavior and a first goblin encounter.
+- Added first-pass scroll-cast magic with YAML-defined spells, untargeted/self-cast and targeted spell modes, and a dedicated spell-target cursor.
 
 ## Later Ideas
 

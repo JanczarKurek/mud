@@ -1,0 +1,14 @@
+extends: npc
+name: Goblin
+description: A wiry green nuisance with a mean stare and quick hands.
+stats:
+  strength: 8
+  agility: 11
+  constitution: 8
+  willpower: 6
+  charisma: 4
+  focus: 7
+render:
+  debug_color: [92, 156, 68]
+  debug_size: 0.92
+  sprite_path: overworld_objects/goblin/sprite.png

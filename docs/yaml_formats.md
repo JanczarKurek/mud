@@ -55,6 +55,13 @@ Fields:
 - Meaning: object definition ID for the instance
 - This should match a directory name under `assets/overworld_objects/`
 
+### `properties`
+- Type: string-to-string mapping
+- Optional: yes
+- Default: empty mapping
+- Meaning: per-instance values passed into object metadata templates
+- Example use: a generic `scroll` item can set `spell_id: spark_bolt`
+
 ### `placement`
 - Type: mapping
 - Optional: yes
@@ -74,6 +81,7 @@ Fields:
 - Intended for authored NPCs and future mobs
 - Current supported behavior kinds:
   - `roam`
+  - `roam_and_chase`
 
 ### Anonymous placement group
 - Use this when you just want to place many objects of the same type and do not need to refer to them elsewhere in the map file.
@@ -84,6 +92,12 @@ Fields:
 ### `type`
 - Type: string
 - Meaning: object definition ID for all spawned instances in the group
+
+### `properties`
+- Type: string-to-string mapping
+- Optional: yes
+- Default: empty mapping
+- Meaning: per-instance values copied into every generated object in the group
 
 ### `placement`
 - Type: list of tile coordinate mappings
@@ -112,6 +126,10 @@ Explicit instance example:
   type: apple
 - id: 601
   type: potion
+- id: 602
+  type: scroll
+  properties:
+    spell_id: lesser_heal
 - id: 900
   type: villager
   placement: { x: 8, y: 23 }
@@ -123,6 +141,19 @@ Explicit instance example:
       min_y: 21
       max_x: 11
       max_y: 25
+- id: 902
+  type: goblin
+  placement: { x: 18, y: 21 }
+  behavior:
+    kind: roam_and_chase
+    step_interval_seconds: 0.9
+    detect_distance_tiles: 5
+    disengage_distance_tiles: 8
+    bounds:
+      min_x: 15
+      min_y: 18
+      max_x: 21
+      max_y: 24
 ```
 
 Anonymous placement group example:
@@ -133,6 +164,11 @@ Anonymous placement group example:
     - { x: 6, y: 7 }
     - { x: 7, y: 7 }
     - { x: 8, y: 8 }
+- type: scroll
+  properties:
+    spell_id: spark_bolt
+  placement:
+    - { x: 30, y: 12 }
 ```
 
 Notes:
@@ -212,6 +248,13 @@ Top-level fields:
   - `backpack`
   - `ring`
   - `boots`
+
+### `fillable_properties`
+- Type: list of strings
+- Optional: yes
+- Default: empty list
+- Meaning: names of per-instance properties that this object definition expects to receive
+- Intended for generic item types that are specialized by instance state, such as scrolls carrying different spells
 
 ### `stats`
 - Type: mapping
@@ -312,6 +355,14 @@ Top-level fields:
   - `{item}` inserts the used item's display name
 - If omitted or empty, the runtime falls back to `Used <Item name> on <Target name>.`
 
+### `spell_id`
+- Type: string or `null`
+- Optional: yes
+- Meaning: if present, the item casts the referenced spell when used
+- Spell IDs map to YAML files under `assets/spells/`
+- Targeted spells enter spell-target cursor mode; untargeted spells cast immediately
+- This field may also be templated from instance properties, for example `"{properties.spell_id}"`
+
 ### `container_capacity`
 - Type: integer
 - Optional: yes
@@ -370,6 +421,8 @@ Notes:
 - `extends` is resolved before deserializing the final object definition.
 - If `sprite_path` is omitted or `null`, the object falls back to colored debug rendering.
 - The current runtime uses these fields directly for world spawning, collision, pickup behavior, and container creation.
+- `name`, `description`, and `spell_id` support simple `{properties.<field>}` templating.
+- `{properties.<field>.name}` resolves the property value as a spell ID and inserts that spell's display name.
 
 Equippable item example:
 
@@ -408,6 +461,30 @@ render:
 sound_paths: []
 ```
 
+Spell scroll example:
+
+```yaml
+extends: pickup
+fillable_properties:
+  - spell_id
+name: Scroll of {properties.spell_id.name}
+description: A charged scroll carrying {properties.spell_id.name}.
+spell_id: "{properties.spell_id}"
+render:
+  debug_color: [224, 171, 108]
+  debug_size: 0.45
+  sprite_path: overworld_objects/scroll/sprite.png
+```
+
+Map instance using the generic scroll:
+
+```yaml
+- id: 604
+  type: scroll
+  properties:
+    spell_id: spark_bolt
+```
+
 Base definition example:
 
 ```yaml
@@ -416,4 +493,77 @@ movable: true
 storable: true
 render:
   z_index: 0.24
+```
+
+## 3. Spell Definition YAML
+
+Path:
+- `assets/spells/*.yaml`
+
+Purpose:
+- Defines castable spell data referenced by usable items such as scrolls.
+
+Top-level fields:
+
+### `name`
+- Type: string
+- Meaning: display name of the spell
+
+### `incantation`
+- Type: string
+- Meaning: spoken words displayed in chat when the spell is cast
+
+### `mana_cost`
+- Type: float
+- Meaning: mana spent by the caster
+
+### `targeting`
+- Type: string
+- Meaning: whether the spell needs a selected target
+- Valid values:
+  - `untargeted`
+  - `targeted`
+
+### `range_tiles`
+- Type: integer
+- Optional: yes
+- Default: `0`
+- Meaning: maximum Chebyshev distance for targeted spells
+
+### `effects`
+- Type: mapping
+- Optional: yes
+- Default: empty mapping
+- Meaning: immediate spell effects
+
+`effects` fields:
+
+### `damage`
+- Type: float
+- Optional: yes
+- Default: `0.0`
+- Meaning: instant damage dealt to the target
+
+### `restore_health`
+- Type: float
+- Optional: yes
+- Default: `0.0`
+- Meaning: health restored by the spell
+
+### `restore_mana`
+- Type: float
+- Optional: yes
+- Default: `0.0`
+- Meaning: mana restored by the spell
+
+Example:
+
+```yaml
+name: Spark Bolt
+incantation: Exori Vis
+mana_cost: 12.0
+targeting: targeted
+range_tiles: 5
+effects:
+  damage: 18.0
 ```

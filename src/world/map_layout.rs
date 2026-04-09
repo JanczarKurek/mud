@@ -9,6 +9,8 @@ use crate::world::components::TilePosition;
 
 const MAP_LAYOUT_PATH: &str = "assets/maps/overworld.yaml";
 
+pub type ObjectProperties = HashMap<String, String>;
+
 #[derive(Resource, Clone, Debug, Deserialize)]
 pub struct MapLayout {
     pub width: i32,
@@ -28,6 +30,8 @@ pub struct MapObjectInstance {
     #[serde(rename = "type")]
     pub type_id: String,
     #[serde(default)]
+    pub properties: ObjectProperties,
+    #[serde(default)]
     pub placement: Option<TileCoordinate>,
     #[serde(default)]
     pub contents: Vec<u64>,
@@ -46,6 +50,8 @@ pub enum MapObjectEntry {
 pub struct AnonymousObjectPlacements {
     #[serde(rename = "type")]
     pub type_id: String,
+    #[serde(default)]
+    pub properties: ObjectProperties,
     pub placement: Vec<TileCoordinate>,
 }
 
@@ -55,6 +61,12 @@ pub enum MapBehavior {
     Roam {
         step_interval_seconds: f32,
         bounds: TileRectangle,
+    },
+    RoamAndChase {
+        step_interval_seconds: f32,
+        bounds: TileRectangle,
+        detect_distance_tiles: i32,
+        disengage_distance_tiles: i32,
     },
 }
 
@@ -171,6 +183,7 @@ impl MapLayout {
                         resolved_objects.push(MapObjectInstance {
                             id: next_generated_id,
                             type_id: group.type_id.clone(),
+                            properties: group.properties.clone(),
                             placement: Some(*tile),
                             contents: Vec::new(),
                             behavior: None,

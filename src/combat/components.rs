@@ -6,6 +6,11 @@ pub struct CombatTarget {
 }
 
 #[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CombatLeash {
+    pub max_distance_tiles: i32,
+}
+
+#[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AttackProfile {
     pub kind: AttackKind,
 }

@@ -1,0 +1,7 @@
+name: Spark Bolt
+incantation: Exori Vis
+mana_cost: 12.0
+targeting: targeted
+range_tiles: 5
+effects:
+  damage: 18.0

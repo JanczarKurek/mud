@@ -1,0 +1,6 @@
+name: Lesser Heal
+incantation: Exura
+mana_cost: 8.0
+targeting: untargeted
+effects:
+  restore_health: 20.0

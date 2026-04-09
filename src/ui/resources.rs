@@ -118,6 +118,7 @@ pub struct ContextMenuState {
     pub position: Vec2,
     pub can_open: bool,
     pub can_use: bool,
+    pub can_use_on: bool,
     pub can_attack: bool,
 }
 
@@ -128,12 +129,14 @@ impl ContextMenuState {
         target: ContextMenuTarget,
         can_open: bool,
         can_use: bool,
+        can_use_on: bool,
         can_attack: bool,
     ) {
         self.position = position;
         self.target = Some(target);
         self.can_open = can_open;
         self.can_use = can_use;
+        self.can_use_on = can_use_on;
         self.can_attack = can_attack;
     }
 
@@ -141,6 +144,7 @@ impl ContextMenuState {
         self.target = None;
         self.can_open = false;
         self.can_use = false;
+        self.can_use_on = false;
         self.can_attack = false;
     }
 
@@ -171,11 +175,18 @@ pub struct UseOnState {
     pub source: Option<ContextMenuTarget>,
 }
 
+#[derive(Resource, Default)]
+pub struct SpellTargetingState {
+    pub source: Option<ContextMenuTarget>,
+    pub spell_id: Option<String>,
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum CursorMode {
     #[default]
     Default,
     UseOn,
+    SpellTarget,
 }
 
 impl CursorMode {}

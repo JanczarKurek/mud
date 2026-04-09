@@ -10,6 +10,12 @@ pub struct RoamingBehavior {
 }
 
 #[derive(Component)]
+pub struct HostileBehavior {
+    pub detect_distance_tiles: i32,
+    pub disengage_distance_tiles: i32,
+}
+
+#[derive(Component)]
 pub struct RoamingStepTimer {
     pub remaining_seconds: f32,
 }

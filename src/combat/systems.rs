@@ -1,13 +1,15 @@
 use bevy::prelude::*;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::combat::components::{AttackKind, AttackProfile, CombatTarget};
+use crate::combat::components::{AttackKind, AttackProfile, CombatLeash, CombatTarget};
 use crate::combat::resources::BattleTurnTimer;
+use crate::magic::resources::SpellDefinitions;
 use crate::npc::components::Npc;
 use crate::player::components::{DerivedStats, Player, VitalStats};
 use crate::ui::resources::ChatLogState;
 use crate::world::components::{OverworldObject, TilePosition};
 use crate::world::object_definitions::OverworldObjectDefinitions;
+use crate::world::object_registry::ObjectRegistry;
 
 #[derive(Clone)]
 struct CombatantSnapshot {
@@ -22,11 +24,10 @@ struct CombatantSnapshot {
 
 pub fn clear_invalid_combat_targets(
     mut commands: Commands,
-    battle_turn_timer: Res<BattleTurnTimer>,
-    target_query: Query<(Entity, &CombatTarget, &TilePosition)>,
+    target_query: Query<(Entity, &CombatTarget, &TilePosition, Option<&CombatLeash>)>,
     entity_query: Query<&TilePosition>,
 ) {
-    for (entity, combat_target, attacker_position) in &target_query {
+    for (entity, combat_target, attacker_position, leash) in &target_query {
         if combat_target.entity == entity {
             commands.entity(entity).remove::<CombatTarget>();
             continue;
@@ -37,9 +38,11 @@ pub fn clear_invalid_combat_targets(
             continue;
         };
 
-        let distance = chebyshev_distance(attacker_position, target_position);
-        if distance > battle_turn_timer.disengage_distance_tiles {
-            commands.entity(entity).remove::<CombatTarget>();
+        if let Some(leash) = leash {
+            let distance = chebyshev_distance(attacker_position, target_position);
+            if distance > leash.max_distance_tiles {
+                commands.entity(entity).remove::<CombatTarget>();
+            }
         }
     }
 }
@@ -60,6 +63,8 @@ pub fn resolve_battle_turn(
         Query<(&mut VitalStats, Option<&Player>, Option<&Npc>)>,
     )>,
     definitions: Res<OverworldObjectDefinitions>,
+    object_registry: Res<ObjectRegistry>,
+    spell_definitions: Res<SpellDefinitions>,
     mut chat_log_state: ResMut<ChatLogState>,
     mut commands: Commands,
 ) {
@@ -89,7 +94,12 @@ pub fn resolve_battle_turn(
                 target: combat_target.map(|target| target.entity),
                 attack_profile: *attack_profile,
                 position: *position,
-                name: combatant_name(overworld_object, &definitions),
+                name: combatant_name(
+                    overworld_object,
+                    &object_registry,
+                    &definitions,
+                    &spell_definitions,
+                ),
                 strength: derived_stats.attributes.strength,
                 health: vital_stats.health,
             },
@@ -188,11 +198,12 @@ fn is_target_in_range(
 
 fn combatant_name(
     overworld_object: &OverworldObject,
+    object_registry: &ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
+    spell_definitions: &SpellDefinitions,
 ) -> String {
-    definitions
-        .get(&overworld_object.definition_id)
-        .map(|definition| definition.name.clone())
+    object_registry
+        .display_name(overworld_object.object_id, definitions, spell_definitions)
         .unwrap_or_else(|| overworld_object.definition_id.clone())
 }
 
