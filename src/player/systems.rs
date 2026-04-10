@@ -1,14 +1,16 @@
 use bevy::input::keyboard::KeyCode;
 use bevy::prelude::*;
 
-use crate::game::resources::{InventoryState, PendingGameCommands};
+use crate::game::commands::{GameCommand, MoveDelta};
+use crate::game::resources::{ClientGameState, InventoryState, PendingGameCommands};
 use crate::player::components::{
     AttributeSet, BaseStats, DerivedStats, Player, VitalStats,
 };
 use crate::scripting::resources::PythonConsoleState;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
-use crate::game::commands::GameCommand;
+use crate::world::components::TilePosition;
+use crate::world::WorldConfig;
 
 pub fn refresh_derived_player_stats(
     inventory_state: Res<InventoryState>,
@@ -79,15 +81,38 @@ pub fn move_player_on_grid(
     pending_commands.push(GameCommand::MovePlayer { delta });
 }
 
-fn movement_direction(keyboard_input: &ButtonInput<KeyCode>) -> Option<IVec2> {
+pub fn sync_player_client_state(
+    client_state: Res<ClientGameState>,
+    world_config: Res<WorldConfig>,
+    mut player_query: Query<(&mut TilePosition, &mut VitalStats), With<Player>>,
+) {
+    let Ok((mut tile_position, mut vital_stats)) = player_query.single_mut() else {
+        return;
+    };
+
+    if let Some(client_tile_position) = client_state.player_tile_position {
+        *tile_position = client_tile_position;
+    } else {
+        *tile_position = TilePosition::new(world_config.map_width / 2, world_config.map_height / 2);
+    }
+
+    if let Some(client_vitals) = client_state.player_vitals {
+        vital_stats.health = client_vitals.health;
+        vital_stats.max_health = client_vitals.max_health;
+        vital_stats.mana = client_vitals.mana;
+        vital_stats.max_mana = client_vitals.max_mana;
+    }
+}
+
+fn movement_direction(keyboard_input: &ButtonInput<KeyCode>) -> Option<MoveDelta> {
     if keyboard_input.pressed(KeyCode::ArrowUp) || keyboard_input.pressed(KeyCode::KeyW) {
-        Some(IVec2::new(0, 1))
+        Some(MoveDelta { x: 0, y: 1 })
     } else if keyboard_input.pressed(KeyCode::ArrowDown) || keyboard_input.pressed(KeyCode::KeyS) {
-        Some(IVec2::new(0, -1))
+        Some(MoveDelta { x: 0, y: -1 })
     } else if keyboard_input.pressed(KeyCode::ArrowLeft) || keyboard_input.pressed(KeyCode::KeyA) {
-        Some(IVec2::new(-1, 0))
+        Some(MoveDelta { x: -1, y: 0 })
     } else if keyboard_input.pressed(KeyCode::ArrowRight) || keyboard_input.pressed(KeyCode::KeyD) {
-        Some(IVec2::new(1, 0))
+        Some(MoveDelta { x: 1, y: 0 })
     } else {
         None
     }

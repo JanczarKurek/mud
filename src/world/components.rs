@@ -1,6 +1,7 @@
 use bevy::prelude::*;
+use serde::{Deserialize, Serialize};
 
-#[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Component, Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TilePosition {
     pub x: i32,
     pub y: i32,

@@ -1,41 +1,48 @@
 use bevy::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::world::components::TilePosition;
 use crate::world::object_definitions::EquipmentSlot;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct MoveDelta {
+    pub x: i32,
+    pub y: i32,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum ItemSlotRef {
     Backpack(usize),
     Equipment(EquipmentSlot),
     Container { object_id: u64, slot_index: usize },
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub enum ItemReference {
     WorldObject(u64),
     Slot(ItemSlotRef),
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub enum ItemDestination {
     Slot(ItemSlotRef),
     WorldTile(TilePosition),
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub enum UseTarget {
     Player,
     Object(u64),
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub enum InspectTarget {
     Object(u64),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum GameCommand {
-    MovePlayer { delta: IVec2 },
+    MovePlayer { delta: MoveDelta },
     SetCombatTarget { target_object_id: Option<u64> },
     OpenContainer { object_id: u64 },
     Inspect { target: InspectTarget },

@@ -3,6 +3,7 @@ use std::fs;
 use std::path::Path;
 
 use bevy::prelude::*;
+use serde::Serialize;
 use serde::Deserialize;
 use serde_yaml::{Mapping, Value};
 
@@ -69,7 +70,7 @@ pub struct UseEffects {
 }
 
 #[allow(dead_code)]
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EquipmentSlot {
     Amulet,

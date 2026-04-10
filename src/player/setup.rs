@@ -59,8 +59,15 @@ pub fn spawn_player_visual(
     };
     sprite.image_mode = SpriteImageMode::Auto;
 
-    let Ok(entity) = player_query.single() else {
-        return;
+    let entity = match player_query.single() {
+        Ok(entity) => entity,
+        Err(_) => commands
+            .spawn((
+                Player,
+                VitalStats::full(1.0, 0.0),
+                TilePosition::new(world_config.map_width / 2, world_config.map_height / 2),
+            ))
+            .id(),
     };
 
     commands.entity(entity).insert((

@@ -3882,6 +3882,7 @@ dependencies = [
  "rustpython",
  "rustpython-vm",
  "serde",
+ "serde_json",
  "serde_yaml",
 ]
 

@@ -14,9 +14,11 @@ use crate::game::systems::{
 };
 use crate::player::systems::move_player_on_grid;
 
-pub struct GamePlugin;
+pub struct GameServerPlugin;
 
-impl Plugin for GamePlugin {
+pub struct GameClientPlugin;
+
+impl Plugin for GameServerPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(InventoryState::default())
             .insert_resource(ChatLogState::default())
@@ -35,5 +37,15 @@ impl Plugin for GamePlugin {
                     .chain()
                     .after(move_player_on_grid),
             );
+    }
+}
+
+impl Plugin for GameClientPlugin {
+    fn build(&self, app: &mut App) {
+        app.insert_resource(PendingGameCommands::default())
+            .insert_resource(PendingGameEvents::default())
+            .insert_resource(PendingGameUiEvents::default())
+            .insert_resource(ClientGameState::default())
+            .add_systems(Update, apply_game_events_to_client_state);
     }
 }

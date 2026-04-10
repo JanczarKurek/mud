@@ -3,7 +3,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::combat::components::CombatTarget;
 use crate::game::commands::{
-    GameCommand, InspectTarget, ItemDestination, ItemReference, ItemSlotRef, UseTarget,
+    GameCommand, InspectTarget, ItemDestination, ItemReference, ItemSlotRef, MoveDelta,
+    UseTarget,
 };
 use crate::game::resources::{
     ChatLogState, ClientGameState, ClientVitalStats, ClientWorldObjectState, GameEvent,
@@ -39,7 +40,6 @@ pub fn process_game_commands(
     spell_definitions: Res<SpellDefinitions>,
     mut object_registry: ResMut<ObjectRegistry>,
     world_config: Res<WorldConfig>,
-    asset_server: Res<AssetServer>,
     collider_query: Query<&TilePosition, (With<Collider>, Without<Player>)>,
     object_query: Query<(Entity, &TilePosition, &OverworldObject), Without<Player>>,
     movable_query: Query<(Entity, &TilePosition, &OverworldObject), (With<Movable>, Without<Player>)>,
@@ -163,7 +163,6 @@ pub fn process_game_commands(
                     &mut object_registry,
                     &definitions,
                     &world_config,
-                    &asset_server,
                     &mut commands,
                     &mut chat_log_state,
                 );
@@ -179,7 +178,6 @@ pub fn process_game_commands(
                     &world_config,
                     &collider_query,
                     &mut object_registry,
-                    &asset_server,
                     &mut commands,
                     &mut chat_log_state,
                 );
@@ -352,7 +350,7 @@ pub fn apply_game_events_to_client_state(
 }
 
 fn handle_move_player(
-    delta: IVec2,
+    delta: MoveDelta,
     world_config: &WorldConfig,
     collider_query: &Query<&TilePosition, (With<Collider>, Without<Player>)>,
     player_query: &mut Query<
@@ -747,7 +745,6 @@ fn handle_move_item(
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     world_config: &WorldConfig,
-    _asset_server: &AssetServer,
     commands: &mut Commands,
     chat_log_state: &mut ChatLogState,
 ) {
@@ -875,7 +872,6 @@ fn handle_admin_spawn(
     world_config: &WorldConfig,
     collider_query: &Query<&TilePosition, (With<Collider>, Without<Player>)>,
     object_registry: &mut ObjectRegistry,
-    _asset_server: &AssetServer,
     commands: &mut Commands,
     chat_log_state: &mut ChatLogState,
 ) {

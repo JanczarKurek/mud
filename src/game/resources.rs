@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 
 use bevy::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::game::commands::GameCommand;
 use crate::world::object_definitions::EquipmentSlot;
 
-#[derive(Clone, Debug, PartialEq, Resource)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Resource, Serialize)]
 pub struct InventoryState {
     pub backpack_slots: Vec<Option<u64>>,
     pub equipment_slots: Vec<(EquipmentSlot, Option<u64>)>,
@@ -105,7 +106,7 @@ impl ChatLogState {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub enum GameUiEvent {
     OpenContainer { object_id: u64 },
 }
@@ -126,7 +127,7 @@ pub struct PendingGameUiEvents {
     pub events: Vec<GameUiEvent>,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct ClientVitalStats {
     pub health: f32,
     pub max_health: f32,
@@ -134,7 +135,7 @@ pub struct ClientVitalStats {
     pub max_mana: f32,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ClientWorldObjectState {
     pub object_id: u64,
     pub definition_id: String,
@@ -144,7 +145,7 @@ pub struct ClientWorldObjectState {
     pub is_movable: bool,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum GameEvent {
     InventoryChanged { inventory: InventoryState },
     ChatLogChanged { lines: Vec<String> },
@@ -165,7 +166,7 @@ pub struct PendingGameEvents {
     pub events: Vec<GameEvent>,
 }
 
-#[derive(Clone, Default, Resource)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Resource, Serialize)]
 pub struct ClientGameState {
     pub inventory: InventoryState,
     pub chat_log_lines: Vec<String>,

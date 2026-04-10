@@ -42,7 +42,19 @@ impl Plugin for WorldServerPlugin {
 
 impl Plugin for WorldClientPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(ClientWorldProjectionState::default())
+        let map_layout = MapLayout::load_from_disk();
+        let world_config = WorldConfig {
+            map_width: map_layout.width,
+            map_height: map_layout.height,
+            tile_size: 48.0,
+        };
+        let object_registry = ObjectRegistry::from_map_layout(&map_layout);
+
+        app.insert_resource(world_config)
+            .insert_resource(map_layout)
+            .insert_resource(object_registry)
+            .insert_resource(OverworldObjectDefinitions::load_from_disk())
+            .insert_resource(ClientWorldProjectionState::default())
             .add_systems(Startup, spawn_ground_tiles)
             .add_systems(
                 Update,

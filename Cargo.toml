@@ -8,4 +8,5 @@ bevy = { version = "0.18", features = ["dynamic_linking", "debug"] }
 rustpython = "0.4"
 rustpython-vm = "0.4"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 serde_yaml = "0.9"
