@@ -5,7 +5,6 @@
 - Decide whether to introduce a dedicated `shared/` crate before networking or only after the local prototype.
 - Replace placeholder colored terrain with proper art/assets later.
 - Decide how we want to represent stacked map objects visually once trees, items, and walls can share space.
-- Expand collision from water-only blocking into a broader rule set for trees, walls, doors, and future objects.
 - Decide whether decorative objects like flowers should share tiles with blocking objects through explicit layering rules.
 - Decide how authored maps should support ranges/rectangles/brushes so large layouts are not verbose YAML tile lists.
 
@@ -45,6 +44,7 @@
 - Added first-pass melee damage so combat turns reduce hit points, kill NPCs, and can defeat the player.
 - Added a hostile roam-and-chase NPC behavior and a first goblin encounter.
 - Added first-pass scroll-cast magic with YAML-defined spells, untargeted/self-cast and targeted spell modes, and a dedicated spell-target cursor.
+- Generalized the right sidebar into docked windows so status, equipment, backpack, target, and container panels share the same scrollable/resizable dock system, with title-bar reordering for movable panel order.
 
 ## Later Ideas
 

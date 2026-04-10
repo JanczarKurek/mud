@@ -12,17 +12,17 @@ use crate::npc::components::Npc;
 use crate::player::components::{DerivedStats, Player, VitalStats};
 use crate::scripting::resources::PythonConsoleState;
 use crate::ui::components::{
-    ChatLogText, ContainerSlotButton, ContainerSlotImage, ContextMenuAttackButton,
+    BackpackSlotRow, ChatLogText, ContainerSlotButton, ContainerSlotImage, ContextMenuAttackButton,
     ContextMenuInspectButton, ContextMenuOpenButton, ContextMenuRoot, ContextMenuUseButton,
-    ContextMenuUseOnButton, CurrentCombatTargetLabel, DockedPanelBody, DockedPanelCloseButton,
-    DockedPanelResizeHandle, DockedPanelRoot, DockedPanelTitle, DragPreviewLabel, DragPreviewRoot,
-    EquipmentSlotButton, EquipmentSlotImage, HealthFill, ItemSlotButton, ItemSlotImage,
-    ItemSlotKind, ManaFill,
+    ContextMenuUseOnButton, CurrentCombatTargetLabel, DockedPanelBody, DockedPanelCanvas,
+    DockedPanelCloseButton, DockedPanelDragHandle, DockedPanelResizeHandle, DockedPanelRoot,
+    DockedPanelTitle, DragPreviewLabel, DragPreviewRoot, EquipmentSlotButton, EquipmentSlotImage,
+    HealthFill, ItemSlotButton, ItemSlotImage, ItemSlotKind, ManaFill, RightSidebarRoot,
 };
 use crate::ui::resources::{
-    ChatLogState, ContextMenuState, ContextMenuTarget, CursorMode, CursorState, DockedPanelKind,
-    DockedPanelResizeState, DockedPanelState, DragSource, DragState, InventoryState,
-    SpellTargetingState, UseOnState,
+    ChatLogState, ContextMenuState, ContextMenuTarget, CursorMode, CursorState,
+    DockedPanelDragState, DockedPanelKind, DockedPanelResizeState, DockedPanelState, DragSource,
+    DragState, InventoryState, SpellTargetingState, UseOnState,
 };
 use crate::world::components::{Collider, Container, Movable, OverworldObject, TilePosition};
 use crate::world::object_definitions::{
@@ -111,7 +111,10 @@ pub fn manage_open_containers(
     };
 
     docked_panel_state.panels.retain(|panel| match panel.kind {
-        DockedPanelKind::CurrentTarget => true,
+        DockedPanelKind::Status
+        | DockedPanelKind::Equipment
+        | DockedPanelKind::Backpack
+        | DockedPanelKind::CurrentTarget => true,
         DockedPanelKind::Container { entity } => container_query
             .get(entity)
             .map(|(_, tile_position, _)| is_near_player(player_position, tile_position))
@@ -164,6 +167,9 @@ pub fn handle_docked_panel_close_buttons(
                 Some(DockedPanelKind::Container { .. }) => {
                     docked_panel_state.close_panel(button.panel_id);
                 }
+                Some(DockedPanelKind::Status)
+                | Some(DockedPanelKind::Equipment)
+                | Some(DockedPanelKind::Backpack) => {}
                 None => {}
             }
             return;
@@ -878,11 +884,19 @@ pub fn sync_docked_panel_layout(
 ) {
     for (panel_root, mut node, mut visibility) in &mut panel_queries.p0() {
         if let Some(panel) = docked_panel_state.panel(panel_root.panel_id) {
+            let top_offset = docked_panel_state
+                .panels
+                .iter()
+                .take_while(|candidate| candidate.id != panel_root.panel_id)
+                .map(|candidate| candidate.height + 8.0)
+                .sum::<f32>();
             node.display = Display::Flex;
             node.height = px(panel.height);
+            node.top = px(top_offset);
             *visibility = Visibility::Visible;
         } else {
             node.display = Display::None;
+            node.top = px(0.0);
             *visibility = Visibility::Hidden;
         }
     }
@@ -925,6 +939,9 @@ pub fn sync_docked_panel_titles(
             .panel(title.panel_id)
             .map(|panel| panel.kind)
         {
+            Some(DockedPanelKind::Status) => "Status".to_owned(),
+            Some(DockedPanelKind::Equipment) => "Equipment".to_owned(),
+            Some(DockedPanelKind::Backpack) => "Backpack".to_owned(),
             Some(DockedPanelKind::CurrentTarget) => "Current Target".to_owned(),
             Some(DockedPanelKind::Container { entity }) => container_query
                 .get(entity)
@@ -950,6 +967,7 @@ pub fn sync_item_slot_button_visibility(
     derived_stats_query: Query<&DerivedStats, With<Player>>,
     container_query: Query<&Container>,
     mut slot_button_query: Query<(&ItemSlotButton, &mut Visibility), With<ContainerSlotButton>>,
+    mut backpack_row_query: Query<(&BackpackSlotRow, &mut Node)>,
 ) {
     let Ok(derived_stats) = derived_stats_query.single() else {
         return;
@@ -980,6 +998,15 @@ pub fn sync_item_slot_button_visibility(
             Visibility::Visible
         } else {
             Visibility::Hidden
+        };
+    }
+
+    let visible_backpack_rows = visible_backpack_capacity.div_ceil(4);
+    for (row, mut node) in &mut backpack_row_query {
+        node.display = if row.row_index < visible_backpack_rows {
+            Display::Flex
+        } else {
+            Display::None
         };
     }
 }
@@ -1416,6 +1443,96 @@ pub fn handle_docked_panel_scrolling(
     }
 }
 
+pub fn handle_docked_panel_dragging(
+    mouse_input: Res<ButtonInput<MouseButton>>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    mut drag_state: ResMut<DockedPanelDragState>,
+    mut docked_panel_state: ResMut<DockedPanelState>,
+    drag_handle_query: Query<
+        (
+            &DockedPanelDragHandle,
+            &ComputedNode,
+            &UiGlobalTransform,
+            &Visibility,
+        ),
+        With<DockedPanelDragHandle>,
+    >,
+    panel_query: Query<
+        (&DockedPanelRoot, &ComputedNode, &UiGlobalTransform),
+        With<DockedPanelRoot>,
+    >,
+) {
+    let Ok(window) = window_query.single() else {
+        return;
+    };
+    let Some(cursor_position) = window.cursor_position() else {
+        if mouse_input.just_released(MouseButton::Left) {
+            drag_state.panel_id = None;
+        }
+        return;
+    };
+
+    if mouse_input.just_pressed(MouseButton::Left) {
+        for (handle, computed_node, global_transform, visibility) in &drag_handle_query {
+            if *visibility == Visibility::Hidden {
+                continue;
+            }
+            if !point_in_ui_node(cursor_position, computed_node, global_transform) {
+                continue;
+            }
+
+            let Some(panel) = docked_panel_state.panel(handle.panel_id) else {
+                continue;
+            };
+            if !panel.movable {
+                continue;
+            }
+
+            drag_state.panel_id = Some(handle.panel_id);
+            break;
+        }
+    }
+
+    let Some(active_panel_id) = drag_state.panel_id else {
+        return;
+    };
+
+    if mouse_input.just_released(MouseButton::Left) {
+        drag_state.panel_id = None;
+        return;
+    }
+
+    if !mouse_input.pressed(MouseButton::Left) {
+        return;
+    }
+
+    let mut ordered_panels = docked_panel_state
+        .panels
+        .iter()
+        .enumerate()
+        .filter_map(|(index, panel)| {
+            panel_query
+                .iter()
+                .find(|(root, _, _)| root.panel_id == panel.id)
+                .map(|(_, computed, transform)| (index, panel.id, computed, transform))
+        })
+        .collect::<Vec<_>>();
+
+    ordered_panels.sort_by_key(|(index, _, _, _)| *index);
+
+    let mut target_index = 0usize;
+
+    for (index, _, _computed, transform) in ordered_panels {
+        let center_y = transform.translation.y;
+        if cursor_position.y >= center_y {
+            target_index = index + 1;
+        }
+    }
+
+    let max_index = docked_panel_state.panels.len().saturating_sub(1);
+    docked_panel_state.move_panel_to_index(active_panel_id, target_index.min(max_index));
+}
+
 pub fn handle_docked_panel_resizing(
     mouse_input: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
@@ -1482,6 +1599,69 @@ pub fn handle_docked_panel_resizing(
         panel.height = (resize_state.start_height + delta_y).clamp(
             DockedPanelState::MIN_PANEL_HEIGHT,
             DockedPanelState::MAX_PANEL_HEIGHT,
+        );
+    }
+}
+
+pub fn print_right_sidebar_layout_debug(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    sidebar_query: Query<
+        (Entity, &ComputedNode, &UiGlobalTransform, &Children),
+        With<RightSidebarRoot>,
+    >,
+    child_nodes: Query<(
+        Option<&DockedPanelCanvas>,
+        Option<&DockedPanelRoot>,
+        &Node,
+        &ComputedNode,
+        &UiGlobalTransform,
+        Option<&Visibility>,
+    )>,
+) {
+    if !keyboard_input.just_pressed(KeyCode::F9) {
+        return;
+    }
+
+    let Ok((sidebar_entity, computed_node, global_transform, children)) = sidebar_query.single()
+    else {
+        info!("layout_debug no_sidebar");
+        return;
+    };
+
+    let sidebar_translation = global_transform.translation;
+    info!(
+        "layout_debug sidebar entity={sidebar_entity:?} pos=({:.1},{:.1}) size=({:.1},{:.1}) children={}",
+        sidebar_translation.x,
+        sidebar_translation.y,
+        computed_node.size().x,
+        computed_node.size().y,
+        children.len()
+    );
+
+    for child in children.iter() {
+        let Ok((canvas, docked, node, computed, transform, visibility)) = child_nodes.get(child)
+        else {
+            continue;
+        };
+
+        let label = if canvas.is_some() {
+            "dock_canvas".to_owned()
+        } else if let Some(docked) = docked {
+            format!("docked_panel:{}", docked.panel_id)
+        } else {
+            "unknown".to_owned()
+        };
+
+        let translation = transform.translation;
+        let visibility = visibility.copied().unwrap_or(Visibility::Inherited);
+        info!(
+            "layout_debug child={label} entity={child:?} display={:?} visibility={visibility:?} pos=({:.1},{:.1}) size=({:.1},{:.1}) flex_grow={:.1}",
+            node.display,
+            translation.x,
+            translation.y,
+            computed.size().x,
+            computed.size().y,
+            node.flex_grow
         );
     }
 }

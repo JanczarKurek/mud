@@ -42,7 +42,15 @@ pub struct DockedPanelRoot {
 }
 
 #[derive(Component)]
+pub struct DockedPanelCanvas;
+
+#[derive(Component)]
 pub struct DockedPanelTitle {
+    pub panel_id: usize,
+}
+
+#[derive(Component)]
+pub struct DockedPanelDragHandle {
     pub panel_id: usize,
 }
 
@@ -110,7 +118,24 @@ pub struct CurrentTargetPanelContent;
 pub struct ContainerPanelContent;
 
 #[derive(Component)]
+pub struct StatusPanelContent;
+
+#[derive(Component)]
+pub struct EquipmentPanelContent;
+
+#[derive(Component)]
+pub struct BackpackPanelContent;
+
+#[derive(Component)]
 pub struct CurrentCombatTargetLabel;
+
+#[derive(Component)]
+pub struct RightSidebarRoot;
+
+#[derive(Component)]
+pub struct BackpackSlotRow {
+    pub row_index: usize,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ItemSlotKind {

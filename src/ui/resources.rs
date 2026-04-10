@@ -160,6 +160,9 @@ pub enum DragSource {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DockedPanelKind {
+    Status,
+    Equipment,
+    Backpack,
     CurrentTarget,
     Container { entity: Entity },
 }
@@ -172,21 +175,28 @@ pub struct DockedPanel {
     pub height: f32,
     pub closable: bool,
     pub resizable: bool,
+    pub movable: bool,
 }
 
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub struct DockedPanelState {
     pub panels: Vec<DockedPanel>,
 }
 
 impl DockedPanelState {
+    pub const STATUS_PANEL_ID: usize = 0;
+    pub const EQUIPMENT_PANEL_ID: usize = 1;
+    pub const BACKPACK_PANEL_ID: usize = 2;
+    pub const CURRENT_TARGET_PANEL_ID: usize = 3;
+    pub const FIRST_CONTAINER_PANEL_ID: usize = 4;
     pub const MAX_OPEN_CONTAINERS: usize = 4;
-    pub const CURRENT_TARGET_PANEL_ID: usize = 0;
-    pub const FIRST_CONTAINER_PANEL_ID: usize = 1;
+    pub const DEFAULT_STATUS_PANEL_HEIGHT: f32 = 96.0;
+    pub const DEFAULT_EQUIPMENT_PANEL_HEIGHT: f32 = 248.0;
+    pub const DEFAULT_BACKPACK_PANEL_HEIGHT: f32 = 184.0;
     pub const DEFAULT_TARGET_PANEL_HEIGHT: f32 = 88.0;
     pub const DEFAULT_CONTAINER_PANEL_HEIGHT: f32 = 182.0;
     pub const MIN_PANEL_HEIGHT: f32 = 84.0;
-    pub const MAX_PANEL_HEIGHT: f32 = 360.0;
+    pub const MAX_PANEL_HEIGHT: f32 = 420.0;
 
     pub fn open_current_target(&mut self) {
         let panel = DockedPanel {
@@ -195,7 +205,8 @@ impl DockedPanelState {
             title: "Current Target".to_owned(),
             height: Self::DEFAULT_TARGET_PANEL_HEIGHT,
             closable: true,
-            resizable: false,
+            resizable: true,
+            movable: true,
         };
         self.upsert_panel(panel);
     }
@@ -212,6 +223,7 @@ impl DockedPanelState {
             height: Self::DEFAULT_CONTAINER_PANEL_HEIGHT,
             closable: true,
             resizable: true,
+            movable: true,
         };
 
         if let Some(existing_index) = self
@@ -245,7 +257,11 @@ impl DockedPanelState {
     pub fn container_entity_for_panel(&self, panel_id: usize) -> Option<Entity> {
         match self.panel(panel_id).map(|panel| panel.kind) {
             Some(DockedPanelKind::Container { entity }) => Some(entity),
-            Some(DockedPanelKind::CurrentTarget) | None => None,
+            Some(DockedPanelKind::Status)
+            | Some(DockedPanelKind::Equipment)
+            | Some(DockedPanelKind::Backpack)
+            | Some(DockedPanelKind::CurrentTarget)
+            | None => None,
         }
     }
 
@@ -253,13 +269,24 @@ impl DockedPanelState {
         self.panel(panel_id).is_some()
     }
 
+    pub fn move_panel_to_index(&mut self, panel_id: usize, target_index: usize) {
+        let Some(current_index) = self.panels.iter().position(|panel| panel.id == panel_id) else {
+            return;
+        };
+
+        let panel = self.panels.remove(current_index);
+        let bounded_index = target_index.min(self.panels.len());
+        self.panels.insert(bounded_index, panel);
+    }
+
     fn upsert_panel(&mut self, panel: DockedPanel) {
-        if let Some(index) = self
+        if let Some(existing) = self
             .panels
-            .iter()
-            .position(|existing| existing.id == panel.id)
+            .iter_mut()
+            .find(|existing| existing.id == panel.id)
         {
-            self.panels.remove(index);
+            *existing = panel;
+            return;
         }
         self.panels.push(panel);
     }
@@ -280,7 +307,10 @@ impl DockedPanelState {
     fn oldest_container_panel_id(&self) -> Option<usize> {
         self.panels.iter().find_map(|panel| match panel.kind {
             DockedPanelKind::Container { .. } => Some(panel.id),
-            DockedPanelKind::CurrentTarget => None,
+            DockedPanelKind::Status
+            | DockedPanelKind::Equipment
+            | DockedPanelKind::Backpack
+            | DockedPanelKind::CurrentTarget => None,
         })
     }
 
@@ -299,11 +329,52 @@ impl DockedPanelState {
     }
 }
 
+impl Default for DockedPanelState {
+    fn default() -> Self {
+        Self {
+            panels: vec![
+                DockedPanel {
+                    id: Self::STATUS_PANEL_ID,
+                    kind: DockedPanelKind::Status,
+                    title: "Status".to_owned(),
+                    height: Self::DEFAULT_STATUS_PANEL_HEIGHT,
+                    closable: false,
+                    resizable: true,
+                    movable: true,
+                },
+                DockedPanel {
+                    id: Self::EQUIPMENT_PANEL_ID,
+                    kind: DockedPanelKind::Equipment,
+                    title: "Equipment".to_owned(),
+                    height: Self::DEFAULT_EQUIPMENT_PANEL_HEIGHT,
+                    closable: false,
+                    resizable: true,
+                    movable: true,
+                },
+                DockedPanel {
+                    id: Self::BACKPACK_PANEL_ID,
+                    kind: DockedPanelKind::Backpack,
+                    title: "Backpack".to_owned(),
+                    height: Self::DEFAULT_BACKPACK_PANEL_HEIGHT,
+                    closable: false,
+                    resizable: true,
+                    movable: true,
+                },
+            ],
+        }
+    }
+}
+
 #[derive(Resource, Default)]
 pub struct DockedPanelResizeState {
     pub panel_id: Option<usize>,
     pub start_cursor_y: f32,
     pub start_height: f32,
+}
+
+#[derive(Resource, Default)]
+pub struct DockedPanelDragState {
+    pub panel_id: Option<usize>,
 }
 
 #[derive(Resource, Default)]
