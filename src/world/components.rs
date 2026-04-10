@@ -34,6 +34,12 @@ pub struct CombatHealthBar {
     pub fill_width: f32,
 }
 
+#[derive(Component, Clone, Debug, Eq, PartialEq)]
+pub struct ClientProjectedWorldObject {
+    pub object_id: u64,
+    pub definition_id: String,
+}
+
 #[derive(Component)]
 pub struct Movable;
 

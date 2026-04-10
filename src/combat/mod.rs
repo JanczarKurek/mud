@@ -6,8 +6,8 @@ use bevy::prelude::*;
 
 use crate::combat::resources::BattleTurnTimer;
 use crate::combat::systems::{clear_invalid_combat_targets, resolve_battle_turn};
+use crate::game::systems::process_game_commands;
 use crate::npc::systems::update_roaming_npcs;
-use crate::player::systems::move_player_on_grid;
 
 pub struct CombatPlugin;
 
@@ -17,7 +17,7 @@ impl Plugin for CombatPlugin {
             Update,
             (clear_invalid_combat_targets, resolve_battle_turn)
                 .chain()
-                .after(move_player_on_grid)
+                .after(process_game_commands)
                 .after(update_roaming_npcs),
         );
     }

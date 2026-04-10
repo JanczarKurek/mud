@@ -3,31 +3,26 @@ use bevy::input::keyboard::{Key, KeyCode, KeyboardInput};
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 
+use crate::game::commands::GameCommand;
+use crate::game::resources::PendingGameCommands;
 use crate::player::components::Player;
 use crate::scripting::python::{PythonConsoleHost, PythonSnapshot, WorldObjectSnapshot};
 use crate::scripting::resources::PythonConsoleState;
 use crate::ui::components::{
     PythonConsoleInput, PythonConsoleOutput, PythonConsolePanel, PythonConsoleScrollbarThumb,
 };
-use crate::world::components::{Collider, OverworldObject, TilePosition};
+use crate::world::components::{OverworldObject, TilePosition};
 use crate::world::object_definitions::OverworldObjectDefinitions;
-use crate::world::object_registry::ObjectRegistry;
-use crate::world::setup::spawn_overworld_object;
-use crate::world::WorldConfig;
 
 pub fn handle_python_console_input(
     mut keyboard_input_events: MessageReader<KeyboardInput>,
     mut mouse_wheel_events: MessageReader<MouseWheel>,
     definitions: Res<OverworldObjectDefinitions>,
-    world_config: Res<WorldConfig>,
-    mut object_registry: ResMut<ObjectRegistry>,
     mut console_state: ResMut<PythonConsoleState>,
+    mut pending_commands: ResMut<PendingGameCommands>,
     mut host: NonSendMut<PythonConsoleHost>,
     player_query: Query<&TilePosition, With<Player>>,
     world_object_query: Query<(&OverworldObject, &TilePosition), Without<Player>>,
-    collider_query: Query<&TilePosition, (With<Collider>, Without<Player>)>,
-    asset_server: Res<AssetServer>,
-    mut commands: Commands,
 ) {
     let Ok(player_position) = player_query.single() else {
         return;
@@ -93,12 +88,7 @@ pub fn handle_python_console_input(
                 let spawn_requests = host.execute(&mut console_state, &command, snapshot);
                 apply_spawn_requests(
                     spawn_requests,
-                    &definitions,
-                    &world_config,
-                    &mut object_registry,
-                    &collider_query,
-                    &asset_server,
-                    &mut commands,
+                    &mut pending_commands,
                     &mut console_state,
                 );
             }
@@ -189,62 +179,17 @@ pub fn refresh_python_console_ui(
 
 fn apply_spawn_requests(
     spawn_requests: Vec<crate::scripting::python::SpawnRequest>,
-    definitions: &OverworldObjectDefinitions,
-    world_config: &WorldConfig,
-    object_registry: &mut ObjectRegistry,
-    collider_query: &Query<&TilePosition, (With<Collider>, Without<Player>)>,
-    asset_server: &AssetServer,
-    commands: &mut Commands,
+    pending_commands: &mut PendingGameCommands,
     console_state: &mut PythonConsoleState,
 ) {
     for request in spawn_requests {
-        if request.x < 0
-            || request.y < 0
-            || request.x >= world_config.map_width
-            || request.y >= world_config.map_height
-        {
-            console_state.push_output(format!(
-                "spawn rejected: ({}, {}) is outside the map",
-                request.x, request.y
-            ));
-            continue;
-        }
-
-        let tile_position = TilePosition::new(request.x, request.y);
-        let Some(definition) = definitions.get(&request.type_id) else {
-            console_state.push_output(format!(
-                "spawn rejected: unknown object type {}",
-                request.type_id
-            ));
-            continue;
-        };
-
-        if definition.colliding
-            && collider_query
-                .iter()
-                .any(|collider_position| *collider_position == tile_position)
-        {
-            console_state.push_output(format!(
-                "spawn rejected: tile ({}, {}) is blocked",
-                request.x, request.y
-            ));
-            continue;
-        }
-
-        let object_id = object_registry.allocate_runtime_id(request.type_id.clone());
-        spawn_overworld_object(
-            commands,
-            asset_server,
-            definitions,
-            world_config,
-            object_id,
-            &request.type_id,
-            None,
-            tile_position,
-        );
+        pending_commands.push(GameCommand::AdminSpawn {
+            type_id: request.type_id.clone(),
+            tile_position: TilePosition::new(request.x, request.y),
+        });
         console_state.push_output(format!(
-            "spawned {} as id {} at ({}, {})",
-            request.type_id, object_id, request.x, request.y
+            "spawn requested: {} at ({}, {})",
+            request.type_id, request.x, request.y
         ));
     }
 }

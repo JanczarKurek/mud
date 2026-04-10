@@ -1,15 +1,15 @@
 use bevy::ecs::query::QueryFilter;
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
-use bevy::log::{info, warn};
+use bevy::log::info;
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, ScrollPosition, UiGlobalTransform};
 use bevy::window::{CursorIcon, CustomCursor, CustomCursorImage, PrimaryWindow};
-use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::combat::components::CombatTarget;
-use crate::magic::resources::{SpellDefinition, SpellDefinitions, SpellTargeting};
-use crate::npc::components::Npc;
-use crate::player::components::{DerivedStats, Player, VitalStats};
+use crate::game::commands::{GameCommand, InspectTarget, ItemDestination, ItemReference, ItemSlotRef, UseTarget};
+use crate::game::resources::{
+    ClientGameState, GameUiEvent, InventoryState, PendingGameCommands, PendingGameUiEvents,
+};
+use crate::magic::resources::{SpellDefinitions, SpellTargeting};
 use crate::scripting::resources::PythonConsoleState;
 use crate::ui::components::{
     BackpackSlotRow, ChatLogText, ContainerSlotButton, ContainerSlotImage, ContextMenuAttackButton,
@@ -20,17 +20,29 @@ use crate::ui::components::{
     HealthFill, ItemSlotButton, ItemSlotImage, ItemSlotKind, ManaFill, RightSidebarRoot,
 };
 use crate::ui::resources::{
-    ChatLogState, ContextMenuState, ContextMenuTarget, CursorMode, CursorState,
+    ContextMenuState, ContextMenuTarget, CursorMode, CursorState,
     DockedPanelDragState, DockedPanelKind, DockedPanelResizeState, DockedPanelState, DragSource,
-    DragState, InventoryState, SpellTargetingState, UseOnState,
+    DragState, SpellTargetingState, UseOnState,
 };
-use crate::world::components::{Collider, Container, Movable, OverworldObject, TilePosition};
-use crate::world::object_definitions::{
-    EquipmentSlot, OverworldObjectDefinition, OverworldObjectDefinitions,
-};
+use crate::world::components::TilePosition;
+use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
-use crate::world::setup::spawn_overworld_object;
 use crate::world::WorldConfig;
+
+pub fn apply_game_ui_events(
+    mut pending_ui_events: ResMut<PendingGameUiEvents>,
+    mut docked_panel_state: ResMut<DockedPanelState>,
+) {
+    let events = std::mem::take(&mut pending_ui_events.events);
+
+    for event in events {
+        match event {
+            GameUiEvent::OpenContainer { object_id } => {
+                docked_panel_state.open(object_id);
+            }
+        }
+    }
+}
 
 pub fn toggle_cursor_mode(
     keyboard_input: Res<ButtonInput<KeyCode>>,
@@ -102,23 +114,21 @@ fn cursor_icon_for_mode(cursor_mode: CursorMode, asset_server: &AssetServer) -> 
 }
 
 pub fn manage_open_containers(
+    client_state: Res<ClientGameState>,
     mut docked_panel_state: ResMut<DockedPanelState>,
-    player_query: Query<&TilePosition, With<Player>>,
-    container_query: Query<(Entity, &TilePosition, &OverworldObject), With<Container>>,
 ) {
-    let Ok(player_position) = player_query.single() else {
-        return;
-    };
+    let player_position = client_state.player_tile_position;
 
     docked_panel_state.panels.retain(|panel| match panel.kind {
         DockedPanelKind::Status
         | DockedPanelKind::Equipment
         | DockedPanelKind::Backpack
         | DockedPanelKind::CurrentTarget => true,
-        DockedPanelKind::Container { entity } => container_query
-            .get(entity)
-            .map(|(_, tile_position, _)| is_near_player(player_position, tile_position))
-            .unwrap_or(false),
+        DockedPanelKind::Container { object_id } => player_position
+            .and_then(|player_position| client_state.world_objects.get(&object_id).map(|object| (player_position, object)))
+            .is_some_and(|(player_position, object)| {
+                object.is_container && is_near_player(&player_position, &object.tile_position)
+            }),
     });
 }
 
@@ -126,7 +136,7 @@ pub fn handle_docked_panel_close_buttons(
     mouse_input: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     mut docked_panel_state: ResMut<DockedPanelState>,
-    player_query: Query<Entity, (With<Player>, With<CombatTarget>)>,
+    mut pending_commands: ResMut<PendingGameCommands>,
     button_query: Query<
         (
             &DockedPanelCloseButton,
@@ -136,7 +146,6 @@ pub fn handle_docked_panel_close_buttons(
         ),
         With<DockedPanelCloseButton>,
     >,
-    mut commands: Commands,
 ) {
     if !mouse_input.just_pressed(MouseButton::Left) {
         return;
@@ -159,9 +168,9 @@ pub fn handle_docked_panel_close_buttons(
                 .map(|panel| panel.kind)
             {
                 Some(DockedPanelKind::CurrentTarget) => {
-                    if let Ok(player_entity) = player_query.single() {
-                        commands.entity(player_entity).remove::<CombatTarget>();
-                    }
+                    pending_commands.push(GameCommand::SetCombatTarget {
+                        target_object_id: None,
+                    });
                     docked_panel_state.close_current_target();
                 }
                 Some(DockedPanelKind::Container { .. }) => {
@@ -178,8 +187,7 @@ pub fn handle_docked_panel_close_buttons(
 }
 
 pub fn sync_current_combat_target(
-    player_query: Query<&CombatTarget, With<Player>>,
-    object_query: Query<&OverworldObject>,
+    client_state: Res<ClientGameState>,
     object_registry: Res<ObjectRegistry>,
     definitions: Res<OverworldObjectDefinitions>,
     spell_definitions: Res<SpellDefinitions>,
@@ -190,16 +198,12 @@ pub fn sync_current_combat_target(
         return;
     };
 
-    let text = if let Ok(combat_target) = player_query.single() {
+    let text = if let Some(target_object_id) = client_state.current_target_object_id {
         docked_panel_state.open_current_target();
-        if let Ok(object) = object_query.get(combat_target.entity) {
-            let name = object_registry
-                .display_name(object.object_id, &definitions, &spell_definitions)
-                .unwrap_or_else(|| object.definition_id.clone());
-            format!("Target: {name}")
-        } else {
-            "Target: none".to_owned()
-        }
+        let name = object_registry
+            .display_name(target_object_id, &definitions, &spell_definitions)
+            .unwrap_or_else(|| target_object_id.to_string());
+        format!("Target: {name}")
     } else {
         docked_panel_state.close_current_target();
         "Target: none".to_owned()
@@ -209,11 +213,11 @@ pub fn sync_current_combat_target(
 }
 
 pub fn sync_vital_bars(
-    player_query: Query<&VitalStats, With<Player>>,
+    client_state: Res<ClientGameState>,
     mut health_query: Query<&mut Node, With<HealthFill>>,
     mut mana_query: Query<&mut Node, (With<ManaFill>, Without<HealthFill>)>,
 ) {
-    let Ok(vital_stats) = player_query.single() else {
+    let Some(vital_stats) = client_state.player_vitals else {
         return;
     };
 
@@ -230,14 +234,14 @@ pub fn sync_vital_bars(
 }
 
 pub fn sync_chat_log(
-    chat_log_state: Res<ChatLogState>,
+    client_state: Res<ClientGameState>,
     mut chat_query: Query<&mut Text, With<ChatLogText>>,
 ) {
     let Ok(mut chat_text) = chat_query.single_mut() else {
         return;
     };
 
-    chat_text.0 = chat_log_state.lines.join("\n");
+    chat_text.0 = client_state.chat_log_lines.join("\n");
 }
 
 pub fn sync_context_menu_root(
@@ -336,10 +340,10 @@ pub fn handle_context_menu_actions(
         Res<OverworldObjectDefinitions>,
         Res<SpellDefinitions>,
     ),
+    mut pending_commands: ResMut<PendingGameCommands>,
     ui_state: (
-        ResMut<ChatLogState>,
         ResMut<ContextMenuState>,
-        ResMut<DockedPanelState>,
+        Res<DockedPanelState>,
         ResMut<CursorState>,
         ResMut<UseOnState>,
         ResMut<SpellTargetingState>,
@@ -351,17 +355,11 @@ pub fn handle_context_menu_actions(
         Query<(&ComputedNode, &UiGlobalTransform, &Visibility), With<ContextMenuUseButton>>,
         Query<(&ComputedNode, &UiGlobalTransform, &Visibility), With<ContextMenuUseOnButton>>,
     )>,
-    mut inventory_state: ResMut<InventoryState>,
-    mut container_query: Query<&mut Container>,
-    player_entity_query: Query<Entity, With<Player>>,
-    mut player_query: Query<&mut VitalStats, With<Player>>,
-    mut commands: Commands,
 ) {
     let (object_registry, definitions, spell_definitions) = static_resources;
     let (
-        mut chat_log_state,
         mut context_menu_state,
-        mut docked_panel_state,
+        docked_panel_state,
         mut cursor_state,
         mut use_on_state,
         mut spell_targeting_state,
@@ -378,22 +376,10 @@ pub fn handle_context_menu_actions(
     }
 
     if is_cursor_over_visible_button(cursor_position, &menu_queries.p0()) {
-        if let Some(ContextMenuTarget::World(target_entity, object_id)) = context_menu_state.target
-        {
-            if let Ok(player_entity) = player_entity_query.single() {
-                commands.entity(player_entity).insert(CombatTarget {
-                    entity: target_entity,
-                });
-
-                if let Some(target_name) = object_name(
-                    object_id,
-                    &object_registry,
-                    &definitions,
-                    &spell_definitions,
-                ) {
-                    chat_log_state.push_narrator(format!("Targeting {target_name}."));
-                }
-            }
+        if let Some(ContextMenuTarget::World(object_id)) = context_menu_state.target {
+            pending_commands.push(GameCommand::SetCombatTarget {
+                target_object_id: Some(object_id),
+            });
         }
         context_menu_state.hide();
         return;
@@ -401,13 +387,9 @@ pub fn handle_context_menu_actions(
 
     if is_cursor_over_button(cursor_position, &menu_queries.p1()) {
         if let Some(target) = context_menu_state.target {
-            inspect_context_target(
-                target,
-                &object_registry,
-                &definitions,
-                &spell_definitions,
-                &mut chat_log_state,
-            );
+            pending_commands.push(GameCommand::Inspect {
+                target: InspectTarget::Object(context_target_object_id(target)),
+            });
         }
         context_menu_state.hide();
         return;
@@ -415,20 +397,24 @@ pub fn handle_context_menu_actions(
 
     if is_cursor_over_visible_button(cursor_position, &menu_queries.p3()) {
         if let Some(target) = context_menu_state.target {
-            handle_use_action(
-                target,
-                &mut inventory_state,
-                &mut container_query,
-                &docked_panel_state,
-                &object_registry,
-                &definitions,
-                &spell_definitions,
-                &mut player_query,
-                &mut chat_log_state,
-                &mut cursor_state,
-                &mut spell_targeting_state,
-                &mut commands,
-            );
+            let object_id = context_target_object_id(target);
+            if let Some(spell_id) =
+                object_registry.resolved_spell_id(object_id, &definitions, &spell_definitions)
+            {
+                if let Some(spell) = spell_definitions.get(&spell_id) {
+                    if spell.targeting == SpellTargeting::Targeted {
+                        spell_targeting_state.source = Some(target);
+                        spell_targeting_state.spell_id = Some(spell_id);
+                        cursor_state.mode = CursorMode::SpellTarget;
+                        context_menu_state.hide();
+                        return;
+                    }
+                }
+            }
+
+            if let Some(source) = context_target_to_item_reference(target, &docked_panel_state) {
+                pending_commands.push(GameCommand::UseItem { source });
+            }
         }
         context_menu_state.hide();
         return;
@@ -447,8 +433,8 @@ pub fn handle_context_menu_actions(
     }
 
     if is_cursor_over_visible_button(cursor_position, &menu_queries.p2()) {
-        if let Some(ContextMenuTarget::World(entity, _)) = context_menu_state.target {
-            docked_panel_state.open(entity);
+        if let Some(ContextMenuTarget::World(object_id)) = context_menu_state.target {
+            pending_commands.push(GameCommand::OpenContainer { object_id });
         }
         context_menu_state.hide();
         return;
@@ -464,25 +450,14 @@ pub fn handle_use_on_targeting(
     world_config: Res<WorldConfig>,
     state_resources: (
         Res<ContextMenuState>,
-        Res<ObjectRegistry>,
-        Res<OverworldObjectDefinitions>,
-        Res<SpellDefinitions>,
         Res<DockedPanelState>,
     ),
-    mut inventory_state: ResMut<InventoryState>,
-    mut container_query: Query<&mut Container>,
-    mut player_queries: ParamSet<(
-        Query<&mut VitalStats, With<Player>>,
-        Query<&TilePosition, With<Player>>,
-    )>,
-    object_query: Query<(Entity, &TilePosition, &OverworldObject)>,
-    mut chat_log_state: ResMut<ChatLogState>,
+    client_state: Res<ClientGameState>,
+    mut pending_commands: ResMut<PendingGameCommands>,
     mut cursor_state: ResMut<CursorState>,
     mut use_on_state: ResMut<UseOnState>,
-    mut commands: Commands,
 ) {
-    let (context_menu_state, object_registry, definitions, spell_definitions, docked_panel_state) =
-        state_resources;
+    let (context_menu_state, docked_panel_state) = state_resources;
     let Some(source_target) = use_on_state.source else {
         return;
     };
@@ -504,47 +479,37 @@ pub fn handle_use_on_targeting(
     let Some(cursor_position) = window.cursor_position() else {
         return;
     };
-    let player_position_query = player_queries.p1();
-    let Ok(player_position) = player_position_query.single() else {
+    let Some(player_position) = client_state.player_tile_position else {
         return;
     };
 
-    let target_tile = cursor_to_tile(window, cursor_position, player_position, &world_config);
+    let target_tile = cursor_to_tile(window, cursor_position, &player_position, &world_config);
+    let Some(source) = context_target_to_item_reference(source_target, &docked_panel_state) else {
+        return;
+    };
 
-    if target_tile == *player_position {
-        use_on_player_target(
-            source_target,
-            &mut inventory_state,
-            &mut container_query,
-            &docked_panel_state,
-            &object_registry,
-            &definitions,
-            &spell_definitions,
-            &mut player_queries.p0(),
-            &mut chat_log_state,
-            &mut commands,
-        );
+    if target_tile == player_position {
+        pending_commands.push(GameCommand::UseItemOn {
+            source,
+            target: UseTarget::Player,
+        });
         use_on_state.source = None;
         cursor_state.mode = CursorMode::Default;
         return;
     }
 
-    for (_, tile_position, object) in &object_query {
-        if *tile_position != target_tile {
+    for object in client_state.world_objects.values() {
+        if object.tile_position != target_tile {
             continue;
         }
-        if !is_near_player(player_position, tile_position) {
+        if !is_near_player(&player_position, &object.tile_position) {
             continue;
         }
 
-        use_on_world_target(
-            source_target,
-            object.object_id,
-            &object_registry,
-            &definitions,
-            &spell_definitions,
-            &mut chat_log_state,
-        );
+        pending_commands.push(GameCommand::UseItemOn {
+            source,
+            target: UseTarget::Object(object.object_id),
+        });
         use_on_state.source = None;
         cursor_state.mode = CursorMode::Default;
         return;
@@ -558,25 +523,14 @@ pub fn handle_spell_targeting(
     world_config: Res<WorldConfig>,
     static_resources: (
         Res<ContextMenuState>,
-        Res<ObjectRegistry>,
-        Res<OverworldObjectDefinitions>,
-        Res<SpellDefinitions>,
         Res<DockedPanelState>,
     ),
-    mut inventory_state: ResMut<InventoryState>,
-    mut container_query: Query<&mut Container>,
-    mut player_queries: ParamSet<(
-        Query<(&mut VitalStats, &TilePosition), With<Player>>,
-        Query<(Entity, &TilePosition, &OverworldObject), (With<Npc>, Without<Player>)>,
-        Query<(&mut VitalStats, &OverworldObject), (With<Npc>, Without<Player>)>,
-    )>,
-    mut chat_log_state: ResMut<ChatLogState>,
+    client_state: Res<ClientGameState>,
+    mut pending_commands: ResMut<PendingGameCommands>,
     mut cursor_state: ResMut<CursorState>,
     mut spell_targeting_state: ResMut<SpellTargetingState>,
-    mut commands: Commands,
 ) {
-    let (context_menu_state, object_registry, definitions, spell_definitions, docked_panel_state) =
-        static_resources;
+    let (context_menu_state, docked_panel_state) = static_resources;
     let (Some(source_target), Some(spell_id)) = (
         spell_targeting_state.source,
         spell_targeting_state.spell_id.as_deref(),
@@ -596,13 +550,6 @@ pub fn handle_spell_targeting(
         return;
     }
 
-    let Some(spell) = spell_definitions.get(spell_id) else {
-        spell_targeting_state.source = None;
-        spell_targeting_state.spell_id = None;
-        cursor_state.mode = CursorMode::Default;
-        return;
-    };
-
     let Ok(window) = window_query.single() else {
         return;
     };
@@ -610,87 +557,27 @@ pub fn handle_spell_targeting(
         return;
     };
 
-    let target_tile = {
-        let player_query = player_queries.p0();
-        let Ok((_, player_position)) = player_query.single() else {
-            return;
-        };
-        cursor_to_tile(window, cursor_position, player_position, &world_config)
+    let Some(player_position) = client_state.player_tile_position else {
+        return;
     };
+    let target_tile = cursor_to_tile(window, cursor_position, &player_position, &world_config);
 
-    let mut selected_target = None;
-    {
-        let npc_query = player_queries.p1();
-        for (target_entity, target_position, target_object) in &npc_query {
-            if *target_position != target_tile {
-                continue;
-            }
+    let selected_target = client_state
+        .world_objects
+        .values()
+        .find(|object| object.is_npc && object.tile_position == target_tile)
+        .map(|object| object.object_id);
 
-            selected_target = Some((target_entity, *target_position, target_object.object_id));
-            break;
-        }
-    }
-
-    let Some((target_entity, target_position, target_object_id)) = selected_target else {
-        chat_log_state.push_narrator(format!("{} needs a valid target.", spell.name));
+    let Some(target_object_id) = selected_target else {
         return;
     };
 
-    let player_position = {
-        let mut player_query = player_queries.p0();
-        let Ok((_, player_position)) = player_query.single_mut() else {
-            return;
-        };
-        *player_position
-    };
-
-    if chebyshev_distance_tiles(player_position, target_position) > spell.range_tiles.max(1) {
-        let target_name = object_registry
-            .display_name(target_object_id, &definitions, &spell_definitions)
-            .unwrap_or_else(|| target_object_id.to_string());
-        chat_log_state.push_narrator(format!(
-            "{} is out of range for {}.",
-            target_name, spell.name
-        ));
-        return;
-    }
-
-    {
-        let mut player_query = player_queries.p0();
-        let Ok((mut player_vitals, _)) = player_query.single_mut() else {
-            return;
-        };
-        if player_vitals.mana < spell.mana_cost {
-            chat_log_state.push_narrator(format!("Not enough mana to cast {}.", spell.name));
-            return;
-        }
-        player_vitals.mana = (player_vitals.mana - spell.mana_cost).max(0.0);
-    }
-
-    {
-        let mut npc_query = player_queries.p2();
-        let Ok((mut target_vitals, target_object)) = npc_query.get_mut(target_entity) else {
-            return;
-        };
-        let target_name = object_registry
-            .display_name(target_object.object_id, &definitions, &spell_definitions)
-            .unwrap_or_else(|| target_object.definition_id.clone());
-
-        apply_spell_effects(spell, &mut target_vitals);
-        consume_source_target(
-            source_target,
-            &mut inventory_state,
-            &mut container_query,
-            &docked_panel_state,
-            &mut commands,
-        );
-        chat_log_state.push_line(format!("[Player]: \"{}\"", spell.incantation));
-        chat_log_state.push_narrator(format!("Cast {} on {}.", spell.name, target_name));
-
-        if target_vitals.health <= 0.0 {
-            commands.entity(target_entity).despawn();
-            chat_log_state.push_line(format!("[{target_name} dies]"));
-        }
+    if let Some(source) = context_target_to_item_reference(source_target, &docked_panel_state) {
+        pending_commands.push(GameCommand::CastSpellAt {
+            source,
+            spell_id: spell_id.to_owned(),
+            target_object_id,
+        });
     }
 
     spell_targeting_state.source = None;
@@ -705,20 +592,12 @@ pub fn handle_context_menu_opening(
     object_registry: Res<ObjectRegistry>,
     definitions: Res<OverworldObjectDefinitions>,
     spell_definitions: Res<SpellDefinitions>,
-    inventory_state: Res<InventoryState>,
+    client_state: Res<ClientGameState>,
     mut context_menu_state: ResMut<ContextMenuState>,
     docked_panel_state: Res<DockedPanelState>,
     mut use_on_state: ResMut<UseOnState>,
     mut spell_targeting_state: ResMut<SpellTargetingState>,
     mut cursor_state: ResMut<CursorState>,
-    player_query: Query<&TilePosition, With<Player>>,
-    object_query: Query<(
-        Entity,
-        &TilePosition,
-        &OverworldObject,
-        Has<Container>,
-        Has<Npc>,
-    )>,
     mut slot_queries: ParamSet<(
         Query<
             (
@@ -757,7 +636,6 @@ pub fn handle_context_menu_opening(
             With<ContainerSlotImage>,
         >,
     )>,
-    container_query: Query<&Container>,
 ) {
     let Ok(window) = window_query.single() else {
         return;
@@ -765,7 +643,7 @@ pub fn handle_context_menu_opening(
     let Some(cursor_position) = window.cursor_position() else {
         return;
     };
-    let Ok(player_position) = player_query.single() else {
+    let Some(player_position) = client_state.player_tile_position else {
         return;
     };
 
@@ -801,8 +679,7 @@ pub fn handle_context_menu_opening(
     );
     if let Some(slot_kind) = hovered_slot {
         let slot_object_id = object_id_in_slot_kind(
-            &inventory_state,
-            &container_query,
+            &client_state,
             &docked_panel_state,
             slot_kind,
         );
@@ -836,24 +713,24 @@ pub fn handle_context_menu_opening(
         }
     }
 
-    let target_tile = cursor_to_tile(window, cursor_position, player_position, &world_config);
+    let target_tile = cursor_to_tile(window, cursor_position, &player_position, &world_config);
     info!(
         "context_open_world_probe target_tile=({}, {})",
         target_tile.x, target_tile.y
     );
-    for (entity, tile_position, object, has_container, has_npc) in &object_query {
-        if *tile_position != target_tile {
+    for object in client_state.world_objects.values() {
+        if object.tile_position != target_tile {
             continue;
         }
-        if !is_near_player(player_position, tile_position) {
+        if !is_near_player(&player_position, &object.tile_position) {
             continue;
         }
 
         let can_use = object_is_usable(object.object_id, &object_registry, &definitions);
         context_menu_state.show(
             cursor_position,
-            ContextMenuTarget::World(entity, object.object_id),
-            has_container,
+            ContextMenuTarget::World(object.object_id),
+            object.is_container,
             can_use,
             can_use_on(
                 object.object_id,
@@ -861,11 +738,11 @@ pub fn handle_context_menu_opening(
                 &definitions,
                 &spell_definitions,
             ),
-            has_npc,
+            object.is_npc,
         );
         info!(
-            "context_open_world_success entity={entity:?} object_id={} has_container={} can_use={} can_attack={}",
-            object.object_id, has_container, can_use, has_npc
+            "context_open_world_success object_id={} has_container={} can_use={} can_attack={}",
+            object.object_id, object.is_container, can_use, object.is_npc
         );
         return;
     }
@@ -925,9 +802,9 @@ pub fn sync_docked_panel_layout(
 }
 
 pub fn sync_docked_panel_titles(
+    client_state: Res<ClientGameState>,
     docked_panel_state: ResMut<DockedPanelState>,
     object_registry: Res<ObjectRegistry>,
-    container_query: Query<(&Container, &OverworldObject)>,
     definitions: Res<OverworldObjectDefinitions>,
     spell_definitions: Res<SpellDefinitions>,
     mut title_query: Query<(&DockedPanelTitle, &mut Text), With<DockedPanelTitle>>,
@@ -943,11 +820,11 @@ pub fn sync_docked_panel_titles(
             Some(DockedPanelKind::Equipment) => "Equipment".to_owned(),
             Some(DockedPanelKind::Backpack) => "Backpack".to_owned(),
             Some(DockedPanelKind::CurrentTarget) => "Current Target".to_owned(),
-            Some(DockedPanelKind::Container { entity }) => container_query
-                .get(entity)
-                .ok()
-                .and_then(|(_, object)| {
-                    object_registry.display_name(object.object_id, &definitions, &spell_definitions)
+            Some(DockedPanelKind::Container { object_id }) => client_state
+                .world_objects
+                .get(&object_id)
+                .and_then(|_| {
+                    object_registry.display_name(object_id, &definitions, &spell_definitions)
                 })
                 .unwrap_or_else(|| "Container".to_owned()),
             None => String::new(),
@@ -962,24 +839,16 @@ pub fn sync_docked_panel_titles(
 }
 
 pub fn sync_item_slot_button_visibility(
-    inventory_state: Res<InventoryState>,
+    client_state: Res<ClientGameState>,
     docked_panel_state: Res<DockedPanelState>,
-    derived_stats_query: Query<&DerivedStats, With<Player>>,
-    container_query: Query<&Container>,
     mut slot_button_query: Query<(&ItemSlotButton, &mut Visibility), With<ContainerSlotButton>>,
     mut backpack_row_query: Query<(&BackpackSlotRow, &mut Node)>,
 ) {
-    let Ok(derived_stats) = derived_stats_query.single() else {
-        return;
-    };
-
-    let visible_backpack_capacity = inventory_state.backpack_slots.len().min(
-        derived_stats
-            .storage_slots
-            .max(0)
-            .try_into()
-            .unwrap_or(0usize),
-    );
+    let visible_backpack_capacity = client_state
+        .inventory
+        .backpack_slots
+        .len()
+        .min(client_state.player_storage_slots);
 
     for (slot, mut visibility) in &mut slot_button_query {
         let should_show = match slot.kind {
@@ -988,9 +857,9 @@ pub fn sync_item_slot_button_visibility(
                 panel_id,
                 slot_index,
             } => docked_panel_state
-                .container_entity_for_panel(panel_id)
-                .and_then(|entity| container_query.get(entity).ok())
-                .is_some_and(|container| slot_index < container.slots.len()),
+                .container_object_id_for_panel(panel_id)
+                .and_then(|object_id| client_state.container_slots.get(&object_id))
+                .is_some_and(|slots| slot_index < slots.len()),
             ItemSlotKind::Equipment(_) => true,
         };
 
@@ -1012,10 +881,9 @@ pub fn sync_item_slot_button_visibility(
 }
 
 pub fn sync_container_slot_images(
-    inventory_state: Res<InventoryState>,
+    client_state: Res<ClientGameState>,
     docked_panel_state: Res<DockedPanelState>,
     object_registry: Res<ObjectRegistry>,
-    container_query: Query<&Container>,
     asset_server: Res<AssetServer>,
     definitions: Res<OverworldObjectDefinitions>,
     mut image_query: Query<
@@ -1025,16 +893,19 @@ pub fn sync_container_slot_images(
 ) {
     for (slot, mut image_node, mut visibility) in &mut image_query {
         let object_id = match slot.kind {
-            ItemSlotKind::Backpack(index) => {
-                inventory_state.backpack_slots.get(index).copied().flatten()
-            }
+            ItemSlotKind::Backpack(index) => client_state
+                .inventory
+                .backpack_slots
+                .get(index)
+                .copied()
+                .flatten(),
             ItemSlotKind::OpenContainer {
                 panel_id,
                 slot_index,
             } => docked_panel_state
-                .container_entity_for_panel(panel_id)
-                .and_then(|entity| container_query.get(entity).ok())
-                .and_then(|container| container.slots.get(slot_index).copied().flatten()),
+                .container_object_id_for_panel(panel_id)
+                .and_then(|object_id| client_state.container_slots.get(&object_id))
+                .and_then(|slots| slots.get(slot_index).copied().flatten()),
             ItemSlotKind::Equipment(_) => None,
         };
         let Some(object_id) = object_id else {
@@ -1063,7 +934,7 @@ pub fn sync_container_slot_images(
 }
 
 pub fn sync_equipment_slot_images(
-    inventory_state: Res<InventoryState>,
+    client_state: Res<ClientGameState>,
     object_registry: Res<ObjectRegistry>,
     asset_server: Res<AssetServer>,
     definitions: Res<OverworldObjectDefinitions>,
@@ -1074,7 +945,7 @@ pub fn sync_equipment_slot_images(
 ) {
     for (slot, mut image_node, mut visibility) in &mut image_query {
         let object_id = match slot.kind {
-            ItemSlotKind::Equipment(slot) => inventory_state.equipment_item(slot),
+            ItemSlotKind::Equipment(slot) => client_state.inventory.equipment_item(slot),
             ItemSlotKind::Backpack(_) | ItemSlotKind::OpenContainer { .. } => None,
         };
         let Some(object_id) = object_id else {
@@ -1107,14 +978,10 @@ pub fn handle_movable_dragging(
     window_query: Query<&Window, With<PrimaryWindow>>,
     world_config: Res<WorldConfig>,
     interaction_state: (Res<ContextMenuState>, Res<UseOnState>),
-    object_registry: Res<ObjectRegistry>,
-    definitions: Res<OverworldObjectDefinitions>,
-    mut inventory_state: ResMut<InventoryState>,
+    client_state: Res<ClientGameState>,
     docked_panel_state: Res<DockedPanelState>,
     mut drag_state: ResMut<DragState>,
-    player_query: Query<&TilePosition, With<Player>>,
-    collider_query: Query<&TilePosition, (With<Collider>, Without<Player>)>,
-    movable_query: Query<(Entity, &TilePosition, &OverworldObject), With<Movable>>,
+    mut pending_commands: ResMut<PendingGameCommands>,
     mut slot_queries: ParamSet<(
         Query<
             (
@@ -1135,9 +1002,6 @@ pub fn handle_movable_dragging(
             (With<Button>, With<ContainerSlotButton>),
         >,
     )>,
-    mut container_query: Query<&mut Container>,
-    asset_server: Res<AssetServer>,
-    mut commands: Commands,
 ) {
     let (context_menu_state, use_on_state) = interaction_state;
     let Ok(window) = window_query.single() else {
@@ -1146,7 +1010,7 @@ pub fn handle_movable_dragging(
     let Some(cursor_position) = window.cursor_position() else {
         return;
     };
-    let Ok(player_position) = player_query.single() else {
+    let Some(player_position) = client_state.player_tile_position else {
         return;
     };
     let hovered_slot = {
@@ -1164,12 +1028,9 @@ pub fn handle_movable_dragging(
 
     if mouse_input.just_pressed(MouseButton::Left) && drag_state.source.is_none() {
         if let Some(slot_kind) = hovered_slot {
-            if let Some(object_id) = take_item_from_slot_kind(
-                &mut inventory_state,
-                &mut container_query,
-                &docked_panel_state,
-                slot_kind,
-            ) {
+            if let Some(object_id) =
+                object_id_in_slot_kind(&client_state, &docked_panel_state, slot_kind)
+            {
                 info!(
                     "drag_start ui_slot={slot_kind:?} object_id={object_id} open_containers={}",
                     docked_panel_state
@@ -1179,8 +1040,8 @@ pub fn handle_movable_dragging(
                         .count()
                 );
                 info!(
-                    "equipment_state_after_take {}",
-                    equipment_state_summary(&inventory_state)
+                    "equipment_state_snapshot {}",
+                    equipment_state_summary(&client_state.inventory)
                 );
                 drag_state.source = Some(DragSource::UiSlot(slot_kind));
                 drag_state.object_id = Some(object_id);
@@ -1189,24 +1050,24 @@ pub fn handle_movable_dragging(
             }
         }
 
-        let target_tile = cursor_to_tile(window, cursor_position, player_position, &world_config);
+        let target_tile = cursor_to_tile(window, cursor_position, &player_position, &world_config);
 
-        for (entity, tile_position, object) in &movable_query {
-            if *tile_position != target_tile {
+        for object in client_state.world_objects.values() {
+            if !object.is_movable || object.tile_position != target_tile {
                 continue;
             }
 
-            if !is_near_player(player_position, tile_position) {
+            if !is_near_player(&player_position, &object.tile_position) {
                 continue;
             }
 
             info!(
-                "drag_start world_entity={entity:?} object_id={} origin=({}, {})",
-                object.object_id, tile_position.x, tile_position.y
+                "drag_start world_object_id={} origin=({}, {})",
+                object.object_id, object.tile_position.x, object.tile_position.y
             );
-            drag_state.source = Some(DragSource::World(entity));
+            drag_state.source = Some(DragSource::World);
             drag_state.object_id = Some(object.object_id);
-            drag_state.world_origin = Some(*tile_position);
+            drag_state.world_origin = Some(object.tile_position);
             break;
         }
     }
@@ -1215,7 +1076,7 @@ pub fn handle_movable_dragging(
         return;
     }
 
-    let target_tile = cursor_to_tile(window, cursor_position, player_position, &world_config);
+    let target_tile = cursor_to_tile(window, cursor_position, &player_position, &world_config);
     let drag_source = drag_state.source.take();
     let Some(object_id) = drag_state.object_id.take() else {
         drag_state.world_origin = None;
@@ -1235,109 +1096,46 @@ pub fn handle_movable_dragging(
     }
 
     match drag_source {
-        Some(DragSource::World(item_entity)) => {
+        Some(DragSource::World) => {
             if let Some(slot_kind) = hovered_slot {
-                if place_item_in_slot_kind(
-                    &mut inventory_state,
-                    &mut container_query,
-                    &docked_panel_state,
-                    object_id,
-                    slot_kind,
-                    &object_registry,
-                    &definitions,
-                ) {
-                    info!(
-                        "equipment_state_after_world_to_slot {}",
-                        equipment_state_summary(&inventory_state)
-                    );
-                    commands.entity(item_entity).despawn();
+                if let Some(destination) = item_slot_kind_to_ref(slot_kind, &docked_panel_state) {
+                    pending_commands.push(GameCommand::MoveItem {
+                        source: ItemReference::WorldObject(object_id),
+                        destination: ItemDestination::Slot(destination),
+                    });
                     return;
                 }
             }
 
-            if let Some(origin) = world_origin {
-                if is_valid_world_drop(
-                    target_tile,
-                    Some(origin),
-                    player_position,
-                    item_entity,
-                    &collider_query,
-                    &movable_query,
-                    &world_config,
-                ) {
-                    commands.entity(item_entity).insert(target_tile);
-                }
+            if world_origin.is_some() {
+                pending_commands.push(GameCommand::MoveItem {
+                    source: ItemReference::WorldObject(object_id),
+                    destination: ItemDestination::WorldTile(target_tile),
+                });
             }
         }
         Some(DragSource::UiSlot(source_slot)) => {
+            let Some(source) = item_slot_kind_to_ref(source_slot, &docked_panel_state) else {
+                return;
+            };
             if let Some(slot_kind) = hovered_slot {
                 if slot_kind == source_slot {
-                    restore_item_to_slot(
-                        &mut inventory_state,
-                        &mut container_query,
-                        &docked_panel_state,
-                        source_slot,
-                        object_id,
-                    );
                     return;
                 }
 
-                if place_item_in_slot_kind(
-                    &mut inventory_state,
-                    &mut container_query,
-                    &docked_panel_state,
-                    object_id,
-                    slot_kind,
-                    &object_registry,
-                    &definitions,
-                ) {
-                    info!(
-                        "equipment_state_after_ui_to_slot {}",
-                        equipment_state_summary(&inventory_state)
-                    );
+                if let Some(destination) = item_slot_kind_to_ref(slot_kind, &docked_panel_state) {
+                    pending_commands.push(GameCommand::MoveItem {
+                        source: ItemReference::Slot(source),
+                        destination: ItemDestination::Slot(destination),
+                    });
                     return;
                 }
             }
 
-            if let Some(world_drop_tile) = find_nearest_valid_world_drop_tile(
-                target_tile,
-                None,
-                player_position,
-                Entity::PLACEHOLDER,
-                &collider_query,
-                &movable_query,
-                &world_config,
-            ) {
-                if let Some(type_id) = object_registry.type_id(object_id) {
-                    spawn_overworld_object(
-                        &mut commands,
-                        &asset_server,
-                        &definitions,
-                        &world_config,
-                        object_id,
-                        type_id,
-                        None,
-                        world_drop_tile,
-                    );
-                    info!(
-                        "equipment_state_after_ui_to_world {}",
-                        equipment_state_summary(&inventory_state)
-                    );
-                    return;
-                }
-            }
-
-            restore_item_to_slot(
-                &mut inventory_state,
-                &mut container_query,
-                &docked_panel_state,
-                source_slot,
-                object_id,
-            );
-            info!(
-                "equipment_state_after_restore {}",
-                equipment_state_summary(&inventory_state)
-            );
+            pending_commands.push(GameCommand::MoveItem {
+                source: ItemReference::Slot(source),
+                destination: ItemDestination::WorldTile(target_tile),
+            });
         }
         None => {}
     }
@@ -1806,39 +1604,14 @@ fn point_in_ui_node(
     computed_node.contains_point(*global_transform, cursor_position)
 }
 
-fn take_item_from_slot_kind(
-    inventory_state: &mut InventoryState,
-    container_query: &mut Query<&mut Container>,
-    docked_panel_state: &DockedPanelState,
-    slot_kind: ItemSlotKind,
-) -> Option<u64> {
-    match slot_kind {
-        ItemSlotKind::Backpack(slot_index) => {
-            inventory_state.backpack_slots.get_mut(slot_index)?.take()
-        }
-        ItemSlotKind::OpenContainer {
-            panel_id,
-            slot_index,
-        } => docked_panel_state
-            .container_entity_for_panel(panel_id)
-            .and_then(|entity| {
-                container_query
-                    .get_mut(entity)
-                    .ok()
-                    .and_then(|mut container| container.slots.get_mut(slot_index)?.take())
-            }),
-        ItemSlotKind::Equipment(slot) => inventory_state.take_equipment_item(slot),
-    }
-}
-
 fn object_id_in_slot_kind(
-    inventory_state: &InventoryState,
-    container_query: &Query<&Container>,
+    client_state: &ClientGameState,
     docked_panel_state: &DockedPanelState,
     slot_kind: ItemSlotKind,
 ) -> Option<u64> {
     match slot_kind {
-        ItemSlotKind::Backpack(slot_index) => inventory_state
+        ItemSlotKind::Backpack(slot_index) => client_state
+            .inventory
             .backpack_slots
             .get(slot_index)
             .copied()
@@ -1847,147 +1620,16 @@ fn object_id_in_slot_kind(
             panel_id,
             slot_index,
         } => docked_panel_state
-            .container_entity_for_panel(panel_id)
-            .and_then(|entity| container_query.get(entity).ok())
-            .and_then(|container| container.slots.get(slot_index).copied().flatten()),
-        ItemSlotKind::Equipment(slot) => inventory_state.equipment_item(slot),
+            .container_object_id_for_panel(panel_id)
+            .and_then(|object_id| client_state.container_slots.get(&object_id))
+            .and_then(|slots| slots.get(slot_index).copied().flatten()),
+        ItemSlotKind::Equipment(slot) => client_state.inventory.equipment_item(slot),
     }
-}
-
-fn place_item_in_slot_kind(
-    inventory_state: &mut InventoryState,
-    container_query: &mut Query<&mut Container>,
-    docked_panel_state: &DockedPanelState,
-    object_id: u64,
-    slot_kind: ItemSlotKind,
-    object_registry: &ObjectRegistry,
-    definitions: &OverworldObjectDefinitions,
-) -> bool {
-    if !object_is_storable(object_id, object_registry, definitions) {
-        return false;
-    }
-
-    match slot_kind {
-        ItemSlotKind::Backpack(slot_index) => {
-            let Some(slot) = inventory_state.backpack_slots.get_mut(slot_index) else {
-                return false;
-            };
-            if slot.is_some() {
-                return false;
-            }
-            *slot = Some(object_id);
-            true
-        }
-        ItemSlotKind::OpenContainer {
-            panel_id,
-            slot_index,
-        } => {
-            let Some(entity) = docked_panel_state.container_entity_for_panel(panel_id) else {
-                return false;
-            };
-            let Ok(mut container) = container_query.get_mut(entity) else {
-                return false;
-            };
-            let Some(slot) = container.slots.get_mut(slot_index) else {
-                return false;
-            };
-            if slot.is_some() {
-                return false;
-            }
-            *slot = Some(object_id);
-            true
-        }
-        ItemSlotKind::Equipment(slot) => place_item_in_equipment_slot(
-            inventory_state,
-            object_registry,
-            definitions,
-            slot,
-            object_id,
-        ),
-    }
-}
-
-fn restore_backpack_slot(inventory_state: &mut InventoryState, slot_index: usize, object_id: u64) {
-    if let Some(slot) = inventory_state.backpack_slots.get_mut(slot_index) {
-        *slot = Some(object_id);
-    }
-}
-
-fn restore_item_to_slot(
-    inventory_state: &mut InventoryState,
-    container_query: &mut Query<&mut Container>,
-    docked_panel_state: &DockedPanelState,
-    slot_kind: ItemSlotKind,
-    object_id: u64,
-) {
-    match slot_kind {
-        ItemSlotKind::Backpack(slot_index) => {
-            restore_backpack_slot(inventory_state, slot_index, object_id)
-        }
-        ItemSlotKind::OpenContainer {
-            panel_id,
-            slot_index,
-        } => {
-            if let Some(entity) = docked_panel_state.container_entity_for_panel(panel_id) {
-                restore_container_slot(container_query, entity, slot_index, object_id);
-            }
-        }
-        ItemSlotKind::Equipment(slot) => {
-            inventory_state.restore_equipment_item(slot, object_id);
-        }
-    }
-}
-
-fn place_item_in_equipment_slot(
-    inventory_state: &mut InventoryState,
-    object_registry: &ObjectRegistry,
-    definitions: &OverworldObjectDefinitions,
-    slot: EquipmentSlot,
-    object_id: u64,
-) -> bool {
-    let Some(type_id) = object_registry.type_id(object_id) else {
-        warn!(
-            "equip_reject object_id={} reason=missing_type_id",
-            object_id
-        );
-        return false;
-    };
-    let Some(definition) = definitions.get(type_id) else {
-        warn!(
-            "equip_reject object_id={} type_id={} reason=missing_definition",
-            object_id, type_id
-        );
-        return false;
-    };
-    if definition.equipment_slot != Some(slot) {
-        warn!(
-            "equip_reject object_id={} type_id={} target_slot={slot:?} item_slot={:?} reason=slot_mismatch",
-            object_id,
-            type_id,
-            definition.equipment_slot
-        );
-        return false;
-    }
-
-    let placed = inventory_state.place_equipment_item(slot, object_id);
-    if placed {
-        info!(
-            "equip_accept object_id={} type_id={} slot={slot:?}",
-            object_id, type_id
-        );
-    } else {
-        warn!(
-            "equip_reject object_id={} type_id={} slot={slot:?} reason=slot_occupied",
-            object_id, type_id
-        );
-    }
-
-    placed
 }
 
 fn drag_source_name(source: &DragSource) -> &'static str {
     match source {
-        DragSource::World(_) => "world",
+        DragSource::World => "world",
         DragSource::UiSlot(_) => "ui_slot",
     }
 }
@@ -2031,288 +1673,6 @@ fn log_equipment_slot_bounds(
     }
 }
 
-fn object_description(
-    object_id: u64,
-    object_registry: &ObjectRegistry,
-    definitions: &OverworldObjectDefinitions,
-    spell_definitions: &SpellDefinitions,
-) -> Option<String> {
-    let type_id = object_registry.type_id(object_id)?;
-    let definition = definitions.get(type_id)?;
-    let mut parts = Vec::new();
-    let display_name = object_registry
-        .display_name(object_id, definitions, spell_definitions)
-        .unwrap_or_else(|| definition.name.clone());
-    let description_text = object_registry
-        .description(object_id, definitions, spell_definitions)
-        .unwrap_or_else(|| definition.description.clone());
-    let description = description_text.trim();
-    if description.is_empty() {
-        parts.push(format!("Just a {}.", display_name.to_lowercase()));
-    } else {
-        parts.push(description.to_owned());
-    }
-
-    let stat_lines = stat_bonus_lines(definition);
-    if !stat_lines.is_empty() {
-        parts.push(format!("Bonuses: {}", stat_lines.join(", ")));
-    }
-
-    Some(parts.join(" "))
-}
-
-fn inspect_context_target(
-    target: ContextMenuTarget,
-    object_registry: &ObjectRegistry,
-    definitions: &OverworldObjectDefinitions,
-    spell_definitions: &SpellDefinitions,
-    chat_log_state: &mut ChatLogState,
-) {
-    let object_id = match target {
-        ContextMenuTarget::World(_, object_id) | ContextMenuTarget::Slot(_, object_id) => object_id,
-    };
-
-    if let Some(description) =
-        object_description(object_id, object_registry, definitions, spell_definitions)
-    {
-        chat_log_state.push_narrator(description);
-    }
-}
-
-fn handle_use_action(
-    source_target: ContextMenuTarget,
-    inventory_state: &mut InventoryState,
-    container_query: &mut Query<&mut Container>,
-    docked_panel_state: &DockedPanelState,
-    object_registry: &ObjectRegistry,
-    definitions: &OverworldObjectDefinitions,
-    spell_definitions: &SpellDefinitions,
-    player_query: &mut Query<&mut VitalStats, With<Player>>,
-    chat_log_state: &mut ChatLogState,
-    cursor_state: &mut CursorState,
-    spell_targeting_state: &mut SpellTargetingState,
-    commands: &mut Commands,
-) {
-    let object_id = context_target_object_id(source_target);
-    let Some(type_id) = object_registry.type_id(object_id) else {
-        return;
-    };
-    let Some(definition) = definitions.get(type_id) else {
-        return;
-    };
-    let source_name = object_registry
-        .display_name(object_id, definitions, spell_definitions)
-        .unwrap_or_else(|| definition.name.clone());
-
-    let Some(spell_id) =
-        object_registry.resolved_spell_id(object_id, definitions, spell_definitions)
-    else {
-        use_on_player_target(
-            source_target,
-            inventory_state,
-            container_query,
-            docked_panel_state,
-            object_registry,
-            definitions,
-            spell_definitions,
-            player_query,
-            chat_log_state,
-            commands,
-        );
-        return;
-    };
-    let Some(spell) = spell_definitions.get(&spell_id) else {
-        chat_log_state.push_narrator(format!(
-            "{} is inscribed with an unknown spell.",
-            source_name
-        ));
-        return;
-    };
-
-    match spell.targeting {
-        SpellTargeting::Untargeted => {
-            cast_untargeted_spell(
-                source_target,
-                spell,
-                docked_panel_state,
-                inventory_state,
-                container_query,
-                player_query,
-                chat_log_state,
-                commands,
-            );
-        }
-        SpellTargeting::Targeted => {
-            spell_targeting_state.source = Some(source_target);
-            spell_targeting_state.spell_id = Some(spell_id);
-            cursor_state.mode = CursorMode::SpellTarget;
-            chat_log_state.push_narrator(format!("Select a target for {}.", spell.name));
-        }
-    }
-}
-
-fn use_on_player_target(
-    source_target: ContextMenuTarget,
-    inventory_state: &mut InventoryState,
-    container_query: &mut Query<&mut Container>,
-    docked_panel_state: &DockedPanelState,
-    object_registry: &ObjectRegistry,
-    definitions: &OverworldObjectDefinitions,
-    spell_definitions: &SpellDefinitions,
-    player_query: &mut Query<&mut VitalStats, With<Player>>,
-    chat_log_state: &mut ChatLogState,
-    commands: &mut Commands,
-) {
-    let object_id = context_target_object_id(source_target);
-
-    let Some(type_id) = object_registry.type_id(object_id) else {
-        return;
-    };
-    let Some(definition) = definitions.get(type_id) else {
-        return;
-    };
-    let source_name = object_registry
-        .display_name(object_id, definitions, spell_definitions)
-        .unwrap_or_else(|| definition.name.clone());
-    if !definition.is_usable() {
-        return;
-    }
-
-    let Ok(mut vital_stats) = player_query.single_mut() else {
-        return;
-    };
-
-    vital_stats.health = (vital_stats.health + definition.use_effects.restore_health)
-        .clamp(0.0, vital_stats.max_health);
-    vital_stats.mana =
-        (vital_stats.mana + definition.use_effects.restore_mana).clamp(0.0, vital_stats.max_mana);
-
-    match source_target {
-        ContextMenuTarget::World(entity, _) => {
-            commands.entity(entity).despawn();
-        }
-        ContextMenuTarget::Slot(slot_kind, _) => {
-            let _ = take_item_from_slot_kind(
-                inventory_state,
-                container_query,
-                docked_panel_state,
-                slot_kind,
-            );
-        }
-    }
-
-    chat_log_state.push_narrator(use_text(definition, &source_name));
-}
-
-fn cast_untargeted_spell(
-    source_target: ContextMenuTarget,
-    spell: &SpellDefinition,
-    docked_panel_state: &DockedPanelState,
-    inventory_state: &mut InventoryState,
-    container_query: &mut Query<&mut Container>,
-    player_query: &mut Query<&mut VitalStats, With<Player>>,
-    chat_log_state: &mut ChatLogState,
-    commands: &mut Commands,
-) {
-    let Ok(mut player_vitals) = player_query.single_mut() else {
-        return;
-    };
-
-    if player_vitals.mana < spell.mana_cost {
-        chat_log_state.push_narrator(format!("Not enough mana to cast {}.", spell.name));
-        return;
-    }
-
-    player_vitals.mana = (player_vitals.mana - spell.mana_cost).max(0.0);
-    apply_spell_effects(spell, &mut player_vitals);
-
-    consume_source_target(
-        source_target,
-        inventory_state,
-        container_query,
-        docked_panel_state,
-        commands,
-    );
-
-    chat_log_state.push_line(format!("[Player]: \"{}\"", spell.incantation));
-    chat_log_state.push_narrator(format!("Cast {}.", spell.name));
-}
-
-fn consume_source_target(
-    source_target: ContextMenuTarget,
-    inventory_state: &mut InventoryState,
-    container_query: &mut Query<&mut Container>,
-    docked_panel_state: &DockedPanelState,
-    commands: &mut Commands,
-) {
-    match source_target {
-        ContextMenuTarget::World(entity, _) => {
-            commands.entity(entity).despawn();
-        }
-        ContextMenuTarget::Slot(slot_kind, _) => {
-            let _ = take_item_from_slot_kind(
-                inventory_state,
-                container_query,
-                docked_panel_state,
-                slot_kind,
-            );
-        }
-    }
-}
-
-fn apply_spell_effects(spell: &SpellDefinition, vital_stats: &mut VitalStats) {
-    vital_stats.health =
-        (vital_stats.health - spell.effects.damage).clamp(0.0, vital_stats.max_health);
-    vital_stats.health =
-        (vital_stats.health + spell.effects.restore_health).clamp(0.0, vital_stats.max_health);
-    vital_stats.mana =
-        (vital_stats.mana + spell.effects.restore_mana).clamp(0.0, vital_stats.max_mana);
-}
-
-fn chebyshev_distance_tiles(a: TilePosition, b: TilePosition) -> i32 {
-    (a.x - b.x).abs().max((a.y - b.y).abs())
-}
-
-fn use_on_world_target(
-    source_target: ContextMenuTarget,
-    target_object_id: u64,
-    object_registry: &ObjectRegistry,
-    definitions: &OverworldObjectDefinitions,
-    spell_definitions: &SpellDefinitions,
-    chat_log_state: &mut ChatLogState,
-) {
-    let source_object_id = context_target_object_id(source_target);
-    let Some(source_type_id) = object_registry.type_id(source_object_id) else {
-        return;
-    };
-    let Some(source_definition) = definitions.get(source_type_id) else {
-        return;
-    };
-    let Some(target_type_id) = object_registry.type_id(target_object_id) else {
-        return;
-    };
-    let Some(target_definition) = definitions.get(target_type_id) else {
-        return;
-    };
-    let source_name = object_registry
-        .display_name(source_object_id, definitions, spell_definitions)
-        .unwrap_or_else(|| source_definition.name.clone());
-    let target_name = object_registry
-        .display_name(target_object_id, definitions, spell_definitions)
-        .unwrap_or_else(|| target_definition.name.clone());
-
-    chat_log_state.push_narrator(use_on_text(source_definition, &source_name, &target_name));
-}
-
-fn object_name(
-    object_id: u64,
-    object_registry: &ObjectRegistry,
-    definitions: &OverworldObjectDefinitions,
-    spell_definitions: &SpellDefinitions,
-) -> Option<String> {
-    object_registry.display_name(object_id, definitions, spell_definitions)
-}
-
 fn object_is_usable(
     object_id: u64,
     object_registry: &ObjectRegistry,
@@ -2326,21 +1686,6 @@ fn object_is_usable(
     };
 
     definition.is_usable()
-}
-
-fn object_is_storable(
-    object_id: u64,
-    object_registry: &ObjectRegistry,
-    definitions: &OverworldObjectDefinitions,
-) -> bool {
-    let Some(type_id) = object_registry.type_id(object_id) else {
-        return false;
-    };
-    let Some(definition) = definitions.get(type_id) else {
-        return false;
-    };
-
-    definition.storable
 }
 
 fn can_use_on(
@@ -2364,85 +1709,36 @@ fn can_use_on(
 
 fn context_target_object_id(target: ContextMenuTarget) -> u64 {
     match target {
-        ContextMenuTarget::World(_, object_id) | ContextMenuTarget::Slot(_, object_id) => object_id,
+        ContextMenuTarget::World(object_id) | ContextMenuTarget::Slot(_, object_id) => object_id,
     }
 }
 
-fn use_text(definition: &OverworldObjectDefinition, item_name: &str) -> String {
-    if definition.use_texts.is_empty() {
-        return format!("{item_name} used.");
-    }
-
-    random_text(&definition.use_texts).replace("{item}", item_name)
-}
-
-fn use_on_text(
-    definition: &OverworldObjectDefinition,
-    item_name: &str,
-    target_name: &str,
-) -> String {
-    if definition.use_on_texts.is_empty() {
-        return format!("Used {} on {}.", item_name, target_name);
-    }
-
-    let template = random_text(&definition.use_on_texts);
-    template
-        .replace("{target}", target_name)
-        .replace("{item}", item_name)
-}
-
-fn random_text(texts: &[String]) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.subsec_nanos() as usize)
-        .unwrap_or(0);
-    texts[nanos % texts.len()].clone()
-}
-
-fn stat_bonus_lines(definition: &OverworldObjectDefinition) -> Vec<String> {
-    let mut bonuses = Vec::new();
-
-    if definition.stats.strength != 0 {
-        bonuses.push(format!("{:+} str", definition.stats.strength));
-    }
-    if definition.stats.agility != 0 {
-        bonuses.push(format!("{:+} agi", definition.stats.agility));
-    }
-    if definition.stats.constitution != 0 {
-        bonuses.push(format!("{:+} con", definition.stats.constitution));
-    }
-    if definition.stats.willpower != 0 {
-        bonuses.push(format!("{:+} wil", definition.stats.willpower));
-    }
-    if definition.stats.charisma != 0 {
-        bonuses.push(format!("{:+} cha", definition.stats.charisma));
-    }
-    if definition.stats.focus != 0 {
-        bonuses.push(format!("{:+} foc", definition.stats.focus));
-    }
-    if definition.stats.max_health != 0 {
-        bonuses.push(format!("{:+} hp", definition.stats.max_health));
-    }
-    if definition.stats.max_mana != 0 {
-        bonuses.push(format!("{:+} mana", definition.stats.max_mana));
-    }
-    if definition.stats.storage_slots != 0 {
-        bonuses.push(format!("{:+} storage", definition.stats.storage_slots));
-    }
-
-    bonuses
-}
-
-fn restore_container_slot(
-    container_query: &mut Query<&mut Container>,
-    entity: Entity,
-    slot_index: usize,
-    object_id: u64,
-) {
-    if let Ok(mut container) = container_query.get_mut(entity) {
-        if let Some(slot) = container.slots.get_mut(slot_index) {
-            *slot = Some(object_id);
+fn context_target_to_item_reference(
+    target: ContextMenuTarget,
+    docked_panel_state: &DockedPanelState,
+) -> Option<ItemReference> {
+    match target {
+        ContextMenuTarget::World(object_id) => Some(ItemReference::WorldObject(object_id)),
+        ContextMenuTarget::Slot(slot_kind, _) => {
+            item_slot_kind_to_ref(slot_kind, docked_panel_state).map(ItemReference::Slot)
         }
+    }
+}
+
+fn item_slot_kind_to_ref(
+    slot_kind: ItemSlotKind,
+    docked_panel_state: &DockedPanelState,
+) -> Option<ItemSlotRef> {
+    match slot_kind {
+        ItemSlotKind::Backpack(slot_index) => Some(ItemSlotRef::Backpack(slot_index)),
+        ItemSlotKind::Equipment(slot) => Some(ItemSlotRef::Equipment(slot)),
+        ItemSlotKind::OpenContainer {
+            panel_id,
+            slot_index,
+        } => Some(ItemSlotRef::Container {
+            object_id: docked_panel_state.container_object_id_for_panel(panel_id)?,
+            slot_index,
+        }),
     }
 }
 
@@ -2468,80 +1764,4 @@ fn is_near_player(player_position: &TilePosition, target_position: &TilePosition
     let delta_y = (player_position.y - target_position.y).abs();
 
     delta_x <= 1 && delta_y <= 1
-}
-
-fn is_valid_world_drop(
-    target_tile: TilePosition,
-    source_world_tile: Option<TilePosition>,
-    player_position: &TilePosition,
-    dragged_entity: Entity,
-    collider_query: &Query<&TilePosition, (With<Collider>, Without<Player>)>,
-    movable_query: &Query<(Entity, &TilePosition, &OverworldObject), With<Movable>>,
-    world_config: &WorldConfig,
-) -> bool {
-    if target_tile.x < 0
-        || target_tile.y < 0
-        || target_tile.x >= world_config.map_width
-        || target_tile.y >= world_config.map_height
-    {
-        return false;
-    }
-
-    if !is_near_player(player_position, &target_tile) {
-        return false;
-    }
-
-    if let Some(source_tile) = source_world_tile {
-        let delta_x = (source_tile.x - target_tile.x).abs();
-        let delta_y = (source_tile.y - target_tile.y).abs();
-        if delta_x > 1 || delta_y > 1 {
-            return false;
-        }
-    }
-
-    if collider_query.iter().any(|tile| *tile == target_tile) {
-        return false;
-    }
-
-    !movable_query
-        .iter()
-        .any(|(entity, tile, _)| entity != dragged_entity && *tile == target_tile)
-}
-
-fn find_nearest_valid_world_drop_tile(
-    requested_tile: TilePosition,
-    source_world_tile: Option<TilePosition>,
-    player_position: &TilePosition,
-    dragged_entity: Entity,
-    collider_query: &Query<&TilePosition, (With<Collider>, Without<Player>)>,
-    movable_query: &Query<(Entity, &TilePosition, &OverworldObject), With<Movable>>,
-    world_config: &WorldConfig,
-) -> Option<TilePosition> {
-    let mut candidates = Vec::new();
-
-    for y in (player_position.y - 1)..=(player_position.y + 1) {
-        for x in (player_position.x - 1)..=(player_position.x + 1) {
-            let tile = TilePosition::new(x, y);
-            let distance = (requested_tile.x - x).abs() + (requested_tile.y - y).abs();
-            candidates.push((distance, tile));
-        }
-    }
-
-    candidates.sort_by_key(|(distance, _)| *distance);
-
-    for (_, candidate) in candidates {
-        if is_valid_world_drop(
-            candidate,
-            source_world_tile,
-            player_position,
-            dragged_entity,
-            collider_query,
-            movable_query,
-            world_config,
-        ) {
-            return Some(candidate);
-        }
-    }
-
-    None
 }

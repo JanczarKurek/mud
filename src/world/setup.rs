@@ -6,14 +6,32 @@ use crate::npc::components::{
 };
 use crate::player::components::{BaseStats, DerivedStats, VitalStats};
 use crate::world::components::{
-    Collider, CombatHealthBar, Container, Movable, OverworldObject, Storable, TilePosition,
-    WorldVisual,
+    ClientProjectedWorldObject, Collider, CombatHealthBar, Container, Movable, OverworldObject,
+    Storable, TilePosition, WorldVisual,
 };
 use crate::world::map_layout::{MapBehavior, MapLayout, MapObjectInstance};
-use crate::world::object_definitions::OverworldObjectDefinitions;
+use crate::world::object_definitions::{OverworldObjectDefinition, OverworldObjectDefinitions};
 use crate::world::WorldConfig;
 
 pub fn spawn_world(
+    mut commands: Commands,
+    map_layout: Res<MapLayout>,
+    definitions: Res<OverworldObjectDefinitions>,
+) {
+    for object in &map_layout.resolved_objects {
+        if map_layout.is_contained(object.id) {
+            continue;
+        }
+
+        let Some(placement) = object.placement else {
+            continue;
+        };
+
+        spawn_overworld_object_instance(&mut commands, &map_layout, &definitions, object, placement.to_tile_position());
+    }
+}
+
+pub fn spawn_ground_tiles(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     map_layout: Res<MapLayout>,
@@ -32,34 +50,12 @@ pub fn spawn_world(
             );
         }
     }
-
-    for object in &map_layout.resolved_objects {
-        if map_layout.is_contained(object.id) {
-            continue;
-        }
-
-        let Some(placement) = object.placement else {
-            continue;
-        };
-
-        spawn_overworld_object_instance(
-            &mut commands,
-            &asset_server,
-            &map_layout,
-            &definitions,
-            &world_config,
-            object,
-            placement.to_tile_position(),
-        );
-    }
 }
 
 pub fn spawn_overworld_object_instance(
     commands: &mut Commands,
-    asset_server: &AssetServer,
     map_layout: &MapLayout,
     definitions: &OverworldObjectDefinitions,
-    world_config: &WorldConfig,
     object: &MapObjectInstance,
     tile_position: TilePosition,
 ) {
@@ -71,9 +67,7 @@ pub fn spawn_overworld_object_instance(
 
     let entity = spawn_overworld_object(
         commands,
-        asset_server,
         definitions,
-        world_config,
         object.id,
         &object.type_id,
         container_contents,
@@ -154,7 +148,6 @@ pub fn spawn_overworld_object_instance(
             }
         }
 
-        attach_combat_health_bar(commands, entity, world_config.tile_size);
     }
 
     let _ = map_layout;
@@ -211,20 +204,7 @@ fn spawn_ground_tile(
     let definition = definitions
         .get(definition_id)
         .unwrap_or_else(|| panic!("Missing overworld object definition for id '{definition_id}'"));
-
-    let mut sprite = if let Some(sprite_path) = &definition.render.sprite_path {
-        let mut sprite = Sprite::from_image(asset_server.load(sprite_path));
-        sprite.custom_size = Some(Vec2::splat(
-            world_config.tile_size * definition.render.debug_size,
-        ));
-        sprite
-    } else {
-        Sprite::from_color(
-            definition.debug_color(),
-            Vec2::splat(world_config.tile_size * definition.render.debug_size),
-        )
-    };
-    sprite.image_mode = SpriteImageMode::Auto;
+    let sprite = sprite_for_definition(asset_server, definition, world_config);
 
     commands.spawn((
         tile_position,
@@ -238,44 +218,23 @@ fn spawn_ground_tile(
 
 pub fn spawn_overworld_object(
     commands: &mut Commands,
-    asset_server: &AssetServer,
     definitions: &OverworldObjectDefinitions,
-    world_config: &WorldConfig,
     object_id: u64,
     definition_id: &str,
     container_contents: Option<Vec<u64>>,
     tile_position: TilePosition,
 ) -> Entity {
-    let definition = definitions
-        .get(definition_id)
-        .unwrap_or_else(|| panic!("Missing overworld object definition for id '{definition_id}'"));
-
-    let mut sprite = if let Some(sprite_path) = &definition.render.sprite_path {
-        let mut sprite = Sprite::from_image(asset_server.load(sprite_path));
-        sprite.custom_size = Some(Vec2::splat(
-            world_config.tile_size * definition.render.debug_size,
-        ));
-        sprite
-    } else {
-        Sprite::from_color(
-            definition.debug_color(),
-            Vec2::splat(world_config.tile_size * definition.render.debug_size),
-        )
-    };
-    sprite.image_mode = SpriteImageMode::Auto;
-
     let mut entity = commands.spawn((
         OverworldObject {
             object_id,
             definition_id: definition_id.to_owned(),
         },
         tile_position,
-        WorldVisual {
-            z_index: definition.render.z_index,
-        },
-        sprite,
-        Transform::from_xyz(0.0, 0.0, definition.render.z_index),
     ));
+
+    let definition = definitions
+        .get(definition_id)
+        .unwrap_or_else(|| panic!("Missing overworld object definition for id '{definition_id}'"));
 
     if definition.colliding {
         entity.insert(Collider);
@@ -307,4 +266,61 @@ pub fn spawn_overworld_object(
     }
 
     entity.id()
+}
+
+pub fn spawn_client_projected_world_object(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    definitions: &OverworldObjectDefinitions,
+    world_config: &WorldConfig,
+    object_id: u64,
+    definition_id: &str,
+    tile_position: TilePosition,
+    is_npc: bool,
+) -> Entity {
+    let definition = definitions
+        .get(definition_id)
+        .unwrap_or_else(|| panic!("Missing overworld object definition for id '{definition_id}'"));
+    let sprite = sprite_for_definition(asset_server, definition, world_config);
+    let entity = commands
+        .spawn((
+            ClientProjectedWorldObject {
+                object_id,
+                definition_id: definition_id.to_owned(),
+            },
+            tile_position,
+            WorldVisual {
+                z_index: definition.render.z_index,
+            },
+            sprite,
+            Transform::from_xyz(0.0, 0.0, definition.render.z_index),
+        ))
+        .id();
+
+    if is_npc {
+        attach_combat_health_bar(commands, entity, world_config.tile_size);
+    }
+
+    entity
+}
+
+fn sprite_for_definition(
+    asset_server: &AssetServer,
+    definition: &OverworldObjectDefinition,
+    world_config: &WorldConfig,
+) -> Sprite {
+    let mut sprite = if let Some(sprite_path) = &definition.render.sprite_path {
+        let mut sprite = Sprite::from_image(asset_server.load(sprite_path));
+        sprite.custom_size = Some(Vec2::splat(
+            world_config.tile_size * definition.render.debug_size,
+        ));
+        sprite
+    } else {
+        Sprite::from_color(
+            definition.debug_color(),
+            Vec2::splat(world_config.tile_size * definition.render.debug_size),
+        )
+    };
+    sprite.image_mode = SpriteImageMode::Auto;
+    sprite
 }

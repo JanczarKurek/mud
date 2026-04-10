@@ -3,10 +3,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::combat::components::{AttackKind, AttackProfile, CombatLeash, CombatTarget};
 use crate::combat::resources::BattleTurnTimer;
+use crate::game::resources::ChatLogState;
 use crate::magic::resources::SpellDefinitions;
 use crate::npc::components::Npc;
 use crate::player::components::{DerivedStats, Player, VitalStats};
-use crate::ui::resources::ChatLogState;
 use crate::world::components::{OverworldObject, TilePosition};
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;

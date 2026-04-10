@@ -2,113 +2,10 @@ use bevy::prelude::*;
 
 use crate::ui::components::ItemSlotKind;
 use crate::world::components::TilePosition;
-use crate::world::object_definitions::EquipmentSlot;
-
-#[derive(Resource)]
-pub struct InventoryState {
-    pub backpack_slots: Vec<Option<u64>>,
-    pub equipment_slots: Vec<(EquipmentSlot, Option<u64>)>,
-}
-
-impl Default for InventoryState {
-    fn default() -> Self {
-        Self {
-            backpack_slots: vec![None; 16],
-            equipment_slots: EquipmentSlot::ALL
-                .into_iter()
-                .map(|slot| (slot, None))
-                .collect(),
-        }
-    }
-}
-
-impl InventoryState {
-    pub fn equipment_item(&self, slot: EquipmentSlot) -> Option<u64> {
-        self.equipment_slots.iter().find_map(
-            |(equipment_slot, item)| {
-                if *equipment_slot == slot {
-                    *item
-                } else {
-                    None
-                }
-            },
-        )
-    }
-
-    pub fn take_equipment_item(&mut self, slot: EquipmentSlot) -> Option<u64> {
-        self.equipment_slots
-            .iter_mut()
-            .find_map(|(equipment_slot, item)| {
-                if *equipment_slot == slot {
-                    item.take()
-                } else {
-                    None
-                }
-            })
-    }
-
-    pub fn place_equipment_item(&mut self, slot: EquipmentSlot, object_id: u64) -> bool {
-        for (equipment_slot, item) in &mut self.equipment_slots {
-            if *equipment_slot != slot {
-                continue;
-            }
-
-            if item.is_some() {
-                return false;
-            }
-
-            *item = Some(object_id);
-            return true;
-        }
-
-        false
-    }
-
-    pub fn restore_equipment_item(&mut self, slot: EquipmentSlot, object_id: u64) {
-        for (equipment_slot, item) in &mut self.equipment_slots {
-            if *equipment_slot == slot {
-                *item = Some(object_id);
-                return;
-            }
-        }
-    }
-}
-
-#[derive(Resource)]
-pub struct ChatLogState {
-    pub lines: Vec<String>,
-    pub max_lines: usize,
-}
-
-impl Default for ChatLogState {
-    fn default() -> Self {
-        Self {
-            lines: vec![
-                "[Narrator]: Right-click an item to inspect it.".to_owned(),
-                "[Narrator]: Right-click a nearby barrel to open it.".to_owned(),
-            ],
-            max_lines: 8,
-        }
-    }
-}
-
-impl ChatLogState {
-    pub fn push_line(&mut self, message: impl Into<String>) {
-        self.lines.push(message.into());
-        if self.lines.len() > self.max_lines {
-            let overflow = self.lines.len() - self.max_lines;
-            self.lines.drain(0..overflow);
-        }
-    }
-
-    pub fn push_narrator(&mut self, message: impl Into<String>) {
-        self.push_line(format!("[Narrator]: {}", message.into()));
-    }
-}
 
 #[derive(Clone, Copy)]
 pub enum ContextMenuTarget {
-    World(Entity, u64),
+    World(u64),
     Slot(ItemSlotKind, u64),
 }
 
@@ -154,7 +51,7 @@ impl ContextMenuState {
 }
 
 pub enum DragSource {
-    World(Entity),
+    World,
     UiSlot(ItemSlotKind),
 }
 
@@ -164,7 +61,7 @@ pub enum DockedPanelKind {
     Equipment,
     Backpack,
     CurrentTarget,
-    Container { entity: Entity },
+    Container { object_id: u64 },
 }
 
 #[derive(Clone, Debug)]
@@ -215,10 +112,10 @@ impl DockedPanelState {
         self.close_panel(Self::CURRENT_TARGET_PANEL_ID);
     }
 
-    pub fn open(&mut self, entity: Entity) {
+    pub fn open(&mut self, object_id: u64) {
         let panel = DockedPanel {
             id: self.next_container_panel_id(),
-            kind: DockedPanelKind::Container { entity },
+            kind: DockedPanelKind::Container { object_id },
             title: "Container".to_owned(),
             height: Self::DEFAULT_CONTAINER_PANEL_HEIGHT,
             closable: true,
@@ -229,7 +126,7 @@ impl DockedPanelState {
         if let Some(existing_index) = self
             .panels
             .iter()
-            .position(|panel| panel.kind == DockedPanelKind::Container { entity })
+            .position(|panel| panel.kind == DockedPanelKind::Container { object_id })
         {
             let existing_panel = self.panels.remove(existing_index);
             self.panels.push(existing_panel);
@@ -254,9 +151,9 @@ impl DockedPanelState {
         self.panels.iter_mut().find(|panel| panel.id == panel_id)
     }
 
-    pub fn container_entity_for_panel(&self, panel_id: usize) -> Option<Entity> {
+    pub fn container_object_id_for_panel(&self, panel_id: usize) -> Option<u64> {
         match self.panel(panel_id).map(|panel| panel.kind) {
-            Some(DockedPanelKind::Container { entity }) => Some(entity),
+            Some(DockedPanelKind::Container { object_id }) => Some(object_id),
             Some(DockedPanelKind::Status)
             | Some(DockedPanelKind::Equipment)
             | Some(DockedPanelKind::Backpack)

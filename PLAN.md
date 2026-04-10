@@ -218,6 +218,11 @@ Tasks:
 - Add robust spatial query helpers.
 - Add serialization-friendly state structures.
 
+Current status note:
+- The project now has an initial in-process authoritative command-processing layer in `src/game/`.
+- UI and player input paths submit commands instead of mutating gameplay state directly for movement, targeting, use/use-on, spell casts, drag/drop, and console spawns.
+- A later step still needs a true client view/replication layer and transport abstraction before the client/server split is complete.
+
 Deliverables:
 - Clear domain model that can support save/load and networking.
 

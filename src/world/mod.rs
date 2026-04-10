@@ -2,6 +2,7 @@ pub mod components;
 pub mod map_layout;
 pub mod object_definitions;
 pub mod object_registry;
+pub mod resources;
 pub mod setup;
 pub mod systems;
 
@@ -10,12 +11,18 @@ use bevy::prelude::*;
 use crate::world::map_layout::MapLayout;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
-use crate::world::setup::spawn_world;
-use crate::world::systems::{sync_combat_health_bars, sync_tile_transforms};
+use crate::world::resources::ClientWorldProjectionState;
+use crate::world::setup::{spawn_ground_tiles, spawn_world};
+use crate::world::systems::{
+    sync_client_world_projection, sync_combat_health_bars, sync_tile_transforms,
+};
+use crate::game::systems::apply_game_events_to_client_state;
 
-pub struct WorldPlugin;
+pub struct WorldServerPlugin;
 
-impl Plugin for WorldPlugin {
+pub struct WorldClientPlugin;
+
+impl Plugin for WorldServerPlugin {
     fn build(&self, app: &mut App) {
         let map_layout = MapLayout::load_from_disk();
         let world_config = WorldConfig {
@@ -29,8 +36,22 @@ impl Plugin for WorldPlugin {
             .insert_resource(map_layout)
             .insert_resource(object_registry)
             .insert_resource(OverworldObjectDefinitions::load_from_disk())
-            .add_systems(Startup, spawn_world)
-            .add_systems(Update, (sync_tile_transforms, sync_combat_health_bars));
+            .add_systems(Startup, spawn_world);
+    }
+}
+
+impl Plugin for WorldClientPlugin {
+    fn build(&self, app: &mut App) {
+        app.insert_resource(ClientWorldProjectionState::default())
+            .add_systems(Startup, spawn_ground_tiles)
+            .add_systems(
+                Update,
+                (
+                    sync_client_world_projection.after(apply_game_events_to_client_state),
+                    sync_tile_transforms,
+                    sync_combat_health_bars,
+                ),
+            );
     }
 }
 

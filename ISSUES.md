@@ -3,6 +3,8 @@
 ## Active
 
 - Decide whether to introduce a dedicated `shared/` crate before networking or only after the local prototype.
+- Finish migrating remaining presentation systems to consume replicated/view state instead of directly reading authoritative ECS/resources.
+- Decide when to delete the now-obsolete direct-mutation helpers still left in `ui::systems`.
 - Replace placeholder colored terrain with proper art/assets later.
 - Decide how we want to represent stacked map objects visually once trees, items, and walls can share space.
 - Decide whether decorative objects like flowers should share tiles with blocking objects through explicit layering rules.
@@ -19,6 +21,7 @@
 - Add validation for map YAML so invalid object IDs or out-of-bounds placements fail clearly.
 - Decide how much scripting authority the embedded Python console should keep once server-authoritative logic exists.
 - Generalize the new NPC behavior system so mobs/NPCs can share the same behavior component layer.
+- Add a transport abstraction on top of the new in-process command pipeline so embedded loopback networking can become the default.
 
 ## Completed
 
@@ -45,10 +48,11 @@
 - Added a hostile roam-and-chase NPC behavior and a first goblin encounter.
 - Added first-pass scroll-cast magic with YAML-defined spells, untargeted/self-cast and targeted spell modes, and a dedicated spell-target cursor.
 - Generalized the right sidebar into docked windows so status, equipment, backpack, target, and container panels share the same scrollable/resizable dock system, with title-bar reordering for movable panel order.
+- Introduced a first server-authoritative command layer inside the single-player app, moving gameplay mutations for movement, targeting, item actions, spell casting, drag/drop, and console spawns behind a central game-processing plugin.
 
 ## Later Ideas
 
 - Chunk-based world streaming.
 - Persistent dropped items and containers.
-- Server-authoritative movement and interaction.
+- Real transport/networking on top of the in-process authoritative command layer.
 - Debug/admin tools for spawning and inspecting entities.
