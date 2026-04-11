@@ -4,6 +4,7 @@ pub mod systems;
 
 use bevy::prelude::*;
 
+use crate::app::state::ClientAppState;
 use crate::player::setup::spawn_player_visual;
 use crate::player::systems::{
     move_player_on_grid, refresh_derived_player_stats, sync_player_client_state,
@@ -21,7 +22,11 @@ impl Plugin for PlayerServerPlugin {
 
 impl Plugin for PlayerClientPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(PostStartup, spawn_player_visual)
-            .add_systems(Update, (sync_player_client_state, move_player_on_grid));
+        app.add_systems(OnEnter(ClientAppState::InGame), spawn_player_visual)
+            .add_systems(
+                Update,
+                (sync_player_client_state, move_player_on_grid)
+                    .run_if(in_state(ClientAppState::InGame)),
+            );
     }
 }

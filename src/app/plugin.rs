@@ -5,6 +5,8 @@ use bevy::prelude::*;
 use bevy::window::Window;
 
 use crate::app::setup::setup_camera;
+use crate::app::state::ClientAppState;
+use crate::app::title_screen::TitleScreenPlugin;
 use crate::combat::CombatPlugin;
 use crate::game::{GameClientPlugin, GameServerPlugin};
 use crate::magic::MagicPlugin;
@@ -50,6 +52,7 @@ impl Plugin for GameAppPlugin {
                     }),
                     ..default()
                 }))
+                .init_state::<ClientAppState>()
                 .add_systems(Startup, setup_camera)
                 .add_systems(Startup, spawn_embedded_player_authoritative)
                 .add_plugins((
@@ -57,6 +60,10 @@ impl Plugin for GameAppPlugin {
                     PlayerClientPlugin,
                     UiPlugin,
                     ScriptingPlugin,
+                    TitleScreenPlugin {
+                        runtime: self.runtime,
+                        server_addr: self.server_addr.clone(),
+                    },
                 ));
             }
             AppRuntime::TcpClient => {
@@ -67,6 +74,7 @@ impl Plugin for GameAppPlugin {
                     }),
                     ..default()
                 }))
+                .init_state::<ClientAppState>()
                 .add_systems(Startup, setup_camera)
                 .add_plugins((
                     GameClientPlugin,
@@ -80,6 +88,10 @@ impl Plugin for GameAppPlugin {
                             .server_addr
                             .clone()
                             .unwrap_or_else(|| "127.0.0.1:7000".to_owned()),
+                    },
+                    TitleScreenPlugin {
+                        runtime: self.runtime,
+                        server_addr: self.server_addr.clone(),
                     },
                 ));
             }

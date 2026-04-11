@@ -4,6 +4,7 @@ pub mod systems;
 
 use bevy::prelude::*;
 
+use crate::app::state::ClientAppState;
 use crate::scripting::python::PythonConsoleHost;
 use crate::scripting::resources::PythonConsoleState;
 use crate::scripting::systems::{handle_python_console_input, refresh_python_console_ui};
@@ -16,7 +17,8 @@ impl Plugin for ScriptingPlugin {
             .insert_non_send_resource(PythonConsoleHost::new())
             .add_systems(
                 Update,
-                (handle_python_console_input, refresh_python_console_ui),
+                (handle_python_console_input, refresh_python_console_ui)
+                    .run_if(in_state(ClientAppState::InGame)),
             );
     }
 }

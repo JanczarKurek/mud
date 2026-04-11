@@ -12,6 +12,7 @@ pub struct ConnectionId(pub u64);
 #[derive(Resource)]
 pub struct TcpClientConfig {
     pub server_addr: String,
+    pub active: bool,
 }
 
 #[derive(Resource, Default)]

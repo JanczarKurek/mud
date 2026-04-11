@@ -5,6 +5,7 @@ pub mod systems;
 
 use bevy::prelude::*;
 
+use crate::app::state::ClientAppState;
 use crate::ui::resources::{
     ContextMenuState, CursorState, DockedPanelDragState, DockedPanelResizeState, DockedPanelState,
     DragState, SpellTargetingState, UseOnState,
@@ -35,7 +36,10 @@ impl Plugin for UiPlugin {
             .insert_resource(CursorState::default())
             .insert_resource(UseOnState::default())
             .insert_resource(SpellTargetingState::default())
-            .add_systems(Startup, (spawn_hud, setup_native_custom_cursor))
+            .add_systems(
+                OnEnter(ClientAppState::InGame),
+                (spawn_hud, setup_native_custom_cursor),
+            )
             .add_systems(
                 Update,
                 (
@@ -52,23 +56,58 @@ impl Plugin for UiPlugin {
                     sync_current_combat_target,
                     sync_docked_panel_layout,
                     sync_docked_panel_titles,
-                ),
+                )
+                    .run_if(in_state(ClientAppState::InGame)),
             )
             .add_systems(
                 Update,
-                (sync_item_slot_button_visibility, sync_container_slot_images),
+                (sync_item_slot_button_visibility, sync_container_slot_images)
+                    .run_if(in_state(ClientAppState::InGame)),
             )
-            .add_systems(Update, sync_equipment_slot_images)
-            .add_systems(Update, handle_context_menu_actions)
-            .add_systems(Update, handle_docked_panel_close_buttons)
-            .add_systems(Update, handle_docked_panel_dragging)
-            .add_systems(Update, handle_docked_panel_resizing)
-            .add_systems(Update, handle_docked_panel_scrolling)
-            .add_systems(Update, handle_context_menu_opening)
-            .add_systems(Update, handle_use_on_targeting)
-            .add_systems(Update, handle_spell_targeting)
-            .add_systems(Update, handle_movable_dragging)
-            .add_systems(Update, print_right_sidebar_layout_debug)
+            .add_systems(
+                Update,
+                sync_equipment_slot_images.run_if(in_state(ClientAppState::InGame)),
+            )
+            .add_systems(
+                Update,
+                handle_context_menu_actions.run_if(in_state(ClientAppState::InGame)),
+            )
+            .add_systems(
+                Update,
+                handle_docked_panel_close_buttons.run_if(in_state(ClientAppState::InGame)),
+            )
+            .add_systems(
+                Update,
+                handle_docked_panel_dragging.run_if(in_state(ClientAppState::InGame)),
+            )
+            .add_systems(
+                Update,
+                handle_docked_panel_resizing.run_if(in_state(ClientAppState::InGame)),
+            )
+            .add_systems(
+                Update,
+                handle_docked_panel_scrolling.run_if(in_state(ClientAppState::InGame)),
+            )
+            .add_systems(
+                Update,
+                handle_context_menu_opening.run_if(in_state(ClientAppState::InGame)),
+            )
+            .add_systems(
+                Update,
+                handle_use_on_targeting.run_if(in_state(ClientAppState::InGame)),
+            )
+            .add_systems(
+                Update,
+                handle_spell_targeting.run_if(in_state(ClientAppState::InGame)),
+            )
+            .add_systems(
+                Update,
+                handle_movable_dragging.run_if(in_state(ClientAppState::InGame)),
+            )
+            .add_systems(
+                Update,
+                print_right_sidebar_layout_debug.run_if(in_state(ClientAppState::InGame)),
+            )
             .add_systems(
                 Update,
                 sync_native_custom_cursor
@@ -76,8 +115,12 @@ impl Plugin for UiPlugin {
                     .after(handle_context_menu_actions)
                     .after(handle_context_menu_opening)
                     .after(handle_use_on_targeting)
-                    .after(handle_spell_targeting),
+                    .after(handle_spell_targeting)
+                    .run_if(in_state(ClientAppState::InGame)),
             )
-            .add_systems(Update, sync_drag_preview);
+            .add_systems(
+                Update,
+                sync_drag_preview.run_if(in_state(ClientAppState::InGame)),
+            );
     }
 }

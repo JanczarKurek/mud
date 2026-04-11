@@ -301,6 +301,10 @@ pub fn poll_tcp_client_messages(
 }
 
 fn ensure_tcp_client_connected(config: &TcpClientConfig, connection: &mut TcpClientConnection) {
+    if !config.active {
+        return;
+    }
+
     if connection.stream.is_some() {
         return;
     }

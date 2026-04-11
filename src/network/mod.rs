@@ -4,6 +4,7 @@ pub mod systems;
 
 use bevy::prelude::*;
 
+use crate::app::state::ClientAppState;
 use crate::game::systems::{apply_game_events_to_client_state, process_game_commands};
 use crate::network::resources::{
     TcpClientConfig, TcpClientConnection, TcpServerConfig, TcpServerState,
@@ -25,12 +26,18 @@ impl Plugin for TcpClientPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(TcpClientConfig {
             server_addr: self.server_addr.clone(),
+            active: false,
         })
         .insert_resource(TcpClientConnection::default())
-        .add_systems(Update, flush_client_commands_to_server)
         .add_systems(
             Update,
-            poll_tcp_client_messages.before(apply_game_events_to_client_state),
+            flush_client_commands_to_server.run_if(in_state(ClientAppState::InGame)),
+        )
+        .add_systems(
+            Update,
+            poll_tcp_client_messages
+                .before(apply_game_events_to_client_state)
+                .run_if(in_state(ClientAppState::InGame)),
         );
     }
 }

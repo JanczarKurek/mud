@@ -1,0 +1,6232 @@
+{
+  "format_version": 2,
+  "saved_at_unix_seconds": 1775939394,
+  "world_config": {
+    "current_space_id": 1,
+    "map_width": 40,
+    "map_height": 30,
+    "tile_size": 48.0,
+    "fill_object_type": "grass"
+  },
+  "map_layout": {
+    "width": 40,
+    "height": 30,
+    "fill_object_type": "grass"
+  },
+  "spaces": [
+    {
+      "id": 0,
+      "authored_id": "underworld",
+      "width": 28,
+      "height": 18,
+      "fill_object_type": "cave_floor",
+      "permanence": "persistent",
+      "instance_owner": null
+    },
+    {
+      "id": 1,
+      "authored_id": "overworld",
+      "width": 40,
+      "height": 30,
+      "fill_object_type": "grass",
+      "permanence": "persistent",
+      "instance_owner": null
+    }
+  ],
+  "object_registry": {
+    "next_runtime_id": 2172,
+    "entries": [
+      {
+        "object_id": 300,
+        "type_id": "barrel",
+        "properties": {}
+      },
+      {
+        "object_id": 301,
+        "type_id": "barrel",
+        "properties": {}
+      },
+      {
+        "object_id": 302,
+        "type_id": "barrel",
+        "properties": {}
+      },
+      {
+        "object_id": 303,
+        "type_id": "barrel",
+        "properties": {}
+      },
+      {
+        "object_id": 304,
+        "type_id": "barrel",
+        "properties": {}
+      },
+      {
+        "object_id": 305,
+        "type_id": "sinkhole",
+        "properties": {}
+      },
+      {
+        "object_id": 600,
+        "type_id": "apple",
+        "properties": {}
+      },
+      {
+        "object_id": 601,
+        "type_id": "potion",
+        "properties": {}
+      },
+      {
+        "object_id": 602,
+        "type_id": "scroll",
+        "properties": {
+          "spell_id": "lesser_heal"
+        }
+      },
+      {
+        "object_id": 603,
+        "type_id": "apple",
+        "properties": {}
+      },
+      {
+        "object_id": 604,
+        "type_id": "scroll",
+        "properties": {
+          "spell_id": "spark_bolt"
+        }
+      },
+      {
+        "object_id": 605,
+        "type_id": "bronze_sword",
+        "properties": {}
+      },
+      {
+        "object_id": 606,
+        "type_id": "wooden_shield",
+        "properties": {}
+      },
+      {
+        "object_id": 607,
+        "type_id": "leather_helmet",
+        "properties": {}
+      },
+      {
+        "object_id": 608,
+        "type_id": "leather_armor",
+        "properties": {}
+      },
+      {
+        "object_id": 609,
+        "type_id": "leather_legs",
+        "properties": {}
+      },
+      {
+        "object_id": 610,
+        "type_id": "traveler_boots",
+        "properties": {}
+      },
+      {
+        "object_id": 900,
+        "type_id": "villager",
+        "properties": {}
+      },
+      {
+        "object_id": 901,
+        "type_id": "villager",
+        "properties": {}
+      },
+      {
+        "object_id": 902,
+        "type_id": "goblin",
+        "properties": {}
+      },
+      {
+        "object_id": 903,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 904,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 905,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 906,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 907,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 908,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 909,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 910,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 911,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 912,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 913,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 914,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 915,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 916,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 917,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 918,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 919,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 920,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 921,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 922,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 923,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 924,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 925,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 926,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 927,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 928,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 929,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 930,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 931,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 932,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 933,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 934,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 935,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 936,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 937,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 938,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 939,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 940,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 941,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 942,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 943,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 944,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 945,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 946,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 947,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 948,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 949,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 950,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 951,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 952,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 953,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 954,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 955,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 956,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 957,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 958,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 959,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 960,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 961,
+        "type_id": "water",
+        "properties": {}
+      },
+      {
+        "object_id": 962,
+        "type_id": "tree",
+        "properties": {}
+      },
+      {
+        "object_id": 963,
+        "type_id": "tree",
+        "properties": {}
+      },
+      {
+        "object_id": 964,
+        "type_id": "tree",
+        "properties": {}
+      },
+      {
+        "object_id": 965,
+        "type_id": "tree",
+        "properties": {}
+      },
+      {
+        "object_id": 966,
+        "type_id": "tree",
+        "properties": {}
+      },
+      {
+        "object_id": 967,
+        "type_id": "tree",
+        "properties": {}
+      },
+      {
+        "object_id": 968,
+        "type_id": "tree",
+        "properties": {}
+      },
+      {
+        "object_id": 969,
+        "type_id": "tree",
+        "properties": {}
+      },
+      {
+        "object_id": 970,
+        "type_id": "tree",
+        "properties": {}
+      },
+      {
+        "object_id": 971,
+        "type_id": "tree",
+        "properties": {}
+      },
+      {
+        "object_id": 972,
+        "type_id": "tree",
+        "properties": {}
+      },
+      {
+        "object_id": 973,
+        "type_id": "tree",
+        "properties": {}
+      },
+      {
+        "object_id": 974,
+        "type_id": "tree",
+        "properties": {}
+      },
+      {
+        "object_id": 975,
+        "type_id": "tree",
+        "properties": {}
+      },
+      {
+        "object_id": 976,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 977,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 978,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 979,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 980,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 981,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 982,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 983,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 984,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 985,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 986,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 987,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 988,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 989,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 990,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 991,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 992,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 993,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 994,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 995,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 996,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 997,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 998,
+        "type_id": "flowers",
+        "properties": {}
+      },
+      {
+        "object_id": 999,
+        "type_id": "flowers",
+        "properties": {}
+      },
+      {
+        "object_id": 1000,
+        "type_id": "flowers",
+        "properties": {}
+      },
+      {
+        "object_id": 1001,
+        "type_id": "flowers",
+        "properties": {}
+      },
+      {
+        "object_id": 1002,
+        "type_id": "flowers",
+        "properties": {}
+      },
+      {
+        "object_id": 1003,
+        "type_id": "flowers",
+        "properties": {}
+      },
+      {
+        "object_id": 1004,
+        "type_id": "flowers",
+        "properties": {}
+      },
+      {
+        "object_id": 1005,
+        "type_id": "flowers",
+        "properties": {}
+      },
+      {
+        "object_id": 1006,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 1007,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 1008,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 1009,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 1010,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 1011,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 1012,
+        "type_id": "apple",
+        "properties": {}
+      },
+      {
+        "object_id": 1013,
+        "type_id": "apple",
+        "properties": {}
+      },
+      {
+        "object_id": 1014,
+        "type_id": "potion",
+        "properties": {}
+      },
+      {
+        "object_id": 1015,
+        "type_id": "scroll",
+        "properties": {
+          "spell_id": "spark_bolt"
+        }
+      },
+      {
+        "object_id": 1016,
+        "type_id": "silver_ring",
+        "properties": {}
+      },
+      {
+        "object_id": 1017,
+        "type_id": "copper_amulet",
+        "properties": {}
+      },
+      {
+        "object_id": 1018,
+        "type_id": "canvas_backpack",
+        "properties": {}
+      },
+      {
+        "object_id": 1200,
+        "type_id": "barrel",
+        "properties": {}
+      },
+      {
+        "object_id": 1201,
+        "type_id": "potion",
+        "properties": {}
+      },
+      {
+        "object_id": 1202,
+        "type_id": "goblin",
+        "properties": {}
+      },
+      {
+        "object_id": 1203,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1204,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1205,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1206,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1207,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1208,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1209,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1210,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1211,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1212,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1213,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1214,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1215,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1216,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1217,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1218,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1219,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1220,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1221,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1222,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1223,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1224,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1225,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1226,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1227,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1228,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1229,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1230,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1231,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1232,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1233,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1234,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1235,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1236,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1237,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1238,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1239,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1240,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1241,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2000,
+        "type_id": "portal_arch",
+        "properties": {}
+      },
+      {
+        "object_id": 2001,
+        "type_id": "barrel",
+        "properties": {}
+      },
+      {
+        "object_id": 2002,
+        "type_id": "potion",
+        "properties": {}
+      },
+      {
+        "object_id": 2003,
+        "type_id": "scroll",
+        "properties": {
+          "spell_id": "spark_bolt"
+        }
+      },
+      {
+        "object_id": 2004,
+        "type_id": "silver_ring",
+        "properties": {}
+      },
+      {
+        "object_id": 2005,
+        "type_id": "copper_amulet",
+        "properties": {}
+      },
+      {
+        "object_id": 2006,
+        "type_id": "goblin",
+        "properties": {}
+      },
+      {
+        "object_id": 2007,
+        "type_id": "goblin",
+        "properties": {}
+      },
+      {
+        "object_id": 2008,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2009,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2010,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2011,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2012,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2013,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2014,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2015,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2016,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2017,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2018,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2019,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2020,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2021,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2022,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2023,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2024,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2025,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2026,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2027,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2028,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2029,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2030,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2031,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2032,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2033,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2034,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2035,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2036,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2037,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2038,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2039,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2040,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2041,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2042,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2043,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2044,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2045,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2046,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2047,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2048,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2049,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2050,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2051,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2052,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2053,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2054,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2055,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2056,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2057,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2058,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2059,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2060,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2061,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2062,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2063,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2064,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2065,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2066,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2067,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2068,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2069,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2070,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2071,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2072,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2073,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2074,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2075,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2076,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2077,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2078,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2079,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2080,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2081,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2082,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2083,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2084,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2085,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2086,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2087,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2088,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2089,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2090,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2091,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2092,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2093,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2094,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2095,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2096,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2097,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2098,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2099,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2100,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2101,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2102,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2103,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2104,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2105,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2106,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2107,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2108,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2109,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2110,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2111,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2112,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2113,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2114,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2115,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2116,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2117,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2118,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2119,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2120,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2121,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2122,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2123,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2124,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2125,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2126,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2127,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2128,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2129,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2130,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2131,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2132,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2133,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2134,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2135,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2136,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2137,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2138,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2139,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2140,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2141,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2142,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2143,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2144,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2145,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2146,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2147,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2148,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2149,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2150,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2151,
+        "type_id": "cave_wall",
+        "properties": {}
+      },
+      {
+        "object_id": 2152,
+        "type_id": "crystal_cluster",
+        "properties": {}
+      },
+      {
+        "object_id": 2153,
+        "type_id": "crystal_cluster",
+        "properties": {}
+      },
+      {
+        "object_id": 2154,
+        "type_id": "crystal_cluster",
+        "properties": {}
+      },
+      {
+        "object_id": 2155,
+        "type_id": "crystal_cluster",
+        "properties": {}
+      },
+      {
+        "object_id": 2156,
+        "type_id": "crystal_cluster",
+        "properties": {}
+      },
+      {
+        "object_id": 2157,
+        "type_id": "crystal_cluster",
+        "properties": {}
+      },
+      {
+        "object_id": 2158,
+        "type_id": "crystal_cluster",
+        "properties": {}
+      },
+      {
+        "object_id": 2159,
+        "type_id": "crystal_cluster",
+        "properties": {}
+      },
+      {
+        "object_id": 2160,
+        "type_id": "cave_mushroom",
+        "properties": {}
+      },
+      {
+        "object_id": 2161,
+        "type_id": "cave_mushroom",
+        "properties": {}
+      },
+      {
+        "object_id": 2162,
+        "type_id": "cave_mushroom",
+        "properties": {}
+      },
+      {
+        "object_id": 2163,
+        "type_id": "cave_mushroom",
+        "properties": {}
+      },
+      {
+        "object_id": 2164,
+        "type_id": "cave_mushroom",
+        "properties": {}
+      },
+      {
+        "object_id": 2165,
+        "type_id": "cave_mushroom",
+        "properties": {}
+      },
+      {
+        "object_id": 2166,
+        "type_id": "cave_mushroom",
+        "properties": {}
+      },
+      {
+        "object_id": 2167,
+        "type_id": "cave_mushroom",
+        "properties": {}
+      },
+      {
+        "object_id": 2168,
+        "type_id": "cave_mushroom",
+        "properties": {}
+      },
+      {
+        "object_id": 2169,
+        "type_id": "cave_mushroom",
+        "properties": {}
+      },
+      {
+        "object_id": 2170,
+        "type_id": "player",
+        "properties": {}
+      },
+      {
+        "object_id": 2171,
+        "type_id": "player",
+        "properties": {}
+      }
+    ]
+  },
+  "network": {
+    "next_connection_id": 2
+  },
+  "players": [],
+  "world_objects": [
+    {
+      "object_id": 300,
+      "definition_id": "barrel",
+      "space_id": 1,
+      "tile_position": {
+        "x": 20,
+        "y": 13
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": [
+        600,
+        601,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "npc": null
+    },
+    {
+      "object_id": 301,
+      "definition_id": "barrel",
+      "space_id": 1,
+      "tile_position": {
+        "x": 21,
+        "y": 13
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": [
+        602,
+        605,
+        606,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "npc": null
+    },
+    {
+      "object_id": 302,
+      "definition_id": "barrel",
+      "space_id": 1,
+      "tile_position": {
+        "x": 22,
+        "y": 15
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "npc": null
+    },
+    {
+      "object_id": 303,
+      "definition_id": "barrel",
+      "space_id": 1,
+      "tile_position": {
+        "x": 19,
+        "y": 16
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": [
+        607,
+        608,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "npc": null
+    },
+    {
+      "object_id": 304,
+      "definition_id": "barrel",
+      "space_id": 1,
+      "tile_position": {
+        "x": 25,
+        "y": 12
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": [
+        603,
+        604,
+        609,
+        610,
+        null,
+        null,
+        null,
+        null
+      ],
+      "npc": null
+    },
+    {
+      "object_id": 305,
+      "definition_id": "sinkhole",
+      "space_id": 1,
+      "tile_position": {
+        "x": 31,
+        "y": 23
+      },
+      "collider": false,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 900,
+      "definition_id": "villager",
+      "space_id": 1,
+      "tile_position": {
+        "x": 5,
+        "y": 23
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": {
+        "base_stats": {
+          "attributes": {
+            "strength": 9,
+            "agility": 9,
+            "constitution": 9,
+            "willpower": 8,
+            "charisma": 7,
+            "focus": 8
+          },
+          "max_health": 0,
+          "max_mana": 0,
+          "storage_slots": 0
+        },
+        "derived_stats": {
+          "attributes": {
+            "strength": 9,
+            "agility": 9,
+            "constitution": 9,
+            "willpower": 8,
+            "charisma": 7,
+            "focus": 8
+          },
+          "max_health": 107,
+          "max_mana": 82,
+          "storage_slots": 0
+        },
+        "vital_stats": {
+          "health": 107.0,
+          "max_health": 107.0,
+          "mana": 82.0,
+          "max_mana": 82.0
+        },
+        "attack_profile": {
+          "kind": "Melee"
+        },
+        "combat_leash": null,
+        "combat_target_object_id": null,
+        "roaming_behavior": {
+          "bounds": {
+            "min_x": 5,
+            "min_y": 21,
+            "max_x": 11,
+            "max_y": 25
+          },
+          "step_interval_seconds": 1.2
+        },
+        "hostile_behavior": null,
+        "roaming_step_timer": {
+          "remaining_seconds": 1.183205
+        },
+        "roaming_random_state": {
+          "seed": 7505484449260917012
+        }
+      }
+    },
+    {
+      "object_id": 901,
+      "definition_id": "villager",
+      "space_id": 1,
+      "tile_position": {
+        "x": 32,
+        "y": 5
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": {
+        "base_stats": {
+          "attributes": {
+            "strength": 9,
+            "agility": 9,
+            "constitution": 9,
+            "willpower": 8,
+            "charisma": 7,
+            "focus": 8
+          },
+          "max_health": 0,
+          "max_mana": 0,
+          "storage_slots": 0
+        },
+        "derived_stats": {
+          "attributes": {
+            "strength": 9,
+            "agility": 9,
+            "constitution": 9,
+            "willpower": 8,
+            "charisma": 7,
+            "focus": 8
+          },
+          "max_health": 107,
+          "max_mana": 82,
+          "storage_slots": 0
+        },
+        "vital_stats": {
+          "health": 107.0,
+          "max_health": 107.0,
+          "mana": 82.0,
+          "max_mana": 82.0
+        },
+        "attack_profile": {
+          "kind": "Melee"
+        },
+        "combat_leash": null,
+        "combat_target_object_id": null,
+        "roaming_behavior": {
+          "bounds": {
+            "min_x": 28,
+            "min_y": 5,
+            "max_x": 35,
+            "max_y": 10
+          },
+          "step_interval_seconds": 1.6
+        },
+        "hostile_behavior": null,
+        "roaming_step_timer": {
+          "remaining_seconds": 1.1803253
+        },
+        "roaming_random_state": {
+          "seed": 14304475645287882887
+        }
+      }
+    },
+    {
+      "object_id": 902,
+      "definition_id": "goblin",
+      "space_id": 1,
+      "tile_position": {
+        "x": 15,
+        "y": 22
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": {
+        "base_stats": {
+          "attributes": {
+            "strength": 9,
+            "agility": 9,
+            "constitution": 9,
+            "willpower": 8,
+            "charisma": 7,
+            "focus": 8
+          },
+          "max_health": 0,
+          "max_mana": 0,
+          "storage_slots": 0
+        },
+        "derived_stats": {
+          "attributes": {
+            "strength": 9,
+            "agility": 9,
+            "constitution": 9,
+            "willpower": 8,
+            "charisma": 7,
+            "focus": 8
+          },
+          "max_health": 107,
+          "max_mana": 82,
+          "storage_slots": 0
+        },
+        "vital_stats": {
+          "health": 89.0,
+          "max_health": 107.0,
+          "mana": 82.0,
+          "max_mana": 82.0
+        },
+        "attack_profile": {
+          "kind": "Melee"
+        },
+        "combat_leash": {
+          "max_distance_tiles": 8
+        },
+        "combat_target_object_id": null,
+        "roaming_behavior": {
+          "bounds": {
+            "min_x": 15,
+            "min_y": 18,
+            "max_x": 21,
+            "max_y": 24
+          },
+          "step_interval_seconds": 0.9
+        },
+        "hostile_behavior": {
+          "detect_distance_tiles": 5,
+          "disengage_distance_tiles": 8
+        },
+        "roaming_step_timer": {
+          "remaining_seconds": 0.9
+        },
+        "roaming_random_state": {
+          "seed": 11321145957353373807
+        }
+      }
+    },
+    {
+      "object_id": 903,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 10,
+        "y": 4
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 904,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 11,
+        "y": 4
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 905,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 10,
+        "y": 5
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 906,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 11,
+        "y": 5
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 907,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 10,
+        "y": 6
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 908,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 11,
+        "y": 6
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 909,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 10,
+        "y": 7
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 910,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 11,
+        "y": 7
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 911,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 10,
+        "y": 8
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 912,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 11,
+        "y": 8
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 913,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 10,
+        "y": 9
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 914,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 11,
+        "y": 9
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 915,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 12,
+        "y": 8
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 916,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 12,
+        "y": 9
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 917,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 13,
+        "y": 8
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 918,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 13,
+        "y": 9
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 919,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 14,
+        "y": 8
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 920,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 14,
+        "y": 9
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 921,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 15,
+        "y": 8
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 922,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 15,
+        "y": 9
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 923,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 16,
+        "y": 8
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 924,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 16,
+        "y": 9
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 925,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 17,
+        "y": 8
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 926,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 17,
+        "y": 9
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 927,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 22,
+        "y": 16
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 928,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 22,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 929,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 22,
+        "y": 18
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 930,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 22,
+        "y": 19
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 931,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 22,
+        "y": 20
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 932,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 23,
+        "y": 16
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 933,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 23,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 934,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 23,
+        "y": 18
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 935,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 23,
+        "y": 19
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 936,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 23,
+        "y": 20
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 937,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 24,
+        "y": 16
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 938,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 24,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 939,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 24,
+        "y": 18
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 940,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 24,
+        "y": 19
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 941,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 24,
+        "y": 20
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 942,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 25,
+        "y": 16
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 943,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 25,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 944,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 25,
+        "y": 18
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 945,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 25,
+        "y": 19
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 946,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 25,
+        "y": 20
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 947,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 26,
+        "y": 16
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 948,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 26,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 949,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 26,
+        "y": 18
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 950,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 26,
+        "y": 19
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 951,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 26,
+        "y": 20
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 952,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 27,
+        "y": 16
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 953,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 27,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 954,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 27,
+        "y": 18
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 955,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 27,
+        "y": 19
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 956,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 27,
+        "y": 20
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 957,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 28,
+        "y": 16
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 958,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 28,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 959,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 28,
+        "y": 18
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 960,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 28,
+        "y": 19
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 961,
+      "definition_id": "water",
+      "space_id": 1,
+      "tile_position": {
+        "x": 28,
+        "y": 20
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 962,
+      "definition_id": "tree",
+      "space_id": 1,
+      "tile_position": {
+        "x": 6,
+        "y": 7
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 963,
+      "definition_id": "tree",
+      "space_id": 1,
+      "tile_position": {
+        "x": 7,
+        "y": 7
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 964,
+      "definition_id": "tree",
+      "space_id": 1,
+      "tile_position": {
+        "x": 8,
+        "y": 8
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 965,
+      "definition_id": "tree",
+      "space_id": 1,
+      "tile_position": {
+        "x": 8,
+        "y": 6
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 966,
+      "definition_id": "tree",
+      "space_id": 1,
+      "tile_position": {
+        "x": 9,
+        "y": 7
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 967,
+      "definition_id": "tree",
+      "space_id": 1,
+      "tile_position": {
+        "x": 14,
+        "y": 14
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 968,
+      "definition_id": "tree",
+      "space_id": 1,
+      "tile_position": {
+        "x": 15,
+        "y": 14
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 969,
+      "definition_id": "tree",
+      "space_id": 1,
+      "tile_position": {
+        "x": 16,
+        "y": 15
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 970,
+      "definition_id": "tree",
+      "space_id": 1,
+      "tile_position": {
+        "x": 15,
+        "y": 16
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 971,
+      "definition_id": "tree",
+      "space_id": 1,
+      "tile_position": {
+        "x": 26,
+        "y": 6
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 972,
+      "definition_id": "tree",
+      "space_id": 1,
+      "tile_position": {
+        "x": 27,
+        "y": 7
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 973,
+      "definition_id": "tree",
+      "space_id": 1,
+      "tile_position": {
+        "x": 28,
+        "y": 6
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 974,
+      "definition_id": "tree",
+      "space_id": 1,
+      "tile_position": {
+        "x": 29,
+        "y": 8
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 975,
+      "definition_id": "tree",
+      "space_id": 1,
+      "tile_position": {
+        "x": 30,
+        "y": 7
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 976,
+      "definition_id": "wall",
+      "space_id": 1,
+      "tile_position": {
+        "x": 18,
+        "y": 11
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 977,
+      "definition_id": "wall",
+      "space_id": 1,
+      "tile_position": {
+        "x": 19,
+        "y": 11
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 978,
+      "definition_id": "wall",
+      "space_id": 1,
+      "tile_position": {
+        "x": 20,
+        "y": 11
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 979,
+      "definition_id": "wall",
+      "space_id": 1,
+      "tile_position": {
+        "x": 21,
+        "y": 11
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 980,
+      "definition_id": "wall",
+      "space_id": 1,
+      "tile_position": {
+        "x": 22,
+        "y": 11
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 981,
+      "definition_id": "wall",
+      "space_id": 1,
+      "tile_position": {
+        "x": 23,
+        "y": 11
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 982,
+      "definition_id": "wall",
+      "space_id": 1,
+      "tile_position": {
+        "x": 24,
+        "y": 11
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 983,
+      "definition_id": "wall",
+      "space_id": 1,
+      "tile_position": {
+        "x": 18,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 984,
+      "definition_id": "wall",
+      "space_id": 1,
+      "tile_position": {
+        "x": 19,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 985,
+      "definition_id": "wall",
+      "space_id": 1,
+      "tile_position": {
+        "x": 22,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 986,
+      "definition_id": "wall",
+      "space_id": 1,
+      "tile_position": {
+        "x": 23,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 987,
+      "definition_id": "wall",
+      "space_id": 1,
+      "tile_position": {
+        "x": 24,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 988,
+      "definition_id": "wall",
+      "space_id": 1,
+      "tile_position": {
+        "x": 18,
+        "y": 12
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 989,
+      "definition_id": "wall",
+      "space_id": 1,
+      "tile_position": {
+        "x": 18,
+        "y": 13
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 990,
+      "definition_id": "wall",
+      "space_id": 1,
+      "tile_position": {
+        "x": 18,
+        "y": 14
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 991,
+      "definition_id": "wall",
+      "space_id": 1,
+      "tile_position": {
+        "x": 18,
+        "y": 15
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 992,
+      "definition_id": "wall",
+      "space_id": 1,
+      "tile_position": {
+        "x": 18,
+        "y": 16
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 993,
+      "definition_id": "wall",
+      "space_id": 1,
+      "tile_position": {
+        "x": 24,
+        "y": 12
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 994,
+      "definition_id": "wall",
+      "space_id": 1,
+      "tile_position": {
+        "x": 24,
+        "y": 13
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 995,
+      "definition_id": "wall",
+      "space_id": 1,
+      "tile_position": {
+        "x": 24,
+        "y": 14
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 996,
+      "definition_id": "wall",
+      "space_id": 1,
+      "tile_position": {
+        "x": 24,
+        "y": 15
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 997,
+      "definition_id": "wall",
+      "space_id": 1,
+      "tile_position": {
+        "x": 24,
+        "y": 16
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 998,
+      "definition_id": "flowers",
+      "space_id": 1,
+      "tile_position": {
+        "x": 4,
+        "y": 4
+      },
+      "collider": false,
+      "movable": true,
+      "storable": true,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 999,
+      "definition_id": "flowers",
+      "space_id": 1,
+      "tile_position": {
+        "x": 5,
+        "y": 4
+      },
+      "collider": false,
+      "movable": true,
+      "storable": true,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 1000,
+      "definition_id": "flowers",
+      "space_id": 1,
+      "tile_position": {
+        "x": 4,
+        "y": 5
+      },
+      "collider": false,
+      "movable": true,
+      "storable": true,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 1001,
+      "definition_id": "flowers",
+      "space_id": 1,
+      "tile_position": {
+        "x": 32,
+        "y": 11
+      },
+      "collider": false,
+      "movable": true,
+      "storable": true,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 1002,
+      "definition_id": "flowers",
+      "space_id": 1,
+      "tile_position": {
+        "x": 33,
+        "y": 11
+      },
+      "collider": false,
+      "movable": true,
+      "storable": true,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 1003,
+      "definition_id": "flowers",
+      "space_id": 1,
+      "tile_position": {
+        "x": 31,
+        "y": 12
+      },
+      "collider": false,
+      "movable": true,
+      "storable": true,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 1004,
+      "definition_id": "flowers",
+      "space_id": 1,
+      "tile_position": {
+        "x": 12,
+        "y": 22
+      },
+      "collider": false,
+      "movable": true,
+      "storable": true,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 1005,
+      "definition_id": "flowers",
+      "space_id": 1,
+      "tile_position": {
+        "x": 13,
+        "y": 23
+      },
+      "collider": false,
+      "movable": true,
+      "storable": true,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 1006,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 3,
+        "y": 19
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 1007,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 4,
+        "y": 20
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 1008,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 5,
+        "y": 19
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 1009,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 34,
+        "y": 24
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 1010,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 35,
+        "y": 24
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 1011,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 36,
+        "y": 23
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 1012,
+      "definition_id": "apple",
+      "space_id": 1,
+      "tile_position": {
+        "x": 18,
+        "y": 18
+      },
+      "collider": false,
+      "movable": true,
+      "storable": true,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 1013,
+      "definition_id": "apple",
+      "space_id": 1,
+      "tile_position": {
+        "x": 11,
+        "y": 14
+      },
+      "collider": false,
+      "movable": true,
+      "storable": true,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 1014,
+      "definition_id": "potion",
+      "space_id": 1,
+      "tile_position": {
+        "x": 21,
+        "y": 18
+      },
+      "collider": false,
+      "movable": true,
+      "storable": true,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 1015,
+      "definition_id": "scroll",
+      "space_id": 1,
+      "tile_position": {
+        "x": 30,
+        "y": 12
+      },
+      "collider": false,
+      "movable": true,
+      "storable": true,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 1016,
+      "definition_id": "silver_ring",
+      "space_id": 1,
+      "tile_position": {
+        "x": 7,
+        "y": 20
+      },
+      "collider": false,
+      "movable": true,
+      "storable": true,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 1017,
+      "definition_id": "copper_amulet",
+      "space_id": 1,
+      "tile_position": {
+        "x": 9,
+        "y": 21
+      },
+      "collider": false,
+      "movable": true,
+      "storable": true,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 1018,
+      "definition_id": "canvas_backpack",
+      "space_id": 1,
+      "tile_position": {
+        "x": 28,
+        "y": 10
+      },
+      "collider": false,
+      "movable": true,
+      "storable": true,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2000,
+      "definition_id": "portal_arch",
+      "space_id": 0,
+      "tile_position": {
+        "x": 3,
+        "y": 14
+      },
+      "collider": false,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2001,
+      "definition_id": "barrel",
+      "space_id": 0,
+      "tile_position": {
+        "x": 10,
+        "y": 15
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": [
+        2002,
+        2003,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "npc": null
+    },
+    {
+      "object_id": 2005,
+      "definition_id": "copper_amulet",
+      "space_id": 0,
+      "tile_position": {
+        "x": 23,
+        "y": 11
+      },
+      "collider": false,
+      "movable": true,
+      "storable": true,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2006,
+      "definition_id": "goblin",
+      "space_id": 0,
+      "tile_position": {
+        "x": 7,
+        "y": 3
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": {
+        "base_stats": {
+          "attributes": {
+            "strength": 9,
+            "agility": 9,
+            "constitution": 9,
+            "willpower": 8,
+            "charisma": 7,
+            "focus": 8
+          },
+          "max_health": 0,
+          "max_mana": 0,
+          "storage_slots": 0
+        },
+        "derived_stats": {
+          "attributes": {
+            "strength": 9,
+            "agility": 9,
+            "constitution": 9,
+            "willpower": 8,
+            "charisma": 7,
+            "focus": 8
+          },
+          "max_health": 107,
+          "max_mana": 82,
+          "storage_slots": 0
+        },
+        "vital_stats": {
+          "health": 91.0,
+          "max_health": 107.0,
+          "mana": 82.0,
+          "max_mana": 82.0
+        },
+        "attack_profile": {
+          "kind": "Melee"
+        },
+        "combat_leash": {
+          "max_distance_tiles": 7
+        },
+        "combat_target_object_id": null,
+        "roaming_behavior": {
+          "bounds": {
+            "min_x": 8,
+            "min_y": 5,
+            "max_x": 13,
+            "max_y": 11
+          },
+          "step_interval_seconds": 0.85
+        },
+        "hostile_behavior": {
+          "detect_distance_tiles": 5,
+          "disengage_distance_tiles": 7
+        },
+        "roaming_step_timer": {
+          "remaining_seconds": 0.6484807
+        },
+        "roaming_random_state": {
+          "seed": 2616111585937412113
+        }
+      }
+    },
+    {
+      "object_id": 2007,
+      "definition_id": "goblin",
+      "space_id": 0,
+      "tile_position": {
+        "x": 17,
+        "y": 11
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": {
+        "base_stats": {
+          "attributes": {
+            "strength": 9,
+            "agility": 9,
+            "constitution": 9,
+            "willpower": 8,
+            "charisma": 7,
+            "focus": 8
+          },
+          "max_health": 0,
+          "max_mana": 0,
+          "storage_slots": 0
+        },
+        "derived_stats": {
+          "attributes": {
+            "strength": 9,
+            "agility": 9,
+            "constitution": 9,
+            "willpower": 8,
+            "charisma": 7,
+            "focus": 8
+          },
+          "max_health": 107,
+          "max_mana": 82,
+          "storage_slots": 0
+        },
+        "vital_stats": {
+          "health": 107.0,
+          "max_health": 107.0,
+          "mana": 82.0,
+          "max_mana": 82.0
+        },
+        "attack_profile": {
+          "kind": "Melee"
+        },
+        "combat_leash": {
+          "max_distance_tiles": 8
+        },
+        "combat_target_object_id": null,
+        "roaming_behavior": {
+          "bounds": {
+            "min_x": 15,
+            "min_y": 11,
+            "max_x": 25,
+            "max_y": 15
+          },
+          "step_interval_seconds": 0.95
+        },
+        "hostile_behavior": {
+          "detect_distance_tiles": 5,
+          "disengage_distance_tiles": 8
+        },
+        "roaming_step_timer": {
+          "remaining_seconds": 0.12732854
+        },
+        "roaming_random_state": {
+          "seed": 6014685664844110620
+        }
+      }
+    },
+    {
+      "object_id": 2008,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 0,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2009,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 1,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2010,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 2,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2011,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 3,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2012,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 4,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2013,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 5,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2014,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 6,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2015,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 7,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2016,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 8,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2017,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 9,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2018,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 10,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2019,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 11,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2020,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 12,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2021,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 13,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2022,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 14,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2023,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 15,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2024,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 16,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2025,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 17,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2026,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 18,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2027,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 19,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2028,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 20,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2029,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 21,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2030,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 22,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2031,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 23,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2032,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 24,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2033,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 25,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2034,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 26,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2035,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 27,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2036,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 0,
+        "y": 1
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2037,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 27,
+        "y": 1
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2038,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 0,
+        "y": 2
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2039,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 27,
+        "y": 2
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2040,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 0,
+        "y": 3
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2041,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 27,
+        "y": 3
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2042,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 0,
+        "y": 4
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2043,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 27,
+        "y": 4
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2044,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 0,
+        "y": 5
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2045,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 27,
+        "y": 5
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2046,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 0,
+        "y": 6
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2047,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 27,
+        "y": 6
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2048,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 0,
+        "y": 7
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2049,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 27,
+        "y": 7
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2050,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 0,
+        "y": 8
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2051,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 27,
+        "y": 8
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2052,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 0,
+        "y": 9
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2053,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 27,
+        "y": 9
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2054,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 0,
+        "y": 10
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2055,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 27,
+        "y": 10
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2056,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 0,
+        "y": 11
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2057,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 27,
+        "y": 11
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2058,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 0,
+        "y": 12
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2059,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 27,
+        "y": 12
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2060,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 0,
+        "y": 13
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2061,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 27,
+        "y": 13
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2062,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 0,
+        "y": 14
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2063,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 27,
+        "y": 14
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2064,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 0,
+        "y": 15
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2065,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 27,
+        "y": 15
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2066,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 0,
+        "y": 16
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2067,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 27,
+        "y": 16
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2068,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 0,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2069,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 1,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2070,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 2,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2071,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 3,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2072,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 4,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2073,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 5,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2074,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 6,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2075,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 7,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2076,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 8,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2077,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 9,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2078,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 10,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2079,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 11,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2080,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 12,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2081,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 13,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2082,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 14,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2083,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 15,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2084,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 16,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2085,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 17,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2086,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 18,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2087,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 19,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2088,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 20,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2089,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 21,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2090,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 22,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2091,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 23,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2092,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 24,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2093,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 25,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2094,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 26,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2095,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 27,
+        "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2096,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 7,
+        "y": 4
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2097,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 8,
+        "y": 4
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2098,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 9,
+        "y": 4
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2099,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 10,
+        "y": 4
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2100,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 11,
+        "y": 4
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2101,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 12,
+        "y": 4
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2102,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 14,
+        "y": 4
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2103,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 15,
+        "y": 4
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2104,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 16,
+        "y": 4
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2105,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 17,
+        "y": 4
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2106,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 18,
+        "y": 4
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2107,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 19,
+        "y": 4
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2108,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 20,
+        "y": 4
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2109,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 7,
+        "y": 5
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2110,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 20,
+        "y": 5
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2111,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 7,
+        "y": 6
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2112,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 14,
+        "y": 6
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2113,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 20,
+        "y": 6
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2114,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 7,
+        "y": 7
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2115,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 14,
+        "y": 7
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2116,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 20,
+        "y": 7
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2117,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 7,
+        "y": 8
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2118,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 14,
+        "y": 8
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2119,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 20,
+        "y": 8
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2120,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 7,
+        "y": 9
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2121,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 20,
+        "y": 9
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2122,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 7,
+        "y": 10
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2123,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 20,
+        "y": 10
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2124,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 7,
+        "y": 11
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2125,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 20,
+        "y": 11
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2126,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 8,
+        "y": 12
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2127,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 9,
+        "y": 12
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2128,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 11,
+        "y": 12
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2129,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 12,
+        "y": 12
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2130,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 13,
+        "y": 12
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2131,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 14,
+        "y": 12
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2132,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 15,
+        "y": 12
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2133,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 17,
+        "y": 12
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2134,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 18,
+        "y": 12
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2135,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 19,
+        "y": 12
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2136,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 20,
+        "y": 12
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2137,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 22,
+        "y": 6
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2138,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 22,
+        "y": 7
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2139,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 22,
+        "y": 8
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2140,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 23,
+        "y": 8
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2141,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 24,
+        "y": 8
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2142,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 24,
+        "y": 9
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2143,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 24,
+        "y": 10
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2144,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 23,
+        "y": 10
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2145,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 22,
+        "y": 10
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2146,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 11,
+        "y": 14
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2147,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 12,
+        "y": 14
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2148,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 13,
+        "y": 14
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2149,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 17,
+        "y": 14
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2150,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 18,
+        "y": 14
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2151,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 19,
+        "y": 14
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2152,
+      "definition_id": "crystal_cluster",
+      "space_id": 0,
+      "tile_position": {
+        "x": 5,
+        "y": 5
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2153,
+      "definition_id": "crystal_cluster",
+      "space_id": 0,
+      "tile_position": {
+        "x": 6,
+        "y": 13
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2154,
+      "definition_id": "crystal_cluster",
+      "space_id": 0,
+      "tile_position": {
+        "x": 10,
+        "y": 2
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2155,
+      "definition_id": "crystal_cluster",
+      "space_id": 0,
+      "tile_position": {
+        "x": 12,
+        "y": 9
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2156,
+      "definition_id": "crystal_cluster",
+      "space_id": 0,
+      "tile_position": {
+        "x": 16,
+        "y": 6
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2157,
+      "definition_id": "crystal_cluster",
+      "space_id": 0,
+      "tile_position": {
+        "x": 18,
+        "y": 15
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2158,
+      "definition_id": "crystal_cluster",
+      "space_id": 0,
+      "tile_position": {
+        "x": 23,
+        "y": 5
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2159,
+      "definition_id": "crystal_cluster",
+      "space_id": 0,
+      "tile_position": {
+        "x": 24,
+        "y": 12
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2160,
+      "definition_id": "cave_mushroom",
+      "space_id": 0,
+      "tile_position": {
+        "x": 2,
+        "y": 4
+      },
+      "collider": false,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2161,
+      "definition_id": "cave_mushroom",
+      "space_id": 0,
+      "tile_position": {
+        "x": 3,
+        "y": 5
+      },
+      "collider": false,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2162,
+      "definition_id": "cave_mushroom",
+      "space_id": 0,
+      "tile_position": {
+        "x": 4,
+        "y": 13
+      },
+      "collider": false,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2163,
+      "definition_id": "cave_mushroom",
+      "space_id": 0,
+      "tile_position": {
+        "x": 5,
+        "y": 14
+      },
+      "collider": false,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2164,
+      "definition_id": "cave_mushroom",
+      "space_id": 0,
+      "tile_position": {
+        "x": 9,
+        "y": 15
+      },
+      "collider": false,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2165,
+      "definition_id": "cave_mushroom",
+      "space_id": 0,
+      "tile_position": {
+        "x": 13,
+        "y": 2
+      },
+      "collider": false,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2166,
+      "definition_id": "cave_mushroom",
+      "space_id": 0,
+      "tile_position": {
+        "x": 15,
+        "y": 10
+      },
+      "collider": false,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2167,
+      "definition_id": "cave_mushroom",
+      "space_id": 0,
+      "tile_position": {
+        "x": 21,
+        "y": 3
+      },
+      "collider": false,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2168,
+      "definition_id": "cave_mushroom",
+      "space_id": 0,
+      "tile_position": {
+        "x": 22,
+        "y": 13
+      },
+      "collider": false,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2169,
+      "definition_id": "cave_mushroom",
+      "space_id": 0,
+      "tile_position": {
+        "x": 25,
+        "y": 14
+      },
+      "collider": false,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    }
+  ]
+}

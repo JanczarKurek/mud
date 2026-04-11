@@ -56,6 +56,7 @@
 - Added server-side world-state dumping on graceful exit, including `Ctrl+C` handling and JSON save output for authoritative players, objects, and runtime registry state.
 - Added first-pass authored multi-space support with `persistent`/`ephemeral` space definitions, portal travel, shared runtime dungeon instancing per entrance, and same-space snapshot filtering for clients.
 - Added a persistent underworld space with dedicated cave assets and a two-way portal connection from the overworld.
+- Added a first title screen with splash art, server selection, author credits, connect flow, and exit action for client builds.
 
 ## Later Ideas
 
