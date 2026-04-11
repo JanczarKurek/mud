@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use bevy::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::magic::resources::SpellDefinitions;
 use crate::world::map_layout::MapLayout;
@@ -12,6 +13,13 @@ pub struct ObjectRegistry {
     type_ids: HashMap<u64, String>,
     properties: HashMap<u64, ObjectProperties>,
     next_runtime_id: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ObjectRegistrySnapshotEntry {
+    pub object_id: u64,
+    pub type_id: String,
+    pub properties: ObjectProperties,
 }
 
 impl ObjectRegistry {
@@ -30,6 +38,22 @@ impl ObjectRegistry {
             type_ids,
             properties,
             next_runtime_id: max_id + 1,
+        }
+    }
+
+    pub fn from_snapshot(entries: Vec<ObjectRegistrySnapshotEntry>, next_runtime_id: u64) -> Self {
+        let mut type_ids = HashMap::new();
+        let mut properties = HashMap::new();
+
+        for entry in entries {
+            type_ids.insert(entry.object_id, entry.type_id);
+            properties.insert(entry.object_id, entry.properties);
+        }
+
+        Self {
+            type_ids,
+            properties,
+            next_runtime_id,
         }
     }
 
@@ -55,6 +79,24 @@ impl ObjectRegistry {
 
     pub fn properties(&self, object_id: u64) -> Option<&ObjectProperties> {
         self.properties.get(&object_id)
+    }
+
+    pub fn next_runtime_id(&self) -> u64 {
+        self.next_runtime_id
+    }
+
+    pub fn snapshot_entries(&self) -> Vec<ObjectRegistrySnapshotEntry> {
+        let mut entries = self
+            .type_ids
+            .iter()
+            .map(|(object_id, type_id)| ObjectRegistrySnapshotEntry {
+                object_id: *object_id,
+                type_id: type_id.clone(),
+                properties: self.properties.get(object_id).cloned().unwrap_or_default(),
+            })
+            .collect::<Vec<_>>();
+        entries.sort_by_key(|entry| entry.object_id);
+        entries
     }
 
     pub fn display_name(

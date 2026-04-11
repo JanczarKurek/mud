@@ -51,6 +51,7 @@
 - Introduced a first server-authoritative command layer inside the single-player app, moving gameplay mutations for movement, targeting, item actions, spell casting, drag/drop, and console spawns behind a central game-processing plugin.
 - Allowed right-click context interactions and combat targeting against nearby remote players.
 - Made players block movement and occupied-tile placement for other players through the authoritative collider path.
+- Added server-side world-state dumping on graceful exit, including `Ctrl+C` handling and JSON save output for authoritative players, objects, and runtime registry state.
 
 ## Later Ideas
 

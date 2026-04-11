@@ -4,6 +4,7 @@ pub mod game;
 pub mod magic;
 pub mod network;
 pub mod npc;
+pub mod persistence;
 pub mod player;
 pub mod scripting;
 pub mod ui;

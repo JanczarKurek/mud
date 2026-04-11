@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use bevy::app::ScheduleRunnerPlugin;
+use bevy::app::{ScheduleRunnerPlugin, TerminalCtrlCHandlerPlugin};
 use bevy::prelude::*;
 use bevy::window::Window;
 
@@ -10,6 +10,7 @@ use crate::game::{GameClientPlugin, GameServerPlugin};
 use crate::magic::MagicPlugin;
 use crate::network::{TcpClientPlugin, TcpServerPlugin};
 use crate::npc::NpcPlugin;
+use crate::persistence::PersistenceServerPlugin;
 use crate::player::setup::spawn_embedded_player_authoritative;
 use crate::player::{PlayerClientPlugin, PlayerServerPlugin};
 use crate::scripting::ScriptingPlugin;
@@ -27,6 +28,7 @@ pub struct GameAppPlugin {
     pub runtime: AppRuntime,
     pub server_addr: Option<String>,
     pub bind_addr: Option<String>,
+    pub save_path: Option<String>,
 }
 
 impl Plugin for GameAppPlugin {
@@ -92,6 +94,10 @@ impl Plugin for GameAppPlugin {
                     PlayerServerPlugin,
                     CombatPlugin,
                     MagicPlugin,
+                    TerminalCtrlCHandlerPlugin,
+                    PersistenceServerPlugin {
+                        save_path: self.save_path.clone(),
+                    },
                     TcpServerPlugin {
                         bind_addr: self
                             .bind_addr

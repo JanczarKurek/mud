@@ -84,7 +84,7 @@ impl Inventory {
     }
 }
 
-#[derive(Component, Clone)]
+#[derive(Component, Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ChatLog {
     pub lines: Vec<String>,
     pub max_lines: usize,
@@ -116,7 +116,7 @@ impl ChatLog {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
 pub struct AttributeSet {
     pub strength: i32,
     pub agility: i32,
@@ -166,7 +166,7 @@ impl AttributeSet {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Clone, Copy, Debug, Deserialize, Serialize)]
 pub struct VitalStats {
     pub health: f32,
     pub max_health: f32,
@@ -185,7 +185,7 @@ impl VitalStats {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Clone, Copy, Debug, Deserialize, Serialize)]
 pub struct BaseStats {
     pub attributes: AttributeSet,
     pub max_health: i32,
@@ -215,7 +215,7 @@ impl BaseStats {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Clone, Copy, Debug, Deserialize, Serialize)]
 pub struct DerivedStats {
     #[allow(dead_code)]
     pub attributes: AttributeSet,
@@ -249,7 +249,7 @@ impl DerivedStats {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Clone, Copy, Debug, Deserialize, Serialize)]
 pub struct MovementCooldown {
     pub remaining_seconds: f32,
     pub step_interval_seconds: f32,

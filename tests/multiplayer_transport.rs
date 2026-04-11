@@ -121,6 +121,7 @@ fn two_clients_receive_snapshots_and_see_each_other_move() {
         runtime: AppRuntime::HeadlessServer,
         server_addr: None,
         bind_addr: Some("127.0.0.1:0".to_owned()),
+        save_path: None,
     });
     app.update();
 
@@ -176,6 +177,7 @@ fn disconnecting_client_removes_its_player_from_the_server() {
         runtime: AppRuntime::HeadlessServer,
         server_addr: None,
         bind_addr: Some("127.0.0.1:0".to_owned()),
+        save_path: None,
     });
     app.update();
 

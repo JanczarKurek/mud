@@ -4,6 +4,7 @@ use crate::combat::components::{AttackProfile, CombatLeash};
 use crate::npc::components::{
     HostileBehavior, Npc, RoamBounds, RoamingBehavior, RoamingRandomState, RoamingStepTimer,
 };
+use crate::persistence::WorldSnapshotStatus;
 use crate::player::components::{BaseStats, DerivedStats, VitalStats};
 use crate::world::components::{
     ClientProjectedWorldObject, ClientRemotePlayerVisual, Collider, CombatHealthBar, Container,
@@ -17,7 +18,12 @@ pub fn spawn_world(
     mut commands: Commands,
     map_layout: Res<MapLayout>,
     definitions: Res<OverworldObjectDefinitions>,
+    snapshot_status: Option<Res<WorldSnapshotStatus>>,
 ) {
+    if snapshot_status.as_ref().is_some_and(|status| status.loaded) {
+        return;
+    }
+
     for object in &map_layout.resolved_objects {
         if map_layout.is_contained(object.id) {
             continue;
