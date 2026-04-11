@@ -39,27 +39,29 @@ pub fn process_game_commands(
     spell_definitions: Res<SpellDefinitions>,
     mut object_registry: ResMut<ObjectRegistry>,
     world_config: Res<WorldConfig>,
-    collider_query: Query<&TilePosition, (With<Collider>, Without<Player>)>,
     object_query: Query<(Entity, &TilePosition, &OverworldObject), Without<Player>>,
     movable_query: Query<
         (Entity, &TilePosition, &OverworldObject),
         (With<Movable>, Without<Player>),
     >,
     mut container_query: Query<&mut Container>,
-    player_lookup_query: Query<(Entity, &PlayerIdentity), With<Player>>,
-    mut player_query: Query<
-        (
-            Entity,
-            &PlayerIdentity,
-            &mut InventoryState,
-            &mut ChatLogState,
-            &mut TilePosition,
-            &mut MovementCooldown,
-            &mut VitalStats,
-            Option<&CombatTarget>,
-        ),
-        With<Player>,
-    >,
+    mut player_queries: ParamSet<(
+        Query<&TilePosition, With<Collider>>,
+        Query<(Entity, &PlayerIdentity, &OverworldObject), With<Player>>,
+        Query<
+            (
+                Entity,
+                &PlayerIdentity,
+                &mut InventoryState,
+                &mut ChatLogState,
+                &mut TilePosition,
+                &mut MovementCooldown,
+                &mut VitalStats,
+                Option<&CombatTarget>,
+            ),
+            With<Player>,
+        >,
+    )>,
     mut npc_vitals_query: Query<(&mut VitalStats, &OverworldObject), (With<Npc>, Without<Player>)>,
     mut commands: Commands,
 ) {
@@ -67,27 +69,31 @@ pub fn process_game_commands(
 
     for queued_command in queued_commands {
         let Some(player_entity) =
-            resolve_player_entity(queued_command.player_id, &player_lookup_query)
+            resolve_player_entity(queued_command.player_id, &player_queries.p1())
         else {
             continue;
         };
 
         match queued_command.command {
             GameCommand::MovePlayer { delta } => {
+                let collider_positions = player_queries.p0().iter().copied().collect::<Vec<_>>();
                 handle_move_player(
                     player_entity,
                     delta,
                     &world_config,
-                    &collider_query,
-                    &mut player_query,
+                    &collider_positions,
+                    &mut player_queries.p2(),
                 );
             }
             GameCommand::SetCombatTarget { target_object_id } => {
+                let target_entity = target_object_id.and_then(|object_id| {
+                    find_combat_target_entity(object_id, &object_query, &player_queries.p1())
+                });
                 handle_set_combat_target(
                     player_entity,
                     target_object_id,
-                    &object_query,
-                    &mut player_query,
+                    target_entity,
+                    &mut player_queries.p2(),
                     &object_registry,
                     &definitions,
                     &spell_definitions,
@@ -100,7 +106,7 @@ pub fn process_game_commands(
                     object_id,
                     &object_query,
                     &mut container_query,
-                    &mut player_query,
+                    &mut player_queries.p2(),
                     &mut ui_events,
                 );
             }
@@ -108,7 +114,7 @@ pub fn process_game_commands(
                 handle_inspect(
                     player_entity,
                     target,
-                    &mut player_query,
+                    &mut player_queries.p2(),
                     &object_registry,
                     &definitions,
                     &spell_definitions,
@@ -120,7 +126,7 @@ pub fn process_game_commands(
                     source,
                     &mut container_query,
                     &object_query,
-                    &mut player_query,
+                    &mut player_queries.p2(),
                     &object_registry,
                     &definitions,
                     &spell_definitions,
@@ -133,7 +139,7 @@ pub fn process_game_commands(
                     source,
                     target,
                     &mut container_query,
-                    &mut player_query,
+                    &mut player_queries.p2(),
                     &object_query,
                     &object_registry,
                     &definitions,
@@ -153,7 +159,7 @@ pub fn process_game_commands(
                     target_object_id,
                     &mut container_query,
                     &object_query,
-                    &mut player_query,
+                    &mut player_queries.p2(),
                     &mut npc_vitals_query,
                     &object_registry,
                     &definitions,
@@ -165,13 +171,14 @@ pub fn process_game_commands(
                 source,
                 destination,
             } => {
+                let collider_positions = player_queries.p0().iter().copied().collect::<Vec<_>>();
                 handle_move_item(
                     player_entity,
                     source,
                     destination,
                     &mut container_query,
-                    &mut player_query,
-                    &collider_query,
+                    &mut player_queries.p2(),
+                    &collider_positions,
                     &movable_query,
                     &object_query,
                     &mut object_registry,
@@ -184,16 +191,17 @@ pub fn process_game_commands(
                 type_id,
                 tile_position,
             } => {
+                let collider_positions = player_queries.p0().iter().copied().collect::<Vec<_>>();
                 handle_admin_spawn(
                     player_entity,
                     &type_id,
                     tile_position,
                     &definitions,
                     &world_config,
-                    &collider_query,
+                    &collider_positions,
                     &mut object_registry,
                     &mut commands,
-                    &mut player_query,
+                    &mut player_queries.p2(),
                 );
             }
         }
@@ -413,7 +421,7 @@ fn handle_move_player(
     player_entity: Entity,
     delta: MoveDelta,
     world_config: &WorldConfig,
-    collider_query: &Query<&TilePosition, (With<Collider>, Without<Player>)>,
+    collider_positions: &[TilePosition],
     player_query: &mut Query<
         (
             Entity,
@@ -443,7 +451,7 @@ fn handle_move_player(
         (tile_position.y + delta.y).clamp(0, world_config.map_height - 1),
     );
 
-    let blocked = collider_query
+    let blocked = collider_positions
         .iter()
         .any(|collider_position| *collider_position == target_position);
 
@@ -458,7 +466,7 @@ fn handle_move_player(
 fn handle_set_combat_target(
     player_entity: Entity,
     target_object_id: Option<u64>,
-    object_query: &Query<(Entity, &TilePosition, &OverworldObject), Without<Player>>,
+    target_entity: Option<Entity>,
     player_query: &mut Query<
         (
             Entity,
@@ -483,7 +491,7 @@ fn handle_set_combat_target(
 
     match target_object_id {
         Some(object_id) => {
-            let Some((target_entity, _)) = find_object_entity(object_id, object_query) else {
+            let Some(target_entity) = target_entity else {
                 return;
             };
             commands.entity(player_entity).insert(CombatTarget {
@@ -847,7 +855,7 @@ fn handle_move_item(
         ),
         With<Player>,
     >,
-    collider_query: &Query<&TilePosition, (With<Collider>, Without<Player>)>,
+    collider_positions: &[TilePosition],
     movable_query: &Query<
         (Entity, &TilePosition, &OverworldObject),
         (With<Movable>, Without<Player>),
@@ -896,7 +904,7 @@ fn handle_move_item(
                 Some(origin),
                 &player_position,
                 entity,
-                collider_query,
+                collider_positions,
                 movable_query,
                 world_config,
             ) {
@@ -947,7 +955,7 @@ fn handle_move_item(
                 None,
                 &player_position,
                 Entity::PLACEHOLDER,
-                collider_query,
+                collider_positions,
                 movable_query,
                 world_config,
             ) else {
@@ -990,7 +998,7 @@ fn handle_admin_spawn(
     tile_position: TilePosition,
     definitions: &OverworldObjectDefinitions,
     world_config: &WorldConfig,
-    collider_query: &Query<&TilePosition, (With<Collider>, Without<Player>)>,
+    collider_positions: &[TilePosition],
     object_registry: &mut ObjectRegistry,
     commands: &mut Commands,
     player_query: &mut Query<
@@ -1025,7 +1033,7 @@ fn handle_admin_spawn(
     };
 
     if definition.colliding
-        && collider_query
+        && collider_positions
             .iter()
             .any(|collider_position| *collider_position == tile_position)
     {
@@ -1050,13 +1058,16 @@ fn handle_admin_spawn(
 
 fn resolve_player_entity(
     player_id: Option<crate::player::components::PlayerId>,
-    player_lookup_query: &Query<(Entity, &PlayerIdentity), With<Player>>,
+    player_lookup_query: &Query<(Entity, &PlayerIdentity, &OverworldObject), With<Player>>,
 ) -> Option<Entity> {
     match player_id {
         Some(player_id) => player_lookup_query
             .iter()
-            .find_map(|(entity, identity)| (identity.id == player_id).then_some(entity)),
-        None => player_lookup_query.iter().next().map(|(entity, _)| entity),
+            .find_map(|(entity, identity, _)| (identity.id == player_id).then_some(entity)),
+        None => player_lookup_query
+            .iter()
+            .next()
+            .map(|(entity, _, _)| entity),
     }
 }
 
@@ -1068,6 +1079,20 @@ fn find_object_entity<'a>(
         .iter()
         .find_map(|(entity, tile_position, object)| {
             (object.object_id == object_id).then_some((entity, *tile_position))
+        })
+}
+
+fn find_combat_target_entity(
+    object_id: u64,
+    object_query: &Query<(Entity, &TilePosition, &OverworldObject), Without<Player>>,
+    player_lookup_query: &Query<(Entity, &PlayerIdentity, &OverworldObject), With<Player>>,
+) -> Option<Entity> {
+    find_object_entity(object_id, object_query)
+        .map(|(entity, _)| entity)
+        .or_else(|| {
+            player_lookup_query
+                .iter()
+                .find_map(|(entity, _, object)| (object.object_id == object_id).then_some(entity))
         })
 }
 
@@ -1483,6 +1508,33 @@ mod tests {
     }
 
     #[test]
+    fn players_block_other_players_movement() {
+        let mut app = setup_server_app();
+        spawn_player(&mut app, 1, 10, 10);
+        spawn_player(&mut app, 2, 11, 10);
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                crate::player::components::PlayerId(1),
+                GameCommand::MovePlayer {
+                    delta: MoveDelta { x: 1, y: 0 },
+                },
+            );
+
+        app.update();
+
+        let mut player_query = app.world_mut().query::<(&PlayerIdentity, &TilePosition)>();
+        let positions = player_query
+            .iter(app.world())
+            .map(|(identity, position)| (identity.id.0, *position))
+            .collect::<std::collections::HashMap<_, _>>();
+
+        assert_eq!(positions[&1], TilePosition::new(10, 10));
+        assert_eq!(positions[&2], TilePosition::new(11, 10));
+    }
+
+    #[test]
     fn move_item_changes_only_the_acting_players_inventory() {
         let mut app = setup_server_app();
         spawn_player(&mut app, 1, 10, 10);
@@ -1534,7 +1586,7 @@ fn is_valid_world_drop(
     origin_tile: Option<TilePosition>,
     player_position: &TilePosition,
     dragged_entity: Entity,
-    collider_query: &Query<&TilePosition, (With<Collider>, Without<Player>)>,
+    collider_positions: &[TilePosition],
     movable_query: &Query<
         (Entity, &TilePosition, &OverworldObject),
         (With<Movable>, Without<Player>),
@@ -1557,7 +1609,7 @@ fn is_valid_world_drop(
         return true;
     }
 
-    if collider_query
+    if collider_positions
         .iter()
         .any(|collider_position| *collider_position == target_tile)
     {
@@ -1574,7 +1626,7 @@ fn find_nearest_valid_world_drop_tile(
     origin_tile: Option<TilePosition>,
     player_position: &TilePosition,
     dragged_entity: Entity,
-    collider_query: &Query<&TilePosition, (With<Collider>, Without<Player>)>,
+    collider_positions: &[TilePosition],
     movable_query: &Query<
         (Entity, &TilePosition, &OverworldObject),
         (With<Movable>, Without<Player>),
@@ -1601,7 +1653,7 @@ fn find_nearest_valid_world_drop_tile(
             origin_tile,
             player_position,
             dragged_entity,
-            collider_query,
+            collider_positions,
             movable_query,
             world_config,
         )

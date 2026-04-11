@@ -744,6 +744,35 @@ pub fn handle_context_menu_opening(
         return;
     }
 
+    for remote_player in client_state.remote_players.values() {
+        if remote_player.tile_position != target_tile {
+            continue;
+        }
+        if !is_near_player(&player_position, &remote_player.tile_position) {
+            continue;
+        }
+
+        let can_use = object_is_usable(remote_player.object_id, &object_registry, &definitions);
+        context_menu_state.show(
+            cursor_position,
+            ContextMenuTarget::World(remote_player.object_id),
+            false,
+            can_use,
+            can_use_on(
+                remote_player.object_id,
+                &object_registry,
+                &definitions,
+                &spell_definitions,
+            ),
+            true,
+        );
+        info!(
+            "context_open_remote_player_success object_id={} can_use={} can_attack=true",
+            remote_player.object_id, can_use
+        );
+        return;
+    }
+
     info!("context_open_no_target");
     context_menu_state.hide();
 }

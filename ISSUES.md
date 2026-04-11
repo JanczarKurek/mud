@@ -49,6 +49,8 @@
 - Added first-pass scroll-cast magic with YAML-defined spells, untargeted/self-cast and targeted spell modes, and a dedicated spell-target cursor.
 - Generalized the right sidebar into docked windows so status, equipment, backpack, target, and container panels share the same scrollable/resizable dock system, with title-bar reordering for movable panel order.
 - Introduced a first server-authoritative command layer inside the single-player app, moving gameplay mutations for movement, targeting, item actions, spell casting, drag/drop, and console spawns behind a central game-processing plugin.
+- Allowed right-click context interactions and combat targeting against nearby remote players.
+- Made players block movement and occupied-tile placement for other players through the authoritative collider path.
 
 ## Later Ideas
 
