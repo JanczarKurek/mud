@@ -8,15 +8,16 @@ pub mod systems;
 
 use bevy::prelude::*;
 
+use crate::game::systems::apply_game_events_to_client_state;
 use crate::world::map_layout::MapLayout;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
-use crate::world::resources::ClientWorldProjectionState;
+use crate::world::resources::{ClientRemotePlayerProjectionState, ClientWorldProjectionState};
 use crate::world::setup::{spawn_ground_tiles, spawn_world};
 use crate::world::systems::{
-    sync_client_world_projection, sync_combat_health_bars, sync_tile_transforms,
+    sync_client_world_projection, sync_combat_health_bars, sync_remote_player_projection,
+    sync_tile_transforms,
 };
-use crate::game::systems::apply_game_events_to_client_state;
 
 pub struct WorldServerPlugin;
 
@@ -55,11 +56,13 @@ impl Plugin for WorldClientPlugin {
             .insert_resource(object_registry)
             .insert_resource(OverworldObjectDefinitions::load_from_disk())
             .insert_resource(ClientWorldProjectionState::default())
+            .insert_resource(ClientRemotePlayerProjectionState::default())
             .add_systems(Startup, spawn_ground_tiles)
             .add_systems(
                 Update,
                 (
                     sync_client_world_projection.after(apply_game_events_to_client_state),
+                    sync_remote_player_projection.after(apply_game_events_to_client_state),
                     sync_tile_transforms,
                     sync_combat_health_bars,
                 ),

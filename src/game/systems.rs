@@ -3,8 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::combat::components::CombatTarget;
 use crate::game::commands::{
-    GameCommand, InspectTarget, ItemDestination, ItemReference, ItemSlotRef, MoveDelta,
-    UseTarget,
+    GameCommand, InspectTarget, ItemDestination, ItemReference, ItemSlotRef, MoveDelta, UseTarget,
 };
 use crate::game::resources::{
     ChatLogState, ClientGameState, ClientVitalStats, ClientWorldObjectState, GameEvent,
@@ -12,9 +11,13 @@ use crate::game::resources::{
 };
 use crate::magic::resources::{SpellDefinition, SpellDefinitions};
 use crate::npc::components::Npc;
-use crate::player::components::{DerivedStats, MovementCooldown, Player, VitalStats};
+use crate::player::components::{
+    DerivedStats, MovementCooldown, Player, PlayerIdentity, VitalStats,
+};
 use crate::world::components::{Collider, Container, Movable, OverworldObject, TilePosition};
-use crate::world::object_definitions::{EquipmentSlot, OverworldObjectDefinition, OverworldObjectDefinitions};
+use crate::world::object_definitions::{
+    EquipmentSlot, OverworldObjectDefinition, OverworldObjectDefinitions,
+};
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::setup::spawn_overworld_object;
 use crate::world::WorldConfig;
@@ -23,30 +26,33 @@ pub fn tick_player_movement_cooldowns(
     time: Res<Time>,
     mut player_query: Query<&mut MovementCooldown, With<Player>>,
 ) {
-    let Ok(mut movement_cooldown) = player_query.single_mut() else {
-        return;
-    };
-
-    movement_cooldown.remaining_seconds =
-        (movement_cooldown.remaining_seconds - time.delta_secs()).max(0.0);
+    for mut movement_cooldown in &mut player_query {
+        movement_cooldown.remaining_seconds =
+            (movement_cooldown.remaining_seconds - time.delta_secs()).max(0.0);
+    }
 }
 
 pub fn process_game_commands(
     mut pending_commands: ResMut<PendingGameCommands>,
     mut ui_events: ResMut<PendingGameUiEvents>,
-    mut inventory_state: ResMut<InventoryState>,
-    mut chat_log_state: ResMut<ChatLogState>,
     definitions: Res<OverworldObjectDefinitions>,
     spell_definitions: Res<SpellDefinitions>,
     mut object_registry: ResMut<ObjectRegistry>,
     world_config: Res<WorldConfig>,
     collider_query: Query<&TilePosition, (With<Collider>, Without<Player>)>,
     object_query: Query<(Entity, &TilePosition, &OverworldObject), Without<Player>>,
-    movable_query: Query<(Entity, &TilePosition, &OverworldObject), (With<Movable>, Without<Player>)>,
+    movable_query: Query<
+        (Entity, &TilePosition, &OverworldObject),
+        (With<Movable>, Without<Player>),
+    >,
     mut container_query: Query<&mut Container>,
+    player_lookup_query: Query<(Entity, &PlayerIdentity), With<Player>>,
     mut player_query: Query<
         (
             Entity,
+            &PlayerIdentity,
+            &mut InventoryState,
+            &mut ChatLogState,
             &mut TilePosition,
             &mut MovementCooldown,
             &mut VitalStats,
@@ -59,10 +65,17 @@ pub fn process_game_commands(
 ) {
     let queued_commands = std::mem::take(&mut pending_commands.commands);
 
-    for command in queued_commands {
-        match command {
+    for queued_command in queued_commands {
+        let Some(player_entity) =
+            resolve_player_entity(queued_command.player_id, &player_lookup_query)
+        else {
+            continue;
+        };
+
+        match queued_command.command {
             GameCommand::MovePlayer { delta } => {
                 handle_move_player(
+                    player_entity,
                     delta,
                     &world_config,
                     &collider_query,
@@ -71,10 +84,10 @@ pub fn process_game_commands(
             }
             GameCommand::SetCombatTarget { target_object_id } => {
                 handle_set_combat_target(
+                    player_entity,
                     target_object_id,
                     &object_query,
                     &mut player_query,
-                    &mut chat_log_state,
                     &object_registry,
                     &definitions,
                     &spell_definitions,
@@ -83,18 +96,19 @@ pub fn process_game_commands(
             }
             GameCommand::OpenContainer { object_id } => {
                 handle_open_container(
+                    player_entity,
                     object_id,
                     &object_query,
                     &mut container_query,
                     &mut player_query,
-                    &mut chat_log_state,
                     &mut ui_events,
                 );
             }
             GameCommand::Inspect { target } => {
                 handle_inspect(
+                    player_entity,
                     target,
-                    &mut chat_log_state,
+                    &mut player_query,
                     &object_registry,
                     &definitions,
                     &spell_definitions,
@@ -102,12 +116,11 @@ pub fn process_game_commands(
             }
             GameCommand::UseItem { source } => {
                 handle_use_item(
+                    player_entity,
                     source,
-                    &mut inventory_state,
                     &mut container_query,
                     &object_query,
                     &mut player_query,
-                    &mut chat_log_state,
                     &object_registry,
                     &definitions,
                     &spell_definitions,
@@ -116,13 +129,12 @@ pub fn process_game_commands(
             }
             GameCommand::UseItemOn { source, target } => {
                 handle_use_item_on(
+                    player_entity,
                     source,
                     target,
-                    &mut inventory_state,
                     &mut container_query,
                     &mut player_query,
                     &object_query,
-                    &mut chat_log_state,
                     &object_registry,
                     &definitions,
                     &spell_definitions,
@@ -135,26 +147,28 @@ pub fn process_game_commands(
                 target_object_id,
             } => {
                 handle_cast_spell_at(
+                    player_entity,
                     source,
                     &spell_id,
                     target_object_id,
-                    &mut inventory_state,
                     &mut container_query,
                     &object_query,
                     &mut player_query,
                     &mut npc_vitals_query,
-                    &mut chat_log_state,
                     &object_registry,
                     &definitions,
                     &spell_definitions,
                     &mut commands,
                 );
             }
-            GameCommand::MoveItem { source, destination } => {
+            GameCommand::MoveItem {
+                source,
+                destination,
+            } => {
                 handle_move_item(
+                    player_entity,
                     source,
                     destination,
-                    &mut inventory_state,
                     &mut container_query,
                     &mut player_query,
                     &collider_query,
@@ -164,7 +178,6 @@ pub fn process_game_commands(
                     &definitions,
                     &world_config,
                     &mut commands,
-                    &mut chat_log_state,
                 );
             }
             GameCommand::AdminSpawn {
@@ -172,6 +185,7 @@ pub fn process_game_commands(
                 tile_position,
             } => {
                 handle_admin_spawn(
+                    player_entity,
                     &type_id,
                     tile_position,
                     &definitions,
@@ -179,7 +193,7 @@ pub fn process_game_commands(
                     &collider_query,
                     &mut object_registry,
                     &mut commands,
-                    &mut chat_log_state,
+                    &mut player_query,
                 );
             }
         }
@@ -187,21 +201,29 @@ pub fn process_game_commands(
 }
 
 pub fn collect_game_events_from_authority(
-    inventory_state: Res<InventoryState>,
-    chat_log_state: Res<ChatLogState>,
-    client_state: Res<ClientGameState>,
+    mut client_state: ResMut<ClientGameState>,
     player_query: Query<
         (
+            &PlayerIdentity,
+            &InventoryState,
+            &ChatLogState,
             &TilePosition,
             &VitalStats,
             &DerivedStats,
+            &OverworldObject,
             Option<&CombatTarget>,
         ),
         With<Player>,
     >,
-    object_query: Query<&OverworldObject, Without<Player>>,
+    object_query: Query<&OverworldObject>,
     world_object_query: Query<
-        (&TilePosition, &OverworldObject, Has<Container>, Has<Npc>, Has<Movable>),
+        (
+            &TilePosition,
+            &OverworldObject,
+            Has<Container>,
+            Has<Npc>,
+            Has<Movable>,
+        ),
         Without<Player>,
     >,
     container_query: Query<(&Container, &OverworldObject), Without<Player>>,
@@ -209,20 +231,31 @@ pub fn collect_game_events_from_authority(
 ) {
     pending_game_events.events.clear();
 
-    if client_state.inventory != *inventory_state {
-        pending_game_events.events.push(GameEvent::InventoryChanged {
-            inventory: inventory_state.clone(),
-        });
-    }
-
-    if client_state.chat_log_lines != chat_log_state.lines {
-        pending_game_events.events.push(GameEvent::ChatLogChanged {
-            lines: chat_log_state.lines.clone(),
-        });
-    }
-
-    if let Ok((player_tile_position, vital_stats, derived_stats, combat_target)) = player_query.single()
+    if let Ok((
+        player_identity,
+        inventory_state,
+        chat_log_state,
+        player_tile_position,
+        vital_stats,
+        derived_stats,
+        player_object,
+        combat_target,
+    )) = player_query.single()
     {
+        if client_state.inventory != *inventory_state {
+            pending_game_events
+                .events
+                .push(GameEvent::InventoryChanged {
+                    inventory: inventory_state.clone(),
+                });
+        }
+
+        if client_state.chat_log_lines != chat_log_state.lines {
+            pending_game_events.events.push(GameEvent::ChatLogChanged {
+                lines: chat_log_state.lines.clone(),
+            });
+        }
+
         if client_state.player_tile_position != Some(*player_tile_position) {
             pending_game_events
                 .events
@@ -238,24 +271,37 @@ pub fn collect_game_events_from_authority(
             max_mana: vital_stats.max_mana,
         };
         if client_state.player_vitals != Some(current_vitals) {
-            pending_game_events.events.push(GameEvent::PlayerVitalsChanged {
-                vitals: current_vitals,
-            });
+            pending_game_events
+                .events
+                .push(GameEvent::PlayerVitalsChanged {
+                    vitals: current_vitals,
+                });
         }
 
         if client_state.player_storage_slots != derived_stats.storage_slots {
-            pending_game_events.events.push(GameEvent::PlayerStorageChanged {
-                storage_slots: derived_stats.storage_slots,
-            });
+            pending_game_events
+                .events
+                .push(GameEvent::PlayerStorageChanged {
+                    storage_slots: derived_stats.storage_slots,
+                });
         }
 
         let current_target_object_id = combat_target
             .and_then(|combat_target| object_query.get(combat_target.entity).ok())
             .map(|object| object.object_id);
         if client_state.current_target_object_id != current_target_object_id {
-            pending_game_events.events.push(GameEvent::CombatTargetChanged {
-                target_object_id: current_target_object_id,
-            });
+            pending_game_events
+                .events
+                .push(GameEvent::CombatTargetChanged {
+                    target_object_id: current_target_object_id,
+                });
+        }
+
+        if client_state.local_player_id != Some(player_identity.id) {
+            client_state.local_player_id = Some(player_identity.id);
+        }
+        if client_state.local_player_object_id != Some(player_object.object_id) {
+            client_state.local_player_object_id = Some(player_object.object_id);
         }
     }
 
@@ -264,18 +310,22 @@ pub fn collect_game_events_from_authority(
         current_container_ids.push(object.object_id);
         let current_slots = container.slots.clone();
         if client_state.container_slots.get(&object.object_id) != Some(&current_slots) {
-            pending_game_events.events.push(GameEvent::ContainerChanged {
-                object_id: object.object_id,
-                slots: current_slots,
-            });
+            pending_game_events
+                .events
+                .push(GameEvent::ContainerChanged {
+                    object_id: object.object_id,
+                    slots: current_slots,
+                });
         }
     }
 
     for stale_object_id in client_state.container_slots.keys() {
         if !current_container_ids.contains(stale_object_id) {
-            pending_game_events.events.push(GameEvent::ContainerRemoved {
-                object_id: *stale_object_id,
-            });
+            pending_game_events
+                .events
+                .push(GameEvent::ContainerRemoved {
+                    object_id: *stale_object_id,
+                });
         }
     }
 
@@ -294,15 +344,19 @@ pub fn collect_game_events_from_authority(
         if client_state.world_objects.get(&object.object_id) != Some(&projected_object) {
             pending_game_events
                 .events
-                .push(GameEvent::WorldObjectUpserted { object: projected_object });
+                .push(GameEvent::WorldObjectUpserted {
+                    object: projected_object,
+                });
         }
     }
 
     for stale_object_id in client_state.world_objects.keys() {
         if !current_world_object_ids.contains(stale_object_id) {
-            pending_game_events.events.push(GameEvent::WorldObjectRemoved {
-                object_id: *stale_object_id,
-            });
+            pending_game_events
+                .events
+                .push(GameEvent::WorldObjectRemoved {
+                    object_id: *stale_object_id,
+                });
         }
     }
 }
@@ -345,17 +399,27 @@ pub fn apply_game_events_to_client_state(
             GameEvent::WorldObjectRemoved { object_id } => {
                 client_state.world_objects.remove(&object_id);
             }
+            GameEvent::RemotePlayerUpserted { player } => {
+                client_state.remote_players.insert(player.player_id, player);
+            }
+            GameEvent::RemotePlayerRemoved { player_id } => {
+                client_state.remote_players.remove(&player_id);
+            }
         }
     }
 }
 
 fn handle_move_player(
+    player_entity: Entity,
     delta: MoveDelta,
     world_config: &WorldConfig,
     collider_query: &Query<&TilePosition, (With<Collider>, Without<Player>)>,
     player_query: &mut Query<
         (
             Entity,
+            &PlayerIdentity,
+            &mut InventoryState,
+            &mut ChatLogState,
             &mut TilePosition,
             &mut MovementCooldown,
             &mut VitalStats,
@@ -364,7 +428,9 @@ fn handle_move_player(
         With<Player>,
     >,
 ) {
-    let Ok((_, mut tile_position, mut movement_cooldown, _, _)) = player_query.single_mut() else {
+    let Ok((_, _, _, _, mut tile_position, mut movement_cooldown, _, _)) =
+        player_query.get_mut(player_entity)
+    else {
         return;
     };
 
@@ -390,11 +456,15 @@ fn handle_move_player(
 }
 
 fn handle_set_combat_target(
+    player_entity: Entity,
     target_object_id: Option<u64>,
     object_query: &Query<(Entity, &TilePosition, &OverworldObject), Without<Player>>,
     player_query: &mut Query<
         (
             Entity,
+            &PlayerIdentity,
+            &mut InventoryState,
+            &mut ChatLogState,
             &mut TilePosition,
             &mut MovementCooldown,
             &mut VitalStats,
@@ -402,13 +472,12 @@ fn handle_set_combat_target(
         ),
         With<Player>,
     >,
-    chat_log_state: &mut ChatLogState,
     object_registry: &ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
     commands: &mut Commands,
 ) {
-    let Ok((player_entity, _, _, _, _)) = player_query.single_mut() else {
+    let Ok((_, _, _, mut chat_log_state, _, _, _, _)) = player_query.get_mut(player_entity) else {
         return;
     };
 
@@ -417,9 +486,9 @@ fn handle_set_combat_target(
             let Some((target_entity, _)) = find_object_entity(object_id, object_query) else {
                 return;
             };
-            commands
-                .entity(player_entity)
-                .insert(CombatTarget { entity: target_entity });
+            commands.entity(player_entity).insert(CombatTarget {
+                entity: target_entity,
+            });
 
             if let Some(target_name) =
                 object_registry.display_name(object_id, definitions, spell_definitions)
@@ -434,12 +503,16 @@ fn handle_set_combat_target(
 }
 
 fn handle_open_container(
+    player_entity: Entity,
     object_id: u64,
     object_query: &Query<(Entity, &TilePosition, &OverworldObject), Without<Player>>,
     container_query: &mut Query<&mut Container>,
     player_query: &mut Query<
         (
             Entity,
+            &PlayerIdentity,
+            &mut InventoryState,
+            &mut ChatLogState,
             &mut TilePosition,
             &mut MovementCooldown,
             &mut VitalStats,
@@ -447,10 +520,11 @@ fn handle_open_container(
         ),
         With<Player>,
     >,
-    chat_log_state: &mut ChatLogState,
     ui_events: &mut PendingGameUiEvents,
 ) {
-    let Ok((_, player_position, _, _, _)) = player_query.single_mut() else {
+    let Ok((_, player_identity, _, mut chat_log_state, player_position, _, _, _)) =
+        player_query.get_mut(player_entity)
+    else {
         return;
     };
     let Some((entity, tile_position)) = find_object_entity(object_id, object_query) else {
@@ -463,16 +537,32 @@ fn handle_open_container(
         return;
     }
 
-    ui_events.events.push(GameUiEvent::OpenContainer { object_id });
+    ui_events.push(player_identity.id, GameUiEvent::OpenContainer { object_id });
 }
 
 fn handle_inspect(
+    player_entity: Entity,
     target: InspectTarget,
-    chat_log_state: &mut ChatLogState,
+    player_query: &mut Query<
+        (
+            Entity,
+            &PlayerIdentity,
+            &mut InventoryState,
+            &mut ChatLogState,
+            &mut TilePosition,
+            &mut MovementCooldown,
+            &mut VitalStats,
+            Option<&CombatTarget>,
+        ),
+        With<Player>,
+    >,
     object_registry: &ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
 ) {
+    let Ok((_, _, _, mut chat_log_state, _, _, _, _)) = player_query.get_mut(player_entity) else {
+        return;
+    };
     let InspectTarget::Object(object_id) = target;
     if let Some(description) =
         object_description(object_id, object_registry, definitions, spell_definitions)
@@ -482,13 +572,16 @@ fn handle_inspect(
 }
 
 fn handle_use_item(
+    player_entity: Entity,
     source: ItemReference,
-    inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
     object_query: &Query<(Entity, &TilePosition, &OverworldObject), Without<Player>>,
     player_query: &mut Query<
         (
             Entity,
+            &PlayerIdentity,
+            &mut InventoryState,
+            &mut ChatLogState,
             &mut TilePosition,
             &mut MovementCooldown,
             &mut VitalStats,
@@ -496,13 +589,19 @@ fn handle_use_item(
         ),
         With<Player>,
     >,
-    chat_log_state: &mut ChatLogState,
     object_registry: &ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
     commands: &mut Commands,
 ) {
-    let object_id = item_reference_object_id(source, inventory_state, container_query, object_query);
+    let Ok((_, _, mut inventory_state, mut chat_log_state, _, _, mut vital_stats, _)) =
+        player_query.get_mut(player_entity)
+    else {
+        return;
+    };
+
+    let object_id =
+        item_reference_object_id(source, &inventory_state, container_query, object_query);
     let Some(object_id) = object_id else {
         return;
     };
@@ -514,11 +613,8 @@ fn handle_use_item(
         return;
     };
 
-    let Some((_, _, _, mut vital_stats, _)) = player_query.single_mut().ok() else {
-        return;
-    };
-
-    if let Some(spell_id) = object_registry.resolved_spell_id(object_id, definitions, spell_definitions)
+    if let Some(spell_id) =
+        object_registry.resolved_spell_id(object_id, definitions, spell_definitions)
     {
         let Some(spell) = spell_definitions.get(&spell_id) else {
             chat_log_state.push_narrator("That spell is unknown.");
@@ -535,7 +631,7 @@ fn handle_use_item(
         apply_spell_effects(spell, &mut vital_stats);
         consume_item_reference(
             source,
-            inventory_state,
+            &mut inventory_state,
             container_query,
             object_query,
             commands,
@@ -555,11 +651,11 @@ fn handle_use_item(
 
     vital_stats.health = (vital_stats.health + definition.use_effects.restore_health)
         .clamp(0.0, vital_stats.max_health);
-    vital_stats.mana = (vital_stats.mana + definition.use_effects.restore_mana)
-        .clamp(0.0, vital_stats.max_mana);
+    vital_stats.mana =
+        (vital_stats.mana + definition.use_effects.restore_mana).clamp(0.0, vital_stats.max_mana);
     consume_item_reference(
         source,
-        inventory_state,
+        &mut inventory_state,
         container_query,
         object_query,
         commands,
@@ -568,13 +664,16 @@ fn handle_use_item(
 }
 
 fn handle_use_item_on(
+    player_entity: Entity,
     source: ItemReference,
     target: UseTarget,
-    inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
     player_query: &mut Query<
         (
             Entity,
+            &PlayerIdentity,
+            &mut InventoryState,
+            &mut ChatLogState,
             &mut TilePosition,
             &mut MovementCooldown,
             &mut VitalStats,
@@ -583,7 +682,6 @@ fn handle_use_item_on(
         With<Player>,
     >,
     object_query: &Query<(Entity, &TilePosition, &OverworldObject), Without<Player>>,
-    chat_log_state: &mut ChatLogState,
     object_registry: &ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
@@ -591,20 +689,24 @@ fn handle_use_item_on(
 ) {
     match target {
         UseTarget::Player => handle_use_item(
+            player_entity,
             source,
-            inventory_state,
             container_query,
             object_query,
             player_query,
-            chat_log_state,
             object_registry,
             definitions,
             spell_definitions,
             commands,
         ),
         UseTarget::Object(target_object_id) => {
+            let Ok((_, _, inventory_state, mut chat_log_state, player_position, _, _, _)) =
+                player_query.get_mut(player_entity)
+            else {
+                return;
+            };
             let Some(source_object_id) =
-                item_reference_object_id(source, inventory_state, container_query, object_query)
+                item_reference_object_id(source, &inventory_state, container_query, object_query)
             else {
                 return;
             };
@@ -616,9 +718,6 @@ fn handle_use_item_on(
             };
             let Some((_, target_position)) = find_object_entity(target_object_id, object_query)
             else {
-                return;
-            };
-            let Ok((_, player_position, _, _, _)) = player_query.single_mut() else {
                 return;
             };
             if !is_near_player(&player_position, &target_position) {
@@ -641,15 +740,18 @@ fn handle_use_item_on(
 }
 
 fn handle_cast_spell_at(
+    player_entity: Entity,
     source: ItemReference,
     spell_id: &str,
     target_object_id: u64,
-    inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
     object_query: &Query<(Entity, &TilePosition, &OverworldObject), Without<Player>>,
     player_query: &mut Query<
         (
             Entity,
+            &PlayerIdentity,
+            &mut InventoryState,
+            &mut ChatLogState,
             &mut TilePosition,
             &mut MovementCooldown,
             &mut VitalStats,
@@ -657,11 +759,7 @@ fn handle_cast_spell_at(
         ),
         With<Player>,
     >,
-    npc_vitals_query: &mut Query<
-        (&mut VitalStats, &OverworldObject),
-        (With<Npc>, Without<Player>),
-    >,
-    chat_log_state: &mut ChatLogState,
+    npc_vitals_query: &mut Query<(&mut VitalStats, &OverworldObject), (With<Npc>, Without<Player>)>,
     object_registry: &ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
@@ -675,7 +773,17 @@ fn handle_cast_spell_at(
         return;
     };
 
-    let Ok((_, player_position, _, mut player_vitals, _)) = player_query.single_mut() else {
+    let Ok((
+        _,
+        _,
+        mut inventory_state,
+        mut chat_log_state,
+        player_position,
+        _,
+        mut player_vitals,
+        _,
+    )) = player_query.get_mut(player_entity)
+    else {
         return;
     };
 
@@ -706,7 +814,7 @@ fn handle_cast_spell_at(
     apply_spell_effects(spell, &mut target_vitals);
     consume_item_reference(
         source,
-        inventory_state,
+        &mut inventory_state,
         container_query,
         object_query,
         commands,
@@ -722,13 +830,16 @@ fn handle_cast_spell_at(
 
 #[allow(clippy::too_many_arguments)]
 fn handle_move_item(
+    player_entity: Entity,
     source: ItemReference,
     destination: ItemDestination,
-    inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
     player_query: &mut Query<
         (
             Entity,
+            &PlayerIdentity,
+            &mut InventoryState,
+            &mut ChatLogState,
             &mut TilePosition,
             &mut MovementCooldown,
             &mut VitalStats,
@@ -746,15 +857,17 @@ fn handle_move_item(
     definitions: &OverworldObjectDefinitions,
     world_config: &WorldConfig,
     commands: &mut Commands,
-    chat_log_state: &mut ChatLogState,
 ) {
-    let Ok((_, player_position, _, _, _)) = player_query.single_mut() else {
+    let Ok((_, _, mut inventory_state, mut chat_log_state, player_position, _, _, _)) =
+        player_query.get_mut(player_entity)
+    else {
         return;
     };
 
     match (source, destination) {
         (ItemReference::WorldObject(object_id), ItemDestination::Slot(slot_ref)) => {
-            let Some((entity, tile_position)) = find_movable_entity(object_id, movable_query) else {
+            let Some((entity, tile_position)) = find_movable_entity(object_id, movable_query)
+            else {
                 return;
             };
             if !is_near_player(&player_position, &tile_position) {
@@ -762,7 +875,7 @@ fn handle_move_item(
                 return;
             }
             if !place_item_in_slot_ref(
-                inventory_state,
+                &mut inventory_state,
                 container_query,
                 object_query,
                 object_id,
@@ -794,13 +907,16 @@ fn handle_move_item(
             if slot_ref == destination_ref {
                 return;
             }
-            let Some(object_id) =
-                take_item_from_slot_ref(inventory_state, container_query, object_query, slot_ref)
-            else {
+            let Some(object_id) = take_item_from_slot_ref(
+                &mut inventory_state,
+                container_query,
+                object_query,
+                slot_ref,
+            ) else {
                 return;
             };
             if !place_item_in_slot_ref(
-                inventory_state,
+                &mut inventory_state,
                 container_query,
                 object_query,
                 object_id,
@@ -809,7 +925,7 @@ fn handle_move_item(
                 definitions,
             ) {
                 restore_item_to_slot_ref(
-                    inventory_state,
+                    &mut inventory_state,
                     container_query,
                     object_query,
                     slot_ref,
@@ -818,9 +934,12 @@ fn handle_move_item(
             }
         }
         (ItemReference::Slot(slot_ref), ItemDestination::WorldTile(target_tile)) => {
-            let Some(object_id) =
-                take_item_from_slot_ref(inventory_state, container_query, object_query, slot_ref)
-            else {
+            let Some(object_id) = take_item_from_slot_ref(
+                &mut inventory_state,
+                container_query,
+                object_query,
+                slot_ref,
+            ) else {
                 return;
             };
             let Some(world_drop_tile) = find_nearest_valid_world_drop_tile(
@@ -833,7 +952,7 @@ fn handle_move_item(
                 world_config,
             ) else {
                 restore_item_to_slot_ref(
-                    inventory_state,
+                    &mut inventory_state,
                     container_query,
                     object_query,
                     slot_ref,
@@ -844,7 +963,7 @@ fn handle_move_item(
 
             let Some(type_id) = object_registry.type_id(object_id).map(str::to_owned) else {
                 restore_item_to_slot_ref(
-                    inventory_state,
+                    &mut inventory_state,
                     container_query,
                     object_query,
                     slot_ref,
@@ -866,6 +985,7 @@ fn handle_move_item(
 }
 
 fn handle_admin_spawn(
+    player_entity: Entity,
     type_id: &str,
     tile_position: TilePosition,
     definitions: &OverworldObjectDefinitions,
@@ -873,8 +993,23 @@ fn handle_admin_spawn(
     collider_query: &Query<&TilePosition, (With<Collider>, Without<Player>)>,
     object_registry: &mut ObjectRegistry,
     commands: &mut Commands,
-    chat_log_state: &mut ChatLogState,
+    player_query: &mut Query<
+        (
+            Entity,
+            &PlayerIdentity,
+            &mut InventoryState,
+            &mut ChatLogState,
+            &mut TilePosition,
+            &mut MovementCooldown,
+            &mut VitalStats,
+            Option<&CombatTarget>,
+        ),
+        With<Player>,
+    >,
 ) {
+    let Ok((_, _, _, mut chat_log_state, _, _, _, _)) = player_query.get_mut(player_entity) else {
+        return;
+    };
     if tile_position.x < 0
         || tile_position.y < 0
         || tile_position.x >= world_config.map_width
@@ -913,13 +1048,27 @@ fn handle_admin_spawn(
     ));
 }
 
+fn resolve_player_entity(
+    player_id: Option<crate::player::components::PlayerId>,
+    player_lookup_query: &Query<(Entity, &PlayerIdentity), With<Player>>,
+) -> Option<Entity> {
+    match player_id {
+        Some(player_id) => player_lookup_query
+            .iter()
+            .find_map(|(entity, identity)| (identity.id == player_id).then_some(entity)),
+        None => player_lookup_query.iter().next().map(|(entity, _)| entity),
+    }
+}
+
 fn find_object_entity<'a>(
     object_id: u64,
     object_query: &Query<(Entity, &TilePosition, &OverworldObject), Without<Player>>,
 ) -> Option<(Entity, TilePosition)> {
-    object_query.iter().find_map(|(entity, tile_position, object)| {
-        (object.object_id == object_id).then_some((entity, *tile_position))
-    })
+    object_query
+        .iter()
+        .find_map(|(entity, tile_position, object)| {
+            (object.object_id == object_id).then_some((entity, *tile_position))
+        })
 }
 
 fn find_movable_entity(
@@ -931,7 +1080,9 @@ fn find_movable_entity(
 ) -> Option<(Entity, TilePosition)> {
     movable_query
         .iter()
-        .find_map(|(entity, tile_position, object)| (object.object_id == object_id).then_some((entity, *tile_position)))
+        .find_map(|(entity, tile_position, object)| {
+            (object.object_id == object_id).then_some((entity, *tile_position))
+        })
 }
 
 fn item_reference_object_id(
@@ -955,7 +1106,11 @@ fn object_id_in_slot_ref(
     slot_ref: ItemSlotRef,
 ) -> Option<u64> {
     match slot_ref {
-        ItemSlotRef::Backpack(slot_index) => inventory_state.backpack_slots.get(slot_index).copied().flatten(),
+        ItemSlotRef::Backpack(slot_index) => inventory_state
+            .backpack_slots
+            .get(slot_index)
+            .copied()
+            .flatten(),
         ItemSlotRef::Equipment(slot) => inventory_state.equipment_item(slot),
         ItemSlotRef::Container {
             object_id,
@@ -975,9 +1130,14 @@ fn take_item_from_slot_ref(
     slot_ref: ItemSlotRef,
 ) -> Option<u64> {
     match slot_ref {
-        ItemSlotRef::Backpack(slot_index) => inventory_state.backpack_slots.get_mut(slot_index)?.take(),
+        ItemSlotRef::Backpack(slot_index) => {
+            inventory_state.backpack_slots.get_mut(slot_index)?.take()
+        }
         ItemSlotRef::Equipment(slot) => inventory_state.take_equipment_item(slot),
-        ItemSlotRef::Container { object_id, slot_index } => {
+        ItemSlotRef::Container {
+            object_id,
+            slot_index,
+        } => {
             let entity = find_container_entity(object_id, object_query)?;
             let mut container = container_query.get_mut(entity).ok()?;
             container.slots.get_mut(slot_index)?.take()
@@ -1009,9 +1169,13 @@ fn place_item_in_slot_ref(
             *slot = Some(object_id);
             true
         }
-        ItemSlotRef::Equipment(slot) => {
-            place_item_in_equipment_slot(inventory_state, object_registry, definitions, slot, object_id)
-        }
+        ItemSlotRef::Equipment(slot) => place_item_in_equipment_slot(
+            inventory_state,
+            object_registry,
+            definitions,
+            slot,
+            object_id,
+        ),
         ItemSlotRef::Container {
             object_id: container_object_id,
             slot_index,
@@ -1077,7 +1241,8 @@ fn consume_item_reference(
             }
         }
         ItemReference::Slot(slot_ref) => {
-            let _ = take_item_from_slot_ref(inventory_state, container_query, object_query, slot_ref);
+            let _ =
+                take_item_from_slot_ref(inventory_state, container_query, object_query, slot_ref);
         }
     }
 }
@@ -1086,9 +1251,9 @@ fn find_container_entity(
     object_id: u64,
     object_query: &Query<(Entity, &TilePosition, &OverworldObject), Without<Player>>,
 ) -> Option<Entity> {
-    object_query.iter().find_map(|(entity, _, object)| {
-        (object.object_id == object_id).then_some(entity)
-    })
+    object_query
+        .iter()
+        .find_map(|(entity, _, object)| (object.object_id == object_id).then_some(entity))
 }
 
 fn place_item_in_equipment_slot(
@@ -1191,6 +1356,174 @@ fn chebyshev_distance_tiles(a: TilePosition, b: TilePosition) -> i32 {
     (a.x - b.x).abs().max((a.y - b.y).abs())
 }
 
+#[cfg(test)]
+mod tests {
+    use bevy::prelude::*;
+
+    use super::*;
+    use crate::combat::components::{AttackProfile, CombatLeash};
+    use crate::game::commands::{
+        GameCommand, ItemDestination, ItemReference, ItemSlotRef, MoveDelta,
+    };
+    use crate::game::GameServerPlugin;
+    use crate::magic::MagicPlugin;
+    use crate::player::components::{
+        BaseStats, ChatLog, DerivedStats, Inventory, MovementCooldown, Player, PlayerId,
+        PlayerIdentity, VitalStats,
+    };
+    use crate::player::PlayerServerPlugin;
+    use crate::world::components::{Collider, OverworldObject};
+    use crate::world::object_registry::ObjectRegistry;
+    use crate::world::WorldServerPlugin;
+
+    fn setup_server_app() -> App {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.add_plugins((
+            GameServerPlugin,
+            WorldServerPlugin,
+            PlayerServerPlugin,
+            MagicPlugin,
+        ));
+        app
+    }
+
+    fn spawn_player(app: &mut App, player_id: u64, x: i32, y: i32) -> Entity {
+        let base_stats = BaseStats::default();
+        let derived_stats = DerivedStats::from_base(&base_stats);
+        let max_health = derived_stats.max_health as f32;
+        let max_mana = derived_stats.max_mana as f32;
+        let object_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("player");
+        app.world_mut()
+            .spawn((
+                Player,
+                PlayerIdentity {
+                    id: PlayerId(player_id),
+                },
+                Inventory::default(),
+                ChatLog::default(),
+                base_stats,
+                derived_stats,
+                VitalStats::full(max_health, max_mana),
+                MovementCooldown::default(),
+                AttackProfile::melee(),
+                CombatLeash {
+                    max_distance_tiles: 6,
+                },
+                Collider,
+                OverworldObject {
+                    object_id,
+                    definition_id: "player".to_owned(),
+                },
+                TilePosition::new(x, y),
+            ))
+            .id()
+    }
+
+    fn spawn_world_object(app: &mut App, type_id: &str, object_id: u64, tile: TilePosition) {
+        let definition = app
+            .world()
+            .resource::<crate::world::object_definitions::OverworldObjectDefinitions>()
+            .get(type_id)
+            .unwrap()
+            .clone();
+        let mut entity = app.world_mut().spawn((
+            OverworldObject {
+                object_id,
+                definition_id: type_id.to_owned(),
+            },
+            tile,
+        ));
+        if definition.colliding {
+            entity.insert(Collider);
+        }
+        if definition.movable {
+            entity.insert(crate::world::components::Movable);
+        }
+        if definition.storable {
+            entity.insert(crate::world::components::Storable);
+        }
+        if let Some(capacity) = definition.container_capacity {
+            entity.insert(crate::world::components::Container {
+                slots: vec![None; capacity],
+            });
+        }
+    }
+
+    #[test]
+    fn routes_move_command_to_only_the_owning_player() {
+        let mut app = setup_server_app();
+        let player_one = spawn_player(&mut app, 1, 10, 10);
+        let player_two = spawn_player(&mut app, 2, 12, 10);
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                crate::player::components::PlayerId(1),
+                GameCommand::MovePlayer {
+                    delta: MoveDelta { x: 1, y: 0 },
+                },
+            );
+
+        app.update();
+
+        let mut player_query = app.world_mut().query::<(&PlayerIdentity, &TilePosition)>();
+        let positions = player_query
+            .iter(app.world())
+            .map(|(identity, position)| (identity.id.0, *position))
+            .collect::<std::collections::HashMap<_, _>>();
+
+        assert_eq!(positions[&1], TilePosition::new(11, 10));
+        assert_eq!(positions[&2], TilePosition::new(12, 10));
+        assert!(app.world().get_entity(player_one).is_ok());
+        assert!(app.world().get_entity(player_two).is_ok());
+    }
+
+    #[test]
+    fn move_item_changes_only_the_acting_players_inventory() {
+        let mut app = setup_server_app();
+        spawn_player(&mut app, 1, 10, 10);
+        spawn_player(&mut app, 2, 14, 10);
+
+        let apple_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("apple");
+        spawn_world_object(&mut app, "apple", apple_id, TilePosition::new(11, 10));
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                crate::player::components::PlayerId(1),
+                GameCommand::MoveItem {
+                    source: ItemReference::WorldObject(apple_id),
+                    destination: ItemDestination::Slot(ItemSlotRef::Backpack(0)),
+                },
+            );
+
+        app.update();
+
+        let mut inventory_query = app.world_mut().query::<(&PlayerIdentity, &Inventory)>();
+        let inventories = inventory_query
+            .iter(app.world())
+            .map(|(identity, inventory)| (identity.id.0, inventory.backpack_slots.clone()))
+            .collect::<std::collections::HashMap<_, _>>();
+
+        assert_eq!(inventories[&1][0], Some(apple_id));
+        assert_eq!(inventories[&2][0], None);
+
+        let mut object_query = app
+            .world_mut()
+            .query::<&crate::world::components::OverworldObject>();
+        assert!(!object_query
+            .iter(app.world())
+            .any(|object| object.object_id == apple_id));
+    }
+}
+
 fn is_near_player(player_position: &TilePosition, target_position: &TilePosition) -> bool {
     (player_position.x - target_position.x).abs() <= 1
         && (player_position.y - target_position.y).abs() <= 1
@@ -1231,9 +1564,9 @@ fn is_valid_world_drop(
         return false;
     }
 
-    !movable_query.iter().any(|(entity, tile_position, _)| {
-        entity != dragged_entity && *tile_position == target_tile
-    })
+    !movable_query
+        .iter()
+        .any(|(entity, tile_position, _)| entity != dragged_entity && *tile_position == target_tile)
 }
 
 fn find_nearest_valid_world_drop_tile(

@@ -42,12 +42,25 @@ pub enum InspectTarget {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum GameCommand {
-    MovePlayer { delta: MoveDelta },
-    SetCombatTarget { target_object_id: Option<u64> },
-    OpenContainer { object_id: u64 },
-    Inspect { target: InspectTarget },
-    UseItem { source: ItemReference },
-    UseItemOn { source: ItemReference, target: UseTarget },
+    MovePlayer {
+        delta: MoveDelta,
+    },
+    SetCombatTarget {
+        target_object_id: Option<u64>,
+    },
+    OpenContainer {
+        object_id: u64,
+    },
+    Inspect {
+        target: InspectTarget,
+    },
+    UseItem {
+        source: ItemReference,
+    },
+    UseItemOn {
+        source: ItemReference,
+        target: UseTarget,
+    },
     CastSpellAt {
         source: ItemReference,
         spell_id: String,

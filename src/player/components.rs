@@ -1,7 +1,120 @@
 use bevy::prelude::*;
+use serde::{Deserialize, Serialize};
+
+use crate::world::object_definitions::EquipmentSlot;
 
 #[derive(Component)]
 pub struct Player;
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct PlayerId(pub u64);
+
+#[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PlayerIdentity {
+    pub id: PlayerId,
+}
+
+#[derive(Component, Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct Inventory {
+    pub backpack_slots: Vec<Option<u64>>,
+    pub equipment_slots: Vec<(EquipmentSlot, Option<u64>)>,
+}
+
+impl Default for Inventory {
+    fn default() -> Self {
+        Self {
+            backpack_slots: vec![None; 16],
+            equipment_slots: EquipmentSlot::ALL
+                .into_iter()
+                .map(|slot| (slot, None))
+                .collect(),
+        }
+    }
+}
+
+impl Inventory {
+    pub fn equipment_item(&self, slot: EquipmentSlot) -> Option<u64> {
+        self.equipment_slots.iter().find_map(
+            |(equipment_slot, item)| {
+                if *equipment_slot == slot {
+                    *item
+                } else {
+                    None
+                }
+            },
+        )
+    }
+
+    pub fn take_equipment_item(&mut self, slot: EquipmentSlot) -> Option<u64> {
+        self.equipment_slots
+            .iter_mut()
+            .find_map(|(equipment_slot, item)| {
+                if *equipment_slot == slot {
+                    item.take()
+                } else {
+                    None
+                }
+            })
+    }
+
+    pub fn place_equipment_item(&mut self, slot: EquipmentSlot, object_id: u64) -> bool {
+        for (equipment_slot, item) in &mut self.equipment_slots {
+            if *equipment_slot != slot {
+                continue;
+            }
+
+            if item.is_some() {
+                return false;
+            }
+
+            *item = Some(object_id);
+            return true;
+        }
+
+        false
+    }
+
+    pub fn restore_equipment_item(&mut self, slot: EquipmentSlot, object_id: u64) {
+        for (equipment_slot, item) in &mut self.equipment_slots {
+            if *equipment_slot == slot {
+                *item = Some(object_id);
+                return;
+            }
+        }
+    }
+}
+
+#[derive(Component, Clone)]
+pub struct ChatLog {
+    pub lines: Vec<String>,
+    pub max_lines: usize,
+}
+
+impl Default for ChatLog {
+    fn default() -> Self {
+        Self {
+            lines: vec![
+                "[Narrator]: Right-click an item to inspect it.".to_owned(),
+                "[Narrator]: Right-click a nearby barrel to open it.".to_owned(),
+            ],
+            max_lines: 8,
+        }
+    }
+}
+
+impl ChatLog {
+    pub fn push_line(&mut self, message: impl Into<String>) {
+        self.lines.push(message.into());
+        if self.lines.len() > self.max_lines {
+            let overflow = self.lines.len() - self.max_lines;
+            self.lines.drain(0..overflow);
+        }
+    }
+
+    pub fn push_narrator(&mut self, message: impl Into<String>) {
+        self.push_line(format!("[Narrator]: {}", message.into()));
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct AttributeSet {

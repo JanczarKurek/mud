@@ -4,8 +4,10 @@ pub mod systems;
 
 use bevy::prelude::*;
 
-use crate::player::setup::{spawn_player_authoritative, spawn_player_visual};
-use crate::player::systems::{move_player_on_grid, refresh_derived_player_stats, sync_player_client_state};
+use crate::player::setup::spawn_player_visual;
+use crate::player::systems::{
+    move_player_on_grid, refresh_derived_player_stats, sync_player_client_state,
+};
 
 pub struct PlayerServerPlugin;
 
@@ -13,8 +15,7 @@ pub struct PlayerClientPlugin;
 
 impl Plugin for PlayerServerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, spawn_player_authoritative)
-            .add_systems(Update, refresh_derived_player_stats);
+        app.add_systems(Update, refresh_derived_player_stats);
     }
 }
 

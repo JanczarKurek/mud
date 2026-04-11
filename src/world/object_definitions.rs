@@ -3,8 +3,8 @@ use std::fs;
 use std::path::Path;
 
 use bevy::prelude::*;
-use serde::Serialize;
 use serde::Deserialize;
+use serde::Serialize;
 use serde_yaml::{Mapping, Value};
 
 const OBJECT_BASES_PATH: &str = "assets/object_bases";

@@ -86,11 +86,7 @@ pub fn handle_python_console_input(
                 };
 
                 let spawn_requests = host.execute(&mut console_state, &command, snapshot);
-                apply_spawn_requests(
-                    spawn_requests,
-                    &mut pending_commands,
-                    &mut console_state,
-                );
+                apply_spawn_requests(spawn_requests, &mut pending_commands, &mut console_state);
             }
             KeyCode::Backspace => {
                 console_state.input.pop();

@@ -5,7 +5,9 @@ use bevy::prelude::*;
 use bevy::ui::{ComputedNode, ScrollPosition, UiGlobalTransform};
 use bevy::window::{CursorIcon, CustomCursor, CustomCursorImage, PrimaryWindow};
 
-use crate::game::commands::{GameCommand, InspectTarget, ItemDestination, ItemReference, ItemSlotRef, UseTarget};
+use crate::game::commands::{
+    GameCommand, InspectTarget, ItemDestination, ItemReference, ItemSlotRef, UseTarget,
+};
 use crate::game::resources::{
     ClientGameState, GameUiEvent, InventoryState, PendingGameCommands, PendingGameUiEvents,
 };
@@ -20,9 +22,9 @@ use crate::ui::components::{
     HealthFill, ItemSlotButton, ItemSlotImage, ItemSlotKind, ManaFill, RightSidebarRoot,
 };
 use crate::ui::resources::{
-    ContextMenuState, ContextMenuTarget, CursorMode, CursorState,
-    DockedPanelDragState, DockedPanelKind, DockedPanelResizeState, DockedPanelState, DragSource,
-    DragState, SpellTargetingState, UseOnState,
+    ContextMenuState, ContextMenuTarget, CursorMode, CursorState, DockedPanelDragState,
+    DockedPanelKind, DockedPanelResizeState, DockedPanelState, DragSource, DragState,
+    SpellTargetingState, UseOnState,
 };
 use crate::world::components::TilePosition;
 use crate::world::object_definitions::OverworldObjectDefinitions;
@@ -125,7 +127,12 @@ pub fn manage_open_containers(
         | DockedPanelKind::Backpack
         | DockedPanelKind::CurrentTarget => true,
         DockedPanelKind::Container { object_id } => player_position
-            .and_then(|player_position| client_state.world_objects.get(&object_id).map(|object| (player_position, object)))
+            .and_then(|player_position| {
+                client_state
+                    .world_objects
+                    .get(&object_id)
+                    .map(|object| (player_position, object))
+            })
             .is_some_and(|(player_position, object)| {
                 object.is_container && is_near_player(&player_position, &object.tile_position)
             }),
@@ -448,10 +455,7 @@ pub fn handle_use_on_targeting(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     world_config: Res<WorldConfig>,
-    state_resources: (
-        Res<ContextMenuState>,
-        Res<DockedPanelState>,
-    ),
+    state_resources: (Res<ContextMenuState>, Res<DockedPanelState>),
     client_state: Res<ClientGameState>,
     mut pending_commands: ResMut<PendingGameCommands>,
     mut cursor_state: ResMut<CursorState>,
@@ -521,10 +525,7 @@ pub fn handle_spell_targeting(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     world_config: Res<WorldConfig>,
-    static_resources: (
-        Res<ContextMenuState>,
-        Res<DockedPanelState>,
-    ),
+    static_resources: (Res<ContextMenuState>, Res<DockedPanelState>),
     client_state: Res<ClientGameState>,
     mut pending_commands: ResMut<PendingGameCommands>,
     mut cursor_state: ResMut<CursorState>,
@@ -678,11 +679,7 @@ pub fn handle_context_menu_opening(
             .count()
     );
     if let Some(slot_kind) = hovered_slot {
-        let slot_object_id = object_id_in_slot_kind(
-            &client_state,
-            &docked_panel_state,
-            slot_kind,
-        );
+        let slot_object_id = object_id_in_slot_kind(&client_state, &docked_panel_state, slot_kind);
         info!(
             "context_open_slot slot={slot_kind:?} resolved_object_id={slot_object_id:?} open_containers={}",
             docked_panel_state

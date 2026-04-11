@@ -1,6 +1,8 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::player::components::PlayerId;
+
 #[derive(Component, Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TilePosition {
     pub x: i32,
@@ -39,6 +41,12 @@ pub struct CombatHealthBar {
 pub struct ClientProjectedWorldObject {
     pub object_id: u64,
     pub definition_id: String,
+}
+
+#[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ClientRemotePlayerVisual {
+    pub player_id: PlayerId,
+    pub object_id: u64,
 }
 
 #[derive(Component)]

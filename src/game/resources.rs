@@ -4,127 +4,54 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::game::commands::GameCommand;
-use crate::world::object_definitions::EquipmentSlot;
+use crate::player::components::{ChatLog, Inventory, PlayerId};
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Resource, Serialize)]
-pub struct InventoryState {
-    pub backpack_slots: Vec<Option<u64>>,
-    pub equipment_slots: Vec<(EquipmentSlot, Option<u64>)>,
-}
-
-impl Default for InventoryState {
-    fn default() -> Self {
-        Self {
-            backpack_slots: vec![None; 16],
-            equipment_slots: EquipmentSlot::ALL
-                .into_iter()
-                .map(|slot| (slot, None))
-                .collect(),
-        }
-    }
-}
-
-impl InventoryState {
-    pub fn equipment_item(&self, slot: EquipmentSlot) -> Option<u64> {
-        self.equipment_slots.iter().find_map(|(equipment_slot, item)| {
-            if *equipment_slot == slot {
-                *item
-            } else {
-                None
-            }
-        })
-    }
-
-    pub fn take_equipment_item(&mut self, slot: EquipmentSlot) -> Option<u64> {
-        self.equipment_slots
-            .iter_mut()
-            .find_map(|(equipment_slot, item)| {
-                if *equipment_slot == slot {
-                    item.take()
-                } else {
-                    None
-                }
-            })
-    }
-
-    pub fn place_equipment_item(&mut self, slot: EquipmentSlot, object_id: u64) -> bool {
-        for (equipment_slot, item) in &mut self.equipment_slots {
-            if *equipment_slot != slot {
-                continue;
-            }
-
-            if item.is_some() {
-                return false;
-            }
-
-            *item = Some(object_id);
-            return true;
-        }
-
-        false
-    }
-
-    pub fn restore_equipment_item(&mut self, slot: EquipmentSlot, object_id: u64) {
-        for (equipment_slot, item) in &mut self.equipment_slots {
-            if *equipment_slot == slot {
-                *item = Some(object_id);
-                return;
-            }
-        }
-    }
-}
-
-#[derive(Clone, Resource)]
-pub struct ChatLogState {
-    pub lines: Vec<String>,
-    pub max_lines: usize,
-}
-
-impl Default for ChatLogState {
-    fn default() -> Self {
-        Self {
-            lines: vec![
-                "[Narrator]: Right-click an item to inspect it.".to_owned(),
-                "[Narrator]: Right-click a nearby barrel to open it.".to_owned(),
-            ],
-            max_lines: 8,
-        }
-    }
-}
-
-impl ChatLogState {
-    pub fn push_line(&mut self, message: impl Into<String>) {
-        self.lines.push(message.into());
-        if self.lines.len() > self.max_lines {
-            let overflow = self.lines.len() - self.max_lines;
-            self.lines.drain(0..overflow);
-        }
-    }
-
-    pub fn push_narrator(&mut self, message: impl Into<String>) {
-        self.push_line(format!("[Narrator]: {}", message.into()));
-    }
-}
+pub type InventoryState = Inventory;
+pub type ChatLogState = ChatLog;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub enum GameUiEvent {
     OpenContainer { object_id: u64 },
 }
 
+#[derive(Clone, Debug)]
+pub struct QueuedGameCommand {
+    pub player_id: Option<PlayerId>,
+    pub command: GameCommand,
+}
+
 #[derive(Resource, Default)]
 pub struct PendingGameCommands {
-    pub commands: Vec<GameCommand>,
+    pub commands: Vec<QueuedGameCommand>,
 }
 
 impl PendingGameCommands {
     pub fn push(&mut self, command: GameCommand) {
-        self.commands.push(command);
+        self.commands.push(QueuedGameCommand {
+            player_id: None,
+            command,
+        });
+    }
+
+    pub fn push_for_player(&mut self, player_id: PlayerId, command: GameCommand) {
+        self.commands.push(QueuedGameCommand {
+            player_id: Some(player_id),
+            command,
+        });
     }
 }
 
 #[derive(Resource, Default)]
 pub struct PendingGameUiEvents {
     pub events: Vec<GameUiEvent>,
+    pub peer_events: HashMap<PlayerId, Vec<GameUiEvent>>,
+}
+
+impl PendingGameUiEvents {
+    pub fn push(&mut self, player_id: PlayerId, event: GameUiEvent) {
+        self.events.push(event);
+        self.peer_events.entry(player_id).or_default().push(event);
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -146,19 +73,52 @@ pub struct ClientWorldObjectState {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct ClientRemotePlayerState {
+    pub player_id: PlayerId,
+    pub object_id: u64,
+    pub tile_position: crate::world::components::TilePosition,
+    pub vitals: ClientVitalStats,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum GameEvent {
-    InventoryChanged { inventory: InventoryState },
-    ChatLogChanged { lines: Vec<String> },
+    InventoryChanged {
+        inventory: Inventory,
+    },
+    ChatLogChanged {
+        lines: Vec<String>,
+    },
     PlayerPositionChanged {
         tile_position: crate::world::components::TilePosition,
     },
-    PlayerVitalsChanged { vitals: ClientVitalStats },
-    PlayerStorageChanged { storage_slots: usize },
-    CombatTargetChanged { target_object_id: Option<u64> },
-    ContainerChanged { object_id: u64, slots: Vec<Option<u64>> },
-    ContainerRemoved { object_id: u64 },
-    WorldObjectUpserted { object: ClientWorldObjectState },
-    WorldObjectRemoved { object_id: u64 },
+    PlayerVitalsChanged {
+        vitals: ClientVitalStats,
+    },
+    PlayerStorageChanged {
+        storage_slots: usize,
+    },
+    CombatTargetChanged {
+        target_object_id: Option<u64>,
+    },
+    ContainerChanged {
+        object_id: u64,
+        slots: Vec<Option<u64>>,
+    },
+    ContainerRemoved {
+        object_id: u64,
+    },
+    WorldObjectUpserted {
+        object: ClientWorldObjectState,
+    },
+    WorldObjectRemoved {
+        object_id: u64,
+    },
+    RemotePlayerUpserted {
+        player: ClientRemotePlayerState,
+    },
+    RemotePlayerRemoved {
+        player_id: PlayerId,
+    },
 }
 
 #[derive(Resource, Default)]
@@ -168,12 +128,15 @@ pub struct PendingGameEvents {
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Resource, Serialize)]
 pub struct ClientGameState {
-    pub inventory: InventoryState,
+    pub local_player_id: Option<PlayerId>,
+    pub inventory: Inventory,
     pub chat_log_lines: Vec<String>,
     pub player_tile_position: Option<crate::world::components::TilePosition>,
     pub player_vitals: Option<ClientVitalStats>,
     pub player_storage_slots: usize,
     pub current_target_object_id: Option<u64>,
+    pub local_player_object_id: Option<u64>,
+    pub remote_players: HashMap<PlayerId, ClientRemotePlayerState>,
     pub container_slots: HashMap<u64, Vec<Option<u64>>>,
     pub world_objects: HashMap<u64, ClientWorldObjectState>,
 }

@@ -3,11 +3,12 @@ use bevy::prelude::*;
 use crate::game::resources::ClientGameState;
 use crate::player::components::{Player, VitalStats};
 use crate::world::components::{
-    ClientProjectedWorldObject, CombatHealthBar, OverworldObject, TilePosition, WorldVisual,
+    ClientProjectedWorldObject, ClientRemotePlayerVisual, CombatHealthBar, OverworldObject,
+    TilePosition, WorldVisual,
 };
 use crate::world::object_definitions::OverworldObjectDefinitions;
-use crate::world::resources::ClientWorldProjectionState;
-use crate::world::setup::spawn_client_projected_world_object;
+use crate::world::resources::{ClientRemotePlayerProjectionState, ClientWorldProjectionState};
+use crate::world::setup::{spawn_client_projected_world_object, spawn_client_remote_player};
 use crate::world::WorldConfig;
 
 pub fn sync_client_world_projection(
@@ -17,14 +18,12 @@ pub fn sync_client_world_projection(
     definitions: Res<OverworldObjectDefinitions>,
     world_config: Res<WorldConfig>,
     mut projection_state: ResMut<ClientWorldProjectionState>,
-    mut projected_query: Query<
-        (
-            Entity,
-            &ClientProjectedWorldObject,
-            &mut TilePosition,
-            &mut WorldVisual,
-        ),
-    >,
+    mut projected_query: Query<(
+        Entity,
+        &ClientProjectedWorldObject,
+        &mut TilePosition,
+        &mut WorldVisual,
+    )>,
 ) {
     for object in client_state.world_objects.values() {
         let Some(&entity) = projection_state.entities.get(&object.object_id) else {
@@ -71,7 +70,9 @@ pub fn sync_client_world_projection(
                 object.tile_position,
                 object.is_npc,
             );
-            projection_state.entities.insert(object.object_id, replacement);
+            projection_state
+                .entities
+                .insert(object.object_id, replacement);
             continue;
         }
 
@@ -90,6 +91,92 @@ pub fn sync_client_world_projection(
 
     for object_id in stale_object_ids {
         if let Some(entity) = projection_state.entities.remove(&object_id) {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
+pub fn sync_remote_player_projection(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    client_state: Res<ClientGameState>,
+    definitions: Res<OverworldObjectDefinitions>,
+    world_config: Res<WorldConfig>,
+    mut projection_state: ResMut<ClientRemotePlayerProjectionState>,
+    mut projected_query: Query<(
+        Entity,
+        &ClientRemotePlayerVisual,
+        &mut TilePosition,
+        &mut WorldVisual,
+    )>,
+) {
+    for remote_player in client_state.remote_players.values() {
+        let Some(&entity) = projection_state.entities.get(&remote_player.player_id) else {
+            let entity = spawn_client_remote_player(
+                &mut commands,
+                &asset_server,
+                &definitions,
+                &world_config,
+                remote_player.player_id,
+                remote_player.object_id,
+                remote_player.tile_position,
+            );
+            projection_state
+                .entities
+                .insert(remote_player.player_id, entity);
+            continue;
+        };
+
+        let Ok((query_entity, projected_player, mut tile_position, mut world_visual)) =
+            projected_query.get_mut(entity)
+        else {
+            let entity = spawn_client_remote_player(
+                &mut commands,
+                &asset_server,
+                &definitions,
+                &world_config,
+                remote_player.player_id,
+                remote_player.object_id,
+                remote_player.tile_position,
+            );
+            projection_state
+                .entities
+                .insert(remote_player.player_id, entity);
+            continue;
+        };
+
+        if projected_player.object_id != remote_player.object_id {
+            commands.entity(query_entity).despawn();
+            let replacement = spawn_client_remote_player(
+                &mut commands,
+                &asset_server,
+                &definitions,
+                &world_config,
+                remote_player.player_id,
+                remote_player.object_id,
+                remote_player.tile_position,
+            );
+            projection_state
+                .entities
+                .insert(remote_player.player_id, replacement);
+            continue;
+        }
+
+        *tile_position = remote_player.tile_position;
+        if let Some(definition) = definitions.get("player") {
+            world_visual.z_index = definition.render.z_index;
+        }
+    }
+
+    let stale_player_ids = projection_state
+        .entities
+        .keys()
+        .copied()
+        .filter(|player_id| !client_state.remote_players.contains_key(player_id))
+        .collect::<Vec<_>>();
+
+    for player_id in stale_player_ids {
+        if let Some(entity) = projection_state.entities.remove(&player_id) {
             commands.entity(entity).despawn();
         }
     }
@@ -116,12 +203,19 @@ pub fn sync_tile_transforms(
 pub fn sync_combat_health_bars(
     player_bar_query: Query<(&VitalStats, &CombatHealthBar), With<Player>>,
     projected_bar_query: Query<(&ClientProjectedWorldObject, &CombatHealthBar)>,
+    remote_player_bar_query: Query<(&ClientRemotePlayerVisual, &CombatHealthBar)>,
+    client_state: Res<ClientGameState>,
     server_vitals_query: Query<(&OverworldObject, &VitalStats), Without<Player>>,
     mut visibility_query: Query<&mut Visibility>,
     mut fill_query: Query<(&mut Sprite, &mut Transform)>,
 ) {
     for (vital_stats, health_bar) in &player_bar_query {
-        sync_health_bar(vital_stats, health_bar, &mut visibility_query, &mut fill_query);
+        sync_health_bar(
+            vital_stats,
+            health_bar,
+            &mut visibility_query,
+            &mut fill_query,
+        );
     }
 
     for (projected_object, health_bar) in &projected_bar_query {
@@ -132,12 +226,62 @@ pub fn sync_combat_health_bars(
             continue;
         };
 
-        sync_health_bar(vital_stats, health_bar, &mut visibility_query, &mut fill_query);
+        sync_health_bar(
+            vital_stats,
+            health_bar,
+            &mut visibility_query,
+            &mut fill_query,
+        );
+    }
+
+    for (remote_player_visual, health_bar) in &remote_player_bar_query {
+        let Some(remote_player) = client_state
+            .remote_players
+            .get(&remote_player_visual.player_id)
+        else {
+            continue;
+        };
+
+        sync_client_health_bar(
+            &remote_player.vitals,
+            health_bar,
+            &mut visibility_query,
+            &mut fill_query,
+        );
     }
 }
 
 fn sync_health_bar(
     vital_stats: &VitalStats,
+    health_bar: &CombatHealthBar,
+    visibility_query: &mut Query<&mut Visibility>,
+    fill_query: &mut Query<(&mut Sprite, &mut Transform)>,
+) {
+    let Ok(mut root_visibility) = visibility_query.get_mut(health_bar.root_entity) else {
+        return;
+    };
+    let Ok((mut fill_sprite, mut fill_transform)) = fill_query.get_mut(health_bar.fill_entity)
+    else {
+        return;
+    };
+
+    let is_damaged = vital_stats.health < vital_stats.max_health && vital_stats.max_health > 0.0;
+    *root_visibility = if is_damaged {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
+    };
+
+    let health_ratio = (vital_stats.health / vital_stats.max_health).clamp(0.0, 1.0);
+    let fill_width = (health_ratio * health_bar.fill_width).max(0.0);
+    if let Some(custom_size) = &mut fill_sprite.custom_size {
+        custom_size.x = fill_width;
+    }
+    fill_transform.translation.x = -(health_bar.fill_width - fill_width) * 0.5;
+}
+
+fn sync_client_health_bar(
+    vital_stats: &crate::game::resources::ClientVitalStats,
     health_bar: &CombatHealthBar,
     visibility_query: &mut Query<&mut Visibility>,
     fill_query: &mut Query<(&mut Sprite, &mut Transform)>,

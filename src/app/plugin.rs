@@ -10,6 +10,7 @@ use crate::game::{GameClientPlugin, GameServerPlugin};
 use crate::magic::MagicPlugin;
 use crate::network::{TcpClientPlugin, TcpServerPlugin};
 use crate::npc::NpcPlugin;
+use crate::player::setup::spawn_embedded_player_authoritative;
 use crate::player::{PlayerClientPlugin, PlayerServerPlugin};
 use crate::scripting::ScriptingPlugin;
 use crate::ui::UiPlugin;
@@ -48,6 +49,7 @@ impl Plugin for GameAppPlugin {
                     ..default()
                 }))
                 .add_systems(Startup, setup_camera)
+                .add_systems(Startup, spawn_embedded_player_authoritative)
                 .add_plugins((
                     WorldClientPlugin,
                     PlayerClientPlugin,

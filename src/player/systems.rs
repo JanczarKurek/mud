@@ -3,66 +3,69 @@ use bevy::prelude::*;
 
 use crate::game::commands::{GameCommand, MoveDelta};
 use crate::game::resources::{ClientGameState, InventoryState, PendingGameCommands};
-use crate::player::components::{
-    AttributeSet, BaseStats, DerivedStats, Player, VitalStats,
-};
+use crate::player::components::{AttributeSet, BaseStats, DerivedStats, Player, VitalStats};
 use crate::scripting::resources::PythonConsoleState;
+use crate::world::components::TilePosition;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
-use crate::world::components::TilePosition;
 use crate::world::WorldConfig;
 
 pub fn refresh_derived_player_stats(
-    inventory_state: Res<InventoryState>,
     object_registry: Res<ObjectRegistry>,
     definitions: Res<OverworldObjectDefinitions>,
-    mut player_query: Query<(&BaseStats, &mut DerivedStats, &mut VitalStats), With<Player>>,
+    mut player_query: Query<
+        (
+            &BaseStats,
+            &InventoryState,
+            &mut DerivedStats,
+            &mut VitalStats,
+        ),
+        With<Player>,
+    >,
 ) {
-    let Ok((base_stats, mut derived_stats, mut vital_stats)) = player_query.single_mut() else {
-        return;
-    };
+    for (base_stats, inventory_state, mut derived_stats, mut vital_stats) in &mut player_query {
+        let mut attributes = base_stats.attributes;
+        let mut max_health = base_stats.max_health;
+        let mut max_mana = base_stats.max_mana;
+        let mut storage_slots = base_stats.storage_slots;
 
-    let mut attributes = base_stats.attributes;
-    let mut max_health = base_stats.max_health;
-    let mut max_mana = base_stats.max_mana;
-    let mut storage_slots = base_stats.storage_slots;
+        for (_, equipped_item) in &inventory_state.equipment_slots {
+            let Some(object_id) = equipped_item else {
+                continue;
+            };
+            let Some(type_id) = object_registry.type_id(*object_id) else {
+                continue;
+            };
+            let Some(definition) = definitions.get(type_id) else {
+                continue;
+            };
 
-    for (_, equipped_item) in &inventory_state.equipment_slots {
-        let Some(object_id) = equipped_item else {
-            continue;
-        };
-        let Some(type_id) = object_registry.type_id(*object_id) else {
-            continue;
-        };
-        let Some(definition) = definitions.get(type_id) else {
-            continue;
-        };
+            attributes.add_assign(AttributeSet {
+                strength: definition.stats.strength,
+                agility: definition.stats.agility,
+                constitution: definition.stats.constitution,
+                willpower: definition.stats.willpower,
+                charisma: definition.stats.charisma,
+                focus: definition.stats.focus,
+            });
+            max_health += definition.stats.max_health;
+            max_mana += definition.stats.max_mana;
+            storage_slots += definition.stats.storage_slots;
+        }
 
-        attributes.add_assign(AttributeSet {
-            strength: definition.stats.strength,
-            agility: definition.stats.agility,
-            constitution: definition.stats.constitution,
-            willpower: definition.stats.willpower,
-            charisma: definition.stats.charisma,
-            focus: definition.stats.focus,
-        });
-        max_health += definition.stats.max_health;
-        max_mana += definition.stats.max_mana;
-        storage_slots += definition.stats.storage_slots;
+        let effective_base = BaseStats {
+            attributes,
+            max_health,
+            max_mana,
+            storage_slots,
+        };
+        *derived_stats = DerivedStats::from_base(&effective_base);
+
+        vital_stats.max_health = derived_stats.max_health as f32;
+        vital_stats.max_mana = derived_stats.max_mana as f32;
+        vital_stats.health = vital_stats.health.clamp(0.0, vital_stats.max_health);
+        vital_stats.mana = vital_stats.mana.clamp(0.0, vital_stats.max_mana);
     }
-
-    let effective_base = BaseStats {
-        attributes,
-        max_health,
-        max_mana,
-        storage_slots,
-    };
-    *derived_stats = DerivedStats::from_base(&effective_base);
-
-    vital_stats.max_health = derived_stats.max_health as f32;
-    vital_stats.max_mana = derived_stats.max_mana as f32;
-    vital_stats.health = vital_stats.health.clamp(0.0, vital_stats.max_health);
-    vital_stats.mana = vital_stats.mana.clamp(0.0, vital_stats.max_mana);
 }
 
 pub fn move_player_on_grid(

@@ -25,10 +25,10 @@ pub fn update_roaming_npcs(
     >,
     mut commands: Commands,
 ) {
-    let player = player_query
+    let players = player_query
         .iter()
-        .next()
-        .map(|(entity, tile_position)| (entity, *tile_position));
+        .map(|(entity, tile_position)| (entity, *tile_position))
+        .collect::<Vec<_>>();
 
     let npc_positions: Vec<(Entity, TilePosition)> = npc_query
         .iter()
@@ -50,13 +50,17 @@ pub fn update_roaming_npcs(
             continue;
         }
 
-        let player_position = player.map(|(_, position)| position);
+        let nearest_player = players
+            .iter()
+            .copied()
+            .min_by_key(|(_, position)| chebyshev_distance(*tile_position, *position));
+        let player_position = nearest_player.map(|(_, position)| position);
         let chase_target = select_chase_target(
             entity,
             *tile_position,
             hostile_behavior,
             combat_target.as_deref(),
-            player,
+            &players,
             &mut commands,
         );
 
@@ -168,13 +172,17 @@ fn select_chase_target(
     tile_position: TilePosition,
     hostile_behavior: Option<&HostileBehavior>,
     combat_target: Option<&CombatTarget>,
-    player: Option<(Entity, TilePosition)>,
+    players: &[(Entity, TilePosition)],
     commands: &mut Commands,
 ) -> Option<TilePosition> {
     let Some(hostile_behavior) = hostile_behavior else {
         return None;
     };
-    let Some((player_entity, player_position)) = player else {
+    let Some((player_entity, player_position)) = players
+        .iter()
+        .copied()
+        .min_by_key(|(_, position)| chebyshev_distance(tile_position, *position))
+    else {
         commands.entity(entity).remove::<CombatTarget>();
         return None;
     };
@@ -299,6 +307,79 @@ fn is_blocked_position(
 
 fn chebyshev_distance(a: TilePosition, b: TilePosition) -> i32 {
     (a.x - b.x).abs().max((a.y - b.y).abs())
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy::prelude::*;
+
+    use super::*;
+    use crate::combat::components::CombatTarget;
+    use crate::npc::components::{
+        HostileBehavior, Npc, RoamBounds, RoamingBehavior, RoamingRandomState, RoamingStepTimer,
+    };
+    use crate::player::components::{
+        ChatLog, Inventory, Player, PlayerId, PlayerIdentity, VitalStats,
+    };
+
+    #[test]
+    fn hostile_npc_targets_the_nearest_player() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+
+        app.world_mut().spawn((
+            Player,
+            PlayerIdentity { id: PlayerId(1) },
+            Inventory::default(),
+            ChatLog::default(),
+            TilePosition::new(5, 5),
+            VitalStats::full(10.0, 0.0),
+        ));
+        let near_player = app
+            .world_mut()
+            .spawn((
+                Player,
+                PlayerIdentity { id: PlayerId(2) },
+                Inventory::default(),
+                ChatLog::default(),
+                TilePosition::new(2, 2),
+                VitalStats::full(10.0, 0.0),
+            ))
+            .id();
+
+        let npc = app
+            .world_mut()
+            .spawn((
+                Npc,
+                TilePosition::new(1, 1),
+                RoamingBehavior {
+                    bounds: RoamBounds {
+                        min_x: 0,
+                        min_y: 0,
+                        max_x: 10,
+                        max_y: 10,
+                    },
+                    step_interval_seconds: 0.1,
+                },
+                HostileBehavior {
+                    detect_distance_tiles: 10,
+                    disengage_distance_tiles: 12,
+                },
+                RoamingStepTimer {
+                    remaining_seconds: 0.0,
+                },
+                RoamingRandomState { seed: 1 },
+            ))
+            .id();
+
+        app.add_systems(Update, update_roaming_npcs);
+        app.update();
+
+        assert_eq!(
+            app.world().get::<CombatTarget>(npc).unwrap().entity,
+            near_player
+        );
+    }
 }
 
 fn next_random_index(random_state: &mut RoamingRandomState, modulo: usize) -> usize {

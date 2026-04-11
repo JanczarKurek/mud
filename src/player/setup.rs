@@ -1,37 +1,71 @@
 use bevy::prelude::*;
 
 use crate::combat::components::{AttackProfile, CombatLeash};
-use crate::player::components::{BaseStats, DerivedStats, MovementCooldown, Player, VitalStats};
-use crate::world::components::{OverworldObject, TilePosition, WorldVisual};
+use crate::player::components::{
+    BaseStats, ChatLog, DerivedStats, Inventory, MovementCooldown, Player, PlayerId,
+    PlayerIdentity, VitalStats,
+};
+use crate::world::components::{Collider, OverworldObject, TilePosition, WorldVisual};
 use crate::world::object_definitions::OverworldObjectDefinitions;
+use crate::world::object_registry::ObjectRegistry;
 use crate::world::setup::attach_combat_health_bar;
 use crate::world::WorldConfig;
 
-pub fn spawn_player_authoritative(
+pub fn spawn_embedded_player_authoritative(
     mut commands: Commands,
     world_config: Res<WorldConfig>,
+    mut object_registry: ResMut<ObjectRegistry>,
+    player_query: Query<Entity, With<Player>>,
 ) {
+    if !player_query.is_empty() {
+        return;
+    }
+
+    let spawn_tile = TilePosition::new(world_config.map_width / 2, world_config.map_height / 2);
+    let object_id = object_registry.allocate_runtime_id("player");
+    let _ = spawn_player_authoritative(
+        &mut commands,
+        &world_config,
+        PlayerId(0),
+        object_id,
+        spawn_tile,
+    );
+}
+
+pub fn spawn_player_authoritative(
+    commands: &mut Commands,
+    _world_config: &WorldConfig,
+    player_id: PlayerId,
+    object_id: u64,
+    tile_position: TilePosition,
+) -> Entity {
     let base_stats = BaseStats::default();
     let derived_stats = DerivedStats::from_base(&base_stats);
     let max_health = derived_stats.max_health as f32;
     let max_mana = derived_stats.max_mana as f32;
 
-    commands.spawn((
-        Player,
-        base_stats,
-        derived_stats,
-        VitalStats::full(max_health, max_mana),
-        MovementCooldown::default(),
-        AttackProfile::melee(),
-        CombatLeash {
-            max_distance_tiles: 6,
-        },
-        OverworldObject {
-            object_id: 0,
-            definition_id: "player".to_owned(),
-        },
-        TilePosition::new(world_config.map_width / 2, world_config.map_height / 2),
-    ));
+    commands
+        .spawn((
+            Player,
+            PlayerIdentity { id: player_id },
+            Inventory::default(),
+            ChatLog::default(),
+            base_stats,
+            derived_stats,
+            VitalStats::full(max_health, max_mana),
+            MovementCooldown::default(),
+            AttackProfile::melee(),
+            CombatLeash {
+                max_distance_tiles: 6,
+            },
+            Collider,
+            OverworldObject {
+                object_id,
+                definition_id: "player".to_owned(),
+            },
+            tile_position,
+        ))
+        .id()
 }
 
 pub fn spawn_player_visual(

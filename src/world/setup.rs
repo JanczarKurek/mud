@@ -6,8 +6,8 @@ use crate::npc::components::{
 };
 use crate::player::components::{BaseStats, DerivedStats, VitalStats};
 use crate::world::components::{
-    ClientProjectedWorldObject, Collider, CombatHealthBar, Container, Movable, OverworldObject,
-    Storable, TilePosition, WorldVisual,
+    ClientProjectedWorldObject, ClientRemotePlayerVisual, Collider, CombatHealthBar, Container,
+    Movable, OverworldObject, Storable, TilePosition, WorldVisual,
 };
 use crate::world::map_layout::{MapBehavior, MapLayout, MapObjectInstance};
 use crate::world::object_definitions::{OverworldObjectDefinition, OverworldObjectDefinitions};
@@ -27,7 +27,13 @@ pub fn spawn_world(
             continue;
         };
 
-        spawn_overworld_object_instance(&mut commands, &map_layout, &definitions, object, placement.to_tile_position());
+        spawn_overworld_object_instance(
+            &mut commands,
+            &map_layout,
+            &definitions,
+            object,
+            placement.to_tile_position(),
+        );
     }
 }
 
@@ -147,7 +153,6 @@ pub fn spawn_overworld_object_instance(
                 }
             }
         }
-
     }
 
     let _ = map_layout;
@@ -301,6 +306,38 @@ pub fn spawn_client_projected_world_object(
         attach_combat_health_bar(commands, entity, world_config.tile_size);
     }
 
+    entity
+}
+
+pub fn spawn_client_remote_player(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    definitions: &OverworldObjectDefinitions,
+    world_config: &WorldConfig,
+    player_id: crate::player::components::PlayerId,
+    object_id: u64,
+    tile_position: TilePosition,
+) -> Entity {
+    let definition = definitions
+        .get("player")
+        .unwrap_or_else(|| panic!("Missing overworld object definition for id 'player'"));
+    let sprite = sprite_for_definition(asset_server, definition, world_config);
+    let entity = commands
+        .spawn((
+            ClientRemotePlayerVisual {
+                player_id,
+                object_id,
+            },
+            tile_position,
+            WorldVisual {
+                z_index: definition.render.z_index,
+            },
+            sprite,
+            Transform::from_xyz(0.0, 0.0, definition.render.z_index),
+        ))
+        .id();
+
+    attach_combat_health_bar(commands, entity, world_config.tile_size);
     entity
 }
 

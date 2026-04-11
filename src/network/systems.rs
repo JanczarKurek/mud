@@ -4,11 +4,24 @@ use std::net::{TcpListener, TcpStream};
 use bevy::log::{error, info, warn};
 use bevy::prelude::*;
 
-use crate::game::resources::{ClientGameState, PendingGameCommands, PendingGameUiEvents};
+use crate::combat::components::CombatTarget;
+use crate::game::resources::{
+    ClientGameState, ClientRemotePlayerState, ClientVitalStats, ClientWorldObjectState,
+    PendingGameCommands, PendingGameUiEvents,
+};
 use crate::network::protocol::{ClientMessage, ServerMessage};
 use crate::network::resources::{
-    TcpClientConfig, TcpClientConnection, TcpServerConfig, TcpServerPeer, TcpServerState,
+    ConnectionId, TcpClientConfig, TcpClientConnection, TcpServerConfig, TcpServerPeer,
+    TcpServerState,
 };
+use crate::npc::components::Npc;
+use crate::player::components::{
+    ChatLog, DerivedStats, Inventory, Player, PlayerId, PlayerIdentity, VitalStats,
+};
+use crate::player::setup::spawn_player_authoritative;
+use crate::world::components::{Collider, Container, Movable, OverworldObject, TilePosition};
+use crate::world::object_registry::ObjectRegistry;
+use crate::world::WorldConfig;
 
 pub fn start_tcp_server(config: Res<TcpServerConfig>, mut server_state: ResMut<TcpServerState>) {
     if server_state.listener.is_some() {
@@ -28,7 +41,14 @@ pub fn start_tcp_server(config: Res<TcpServerConfig>, mut server_state: ResMut<T
     server_state.listener = Some(listener);
 }
 
-pub fn accept_tcp_client_connections(mut server_state: ResMut<TcpServerState>) {
+pub fn accept_tcp_client_connections(
+    mut server_state: ResMut<TcpServerState>,
+    world_config: Res<WorldConfig>,
+    collider_query: Query<&TilePosition, With<Collider>>,
+    player_position_query: Query<&TilePosition, With<Player>>,
+    mut object_registry: ResMut<ObjectRegistry>,
+    mut commands: Commands,
+) {
     let Some(listener) = server_state
         .listener
         .as_ref()
@@ -45,12 +65,37 @@ pub fn accept_tcp_client_connections(mut server_state: ResMut<TcpServerState>) {
                     continue;
                 }
 
+                let Some(spawn_tile) =
+                    find_spawn_tile(&world_config, &collider_query, &player_position_query)
+                else {
+                    warn!("rejecting TCP client from {address}: no free spawn tile");
+                    continue;
+                };
+
+                let connection_id = ConnectionId(server_state.next_connection_id);
+                server_state.next_connection_id += 1;
+                let player_id = PlayerId(connection_id.0);
+                let object_id = object_registry.allocate_runtime_id("player");
+                let player_entity = spawn_player_authoritative(
+                    &mut commands,
+                    &world_config,
+                    player_id,
+                    object_id,
+                    spawn_tile,
+                );
+
                 info!("TCP client connected from {address}");
-                server_state.client = Some(TcpServerPeer {
-                    stream,
-                    read_buffer: Vec::new(),
-                    last_snapshot: None,
-                });
+                server_state.peers.insert(
+                    connection_id,
+                    TcpServerPeer {
+                        connection_id,
+                        player_id,
+                        player_entity,
+                        stream,
+                        read_buffer: Vec::new(),
+                        last_snapshot: None,
+                    },
+                );
             }
             Err(error) if error.kind() == ErrorKind::WouldBlock => break,
             Err(error) => {
@@ -64,56 +109,120 @@ pub fn accept_tcp_client_connections(mut server_state: ResMut<TcpServerState>) {
 pub fn poll_tcp_server_messages(
     mut server_state: ResMut<TcpServerState>,
     mut pending_commands: ResMut<PendingGameCommands>,
+    mut commands: Commands,
 ) {
-    let Some(client) = &mut server_state.client else {
-        return;
-    };
+    let connection_ids = server_state.peers.keys().copied().collect::<Vec<_>>();
+    let mut disconnected_peers = Vec::new();
 
-    let mut disconnected = false;
-    while let Some(line) = read_next_line(&mut client.stream, &mut client.read_buffer, &mut disconnected)
-    {
-        match serde_json::from_str::<ClientMessage>(&line) {
-            Ok(ClientMessage::Command(command)) => pending_commands.push(command),
-            Err(error) => warn!("failed to parse client message: {error}"),
+    for connection_id in connection_ids {
+        let Some(peer) = server_state.peers.get_mut(&connection_id) else {
+            continue;
+        };
+
+        let mut disconnected = false;
+        while let Some(line) =
+            read_next_line(&mut peer.stream, &mut peer.read_buffer, &mut disconnected)
+        {
+            match serde_json::from_str::<ClientMessage>(&line) {
+                Ok(ClientMessage::Command(command)) => {
+                    pending_commands.push_for_player(peer.player_id, command);
+                }
+                Err(error) => warn!("failed to parse client message: {error}"),
+            }
+        }
+
+        if disconnected {
+            disconnected_peers.push(connection_id);
         }
     }
 
-    if disconnected {
-        info!("TCP client disconnected");
-        server_state.client = None;
+    for connection_id in disconnected_peers {
+        disconnect_peer(&mut server_state, connection_id, &mut commands);
     }
 }
 
 pub fn flush_server_messages(
-    client_state: Res<ClientGameState>,
     mut pending_ui_events: ResMut<PendingGameUiEvents>,
     mut server_state: ResMut<TcpServerState>,
+    player_query: Query<
+        (
+            Entity,
+            &PlayerIdentity,
+            &Inventory,
+            &ChatLog,
+            &TilePosition,
+            &VitalStats,
+            &DerivedStats,
+            Option<&CombatTarget>,
+            &OverworldObject,
+        ),
+        With<Player>,
+    >,
+    object_query: Query<&OverworldObject>,
+    world_object_query: Query<
+        (
+            &TilePosition,
+            &OverworldObject,
+            Has<Container>,
+            Has<Npc>,
+            Has<Movable>,
+        ),
+        Without<Player>,
+    >,
+    container_query: Query<(&Container, &OverworldObject), Without<Player>>,
+    mut commands: Commands,
 ) {
-    let Some(client) = &mut server_state.client else {
-        pending_ui_events.events.clear();
-        return;
-    };
+    let peer_ui_events = std::mem::take(&mut pending_ui_events.peer_events);
+    pending_ui_events.events.clear();
 
-    let mut disconnected = false;
-    if client.last_snapshot.as_ref() != Some(&*client_state) {
-        if !write_message(&mut client.stream, &ServerMessage::Snapshot(client_state.clone()), &mut disconnected)
-        {
-            warn!("failed to send snapshot to TCP client");
-        } else {
-            client.last_snapshot = Some(client_state.clone());
+    let connection_ids = server_state.peers.keys().copied().collect::<Vec<_>>();
+    let mut disconnected_peers = Vec::new();
+
+    for connection_id in connection_ids {
+        let Some(peer) = server_state.peers.get_mut(&connection_id) else {
+            continue;
+        };
+
+        let snapshot = build_client_game_state(
+            peer.player_id,
+            &player_query,
+            &object_query,
+            &world_object_query,
+            &container_query,
+        );
+
+        let mut disconnected = false;
+        if peer.last_snapshot.as_ref() != Some(&snapshot) {
+            if !write_message(
+                &mut peer.stream,
+                &ServerMessage::Snapshot(snapshot.clone()),
+                &mut disconnected,
+            ) {
+                warn!("failed to send snapshot to TCP client");
+            } else {
+                peer.last_snapshot = Some(snapshot);
+            }
+        }
+
+        if let Some(events) = peer_ui_events.get(&peer.player_id) {
+            if !events.is_empty()
+                && !write_message(
+                    &mut peer.stream,
+                    &ServerMessage::UiEvents(events.clone()),
+                    &mut disconnected,
+                )
+            {
+                warn!("failed to send UI events to TCP client");
+            }
+        }
+
+        if disconnected {
+            disconnected_peers.push(connection_id);
         }
     }
 
-    if !pending_ui_events.events.is_empty() {
-        let events = std::mem::take(&mut pending_ui_events.events);
-        if !write_message(&mut client.stream, &ServerMessage::UiEvents(events), &mut disconnected) {
-            warn!("failed to send UI events to TCP client");
-        }
-    }
-
-    if disconnected {
-        info!("TCP client disconnected");
-        server_state.client = None;
+    for connection_id in disconnected_peers {
+        disconnect_peer(&mut server_state, connection_id, &mut commands);
     }
 }
 
@@ -132,7 +241,11 @@ pub fn flush_client_commands_to_server(
     let commands = std::mem::take(&mut pending_commands.commands);
     let mut disconnected = false;
     for command in commands {
-        if !write_message(stream, &ClientMessage::Command(command), &mut disconnected) {
+        if !write_message(
+            stream,
+            &ClientMessage::Command(command.command),
+            &mut disconnected,
+        ) {
             break;
         }
     }
@@ -196,6 +309,151 @@ fn ensure_tcp_client_connected(config: &TcpClientConfig, connection: &mut TcpCli
     connection.stream = Some(stream);
 }
 
+fn disconnect_peer(
+    server_state: &mut TcpServerState,
+    connection_id: ConnectionId,
+    commands: &mut Commands,
+) {
+    if let Some(peer) = server_state.peers.remove(&connection_id) {
+        info!("TCP client disconnected");
+        commands.entity(peer.player_entity).despawn();
+    }
+}
+
+fn find_spawn_tile(
+    world_config: &WorldConfig,
+    collider_query: &Query<&TilePosition, With<Collider>>,
+    player_position_query: &Query<&TilePosition, With<Player>>,
+) -> Option<TilePosition> {
+    let origin = TilePosition::new(world_config.map_width / 2, world_config.map_height / 2);
+
+    for radius in 0..world_config.map_width.max(world_config.map_height) {
+        for y in -radius..=radius {
+            for x in -radius..=radius {
+                if radius > 0 && x.abs() != radius && y.abs() != radius {
+                    continue;
+                }
+
+                let candidate = TilePosition::new(origin.x + x, origin.y + y);
+                if candidate.x < 0
+                    || candidate.y < 0
+                    || candidate.x >= world_config.map_width
+                    || candidate.y >= world_config.map_height
+                {
+                    continue;
+                }
+
+                let blocked = collider_query.iter().any(|tile| *tile == candidate)
+                    || player_position_query.iter().any(|tile| *tile == candidate);
+                if !blocked {
+                    return Some(candidate);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn build_client_game_state(
+    local_player_id: PlayerId,
+    player_query: &Query<
+        (
+            Entity,
+            &PlayerIdentity,
+            &Inventory,
+            &ChatLog,
+            &TilePosition,
+            &VitalStats,
+            &DerivedStats,
+            Option<&CombatTarget>,
+            &OverworldObject,
+        ),
+        With<Player>,
+    >,
+    object_query: &Query<&OverworldObject>,
+    world_object_query: &Query<
+        (
+            &TilePosition,
+            &OverworldObject,
+            Has<Container>,
+            Has<Npc>,
+            Has<Movable>,
+        ),
+        Without<Player>,
+    >,
+    container_query: &Query<(&Container, &OverworldObject), Without<Player>>,
+) -> ClientGameState {
+    let mut state = ClientGameState {
+        local_player_id: Some(local_player_id),
+        ..default()
+    };
+
+    for (
+        _entity,
+        identity,
+        inventory,
+        chat_log,
+        tile_position,
+        vital_stats,
+        derived_stats,
+        combat_target,
+        player_object,
+    ) in player_query.iter()
+    {
+        let projected_vitals = ClientVitalStats {
+            health: vital_stats.health,
+            max_health: vital_stats.max_health,
+            mana: vital_stats.mana,
+            max_mana: vital_stats.max_mana,
+        };
+
+        if identity.id == local_player_id {
+            state.inventory = inventory.clone();
+            state.chat_log_lines = chat_log.lines.clone();
+            state.player_tile_position = Some(*tile_position);
+            state.player_vitals = Some(projected_vitals);
+            state.player_storage_slots = derived_stats.storage_slots;
+            state.local_player_object_id = Some(player_object.object_id);
+            state.current_target_object_id = combat_target
+                .and_then(|combat_target| object_query.get(combat_target.entity).ok())
+                .map(|object| object.object_id);
+        } else {
+            state.remote_players.insert(
+                identity.id,
+                ClientRemotePlayerState {
+                    player_id: identity.id,
+                    object_id: player_object.object_id,
+                    tile_position: *tile_position,
+                    vitals: projected_vitals,
+                },
+            );
+        }
+    }
+
+    for (container, object) in container_query.iter() {
+        state
+            .container_slots
+            .insert(object.object_id, container.slots.clone());
+    }
+
+    for (tile_position, object, has_container, has_npc, has_movable) in world_object_query.iter() {
+        state.world_objects.insert(
+            object.object_id,
+            ClientWorldObjectState {
+                object_id: object.object_id,
+                definition_id: object.definition_id.clone(),
+                tile_position: *tile_position,
+                is_container: has_container,
+                is_npc: has_npc,
+                is_movable: has_movable,
+            },
+        );
+    }
+
+    state
+}
+
 fn read_next_line(
     stream: &mut TcpStream,
     buffer: &mut Vec<u8>,
@@ -242,5 +500,220 @@ fn write_message(
             *disconnected = true;
             false
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy::ecs::system::SystemState;
+    use bevy::prelude::*;
+
+    use super::*;
+    use crate::combat::components::{AttackProfile, CombatLeash};
+    use crate::game::GameServerPlugin;
+    use crate::magic::MagicPlugin;
+    use crate::npc::NpcPlugin;
+    use crate::player::components::{
+        BaseStats, ChatLog, DerivedStats, Inventory, MovementCooldown, Player, PlayerId,
+        PlayerIdentity, VitalStats,
+    };
+    use crate::player::PlayerServerPlugin;
+    use crate::world::components::{Collider, OverworldObject};
+    use crate::world::object_registry::ObjectRegistry;
+    use crate::world::{WorldConfig, WorldServerPlugin};
+
+    fn setup_server_app() -> App {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.add_plugins((
+            GameServerPlugin,
+            WorldServerPlugin,
+            NpcPlugin,
+            PlayerServerPlugin,
+            MagicPlugin,
+        ));
+        app
+    }
+
+    fn spawn_player(app: &mut App, player_id: u64, x: i32, y: i32) -> Entity {
+        let base_stats = BaseStats::default();
+        let derived_stats = DerivedStats::from_base(&base_stats);
+        let max_health = derived_stats.max_health as f32;
+        let max_mana = derived_stats.max_mana as f32;
+        let object_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("player");
+        app.world_mut()
+            .spawn((
+                Player,
+                PlayerIdentity {
+                    id: PlayerId(player_id),
+                },
+                Inventory::default(),
+                ChatLog::default(),
+                base_stats,
+                derived_stats,
+                VitalStats::full(max_health, max_mana),
+                MovementCooldown::default(),
+                AttackProfile::melee(),
+                CombatLeash {
+                    max_distance_tiles: 6,
+                },
+                Collider,
+                OverworldObject {
+                    object_id,
+                    definition_id: "player".to_owned(),
+                },
+                crate::world::components::TilePosition::new(x, y),
+            ))
+            .id()
+    }
+
+    fn spawn_container(app: &mut App, type_id: &str, x: i32, y: i32) -> u64 {
+        let object_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id(type_id);
+        let definition = app
+            .world()
+            .resource::<crate::world::object_definitions::OverworldObjectDefinitions>()
+            .get(type_id)
+            .unwrap()
+            .clone();
+        let mut entity = app.world_mut().spawn((
+            OverworldObject {
+                object_id,
+                definition_id: type_id.to_owned(),
+            },
+            crate::world::components::TilePosition::new(x, y),
+        ));
+        if definition.colliding {
+            entity.insert(Collider);
+        }
+        if let Some(capacity) = definition.container_capacity {
+            entity.insert(crate::world::components::Container {
+                slots: vec![None; capacity],
+            });
+        }
+        if definition.movable {
+            entity.insert(crate::world::components::Movable);
+        }
+        object_id
+    }
+
+    #[test]
+    fn spawn_tile_skips_blocked_center_and_existing_players() {
+        let mut app = setup_server_app();
+        let world_config = {
+            let config = app.world().resource::<WorldConfig>();
+            WorldConfig {
+                map_width: config.map_width,
+                map_height: config.map_height,
+                tile_size: config.tile_size,
+            }
+        };
+        let center = crate::world::components::TilePosition::new(
+            world_config.map_width / 2,
+            world_config.map_height / 2,
+        );
+
+        spawn_player(&mut app, 1, center.x, center.y);
+        spawn_container(&mut app, "wall", center.x + 1, center.y);
+
+        type SpawnState<'w, 's> = SystemState<(
+            Query<
+                'w,
+                's,
+                &'static crate::world::components::TilePosition,
+                With<crate::world::components::Collider>,
+            >,
+            Query<'w, 's, &'static crate::world::components::TilePosition, With<Player>>,
+        )>;
+        let mut state: SpawnState = SystemState::new(app.world_mut());
+        let (collider_query, player_query) = state.get(app.world_mut());
+        let spawn_tile = find_spawn_tile(&world_config, &collider_query, &player_query).unwrap();
+
+        assert_ne!(spawn_tile, center);
+        assert_ne!(
+            spawn_tile,
+            crate::world::components::TilePosition::new(center.x + 1, center.y)
+        );
+    }
+
+    #[test]
+    fn snapshot_builder_separates_local_and_remote_players() {
+        let mut app = setup_server_app();
+        spawn_player(&mut app, 1, 10, 10);
+        spawn_player(&mut app, 2, 12, 10);
+        let barrel_id = spawn_container(&mut app, "barrel", 11, 10);
+
+        type SnapshotState<'w, 's> = SystemState<(
+            Query<
+                'w,
+                's,
+                (
+                    Entity,
+                    &'static crate::player::components::PlayerIdentity,
+                    &'static crate::player::components::Inventory,
+                    &'static crate::player::components::ChatLog,
+                    &'static crate::world::components::TilePosition,
+                    &'static crate::player::components::VitalStats,
+                    &'static crate::player::components::DerivedStats,
+                    Option<&'static crate::combat::components::CombatTarget>,
+                    &'static crate::world::components::OverworldObject,
+                ),
+                With<Player>,
+            >,
+            Query<'w, 's, &'static crate::world::components::OverworldObject>,
+            Query<
+                'w,
+                's,
+                (
+                    &'static crate::world::components::TilePosition,
+                    &'static crate::world::components::OverworldObject,
+                    Has<crate::world::components::Container>,
+                    Has<crate::npc::components::Npc>,
+                    Has<crate::world::components::Movable>,
+                ),
+                Without<Player>,
+            >,
+            Query<
+                'w,
+                's,
+                (
+                    &'static crate::world::components::Container,
+                    &'static crate::world::components::OverworldObject,
+                ),
+                Without<Player>,
+            >,
+        )>;
+        let mut state: SnapshotState = SystemState::new(app.world_mut());
+        let (player_query, object_query, world_object_query, container_query) =
+            state.get(app.world_mut());
+
+        let snapshot = build_client_game_state(
+            PlayerId(1),
+            &player_query,
+            &object_query,
+            &world_object_query,
+            &container_query,
+        );
+
+        assert_eq!(snapshot.local_player_id, Some(PlayerId(1)));
+        assert_eq!(
+            snapshot.player_tile_position,
+            Some(crate::world::components::TilePosition::new(10, 10))
+        );
+        assert_eq!(snapshot.remote_players.len(), 1);
+        assert_eq!(
+            snapshot
+                .remote_players
+                .get(&PlayerId(2))
+                .unwrap()
+                .tile_position,
+            crate::world::components::TilePosition::new(12, 10)
+        );
+        assert!(snapshot.container_slots.contains_key(&barrel_id));
     }
 }

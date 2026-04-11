@@ -3,10 +3,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::combat::components::{AttackKind, AttackProfile, CombatLeash, CombatTarget};
 use crate::combat::resources::BattleTurnTimer;
-use crate::game::resources::ChatLogState;
 use crate::magic::resources::SpellDefinitions;
 use crate::npc::components::Npc;
-use crate::player::components::{DerivedStats, Player, VitalStats};
+use crate::player::components::{ChatLog, DerivedStats, Player, VitalStats};
 use crate::world::components::{OverworldObject, TilePosition};
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
@@ -65,7 +64,7 @@ pub fn resolve_battle_turn(
     definitions: Res<OverworldObjectDefinitions>,
     object_registry: Res<ObjectRegistry>,
     spell_definitions: Res<SpellDefinitions>,
-    mut chat_log_state: ResMut<ChatLogState>,
+    mut chat_log_query: Query<&mut ChatLog, With<Player>>,
     mut commands: Commands,
 ) {
     battle_turn_timer.remaining_seconds -= time.delta_secs();
@@ -146,10 +145,13 @@ pub fn resolve_battle_turn(
         }
 
         target_vitals.health = (target_vitals.health - damage as f32).max(0.0);
-        chat_log_state.push_line(format!(
-            "[{} hit {} for {damage} damage]",
-            attacker.name, target.name
-        ));
+        broadcast_chat_line(
+            &mut chat_log_query,
+            format!(
+                "[{} hit {} for {damage} damage]",
+                attacker.name, target.name
+            ),
+        );
 
         if target_vitals.health > 0.0 {
             continue;
@@ -157,13 +159,22 @@ pub fn resolve_battle_turn(
 
         if is_npc.is_some() {
             commands.entity(target_entity).despawn();
-            chat_log_state.push_line(format!("[{} dies]", target.name));
+            broadcast_chat_line(&mut chat_log_query, format!("[{} dies]", target.name));
             continue;
         }
 
         if is_player.is_some() {
-            chat_log_state.push_line(format!("[{} is defeated]", target.name));
+            broadcast_chat_line(
+                &mut chat_log_query,
+                format!("[{} is defeated]", target.name),
+            );
         }
+    }
+}
+
+fn broadcast_chat_line(chat_log_query: &mut Query<&mut ChatLog, With<Player>>, message: String) {
+    for mut chat_log in chat_log_query.iter_mut() {
+        chat_log.push_line(message.clone());
     }
 }
 

@@ -1,8 +1,13 @@
+use std::collections::HashMap;
 use std::net::{TcpListener, TcpStream};
 
 use bevy::prelude::*;
 
 use crate::game::resources::ClientGameState;
+use crate::player::components::PlayerId;
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct ConnectionId(pub u64);
 
 #[derive(Resource)]
 pub struct TcpClientConfig {
@@ -21,6 +26,9 @@ pub struct TcpServerConfig {
 }
 
 pub struct TcpServerPeer {
+    pub connection_id: ConnectionId,
+    pub player_id: PlayerId,
+    pub player_entity: Entity,
     pub stream: TcpStream,
     pub read_buffer: Vec<u8>,
     pub last_snapshot: Option<ClientGameState>,
@@ -29,5 +37,6 @@ pub struct TcpServerPeer {
 #[derive(Resource, Default)]
 pub struct TcpServerState {
     pub listener: Option<TcpListener>,
-    pub client: Option<TcpServerPeer>,
+    pub next_connection_id: u64,
+    pub peers: HashMap<ConnectionId, TcpServerPeer>,
 }

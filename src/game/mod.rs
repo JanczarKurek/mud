@@ -5,8 +5,7 @@ pub mod systems;
 use bevy::prelude::*;
 
 use crate::game::resources::{
-    ChatLogState, ClientGameState, InventoryState, PendingGameCommands, PendingGameEvents,
-    PendingGameUiEvents,
+    ClientGameState, PendingGameCommands, PendingGameEvents, PendingGameUiEvents,
 };
 use crate::game::systems::{
     apply_game_events_to_client_state, collect_game_events_from_authority, process_game_commands,
@@ -20,9 +19,7 @@ pub struct GameClientPlugin;
 
 impl Plugin for GameServerPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(InventoryState::default())
-            .insert_resource(ChatLogState::default())
-            .insert_resource(PendingGameCommands::default())
+        app.insert_resource(PendingGameCommands::default())
             .insert_resource(PendingGameEvents::default())
             .insert_resource(PendingGameUiEvents::default())
             .insert_resource(ClientGameState::default())
