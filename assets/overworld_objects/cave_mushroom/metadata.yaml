@@ -1,0 +1,8 @@
+extends: static_world
+name: Cave Mushroom
+description: Pale mushrooms thriving in damp underground air.
+render:
+  z_index: 0.12
+  debug_color: [205, 170, 112]
+  debug_size: 0.42
+  sprite_path: overworld_objects/cave_mushroom/sprite.png

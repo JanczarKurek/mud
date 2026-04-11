@@ -68,11 +68,8 @@ pub fn accept_tcp_client_connections(
                     continue;
                 }
 
-                let Some(spawn_tile) = find_spawn_tile(
-                    &world_config,
-                    &collider_query,
-                    &player_position_query,
-                )
+                let Some(spawn_tile) =
+                    find_spawn_tile(&world_config, &collider_query, &player_position_query)
                 else {
                     warn!("rejecting TCP client from {address}: no free spawn tile");
                     continue;
@@ -433,7 +430,8 @@ fn build_client_game_state(
         if identity.id == local_player_id {
             state.inventory = inventory.clone();
             state.chat_log_lines = chat_log.lines.clone();
-            state.player_position = Some(SpacePosition::new(space_resident.space_id, *tile_position));
+            state.player_position =
+                Some(SpacePosition::new(space_resident.space_id, *tile_position));
             state.player_tile_position = Some(*tile_position);
             state.player_vitals = Some(projected_vitals);
             state.player_storage_slots = derived_stats.storage_slots;
@@ -484,7 +482,9 @@ fn build_client_game_state(
             .insert(object.object_id, container.slots.clone());
     }
 
-    for (space_resident, tile_position, object, vitals, has_container, has_npc, has_movable) in world_object_query.iter() {
+    for (space_resident, tile_position, object, vitals, has_container, has_npc, has_movable) in
+        world_object_query.iter()
+    {
         if space_resident.space_id != local_space_id {
             continue;
         }

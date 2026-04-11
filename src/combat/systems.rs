@@ -24,7 +24,13 @@ struct CombatantSnapshot {
 
 pub fn clear_invalid_combat_targets(
     mut commands: Commands,
-    target_query: Query<(Entity, &CombatTarget, &SpaceResident, &TilePosition, Option<&CombatLeash>)>,
+    target_query: Query<(
+        Entity,
+        &CombatTarget,
+        &SpaceResident,
+        &TilePosition,
+        Option<&CombatLeash>,
+    )>,
     entity_query: Query<(&SpaceResident, &TilePosition)>,
 ) {
     for (entity, combat_target, attacker_space, attacker_position, leash) in &target_query {

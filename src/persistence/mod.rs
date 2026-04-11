@@ -61,7 +61,10 @@ impl Plugin for PersistenceServerPlugin {
                 .unwrap_or_else(|| PathBuf::from(DEFAULT_WORLD_SAVE_PATH)),
         })
         .insert_resource(WorldSnapshotStatus::default())
-        .add_systems(Startup, load_world_from_snapshot.before(initialize_runtime_spaces))
+        .add_systems(
+            Startup,
+            load_world_from_snapshot.before(initialize_runtime_spaces),
+        )
         .add_systems(Last, save_world_on_app_exit);
     }
 }
@@ -71,7 +74,10 @@ pub struct WorldStateDump {
     pub format_version: u32,
     pub saved_at_unix_seconds: u64,
     pub world_config: WorldConfigDump,
-    pub map_layout: MapLayoutDump,
+    #[serde(default)]
+    pub map_layout: Option<MapLayoutDump>,
+    #[serde(default)]
+    pub spaces: Vec<RuntimeSpaceDump>,
     pub object_registry: ObjectRegistryDump,
     pub network: NetworkStateDump,
     pub players: Vec<PlayerStateDump>,
@@ -80,9 +86,13 @@ pub struct WorldStateDump {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorldConfigDump {
+    #[serde(default)]
+    pub current_space_id: Option<crate::world::components::SpaceId>,
     pub map_width: i32,
     pub map_height: i32,
     pub tile_size: f32,
+    #[serde(default)]
+    pub fill_object_type: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -104,9 +114,28 @@ pub struct NetworkStateDump {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RuntimeSpaceDump {
+    pub id: crate::world::components::SpaceId,
+    pub authored_id: String,
+    pub width: i32,
+    pub height: i32,
+    pub fill_object_type: String,
+    pub permanence: SpacePermanence,
+    pub instance_owner: Option<PortalInstanceKeyDump>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PortalInstanceKeyDump {
+    pub source_space_id: crate::world::components::SpaceId,
+    pub portal_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PlayerStateDump {
     pub player_id: PlayerId,
     pub object_id: u64,
+    #[serde(default)]
+    pub space_id: Option<crate::world::components::SpaceId>,
     pub tile_position: TilePosition,
     pub inventory: Inventory,
     pub chat_log: ChatLog,
@@ -123,6 +152,8 @@ pub struct PlayerStateDump {
 pub struct WorldObjectStateDump {
     pub object_id: u64,
     pub definition_id: String,
+    #[serde(default)]
+    pub space_id: Option<crate::world::components::SpaceId>,
     pub tile_position: Option<TilePosition>,
     pub collider: bool,
     pub movable: bool,
@@ -149,6 +180,7 @@ fn save_world_on_app_exit(
     mut app_exit_reader: MessageReader<AppExit>,
     save_config: Res<WorldSaveConfig>,
     world_config: Res<WorldConfig>,
+    space_manager: Res<SpaceManager>,
     object_registry: Res<ObjectRegistry>,
     tcp_server_state: Option<Res<TcpServerState>>,
     player_query: Query<
@@ -156,6 +188,7 @@ fn save_world_on_app_exit(
             Entity,
             &PlayerIdentity,
             &OverworldObject,
+            &SpaceResident,
             &TilePosition,
             &Inventory,
             &ChatLog,
@@ -173,6 +206,7 @@ fn save_world_on_app_exit(
         (
             Entity,
             &OverworldObject,
+            &SpaceResident,
             Option<&TilePosition>,
             Has<Collider>,
             Has<Movable>,
@@ -203,12 +237,32 @@ fn save_world_on_app_exit(
     }
 
     let mut entity_to_object_id = std::collections::HashMap::new();
-    for (entity, _, object, _, _, _, _, _, _, _, _, _, _) in player_query.iter() {
+    for (entity, _, object, _, _, _, _, _, _, _, _, _, _, _) in player_query.iter() {
         entity_to_object_id.insert(entity, object.object_id);
     }
-    for (entity, object, _, _, _, _, _, _, _) in world_object_query.iter() {
+    for (entity, object, _, _, _, _, _, _, _, _) in world_object_query.iter() {
         entity_to_object_id.insert(entity, object.object_id);
     }
+
+    let mut spaces = space_manager
+        .spaces
+        .values()
+        .map(|space| RuntimeSpaceDump {
+            id: space.id,
+            authored_id: space.authored_id.clone(),
+            width: space.width,
+            height: space.height,
+            fill_object_type: space.fill_object_type.clone(),
+            permanence: space.permanence,
+            instance_owner: space.instance_owner.as_ref().map(|instance_owner| {
+                PortalInstanceKeyDump {
+                    source_space_id: instance_owner.source_space_id,
+                    portal_id: instance_owner.portal_id.clone(),
+                }
+            }),
+        })
+        .collect::<Vec<_>>();
+    spaces.sort_by_key(|space| space.id.0);
 
     let mut players = player_query
         .iter()
@@ -217,6 +271,7 @@ fn save_world_on_app_exit(
                 _entity,
                 identity,
                 object,
+                space_resident,
                 tile_position,
                 inventory,
                 chat_log,
@@ -230,6 +285,7 @@ fn save_world_on_app_exit(
             )| PlayerStateDump {
                 player_id: identity.id,
                 object_id: object.object_id,
+                space_id: Some(space_resident.space_id),
                 tile_position: *tile_position,
                 inventory: inventory.clone(),
                 chat_log: chat_log.clone(),
@@ -252,6 +308,7 @@ fn save_world_on_app_exit(
             |(
                 entity,
                 object,
+                space_resident,
                 tile_position,
                 collider,
                 movable,
@@ -262,6 +319,7 @@ fn save_world_on_app_exit(
             )| WorldObjectStateDump {
                 object_id: object.object_id,
                 definition_id: object.definition_id.clone(),
+                space_id: Some(space_resident.space_id),
                 tile_position: tile_position.copied(),
                 collider,
                 movable,
@@ -300,21 +358,24 @@ fn save_world_on_app_exit(
     world_objects.sort_by_key(|object| object.object_id);
 
     let dump = WorldStateDump {
-        format_version: 1,
+        format_version: 2,
+        spaces,
         saved_at_unix_seconds: SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs(),
         world_config: WorldConfigDump {
+            current_space_id: Some(world_config.current_space_id),
             map_width: world_config.map_width,
             map_height: world_config.map_height,
             tile_size: world_config.tile_size,
+            fill_object_type: Some(world_config.fill_object_type.clone()),
         },
-        map_layout: MapLayoutDump {
+        map_layout: Some(MapLayoutDump {
             width: world_config.map_width,
             height: world_config.map_height,
             fill_object_type: world_config.fill_object_type.clone(),
-        },
+        }),
         object_registry: ObjectRegistryDump {
             next_runtime_id: object_registry.next_runtime_id(),
             entries: object_registry.snapshot_entries(),
@@ -357,6 +418,7 @@ fn load_world_from_snapshot(
     let WorldStateDump {
         world_config: dump_world_config,
         map_layout: dump_map_layout,
+        spaces: dump_spaces,
         object_registry: dump_registry,
         network: dump_network,
         players,
@@ -364,23 +426,75 @@ fn load_world_from_snapshot(
         ..
     } = dump;
 
-    let bootstrap_definition = authored_spaces.bootstrap_space();
-    let space_id = space_manager.allocate_space_id();
-    space_manager.insert_space(RuntimeSpace {
-        id: space_id,
-        authored_id: bootstrap_definition.authored_id.clone(),
-        width: dump_world_config.map_width,
-        height: dump_world_config.map_height,
-        fill_object_type: dump_map_layout.fill_object_type.clone(),
-        permanence: SpacePermanence::Persistent,
-        instance_owner: None,
-    });
+    let legacy_fill_object_type = dump_map_layout
+        .as_ref()
+        .map(|layout| layout.fill_object_type.clone())
+        .or(dump_world_config.fill_object_type.clone())
+        .unwrap_or_else(|| "grass".to_owned());
 
-    world_config.current_space_id = space_id;
-    world_config.map_width = dump_world_config.map_width;
-    world_config.map_height = dump_world_config.map_height;
+    if dump_spaces.is_empty() {
+        let bootstrap_definition = authored_spaces.bootstrap_space();
+        let space_id = space_manager.allocate_space_id();
+        space_manager.insert_space(RuntimeSpace {
+            id: space_id,
+            authored_id: bootstrap_definition.authored_id.clone(),
+            width: dump_world_config.map_width,
+            height: dump_world_config.map_height,
+            fill_object_type: legacy_fill_object_type.clone(),
+            permanence: SpacePermanence::Persistent,
+            instance_owner: None,
+        });
+    } else {
+        let max_space_id = dump_spaces
+            .iter()
+            .map(|space| space.id.0)
+            .max()
+            .unwrap_or(0);
+        space_manager.next_space_id = max_space_id + 1;
+        for dump_space in dump_spaces {
+            space_manager.insert_space(RuntimeSpace {
+                id: dump_space.id,
+                authored_id: dump_space.authored_id,
+                width: dump_space.width,
+                height: dump_space.height,
+                fill_object_type: dump_space.fill_object_type,
+                permanence: dump_space.permanence,
+                instance_owner: dump_space.instance_owner.map(|instance_owner| {
+                    crate::world::resources::PortalInstanceKey {
+                        source_space_id: instance_owner.source_space_id,
+                        portal_id: instance_owner.portal_id,
+                    }
+                }),
+            });
+        }
+    }
+
+    let current_space_id = dump_world_config
+        .current_space_id
+        .or_else(|| {
+            space_manager
+                .spaces
+                .keys()
+                .copied()
+                .min_by_key(|space_id| space_id.0)
+        })
+        .unwrap_or(crate::world::components::SpaceId(0));
+    let current_space = space_manager.get(current_space_id).cloned();
+
+    world_config.current_space_id = current_space_id;
+    world_config.map_width = current_space
+        .as_ref()
+        .map(|space| space.width)
+        .unwrap_or(dump_world_config.map_width);
+    world_config.map_height = current_space
+        .as_ref()
+        .map(|space| space.height)
+        .unwrap_or(dump_world_config.map_height);
     world_config.tile_size = dump_world_config.tile_size;
-    world_config.fill_object_type = dump_map_layout.fill_object_type;
+    world_config.fill_object_type = current_space
+        .as_ref()
+        .map(|space| space.fill_object_type.clone())
+        .unwrap_or(legacy_fill_object_type);
     *object_registry =
         ObjectRegistry::from_snapshot(dump_registry.entries, dump_registry.next_runtime_id);
     if let Some(server_state) = tcp_server_state.as_mut() {
@@ -391,6 +505,7 @@ fn load_world_from_snapshot(
     let mut pending_combat_targets = Vec::new();
 
     for player in players {
+        let space_id = player.space_id.unwrap_or(current_space_id);
         let entity = commands
             .spawn((
                 Player,
@@ -421,10 +536,14 @@ fn load_world_from_snapshot(
     }
 
     for object in world_objects {
-        let mut entity = commands.spawn((OverworldObject {
-            object_id: object.object_id,
-            definition_id: object.definition_id,
-        }, SpaceResident { space_id }));
+        let space_id = object.space_id.unwrap_or(current_space_id);
+        let mut entity = commands.spawn((
+            OverworldObject {
+                object_id: object.object_id,
+                definition_id: object.definition_id,
+            },
+            SpaceResident { space_id },
+        ));
 
         if let Some(tile_position) = object.tile_position {
             entity.insert(tile_position);
@@ -588,7 +707,15 @@ mod tests {
             serde_json::from_str::<WorldStateDump>(&std::fs::read_to_string(&save_path).unwrap())
                 .unwrap();
 
-        assert_eq!(dump.format_version, 1);
+        assert_eq!(dump.format_version, 2);
+        assert!(!dump.spaces.is_empty());
+        assert_eq!(
+            dump.players
+                .iter()
+                .find(|player| player.player_id == PlayerId(42))
+                .and_then(|player| player.space_id),
+            Some(world_config.current_space_id)
+        );
         assert!(dump
             .players
             .iter()
@@ -609,18 +736,29 @@ mod tests {
         let _ = std::fs::remove_file(&save_path);
 
         let dump = WorldStateDump {
-            format_version: 1,
+            format_version: 2,
             saved_at_unix_seconds: 0,
             world_config: WorldConfigDump {
+                current_space_id: Some(crate::world::components::SpaceId(7)),
                 map_width: 32,
                 map_height: 24,
                 tile_size: 48.0,
+                fill_object_type: Some("grass".to_owned()),
             },
-            map_layout: MapLayoutDump {
+            map_layout: Some(MapLayoutDump {
                 width: 32,
                 height: 24,
                 fill_object_type: "grass".to_owned(),
-            },
+            }),
+            spaces: vec![RuntimeSpaceDump {
+                id: crate::world::components::SpaceId(7),
+                authored_id: "overworld".to_owned(),
+                width: 32,
+                height: 24,
+                fill_object_type: "grass".to_owned(),
+                permanence: SpacePermanence::Persistent,
+                instance_owner: None,
+            }],
             object_registry: ObjectRegistryDump {
                 next_runtime_id: 1000,
                 entries: vec![
@@ -642,6 +780,7 @@ mod tests {
             players: vec![PlayerStateDump {
                 player_id: PlayerId(7),
                 object_id: 42,
+                space_id: Some(crate::world::components::SpaceId(7)),
                 tile_position: TilePosition::new(5, 6),
                 inventory: Inventory::default(),
                 chat_log: ChatLog::default(),
@@ -658,6 +797,7 @@ mod tests {
             world_objects: vec![WorldObjectStateDump {
                 object_id: 43,
                 definition_id: "barrel".to_owned(),
+                space_id: Some(crate::world::components::SpaceId(7)),
                 tile_position: Some(TilePosition::new(7, 6)),
                 collider: false,
                 movable: false,
@@ -680,6 +820,11 @@ mod tests {
             app.world().resource::<ObjectRegistry>().next_runtime_id(),
             1000
         );
+        assert!(app
+            .world()
+            .resource::<SpaceManager>()
+            .get(crate::world::components::SpaceId(7))
+            .is_some());
 
         let restored_players = {
             let world = app.world_mut();

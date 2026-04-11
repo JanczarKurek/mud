@@ -75,7 +75,9 @@ impl SpaceManager {
     }
 
     pub fn persistent_space_id(&self, authored_id: &str) -> Option<SpaceId> {
-        self.persistent_spaces_by_authored_id.get(authored_id).copied()
+        self.persistent_spaces_by_authored_id
+            .get(authored_id)
+            .copied()
     }
 
     pub fn portal_instance(&self, key: &PortalInstanceKey) -> Option<SpaceId> {

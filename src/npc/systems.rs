@@ -145,12 +145,9 @@ fn choose_roaming_step(
         let target_position =
             TilePosition::new(tile_position.x + delta.x, tile_position.y + delta.y);
 
-        if blocker_query
-            .iter()
-            .any(|(resident, blocker_position)| {
-                resident.space_id == space_id && *blocker_position == target_position
-            })
-        {
+        if blocker_query.iter().any(|(resident, blocker_position)| {
+            resident.space_id == space_id && *blocker_position == target_position
+        }) {
             continue;
         }
 
@@ -158,11 +155,14 @@ fn choose_roaming_step(
             continue;
         }
 
-        if npc_positions.iter().any(|(other_entity, other_space_id, other_position)| {
-            *other_space_id == space_id
-                && *other_entity != entity
-                && *other_position == target_position
-        }) {
+        if npc_positions
+            .iter()
+            .any(|(other_entity, other_space_id, other_position)| {
+                *other_space_id == space_id
+                    && *other_entity != entity
+                    && *other_position == target_position
+            })
+        {
             continue;
         }
 
@@ -307,12 +307,9 @@ fn is_blocked_position(
     npc_positions: &[(Entity, SpaceId, TilePosition)],
     respect_player_tile: bool,
 ) -> bool {
-    if blocker_query
-        .iter()
-        .any(|(resident, blocker_position)| {
-            resident.space_id == space_id && *blocker_position == target_position
-        })
-    {
+    if blocker_query.iter().any(|(resident, blocker_position)| {
+        resident.space_id == space_id && *blocker_position == target_position
+    }) {
         return true;
     }
 
@@ -322,11 +319,13 @@ fn is_blocked_position(
         return true;
     }
 
-    npc_positions.iter().any(|(other_entity, other_space_id, other_position)| {
-        *other_space_id == space_id
-            && *other_entity != entity
-            && *other_position == target_position
-    })
+    npc_positions
+        .iter()
+        .any(|(other_entity, other_space_id, other_position)| {
+            *other_space_id == space_id
+                && *other_entity != entity
+                && *other_position == target_position
+        })
 }
 
 fn chebyshev_distance(a: TilePosition, b: TilePosition) -> i32 {

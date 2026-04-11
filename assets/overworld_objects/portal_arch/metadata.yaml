@@ -1,0 +1,8 @@
+extends: static_world
+name: Portal Arch
+description: A carved stone arch humming with a stable way back to the surface.
+render:
+  z_index: 0.24
+  debug_color: [109, 196, 205]
+  debug_size: 0.8
+  sprite_path: overworld_objects/portal_arch/sprite.png

@@ -1,0 +1,8 @@
+extends: obstacle
+name: Crystal Cluster
+description: A sharp growth of glowing crystals anchored into the cave floor.
+render:
+  z_index: 0.28
+  debug_color: [88, 212, 220]
+  debug_size: 0.78
+  sprite_path: overworld_objects/crystal_cluster/sprite.png

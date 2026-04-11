@@ -9,6 +9,11 @@ portals:
     destination_space_id: starter_cellar
     destination_tile: { x: 6, y: 1 }
     destination_permanence: ephemeral
+  - id: underworld_sinkhole
+    source: { x: 31, y: 23 }
+    destination_space_id: underworld
+    destination_tile: { x: 3, y: 14 }
+    destination_permanence: persistent
 objects:
   - type: water
     placement:
@@ -129,6 +134,9 @@ objects:
       - { x: 34, y: 24 }
       - { x: 35, y: 24 }
       - { x: 36, y: 23 }
+  - id: 305
+    type: sinkhole
+    placement: { x: 31, y: 23 }
   - id: 300
     type: barrel
     placement: { x: 20, y: 13 }

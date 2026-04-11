@@ -131,12 +131,18 @@ impl SpaceDefinitions {
         let mut spaces = HashMap::new();
 
         let entries = fs::read_dir(path).unwrap_or_else(|error| {
-            panic!("Failed to read map layouts directory {}: {error}", path.display())
+            panic!(
+                "Failed to read map layouts directory {}: {error}",
+                path.display()
+            )
         });
 
         for entry in entries {
             let entry = entry.unwrap_or_else(|error| {
-                panic!("Failed to read map layout entry in {}: {error}", path.display())
+                panic!(
+                    "Failed to read map layout entry in {}: {error}",
+                    path.display()
+                )
             });
             let file_path = entry.path();
             if !file_path.is_file()
@@ -151,7 +157,10 @@ impl SpaceDefinitions {
 
             let mut definition: SpaceDefinition =
                 serde_yaml::from_str(&yaml).unwrap_or_else(|error| {
-                    panic!("Failed to parse map layout {}: {error}", file_path.display())
+                    panic!(
+                        "Failed to parse map layout {}: {error}",
+                        file_path.display()
+                    )
                 });
 
             if definition.authored_id.trim().is_empty() {

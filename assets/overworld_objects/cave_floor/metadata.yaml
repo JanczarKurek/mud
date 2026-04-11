@@ -1,0 +1,7 @@
+extends: ground_tile
+name: Cave Floor
+description: Packed subterranean earth worn smooth by underground traffic.
+render:
+  debug_color: [71, 58, 48]
+  debug_size: 0.96
+  sprite_path: overworld_objects/cave_floor/sprite.png

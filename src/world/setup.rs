@@ -8,8 +8,8 @@ use crate::persistence::WorldSnapshotStatus;
 use crate::player::components::{BaseStats, DerivedStats, VitalStats};
 use crate::world::components::{
     ClientProjectedWorldObject, ClientRemotePlayerVisual, Collider, CombatHealthBar, Container,
-    DisplayedVitalStats, HealthBarDisplayPolicy, Movable, OverworldObject, SpaceId,
-    SpacePosition, SpaceResident, Storable, TilePosition, WorldVisual,
+    DisplayedVitalStats, HealthBarDisplayPolicy, Movable, OverworldObject, SpaceId, SpacePosition,
+    SpaceResident, Storable, TilePosition, WorldVisual,
 };
 use crate::world::map_layout::{
     MapBehavior, MapObjectInstance, PortalDefinition, SpaceDefinition, SpaceDefinitions,
@@ -394,21 +394,21 @@ pub fn spawn_client_projected_world_object(
     let sprite = sprite_for_definition(asset_server, definition, world_config);
     let entity = commands
         .spawn((
-        ClientProjectedWorldObject {
-            object_id,
-            definition_id: definition_id.to_owned(),
-        },
-        SpaceResident {
-            space_id: position.space_id,
-        },
-        position.tile_position,
-        WorldVisual {
-            z_index: definition.render.z_index,
-        },
-        DisplayedVitalStats::default(),
-        sprite,
-        Transform::from_xyz(0.0, 0.0, definition.render.z_index),
-    ))
+            ClientProjectedWorldObject {
+                object_id,
+                definition_id: definition_id.to_owned(),
+            },
+            SpaceResident {
+                space_id: position.space_id,
+            },
+            position.tile_position,
+            WorldVisual {
+                z_index: definition.render.z_index,
+            },
+            DisplayedVitalStats::default(),
+            sprite,
+            Transform::from_xyz(0.0, 0.0, definition.render.z_index),
+        ))
         .id();
 
     if is_npc {

@@ -1,0 +1,8 @@
+extends: static_world
+name: Sinkhole
+description: A dark, narrow break in the ground leading below.
+render:
+  z_index: 0.18
+  debug_color: [56, 42, 32]
+  debug_size: 0.72
+  sprite_path: overworld_objects/sinkhole/sprite.png

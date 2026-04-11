@@ -11,6 +11,7 @@ Path:
 
 Current example:
 - `assets/maps/overworld.yaml`
+- `assets/maps/underworld.yaml`
 
 Purpose:
 - Describes one authored space definition.
@@ -219,6 +220,7 @@ Notes:
 - Spaces with `persistent` permanence are loaded/shared world spaces.
 - Spaces with `ephemeral` permanence may be instantiated on demand and despawned when empty.
 - Portals are authored per space and connect a source tile to another authored space definition.
+- Portal tiles can also hold normal non-colliding objects, which is how visible entrances/exits such as sinkholes or portal arches are authored.
 - Each object may exist in at most one place:
   - placed in the world via `placement`
   - inside exactly one container via another object's `contents`

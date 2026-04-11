@@ -1,0 +1,8 @@
+extends: obstacle
+name: Cave Wall
+description: Jagged bedrock that closes off the deeper tunnels.
+render:
+  z_index: 0.3
+  debug_color: [93, 81, 72]
+  debug_size: 0.94
+  sprite_path: overworld_objects/cave_wall/sprite.png
