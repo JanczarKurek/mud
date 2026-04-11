@@ -9,6 +9,8 @@
 - Decide how we want to represent stacked map objects visually once trees, items, and walls can share space.
 - Decide whether decorative objects like flowers should share tiles with blocking objects through explicit layering rules.
 - Decide how authored maps should support ranges/rectangles/brushes so large layouts are not verbose YAML tile lists.
+- Finish migrating persistence/save data to serialize multiple runtime spaces instead of the old single-map dump format.
+- Add dedicated ECS query helpers/system params for common same-space access patterns so AI and interaction systems stop hand-filtering residents.
 
 ## Risks
 
@@ -52,6 +54,7 @@
 - Allowed right-click context interactions and combat targeting against nearby remote players.
 - Made players block movement and occupied-tile placement for other players through the authoritative collider path.
 - Added server-side world-state dumping on graceful exit, including `Ctrl+C` handling and JSON save output for authoritative players, objects, and runtime registry state.
+- Added first-pass authored multi-space support with `persistent`/`ephemeral` space definitions, portal travel, shared runtime dungeon instancing per entrance, and same-space snapshot filtering for clients.
 
 ## Later Ideas
 

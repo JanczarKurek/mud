@@ -6,7 +6,7 @@ use crate::combat::resources::BattleTurnTimer;
 use crate::magic::resources::SpellDefinitions;
 use crate::npc::components::Npc;
 use crate::player::components::{ChatLog, DerivedStats, Player, VitalStats};
-use crate::world::components::{OverworldObject, TilePosition};
+use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
 
@@ -15,6 +15,7 @@ struct CombatantSnapshot {
     entity: Entity,
     target: Option<Entity>,
     attack_profile: AttackProfile,
+    space_id: crate::world::components::SpaceId,
     position: TilePosition,
     name: String,
     strength: i32,
@@ -23,19 +24,24 @@ struct CombatantSnapshot {
 
 pub fn clear_invalid_combat_targets(
     mut commands: Commands,
-    target_query: Query<(Entity, &CombatTarget, &TilePosition, Option<&CombatLeash>)>,
-    entity_query: Query<&TilePosition>,
+    target_query: Query<(Entity, &CombatTarget, &SpaceResident, &TilePosition, Option<&CombatLeash>)>,
+    entity_query: Query<(&SpaceResident, &TilePosition)>,
 ) {
-    for (entity, combat_target, attacker_position, leash) in &target_query {
+    for (entity, combat_target, attacker_space, attacker_position, leash) in &target_query {
         if combat_target.entity == entity {
             commands.entity(entity).remove::<CombatTarget>();
             continue;
         }
 
-        let Ok(target_position) = entity_query.get(combat_target.entity) else {
+        let Ok((target_space, target_position)) = entity_query.get(combat_target.entity) else {
             commands.entity(entity).remove::<CombatTarget>();
             continue;
         };
+
+        if attacker_space.space_id != target_space.space_id {
+            commands.entity(entity).remove::<CombatTarget>();
+            continue;
+        }
 
         if let Some(leash) = leash {
             let distance = chebyshev_distance(attacker_position, target_position);
@@ -54,6 +60,7 @@ pub fn resolve_battle_turn(
             Entity,
             Option<&CombatTarget>,
             &AttackProfile,
+            &SpaceResident,
             &TilePosition,
             &OverworldObject,
             &DerivedStats,
@@ -84,6 +91,7 @@ pub fn resolve_battle_turn(
                 entity,
                 combat_target,
                 attack_profile,
+                space_resident,
                 position,
                 overworld_object,
                 derived_stats,
@@ -92,6 +100,7 @@ pub fn resolve_battle_turn(
                 entity,
                 target: combat_target.map(|target| target.entity),
                 attack_profile: *attack_profile,
+                space_id: space_resident.space_id,
                 position: *position,
                 name: combatant_name(
                     overworld_object,
@@ -121,7 +130,7 @@ pub fn resolve_battle_turn(
             continue;
         };
 
-        if target.health <= 0.0 {
+        if target.health <= 0.0 || target.space_id != attacker.space_id {
             continue;
         }
 

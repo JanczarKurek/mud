@@ -13,12 +13,26 @@ Current example:
 - `assets/maps/overworld.yaml`
 
 Purpose:
-- Describes the tile dimensions of a map.
+- Describes one authored space definition.
+- Defines the tile dimensions of that space.
 - Defines the default fill object type for every tile.
 - Defines explicit object instances with stable numeric IDs.
 - Allows objects to exist on the map, inside containers, or nowhere.
+- Defines portal links between spaces.
 
 Top-level fields:
+
+### `authored_id`
+- Type: string
+- Meaning: stable authored identifier for the space
+- This is used by portal destinations and runtime space instancing
+
+### `permanence`
+- Type: string
+- Allowed values:
+  - `persistent`
+  - `ephemeral`
+- Meaning: default runtime lifetime policy for this space definition
 
 ### `width`
 - Type: integer
@@ -32,6 +46,36 @@ Top-level fields:
 - Type: string
 - Meaning: object definition ID that fills every tile before explicit object instances are applied
 - This should match a directory name under `assets/overworld_objects/`
+
+### `portals`
+- Type: list of portal mappings
+- Optional: yes
+- Default: empty list
+- Meaning: tile-triggered links to another authored space
+
+Portal fields:
+
+### `id`
+- Type: string
+- Meaning: stable portal identifier within the source space
+
+### `source`
+- Type: tile coordinate mapping
+- Meaning: tile in this space that triggers the transition
+
+### `destination_space_id`
+- Type: string
+- Meaning: authored ID of the destination space
+
+### `destination_tile`
+- Type: tile coordinate mapping
+- Meaning: tile where the traveler appears in the destination space
+
+### `destination_permanence`
+- Type: string or omitted
+- Optional: yes
+- Meaning: optional runtime permanence override for the instantiated destination
+- If omitted, the destination space definition's own `permanence` is used
 
 ### `objects`
 - Type: list of object entries
@@ -172,6 +216,9 @@ Anonymous placement group example:
 ```
 
 Notes:
+- Spaces with `persistent` permanence are loaded/shared world spaces.
+- Spaces with `ephemeral` permanence may be instantiated on demand and despawned when empty.
+- Portals are authored per space and connect a source tile to another authored space definition.
 - Each object may exist in at most one place:
   - placed in the world via `placement`
   - inside exactly one container via another object's `contents`

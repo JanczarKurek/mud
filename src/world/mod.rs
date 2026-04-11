@@ -9,14 +9,16 @@ pub mod systems;
 use bevy::prelude::*;
 
 use crate::game::systems::apply_game_events_to_client_state;
-use crate::world::map_layout::MapLayout;
+use crate::world::map_layout::SpaceDefinitions;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
-use crate::world::resources::{ClientRemotePlayerProjectionState, ClientWorldProjectionState};
-use crate::world::setup::{spawn_ground_tiles, spawn_world};
+use crate::world::resources::{
+    ClientRemotePlayerProjectionState, ClientWorldProjectionState, SpaceManager,
+};
+use crate::world::setup::{initialize_runtime_spaces, spawn_ground_tiles_for_current_space};
 use crate::world::systems::{
-    sync_client_world_projection, sync_combat_health_bars, sync_remote_player_projection,
-    sync_tile_transforms,
+    cleanup_empty_ephemeral_spaces, sync_client_world_projection, sync_combat_health_bars,
+    sync_remote_player_projection, sync_tile_transforms,
 };
 
 pub struct WorldServerPlugin;
@@ -25,54 +27,62 @@ pub struct WorldClientPlugin;
 
 impl Plugin for WorldServerPlugin {
     fn build(&self, app: &mut App) {
-        let map_layout = MapLayout::load_from_disk();
-        let world_config = WorldConfig {
-            map_width: map_layout.width,
-            map_height: map_layout.height,
-            tile_size: 48.0,
-        };
-        let object_registry = ObjectRegistry::from_map_layout(&map_layout);
+        let authored_spaces = SpaceDefinitions::load_from_disk();
+        let bootstrap_space = authored_spaces.bootstrap_space();
 
-        app.insert_resource(world_config)
-            .insert_resource(map_layout)
-            .insert_resource(object_registry)
-            .insert_resource(OverworldObjectDefinitions::load_from_disk())
-            .add_systems(Startup, spawn_world);
+        app.insert_resource(WorldConfig {
+            current_space_id: crate::world::components::SpaceId(0),
+            map_width: bootstrap_space.width,
+            map_height: bootstrap_space.height,
+            tile_size: 48.0,
+            fill_object_type: bootstrap_space.fill_object_type.clone(),
+        })
+        .insert_resource(authored_spaces.clone())
+        .insert_resource(SpaceManager::default())
+        .insert_resource(ObjectRegistry::from_space_definitions(&authored_spaces))
+        .insert_resource(OverworldObjectDefinitions::load_from_disk())
+        .add_systems(Startup, initialize_runtime_spaces)
+        .add_systems(Update, cleanup_empty_ephemeral_spaces);
     }
 }
 
 impl Plugin for WorldClientPlugin {
     fn build(&self, app: &mut App) {
-        let map_layout = MapLayout::load_from_disk();
-        let world_config = WorldConfig {
-            map_width: map_layout.width,
-            map_height: map_layout.height,
-            tile_size: 48.0,
-        };
-        let object_registry = ObjectRegistry::from_map_layout(&map_layout);
+        let authored_spaces = SpaceDefinitions::load_from_disk();
+        let bootstrap_space = authored_spaces.bootstrap_space();
+        let object_registry = ObjectRegistry::from_space_definitions(&authored_spaces);
 
-        app.insert_resource(world_config)
-            .insert_resource(map_layout)
-            .insert_resource(object_registry)
-            .insert_resource(OverworldObjectDefinitions::load_from_disk())
-            .insert_resource(ClientWorldProjectionState::default())
-            .insert_resource(ClientRemotePlayerProjectionState::default())
-            .add_systems(Startup, spawn_ground_tiles)
-            .add_systems(
-                Update,
-                (
-                    sync_client_world_projection.after(apply_game_events_to_client_state),
-                    sync_remote_player_projection.after(apply_game_events_to_client_state),
-                    sync_tile_transforms,
-                    sync_combat_health_bars,
-                ),
-            );
+        app.insert_resource(WorldConfig {
+            current_space_id: crate::world::components::SpaceId(0),
+            map_width: bootstrap_space.width,
+            map_height: bootstrap_space.height,
+            tile_size: 48.0,
+            fill_object_type: bootstrap_space.fill_object_type.clone(),
+        })
+        .insert_resource(authored_spaces)
+        .insert_resource(object_registry)
+        .insert_resource(OverworldObjectDefinitions::load_from_disk())
+        .insert_resource(ClientWorldProjectionState::default())
+        .insert_resource(ClientRemotePlayerProjectionState::default())
+        .add_systems(Startup, spawn_ground_tiles_for_current_space)
+        .add_systems(
+            Update,
+            (
+                sync_client_world_projection.after(apply_game_events_to_client_state),
+                sync_remote_player_projection.after(apply_game_events_to_client_state),
+                sync_tile_transforms,
+                sync_combat_health_bars,
+                spawn_ground_tiles_for_current_space,
+            ),
+        );
     }
 }
 
-#[derive(Resource)]
+#[derive(Resource, Clone, Debug)]
 pub struct WorldConfig {
+    pub current_space_id: crate::world::components::SpaceId,
     pub map_width: i32,
     pub map_height: i32,
     pub tile_size: f32,
+    pub fill_object_type: String,
 }

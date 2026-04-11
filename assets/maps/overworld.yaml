@@ -1,6 +1,14 @@
+authored_id: overworld
+permanence: persistent
 width: 40
 height: 30
 fill_object_type: grass
+portals:
+  - id: starter_cellar
+    source: { x: 6, y: 18 }
+    destination_space_id: starter_cellar
+    destination_tile: { x: 6, y: 1 }
+    destination_permanence: ephemeral
 objects:
   - type: water
     placement:

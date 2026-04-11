@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::game::commands::GameCommand;
 use crate::player::components::{ChatLog, Inventory, PlayerId};
+use crate::world::components::{SpacePosition, TilePosition};
 
 pub type InventoryState = Inventory;
 pub type ChatLogState = ChatLog;
@@ -62,11 +63,13 @@ pub struct ClientVitalStats {
     pub max_mana: f32,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ClientWorldObjectState {
     pub object_id: u64,
     pub definition_id: String,
-    pub tile_position: crate::world::components::TilePosition,
+    pub position: SpacePosition,
+    pub tile_position: TilePosition,
+    pub vitals: Option<ClientVitalStats>,
     pub is_container: bool,
     pub is_npc: bool,
     pub is_movable: bool,
@@ -76,8 +79,18 @@ pub struct ClientWorldObjectState {
 pub struct ClientRemotePlayerState {
     pub player_id: PlayerId,
     pub object_id: u64,
-    pub tile_position: crate::world::components::TilePosition,
+    pub position: SpacePosition,
+    pub tile_position: TilePosition,
     pub vitals: ClientVitalStats,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ClientSpaceState {
+    pub space_id: crate::world::components::SpaceId,
+    pub authored_id: String,
+    pub width: i32,
+    pub height: i32,
+    pub fill_object_type: String,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -89,7 +102,11 @@ pub enum GameEvent {
         lines: Vec<String>,
     },
     PlayerPositionChanged {
-        tile_position: crate::world::components::TilePosition,
+        position: SpacePosition,
+        tile_position: TilePosition,
+    },
+    CurrentSpaceChanged {
+        space: ClientSpaceState,
     },
     PlayerVitalsChanged {
         vitals: ClientVitalStats,
@@ -131,7 +148,9 @@ pub struct ClientGameState {
     pub local_player_id: Option<PlayerId>,
     pub inventory: Inventory,
     pub chat_log_lines: Vec<String>,
-    pub player_tile_position: Option<crate::world::components::TilePosition>,
+    pub player_position: Option<SpacePosition>,
+    pub player_tile_position: Option<TilePosition>,
+    pub current_space: Option<ClientSpaceState>,
     pub player_vitals: Option<ClientVitalStats>,
     pub player_storage_slots: usize,
     pub current_target_object_id: Option<u64>,

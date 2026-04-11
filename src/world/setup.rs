@@ -8,24 +8,76 @@ use crate::persistence::WorldSnapshotStatus;
 use crate::player::components::{BaseStats, DerivedStats, VitalStats};
 use crate::world::components::{
     ClientProjectedWorldObject, ClientRemotePlayerVisual, Collider, CombatHealthBar, Container,
-    Movable, OverworldObject, Storable, TilePosition, WorldVisual,
+    DisplayedVitalStats, HealthBarDisplayPolicy, Movable, OverworldObject, SpaceId,
+    SpacePosition, SpaceResident, Storable, TilePosition, WorldVisual,
 };
-use crate::world::map_layout::{MapBehavior, MapLayout, MapObjectInstance};
+use crate::world::map_layout::{
+    MapBehavior, MapObjectInstance, PortalDefinition, SpaceDefinition, SpaceDefinitions,
+    SpacePermanence,
+};
 use crate::world::object_definitions::{OverworldObjectDefinition, OverworldObjectDefinitions};
+use crate::world::resources::{PortalInstanceKey, RuntimeSpace, SpaceManager};
 use crate::world::WorldConfig;
 
-pub fn spawn_world(
+pub fn initialize_runtime_spaces(
     mut commands: Commands,
-    map_layout: Res<MapLayout>,
-    definitions: Res<OverworldObjectDefinitions>,
+    definitions: Res<SpaceDefinitions>,
+    object_definitions: Res<OverworldObjectDefinitions>,
+    mut space_manager: ResMut<SpaceManager>,
     snapshot_status: Option<Res<WorldSnapshotStatus>>,
 ) {
     if snapshot_status.as_ref().is_some_and(|status| status.loaded) {
         return;
     }
 
-    for object in &map_layout.resolved_objects {
-        if map_layout.is_contained(object.id) {
+    for definition in definitions.iter() {
+        if !definition.permanence.is_persistent() {
+            continue;
+        }
+
+        let space_id = instantiate_space(
+            &mut commands,
+            &mut space_manager,
+            definition,
+            &object_definitions,
+            None,
+            definition.permanence,
+        );
+
+        if definition.authored_id == definitions.bootstrap_space_id {
+            commands.insert_resource(WorldConfig {
+                current_space_id: space_id,
+                map_width: definition.width,
+                map_height: definition.height,
+                tile_size: 48.0,
+                fill_object_type: definition.fill_object_type.clone(),
+            });
+        }
+    }
+}
+
+pub fn instantiate_space(
+    commands: &mut Commands,
+    space_manager: &mut SpaceManager,
+    definition: &SpaceDefinition,
+    definitions: &OverworldObjectDefinitions,
+    instance_owner: Option<PortalInstanceKey>,
+    permanence: SpacePermanence,
+) -> SpaceId {
+    let space_id = space_manager.allocate_space_id();
+    let runtime_space = RuntimeSpace {
+        id: space_id,
+        authored_id: definition.authored_id.clone(),
+        width: definition.width,
+        height: definition.height,
+        fill_object_type: definition.fill_object_type.clone(),
+        permanence,
+        instance_owner,
+    };
+    space_manager.insert_space(runtime_space);
+
+    for object in &definition.resolved_objects {
+        if definition.is_contained(object.id) {
             continue;
         }
 
@@ -34,22 +86,67 @@ pub fn spawn_world(
         };
 
         spawn_overworld_object_instance(
-            &mut commands,
-            &map_layout,
-            &definitions,
+            commands,
+            definitions,
             object,
+            space_id,
             placement.to_tile_position(),
         );
     }
+
+    space_id
 }
 
-pub fn spawn_ground_tiles(
+pub fn resolve_portal_destination_space(
+    commands: &mut Commands,
+    authored_spaces: &SpaceDefinitions,
+    definitions: &OverworldObjectDefinitions,
+    space_manager: &mut SpaceManager,
+    source_space_id: SpaceId,
+    portal: &PortalDefinition,
+) -> Option<SpaceId> {
+    let destination_definition = authored_spaces.get(&portal.destination_space_id)?;
+    let permanence = portal
+        .destination_permanence
+        .unwrap_or(destination_definition.permanence);
+
+    if permanence.is_persistent() {
+        return space_manager.persistent_space_id(&portal.destination_space_id);
+    }
+
+    let instance_key = PortalInstanceKey {
+        source_space_id,
+        portal_id: portal.id.clone(),
+    };
+    if let Some(space_id) = space_manager.portal_instance(&instance_key) {
+        return Some(space_id);
+    }
+
+    Some(instantiate_space(
+        commands,
+        space_manager,
+        destination_definition,
+        definitions,
+        Some(instance_key),
+        permanence,
+    ))
+}
+
+pub fn spawn_ground_tiles_for_current_space(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    map_layout: Res<MapLayout>,
     definitions: Res<OverworldObjectDefinitions>,
     world_config: Res<WorldConfig>,
+    current_ground_tiles: Query<Entity, With<crate::world::components::ClientGroundTile>>,
 ) {
+    if !world_config.is_changed() {
+        return;
+    }
+
+    for entity in &current_ground_tiles {
+        commands.entity(entity).despawn();
+    }
+
     for y in 0..world_config.map_height {
         for x in 0..world_config.map_width {
             spawn_ground_tile(
@@ -57,7 +154,7 @@ pub fn spawn_ground_tiles(
                 &asset_server,
                 &definitions,
                 &world_config,
-                &map_layout.fill_object_type,
+                &world_config.fill_object_type,
                 TilePosition::new(x, y),
             );
         }
@@ -66,9 +163,9 @@ pub fn spawn_ground_tiles(
 
 pub fn spawn_overworld_object_instance(
     commands: &mut Commands,
-    map_layout: &MapLayout,
     definitions: &OverworldObjectDefinitions,
     object: &MapObjectInstance,
+    space_id: SpaceId,
     tile_position: TilePosition,
 ) {
     let container_contents = if object.contents.is_empty() {
@@ -83,6 +180,7 @@ pub fn spawn_overworld_object_instance(
         object.id,
         &object.type_id,
         container_contents,
+        space_id,
         tile_position,
     );
 
@@ -160,8 +258,6 @@ pub fn spawn_overworld_object_instance(
             }
         }
     }
-
-    let _ = map_layout;
 }
 
 pub fn attach_combat_health_bar(commands: &mut Commands, entity: Entity, tile_size: f32) {
@@ -218,6 +314,10 @@ fn spawn_ground_tile(
     let sprite = sprite_for_definition(asset_server, definition, world_config);
 
     commands.spawn((
+        crate::world::components::ClientGroundTile,
+        SpaceResident {
+            space_id: world_config.current_space_id,
+        },
         tile_position,
         WorldVisual {
             z_index: definition.render.z_index,
@@ -233,6 +333,7 @@ pub fn spawn_overworld_object(
     object_id: u64,
     definition_id: &str,
     container_contents: Option<Vec<u64>>,
+    space_id: SpaceId,
     tile_position: TilePosition,
 ) -> Entity {
     let mut entity = commands.spawn((
@@ -240,6 +341,7 @@ pub fn spawn_overworld_object(
             object_id,
             definition_id: definition_id.to_owned(),
         },
+        SpaceResident { space_id },
         tile_position,
     ));
 
@@ -259,21 +361,18 @@ pub fn spawn_overworld_object(
         entity.insert(Storable);
     }
 
-    if let Some(container_capacity) = definition.container_capacity {
-        let mut slots = vec![None; container_capacity];
-        if let Some(contents) = container_contents {
-            assert!(
-                contents.len() <= container_capacity,
-                "Container object {} exceeds capacity {}",
-                object_id,
-                container_capacity
-            );
-            for (index, contained_object_id) in contents.into_iter().enumerate() {
-                slots[index] = Some(contained_object_id);
-            }
-        }
+    if let Some(capacity) = definition.container_capacity {
+        entity.insert(Container {
+            slots: vec![None; capacity],
+        });
 
-        entity.insert(Container { slots });
+        if let Some(container_contents) = container_contents {
+            let mut slots = vec![None; capacity];
+            for (index, object_id) in container_contents.into_iter().enumerate().take(capacity) {
+                slots[index] = Some(object_id);
+            }
+            entity.insert(Container { slots });
+        }
     }
 
     entity.id()
@@ -286,7 +385,7 @@ pub fn spawn_client_projected_world_object(
     world_config: &WorldConfig,
     object_id: u64,
     definition_id: &str,
-    tile_position: TilePosition,
+    position: SpacePosition,
     is_npc: bool,
 ) -> Entity {
     let definition = definitions
@@ -295,20 +394,27 @@ pub fn spawn_client_projected_world_object(
     let sprite = sprite_for_definition(asset_server, definition, world_config);
     let entity = commands
         .spawn((
-            ClientProjectedWorldObject {
-                object_id,
-                definition_id: definition_id.to_owned(),
-            },
-            tile_position,
-            WorldVisual {
-                z_index: definition.render.z_index,
-            },
-            sprite,
-            Transform::from_xyz(0.0, 0.0, definition.render.z_index),
-        ))
+        ClientProjectedWorldObject {
+            object_id,
+            definition_id: definition_id.to_owned(),
+        },
+        SpaceResident {
+            space_id: position.space_id,
+        },
+        position.tile_position,
+        WorldVisual {
+            z_index: definition.render.z_index,
+        },
+        DisplayedVitalStats::default(),
+        sprite,
+        Transform::from_xyz(0.0, 0.0, definition.render.z_index),
+    ))
         .id();
 
     if is_npc {
+        commands.entity(entity).insert(HealthBarDisplayPolicy {
+            always_visible: false,
+        });
         attach_combat_health_bar(commands, entity, world_config.tile_size);
     }
 
@@ -322,27 +428,36 @@ pub fn spawn_client_remote_player(
     world_config: &WorldConfig,
     player_id: crate::player::components::PlayerId,
     object_id: u64,
-    tile_position: TilePosition,
+    position: SpacePosition,
 ) -> Entity {
     let definition = definitions
         .get("player")
         .unwrap_or_else(|| panic!("Missing overworld object definition for id 'player'"));
-    let sprite = sprite_for_definition(asset_server, definition, world_config);
+    let mut sprite = sprite_for_definition(asset_server, definition, world_config);
+    sprite.color = Color::srgba(0.82, 0.92, 1.0, 0.8);
+
     let entity = commands
         .spawn((
             ClientRemotePlayerVisual {
                 player_id,
                 object_id,
             },
-            tile_position,
+            SpaceResident {
+                space_id: position.space_id,
+            },
+            position.tile_position,
             WorldVisual {
                 z_index: definition.render.z_index,
             },
+            DisplayedVitalStats::default(),
             sprite,
             Transform::from_xyz(0.0, 0.0, definition.render.z_index),
         ))
         .id();
 
+    commands.entity(entity).insert(HealthBarDisplayPolicy {
+        always_visible: false,
+    });
     attach_combat_health_bar(commands, entity, world_config.tile_size);
     entity
 }
@@ -364,6 +479,7 @@ fn sprite_for_definition(
             Vec2::splat(world_config.tile_size * definition.render.debug_size),
         )
     };
+
     sprite.image_mode = SpriteImageMode::Auto;
     sprite
 }

@@ -5,7 +5,10 @@ use crate::player::components::{
     BaseStats, ChatLog, DerivedStats, Inventory, MovementCooldown, Player, PlayerId,
     PlayerIdentity, VitalStats,
 };
-use crate::world::components::{Collider, OverworldObject, TilePosition, WorldVisual};
+use crate::world::components::{
+    Collider, DisplayedVitalStats, HealthBarDisplayPolicy, OverworldObject, SpaceResident,
+    TilePosition, WorldVisual,
+};
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::setup::attach_combat_health_bar;
@@ -63,6 +66,9 @@ pub fn spawn_player_authoritative(
                 object_id,
                 definition_id: "player".to_owned(),
             },
+            SpaceResident {
+                space_id: _world_config.current_space_id,
+            },
             tile_position,
         ))
         .id()
@@ -107,6 +113,10 @@ pub fn spawn_player_visual(
     commands.entity(entity).insert((
         WorldVisual {
             z_index: definition.render.z_index,
+        },
+        DisplayedVitalStats::default(),
+        HealthBarDisplayPolicy {
+            always_visible: true,
         },
         sprite,
         Transform::from_xyz(0.0, 0.0, definition.render.z_index),

@@ -4,8 +4,7 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::magic::resources::SpellDefinitions;
-use crate::world::map_layout::MapLayout;
-use crate::world::map_layout::ObjectProperties;
+use crate::world::map_layout::{ObjectProperties, SpaceDefinitions};
 use crate::world::object_definitions::OverworldObjectDefinitions;
 
 #[derive(Resource, Default)]
@@ -23,15 +22,22 @@ pub struct ObjectRegistrySnapshotEntry {
 }
 
 impl ObjectRegistry {
-    pub fn from_map_layout(map_layout: &MapLayout) -> Self {
+    pub fn from_space_definitions(space_definitions: &SpaceDefinitions) -> Self {
         let mut type_ids = HashMap::new();
         let mut properties = HashMap::new();
         let mut max_id = 0;
 
-        for object in &map_layout.resolved_objects {
-            type_ids.insert(object.id, object.type_id.clone());
-            properties.insert(object.id, object.properties.clone());
-            max_id = max_id.max(object.id);
+        for definition in space_definitions.iter() {
+            for object in &definition.resolved_objects {
+                let previous = type_ids.insert(object.id, object.type_id.clone());
+                assert!(
+                    previous.is_none(),
+                    "Duplicate authored object id {} across spaces",
+                    object.id
+                );
+                properties.insert(object.id, object.properties.clone());
+                max_id = max_id.max(object.id);
+            }
         }
 
         Self {

@@ -3,25 +3,60 @@ use std::fs;
 use std::path::Path;
 
 use bevy::prelude::*;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::world::components::TilePosition;
 
-const MAP_LAYOUT_PATH: &str = "assets/maps/overworld.yaml";
+const MAP_LAYOUTS_PATH: &str = "assets/maps";
+const DEFAULT_BOOTSTRAP_SPACE_ID: &str = "overworld";
 
 pub type ObjectProperties = HashMap<String, String>;
 
-#[derive(Resource, Clone, Debug, Deserialize)]
-pub struct MapLayout {
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SpacePermanence {
+    Persistent,
+    Ephemeral,
+}
+
+impl SpacePermanence {
+    pub const fn is_persistent(self) -> bool {
+        matches!(self, Self::Persistent)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Resource)]
+pub struct SpaceDefinitions {
+    pub bootstrap_space_id: String,
+    pub spaces: HashMap<String, SpaceDefinition>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct SpaceDefinition {
+    pub authored_id: String,
     pub width: i32,
     pub height: i32,
     #[serde(alias = "fill_object")]
     pub fill_object_type: String,
+    #[serde(default = "default_persistent_permanence")]
+    pub permanence: SpacePermanence,
+    #[serde(default)]
+    pub portals: Vec<PortalDefinition>,
     pub objects: Vec<MapObjectEntry>,
     #[serde(skip)]
     pub resolved_objects: Vec<MapObjectInstance>,
     #[serde(skip)]
     object_indices: HashMap<u64, usize>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct PortalDefinition {
+    pub id: String,
+    pub source: TileCoordinate,
+    pub destination_space_id: String,
+    pub destination_tile: TileCoordinate,
+    #[serde(default)]
+    pub destination_permanence: Option<SpacePermanence>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -70,7 +105,7 @@ pub enum MapBehavior {
     },
 }
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TileCoordinate {
     pub x: i32,
     pub y: i32,
@@ -90,19 +125,104 @@ impl TileCoordinate {
     }
 }
 
-impl MapLayout {
+impl SpaceDefinitions {
     pub fn load_from_disk() -> Self {
-        let path = Path::new(MAP_LAYOUT_PATH);
-        let yaml = fs::read_to_string(path).unwrap_or_else(|error| {
-            panic!("Failed to read map layout {}: {error}", path.display())
+        let path = Path::new(MAP_LAYOUTS_PATH);
+        let mut spaces = HashMap::new();
+
+        let entries = fs::read_dir(path).unwrap_or_else(|error| {
+            panic!("Failed to read map layouts directory {}: {error}", path.display())
         });
 
-        let mut layout: Self = serde_yaml::from_str(&yaml).unwrap_or_else(|error| {
-            panic!("Failed to parse map layout {}: {error}", path.display())
-        });
+        for entry in entries {
+            let entry = entry.unwrap_or_else(|error| {
+                panic!("Failed to read map layout entry in {}: {error}", path.display())
+            });
+            let file_path = entry.path();
+            if !file_path.is_file()
+                || file_path.extension().and_then(|ext| ext.to_str()) != Some("yaml")
+            {
+                continue;
+            }
 
-        layout.validate();
-        layout
+            let yaml = fs::read_to_string(&file_path).unwrap_or_else(|error| {
+                panic!("Failed to read map layout {}: {error}", file_path.display())
+            });
+
+            let mut definition: SpaceDefinition =
+                serde_yaml::from_str(&yaml).unwrap_or_else(|error| {
+                    panic!("Failed to parse map layout {}: {error}", file_path.display())
+                });
+
+            if definition.authored_id.trim().is_empty() {
+                definition.authored_id = file_path
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "Failed to derive authored space id from {}",
+                            file_path.display()
+                        )
+                    })
+                    .to_owned();
+            }
+
+            definition.validate();
+            let previous = spaces.insert(definition.authored_id.clone(), definition);
+            assert!(
+                previous.is_none(),
+                "Duplicate authored space id found while loading {}",
+                file_path.display()
+            );
+        }
+
+        assert!(
+            spaces.contains_key(DEFAULT_BOOTSTRAP_SPACE_ID),
+            "Missing bootstrap space definition '{}'",
+            DEFAULT_BOOTSTRAP_SPACE_ID
+        );
+
+        for definition in spaces.values() {
+            for portal in &definition.portals {
+                assert!(
+                    spaces.contains_key(&portal.destination_space_id),
+                    "Space '{}' portal '{}' points to missing destination '{}'",
+                    definition.authored_id,
+                    portal.id,
+                    portal.destination_space_id
+                );
+            }
+        }
+
+        Self {
+            bootstrap_space_id: DEFAULT_BOOTSTRAP_SPACE_ID.to_owned(),
+            spaces,
+        }
+    }
+
+    pub fn bootstrap_space(&self) -> &SpaceDefinition {
+        self.get(&self.bootstrap_space_id).unwrap_or_else(|| {
+            panic!(
+                "Missing bootstrap space definition '{}'",
+                self.bootstrap_space_id
+            )
+        })
+    }
+
+    pub fn get(&self, authored_id: &str) -> Option<&SpaceDefinition> {
+        self.spaces.get(authored_id)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &SpaceDefinition> {
+        self.spaces.values()
+    }
+}
+
+impl SpaceDefinition {
+    pub fn portal_at(&self, tile_position: TilePosition) -> Option<&PortalDefinition> {
+        self.portals
+            .iter()
+            .find(|portal| portal.source.to_tile_position() == tile_position)
     }
 
     pub fn is_contained(&self, object_id: u64) -> bool {
@@ -120,15 +240,25 @@ impl MapLayout {
             let previous = object_indices.insert(object.id, index);
             assert!(
                 previous.is_none(),
-                "Duplicate object id {} found in map layout",
-                object.id
+                "Duplicate object id {} found in space '{}'",
+                object.id,
+                self.authored_id
             );
         }
 
         let mut location_counts: HashMap<u64, usize> = HashMap::new();
 
         for object in &self.resolved_objects {
-            if object.placement.is_some() {
+            if let Some(placement) = object.placement {
+                assert!(
+                    placement.x >= 0
+                        && placement.y >= 0
+                        && placement.x < self.width
+                        && placement.y < self.height,
+                    "Object {} placement is outside space '{}'",
+                    object.id,
+                    self.authored_id
+                );
                 *location_counts.entry(object.id).or_default() += 1;
             }
         }
@@ -137,24 +267,39 @@ impl MapLayout {
             for contained_id in &object.contents {
                 assert!(
                     *contained_id != object.id,
-                    "Object {} cannot contain itself",
-                    object.id
+                    "Object {} cannot contain itself in '{}'",
+                    object.id,
+                    self.authored_id
                 );
                 assert!(
                     object_indices.contains_key(contained_id),
-                    "Object {} references missing contained object id {}",
+                    "Object {} references missing contained object id {} in '{}'",
                     object.id,
-                    contained_id
+                    contained_id,
+                    self.authored_id
                 );
                 *location_counts.entry(*contained_id).or_default() += 1;
             }
         }
 
+        for portal in &self.portals {
+            assert!(
+                portal.source.x >= 0
+                    && portal.source.y >= 0
+                    && portal.source.x < self.width
+                    && portal.source.y < self.height,
+                "Portal '{}' source is outside space '{}'",
+                portal.id,
+                self.authored_id
+            );
+        }
+
         for (object_id, count) in location_counts {
             assert!(
                 count <= 1,
-                "Object {} appears in more than one place in the map layout",
-                object_id
+                "Object {} appears in more than one place in '{}'",
+                object_id,
+                self.authored_id
             );
         }
 
@@ -196,4 +341,8 @@ impl MapLayout {
 
         self.resolved_objects = resolved_objects;
     }
+}
+
+const fn default_persistent_permanence() -> SpacePermanence {
+    SpacePermanence::Persistent
 }

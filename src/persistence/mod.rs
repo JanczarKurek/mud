@@ -19,11 +19,12 @@ use crate::player::components::{
     PlayerIdentity, VitalStats,
 };
 use crate::world::components::{
-    Collider, Container, Movable, OverworldObject, Storable, TilePosition,
+    Collider, Container, Movable, OverworldObject, SpaceResident, Storable, TilePosition,
 };
-use crate::world::map_layout::MapLayout;
+use crate::world::map_layout::{SpaceDefinitions, SpacePermanence};
 use crate::world::object_registry::{ObjectRegistry, ObjectRegistrySnapshotEntry};
-use crate::world::setup::spawn_world;
+use crate::world::resources::{RuntimeSpace, SpaceManager};
+use crate::world::setup::initialize_runtime_spaces;
 use crate::world::WorldConfig;
 
 pub const DEFAULT_WORLD_SAVE_PATH: &str = "saves/world-state.json";
@@ -60,7 +61,7 @@ impl Plugin for PersistenceServerPlugin {
                 .unwrap_or_else(|| PathBuf::from(DEFAULT_WORLD_SAVE_PATH)),
         })
         .insert_resource(WorldSnapshotStatus::default())
-        .add_systems(Startup, load_world_from_snapshot.before(spawn_world))
+        .add_systems(Startup, load_world_from_snapshot.before(initialize_runtime_spaces))
         .add_systems(Last, save_world_on_app_exit);
     }
 }
@@ -148,7 +149,6 @@ fn save_world_on_app_exit(
     mut app_exit_reader: MessageReader<AppExit>,
     save_config: Res<WorldSaveConfig>,
     world_config: Res<WorldConfig>,
-    map_layout: Res<MapLayout>,
     object_registry: Res<ObjectRegistry>,
     tcp_server_state: Option<Res<TcpServerState>>,
     player_query: Query<
@@ -311,9 +311,9 @@ fn save_world_on_app_exit(
             tile_size: world_config.tile_size,
         },
         map_layout: MapLayoutDump {
-            width: map_layout.width,
-            height: map_layout.height,
-            fill_object_type: map_layout.fill_object_type.clone(),
+            width: world_config.map_width,
+            height: world_config.map_height,
+            fill_object_type: world_config.fill_object_type.clone(),
         },
         object_registry: ObjectRegistryDump {
             next_runtime_id: object_registry.next_runtime_id(),
@@ -344,8 +344,10 @@ fn load_world_from_snapshot(
     mut commands: Commands,
     save_config: Res<WorldSaveConfig>,
     mut snapshot_status: ResMut<WorldSnapshotStatus>,
+    authored_spaces: Res<SpaceDefinitions>,
     mut world_config: ResMut<WorldConfig>,
     mut object_registry: ResMut<ObjectRegistry>,
+    mut space_manager: ResMut<SpaceManager>,
     mut tcp_server_state: Option<ResMut<TcpServerState>>,
 ) {
     let Ok(dump) = read_world_dump(&save_config.path) else {
@@ -354,6 +356,7 @@ fn load_world_from_snapshot(
 
     let WorldStateDump {
         world_config: dump_world_config,
+        map_layout: dump_map_layout,
         object_registry: dump_registry,
         network: dump_network,
         players,
@@ -361,9 +364,23 @@ fn load_world_from_snapshot(
         ..
     } = dump;
 
+    let bootstrap_definition = authored_spaces.bootstrap_space();
+    let space_id = space_manager.allocate_space_id();
+    space_manager.insert_space(RuntimeSpace {
+        id: space_id,
+        authored_id: bootstrap_definition.authored_id.clone(),
+        width: dump_world_config.map_width,
+        height: dump_world_config.map_height,
+        fill_object_type: dump_map_layout.fill_object_type.clone(),
+        permanence: SpacePermanence::Persistent,
+        instance_owner: None,
+    });
+
+    world_config.current_space_id = space_id;
     world_config.map_width = dump_world_config.map_width;
     world_config.map_height = dump_world_config.map_height;
     world_config.tile_size = dump_world_config.tile_size;
+    world_config.fill_object_type = dump_map_layout.fill_object_type;
     *object_registry =
         ObjectRegistry::from_snapshot(dump_registry.entries, dump_registry.next_runtime_id);
     if let Some(server_state) = tcp_server_state.as_mut() {
@@ -393,6 +410,7 @@ fn load_world_from_snapshot(
                     object_id: player.object_id,
                     definition_id: "player".to_owned(),
                 },
+                SpaceResident { space_id },
                 player.tile_position,
             ))
             .id();
@@ -406,7 +424,7 @@ fn load_world_from_snapshot(
         let mut entity = commands.spawn((OverworldObject {
             object_id: object.object_id,
             definition_id: object.definition_id,
-        },));
+        }, SpaceResident { space_id }));
 
         if let Some(tile_position) = object.tile_position {
             entity.insert(tile_position);
@@ -524,6 +542,7 @@ mod tests {
                 save_path: Some(save_path.display().to_string()),
             },
         ));
+        app.update();
         app
     }
 
@@ -543,9 +562,15 @@ mod tests {
             TilePosition::new(world_config.map_width / 2, world_config.map_height / 2)
         };
         let world_config = WorldConfig {
+            current_space_id: app.world().resource::<WorldConfig>().current_space_id,
             map_width: app.world().resource::<WorldConfig>().map_width,
             map_height: app.world().resource::<WorldConfig>().map_height,
             tile_size: app.world().resource::<WorldConfig>().tile_size,
+            fill_object_type: app
+                .world()
+                .resource::<WorldConfig>()
+                .fill_object_type
+                .clone(),
         };
         spawn_player_authoritative(
             &mut app.world_mut().commands(),

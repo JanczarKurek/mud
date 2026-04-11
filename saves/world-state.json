@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "saved_at_unix_seconds": 1775916728,
+  "saved_at_unix_seconds": 1775935495,
   "world_config": {
     "map_width": 40,
     "map_height": 30,
@@ -12,7 +12,7 @@
     "fill_object_type": "grass"
   },
   "object_registry": {
-    "next_runtime_id": 1021,
+    "next_runtime_id": 1246,
     "entries": [
       {
         "object_id": 300,
@@ -696,19 +696,239 @@
         "properties": {}
       },
       {
-        "object_id": 1019,
+        "object_id": 1200,
+        "type_id": "barrel",
+        "properties": {}
+      },
+      {
+        "object_id": 1201,
+        "type_id": "potion",
+        "properties": {}
+      },
+      {
+        "object_id": 1202,
+        "type_id": "goblin",
+        "properties": {}
+      },
+      {
+        "object_id": 1203,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1204,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1205,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1206,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1207,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1208,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1209,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1210,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1211,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1212,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1213,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1214,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1215,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1216,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1217,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1218,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1219,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1220,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1221,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1222,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1223,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1224,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1225,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1226,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1227,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1228,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1229,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1230,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1231,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1232,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1233,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1234,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1235,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1236,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1237,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1238,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1239,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1240,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1241,
+        "type_id": "wall",
+        "properties": {}
+      },
+      {
+        "object_id": 1242,
         "type_id": "player",
         "properties": {}
       },
       {
-        "object_id": 1020,
+        "object_id": 1243,
+        "type_id": "player",
+        "properties": {}
+      },
+      {
+        "object_id": 1244,
+        "type_id": "player",
+        "properties": {}
+      },
+      {
+        "object_id": 1245,
         "type_id": "player",
         "properties": {}
       }
     ]
   },
   "network": {
-    "next_connection_id": 2
+    "next_connection_id": 4
   },
   "players": [],
   "world_objects": [
@@ -826,8 +1046,8 @@
       "object_id": 900,
       "definition_id": "villager",
       "tile_position": {
-        "x": 7,
-        "y": 25
+        "x": 6,
+        "y": 24
       },
       "collider": true,
       "movable": false,
@@ -882,10 +1102,10 @@
         },
         "hostile_behavior": null,
         "roaming_step_timer": {
-          "remaining_seconds": 1.2
+          "remaining_seconds": 1.1832505
         },
         "roaming_random_state": {
-          "seed": 3587332259603836844
+          "seed": 2864486513634052836
         }
       }
     },
@@ -893,8 +1113,8 @@
       "object_id": 901,
       "definition_id": "villager",
       "tile_position": {
-        "x": 34,
-        "y": 7
+        "x": 32,
+        "y": 5
       },
       "collider": true,
       "movable": false,
@@ -949,10 +1169,10 @@
         },
         "hostile_behavior": null,
         "roaming_step_timer": {
-          "remaining_seconds": 1.1798519
+          "remaining_seconds": 1.1632782
         },
         "roaming_random_state": {
-          "seed": 14819514012945421465
+          "seed": 5453495617623759795
         }
       }
     },
@@ -960,8 +1180,8 @@
       "object_id": 902,
       "definition_id": "goblin",
       "tile_position": {
-        "x": 19,
-        "y": 20
+        "x": 21,
+        "y": 18
       },
       "collider": true,
       "movable": false,
@@ -995,7 +1215,7 @@
           "storage_slots": 0
         },
         "vital_stats": {
-          "health": 107.0,
+          "health": 40.0,
           "max_health": 107.0,
           "mana": 82.0,
           "max_mana": 82.0
@@ -1021,10 +1241,10 @@
           "disengage_distance_tiles": 8
         },
         "roaming_step_timer": {
-          "remaining_seconds": 0.2953256
+          "remaining_seconds": 0.328994
         },
         "roaming_random_state": {
-          "seed": 2256104883903275674
+          "seed": 5982697190766241495
         }
       }
     },
@@ -2490,6 +2710,32 @@
       "tile_position": {
         "x": 30,
         "y": 12
+      },
+      "collider": false,
+      "movable": true,
+      "storable": true,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 1016,
+      "definition_id": "silver_ring",
+      "tile_position": {
+        "x": 7,
+        "y": 20
+      },
+      "collider": false,
+      "movable": true,
+      "storable": true,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 1017,
+      "definition_id": "copper_amulet",
+      "tile_position": {
+        "x": 9,
+        "y": 21
       },
       "collider": false,
       "movable": true,

@@ -6,8 +6,8 @@ use bevy::prelude::*;
 
 use crate::combat::components::CombatTarget;
 use crate::game::resources::{
-    ClientGameState, ClientRemotePlayerState, ClientVitalStats, ClientWorldObjectState,
-    PendingGameCommands, PendingGameUiEvents,
+    ClientGameState, ClientRemotePlayerState, ClientSpaceState, ClientVitalStats,
+    ClientWorldObjectState, PendingGameCommands, PendingGameUiEvents,
 };
 use crate::network::protocol::{ClientMessage, ServerMessage};
 use crate::network::resources::{
@@ -19,8 +19,11 @@ use crate::player::components::{
     ChatLog, DerivedStats, Inventory, Player, PlayerId, PlayerIdentity, VitalStats,
 };
 use crate::player::setup::spawn_player_authoritative;
-use crate::world::components::{Collider, Container, Movable, OverworldObject, TilePosition};
+use crate::world::components::{
+    Collider, Container, Movable, OverworldObject, SpacePosition, SpaceResident, TilePosition,
+};
 use crate::world::object_registry::ObjectRegistry;
+use crate::world::resources::SpaceManager;
 use crate::world::WorldConfig;
 
 pub fn start_tcp_server(config: Res<TcpServerConfig>, mut server_state: ResMut<TcpServerState>) {
@@ -44,8 +47,8 @@ pub fn start_tcp_server(config: Res<TcpServerConfig>, mut server_state: ResMut<T
 pub fn accept_tcp_client_connections(
     mut server_state: ResMut<TcpServerState>,
     world_config: Res<WorldConfig>,
-    collider_query: Query<&TilePosition, With<Collider>>,
-    player_position_query: Query<&TilePosition, With<Player>>,
+    collider_query: Query<(&SpaceResident, &TilePosition), With<Collider>>,
+    player_position_query: Query<(&SpaceResident, &TilePosition), With<Player>>,
     mut object_registry: ResMut<ObjectRegistry>,
     mut commands: Commands,
 ) {
@@ -65,8 +68,11 @@ pub fn accept_tcp_client_connections(
                     continue;
                 }
 
-                let Some(spawn_tile) =
-                    find_spawn_tile(&world_config, &collider_query, &player_position_query)
+                let Some(spawn_tile) = find_spawn_tile(
+                    &world_config,
+                    &collider_query,
+                    &player_position_query,
+                )
                 else {
                     warn!("rejecting TCP client from {address}: no free spawn tile");
                     continue;
@@ -150,6 +156,7 @@ pub fn flush_server_messages(
             &PlayerIdentity,
             &Inventory,
             &ChatLog,
+            &SpaceResident,
             &TilePosition,
             &VitalStats,
             &DerivedStats,
@@ -161,15 +168,18 @@ pub fn flush_server_messages(
     object_query: Query<&OverworldObject>,
     world_object_query: Query<
         (
+            &SpaceResident,
             &TilePosition,
             &OverworldObject,
+            Option<&VitalStats>,
             Has<Container>,
             Has<Npc>,
             Has<Movable>,
         ),
         Without<Player>,
     >,
-    container_query: Query<(&Container, &OverworldObject), Without<Player>>,
+    container_query: Query<(&Container, &OverworldObject, &SpaceResident), Without<Player>>,
+    space_manager: Res<SpaceManager>,
     mut commands: Commands,
 ) {
     let peer_ui_events = std::mem::take(&mut pending_ui_events.peer_events);
@@ -189,6 +199,7 @@ pub fn flush_server_messages(
             &object_query,
             &world_object_query,
             &container_query,
+            &space_manager,
         );
 
         let mut disconnected = false;
@@ -322,10 +333,11 @@ fn disconnect_peer(
 
 fn find_spawn_tile(
     world_config: &WorldConfig,
-    collider_query: &Query<&TilePosition, With<Collider>>,
-    player_position_query: &Query<&TilePosition, With<Player>>,
+    collider_query: &Query<(&SpaceResident, &TilePosition), With<Collider>>,
+    player_position_query: &Query<(&SpaceResident, &TilePosition), With<Player>>,
 ) -> Option<TilePosition> {
     let origin = TilePosition::new(world_config.map_width / 2, world_config.map_height / 2);
+    let space_id = world_config.current_space_id;
 
     for radius in 0..world_config.map_width.max(world_config.map_height) {
         for y in -radius..=radius {
@@ -343,8 +355,12 @@ fn find_spawn_tile(
                     continue;
                 }
 
-                let blocked = collider_query.iter().any(|tile| *tile == candidate)
-                    || player_position_query.iter().any(|tile| *tile == candidate);
+                let blocked = collider_query
+                    .iter()
+                    .any(|(resident, tile)| resident.space_id == space_id && *tile == candidate)
+                    || player_position_query.iter().any(|(resident, tile)| {
+                        resident.space_id == space_id && *tile == candidate
+                    });
                 if !blocked {
                     return Some(candidate);
                 }
@@ -363,6 +379,7 @@ fn build_client_game_state(
             &PlayerIdentity,
             &Inventory,
             &ChatLog,
+            &SpaceResident,
             &TilePosition,
             &VitalStats,
             &DerivedStats,
@@ -374,26 +391,31 @@ fn build_client_game_state(
     object_query: &Query<&OverworldObject>,
     world_object_query: &Query<
         (
+            &SpaceResident,
             &TilePosition,
             &OverworldObject,
+            Option<&VitalStats>,
             Has<Container>,
             Has<Npc>,
             Has<Movable>,
         ),
         Without<Player>,
     >,
-    container_query: &Query<(&Container, &OverworldObject), Without<Player>>,
+    container_query: &Query<(&Container, &OverworldObject, &SpaceResident), Without<Player>>,
+    space_manager: &SpaceManager,
 ) -> ClientGameState {
     let mut state = ClientGameState {
         local_player_id: Some(local_player_id),
         ..default()
     };
+    let mut local_space_id = None;
 
     for (
         _entity,
         identity,
         inventory,
         chat_log,
+        space_resident,
         tile_position,
         vital_stats,
         derived_stats,
@@ -411,19 +433,23 @@ fn build_client_game_state(
         if identity.id == local_player_id {
             state.inventory = inventory.clone();
             state.chat_log_lines = chat_log.lines.clone();
+            state.player_position = Some(SpacePosition::new(space_resident.space_id, *tile_position));
             state.player_tile_position = Some(*tile_position);
             state.player_vitals = Some(projected_vitals);
             state.player_storage_slots = derived_stats.storage_slots;
             state.local_player_object_id = Some(player_object.object_id);
+            local_space_id = Some(space_resident.space_id);
             state.current_target_object_id = combat_target
                 .and_then(|combat_target| object_query.get(combat_target.entity).ok())
                 .map(|object| object.object_id);
         } else {
+            let position = SpacePosition::new(space_resident.space_id, *tile_position);
             state.remote_players.insert(
                 identity.id,
                 ClientRemotePlayerState {
                     player_id: identity.id,
                     object_id: player_object.object_id,
+                    position,
                     tile_position: *tile_position,
                     vitals: projected_vitals,
                 },
@@ -431,19 +457,50 @@ fn build_client_game_state(
         }
     }
 
-    for (container, object) in container_query.iter() {
+    let Some(local_space_id) = local_space_id else {
+        return state;
+    };
+    let Some(runtime_space) = space_manager.get(local_space_id) else {
+        return state;
+    };
+    state.current_space = Some(ClientSpaceState {
+        space_id: runtime_space.id,
+        authored_id: runtime_space.authored_id.clone(),
+        width: runtime_space.width,
+        height: runtime_space.height,
+        fill_object_type: runtime_space.fill_object_type.clone(),
+    });
+
+    state
+        .remote_players
+        .retain(|_, remote_player| remote_player.position.space_id == local_space_id);
+
+    for (container, object, resident) in container_query.iter() {
+        if resident.space_id != local_space_id {
+            continue;
+        }
         state
             .container_slots
             .insert(object.object_id, container.slots.clone());
     }
 
-    for (tile_position, object, has_container, has_npc, has_movable) in world_object_query.iter() {
+    for (space_resident, tile_position, object, vitals, has_container, has_npc, has_movable) in world_object_query.iter() {
+        if space_resident.space_id != local_space_id {
+            continue;
+        }
         state.world_objects.insert(
             object.object_id,
             ClientWorldObjectState {
                 object_id: object.object_id,
                 definition_id: object.definition_id.clone(),
+                position: SpacePosition::new(space_resident.space_id, *tile_position),
                 tile_position: *tile_position,
+                vitals: vitals.map(|vitals| ClientVitalStats {
+                    health: vitals.health,
+                    max_health: vitals.max_health,
+                    mana: vitals.mana,
+                    max_mana: vitals.max_mana,
+                }),
                 is_container: has_container,
                 is_npc: has_npc,
                 is_movable: has_movable,
@@ -532,6 +589,7 @@ mod tests {
             PlayerServerPlugin,
             MagicPlugin,
         ));
+        app.update();
         app
     }
 
@@ -540,6 +598,7 @@ mod tests {
         let derived_stats = DerivedStats::from_base(&base_stats);
         let max_health = derived_stats.max_health as f32;
         let max_mana = derived_stats.max_mana as f32;
+        let current_space_id = app.world().resource::<WorldConfig>().current_space_id;
         let object_id = app
             .world_mut()
             .resource_mut::<ObjectRegistry>()
@@ -565,12 +624,16 @@ mod tests {
                     object_id,
                     definition_id: "player".to_owned(),
                 },
+                crate::world::components::SpaceResident {
+                    space_id: current_space_id,
+                },
                 crate::world::components::TilePosition::new(x, y),
             ))
             .id()
     }
 
     fn spawn_container(app: &mut App, type_id: &str, x: i32, y: i32) -> u64 {
+        let current_space_id = app.world().resource::<WorldConfig>().current_space_id;
         let object_id = app
             .world_mut()
             .resource_mut::<ObjectRegistry>()
@@ -585,6 +648,9 @@ mod tests {
             OverworldObject {
                 object_id,
                 definition_id: type_id.to_owned(),
+            },
+            crate::world::components::SpaceResident {
+                space_id: current_space_id,
             },
             crate::world::components::TilePosition::new(x, y),
         ));
@@ -608,9 +674,11 @@ mod tests {
         let world_config = {
             let config = app.world().resource::<WorldConfig>();
             WorldConfig {
+                current_space_id: config.current_space_id,
                 map_width: config.map_width,
                 map_height: config.map_height,
                 tile_size: config.tile_size,
+                fill_object_type: config.fill_object_type.clone(),
             }
         };
         let center = crate::world::components::TilePosition::new(
@@ -625,10 +693,21 @@ mod tests {
             Query<
                 'w,
                 's,
-                &'static crate::world::components::TilePosition,
+                (
+                    &'static crate::world::components::SpaceResident,
+                    &'static crate::world::components::TilePosition,
+                ),
                 With<crate::world::components::Collider>,
             >,
-            Query<'w, 's, &'static crate::world::components::TilePosition, With<Player>>,
+            Query<
+                'w,
+                's,
+                (
+                    &'static crate::world::components::SpaceResident,
+                    &'static crate::world::components::TilePosition,
+                ),
+                With<Player>,
+            >,
         )>;
         let mut state: SpawnState = SystemState::new(app.world_mut());
         let (collider_query, player_query) = state.get(app.world_mut());
@@ -657,6 +736,7 @@ mod tests {
                     &'static crate::player::components::PlayerIdentity,
                     &'static crate::player::components::Inventory,
                     &'static crate::player::components::ChatLog,
+                    &'static crate::world::components::SpaceResident,
                     &'static crate::world::components::TilePosition,
                     &'static crate::player::components::VitalStats,
                     &'static crate::player::components::DerivedStats,
@@ -670,8 +750,10 @@ mod tests {
                 'w,
                 's,
                 (
+                    &'static crate::world::components::SpaceResident,
                     &'static crate::world::components::TilePosition,
                     &'static crate::world::components::OverworldObject,
+                    Option<&'static crate::player::components::VitalStats>,
                     Has<crate::world::components::Container>,
                     Has<crate::npc::components::Npc>,
                     Has<crate::world::components::Movable>,
@@ -684,12 +766,14 @@ mod tests {
                 (
                     &'static crate::world::components::Container,
                     &'static crate::world::components::OverworldObject,
+                    &'static crate::world::components::SpaceResident,
                 ),
                 Without<Player>,
             >,
+            Res<'w, crate::world::resources::SpaceManager>,
         )>;
         let mut state: SnapshotState = SystemState::new(app.world_mut());
-        let (player_query, object_query, world_object_query, container_query) =
+        let (player_query, object_query, world_object_query, container_query, space_manager) =
             state.get(app.world_mut());
 
         let snapshot = build_client_game_state(
@@ -698,6 +782,7 @@ mod tests {
             &object_query,
             &world_object_query,
             &container_query,
+            &space_manager,
         );
 
         assert_eq!(snapshot.local_player_id, Some(PlayerId(1)));
@@ -715,5 +800,9 @@ mod tests {
             crate::world::components::TilePosition::new(12, 10)
         );
         assert!(snapshot.container_slots.contains_key(&barrel_id));
+        assert!(snapshot
+            .world_objects
+            .values()
+            .any(|object| object.vitals.is_none()));
     }
 }

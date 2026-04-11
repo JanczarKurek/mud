@@ -5,7 +5,7 @@ use crate::game::commands::{GameCommand, MoveDelta};
 use crate::game::resources::{ClientGameState, InventoryState, PendingGameCommands};
 use crate::player::components::{AttributeSet, BaseStats, DerivedStats, Player, VitalStats};
 use crate::scripting::resources::PythonConsoleState;
-use crate::world::components::TilePosition;
+use crate::world::components::{DisplayedVitalStats, SpaceResident, TilePosition};
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::WorldConfig;
@@ -87,16 +87,28 @@ pub fn move_player_on_grid(
 pub fn sync_player_client_state(
     client_state: Res<ClientGameState>,
     world_config: Res<WorldConfig>,
-    mut player_query: Query<(&mut TilePosition, &mut VitalStats), With<Player>>,
+    mut player_query: Query<
+        (
+            &mut SpaceResident,
+            &mut TilePosition,
+            &mut VitalStats,
+            &mut DisplayedVitalStats,
+        ),
+        With<Player>,
+    >,
 ) {
-    let Ok((mut tile_position, mut vital_stats)) = player_query.single_mut() else {
+    let Ok((mut space_resident, mut tile_position, mut vital_stats, mut displayed_vitals)) =
+        player_query.single_mut()
+    else {
         return;
     };
 
-    if let Some(client_tile_position) = client_state.player_tile_position {
-        *tile_position = client_tile_position;
+    if let Some(client_position) = client_state.player_position {
+        space_resident.space_id = client_position.space_id;
+        *tile_position = client_position.tile_position;
     } else {
         *tile_position = TilePosition::new(world_config.map_width / 2, world_config.map_height / 2);
+        space_resident.space_id = world_config.current_space_id;
     }
 
     if let Some(client_vitals) = client_state.player_vitals {
@@ -104,6 +116,16 @@ pub fn sync_player_client_state(
         vital_stats.max_health = client_vitals.max_health;
         vital_stats.mana = client_vitals.mana;
         vital_stats.max_mana = client_vitals.max_mana;
+
+        displayed_vitals.health = client_vitals.health;
+        displayed_vitals.max_health = client_vitals.max_health;
+        displayed_vitals.mana = client_vitals.mana;
+        displayed_vitals.max_mana = client_vitals.max_mana;
+    } else {
+        displayed_vitals.health = vital_stats.health;
+        displayed_vitals.max_health = vital_stats.max_health;
+        displayed_vitals.mana = vital_stats.mana;
+        displayed_vitals.max_mana = vital_stats.max_mana;
     }
 }
 

@@ -14,12 +14,16 @@ use crate::npc::components::Npc;
 use crate::player::components::{
     DerivedStats, MovementCooldown, Player, PlayerIdentity, VitalStats,
 };
-use crate::world::components::{Collider, Container, Movable, OverworldObject, TilePosition};
+use crate::world::map_layout::SpaceDefinitions;
+use crate::world::components::{
+    Collider, Container, Movable, OverworldObject, SpacePosition, SpaceResident, TilePosition,
+};
 use crate::world::object_definitions::{
     EquipmentSlot, OverworldObjectDefinition, OverworldObjectDefinitions,
 };
 use crate::world::object_registry::ObjectRegistry;
-use crate::world::setup::spawn_overworld_object;
+use crate::world::resources::SpaceManager;
+use crate::world::setup::{resolve_portal_destination_space, spawn_overworld_object};
 use crate::world::WorldConfig;
 
 pub fn tick_player_movement_cooldowns(
@@ -37,23 +41,26 @@ pub fn process_game_commands(
     mut ui_events: ResMut<PendingGameUiEvents>,
     definitions: Res<OverworldObjectDefinitions>,
     spell_definitions: Res<SpellDefinitions>,
+    authored_spaces: Res<SpaceDefinitions>,
     mut object_registry: ResMut<ObjectRegistry>,
+    mut space_manager: ResMut<SpaceManager>,
     world_config: Res<WorldConfig>,
-    object_query: Query<(Entity, &TilePosition, &OverworldObject), Without<Player>>,
+    object_query: Query<(Entity, &SpaceResident, &TilePosition, &OverworldObject), Without<Player>>,
     movable_query: Query<
-        (Entity, &TilePosition, &OverworldObject),
+        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
         (With<Movable>, Without<Player>),
     >,
     mut container_query: Query<&mut Container>,
     mut player_queries: ParamSet<(
-        Query<&TilePosition, With<Collider>>,
-        Query<(Entity, &PlayerIdentity, &OverworldObject), With<Player>>,
+        Query<(&SpaceResident, &TilePosition), With<Collider>>,
+        Query<(Entity, &PlayerIdentity, &SpaceResident, &TilePosition, &OverworldObject), With<Player>>,
         Query<
             (
                 Entity,
                 &PlayerIdentity,
                 &mut InventoryState,
                 &mut ChatLogState,
+                &mut SpaceResident,
                 &mut TilePosition,
                 &mut MovementCooldown,
                 &mut VitalStats,
@@ -76,18 +83,50 @@ pub fn process_game_commands(
 
         match queued_command.command {
             GameCommand::MovePlayer { delta } => {
-                let collider_positions = player_queries.p0().iter().copied().collect::<Vec<_>>();
+                let Some(source_space_id) = player_queries
+                    .p1()
+                    .iter()
+                    .find_map(|(entity, _, resident, _, _)| {
+                        (entity == player_entity).then_some(resident.space_id)
+                    })
+                else {
+                    continue;
+                };
+                let collider_positions = player_queries
+                    .p0()
+                    .iter()
+                    .filter_map(|(resident, tile_position)| {
+                        (resident.space_id == source_space_id).then_some(*tile_position)
+                    })
+                    .collect::<Vec<_>>();
                 handle_move_player(
                     player_entity,
                     delta,
-                    &world_config,
                     &collider_positions,
                     &mut player_queries.p2(),
+                    &authored_spaces,
+                    &definitions,
+                    &mut space_manager,
+                    &mut commands,
                 );
             }
             GameCommand::SetCombatTarget { target_object_id } => {
+                let Some(source_space_id) = player_queries
+                    .p1()
+                    .iter()
+                    .find_map(|(entity, _, resident, _, _)| {
+                        (entity == player_entity).then_some(resident.space_id)
+                    })
+                else {
+                    continue;
+                };
                 let target_entity = target_object_id.and_then(|object_id| {
-                    find_combat_target_entity(object_id, &object_query, &player_queries.p1())
+                    find_combat_target_entity(
+                        object_id,
+                        source_space_id,
+                        &object_query,
+                        &player_queries.p1(),
+                    )
                 });
                 handle_set_combat_target(
                     player_entity,
@@ -171,7 +210,22 @@ pub fn process_game_commands(
                 source,
                 destination,
             } => {
-                let collider_positions = player_queries.p0().iter().copied().collect::<Vec<_>>();
+                let Some(source_space_id) = player_queries
+                    .p1()
+                    .iter()
+                    .find_map(|(entity, _, resident, _, _)| {
+                        (entity == player_entity).then_some(resident.space_id)
+                    })
+                else {
+                    continue;
+                };
+                let collider_positions = player_queries
+                    .p0()
+                    .iter()
+                    .filter_map(|(resident, tile_position)| {
+                        (resident.space_id == source_space_id).then_some(*tile_position)
+                    })
+                    .collect::<Vec<_>>();
                 handle_move_item(
                     player_entity,
                     source,
@@ -191,7 +245,22 @@ pub fn process_game_commands(
                 type_id,
                 tile_position,
             } => {
-                let collider_positions = player_queries.p0().iter().copied().collect::<Vec<_>>();
+                let Some(source_space_id) = player_queries
+                    .p1()
+                    .iter()
+                    .find_map(|(entity, _, resident, _, _)| {
+                        (entity == player_entity).then_some(resident.space_id)
+                    })
+                else {
+                    continue;
+                };
+                let collider_positions = player_queries
+                    .p0()
+                    .iter()
+                    .filter_map(|(resident, tile_position)| {
+                        (resident.space_id == source_space_id).then_some(*tile_position)
+                    })
+                    .collect::<Vec<_>>();
                 handle_admin_spawn(
                     player_entity,
                     &type_id,
@@ -210,11 +279,14 @@ pub fn process_game_commands(
 
 pub fn collect_game_events_from_authority(
     mut client_state: ResMut<ClientGameState>,
+    _world_config: Res<WorldConfig>,
+    space_manager: Res<SpaceManager>,
     player_query: Query<
         (
             &PlayerIdentity,
             &InventoryState,
             &ChatLogState,
+            &SpaceResident,
             &TilePosition,
             &VitalStats,
             &DerivedStats,
@@ -226,15 +298,17 @@ pub fn collect_game_events_from_authority(
     object_query: Query<&OverworldObject>,
     world_object_query: Query<
         (
+            &SpaceResident,
             &TilePosition,
             &OverworldObject,
+            Option<&VitalStats>,
             Has<Container>,
             Has<Npc>,
             Has<Movable>,
         ),
         Without<Player>,
     >,
-    container_query: Query<(&Container, &OverworldObject), Without<Player>>,
+    container_query: Query<(&Container, &OverworldObject, &SpaceResident), Without<Player>>,
     mut pending_game_events: ResMut<PendingGameEvents>,
 ) {
     pending_game_events.events.clear();
@@ -243,6 +317,7 @@ pub fn collect_game_events_from_authority(
         player_identity,
         inventory_state,
         chat_log_state,
+        player_space_resident,
         player_tile_position,
         vital_stats,
         derived_stats,
@@ -264,10 +339,14 @@ pub fn collect_game_events_from_authority(
             });
         }
 
-        if client_state.player_tile_position != Some(*player_tile_position) {
+        let current_player_position =
+            SpacePosition::new(player_space_resident.space_id, *player_tile_position);
+
+        if client_state.player_position != Some(current_player_position) {
             pending_game_events
                 .events
                 .push(GameEvent::PlayerPositionChanged {
+                    position: current_player_position,
                     tile_position: *player_tile_position,
                 });
         }
@@ -311,10 +390,33 @@ pub fn collect_game_events_from_authority(
         if client_state.local_player_object_id != Some(player_object.object_id) {
             client_state.local_player_object_id = Some(player_object.object_id);
         }
+
+        if let Some(runtime_space) = space_manager.get(player_space_resident.space_id) {
+            let current_space = crate::game::resources::ClientSpaceState {
+                space_id: runtime_space.id,
+                authored_id: runtime_space.authored_id.clone(),
+                width: runtime_space.width,
+                height: runtime_space.height,
+                fill_object_type: runtime_space.fill_object_type.clone(),
+            };
+            if client_state.current_space.as_ref() != Some(&current_space) {
+                pending_game_events
+                    .events
+                    .push(GameEvent::CurrentSpaceChanged { space: current_space });
+            }
+        }
     }
 
     let mut current_container_ids = Vec::new();
-    for (container, object) in &container_query {
+    let local_space_id = client_state
+        .player_position
+        .map(|position| position.space_id)
+        .unwrap_or(crate::world::components::SpaceId(0));
+
+    for (container, object, resident) in &container_query {
+        if resident.space_id != local_space_id {
+            continue;
+        }
         current_container_ids.push(object.object_id);
         let current_slots = container.slots.clone();
         if client_state.container_slots.get(&object.object_id) != Some(&current_slots) {
@@ -338,12 +440,22 @@ pub fn collect_game_events_from_authority(
     }
 
     let mut current_world_object_ids = Vec::new();
-    for (tile_position, object, has_container, has_npc, has_movable) in &world_object_query {
+    for (space_resident, tile_position, object, vitals, has_container, has_npc, has_movable) in &world_object_query {
+        if space_resident.space_id != local_space_id {
+            continue;
+        }
         current_world_object_ids.push(object.object_id);
         let projected_object = ClientWorldObjectState {
             object_id: object.object_id,
             definition_id: object.definition_id.clone(),
+            position: SpacePosition::new(space_resident.space_id, *tile_position),
             tile_position: *tile_position,
+            vitals: vitals.map(|vitals| ClientVitalStats {
+                health: vitals.health,
+                max_health: vitals.max_health,
+                mana: vitals.mana,
+                max_mana: vitals.max_mana,
+            }),
             is_container: has_container,
             is_npc: has_npc,
             is_movable: has_movable,
@@ -383,8 +495,12 @@ pub fn apply_game_events_to_client_state(
             GameEvent::ChatLogChanged { lines } => {
                 client_state.chat_log_lines = lines;
             }
-            GameEvent::PlayerPositionChanged { tile_position } => {
+            GameEvent::PlayerPositionChanged { position, tile_position } => {
+                client_state.player_position = Some(position);
                 client_state.player_tile_position = Some(tile_position);
+            }
+            GameEvent::CurrentSpaceChanged { space } => {
+                client_state.current_space = Some(space);
             }
             GameEvent::PlayerVitalsChanged { vitals } => {
                 client_state.player_vitals = Some(vitals);
@@ -420,7 +536,6 @@ pub fn apply_game_events_to_client_state(
 fn handle_move_player(
     player_entity: Entity,
     delta: MoveDelta,
-    world_config: &WorldConfig,
     collider_positions: &[TilePosition],
     player_query: &mut Query<
         (
@@ -428,6 +543,7 @@ fn handle_move_player(
             &PlayerIdentity,
             &mut InventoryState,
             &mut ChatLogState,
+            &mut SpaceResident,
             &mut TilePosition,
             &mut MovementCooldown,
             &mut VitalStats,
@@ -435,8 +551,12 @@ fn handle_move_player(
         ),
         With<Player>,
     >,
+    authored_spaces: &SpaceDefinitions,
+    definitions: &OverworldObjectDefinitions,
+    space_manager: &mut SpaceManager,
+    commands: &mut Commands,
 ) {
-    let Ok((_, _, _, _, mut tile_position, mut movement_cooldown, _, _)) =
+    let Ok((_, _, _, _, mut space_resident, mut tile_position, mut movement_cooldown, _, _)) =
         player_query.get_mut(player_entity)
     else {
         return;
@@ -446,9 +566,13 @@ fn handle_move_player(
         return;
     }
 
+    let Some(runtime_space) = space_manager.get(space_resident.space_id).cloned() else {
+        return;
+    };
+
     let target_position = TilePosition::new(
-        (tile_position.x + delta.x).clamp(0, world_config.map_width - 1),
-        (tile_position.y + delta.y).clamp(0, world_config.map_height - 1),
+        (tile_position.x + delta.x).clamp(0, runtime_space.width - 1),
+        (tile_position.y + delta.y).clamp(0, runtime_space.height - 1),
     );
 
     let blocked = collider_positions
@@ -461,6 +585,26 @@ fn handle_move_player(
 
     *tile_position = target_position;
     movement_cooldown.remaining_seconds = movement_cooldown.step_interval_seconds;
+
+    let Some(space_definition) = authored_spaces.get(&runtime_space.authored_id) else {
+        return;
+    };
+    let Some(portal) = space_definition.portal_at(target_position) else {
+        return;
+    };
+    let Some(destination_space_id) = resolve_portal_destination_space(
+        commands,
+        authored_spaces,
+        definitions,
+        space_manager,
+        space_resident.space_id,
+        portal,
+    ) else {
+        return;
+    };
+
+    space_resident.space_id = destination_space_id;
+    *tile_position = portal.destination_tile.to_tile_position();
 }
 
 fn handle_set_combat_target(
@@ -473,6 +617,7 @@ fn handle_set_combat_target(
             &PlayerIdentity,
             &mut InventoryState,
             &mut ChatLogState,
+            &mut SpaceResident,
             &mut TilePosition,
             &mut MovementCooldown,
             &mut VitalStats,
@@ -485,7 +630,7 @@ fn handle_set_combat_target(
     spell_definitions: &SpellDefinitions,
     commands: &mut Commands,
 ) {
-    let Ok((_, _, _, mut chat_log_state, _, _, _, _)) = player_query.get_mut(player_entity) else {
+    let Ok((_, _, _, mut chat_log_state, _, _, _, _, _)) = player_query.get_mut(player_entity) else {
         return;
     };
 
@@ -513,7 +658,7 @@ fn handle_set_combat_target(
 fn handle_open_container(
     player_entity: Entity,
     object_id: u64,
-    object_query: &Query<(Entity, &TilePosition, &OverworldObject), Without<Player>>,
+    object_query: &Query<(Entity, &SpaceResident, &TilePosition, &OverworldObject), Without<Player>>,
     container_query: &mut Query<&mut Container>,
     player_query: &mut Query<
         (
@@ -521,6 +666,7 @@ fn handle_open_container(
             &PlayerIdentity,
             &mut InventoryState,
             &mut ChatLogState,
+            &mut SpaceResident,
             &mut TilePosition,
             &mut MovementCooldown,
             &mut VitalStats,
@@ -530,12 +676,14 @@ fn handle_open_container(
     >,
     ui_events: &mut PendingGameUiEvents,
 ) {
-    let Ok((_, player_identity, _, mut chat_log_state, player_position, _, _, _)) =
+    let Ok((_, player_identity, _, mut chat_log_state, player_space_resident, player_position, _, _, _)) =
         player_query.get_mut(player_entity)
     else {
         return;
     };
-    let Some((entity, tile_position)) = find_object_entity(object_id, object_query) else {
+    let Some((entity, tile_position)) =
+        find_object_entity(object_id, player_space_resident.space_id, object_query)
+    else {
         return;
     };
 
@@ -557,6 +705,7 @@ fn handle_inspect(
             &PlayerIdentity,
             &mut InventoryState,
             &mut ChatLogState,
+            &mut SpaceResident,
             &mut TilePosition,
             &mut MovementCooldown,
             &mut VitalStats,
@@ -568,7 +717,7 @@ fn handle_inspect(
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
 ) {
-    let Ok((_, _, _, mut chat_log_state, _, _, _, _)) = player_query.get_mut(player_entity) else {
+    let Ok((_, _, _, mut chat_log_state, _, _, _, _, _)) = player_query.get_mut(player_entity) else {
         return;
     };
     let InspectTarget::Object(object_id) = target;
@@ -583,13 +732,14 @@ fn handle_use_item(
     player_entity: Entity,
     source: ItemReference,
     container_query: &mut Query<&mut Container>,
-    object_query: &Query<(Entity, &TilePosition, &OverworldObject), Without<Player>>,
+    object_query: &Query<(Entity, &SpaceResident, &TilePosition, &OverworldObject), Without<Player>>,
     player_query: &mut Query<
         (
             Entity,
             &PlayerIdentity,
             &mut InventoryState,
             &mut ChatLogState,
+            &mut SpaceResident,
             &mut TilePosition,
             &mut MovementCooldown,
             &mut VitalStats,
@@ -602,7 +752,7 @@ fn handle_use_item(
     spell_definitions: &SpellDefinitions,
     commands: &mut Commands,
 ) {
-    let Ok((_, _, mut inventory_state, mut chat_log_state, _, _, mut vital_stats, _)) =
+    let Ok((_, _, mut inventory_state, mut chat_log_state, _, _, _, mut vital_stats, _)) =
         player_query.get_mut(player_entity)
     else {
         return;
@@ -682,6 +832,7 @@ fn handle_use_item_on(
             &PlayerIdentity,
             &mut InventoryState,
             &mut ChatLogState,
+            &mut SpaceResident,
             &mut TilePosition,
             &mut MovementCooldown,
             &mut VitalStats,
@@ -689,7 +840,7 @@ fn handle_use_item_on(
         ),
         With<Player>,
     >,
-    object_query: &Query<(Entity, &TilePosition, &OverworldObject), Without<Player>>,
+    object_query: &Query<(Entity, &SpaceResident, &TilePosition, &OverworldObject), Without<Player>>,
     object_registry: &ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
@@ -708,7 +859,7 @@ fn handle_use_item_on(
             commands,
         ),
         UseTarget::Object(target_object_id) => {
-            let Ok((_, _, inventory_state, mut chat_log_state, player_position, _, _, _)) =
+            let Ok((_, _, inventory_state, mut chat_log_state, player_space_resident, player_position, _, _, _)) =
                 player_query.get_mut(player_entity)
             else {
                 return;
@@ -724,7 +875,11 @@ fn handle_use_item_on(
             let Some(source_definition) = definitions.get(source_type_id) else {
                 return;
             };
-            let Some((_, target_position)) = find_object_entity(target_object_id, object_query)
+            let Some((_, target_position)) = find_object_entity(
+                target_object_id,
+                player_space_resident.space_id,
+                object_query,
+            )
             else {
                 return;
             };
@@ -753,13 +908,14 @@ fn handle_cast_spell_at(
     spell_id: &str,
     target_object_id: u64,
     container_query: &mut Query<&mut Container>,
-    object_query: &Query<(Entity, &TilePosition, &OverworldObject), Without<Player>>,
+    object_query: &Query<(Entity, &SpaceResident, &TilePosition, &OverworldObject), Without<Player>>,
     player_query: &mut Query<
         (
             Entity,
             &PlayerIdentity,
             &mut InventoryState,
             &mut ChatLogState,
+            &mut SpaceResident,
             &mut TilePosition,
             &mut MovementCooldown,
             &mut VitalStats,
@@ -776,21 +932,26 @@ fn handle_cast_spell_at(
     let Some(spell) = spell_definitions.get(spell_id) else {
         return;
     };
-    let Some((target_entity, target_position)) = find_object_entity(target_object_id, object_query)
-    else {
-        return;
-    };
-
     let Ok((
         _,
         _,
         mut inventory_state,
         mut chat_log_state,
+        player_space_resident,
         player_position,
         _,
         mut player_vitals,
         _,
     )) = player_query.get_mut(player_entity)
+    else {
+        return;
+    };
+
+    let Some((target_entity, target_position)) = find_object_entity(
+        target_object_id,
+        player_space_resident.space_id,
+        object_query,
+    )
     else {
         return;
     };
@@ -848,6 +1009,7 @@ fn handle_move_item(
             &PlayerIdentity,
             &mut InventoryState,
             &mut ChatLogState,
+            &mut SpaceResident,
             &mut TilePosition,
             &mut MovementCooldown,
             &mut VitalStats,
@@ -857,16 +1019,16 @@ fn handle_move_item(
     >,
     collider_positions: &[TilePosition],
     movable_query: &Query<
-        (Entity, &TilePosition, &OverworldObject),
+        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
         (With<Movable>, Without<Player>),
     >,
-    object_query: &Query<(Entity, &TilePosition, &OverworldObject), Without<Player>>,
+    object_query: &Query<(Entity, &SpaceResident, &TilePosition, &OverworldObject), Without<Player>>,
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     world_config: &WorldConfig,
     commands: &mut Commands,
 ) {
-    let Ok((_, _, mut inventory_state, mut chat_log_state, player_position, _, _, _)) =
+    let Ok((_, _, mut inventory_state, mut chat_log_state, space_resident, player_position, _, _, _)) =
         player_query.get_mut(player_entity)
     else {
         return;
@@ -874,7 +1036,8 @@ fn handle_move_item(
 
     match (source, destination) {
         (ItemReference::WorldObject(object_id), ItemDestination::Slot(slot_ref)) => {
-            let Some((entity, tile_position)) = find_movable_entity(object_id, movable_query)
+            let Some((entity, tile_position)) =
+                find_movable_entity(object_id, space_resident.space_id, movable_query)
             else {
                 return;
             };
@@ -896,12 +1059,15 @@ fn handle_move_item(
             commands.entity(entity).despawn();
         }
         (ItemReference::WorldObject(object_id), ItemDestination::WorldTile(target_tile)) => {
-            let Some((entity, origin)) = find_movable_entity(object_id, movable_query) else {
+            let Some((entity, origin)) =
+                find_movable_entity(object_id, space_resident.space_id, movable_query)
+            else {
                 return;
             };
             if is_valid_world_drop(
                 target_tile,
                 Some(origin),
+                space_resident.space_id,
                 &player_position,
                 entity,
                 collider_positions,
@@ -953,6 +1119,7 @@ fn handle_move_item(
             let Some(world_drop_tile) = find_nearest_valid_world_drop_tile(
                 target_tile,
                 None,
+                space_resident.space_id,
                 &player_position,
                 Entity::PLACEHOLDER,
                 collider_positions,
@@ -986,6 +1153,7 @@ fn handle_move_item(
                 object_id,
                 &type_id,
                 None,
+                space_resident.space_id,
                 world_drop_tile,
             );
         }
@@ -1007,6 +1175,7 @@ fn handle_admin_spawn(
             &PlayerIdentity,
             &mut InventoryState,
             &mut ChatLogState,
+            &mut SpaceResident,
             &mut TilePosition,
             &mut MovementCooldown,
             &mut VitalStats,
@@ -1015,7 +1184,7 @@ fn handle_admin_spawn(
         With<Player>,
     >,
 ) {
-    let Ok((_, _, _, mut chat_log_state, _, _, _, _)) = player_query.get_mut(player_entity) else {
+    let Ok((_, _, _, mut chat_log_state, space_resident, _, _, _, _)) = player_query.get_mut(player_entity) else {
         return;
     };
     if tile_position.x < 0
@@ -1048,6 +1217,7 @@ fn handle_admin_spawn(
         object_id,
         type_id,
         None,
+        space_resident.space_id,
         tile_position,
     );
     chat_log_state.push_narrator(format!(
@@ -1058,55 +1228,69 @@ fn handle_admin_spawn(
 
 fn resolve_player_entity(
     player_id: Option<crate::player::components::PlayerId>,
-    player_lookup_query: &Query<(Entity, &PlayerIdentity, &OverworldObject), With<Player>>,
+    player_lookup_query: &Query<
+        (Entity, &PlayerIdentity, &SpaceResident, &TilePosition, &OverworldObject),
+        With<Player>,
+    >,
 ) -> Option<Entity> {
     match player_id {
         Some(player_id) => player_lookup_query
             .iter()
-            .find_map(|(entity, identity, _)| (identity.id == player_id).then_some(entity)),
+            .find_map(|(entity, identity, ..)| (identity.id == player_id).then_some(entity)),
         None => player_lookup_query
             .iter()
             .next()
-            .map(|(entity, _, _)| entity),
+            .map(|(entity, ..)| entity),
     }
 }
 
-fn find_object_entity<'a>(
+fn find_object_entity(
     object_id: u64,
-    object_query: &Query<(Entity, &TilePosition, &OverworldObject), Without<Player>>,
+    space_id: crate::world::components::SpaceId,
+    object_query: &Query<(Entity, &SpaceResident, &TilePosition, &OverworldObject), Without<Player>>,
 ) -> Option<(Entity, TilePosition)> {
     object_query
         .iter()
-        .find_map(|(entity, tile_position, object)| {
-            (object.object_id == object_id).then_some((entity, *tile_position))
+        .find_map(|(entity, resident, tile_position, object)| {
+            (resident.space_id == space_id && object.object_id == object_id)
+                .then_some((entity, *tile_position))
         })
 }
 
 fn find_combat_target_entity(
     object_id: u64,
-    object_query: &Query<(Entity, &TilePosition, &OverworldObject), Without<Player>>,
-    player_lookup_query: &Query<(Entity, &PlayerIdentity, &OverworldObject), With<Player>>,
+    source_space_id: crate::world::components::SpaceId,
+    object_query: &Query<(Entity, &SpaceResident, &TilePosition, &OverworldObject), Without<Player>>,
+    player_lookup_query: &Query<
+        (Entity, &PlayerIdentity, &SpaceResident, &TilePosition, &OverworldObject),
+        With<Player>,
+    >,
 ) -> Option<Entity> {
-    find_object_entity(object_id, object_query)
+    find_object_entity(object_id, source_space_id, object_query)
         .map(|(entity, _)| entity)
         .or_else(|| {
             player_lookup_query
                 .iter()
-                .find_map(|(entity, _, object)| (object.object_id == object_id).then_some(entity))
+                .find_map(|(entity, _, resident, _, object)| {
+                    (resident.space_id == source_space_id && object.object_id == object_id)
+                        .then_some(entity)
+                })
         })
 }
 
 fn find_movable_entity(
     object_id: u64,
+    space_id: crate::world::components::SpaceId,
     movable_query: &Query<
-        (Entity, &TilePosition, &OverworldObject),
+        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
         (With<Movable>, Without<Player>),
     >,
 ) -> Option<(Entity, TilePosition)> {
     movable_query
         .iter()
-        .find_map(|(entity, tile_position, object)| {
-            (object.object_id == object_id).then_some((entity, *tile_position))
+        .find_map(|(entity, resident, tile_position, object)| {
+            (resident.space_id == space_id && object.object_id == object_id)
+                .then_some((entity, *tile_position))
         })
 }
 
@@ -1114,7 +1298,7 @@ fn item_reference_object_id(
     item_reference: ItemReference,
     inventory_state: &InventoryState,
     container_query: &mut Query<&mut Container>,
-    object_query: &Query<(Entity, &TilePosition, &OverworldObject), Without<Player>>,
+    object_query: &Query<(Entity, &SpaceResident, &TilePosition, &OverworldObject), Without<Player>>,
 ) -> Option<u64> {
     match item_reference {
         ItemReference::WorldObject(object_id) => Some(object_id),
@@ -1127,7 +1311,7 @@ fn item_reference_object_id(
 fn object_id_in_slot_ref(
     inventory_state: &InventoryState,
     container_query: &mut Query<&mut Container>,
-    object_query: &Query<(Entity, &TilePosition, &OverworldObject), Without<Player>>,
+    object_query: &Query<(Entity, &SpaceResident, &TilePosition, &OverworldObject), Without<Player>>,
     slot_ref: ItemSlotRef,
 ) -> Option<u64> {
     match slot_ref {
@@ -1151,7 +1335,7 @@ fn object_id_in_slot_ref(
 fn take_item_from_slot_ref(
     inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
-    object_query: &Query<(Entity, &TilePosition, &OverworldObject), Without<Player>>,
+    object_query: &Query<(Entity, &SpaceResident, &TilePosition, &OverworldObject), Without<Player>>,
     slot_ref: ItemSlotRef,
 ) -> Option<u64> {
     match slot_ref {
@@ -1173,7 +1357,7 @@ fn take_item_from_slot_ref(
 fn place_item_in_slot_ref(
     inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
-    object_query: &Query<(Entity, &TilePosition, &OverworldObject), Without<Player>>,
+    object_query: &Query<(Entity, &SpaceResident, &TilePosition, &OverworldObject), Without<Player>>,
     object_id: u64,
     slot_ref: ItemSlotRef,
     object_registry: &ObjectRegistry,
@@ -1226,7 +1410,7 @@ fn place_item_in_slot_ref(
 fn restore_item_to_slot_ref(
     inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
-    object_query: &Query<(Entity, &TilePosition, &OverworldObject), Without<Player>>,
+    object_query: &Query<(Entity, &SpaceResident, &TilePosition, &OverworldObject), Without<Player>>,
     slot_ref: ItemSlotRef,
     object_id: u64,
 ) {
@@ -1256,12 +1440,15 @@ fn consume_item_reference(
     item_reference: ItemReference,
     inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
-    object_query: &Query<(Entity, &TilePosition, &OverworldObject), Without<Player>>,
+    object_query: &Query<(Entity, &SpaceResident, &TilePosition, &OverworldObject), Without<Player>>,
     commands: &mut Commands,
 ) {
     match item_reference {
         ItemReference::WorldObject(object_id) => {
-            if let Some((entity, _)) = find_object_entity(object_id, object_query) {
+            if let Some((entity, _, _, _)) = object_query
+                .iter()
+                .find(|(_, _, _, object)| object.object_id == object_id)
+            {
                 commands.entity(entity).despawn();
             }
         }
@@ -1274,11 +1461,11 @@ fn consume_item_reference(
 
 fn find_container_entity(
     object_id: u64,
-    object_query: &Query<(Entity, &TilePosition, &OverworldObject), Without<Player>>,
+    object_query: &Query<(Entity, &SpaceResident, &TilePosition, &OverworldObject), Without<Player>>,
 ) -> Option<Entity> {
     object_query
         .iter()
-        .find_map(|(entity, _, object)| (object.object_id == object_id).then_some(entity))
+        .find_map(|(entity, _, _, object)| (object.object_id == object_id).then_some(entity))
 }
 
 fn place_item_in_equipment_slot(
@@ -1410,6 +1597,7 @@ mod tests {
             PlayerServerPlugin,
             MagicPlugin,
         ));
+        app.update();
         app
     }
 
@@ -1418,6 +1606,7 @@ mod tests {
         let derived_stats = DerivedStats::from_base(&base_stats);
         let max_health = derived_stats.max_health as f32;
         let max_mana = derived_stats.max_mana as f32;
+        let current_space_id = app.world().resource::<WorldConfig>().current_space_id;
         let object_id = app
             .world_mut()
             .resource_mut::<ObjectRegistry>()
@@ -1443,12 +1632,16 @@ mod tests {
                     object_id,
                     definition_id: "player".to_owned(),
                 },
+                SpaceResident {
+                    space_id: current_space_id,
+                },
                 TilePosition::new(x, y),
             ))
             .id()
     }
 
     fn spawn_world_object(app: &mut App, type_id: &str, object_id: u64, tile: TilePosition) {
+        let current_space_id = app.world().resource::<WorldConfig>().current_space_id;
         let definition = app
             .world()
             .resource::<crate::world::object_definitions::OverworldObjectDefinitions>()
@@ -1459,6 +1652,9 @@ mod tests {
             OverworldObject {
                 object_id,
                 definition_id: type_id.to_owned(),
+            },
+            SpaceResident {
+                space_id: current_space_id,
             },
             tile,
         ));
@@ -1584,11 +1780,12 @@ fn is_near_player(player_position: &TilePosition, target_position: &TilePosition
 fn is_valid_world_drop(
     target_tile: TilePosition,
     origin_tile: Option<TilePosition>,
+    space_id: crate::world::components::SpaceId,
     player_position: &TilePosition,
     dragged_entity: Entity,
     collider_positions: &[TilePosition],
     movable_query: &Query<
-        (Entity, &TilePosition, &OverworldObject),
+        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
         (With<Movable>, Without<Player>),
     >,
     world_config: &WorldConfig,
@@ -1618,17 +1815,22 @@ fn is_valid_world_drop(
 
     !movable_query
         .iter()
-        .any(|(entity, tile_position, _)| entity != dragged_entity && *tile_position == target_tile)
+        .any(|(entity, resident, tile_position, _)| {
+            resident.space_id == space_id
+                && entity != dragged_entity
+                && *tile_position == target_tile
+        })
 }
 
 fn find_nearest_valid_world_drop_tile(
     target_tile: TilePosition,
     origin_tile: Option<TilePosition>,
+    space_id: crate::world::components::SpaceId,
     player_position: &TilePosition,
     dragged_entity: Entity,
     collider_positions: &[TilePosition],
     movable_query: &Query<
-        (Entity, &TilePosition, &OverworldObject),
+        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
         (With<Movable>, Without<Player>),
     >,
     world_config: &WorldConfig,
@@ -1651,6 +1853,7 @@ fn find_nearest_valid_world_drop_tile(
         is_valid_world_drop(
             *candidate,
             origin_tile,
+            space_id,
             player_position,
             dragged_entity,
             collider_positions,
