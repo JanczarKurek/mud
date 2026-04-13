@@ -8,7 +8,7 @@ use crate::player::components::{
 };
 use crate::world::components::{
     Collider, DisplayedVitalStats, HealthBarDisplayPolicy, OverworldObject, SpaceId, SpaceResident,
-    TilePosition, WorldVisual,
+    TilePosition,
 };
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
@@ -108,17 +108,14 @@ pub fn spawn_player_visual(
         .get("player")
         .unwrap_or_else(|| panic!("Missing overworld object definition for id 'player'"));
 
+    let size = definition.render.sprite_pixel_size(world_config.tile_size);
+
     let mut sprite = if let Some(sprite_path) = &definition.render.sprite_path {
         let mut sprite = Sprite::from_image(asset_server.load(sprite_path));
-        sprite.custom_size = Some(Vec2::splat(
-            world_config.tile_size * definition.render.debug_size,
-        ));
+        sprite.custom_size = Some(size);
         sprite
     } else {
-        Sprite::from_color(
-            definition.debug_color(),
-            Vec2::splat(world_config.tile_size * definition.render.debug_size),
-        )
+        Sprite::from_color(definition.debug_color(), size)
     };
     sprite.image_mode = SpriteImageMode::Auto;
 
@@ -133,17 +130,27 @@ pub fn spawn_player_visual(
             .id(),
     };
 
+    let visual = crate::world::setup::world_visual_for_definition(definition, world_config.tile_size);
+    let sprite_height = visual.sprite_height;
+    let uses_y_sort = visual.y_sort;
+
     commands.entity(entity).insert((
-        WorldVisual {
-            z_index: definition.render.z_index,
-        },
+        visual,
         DisplayedVitalStats::default(),
         HealthBarDisplayPolicy {
             always_visible: true,
         },
         sprite,
-        Transform::from_xyz(0.0, 0.0, definition.render.z_index),
+        Transform::from_xyz(
+            0.0,
+            if uses_y_sort { -world_config.tile_size * 0.5 } else { 0.0 },
+            definition.render.z_index,
+        ),
     ));
 
-    attach_combat_health_bar(&mut commands, entity, world_config.tile_size);
+    if uses_y_sort {
+        commands.entity(entity).insert(bevy::sprite::Anchor::BOTTOM_CENTER);
+    }
+
+    attach_combat_health_bar(&mut commands, entity, world_config.tile_size, sprite_height);
 }

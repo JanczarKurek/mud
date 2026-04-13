@@ -34,6 +34,9 @@
 - PRs should include: summary, key files touched, and how to run/verify.
 - Add screenshots or short clips for visual/interaction changes.
 
+## Environment Limitations
+- The agent environment does not have GPU access. `cargo run --bin mud2` (the graphical client) cannot be launched to visually verify changes. Use `cargo check` and `cargo clippy` for verification, and note when manual visual testing is required.
+
 ## Configuration Notes
 - Rust toolchain is pinned via `rust-toolchain.toml`; match it when running CI or local builds.
 - If a new crate is needed but the environment cannot download dependencies, update `Cargo.toml` first and ask the user to run a rebuild (`cargo build`/`cargo check`) so Cargo can fetch the crate. Continue implementation after the rebuild succeeds.

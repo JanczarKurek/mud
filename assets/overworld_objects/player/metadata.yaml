@@ -6,3 +6,4 @@ render:
   debug_color: [214, 194, 96]
   debug_size: 0.95
   sprite_path: overworld_objects/player/sprite_large.png
+  y_sort: true

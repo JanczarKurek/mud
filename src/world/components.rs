@@ -51,6 +51,8 @@ pub struct Collider;
 #[derive(Component)]
 pub struct WorldVisual {
     pub z_index: f32,
+    pub y_sort: bool,
+    pub sprite_height: f32,
 }
 
 #[derive(Component)]

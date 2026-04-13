@@ -121,6 +121,29 @@ pub struct RenderMetadata {
     pub debug_size: f32,
     #[serde(default)]
     pub sprite_path: Option<String>,
+    #[serde(default)]
+    pub sprite_width_tiles: f32,
+    #[serde(default)]
+    pub sprite_height_tiles: f32,
+    #[serde(default)]
+    pub y_sort: bool,
+}
+
+impl RenderMetadata {
+    pub fn has_oversized_sprite(&self) -> bool {
+        self.sprite_width_tiles > 0.0 && self.sprite_height_tiles > 0.0
+    }
+
+    pub fn sprite_pixel_size(&self, tile_size: f32) -> Vec2 {
+        if self.has_oversized_sprite() {
+            Vec2::new(
+                self.sprite_width_tiles * tile_size,
+                self.sprite_height_tiles * tile_size,
+            )
+        } else {
+            Vec2::splat(tile_size * self.debug_size)
+        }
+    }
 }
 
 impl OverworldObjectDefinition {
@@ -204,6 +227,14 @@ impl OverworldObjectDefinitions {
                         definition_id
                     )
                 });
+            info!(
+                "object '{}' render: z_index={}, y_sort={}, sprite={}x{}",
+                definition_id,
+                definition.render.z_index,
+                definition.render.y_sort,
+                definition.render.sprite_width_tiles,
+                definition.render.sprite_height_tiles,
+            );
             definitions.insert(definition_id, definition);
         }
 

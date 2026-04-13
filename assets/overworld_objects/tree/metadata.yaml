@@ -6,3 +6,5 @@ render:
   debug_color: [31, 115, 46]
   debug_size: 1.0
   sprite_path: overworld_objects/tree/sprite.png
+  sprite_width_tiles: 1.0
+  sprite_height_tiles: 2.0

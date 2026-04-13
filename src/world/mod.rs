@@ -20,7 +20,7 @@ use crate::world::setup::{
 };
 use crate::world::systems::{
     cleanup_empty_ephemeral_spaces, sync_client_world_projection, sync_combat_health_bars,
-    sync_remote_player_projection, sync_tile_transforms,
+    sync_player_z, sync_remote_player_projection, sync_tile_transforms,
 };
 
 pub struct WorldServerPlugin;
@@ -76,6 +76,7 @@ impl Plugin for WorldClientPlugin {
                 sync_client_world_projection.after(apply_game_events_to_client_state),
                 sync_remote_player_projection.after(apply_game_events_to_client_state),
                 sync_tile_transforms,
+                sync_player_z,
                 sync_combat_health_bars,
                 spawn_ground_tiles_for_current_space,
             ),

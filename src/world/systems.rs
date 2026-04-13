@@ -231,6 +231,12 @@ pub fn sync_remote_player_projection(
     }
 }
 
+/// Y-sorted entities live above all flat layers (ground, pickups).
+/// Lower tile_y = lower on screen = closer to viewer = higher z.
+fn y_sort_z(tile_y: i32) -> f32 {
+    1.0 - tile_y as f32 * 0.01
+}
+
 pub fn sync_tile_transforms(
     client_state: Res<ClientGameState>,
     world_config: Res<WorldConfig>,
@@ -245,14 +251,52 @@ pub fn sync_tile_transforms(
 
     for (space_resident, tile_position, world_visual, mut transform) in &mut query {
         let is_active = space_resident.space_id == player_position.space_id;
+
+        let z = if !is_active {
+            -10_000.0
+        } else if world_visual.y_sort {
+            y_sort_z(tile_position.y)
+        } else {
+            world_visual.z_index
+        };
+
+        let anchor_y_offset = if world_visual.y_sort {
+            -world_config.tile_size * 0.5
+        } else {
+            0.0
+        };
+
         transform.translation = Vec3::new(
             (tile_position.x - player_position.tile_position.x) as f32 * world_config.tile_size,
-            (tile_position.y - player_position.tile_position.y) as f32 * world_config.tile_size,
-            if is_active {
-                world_visual.z_index
-            } else {
-                -10_000.0
-            },
+            (tile_position.y - player_position.tile_position.y) as f32 * world_config.tile_size
+                + anchor_y_offset,
+            z,
+        );
+    }
+}
+
+pub fn sync_player_z(
+    client_state: Res<ClientGameState>,
+    mut query: Query<(&WorldVisual, &TilePosition, &mut Transform), With<Player>>,
+) {
+    let Ok((world_visual, tile_position, mut transform)) = query.single_mut() else {
+        return;
+    };
+
+    if world_visual.y_sort {
+        let _ = client_state.player_position;
+        let new_z = y_sort_z(tile_position.y);
+        if (transform.translation.z - new_z).abs() > 0.001 {
+            info!(
+                "player z update: tile_y={} z_index={} -> z={}",
+                tile_position.y, world_visual.z_index, new_z
+            );
+        }
+        transform.translation.z = new_z;
+    } else {
+        info!(
+            "player y_sort=false, z_index={}, z={}",
+            world_visual.z_index, transform.translation.z
         );
     }
 }

@@ -449,6 +449,31 @@ Top-level fields:
 - Meaning: Bevy asset path to the sprite image
 - Path should be relative to `assets/`
 
+### `sprite_width_tiles`
+- Type: float
+- Optional: yes
+- Default: `0.0`
+- Meaning: sprite width in tile units for oversized sprites
+- When both `sprite_width_tiles` and `sprite_height_tiles` are greater than 0, the sprite is rendered at this size instead of the `debug_size` square
+- Enables Tibia-style oversized rendering where sprites extend beyond their grid tile
+
+### `sprite_height_tiles`
+- Type: float
+- Optional: yes
+- Default: `0.0`
+- Meaning: sprite height in tile units for oversized sprites
+- Used together with `sprite_width_tiles` to define non-square sprite dimensions
+- A tree occupying 1 tile but visually 2 tiles tall would use `sprite_height_tiles: 2.0`
+
+### `y_sort`
+- Type: boolean
+- Optional: yes
+- Default: `false`
+- Meaning: enables y-based depth sorting within the object's z_index layer
+- When enabled, sprites are anchored at their bottom-center (foot position) and rendered with depth based on their vertical position: objects lower on screen render in front of objects higher on screen
+- Recommended for obstacles, NPCs, and players to achieve correct occlusion with oversized sprites
+- Ground tiles and flat pickups should leave this as `false`
+
 Example:
 
 ```yaml

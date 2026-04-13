@@ -1,6 +1,6 @@
 {
   "format_version": 2,
-  "saved_at_unix_seconds": 1776116263,
+  "saved_at_unix_seconds": 1776122388,
   "world_config": {
     "current_space_id": 0,
     "map_width": 40,
@@ -1800,8 +1800,8 @@
       "object_id": 2170,
       "space_id": 0,
       "tile_position": {
-        "x": 5,
-        "y": 6
+        "x": 11,
+        "y": 22
       },
       "inventory": {
         "backpack_slots": [
@@ -2055,7 +2055,7 @@
       "space_id": 0,
       "tile_position": {
         "x": 7,
-        "y": 25
+        "y": 22
       },
       "collider": true,
       "movable": false,
@@ -2110,10 +2110,10 @@
         },
         "hostile_behavior": null,
         "roaming_step_timer": {
-          "remaining_seconds": 0.92654794
+          "remaining_seconds": 1.2
         },
         "roaming_random_state": {
-          "seed": 1397586434342692814
+          "seed": 2577721280448941311
         }
       }
     },
@@ -2122,8 +2122,8 @@
       "definition_id": "villager",
       "space_id": 0,
       "tile_position": {
-        "x": 34,
-        "y": 7
+        "x": 35,
+        "y": 5
       },
       "collider": true,
       "movable": false,
@@ -2178,10 +2178,10 @@
         },
         "hostile_behavior": null,
         "roaming_step_timer": {
-          "remaining_seconds": 0.022071572
+          "remaining_seconds": 1.1670667
         },
         "roaming_random_state": {
-          "seed": 16116460531196260403
+          "seed": 5349582864807501422
         }
       }
     },
@@ -2190,8 +2190,8 @@
       "definition_id": "goblin",
       "space_id": 0,
       "tile_position": {
-        "x": 16,
-        "y": 19
+        "x": 19,
+        "y": 24
       },
       "collider": true,
       "movable": false,
@@ -2251,10 +2251,10 @@
           "disengage_distance_tiles": 8
         },
         "roaming_step_timer": {
-          "remaining_seconds": 0.7366715
+          "remaining_seconds": 0.4366356
         },
         "roaming_random_state": {
-          "seed": 3581734396354463301
+          "seed": 3830961570609202496
         }
       }
     },
@@ -3952,8 +3952,8 @@
       "definition_id": "goblin",
       "space_id": 1,
       "tile_position": {
-        "x": 11,
-        "y": 6
+        "x": 12,
+        "y": 7
       },
       "collider": true,
       "movable": false,
@@ -4013,10 +4013,10 @@
           "disengage_distance_tiles": 7
         },
         "roaming_step_timer": {
-          "remaining_seconds": 0.19769013
+          "remaining_seconds": 0.36628
         },
         "roaming_random_state": {
-          "seed": 10371609972733608494
+          "seed": 6501733431970884399
         }
       }
     },
@@ -4025,8 +4025,8 @@
       "definition_id": "goblin",
       "space_id": 1,
       "tile_position": {
-        "x": 23,
-        "y": 12
+        "x": 20,
+        "y": 13
       },
       "collider": true,
       "movable": false,
@@ -4086,10 +4086,10 @@
           "disengage_distance_tiles": 8
         },
         "roaming_step_timer": {
-          "remaining_seconds": 0.73701143
+          "remaining_seconds": 0.55370474
         },
         "roaming_random_state": {
-          "seed": 5653861896231459005
+          "seed": 12158497579167776165
         }
       }
     },

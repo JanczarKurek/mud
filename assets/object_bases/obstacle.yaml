@@ -1,2 +1,4 @@
 extends: static_world
 colliding: true
+render:
+  y_sort: true

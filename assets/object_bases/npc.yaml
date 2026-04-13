@@ -6,3 +6,4 @@ render:
   z_index: 1.0
   debug_color: [188, 138, 88]
   debug_size: 0.95
+  y_sort: true

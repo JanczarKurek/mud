@@ -265,10 +265,15 @@ pub fn spawn_overworld_object_instance(
     }
 }
 
-pub fn attach_combat_health_bar(commands: &mut Commands, entity: Entity, tile_size: f32) {
+pub fn attach_combat_health_bar(
+    commands: &mut Commands,
+    entity: Entity,
+    tile_size: f32,
+    sprite_height: f32,
+) {
     let bar_width = tile_size * 0.72;
     let bar_height = 5.0;
-    let bar_y = tile_size * 0.52;
+    let bar_y = sprite_height + 2.0;
     let fill_width = bar_width - 2.0;
 
     let mut root_entity = Entity::PLACEHOLDER;
@@ -326,6 +331,8 @@ fn spawn_ground_tile(
         tile_position,
         WorldVisual {
             z_index: definition.render.z_index,
+            y_sort: false,
+            sprite_height: 0.0,
         },
         sprite,
         Transform::from_xyz(0.0, 0.0, definition.render.z_index),
@@ -397,30 +404,33 @@ pub fn spawn_client_projected_world_object(
         .get(definition_id)
         .unwrap_or_else(|| panic!("Missing overworld object definition for id '{definition_id}'"));
     let sprite = sprite_for_definition(asset_server, definition, world_config);
-    let entity = commands
-        .spawn((
-            ClientProjectedWorldObject {
-                object_id,
-                definition_id: definition_id.to_owned(),
-            },
-            SpaceResident {
-                space_id: position.space_id,
-            },
-            position.tile_position,
-            WorldVisual {
-                z_index: definition.render.z_index,
-            },
-            DisplayedVitalStats::default(),
-            sprite,
-            Transform::from_xyz(0.0, 0.0, definition.render.z_index),
-        ))
-        .id();
+    let visual = world_visual_for_definition(definition, world_config.tile_size);
+    let sprite_height = visual.sprite_height;
+    let uses_y_sort = visual.y_sort;
+    let mut entity_commands = commands.spawn((
+        ClientProjectedWorldObject {
+            object_id,
+            definition_id: definition_id.to_owned(),
+        },
+        SpaceResident {
+            space_id: position.space_id,
+        },
+        position.tile_position,
+        visual,
+        DisplayedVitalStats::default(),
+        sprite,
+        Transform::from_xyz(0.0, 0.0, definition.render.z_index),
+    ));
+    if uses_y_sort {
+        entity_commands.insert(bevy::sprite::Anchor::BOTTOM_CENTER);
+    }
+    let entity = entity_commands.id();
 
     if is_npc {
         commands.entity(entity).insert(HealthBarDisplayPolicy {
             always_visible: false,
         });
-        attach_combat_health_bar(commands, entity, world_config.tile_size);
+        attach_combat_health_bar(commands, entity, world_config.tile_size, sprite_height);
     }
 
     entity
@@ -440,31 +450,46 @@ pub fn spawn_client_remote_player(
         .unwrap_or_else(|| panic!("Missing overworld object definition for id 'player'"));
     let mut sprite = sprite_for_definition(asset_server, definition, world_config);
     sprite.color = Color::srgba(0.82, 0.92, 1.0, 0.8);
+    let visual = world_visual_for_definition(definition, world_config.tile_size);
+    let sprite_height = visual.sprite_height;
+    let uses_y_sort = visual.y_sort;
 
-    let entity = commands
-        .spawn((
-            ClientRemotePlayerVisual {
-                player_id,
-                object_id,
-            },
-            SpaceResident {
-                space_id: position.space_id,
-            },
-            position.tile_position,
-            WorldVisual {
-                z_index: definition.render.z_index,
-            },
-            DisplayedVitalStats::default(),
-            sprite,
-            Transform::from_xyz(0.0, 0.0, definition.render.z_index),
-        ))
-        .id();
+    let mut entity_commands = commands.spawn((
+        ClientRemotePlayerVisual {
+            player_id,
+            object_id,
+        },
+        SpaceResident {
+            space_id: position.space_id,
+        },
+        position.tile_position,
+        visual,
+        DisplayedVitalStats::default(),
+        sprite,
+        Transform::from_xyz(0.0, 0.0, definition.render.z_index),
+    ));
+    if uses_y_sort {
+        entity_commands.insert(bevy::sprite::Anchor::BOTTOM_CENTER);
+    }
+    let entity = entity_commands.id();
 
     commands.entity(entity).insert(HealthBarDisplayPolicy {
         always_visible: false,
     });
-    attach_combat_health_bar(commands, entity, world_config.tile_size);
+    attach_combat_health_bar(commands, entity, world_config.tile_size, sprite_height);
     entity
+}
+
+pub fn world_visual_for_definition(
+    definition: &OverworldObjectDefinition,
+    tile_size: f32,
+) -> WorldVisual {
+    let sprite_size = definition.render.sprite_pixel_size(tile_size);
+    WorldVisual {
+        z_index: definition.render.z_index,
+        y_sort: definition.render.y_sort,
+        sprite_height: sprite_size.y,
+    }
 }
 
 fn sprite_for_definition(
@@ -472,19 +497,17 @@ fn sprite_for_definition(
     definition: &OverworldObjectDefinition,
     world_config: &WorldConfig,
 ) -> Sprite {
+    let size = definition.render.sprite_pixel_size(world_config.tile_size);
+
     let mut sprite = if let Some(sprite_path) = &definition.render.sprite_path {
         let mut sprite = Sprite::from_image(asset_server.load(sprite_path));
-        sprite.custom_size = Some(Vec2::splat(
-            world_config.tile_size * definition.render.debug_size,
-        ));
+        sprite.custom_size = Some(size);
         sprite
     } else {
-        Sprite::from_color(
-            definition.debug_color(),
-            Vec2::splat(world_config.tile_size * definition.render.debug_size),
-        )
+        Sprite::from_color(definition.debug_color(), size)
     };
 
     sprite.image_mode = SpriteImageMode::Auto;
+
     sprite
 }
