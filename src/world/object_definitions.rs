@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
+use bevy::log::info;
 use bevy::prelude::*;
 use serde::Deserialize;
 use serde::Serialize;
@@ -146,6 +147,10 @@ pub struct OverworldObjectDefinitions {
 impl OverworldObjectDefinitions {
     pub fn load_from_disk() -> Self {
         let object_definitions_path = Path::new(OBJECT_DEFINITIONS_PATH);
+        info!(
+            "loading overworld object definitions from {}",
+            object_definitions_path.display()
+        );
         let object_entries = fs::read_dir(object_definitions_path).unwrap_or_else(|error| {
             panic!(
                 "Failed to read overworld object definitions from {}: {error}",
@@ -169,6 +174,10 @@ impl OverworldObjectDefinitions {
             };
 
             let metadata_path = path.join("metadata.yaml");
+            info!(
+                "loading overworld object metadata {}",
+                metadata_path.display()
+            );
             raw_definition_values.insert(
                 directory_name.to_owned(),
                 load_yaml_value(&metadata_path, "overworld object metadata"),
@@ -212,6 +221,10 @@ impl OverworldObjectDefinitions {
 
 fn load_base_values() -> HashMap<String, Value> {
     let base_path = Path::new(OBJECT_BASES_PATH);
+    info!(
+        "loading overworld object base metadata from {}",
+        base_path.display()
+    );
     let Ok(entries) = fs::read_dir(base_path) else {
         return HashMap::new();
     };

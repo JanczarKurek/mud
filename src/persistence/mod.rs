@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -5,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use bevy::app::AppExit;
 use bevy::ecs::message::MessageReader;
-use bevy::log::{error, info};
+use bevy::log::{debug, error, info, warn};
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -31,6 +32,11 @@ pub const DEFAULT_WORLD_SAVE_PATH: &str = "saves/world-state.json";
 
 pub struct PersistenceServerPlugin {
     pub save_path: Option<String>,
+}
+
+#[derive(SystemSet, Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum PersistenceStartupSet {
+    LoadSnapshot,
 }
 
 #[derive(Resource, Clone, Copy, Debug, Default)]
@@ -63,7 +69,9 @@ impl Plugin for PersistenceServerPlugin {
         .insert_resource(WorldSnapshotStatus::default())
         .add_systems(
             Startup,
-            load_world_from_snapshot.before(initialize_runtime_spaces),
+            load_world_from_snapshot
+                .in_set(PersistenceStartupSet::LoadSnapshot)
+                .before(initialize_runtime_spaces),
         )
         .add_systems(Last, save_world_on_app_exit);
     }
@@ -411,8 +419,22 @@ fn load_world_from_snapshot(
     mut space_manager: ResMut<SpaceManager>,
     mut tcp_server_state: Option<ResMut<TcpServerState>>,
 ) {
-    let Ok(dump) = read_world_dump(&save_config.path) else {
-        return;
+    let dump = match read_world_dump(&save_config.path) {
+        Ok(dump) => dump,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            info!(
+                "no world snapshot found at {}; starting fresh world",
+                save_config.path.display()
+            );
+            return;
+        }
+        Err(error) => {
+            warn!(
+                "failed to load world snapshot from {}: {error}",
+                save_config.path.display()
+            );
+            return;
+        }
     };
 
     let WorldStateDump {
@@ -504,7 +526,17 @@ fn load_world_from_snapshot(
     let mut object_entities = std::collections::HashMap::new();
     let mut pending_combat_targets = Vec::new();
 
+    let mut seen_players = HashSet::new();
     for player in players {
+        let player_key = (player.player_id.0, player.object_id);
+        if !seen_players.insert(player_key) {
+            warn!(
+                "skipping duplicate player entry from snapshot: player_id={} object_id={}",
+                player.player_id.0, player.object_id
+            );
+            continue;
+        }
+
         let space_id = player.space_id.unwrap_or(current_space_id);
         let entity = commands
             .spawn((
@@ -617,6 +649,13 @@ fn load_world_from_snapshot(
 }
 
 fn write_world_dump(path: &Path, dump: &WorldStateDump) -> std::io::Result<()> {
+    info!(
+        "writing world snapshot to {} ({} players, {} world objects, {} spaces)",
+        path.display(),
+        dump.players.len(),
+        dump.world_objects.len(),
+        dump.spaces.len()
+    );
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -629,6 +668,7 @@ fn write_world_dump(path: &Path, dump: &WorldStateDump) -> std::io::Result<()> {
 }
 
 fn read_world_dump(path: &Path) -> std::io::Result<WorldStateDump> {
+    debug!("reading world snapshot from {}", path.display());
     let file = File::open(path)?;
     let reader = BufReader::new(file);
     serde_json::from_reader(reader).map_err(std::io::Error::other)

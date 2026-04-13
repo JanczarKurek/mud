@@ -1,12 +1,13 @@
 use bevy::prelude::*;
 
 use crate::combat::components::{AttackProfile, CombatLeash};
+use crate::persistence::WorldSnapshotStatus;
 use crate::player::components::{
     BaseStats, ChatLog, DerivedStats, Inventory, MovementCooldown, Player, PlayerId,
     PlayerIdentity, VitalStats,
 };
 use crate::world::components::{
-    Collider, DisplayedVitalStats, HealthBarDisplayPolicy, OverworldObject, SpaceResident,
+    Collider, DisplayedVitalStats, HealthBarDisplayPolicy, OverworldObject, SpaceId, SpaceResident,
     TilePosition, WorldVisual,
 };
 use crate::world::object_definitions::OverworldObjectDefinitions;
@@ -18,9 +19,17 @@ pub fn spawn_embedded_player_authoritative(
     mut commands: Commands,
     world_config: Res<WorldConfig>,
     mut object_registry: ResMut<ObjectRegistry>,
-    player_query: Query<Entity, With<Player>>,
+    snapshot_status: Option<Res<WorldSnapshotStatus>>,
+    player_query: Query<Option<&PlayerIdentity>, With<Player>>,
 ) {
-    if !player_query.is_empty() {
+    if snapshot_status.as_ref().is_some_and(|status| status.loaded) {
+        return;
+    }
+
+    if player_query
+        .iter()
+        .any(|identity| identity.is_none_or(|identity| identity.id == PlayerId(0)))
+    {
         return;
     }
 
@@ -37,9 +46,25 @@ pub fn spawn_embedded_player_authoritative(
 
 pub fn spawn_player_authoritative(
     commands: &mut Commands,
-    _world_config: &WorldConfig,
+    world_config: &WorldConfig,
     player_id: PlayerId,
     object_id: u64,
+    tile_position: TilePosition,
+) -> Entity {
+    spawn_player_authoritative_in_space(
+        commands,
+        player_id,
+        object_id,
+        world_config.current_space_id,
+        tile_position,
+    )
+}
+
+pub fn spawn_player_authoritative_in_space(
+    commands: &mut Commands,
+    player_id: PlayerId,
+    object_id: u64,
+    space_id: SpaceId,
     tile_position: TilePosition,
 ) -> Entity {
     let base_stats = BaseStats::default();
@@ -66,9 +91,7 @@ pub fn spawn_player_authoritative(
                 object_id,
                 definition_id: "player".to_owned(),
             },
-            SpaceResident {
-                space_id: _world_config.current_space_id,
-            },
+            SpaceResident { space_id },
             tile_position,
         ))
         .id()

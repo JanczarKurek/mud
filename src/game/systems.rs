@@ -1,3 +1,4 @@
+use bevy::log::{debug, info};
 use bevy::prelude::*;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -325,6 +326,7 @@ pub fn collect_game_events_from_authority(
     mut pending_game_events: ResMut<PendingGameEvents>,
 ) {
     pending_game_events.events.clear();
+    let mut authoritative_local_space_id = None;
 
     if let Ok((
         player_identity,
@@ -338,6 +340,8 @@ pub fn collect_game_events_from_authority(
         combat_target,
     )) = player_query.single()
     {
+        authoritative_local_space_id = Some(player_space_resident.space_id);
+
         if client_state.inventory != *inventory_state {
             pending_game_events
                 .events
@@ -423,9 +427,12 @@ pub fn collect_game_events_from_authority(
     }
 
     let mut current_container_ids = Vec::new();
-    let local_space_id = client_state
-        .player_position
-        .map(|position| position.space_id)
+    let local_space_id = authoritative_local_space_id
+        .or_else(|| {
+            client_state
+                .player_position
+                .map(|position| position.space_id)
+        })
         .unwrap_or(crate::world::components::SpaceId(0));
 
     for (container, object, resident) in &container_query {
@@ -505,6 +512,7 @@ pub fn apply_game_events_to_client_state(
     let events = std::mem::take(&mut pending_game_events.events);
 
     for event in events {
+        log_client_game_event(&client_state, &event);
         match event {
             GameEvent::InventoryChanged { inventory } => {
                 client_state.inventory = inventory;
@@ -549,6 +557,116 @@ pub fn apply_game_events_to_client_state(
             GameEvent::RemotePlayerRemoved { player_id } => {
                 client_state.remote_players.remove(&player_id);
             }
+        }
+    }
+}
+
+fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
+    match event {
+        GameEvent::InventoryChanged { inventory } => info!(
+            "client inventory updated: {} backpack slots used, {} equipped slots occupied",
+            inventory
+                .backpack_slots
+                .iter()
+                .flatten()
+                .count(),
+            inventory
+                .equipment_slots
+                .iter()
+                .filter_map(|(_, object_id)| *object_id)
+                .count(),
+        ),
+        GameEvent::ChatLogChanged { lines } => {
+            let previous_count = client_state.chat_log_lines.len();
+            let new_count = lines.len();
+            if new_count > previous_count {
+                if let Some(last_line) = lines.last() {
+                    info!("client chat log appended: {last_line}");
+                }
+            } else {
+                debug!(
+                    "client chat log replaced: {} -> {} lines",
+                    previous_count,
+                    new_count
+                );
+            }
+        }
+        GameEvent::PlayerPositionChanged { position, .. } => info!(
+            "client player position updated: {:?} -> space {} at ({}, {})",
+            client_state.player_position,
+            position.space_id.0,
+            position.tile_position.x,
+            position.tile_position.y
+        ),
+        GameEvent::CurrentSpaceChanged { space } => info!(
+            "client current space updated: {:?} -> {} ({})",
+            client_state
+                .current_space
+                .as_ref()
+                .map(|current| current.space_id.0),
+            space.space_id.0,
+            space.authored_id
+        ),
+        GameEvent::PlayerVitalsChanged { vitals } => info!(
+            "client player vitals updated: hp {:.1}/{:.1} -> {:.1}/{:.1}, mana {:.1}/{:.1} -> {:.1}/{:.1}",
+            client_state
+                .player_vitals
+                .map(|current| current.health)
+                .unwrap_or_default(),
+            client_state
+                .player_vitals
+                .map(|current| current.max_health)
+                .unwrap_or_default(),
+            vitals.health,
+            vitals.max_health,
+            client_state
+                .player_vitals
+                .map(|current| current.mana)
+                .unwrap_or_default(),
+            client_state
+                .player_vitals
+                .map(|current| current.max_mana)
+                .unwrap_or_default(),
+            vitals.mana,
+            vitals.max_mana
+        ),
+        GameEvent::PlayerStorageChanged { storage_slots } => info!(
+            "client player storage updated: {} -> {}",
+            client_state.player_storage_slots,
+            storage_slots
+        ),
+        GameEvent::CombatTargetChanged { target_object_id } => info!(
+            "client combat target updated: {:?} -> {:?}",
+            client_state.current_target_object_id,
+            target_object_id
+        ),
+        GameEvent::ContainerChanged { object_id, slots } => debug!(
+            "client container {} updated: {} slots",
+            object_id,
+            slots.len()
+        ),
+        GameEvent::ContainerRemoved { object_id } => {
+            debug!("client container {} removed from projection", object_id)
+        }
+        GameEvent::WorldObjectUpserted { object } => debug!(
+            "client projected object upserted: {} ({}) at ({}, {})",
+            object.object_id,
+            object.definition_id,
+            object.tile_position.x,
+            object.tile_position.y
+        ),
+        GameEvent::WorldObjectRemoved { object_id } => {
+            debug!("client projected object removed: {}", object_id)
+        }
+        GameEvent::RemotePlayerUpserted { player } => debug!(
+            "client remote player upserted: {} object {} at ({}, {})",
+            player.player_id.0,
+            player.object_id,
+            player.tile_position.x,
+            player.tile_position.y
+        ),
+        GameEvent::RemotePlayerRemoved { player_id } => {
+            debug!("client remote player removed: {}", player_id.0)
         }
     }
 }
@@ -1740,7 +1858,12 @@ mod tests {
             .id()
     }
 
-    fn spawn_world_object(app: &mut App, type_id: &str, object_id: u64, tile: TilePosition) {
+    fn spawn_world_object(
+        app: &mut App,
+        type_id: &str,
+        object_id: u64,
+        tile: TilePosition,
+    ) -> Entity {
         let current_space_id = app.world().resource::<WorldConfig>().current_space_id;
         let definition = app
             .world()
@@ -1772,6 +1895,56 @@ mod tests {
                 slots: vec![None; capacity],
             });
         }
+
+        entity.id()
+    }
+
+    #[test]
+    fn loaded_player_space_drives_same_frame_world_projection() {
+        let mut app = setup_server_app();
+        let alternate_space_id = app
+            .world()
+            .resource::<crate::world::resources::SpaceManager>()
+            .spaces
+            .keys()
+            .copied()
+            .find(|space_id| *space_id != app.world().resource::<WorldConfig>().current_space_id)
+            .expect("expected a second persistent space for projection test");
+
+        let player = spawn_player(&mut app, 1, 4, 4);
+        app.world_mut().entity_mut(player).insert(SpaceResident {
+            space_id: alternate_space_id,
+        });
+
+        let object_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("apple");
+        let world_object =
+            spawn_world_object(&mut app, "apple", object_id, TilePosition::new(5, 4));
+        app.world_mut()
+            .entity_mut(world_object)
+            .insert(SpaceResident {
+                space_id: alternate_space_id,
+            });
+
+        app.update();
+
+        let client_state = app.world().resource::<ClientGameState>();
+        assert_eq!(
+            client_state
+                .player_position
+                .map(|position| position.space_id),
+            Some(alternate_space_id)
+        );
+        assert_eq!(
+            client_state
+                .current_space
+                .as_ref()
+                .map(|space| space.space_id),
+            Some(alternate_space_id)
+        );
+        assert!(client_state.world_objects.contains_key(&object_id));
     }
 
     #[test]

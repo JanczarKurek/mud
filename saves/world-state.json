@@ -1,8 +1,8 @@
 {
   "format_version": 2,
-  "saved_at_unix_seconds": 1775939394,
+  "saved_at_unix_seconds": 1776116263,
   "world_config": {
-    "current_space_id": 1,
+    "current_space_id": 0,
     "map_width": 40,
     "map_height": 30,
     "tile_size": 48.0,
@@ -16,25 +16,25 @@
   "spaces": [
     {
       "id": 0,
-      "authored_id": "underworld",
-      "width": 28,
-      "height": 18,
-      "fill_object_type": "cave_floor",
-      "permanence": "persistent",
-      "instance_owner": null
-    },
-    {
-      "id": 1,
       "authored_id": "overworld",
       "width": 40,
       "height": 30,
       "fill_object_type": "grass",
       "permanence": "persistent",
       "instance_owner": null
+    },
+    {
+      "id": 1,
+      "authored_id": "underworld",
+      "width": 28,
+      "height": 18,
+      "fill_object_type": "cave_floor",
+      "permanence": "persistent",
+      "instance_owner": null
     }
   ],
   "object_registry": {
-    "next_runtime_id": 2172,
+    "next_runtime_id": 2171,
     "entries": [
       {
         "object_id": 300,
@@ -1788,23 +1788,142 @@
         "object_id": 2170,
         "type_id": "player",
         "properties": {}
-      },
-      {
-        "object_id": 2171,
-        "type_id": "player",
-        "properties": {}
       }
     ]
   },
   "network": {
-    "next_connection_id": 2
+    "next_connection_id": 0
   },
-  "players": [],
+  "players": [
+    {
+      "player_id": 0,
+      "object_id": 2170,
+      "space_id": 0,
+      "tile_position": {
+        "x": 5,
+        "y": 6
+      },
+      "inventory": {
+        "backpack_slots": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "equipment_slots": [
+          [
+            "amulet",
+            null
+          ],
+          [
+            "helmet",
+            null
+          ],
+          [
+            "weapon",
+            null
+          ],
+          [
+            "armor",
+            null
+          ],
+          [
+            "shield",
+            null
+          ],
+          [
+            "legs",
+            null
+          ],
+          [
+            "backpack",
+            null
+          ],
+          [
+            "ring",
+            null
+          ],
+          [
+            "boots",
+            null
+          ]
+        ]
+      },
+      "chat_log": {
+        "lines": [
+          "[Goblin hit Player for 2 damage]",
+          "[Goblin hit Player for 6 damage]",
+          "[Goblin hit Player for 5 damage]",
+          "[Goblin hit Player for 2 damage]",
+          "[Goblin hit Player for 6 damage]",
+          "[Goblin hit Player for 6 damage]",
+          "[Goblin hit Player for 6 damage]",
+          "[Player is defeated]"
+        ],
+        "max_lines": 8
+      },
+      "base_stats": {
+        "attributes": {
+          "strength": 10,
+          "agility": 10,
+          "constitution": 10,
+          "willpower": 10,
+          "charisma": 10,
+          "focus": 10
+        },
+        "max_health": 0,
+        "max_mana": 0,
+        "storage_slots": 8
+      },
+      "derived_stats": {
+        "attributes": {
+          "strength": 10,
+          "agility": 10,
+          "constitution": 10,
+          "willpower": 10,
+          "charisma": 10,
+          "focus": 10
+        },
+        "max_health": 115,
+        "max_mana": 100,
+        "storage_slots": 8
+      },
+      "vital_stats": {
+        "health": 0.0,
+        "max_health": 115.0,
+        "mana": 100.0,
+        "max_mana": 100.0
+      },
+      "movement_cooldown": {
+        "remaining_seconds": 0.0,
+        "step_interval_seconds": 0.18
+      },
+      "attack_profile": {
+        "kind": "Melee"
+      },
+      "combat_leash": {
+        "max_distance_tiles": 6
+      },
+      "combat_target_object_id": null
+    }
+  ],
   "world_objects": [
     {
       "object_id": 300,
       "definition_id": "barrel",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 20,
         "y": 13
@@ -1827,7 +1946,7 @@
     {
       "object_id": 301,
       "definition_id": "barrel",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 21,
         "y": 13
@@ -1850,7 +1969,7 @@
     {
       "object_id": 302,
       "definition_id": "barrel",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 22,
         "y": 15
@@ -1873,7 +1992,7 @@
     {
       "object_id": 303,
       "definition_id": "barrel",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 19,
         "y": 16
@@ -1896,7 +2015,7 @@
     {
       "object_id": 304,
       "definition_id": "barrel",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 25,
         "y": 12
@@ -1919,7 +2038,7 @@
     {
       "object_id": 305,
       "definition_id": "sinkhole",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 31,
         "y": 23
@@ -1933,10 +2052,10 @@
     {
       "object_id": 900,
       "definition_id": "villager",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
-        "x": 5,
-        "y": 23
+        "x": 7,
+        "y": 25
       },
       "collider": true,
       "movable": false,
@@ -1991,20 +2110,20 @@
         },
         "hostile_behavior": null,
         "roaming_step_timer": {
-          "remaining_seconds": 1.183205
+          "remaining_seconds": 0.92654794
         },
         "roaming_random_state": {
-          "seed": 7505484449260917012
+          "seed": 1397586434342692814
         }
       }
     },
     {
       "object_id": 901,
       "definition_id": "villager",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
-        "x": 32,
-        "y": 5
+        "x": 34,
+        "y": 7
       },
       "collider": true,
       "movable": false,
@@ -2059,20 +2178,20 @@
         },
         "hostile_behavior": null,
         "roaming_step_timer": {
-          "remaining_seconds": 1.1803253
+          "remaining_seconds": 0.022071572
         },
         "roaming_random_state": {
-          "seed": 14304475645287882887
+          "seed": 16116460531196260403
         }
       }
     },
     {
       "object_id": 902,
       "definition_id": "goblin",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
-        "x": 15,
-        "y": 22
+        "x": 16,
+        "y": 19
       },
       "collider": true,
       "movable": false,
@@ -2106,7 +2225,7 @@
           "storage_slots": 0
         },
         "vital_stats": {
-          "health": 89.0,
+          "health": 107.0,
           "max_health": 107.0,
           "mana": 82.0,
           "max_mana": 82.0
@@ -2132,17 +2251,17 @@
           "disengage_distance_tiles": 8
         },
         "roaming_step_timer": {
-          "remaining_seconds": 0.9
+          "remaining_seconds": 0.7366715
         },
         "roaming_random_state": {
-          "seed": 11321145957353373807
+          "seed": 3581734396354463301
         }
       }
     },
     {
       "object_id": 903,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 10,
         "y": 4
@@ -2156,7 +2275,7 @@
     {
       "object_id": 904,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 11,
         "y": 4
@@ -2170,7 +2289,7 @@
     {
       "object_id": 905,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 10,
         "y": 5
@@ -2184,7 +2303,7 @@
     {
       "object_id": 906,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 11,
         "y": 5
@@ -2198,7 +2317,7 @@
     {
       "object_id": 907,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 10,
         "y": 6
@@ -2212,7 +2331,7 @@
     {
       "object_id": 908,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 11,
         "y": 6
@@ -2226,7 +2345,7 @@
     {
       "object_id": 909,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 10,
         "y": 7
@@ -2240,7 +2359,7 @@
     {
       "object_id": 910,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 11,
         "y": 7
@@ -2254,7 +2373,7 @@
     {
       "object_id": 911,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 10,
         "y": 8
@@ -2268,7 +2387,7 @@
     {
       "object_id": 912,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 11,
         "y": 8
@@ -2282,7 +2401,7 @@
     {
       "object_id": 913,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 10,
         "y": 9
@@ -2296,7 +2415,7 @@
     {
       "object_id": 914,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 11,
         "y": 9
@@ -2310,7 +2429,7 @@
     {
       "object_id": 915,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 12,
         "y": 8
@@ -2324,7 +2443,7 @@
     {
       "object_id": 916,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 12,
         "y": 9
@@ -2338,7 +2457,7 @@
     {
       "object_id": 917,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 13,
         "y": 8
@@ -2352,7 +2471,7 @@
     {
       "object_id": 918,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 13,
         "y": 9
@@ -2366,7 +2485,7 @@
     {
       "object_id": 919,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 14,
         "y": 8
@@ -2380,7 +2499,7 @@
     {
       "object_id": 920,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 14,
         "y": 9
@@ -2394,7 +2513,7 @@
     {
       "object_id": 921,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 15,
         "y": 8
@@ -2408,7 +2527,7 @@
     {
       "object_id": 922,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 15,
         "y": 9
@@ -2422,7 +2541,7 @@
     {
       "object_id": 923,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 16,
         "y": 8
@@ -2436,7 +2555,7 @@
     {
       "object_id": 924,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 16,
         "y": 9
@@ -2450,7 +2569,7 @@
     {
       "object_id": 925,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 17,
         "y": 8
@@ -2464,7 +2583,7 @@
     {
       "object_id": 926,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 17,
         "y": 9
@@ -2478,7 +2597,7 @@
     {
       "object_id": 927,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 22,
         "y": 16
@@ -2492,7 +2611,7 @@
     {
       "object_id": 928,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 22,
         "y": 17
@@ -2506,7 +2625,7 @@
     {
       "object_id": 929,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 22,
         "y": 18
@@ -2520,7 +2639,7 @@
     {
       "object_id": 930,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 22,
         "y": 19
@@ -2534,7 +2653,7 @@
     {
       "object_id": 931,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 22,
         "y": 20
@@ -2548,7 +2667,7 @@
     {
       "object_id": 932,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 23,
         "y": 16
@@ -2562,7 +2681,7 @@
     {
       "object_id": 933,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 23,
         "y": 17
@@ -2576,7 +2695,7 @@
     {
       "object_id": 934,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 23,
         "y": 18
@@ -2590,7 +2709,7 @@
     {
       "object_id": 935,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 23,
         "y": 19
@@ -2604,7 +2723,7 @@
     {
       "object_id": 936,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 23,
         "y": 20
@@ -2618,7 +2737,7 @@
     {
       "object_id": 937,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 24,
         "y": 16
@@ -2632,7 +2751,7 @@
     {
       "object_id": 938,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 24,
         "y": 17
@@ -2646,7 +2765,7 @@
     {
       "object_id": 939,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 24,
         "y": 18
@@ -2660,7 +2779,7 @@
     {
       "object_id": 940,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 24,
         "y": 19
@@ -2674,7 +2793,7 @@
     {
       "object_id": 941,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 24,
         "y": 20
@@ -2688,7 +2807,7 @@
     {
       "object_id": 942,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 25,
         "y": 16
@@ -2702,7 +2821,7 @@
     {
       "object_id": 943,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 25,
         "y": 17
@@ -2716,7 +2835,7 @@
     {
       "object_id": 944,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 25,
         "y": 18
@@ -2730,7 +2849,7 @@
     {
       "object_id": 945,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 25,
         "y": 19
@@ -2744,7 +2863,7 @@
     {
       "object_id": 946,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 25,
         "y": 20
@@ -2758,7 +2877,7 @@
     {
       "object_id": 947,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 26,
         "y": 16
@@ -2772,7 +2891,7 @@
     {
       "object_id": 948,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 26,
         "y": 17
@@ -2786,7 +2905,7 @@
     {
       "object_id": 949,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 26,
         "y": 18
@@ -2800,7 +2919,7 @@
     {
       "object_id": 950,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 26,
         "y": 19
@@ -2814,7 +2933,7 @@
     {
       "object_id": 951,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 26,
         "y": 20
@@ -2828,7 +2947,7 @@
     {
       "object_id": 952,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 27,
         "y": 16
@@ -2842,7 +2961,7 @@
     {
       "object_id": 953,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 27,
         "y": 17
@@ -2856,7 +2975,7 @@
     {
       "object_id": 954,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 27,
         "y": 18
@@ -2870,7 +2989,7 @@
     {
       "object_id": 955,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 27,
         "y": 19
@@ -2884,7 +3003,7 @@
     {
       "object_id": 956,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 27,
         "y": 20
@@ -2898,7 +3017,7 @@
     {
       "object_id": 957,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 28,
         "y": 16
@@ -2912,7 +3031,7 @@
     {
       "object_id": 958,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 28,
         "y": 17
@@ -2926,7 +3045,7 @@
     {
       "object_id": 959,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 28,
         "y": 18
@@ -2940,7 +3059,7 @@
     {
       "object_id": 960,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 28,
         "y": 19
@@ -2954,7 +3073,7 @@
     {
       "object_id": 961,
       "definition_id": "water",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 28,
         "y": 20
@@ -2968,7 +3087,7 @@
     {
       "object_id": 962,
       "definition_id": "tree",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 6,
         "y": 7
@@ -2982,7 +3101,7 @@
     {
       "object_id": 963,
       "definition_id": "tree",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 7,
         "y": 7
@@ -2996,7 +3115,7 @@
     {
       "object_id": 964,
       "definition_id": "tree",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 8,
         "y": 8
@@ -3010,7 +3129,7 @@
     {
       "object_id": 965,
       "definition_id": "tree",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 8,
         "y": 6
@@ -3024,7 +3143,7 @@
     {
       "object_id": 966,
       "definition_id": "tree",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 9,
         "y": 7
@@ -3038,7 +3157,7 @@
     {
       "object_id": 967,
       "definition_id": "tree",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 14,
         "y": 14
@@ -3052,7 +3171,7 @@
     {
       "object_id": 968,
       "definition_id": "tree",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 15,
         "y": 14
@@ -3066,7 +3185,7 @@
     {
       "object_id": 969,
       "definition_id": "tree",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 16,
         "y": 15
@@ -3080,7 +3199,7 @@
     {
       "object_id": 970,
       "definition_id": "tree",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 15,
         "y": 16
@@ -3094,7 +3213,7 @@
     {
       "object_id": 971,
       "definition_id": "tree",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 26,
         "y": 6
@@ -3108,7 +3227,7 @@
     {
       "object_id": 972,
       "definition_id": "tree",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 27,
         "y": 7
@@ -3122,7 +3241,7 @@
     {
       "object_id": 973,
       "definition_id": "tree",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 28,
         "y": 6
@@ -3136,7 +3255,7 @@
     {
       "object_id": 974,
       "definition_id": "tree",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 29,
         "y": 8
@@ -3150,7 +3269,7 @@
     {
       "object_id": 975,
       "definition_id": "tree",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 30,
         "y": 7
@@ -3164,7 +3283,7 @@
     {
       "object_id": 976,
       "definition_id": "wall",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 18,
         "y": 11
@@ -3178,7 +3297,7 @@
     {
       "object_id": 977,
       "definition_id": "wall",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 19,
         "y": 11
@@ -3192,7 +3311,7 @@
     {
       "object_id": 978,
       "definition_id": "wall",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 20,
         "y": 11
@@ -3206,7 +3325,7 @@
     {
       "object_id": 979,
       "definition_id": "wall",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 21,
         "y": 11
@@ -3220,7 +3339,7 @@
     {
       "object_id": 980,
       "definition_id": "wall",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 22,
         "y": 11
@@ -3234,7 +3353,7 @@
     {
       "object_id": 981,
       "definition_id": "wall",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 23,
         "y": 11
@@ -3248,7 +3367,7 @@
     {
       "object_id": 982,
       "definition_id": "wall",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 24,
         "y": 11
@@ -3262,7 +3381,7 @@
     {
       "object_id": 983,
       "definition_id": "wall",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 18,
         "y": 17
@@ -3276,7 +3395,7 @@
     {
       "object_id": 984,
       "definition_id": "wall",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 19,
         "y": 17
@@ -3290,7 +3409,7 @@
     {
       "object_id": 985,
       "definition_id": "wall",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 22,
         "y": 17
@@ -3304,7 +3423,7 @@
     {
       "object_id": 986,
       "definition_id": "wall",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 23,
         "y": 17
@@ -3318,7 +3437,7 @@
     {
       "object_id": 987,
       "definition_id": "wall",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 24,
         "y": 17
@@ -3332,7 +3451,7 @@
     {
       "object_id": 988,
       "definition_id": "wall",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 18,
         "y": 12
@@ -3346,7 +3465,7 @@
     {
       "object_id": 989,
       "definition_id": "wall",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 18,
         "y": 13
@@ -3360,7 +3479,7 @@
     {
       "object_id": 990,
       "definition_id": "wall",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 18,
         "y": 14
@@ -3374,7 +3493,7 @@
     {
       "object_id": 991,
       "definition_id": "wall",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 18,
         "y": 15
@@ -3388,7 +3507,7 @@
     {
       "object_id": 992,
       "definition_id": "wall",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 18,
         "y": 16
@@ -3402,7 +3521,7 @@
     {
       "object_id": 993,
       "definition_id": "wall",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 24,
         "y": 12
@@ -3416,7 +3535,7 @@
     {
       "object_id": 994,
       "definition_id": "wall",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 24,
         "y": 13
@@ -3430,7 +3549,7 @@
     {
       "object_id": 995,
       "definition_id": "wall",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 24,
         "y": 14
@@ -3444,7 +3563,7 @@
     {
       "object_id": 996,
       "definition_id": "wall",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 24,
         "y": 15
@@ -3458,7 +3577,7 @@
     {
       "object_id": 997,
       "definition_id": "wall",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 24,
         "y": 16
@@ -3472,7 +3591,7 @@
     {
       "object_id": 998,
       "definition_id": "flowers",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 4,
         "y": 4
@@ -3486,7 +3605,7 @@
     {
       "object_id": 999,
       "definition_id": "flowers",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 5,
         "y": 4
@@ -3500,7 +3619,7 @@
     {
       "object_id": 1000,
       "definition_id": "flowers",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 4,
         "y": 5
@@ -3514,7 +3633,7 @@
     {
       "object_id": 1001,
       "definition_id": "flowers",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 32,
         "y": 11
@@ -3528,7 +3647,7 @@
     {
       "object_id": 1002,
       "definition_id": "flowers",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 33,
         "y": 11
@@ -3542,7 +3661,7 @@
     {
       "object_id": 1003,
       "definition_id": "flowers",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 31,
         "y": 12
@@ -3556,7 +3675,7 @@
     {
       "object_id": 1004,
       "definition_id": "flowers",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 12,
         "y": 22
@@ -3570,7 +3689,7 @@
     {
       "object_id": 1005,
       "definition_id": "flowers",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 13,
         "y": 23
@@ -3584,7 +3703,7 @@
     {
       "object_id": 1006,
       "definition_id": "stone",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 3,
         "y": 19
@@ -3598,7 +3717,7 @@
     {
       "object_id": 1007,
       "definition_id": "stone",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 4,
         "y": 20
@@ -3612,7 +3731,7 @@
     {
       "object_id": 1008,
       "definition_id": "stone",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 5,
         "y": 19
@@ -3626,7 +3745,7 @@
     {
       "object_id": 1009,
       "definition_id": "stone",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 34,
         "y": 24
@@ -3640,7 +3759,7 @@
     {
       "object_id": 1010,
       "definition_id": "stone",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 35,
         "y": 24
@@ -3654,7 +3773,7 @@
     {
       "object_id": 1011,
       "definition_id": "stone",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 36,
         "y": 23
@@ -3668,7 +3787,7 @@
     {
       "object_id": 1012,
       "definition_id": "apple",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 18,
         "y": 18
@@ -3682,7 +3801,7 @@
     {
       "object_id": 1013,
       "definition_id": "apple",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 11,
         "y": 14
@@ -3696,7 +3815,7 @@
     {
       "object_id": 1014,
       "definition_id": "potion",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 21,
         "y": 18
@@ -3710,7 +3829,7 @@
     {
       "object_id": 1015,
       "definition_id": "scroll",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 30,
         "y": 12
@@ -3724,7 +3843,7 @@
     {
       "object_id": 1016,
       "definition_id": "silver_ring",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 7,
         "y": 20
@@ -3738,7 +3857,7 @@
     {
       "object_id": 1017,
       "definition_id": "copper_amulet",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 9,
         "y": 21
@@ -3752,7 +3871,7 @@
     {
       "object_id": 1018,
       "definition_id": "canvas_backpack",
-      "space_id": 1,
+      "space_id": 0,
       "tile_position": {
         "x": 28,
         "y": 10
@@ -3766,7 +3885,7 @@
     {
       "object_id": 2000,
       "definition_id": "portal_arch",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 3,
         "y": 14
@@ -3780,7 +3899,7 @@
     {
       "object_id": 2001,
       "definition_id": "barrel",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 10,
         "y": 15
@@ -3801,9 +3920,23 @@
       "npc": null
     },
     {
+      "object_id": 2004,
+      "definition_id": "silver_ring",
+      "space_id": 1,
+      "tile_position": {
+        "x": 16,
+        "y": 13
+      },
+      "collider": false,
+      "movable": true,
+      "storable": true,
+      "container_slots": null,
+      "npc": null
+    },
+    {
       "object_id": 2005,
       "definition_id": "copper_amulet",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 23,
         "y": 11
@@ -3817,10 +3950,10 @@
     {
       "object_id": 2006,
       "definition_id": "goblin",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
-        "x": 7,
-        "y": 3
+        "x": 11,
+        "y": 6
       },
       "collider": true,
       "movable": false,
@@ -3854,7 +3987,7 @@
           "storage_slots": 0
         },
         "vital_stats": {
-          "health": 91.0,
+          "health": 107.0,
           "max_health": 107.0,
           "mana": 82.0,
           "max_mana": 82.0
@@ -3880,20 +4013,20 @@
           "disengage_distance_tiles": 7
         },
         "roaming_step_timer": {
-          "remaining_seconds": 0.6484807
+          "remaining_seconds": 0.19769013
         },
         "roaming_random_state": {
-          "seed": 2616111585937412113
+          "seed": 10371609972733608494
         }
       }
     },
     {
       "object_id": 2007,
       "definition_id": "goblin",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
-        "x": 17,
-        "y": 11
+        "x": 23,
+        "y": 12
       },
       "collider": true,
       "movable": false,
@@ -3953,17 +4086,17 @@
           "disengage_distance_tiles": 8
         },
         "roaming_step_timer": {
-          "remaining_seconds": 0.12732854
+          "remaining_seconds": 0.73701143
         },
         "roaming_random_state": {
-          "seed": 6014685664844110620
+          "seed": 5653861896231459005
         }
       }
     },
     {
       "object_id": 2008,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 0,
         "y": 0
@@ -3977,7 +4110,7 @@
     {
       "object_id": 2009,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 1,
         "y": 0
@@ -3991,7 +4124,7 @@
     {
       "object_id": 2010,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 2,
         "y": 0
@@ -4005,7 +4138,7 @@
     {
       "object_id": 2011,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 3,
         "y": 0
@@ -4019,7 +4152,7 @@
     {
       "object_id": 2012,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 4,
         "y": 0
@@ -4033,7 +4166,7 @@
     {
       "object_id": 2013,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 5,
         "y": 0
@@ -4047,7 +4180,7 @@
     {
       "object_id": 2014,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 6,
         "y": 0
@@ -4061,7 +4194,7 @@
     {
       "object_id": 2015,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 7,
         "y": 0
@@ -4075,7 +4208,7 @@
     {
       "object_id": 2016,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 8,
         "y": 0
@@ -4089,7 +4222,7 @@
     {
       "object_id": 2017,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 9,
         "y": 0
@@ -4103,7 +4236,7 @@
     {
       "object_id": 2018,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 10,
         "y": 0
@@ -4117,7 +4250,7 @@
     {
       "object_id": 2019,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 11,
         "y": 0
@@ -4131,7 +4264,7 @@
     {
       "object_id": 2020,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 12,
         "y": 0
@@ -4145,7 +4278,7 @@
     {
       "object_id": 2021,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 13,
         "y": 0
@@ -4159,7 +4292,7 @@
     {
       "object_id": 2022,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 14,
         "y": 0
@@ -4173,7 +4306,7 @@
     {
       "object_id": 2023,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 15,
         "y": 0
@@ -4187,7 +4320,7 @@
     {
       "object_id": 2024,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 16,
         "y": 0
@@ -4201,7 +4334,7 @@
     {
       "object_id": 2025,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 17,
         "y": 0
@@ -4215,7 +4348,7 @@
     {
       "object_id": 2026,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 18,
         "y": 0
@@ -4229,7 +4362,7 @@
     {
       "object_id": 2027,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 19,
         "y": 0
@@ -4243,7 +4376,7 @@
     {
       "object_id": 2028,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 20,
         "y": 0
@@ -4257,7 +4390,7 @@
     {
       "object_id": 2029,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 21,
         "y": 0
@@ -4271,7 +4404,7 @@
     {
       "object_id": 2030,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 22,
         "y": 0
@@ -4285,7 +4418,7 @@
     {
       "object_id": 2031,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 23,
         "y": 0
@@ -4299,7 +4432,7 @@
     {
       "object_id": 2032,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 24,
         "y": 0
@@ -4313,7 +4446,7 @@
     {
       "object_id": 2033,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 25,
         "y": 0
@@ -4327,7 +4460,7 @@
     {
       "object_id": 2034,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 26,
         "y": 0
@@ -4341,7 +4474,7 @@
     {
       "object_id": 2035,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 27,
         "y": 0
@@ -4355,7 +4488,7 @@
     {
       "object_id": 2036,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 0,
         "y": 1
@@ -4369,7 +4502,7 @@
     {
       "object_id": 2037,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 27,
         "y": 1
@@ -4383,7 +4516,7 @@
     {
       "object_id": 2038,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 0,
         "y": 2
@@ -4397,7 +4530,7 @@
     {
       "object_id": 2039,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 27,
         "y": 2
@@ -4411,7 +4544,7 @@
     {
       "object_id": 2040,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 0,
         "y": 3
@@ -4425,7 +4558,7 @@
     {
       "object_id": 2041,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 27,
         "y": 3
@@ -4439,7 +4572,7 @@
     {
       "object_id": 2042,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 0,
         "y": 4
@@ -4453,7 +4586,7 @@
     {
       "object_id": 2043,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 27,
         "y": 4
@@ -4467,7 +4600,7 @@
     {
       "object_id": 2044,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 0,
         "y": 5
@@ -4481,7 +4614,7 @@
     {
       "object_id": 2045,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 27,
         "y": 5
@@ -4495,7 +4628,7 @@
     {
       "object_id": 2046,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 0,
         "y": 6
@@ -4509,7 +4642,7 @@
     {
       "object_id": 2047,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 27,
         "y": 6
@@ -4523,7 +4656,7 @@
     {
       "object_id": 2048,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 0,
         "y": 7
@@ -4537,7 +4670,7 @@
     {
       "object_id": 2049,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 27,
         "y": 7
@@ -4551,7 +4684,7 @@
     {
       "object_id": 2050,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 0,
         "y": 8
@@ -4565,7 +4698,7 @@
     {
       "object_id": 2051,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 27,
         "y": 8
@@ -4579,7 +4712,7 @@
     {
       "object_id": 2052,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 0,
         "y": 9
@@ -4593,7 +4726,7 @@
     {
       "object_id": 2053,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 27,
         "y": 9
@@ -4607,7 +4740,7 @@
     {
       "object_id": 2054,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 0,
         "y": 10
@@ -4621,7 +4754,7 @@
     {
       "object_id": 2055,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 27,
         "y": 10
@@ -4635,7 +4768,7 @@
     {
       "object_id": 2056,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 0,
         "y": 11
@@ -4649,7 +4782,7 @@
     {
       "object_id": 2057,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 27,
         "y": 11
@@ -4663,7 +4796,7 @@
     {
       "object_id": 2058,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 0,
         "y": 12
@@ -4677,7 +4810,7 @@
     {
       "object_id": 2059,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 27,
         "y": 12
@@ -4691,7 +4824,7 @@
     {
       "object_id": 2060,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 0,
         "y": 13
@@ -4705,7 +4838,7 @@
     {
       "object_id": 2061,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 27,
         "y": 13
@@ -4719,7 +4852,7 @@
     {
       "object_id": 2062,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 0,
         "y": 14
@@ -4733,7 +4866,7 @@
     {
       "object_id": 2063,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 27,
         "y": 14
@@ -4747,7 +4880,7 @@
     {
       "object_id": 2064,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 0,
         "y": 15
@@ -4761,7 +4894,7 @@
     {
       "object_id": 2065,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 27,
         "y": 15
@@ -4775,7 +4908,7 @@
     {
       "object_id": 2066,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 0,
         "y": 16
@@ -4789,7 +4922,7 @@
     {
       "object_id": 2067,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 27,
         "y": 16
@@ -4803,7 +4936,7 @@
     {
       "object_id": 2068,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 0,
         "y": 17
@@ -4817,7 +4950,7 @@
     {
       "object_id": 2069,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 1,
         "y": 17
@@ -4831,7 +4964,7 @@
     {
       "object_id": 2070,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 2,
         "y": 17
@@ -4845,7 +4978,7 @@
     {
       "object_id": 2071,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 3,
         "y": 17
@@ -4859,7 +4992,7 @@
     {
       "object_id": 2072,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 4,
         "y": 17
@@ -4873,7 +5006,7 @@
     {
       "object_id": 2073,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 5,
         "y": 17
@@ -4887,7 +5020,7 @@
     {
       "object_id": 2074,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 6,
         "y": 17
@@ -4901,7 +5034,7 @@
     {
       "object_id": 2075,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 7,
         "y": 17
@@ -4915,7 +5048,7 @@
     {
       "object_id": 2076,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 8,
         "y": 17
@@ -4929,7 +5062,7 @@
     {
       "object_id": 2077,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 9,
         "y": 17
@@ -4943,7 +5076,7 @@
     {
       "object_id": 2078,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 10,
         "y": 17
@@ -4957,7 +5090,7 @@
     {
       "object_id": 2079,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 11,
         "y": 17
@@ -4971,7 +5104,7 @@
     {
       "object_id": 2080,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 12,
         "y": 17
@@ -4985,7 +5118,7 @@
     {
       "object_id": 2081,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 13,
         "y": 17
@@ -4999,7 +5132,7 @@
     {
       "object_id": 2082,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 14,
         "y": 17
@@ -5013,7 +5146,7 @@
     {
       "object_id": 2083,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 15,
         "y": 17
@@ -5027,7 +5160,7 @@
     {
       "object_id": 2084,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 16,
         "y": 17
@@ -5041,7 +5174,7 @@
     {
       "object_id": 2085,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 17,
         "y": 17
@@ -5055,7 +5188,7 @@
     {
       "object_id": 2086,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 18,
         "y": 17
@@ -5069,7 +5202,7 @@
     {
       "object_id": 2087,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 19,
         "y": 17
@@ -5083,7 +5216,7 @@
     {
       "object_id": 2088,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 20,
         "y": 17
@@ -5097,7 +5230,7 @@
     {
       "object_id": 2089,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 21,
         "y": 17
@@ -5111,7 +5244,7 @@
     {
       "object_id": 2090,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 22,
         "y": 17
@@ -5125,7 +5258,7 @@
     {
       "object_id": 2091,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 23,
         "y": 17
@@ -5139,7 +5272,7 @@
     {
       "object_id": 2092,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 24,
         "y": 17
@@ -5153,7 +5286,7 @@
     {
       "object_id": 2093,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 25,
         "y": 17
@@ -5167,7 +5300,7 @@
     {
       "object_id": 2094,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 26,
         "y": 17
@@ -5181,7 +5314,7 @@
     {
       "object_id": 2095,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 27,
         "y": 17
@@ -5195,7 +5328,7 @@
     {
       "object_id": 2096,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 7,
         "y": 4
@@ -5209,7 +5342,7 @@
     {
       "object_id": 2097,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 8,
         "y": 4
@@ -5223,7 +5356,7 @@
     {
       "object_id": 2098,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 9,
         "y": 4
@@ -5237,7 +5370,7 @@
     {
       "object_id": 2099,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 10,
         "y": 4
@@ -5251,7 +5384,7 @@
     {
       "object_id": 2100,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 11,
         "y": 4
@@ -5265,7 +5398,7 @@
     {
       "object_id": 2101,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 12,
         "y": 4
@@ -5279,7 +5412,7 @@
     {
       "object_id": 2102,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 14,
         "y": 4
@@ -5293,7 +5426,7 @@
     {
       "object_id": 2103,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 15,
         "y": 4
@@ -5307,7 +5440,7 @@
     {
       "object_id": 2104,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 16,
         "y": 4
@@ -5321,7 +5454,7 @@
     {
       "object_id": 2105,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 17,
         "y": 4
@@ -5335,7 +5468,7 @@
     {
       "object_id": 2106,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 18,
         "y": 4
@@ -5349,7 +5482,7 @@
     {
       "object_id": 2107,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 19,
         "y": 4
@@ -5363,7 +5496,7 @@
     {
       "object_id": 2108,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 20,
         "y": 4
@@ -5377,7 +5510,7 @@
     {
       "object_id": 2109,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 7,
         "y": 5
@@ -5391,7 +5524,7 @@
     {
       "object_id": 2110,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 20,
         "y": 5
@@ -5405,7 +5538,7 @@
     {
       "object_id": 2111,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 7,
         "y": 6
@@ -5419,7 +5552,7 @@
     {
       "object_id": 2112,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 14,
         "y": 6
@@ -5433,7 +5566,7 @@
     {
       "object_id": 2113,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 20,
         "y": 6
@@ -5447,7 +5580,7 @@
     {
       "object_id": 2114,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 7,
         "y": 7
@@ -5461,7 +5594,7 @@
     {
       "object_id": 2115,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 14,
         "y": 7
@@ -5475,7 +5608,7 @@
     {
       "object_id": 2116,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 20,
         "y": 7
@@ -5489,7 +5622,7 @@
     {
       "object_id": 2117,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 7,
         "y": 8
@@ -5503,7 +5636,7 @@
     {
       "object_id": 2118,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 14,
         "y": 8
@@ -5517,7 +5650,7 @@
     {
       "object_id": 2119,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 20,
         "y": 8
@@ -5531,7 +5664,7 @@
     {
       "object_id": 2120,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 7,
         "y": 9
@@ -5545,7 +5678,7 @@
     {
       "object_id": 2121,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 20,
         "y": 9
@@ -5559,7 +5692,7 @@
     {
       "object_id": 2122,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 7,
         "y": 10
@@ -5573,7 +5706,7 @@
     {
       "object_id": 2123,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 20,
         "y": 10
@@ -5587,7 +5720,7 @@
     {
       "object_id": 2124,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 7,
         "y": 11
@@ -5601,7 +5734,7 @@
     {
       "object_id": 2125,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 20,
         "y": 11
@@ -5615,7 +5748,7 @@
     {
       "object_id": 2126,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 8,
         "y": 12
@@ -5629,7 +5762,7 @@
     {
       "object_id": 2127,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 9,
         "y": 12
@@ -5643,7 +5776,7 @@
     {
       "object_id": 2128,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 11,
         "y": 12
@@ -5657,7 +5790,7 @@
     {
       "object_id": 2129,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 12,
         "y": 12
@@ -5671,7 +5804,7 @@
     {
       "object_id": 2130,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 13,
         "y": 12
@@ -5685,7 +5818,7 @@
     {
       "object_id": 2131,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 14,
         "y": 12
@@ -5699,7 +5832,7 @@
     {
       "object_id": 2132,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 15,
         "y": 12
@@ -5713,7 +5846,7 @@
     {
       "object_id": 2133,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 17,
         "y": 12
@@ -5727,7 +5860,7 @@
     {
       "object_id": 2134,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 18,
         "y": 12
@@ -5741,7 +5874,7 @@
     {
       "object_id": 2135,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 19,
         "y": 12
@@ -5755,7 +5888,7 @@
     {
       "object_id": 2136,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 20,
         "y": 12
@@ -5769,7 +5902,7 @@
     {
       "object_id": 2137,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 22,
         "y": 6
@@ -5783,7 +5916,7 @@
     {
       "object_id": 2138,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 22,
         "y": 7
@@ -5797,7 +5930,7 @@
     {
       "object_id": 2139,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 22,
         "y": 8
@@ -5811,7 +5944,7 @@
     {
       "object_id": 2140,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 23,
         "y": 8
@@ -5825,7 +5958,7 @@
     {
       "object_id": 2141,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 24,
         "y": 8
@@ -5839,7 +5972,7 @@
     {
       "object_id": 2142,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 24,
         "y": 9
@@ -5853,7 +5986,7 @@
     {
       "object_id": 2143,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 24,
         "y": 10
@@ -5867,7 +6000,7 @@
     {
       "object_id": 2144,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 23,
         "y": 10
@@ -5881,7 +6014,7 @@
     {
       "object_id": 2145,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 22,
         "y": 10
@@ -5895,7 +6028,7 @@
     {
       "object_id": 2146,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 11,
         "y": 14
@@ -5909,7 +6042,7 @@
     {
       "object_id": 2147,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 12,
         "y": 14
@@ -5923,7 +6056,7 @@
     {
       "object_id": 2148,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 13,
         "y": 14
@@ -5937,7 +6070,7 @@
     {
       "object_id": 2149,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 17,
         "y": 14
@@ -5951,7 +6084,7 @@
     {
       "object_id": 2150,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 18,
         "y": 14
@@ -5965,7 +6098,7 @@
     {
       "object_id": 2151,
       "definition_id": "cave_wall",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 19,
         "y": 14
@@ -5979,7 +6112,7 @@
     {
       "object_id": 2152,
       "definition_id": "crystal_cluster",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 5,
         "y": 5
@@ -5993,7 +6126,7 @@
     {
       "object_id": 2153,
       "definition_id": "crystal_cluster",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 6,
         "y": 13
@@ -6007,7 +6140,7 @@
     {
       "object_id": 2154,
       "definition_id": "crystal_cluster",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 10,
         "y": 2
@@ -6021,7 +6154,7 @@
     {
       "object_id": 2155,
       "definition_id": "crystal_cluster",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 12,
         "y": 9
@@ -6035,7 +6168,7 @@
     {
       "object_id": 2156,
       "definition_id": "crystal_cluster",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 16,
         "y": 6
@@ -6049,7 +6182,7 @@
     {
       "object_id": 2157,
       "definition_id": "crystal_cluster",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 18,
         "y": 15
@@ -6063,7 +6196,7 @@
     {
       "object_id": 2158,
       "definition_id": "crystal_cluster",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 23,
         "y": 5
@@ -6077,7 +6210,7 @@
     {
       "object_id": 2159,
       "definition_id": "crystal_cluster",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 24,
         "y": 12
@@ -6091,7 +6224,7 @@
     {
       "object_id": 2160,
       "definition_id": "cave_mushroom",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 2,
         "y": 4
@@ -6105,7 +6238,7 @@
     {
       "object_id": 2161,
       "definition_id": "cave_mushroom",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 3,
         "y": 5
@@ -6119,7 +6252,7 @@
     {
       "object_id": 2162,
       "definition_id": "cave_mushroom",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 4,
         "y": 13
@@ -6133,7 +6266,7 @@
     {
       "object_id": 2163,
       "definition_id": "cave_mushroom",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 5,
         "y": 14
@@ -6147,7 +6280,7 @@
     {
       "object_id": 2164,
       "definition_id": "cave_mushroom",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 9,
         "y": 15
@@ -6161,7 +6294,7 @@
     {
       "object_id": 2165,
       "definition_id": "cave_mushroom",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 13,
         "y": 2
@@ -6175,7 +6308,7 @@
     {
       "object_id": 2166,
       "definition_id": "cave_mushroom",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 15,
         "y": 10
@@ -6189,7 +6322,7 @@
     {
       "object_id": 2167,
       "definition_id": "cave_mushroom",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 21,
         "y": 3
@@ -6203,7 +6336,7 @@
     {
       "object_id": 2168,
       "definition_id": "cave_mushroom",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 22,
         "y": 13
@@ -6217,7 +6350,7 @@
     {
       "object_id": 2169,
       "definition_id": "cave_mushroom",
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
         "x": 25,
         "y": 14

@@ -15,7 +15,9 @@ use crate::world::object_registry::ObjectRegistry;
 use crate::world::resources::{
     ClientRemotePlayerProjectionState, ClientWorldProjectionState, SpaceManager,
 };
-use crate::world::setup::{initialize_runtime_spaces, spawn_ground_tiles_for_current_space};
+use crate::world::setup::{
+    initialize_runtime_spaces, spawn_ground_tiles_for_current_space, WorldStartupSet,
+};
 use crate::world::systems::{
     cleanup_empty_ephemeral_spaces, sync_client_world_projection, sync_combat_health_bars,
     sync_remote_player_projection, sync_tile_transforms,
@@ -41,7 +43,10 @@ impl Plugin for WorldServerPlugin {
         .insert_resource(SpaceManager::default())
         .insert_resource(ObjectRegistry::from_space_definitions(&authored_spaces))
         .insert_resource(OverworldObjectDefinitions::load_from_disk())
-        .add_systems(Startup, initialize_runtime_spaces)
+        .add_systems(
+            Startup,
+            initialize_runtime_spaces.in_set(WorldStartupSet::InitializeRuntimeSpaces),
+        )
         .add_systems(Update, cleanup_empty_ephemeral_spaces);
     }
 }

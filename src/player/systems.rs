@@ -3,7 +3,9 @@ use bevy::prelude::*;
 
 use crate::game::commands::{GameCommand, MoveDelta};
 use crate::game::resources::{ClientGameState, InventoryState, PendingGameCommands};
-use crate::player::components::{AttributeSet, BaseStats, DerivedStats, Player, VitalStats};
+use crate::player::components::{
+    AttributeSet, BaseStats, DerivedStats, Player, PlayerIdentity, VitalStats,
+};
 use crate::scripting::resources::PythonConsoleState;
 use crate::world::components::{DisplayedVitalStats, SpaceResident, TilePosition};
 use crate::world::object_definitions::OverworldObjectDefinitions;
@@ -93,30 +95,46 @@ pub fn sync_player_client_state(
             &mut TilePosition,
             &mut VitalStats,
             &mut DisplayedVitalStats,
+            Option<&PlayerIdentity>,
         ),
         With<Player>,
     >,
 ) {
-    let Ok((mut space_resident, mut tile_position, mut vital_stats, mut displayed_vitals)) =
-        player_query.single_mut()
+    let Ok((
+        mut space_resident,
+        mut tile_position,
+        mut vital_stats,
+        mut displayed_vitals,
+        player_identity,
+    )) = player_query.single_mut()
     else {
         return;
     };
 
-    if let Some(client_position) = client_state.player_position {
-        space_resident.space_id = client_position.space_id;
-        *tile_position = client_position.tile_position;
-    } else {
-        *tile_position = TilePosition::new(world_config.map_width / 2, world_config.map_height / 2);
-        space_resident.space_id = world_config.current_space_id;
+    let is_projected_client_player = player_identity.is_none();
+
+    if is_projected_client_player {
+        if let Some(client_position) = client_state.player_position {
+            space_resident.space_id = client_position.space_id;
+            *tile_position = client_position.tile_position;
+        } else {
+            *tile_position =
+                TilePosition::new(world_config.map_width / 2, world_config.map_height / 2);
+            space_resident.space_id = world_config.current_space_id;
+        }
+
+        if let Some(client_vitals) = client_state.player_vitals {
+            vital_stats.health = client_vitals.health;
+            vital_stats.max_health = client_vitals.max_health;
+            vital_stats.mana = client_vitals.mana;
+            vital_stats.max_mana = client_vitals.max_mana;
+        }
     }
 
-    if let Some(client_vitals) = client_state.player_vitals {
-        vital_stats.health = client_vitals.health;
-        vital_stats.max_health = client_vitals.max_health;
-        vital_stats.mana = client_vitals.mana;
-        vital_stats.max_mana = client_vitals.max_mana;
-
+    if let Some(client_vitals) = client_state
+        .player_vitals
+        .filter(|_| is_projected_client_player)
+    {
         displayed_vitals.health = client_vitals.health;
         displayed_vitals.max_health = client_vitals.max_health;
         displayed_vitals.mana = client_vitals.mana;
@@ -140,5 +158,119 @@ fn movement_direction(keyboard_input: &ButtonInput<KeyCode>) -> Option<MoveDelta
         Some(MoveDelta { x: 1, y: 0 })
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game::resources::ClientVitalStats;
+    use crate::player::components::PlayerIdentity;
+    use crate::world::components::{SpaceId, SpacePosition};
+
+    fn default_world_config() -> WorldConfig {
+        WorldConfig {
+            current_space_id: SpaceId(1),
+            map_width: 32,
+            map_height: 24,
+            tile_size: 48.0,
+            fill_object_type: "grass".to_owned(),
+        }
+    }
+
+    #[test]
+    fn authoritative_embedded_player_keeps_authoritative_vitals() {
+        let mut app = App::new();
+        app.insert_resource(default_world_config());
+        app.insert_resource(ClientGameState {
+            player_position: Some(SpacePosition::new(SpaceId(9), TilePosition::new(7, 8))),
+            player_vitals: Some(ClientVitalStats {
+                health: 99.0,
+                max_health: 120.0,
+                mana: 20.0,
+                max_mana: 30.0,
+            }),
+            ..default()
+        });
+        let entity = app
+            .world_mut()
+            .spawn((
+                Player,
+                PlayerIdentity {
+                    id: crate::player::components::PlayerId(0),
+                },
+                SpaceResident {
+                    space_id: SpaceId(1),
+                },
+                TilePosition::new(2, 3),
+                VitalStats {
+                    health: 14.0,
+                    max_health: 35.0,
+                    mana: 4.0,
+                    max_mana: 10.0,
+                },
+                DisplayedVitalStats::default(),
+            ))
+            .id();
+
+        app.add_systems(Update, sync_player_client_state);
+        app.update();
+
+        let entity_ref = app.world().entity(entity);
+        let space_resident = entity_ref.get::<SpaceResident>().unwrap();
+        let tile_position = entity_ref.get::<TilePosition>().unwrap();
+        let vital_stats = entity_ref.get::<VitalStats>().unwrap();
+        let displayed_vitals = entity_ref.get::<DisplayedVitalStats>().unwrap();
+
+        assert_eq!(space_resident.space_id, SpaceId(1));
+        assert_eq!(*tile_position, TilePosition::new(2, 3));
+        assert_eq!(vital_stats.health, 14.0);
+        assert_eq!(vital_stats.max_health, 35.0);
+        assert_eq!(displayed_vitals.health, 14.0);
+        assert_eq!(displayed_vitals.max_health, 35.0);
+    }
+
+    #[test]
+    fn projected_client_player_tracks_client_state() {
+        let mut app = App::new();
+        app.insert_resource(default_world_config());
+        app.insert_resource(ClientGameState {
+            player_position: Some(SpacePosition::new(SpaceId(5), TilePosition::new(10, 11))),
+            player_vitals: Some(ClientVitalStats {
+                health: 12.0,
+                max_health: 40.0,
+                mana: 6.0,
+                max_mana: 18.0,
+            }),
+            ..default()
+        });
+        let entity = app
+            .world_mut()
+            .spawn((
+                Player,
+                SpaceResident {
+                    space_id: SpaceId(1),
+                },
+                TilePosition::new(0, 0),
+                VitalStats::full(1.0, 0.0),
+                DisplayedVitalStats::default(),
+            ))
+            .id();
+
+        app.add_systems(Update, sync_player_client_state);
+        app.update();
+
+        let entity_ref = app.world().entity(entity);
+        let space_resident = entity_ref.get::<SpaceResident>().unwrap();
+        let tile_position = entity_ref.get::<TilePosition>().unwrap();
+        let vital_stats = entity_ref.get::<VitalStats>().unwrap();
+        let displayed_vitals = entity_ref.get::<DisplayedVitalStats>().unwrap();
+
+        assert_eq!(space_resident.space_id, SpaceId(5));
+        assert_eq!(*tile_position, TilePosition::new(10, 11));
+        assert_eq!(vital_stats.health, 12.0);
+        assert_eq!(vital_stats.max_health, 40.0);
+        assert_eq!(displayed_vitals.mana, 6.0);
+        assert_eq!(displayed_vitals.max_mana, 18.0);
     }
 }

@@ -19,6 +19,11 @@ use crate::world::object_definitions::{OverworldObjectDefinition, OverworldObjec
 use crate::world::resources::{PortalInstanceKey, RuntimeSpace, SpaceManager};
 use crate::world::WorldConfig;
 
+#[derive(SystemSet, Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum WorldStartupSet {
+    InitializeRuntimeSpaces,
+}
+
 pub fn initialize_runtime_spaces(
     mut commands: Commands,
     definitions: Res<SpaceDefinitions>,

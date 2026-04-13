@@ -18,10 +18,11 @@ use crate::npc::components::Npc;
 use crate::player::components::{
     ChatLog, DerivedStats, Inventory, Player, PlayerId, PlayerIdentity, VitalStats,
 };
-use crate::player::setup::spawn_player_authoritative;
+use crate::player::setup::spawn_player_authoritative_in_space;
 use crate::world::components::{
     Collider, Container, Movable, OverworldObject, SpacePosition, SpaceResident, TilePosition,
 };
+use crate::world::map_layout::SpaceDefinitions;
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::resources::SpaceManager;
 use crate::world::WorldConfig;
@@ -47,6 +48,8 @@ pub fn start_tcp_server(config: Res<TcpServerConfig>, mut server_state: ResMut<T
 pub fn accept_tcp_client_connections(
     mut server_state: ResMut<TcpServerState>,
     world_config: Res<WorldConfig>,
+    authored_spaces: Res<SpaceDefinitions>,
+    space_manager: Res<SpaceManager>,
     collider_query: Query<(&SpaceResident, &TilePosition), With<Collider>>,
     player_position_query: Query<(&SpaceResident, &TilePosition), With<Player>>,
     mut object_registry: ResMut<ObjectRegistry>,
@@ -68,9 +71,13 @@ pub fn accept_tcp_client_connections(
                     continue;
                 }
 
-                let Some(spawn_tile) =
-                    find_spawn_tile(&world_config, &collider_query, &player_position_query)
-                else {
+                let Some((spawn_space_id, spawn_tile)) = find_spawn_location(
+                    &world_config,
+                    &authored_spaces,
+                    &space_manager,
+                    &collider_query,
+                    &player_position_query,
+                ) else {
                     warn!("rejecting TCP client from {address}: no free spawn tile");
                     continue;
                 };
@@ -79,11 +86,11 @@ pub fn accept_tcp_client_connections(
                 server_state.next_connection_id += 1;
                 let player_id = PlayerId(connection_id.0);
                 let object_id = object_registry.allocate_runtime_id("player");
-                let player_entity = spawn_player_authoritative(
+                let player_entity = spawn_player_authoritative_in_space(
                     &mut commands,
-                    &world_config,
                     player_id,
                     object_id,
+                    spawn_space_id,
                     spawn_tile,
                 );
 
@@ -332,15 +339,23 @@ fn disconnect_peer(
     }
 }
 
-fn find_spawn_tile(
+fn find_spawn_location(
     world_config: &WorldConfig,
+    authored_spaces: &SpaceDefinitions,
+    space_manager: &SpaceManager,
     collider_query: &Query<(&SpaceResident, &TilePosition), With<Collider>>,
     player_position_query: &Query<(&SpaceResident, &TilePosition), With<Player>>,
-) -> Option<TilePosition> {
-    let origin = TilePosition::new(world_config.map_width / 2, world_config.map_height / 2);
-    let space_id = world_config.current_space_id;
+) -> Option<(crate::world::components::SpaceId, TilePosition)> {
+    let bootstrap_space_id = space_manager
+        .persistent_space_id(&authored_spaces.bootstrap_space_id)
+        .unwrap_or(world_config.current_space_id);
+    let (width, height) = space_manager
+        .get(bootstrap_space_id)
+        .map(|space| (space.width, space.height))
+        .unwrap_or((world_config.map_width, world_config.map_height));
+    let origin = TilePosition::new(width / 2, height / 2);
 
-    for radius in 0..world_config.map_width.max(world_config.map_height) {
+    for radius in 0..width.max(height) {
         for y in -radius..=radius {
             for x in -radius..=radius {
                 if radius > 0 && x.abs() != radius && y.abs() != radius {
@@ -350,20 +365,19 @@ fn find_spawn_tile(
                 let candidate = TilePosition::new(origin.x + x, origin.y + y);
                 if candidate.x < 0
                     || candidate.y < 0
-                    || candidate.x >= world_config.map_width
-                    || candidate.y >= world_config.map_height
+                    || candidate.x >= width
+                    || candidate.y >= height
                 {
                     continue;
                 }
 
-                let blocked = collider_query
-                    .iter()
-                    .any(|(resident, tile)| resident.space_id == space_id && *tile == candidate)
-                    || player_position_query.iter().any(|(resident, tile)| {
-                        resident.space_id == space_id && *tile == candidate
-                    });
+                let blocked = collider_query.iter().any(|(resident, tile)| {
+                    resident.space_id == bootstrap_space_id && *tile == candidate
+                }) || player_position_query.iter().any(|(resident, tile)| {
+                    resident.space_id == bootstrap_space_id && *tile == candidate
+                });
                 if !blocked {
-                    return Some(candidate);
+                    return Some((bootstrap_space_id, candidate));
                 }
             }
         }
@@ -712,10 +726,20 @@ mod tests {
                 ),
                 With<Player>,
             >,
+            Res<'w, SpaceDefinitions>,
+            Res<'w, crate::world::resources::SpaceManager>,
         )>;
         let mut state: SpawnState = SystemState::new(app.world_mut());
-        let (collider_query, player_query) = state.get(app.world_mut());
-        let spawn_tile = find_spawn_tile(&world_config, &collider_query, &player_query).unwrap();
+        let (collider_query, player_query, authored_spaces, space_manager) =
+            state.get(app.world_mut());
+        let (_, spawn_tile) = find_spawn_location(
+            &world_config,
+            &authored_spaces,
+            &space_manager,
+            &collider_query,
+            &player_query,
+        )
+        .unwrap();
 
         assert_ne!(spawn_tile, center);
         assert_ne!(

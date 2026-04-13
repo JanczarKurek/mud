@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
+use bevy::log::info;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -129,6 +130,7 @@ impl SpaceDefinitions {
     pub fn load_from_disk() -> Self {
         let path = Path::new(MAP_LAYOUTS_PATH);
         let mut spaces = HashMap::new();
+        info!("loading map layouts from {}", path.display());
 
         let entries = fs::read_dir(path).unwrap_or_else(|error| {
             panic!(
@@ -183,6 +185,7 @@ impl SpaceDefinitions {
                 "Duplicate authored space id found while loading {}",
                 file_path.display()
             );
+            info!("loaded map layout {}", file_path.display());
         }
 
         assert!(

@@ -12,11 +12,12 @@ use crate::game::{GameClientPlugin, GameServerPlugin};
 use crate::magic::MagicPlugin;
 use crate::network::{TcpClientPlugin, TcpServerPlugin};
 use crate::npc::NpcPlugin;
-use crate::persistence::PersistenceServerPlugin;
+use crate::persistence::{PersistenceServerPlugin, PersistenceStartupSet};
 use crate::player::setup::spawn_embedded_player_authoritative;
 use crate::player::{PlayerClientPlugin, PlayerServerPlugin};
 use crate::scripting::ScriptingPlugin;
 use crate::ui::UiPlugin;
+use crate::world::setup::WorldStartupSet;
 use crate::world::{WorldClientPlugin, WorldServerPlugin};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -44,6 +45,9 @@ impl Plugin for GameAppPlugin {
                     PlayerServerPlugin,
                     CombatPlugin,
                     MagicPlugin,
+                    PersistenceServerPlugin {
+                        save_path: self.save_path.clone(),
+                    },
                 ));
                 app.add_plugins(DefaultPlugins.set(WindowPlugin {
                     primary_window: Some(Window {
@@ -54,7 +58,12 @@ impl Plugin for GameAppPlugin {
                 }))
                 .init_state::<ClientAppState>()
                 .add_systems(Startup, setup_camera)
-                .add_systems(Startup, spawn_embedded_player_authoritative)
+                .add_systems(
+                    Startup,
+                    spawn_embedded_player_authoritative
+                        .after(PersistenceStartupSet::LoadSnapshot)
+                        .after(WorldStartupSet::InitializeRuntimeSpaces),
+                )
                 .add_plugins((
                     WorldClientPlugin,
                     PlayerClientPlugin,
