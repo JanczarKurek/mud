@@ -14,6 +14,7 @@ const DEFAULT_BOOTSTRAP_SPACE_ID: &str = "overworld";
 pub type ObjectProperties = HashMap<String, String>;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SpacePermanence {
     Persistent,
@@ -33,6 +34,7 @@ pub struct SpaceDefinitions {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct SpaceDefinition {
     pub authored_id: String,
     pub width: i32,
@@ -43,7 +45,15 @@ pub struct SpaceDefinition {
     pub permanence: SpacePermanence,
     #[serde(default)]
     pub portals: Vec<PortalDefinition>,
+    #[serde(default)]
     pub objects: Vec<MapObjectEntry>,
+    /// Single-character keys mapping to object type IDs for use in `tiles`.
+    #[serde(default)]
+    pub legend: HashMap<String, String>,
+    /// ASCII grid of tiles, row-major with y=0 at top. Each character maps
+    /// via `legend`; unmapped characters are skipped (fill_object_type applies).
+    #[serde(default)]
+    pub tiles: Option<String>,
     #[serde(skip)]
     pub resolved_objects: Vec<MapObjectInstance>,
     #[serde(skip)]
@@ -51,6 +61,7 @@ pub struct SpaceDefinition {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct PortalDefinition {
     pub id: String,
     pub source: TileCoordinate,
@@ -61,6 +72,7 @@ pub struct PortalDefinition {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct MapObjectInstance {
     pub id: u64,
     #[serde(rename = "type")]
@@ -76,6 +88,7 @@ pub struct MapObjectInstance {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 #[serde(untagged)]
 pub enum MapObjectEntry {
     Explicit(MapObjectInstance),
@@ -83,6 +96,7 @@ pub enum MapObjectEntry {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct AnonymousObjectPlacements {
     #[serde(rename = "type")]
     pub type_id: String,
@@ -92,6 +106,7 @@ pub struct AnonymousObjectPlacements {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum MapBehavior {
     Roam {
@@ -107,12 +122,14 @@ pub enum MapBehavior {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct TileCoordinate {
     pub x: i32,
     pub y: i32,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct TileRectangle {
     pub min_x: i32,
     pub min_y: i32,
@@ -244,6 +261,7 @@ impl SpaceDefinition {
     }
 
     fn validate(&mut self) {
+        self.expand_tile_grid();
         self.expand_anonymous_objects();
 
         let mut object_indices = HashMap::new();
@@ -316,6 +334,67 @@ impl SpaceDefinition {
         }
 
         self.object_indices = object_indices;
+    }
+
+    fn expand_tile_grid(&mut self) {
+        let Some(tiles_str) = self.tiles.clone() else {
+            return;
+        };
+
+        let lines: Vec<&str> = tiles_str.lines().collect();
+        assert!(
+            lines.len() == self.height as usize,
+            "Space '{}' tiles grid has {} rows but height is {}",
+            self.authored_id,
+            lines.len(),
+            self.height
+        );
+        for key in self.legend.keys() {
+            assert!(
+                key.chars().count() == 1,
+                "Space '{}' legend key '{}' must be exactly one character",
+                self.authored_id,
+                key
+            );
+        }
+
+        let char_map: HashMap<char, &str> = self
+            .legend
+            .iter()
+            .map(|(k, v)| (k.chars().next().unwrap(), v.as_str()))
+            .collect();
+
+        let mut type_to_tiles: HashMap<String, Vec<TileCoordinate>> = HashMap::new();
+        for (row_idx, line) in lines.iter().enumerate() {
+            assert!(
+                line.chars().count() == self.width as usize,
+                "Space '{}' tiles row {} has {} chars but width is {}",
+                self.authored_id,
+                row_idx,
+                line.chars().count(),
+                self.width
+            );
+            for (col_idx, ch) in line.chars().enumerate() {
+                if let Some(&type_id) = char_map.get(&ch) {
+                    type_to_tiles
+                        .entry(type_id.to_owned())
+                        .or_default()
+                        .push(TileCoordinate {
+                            x: col_idx as i32,
+                            y: row_idx as i32,
+                        });
+                }
+            }
+        }
+
+        for (type_id, placements) in type_to_tiles {
+            self.objects
+                .push(MapObjectEntry::Anonymous(AnonymousObjectPlacements {
+                    type_id,
+                    properties: HashMap::new(),
+                    placement: placements,
+                }));
+        }
     }
 
     fn expand_anonymous_objects(&mut self) {

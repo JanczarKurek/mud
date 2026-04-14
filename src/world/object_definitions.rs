@@ -13,6 +13,7 @@ const OBJECT_DEFINITIONS_PATH: &str = "assets/overworld_objects";
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct OverworldObjectDefinition {
     pub name: String,
     pub description: String,
@@ -41,6 +42,7 @@ pub struct OverworldObjectDefinition {
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct StatModifiers {
     #[serde(default)]
     pub strength: i32,
@@ -63,6 +65,7 @@ pub struct StatModifiers {
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct UseEffects {
     #[serde(default)]
     pub restore_health: f32,
@@ -72,6 +75,7 @@ pub struct UseEffects {
 
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Hash, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum EquipmentSlot {
     Amulet,
@@ -115,6 +119,7 @@ impl EquipmentSlot {
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct RenderMetadata {
     pub z_index: f32,
     pub debug_color: [u8; 3],

@@ -1,0 +1,299 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SpaceDefinition",
+  "type": "object",
+  "required": [
+    "authored_id",
+    "fill_object_type",
+    "height",
+    "width"
+  ],
+  "properties": {
+    "authored_id": {
+      "type": "string"
+    },
+    "fill_object_type": {
+      "type": "string"
+    },
+    "height": {
+      "type": "integer",
+      "format": "int32"
+    },
+    "legend": {
+      "description": "Single-character keys mapping to object type IDs for use in `tiles`.",
+      "default": {},
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "objects": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/MapObjectEntry"
+      }
+    },
+    "permanence": {
+      "default": "persistent",
+      "allOf": [
+        {
+          "$ref": "#/definitions/SpacePermanence"
+        }
+      ]
+    },
+    "portals": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/PortalDefinition"
+      }
+    },
+    "tiles": {
+      "description": "ASCII grid of tiles, row-major with y=0 at top. Each character maps via `legend`; unmapped characters are skipped (fill_object_type applies).",
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "width": {
+      "type": "integer",
+      "format": "int32"
+    }
+  },
+  "definitions": {
+    "AnonymousObjectPlacements": {
+      "type": "object",
+      "required": [
+        "placement",
+        "type"
+      ],
+      "properties": {
+        "placement": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/TileCoordinate"
+          }
+        },
+        "properties": {
+          "default": {},
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "type": {
+          "type": "string"
+        }
+      }
+    },
+    "MapBehavior": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "bounds",
+            "kind",
+            "step_interval_seconds"
+          ],
+          "properties": {
+            "bounds": {
+              "$ref": "#/definitions/TileRectangle"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "roam"
+              ]
+            },
+            "step_interval_seconds": {
+              "type": "number",
+              "format": "float"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "bounds",
+            "detect_distance_tiles",
+            "disengage_distance_tiles",
+            "kind",
+            "step_interval_seconds"
+          ],
+          "properties": {
+            "bounds": {
+              "$ref": "#/definitions/TileRectangle"
+            },
+            "detect_distance_tiles": {
+              "type": "integer",
+              "format": "int32"
+            },
+            "disengage_distance_tiles": {
+              "type": "integer",
+              "format": "int32"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "roam_and_chase"
+              ]
+            },
+            "step_interval_seconds": {
+              "type": "number",
+              "format": "float"
+            }
+          }
+        }
+      ]
+    },
+    "MapObjectEntry": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/MapObjectInstance"
+        },
+        {
+          "$ref": "#/definitions/AnonymousObjectPlacements"
+        }
+      ]
+    },
+    "MapObjectInstance": {
+      "type": "object",
+      "required": [
+        "id",
+        "type"
+      ],
+      "properties": {
+        "behavior": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/MapBehavior"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "contents": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        },
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "placement": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/TileCoordinate"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "properties": {
+          "default": {},
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "type": {
+          "type": "string"
+        }
+      }
+    },
+    "PortalDefinition": {
+      "type": "object",
+      "required": [
+        "destination_space_id",
+        "destination_tile",
+        "id",
+        "source"
+      ],
+      "properties": {
+        "destination_permanence": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SpacePermanence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "destination_space_id": {
+          "type": "string"
+        },
+        "destination_tile": {
+          "$ref": "#/definitions/TileCoordinate"
+        },
+        "id": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/definitions/TileCoordinate"
+        }
+      }
+    },
+    "SpacePermanence": {
+      "type": "string",
+      "enum": [
+        "persistent",
+        "ephemeral"
+      ]
+    },
+    "TileCoordinate": {
+      "type": "object",
+      "required": [
+        "x",
+        "y"
+      ],
+      "properties": {
+        "x": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "y": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "TileRectangle": {
+      "type": "object",
+      "required": [
+        "max_x",
+        "max_y",
+        "min_x",
+        "min_y"
+      ],
+      "properties": {
+        "max_x": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "max_y": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "min_x": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "min_y": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    }
+  }
+}

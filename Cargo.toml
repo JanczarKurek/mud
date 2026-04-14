@@ -10,3 +10,12 @@ rustpython-vm = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
+schemars = { version = "0.8", optional = true }
+
+[features]
+gen-schemas = ["schemars"]
+
+[[bin]]
+name = "gen_schemas"
+path = "src/bin/gen_schemas.rs"
+required-features = ["gen-schemas"]

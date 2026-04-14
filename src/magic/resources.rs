@@ -8,6 +8,7 @@ use serde::Deserialize;
 const SPELL_DEFINITIONS_PATH: &str = "assets/spells";
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct SpellDefinition {
     pub name: String,
     pub incantation: String,
@@ -20,6 +21,7 @@ pub struct SpellDefinition {
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct SpellEffects {
     #[serde(default)]
     pub damage: f32,
@@ -30,6 +32,7 @@ pub struct SpellEffects {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SpellTargeting {
     Targeted,

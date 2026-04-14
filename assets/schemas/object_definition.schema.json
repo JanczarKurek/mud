@@ -1,0 +1,224 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "OverworldObjectDefinition",
+  "type": "object",
+  "required": [
+    "colliding",
+    "description",
+    "movable",
+    "name",
+    "render",
+    "storable"
+  ],
+  "properties": {
+    "colliding": {
+      "type": "boolean"
+    },
+    "container_capacity": {
+      "default": null,
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint",
+      "minimum": 0.0
+    },
+    "description": {
+      "type": "string"
+    },
+    "equipment_slot": {
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/EquipmentSlot"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "fillable_properties": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "movable": {
+      "type": "boolean"
+    },
+    "name": {
+      "type": "string"
+    },
+    "render": {
+      "$ref": "#/definitions/RenderMetadata"
+    },
+    "sound_paths": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "spell_id": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "stats": {
+      "$ref": "#/definitions/StatModifiers"
+    },
+    "storable": {
+      "type": "boolean"
+    },
+    "use_effects": {
+      "$ref": "#/definitions/UseEffects"
+    },
+    "use_on_texts": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "use_texts": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "definitions": {
+    "EquipmentSlot": {
+      "type": "string",
+      "enum": [
+        "amulet",
+        "helmet",
+        "weapon",
+        "armor",
+        "shield",
+        "legs",
+        "backpack",
+        "ring",
+        "boots"
+      ]
+    },
+    "RenderMetadata": {
+      "type": "object",
+      "required": [
+        "debug_color",
+        "debug_size",
+        "z_index"
+      ],
+      "properties": {
+        "debug_color": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "debug_size": {
+          "type": "number",
+          "format": "float"
+        },
+        "sprite_height_tiles": {
+          "default": 0.0,
+          "type": "number",
+          "format": "float"
+        },
+        "sprite_path": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sprite_width_tiles": {
+          "default": 0.0,
+          "type": "number",
+          "format": "float"
+        },
+        "y_sort": {
+          "default": false,
+          "type": "boolean"
+        },
+        "z_index": {
+          "type": "number",
+          "format": "float"
+        }
+      }
+    },
+    "StatModifiers": {
+      "type": "object",
+      "properties": {
+        "agility": {
+          "default": 0,
+          "type": "integer",
+          "format": "int32"
+        },
+        "charisma": {
+          "default": 0,
+          "type": "integer",
+          "format": "int32"
+        },
+        "constitution": {
+          "default": 0,
+          "type": "integer",
+          "format": "int32"
+        },
+        "focus": {
+          "default": 0,
+          "type": "integer",
+          "format": "int32"
+        },
+        "max_health": {
+          "default": 0,
+          "type": "integer",
+          "format": "int32"
+        },
+        "max_mana": {
+          "default": 0,
+          "type": "integer",
+          "format": "int32"
+        },
+        "storage_slots": {
+          "default": 0,
+          "type": "integer",
+          "format": "int32"
+        },
+        "strength": {
+          "default": 0,
+          "type": "integer",
+          "format": "int32"
+        },
+        "willpower": {
+          "default": 0,
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "UseEffects": {
+      "type": "object",
+      "properties": {
+        "restore_health": {
+          "default": 0.0,
+          "type": "number",
+          "format": "float"
+        },
+        "restore_mana": {
+          "default": 0.0,
+          "type": "number",
+          "format": "float"
+        }
+      }
+    }
+  }
+}

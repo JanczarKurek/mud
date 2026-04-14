@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SpellDefinition",
+  "type": "object",
+  "required": [
+    "incantation",
+    "mana_cost",
+    "name",
+    "targeting"
+  ],
+  "properties": {
+    "effects": {
+      "$ref": "#/definitions/SpellEffects"
+    },
+    "incantation": {
+      "type": "string"
+    },
+    "mana_cost": {
+      "type": "number",
+      "format": "float"
+    },
+    "name": {
+      "type": "string"
+    },
+    "range_tiles": {
+      "default": 0,
+      "type": "integer",
+      "format": "int32"
+    },
+    "targeting": {
+      "$ref": "#/definitions/SpellTargeting"
+    }
+  },
+  "definitions": {
+    "SpellEffects": {
+      "type": "object",
+      "properties": {
+        "damage": {
+          "default": 0.0,
+          "type": "number",
+          "format": "float"
+        },
+        "restore_health": {
+          "default": 0.0,
+          "type": "number",
+          "format": "float"
+        },
+        "restore_mana": {
+          "default": 0.0,
+          "type": "number",
+          "format": "float"
+        }
+      }
+    },
+    "SpellTargeting": {
+      "type": "string",
+      "enum": [
+        "targeted",
+        "untargeted"
+      ]
+    }
+  }
+}

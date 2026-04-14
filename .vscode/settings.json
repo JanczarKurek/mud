@@ -1,0 +1,7 @@
+{
+  "yaml.schemas": {
+    "./assets/schemas/map_layout.schema.json": "assets/maps/*.yaml",
+    "./assets/schemas/object_definition.schema.json": "assets/overworld_objects/*/metadata.yaml",
+    "./assets/schemas/spell_definition.schema.json": "assets/spells/*.yaml"
+  }
+}

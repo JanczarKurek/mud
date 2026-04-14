@@ -4,6 +4,20 @@ This document describes the YAML formats currently used by the project.
 
 It should be updated whenever the schema or intended meaning of these files changes.
 
+## Schema files
+
+Machine-readable JSON Schema files live under `assets/schemas/` and are wired to the
+asset YAML paths in `.vscode/settings.json`. With the [redhat.vscode-yaml](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml)
+extension installed, VS Code provides inline validation and autocomplete for all asset YAML files.
+
+To regenerate schemas after changing any serde struct:
+
+```bash
+cargo run --bin gen_schemas --features gen-schemas
+```
+
+The generated files are committed alongside the source and should be kept in sync.
+
 ## 1. Map Layout YAML
 
 Path:
@@ -214,6 +228,69 @@ Anonymous placement group example:
     spell_id: spark_bolt
   placement:
     - { x: 30, y: 12 }
+```
+
+### Compact tile grid format
+
+Instead of listing every tile coordinate in anonymous placement groups, you can describe the map visually using the `legend` and `tiles` fields.
+
+### `legend`
+- Type: string-to-string mapping
+- Optional: yes
+- Default: empty
+- Meaning: maps single-character keys to object type IDs
+- Keys must be exactly one character each
+
+### `tiles`
+- Type: multi-line string (YAML literal block scalar `|`)
+- Optional: yes
+- Meaning: ASCII grid representation of the map, row-major with y=0 at the top row
+- Each row must be exactly `width` characters wide
+- The number of rows must be exactly `height`
+- Characters present in `legend` produce anonymous object placements; all other characters are ignored (the `fill_object_type` applies to those cells)
+- Grid-placed objects cannot carry `properties`; if you need properties on an anonymous group, use an explicit anonymous placement group in `objects:` instead
+
+Both `tiles` (via `legend`) and `objects:` anonymous groups can be used in the same file. The `objects:` field is optional when using `tiles:` alone.
+
+**Layering note:** A tile can have multiple objects — for instance, a wall sitting on top of a water tile. The grid represents one object per cell. To preserve a second object at the same position, add it as an explicit anonymous group in `objects:`.
+
+Example:
+
+```yaml
+authored_id: starter_cellar
+permanence: ephemeral
+width: 12
+height: 10
+fill_object_type: grass
+
+legend:
+  "#": wall
+
+tiles: |
+  #####.######
+  #..........#
+  #..........#
+  #..........#
+  #..........#
+  #..........#
+  #..........#
+  #..........#
+  #..........#
+  ############
+
+portals:
+  - id: cellar_exit
+    source: { x: 6, y: 0 }
+    destination_space_id: overworld
+    destination_tile: { x: 6, y: 18 }
+
+objects:
+  - id: 1200
+    type: barrel
+    placement: { x: 5, y: 4 }
+    contents: [1201]
+  - id: 1201
+    type: potion
 ```
 
 Notes:

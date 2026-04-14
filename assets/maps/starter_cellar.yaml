@@ -3,54 +3,30 @@ permanence: ephemeral
 width: 12
 height: 10
 fill_object_type: grass
+
+legend:
+  "#": wall
+
+tiles: |
+  #####.######
+  #..........#
+  #..........#
+  #..........#
+  #..........#
+  #..........#
+  #..........#
+  #..........#
+  #..........#
+  ############
+
 portals:
   - id: cellar_exit
     source: { x: 6, y: 0 }
     destination_space_id: overworld
     destination_tile: { x: 6, y: 18 }
     destination_permanence: persistent
+
 objects:
-  - type: wall
-    placement:
-      - { x: 0, y: 0 }
-      - { x: 1, y: 0 }
-      - { x: 2, y: 0 }
-      - { x: 3, y: 0 }
-      - { x: 4, y: 0 }
-      - { x: 5, y: 0 }
-      - { x: 7, y: 0 }
-      - { x: 8, y: 0 }
-      - { x: 9, y: 0 }
-      - { x: 10, y: 0 }
-      - { x: 11, y: 0 }
-      - { x: 0, y: 1 }
-      - { x: 11, y: 1 }
-      - { x: 0, y: 2 }
-      - { x: 11, y: 2 }
-      - { x: 0, y: 3 }
-      - { x: 11, y: 3 }
-      - { x: 0, y: 4 }
-      - { x: 11, y: 4 }
-      - { x: 0, y: 5 }
-      - { x: 11, y: 5 }
-      - { x: 0, y: 6 }
-      - { x: 11, y: 6 }
-      - { x: 0, y: 7 }
-      - { x: 11, y: 7 }
-      - { x: 0, y: 8 }
-      - { x: 11, y: 8 }
-      - { x: 0, y: 9 }
-      - { x: 1, y: 9 }
-      - { x: 2, y: 9 }
-      - { x: 3, y: 9 }
-      - { x: 4, y: 9 }
-      - { x: 5, y: 9 }
-      - { x: 6, y: 9 }
-      - { x: 7, y: 9 }
-      - { x: 8, y: 9 }
-      - { x: 9, y: 9 }
-      - { x: 10, y: 9 }
-      - { x: 11, y: 9 }
   - id: 1200
     type: barrel
     placement: { x: 5, y: 4 }
