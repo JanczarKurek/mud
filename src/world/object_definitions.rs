@@ -117,6 +117,32 @@ impl EquipmentSlot {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, Default)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct AnimationClipDef {
+    pub row: u32,
+    pub start_col: u32,
+    pub frame_count: u32,
+    pub fps: f32,
+    #[serde(default = "default_true")]
+    pub looping: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct AnimationSheetDef {
+    pub sheet_path: String,
+    pub frame_width: u32,
+    pub frame_height: u32,
+    pub sheet_columns: u32,
+    pub sheet_rows: u32,
+    pub clips: HashMap<String, AnimationClipDef>,
+}
+
 #[allow(dead_code)]
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
@@ -132,6 +158,8 @@ pub struct RenderMetadata {
     pub sprite_height_tiles: f32,
     #[serde(default)]
     pub y_sort: bool,
+    #[serde(default)]
+    pub animation: Option<AnimationSheetDef>,
 }
 
 impl RenderMetadata {

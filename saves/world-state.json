@@ -1,17 +1,17 @@
 {
   "format_version": 2,
-  "saved_at_unix_seconds": 1776209116,
+  "saved_at_unix_seconds": 1776292965,
   "world_config": {
-    "current_space_id": 0,
-    "map_width": 28,
-    "map_height": 18,
+    "current_space_id": 1,
+    "map_width": 40,
+    "map_height": 30,
     "tile_size": 48.0,
-    "fill_object_type": "cave_floor"
+    "fill_object_type": "grass"
   },
   "map_layout": {
-    "width": 28,
-    "height": 18,
-    "fill_object_type": "cave_floor"
+    "width": 40,
+    "height": 30,
+    "fill_object_type": "grass"
   },
   "spaces": [
     {
@@ -1773,10 +1773,10 @@
     {
       "player_id": 0,
       "object_id": 2170,
-      "space_id": 0,
+      "space_id": 1,
       "tile_position": {
-        "x": 5,
-        "y": 1
+        "x": 15,
+        "y": 15
       },
       "inventory": {
         "backpack_slots": [
@@ -1838,8 +1838,14 @@
       },
       "chat_log": {
         "lines": [
-          "[Narrator]: Right-click an item to inspect it.",
-          "[Narrator]: Right-click a nearby barrel to open it."
+          "[Goblin hit Player for 7 damage]",
+          "[Goblin hit Player for 5 damage]",
+          "[Goblin hit Player for 2 damage]",
+          "[Goblin hit Player for 3 damage]",
+          "[Goblin hit Player for 5 damage]",
+          "[Goblin hit Player for 4 damage]",
+          "[Goblin hit Player for 6 damage]",
+          "[Player is defeated]"
         ],
         "max_lines": 8
       },
@@ -1870,7 +1876,7 @@
         "storage_slots": 8
       },
       "vital_stats": {
-        "health": 115.0,
+        "health": 0.0,
         "max_health": 115.0,
         "mana": 100.0,
         "max_mana": 100.0
@@ -2023,8 +2029,8 @@
       "definition_id": "villager",
       "space_id": 1,
       "tile_position": {
-        "x": 8,
-        "y": 21
+        "x": 10,
+        "y": 24
       },
       "collider": true,
       "movable": false,
@@ -2079,10 +2085,10 @@
         },
         "hostile_behavior": null,
         "roaming_step_timer": {
-          "remaining_seconds": 0.54881847
+          "remaining_seconds": 0.476544
         },
         "roaming_random_state": {
-          "seed": 14167492900391053071
+          "seed": 4412694223413969356
         }
       }
     },
@@ -2091,8 +2097,8 @@
       "definition_id": "villager",
       "space_id": 1,
       "tile_position": {
-        "x": 35,
-        "y": 9
+        "x": 28,
+        "y": 8
       },
       "collider": true,
       "movable": false,
@@ -2147,10 +2153,10 @@
         },
         "hostile_behavior": null,
         "roaming_step_timer": {
-          "remaining_seconds": 0.114935294
+          "remaining_seconds": 1.2289989
         },
         "roaming_random_state": {
-          "seed": 13126627648741012746
+          "seed": 12614862036731465278
         }
       }
     },
@@ -2159,8 +2165,8 @@
       "definition_id": "goblin",
       "space_id": 1,
       "tile_position": {
-        "x": 15,
-        "y": 21
+        "x": 16,
+        "y": 16
       },
       "collider": true,
       "movable": false,
@@ -2205,7 +2211,7 @@
         "combat_leash": {
           "max_distance_tiles": 8
         },
-        "combat_target_object_id": null,
+        "combat_target_object_id": 2170,
         "roaming_behavior": {
           "bounds": {
             "min_x": 15,
@@ -2220,10 +2226,10 @@
           "disengage_distance_tiles": 8
         },
         "roaming_step_timer": {
-          "remaining_seconds": 0.14451374
+          "remaining_seconds": 0.8369533
         },
         "roaming_random_state": {
-          "seed": 2445827057138036198
+          "seed": 13565716118542655009
         }
       }
     },
@@ -3851,8 +3857,8 @@
       "definition_id": "goblin",
       "space_id": 0,
       "tile_position": {
-        "x": 12,
-        "y": 5
+        "x": 7,
+        "y": 3
       },
       "collider": true,
       "movable": false,
@@ -3912,10 +3918,10 @@
           "disengage_distance_tiles": 7
         },
         "roaming_step_timer": {
-          "remaining_seconds": 0.35066628
+          "remaining_seconds": 0.727041
         },
         "roaming_random_state": {
-          "seed": 12880596325178236872
+          "seed": 17328592534436921143
         }
       }
     },
@@ -3924,8 +3930,8 @@
       "definition_id": "goblin",
       "space_id": 0,
       "tile_position": {
-        "x": 22,
-        "y": 11
+        "x": 21,
+        "y": 13
       },
       "collider": true,
       "movable": false,
@@ -3985,10 +3991,10 @@
           "disengage_distance_tiles": 8
         },
         "roaming_step_timer": {
-          "remaining_seconds": 0.60427356
+          "remaining_seconds": 0.75444496
         },
         "roaming_random_state": {
-          "seed": 7958898692860150720
+          "seed": 4639004494807474985
         }
       }
     },

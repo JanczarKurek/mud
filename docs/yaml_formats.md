@@ -551,6 +551,106 @@ Top-level fields:
 - Recommended for obstacles, NPCs, and players to achieve correct occlusion with oversized sprites
 - Ground tiles and flat pickups should leave this as `false`
 
+### `animation`
+- Type: mapping or `null`
+- Optional: yes
+- Default: `null` (no animation; static `sprite_path` is used instead)
+- Meaning: sprite-sheet animation configuration for the object
+- When present, the object uses a texture atlas instead of a static image
+- Objects without this field fall back to the static `sprite_path` with no behaviour change
+
+`animation` fields:
+
+### `sheet_path`
+- Type: string
+- Meaning: Bevy asset path to the sprite-sheet PNG, relative to `assets/`
+- The sheet must be a uniform grid where every frame cell is the same pixel size
+
+### `frame_width`
+- Type: integer
+- Meaning: width in pixels of a single animation frame cell
+
+### `frame_height`
+- Type: integer
+- Meaning: height in pixels of a single animation frame cell
+
+### `sheet_columns`
+- Type: integer
+- Meaning: number of frame columns in the sprite-sheet grid
+- Used together with `sheet_rows` to register the texture atlas layout
+
+### `sheet_rows`
+- Type: integer
+- Meaning: number of frame rows in the sprite-sheet grid
+
+### `clips`
+- Type: mapping from clip name string to clip definition
+- Meaning: named animation clips that can be played on this object
+- Well-known clip names used by the animation system:
+  - `idle` — played when the entity is not moving (looping)
+  - `walk` — played for one movement step, returns to `idle` when the step ends
+
+Each clip definition has these fields:
+
+### `row`
+- Type: integer
+- Meaning: zero-indexed row in the sprite-sheet grid where this clip's frames begin
+
+### `start_col`
+- Type: integer
+- Meaning: zero-indexed column in the sprite-sheet grid where this clip's frames begin
+
+### `frame_count`
+- Type: integer
+- Meaning: number of consecutive frames in this clip, starting from `(row, start_col)`
+
+### `fps`
+- Type: float
+- Meaning: frames-per-second playback rate
+
+### `looping`
+- Type: boolean
+- Optional: yes
+- Default: `true`
+- Meaning: whether the clip loops indefinitely or freezes on its last frame
+
+Animated object example:
+
+```yaml
+extends: npc
+name: Goblin
+render:
+  z_index: 1.0
+  debug_color: [92, 156, 68]
+  debug_size: 0.92
+  y_sort: true
+  animation:
+    sheet_path: overworld_objects/goblin/sheet.png
+    frame_width: 32
+    frame_height: 48
+    sheet_columns: 4
+    sheet_rows: 2
+    clips:
+      idle:
+        row: 0
+        start_col: 0
+        frame_count: 1
+        fps: 1.0
+        looping: true
+      walk:
+        row: 1
+        start_col: 0
+        frame_count: 4
+        fps: 8.0
+        looping: true
+```
+
+Notes:
+- The atlas frame index for a given clip frame is `row * sheet_columns + start_col + frame_offset`.
+- If the `idle` clip is omitted from `clips`, the animation system defaults to frame 0.
+- If the `walk` clip is omitted, the system falls back to `idle` during movement.
+- Smooth movement (viewport scroll for the player, per-entity offset for NPCs) is automatic when an entity has `animation` defined; no additional configuration is needed.
+
 Example:
 
 ```yaml

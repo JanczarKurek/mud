@@ -1,3 +1,4 @@
+pub mod animation;
 pub mod components;
 pub mod map_layout;
 pub mod object_definitions;
@@ -12,8 +13,13 @@ use crate::game::systems::apply_game_events_to_client_state;
 use crate::world::map_layout::SpaceDefinitions;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
+use crate::world::animation::{
+    advance_animation_timers, attach_animated_sprite, cleanup_just_moved,
+    detect_player_movement, return_to_idle_animation, tick_view_scroll, tick_visual_offsets,
+    trigger_movement_animation,
+};
 use crate::world::resources::{
-    ClientRemotePlayerProjectionState, ClientWorldProjectionState, SpaceManager,
+    ClientRemotePlayerProjectionState, ClientWorldProjectionState, SpaceManager, ViewScrollOffset,
 };
 use crate::world::setup::{
     initialize_runtime_spaces, spawn_ground_tiles_for_current_space, WorldStartupSet,
@@ -69,6 +75,7 @@ impl Plugin for WorldClientPlugin {
         .insert_resource(OverworldObjectDefinitions::load_from_disk())
         .insert_resource(ClientWorldProjectionState::default())
         .insert_resource(ClientRemotePlayerProjectionState::default())
+        .insert_resource(ViewScrollOffset::default())
         .add_systems(Startup, spawn_ground_tiles_for_current_space)
         .add_systems(
             Update,
@@ -79,6 +86,17 @@ impl Plugin for WorldClientPlugin {
                 sync_player_z,
                 sync_combat_health_bars,
                 spawn_ground_tiles_for_current_space,
+                // Animation systems
+                attach_animated_sprite.after(sync_client_world_projection),
+                advance_animation_timers,
+                detect_player_movement.after(apply_game_events_to_client_state),
+                trigger_movement_animation
+                    .after(sync_client_world_projection)
+                    .after(detect_player_movement),
+                return_to_idle_animation.after(trigger_movement_animation),
+                cleanup_just_moved.after(return_to_idle_animation),
+                tick_view_scroll,
+                tick_visual_offsets,
             ),
         );
     }

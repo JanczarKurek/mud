@@ -2,13 +2,14 @@ use bevy::prelude::*;
 
 use crate::game::resources::ClientGameState;
 use crate::player::components::Player;
+use crate::world::animation::{JustMoved, VisualOffset};
 use crate::world::components::{
     ClientProjectedWorldObject, ClientRemotePlayerVisual, CombatHealthBar, DisplayedVitalStats,
     HealthBarDisplayPolicy, SpaceResident, TilePosition, WorldVisual,
 };
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::resources::{
-    ClientRemotePlayerProjectionState, ClientWorldProjectionState, SpaceManager,
+    ClientRemotePlayerProjectionState, ClientWorldProjectionState, SpaceManager, ViewScrollOffset,
 };
 use crate::world::setup::{spawn_client_projected_world_object, spawn_client_remote_player};
 use crate::world::WorldConfig;
@@ -104,7 +105,23 @@ pub fn sync_client_world_projection(
         }
 
         space_resident.space_id = object.position.space_id;
+        let old_tile = *tile_position;
         *tile_position = object.position.tile_position;
+        if old_tile != *tile_position {
+            let dx = tile_position.x - old_tile.x;
+            let dy = tile_position.y - old_tile.y;
+            commands.entity(query_entity).insert((
+                JustMoved { dx, dy },
+                VisualOffset {
+                    current: Vec2::new(
+                        -dx as f32 * world_config.tile_size,
+                        -dy as f32 * world_config.tile_size,
+                    ),
+                    elapsed: 0.0,
+                    duration: 0.18,
+                },
+            ));
+        }
         if let Some(vitals) = object.vitals {
             displayed_vitals.health = vitals.health;
             displayed_vitals.max_health = vitals.max_health;
@@ -240,8 +257,9 @@ fn y_sort_z(tile_y: i32) -> f32 {
 pub fn sync_tile_transforms(
     client_state: Res<ClientGameState>,
     world_config: Res<WorldConfig>,
+    view_scroll: Res<ViewScrollOffset>,
     mut query: Query<
-        (&SpaceResident, &TilePosition, &WorldVisual, &mut Transform),
+        (&SpaceResident, &TilePosition, &WorldVisual, &mut Transform, Option<&VisualOffset>),
         Without<Player>,
     >,
 ) {
@@ -249,7 +267,7 @@ pub fn sync_tile_transforms(
         return;
     };
 
-    for (space_resident, tile_position, world_visual, mut transform) in &mut query {
+    for (space_resident, tile_position, world_visual, mut transform, visual_offset) in &mut query {
         let is_active = space_resident.space_id == player_position.space_id;
 
         let z = if !is_active {
@@ -266,10 +284,16 @@ pub fn sync_tile_transforms(
             0.0
         };
 
+        let entity_offset = visual_offset.map_or(Vec2::ZERO, |o| o.current);
+
         transform.translation = Vec3::new(
-            (tile_position.x - player_position.tile_position.x) as f32 * world_config.tile_size,
+            (tile_position.x - player_position.tile_position.x) as f32 * world_config.tile_size
+                + view_scroll.current.x
+                + entity_offset.x,
             (tile_position.y - player_position.tile_position.y) as f32 * world_config.tile_size
-                + anchor_y_offset,
+                + anchor_y_offset
+                + view_scroll.current.y
+                + entity_offset.y,
             z,
         );
     }

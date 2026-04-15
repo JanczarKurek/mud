@@ -2,6 +2,16 @@ use std::collections::HashMap;
 
 use bevy::prelude::*;
 
+/// Pixel offset added to all non-player entity translations each frame,
+/// driven by the local player's most recent tile move. Lerps to zero over
+/// the movement duration to produce a Tibia-style smooth viewport scroll.
+#[derive(Resource, Default, Clone, Debug)]
+pub struct ViewScrollOffset {
+    pub current: Vec2,
+    pub elapsed: f32,
+    pub duration: f32,
+}
+
 use crate::player::components::PlayerId;
 use crate::world::components::SpaceId;
 use crate::world::map_layout::SpacePermanence;
