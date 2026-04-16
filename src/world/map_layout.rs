@@ -245,6 +245,29 @@ impl SpaceDefinitions {
     pub fn iter(&self) -> impl Iterator<Item = &SpaceDefinition> {
         self.spaces.values()
     }
+
+    /// Insert or replace a space definition (e.g. after editor Save As or New Map).
+    pub fn insert_or_replace(&mut self, def: SpaceDefinition) {
+        self.spaces.insert(def.authored_id.clone(), def);
+    }
+
+    /// Load a single map YAML from `assets/maps/{authored_id}.yaml` and insert it.
+    /// Returns `true` if successful. Skips validation assertions for portal destinations.
+    pub fn load_single_from_disk(&mut self, authored_id: &str) -> bool {
+        let path = format!("assets/maps/{authored_id}.yaml");
+        let Ok(yaml) = std::fs::read_to_string(&path) else {
+            return false;
+        };
+        let Ok(mut def) = serde_yaml::from_str::<SpaceDefinition>(&yaml) else {
+            return false;
+        };
+        if def.authored_id.trim().is_empty() {
+            def.authored_id = authored_id.to_owned();
+        }
+        def.resolve_objects();
+        self.spaces.insert(def.authored_id.clone(), def);
+        true
+    }
 }
 
 impl SpaceDefinition {
@@ -258,6 +281,40 @@ impl SpaceDefinition {
         self.resolved_objects
             .iter()
             .any(|object| object.contents.contains(&object_id))
+    }
+
+    /// Expand tile grid + anonymous objects and build internal indices.
+    /// Call this when constructing a SpaceDefinition outside of `load_from_disk`.
+    pub fn resolve_objects(&mut self) {
+        self.expand_tile_grid();
+        self.expand_anonymous_objects();
+        let mut object_indices = HashMap::new();
+        for (index, object) in self.resolved_objects.iter().enumerate() {
+            object_indices.insert(object.id, index);
+        }
+        self.object_indices = object_indices;
+    }
+
+    /// Create a blank space definition (no objects, no portals).
+    pub fn new_empty(
+        authored_id: String,
+        width: i32,
+        height: i32,
+        fill_object_type: String,
+    ) -> Self {
+        Self {
+            authored_id,
+            width,
+            height,
+            fill_object_type,
+            permanence: SpacePermanence::Persistent,
+            portals: Vec::new(),
+            objects: Vec::new(),
+            legend: HashMap::new(),
+            tiles: None,
+            resolved_objects: Vec::new(),
+            object_indices: HashMap::new(),
+        }
     }
 
     fn validate(&mut self) {

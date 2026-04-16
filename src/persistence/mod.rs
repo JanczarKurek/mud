@@ -186,6 +186,7 @@ pub struct NpcStateDump {
 
 fn save_world_on_app_exit(
     mut app_exit_reader: MessageReader<AppExit>,
+    app_state: Res<State<crate::app::state::ClientAppState>>,
     save_config: Res<WorldSaveConfig>,
     world_config: Res<WorldConfig>,
     space_manager: Res<SpaceManager>,
@@ -241,6 +242,10 @@ fn save_world_on_app_exit(
     >,
 ) {
     if app_exit_reader.read().next().is_none() {
+        return;
+    }
+
+    if *app_state == crate::app::state::ClientAppState::MapEditor {
         return;
     }
 
