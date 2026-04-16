@@ -1,0 +1,34 @@
+extends: npc
+name: Cyclops
+description: A hulking one-eyed giant with a massive club and a short temper.
+stats:
+  strength: 18
+  agility: 5
+  constitution: 16
+  willpower: 7
+  charisma: 4
+  focus: 7
+render:
+  debug_color: [110, 130, 75]
+  debug_size: 1.4
+  sprite_path: overworld_objects/cyclops/sprite.png
+  y_sort: true
+  animation:
+    sheet_path: overworld_objects/cyclops/sheet.png
+    frame_width: 64
+    frame_height: 80
+    sheet_columns: 4
+    sheet_rows: 2
+    clips:
+      idle:
+        row: 0
+        start_col: 0
+        frame_count: 4
+        fps: 2.0
+        looping: true
+      walk:
+        row: 1
+        start_col: 0
+        frame_count: 4
+        fps: 6.0
+        looping: true

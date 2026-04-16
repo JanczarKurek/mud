@@ -1,0 +1,34 @@
+extends: npc
+name: Skeleton
+description: A reanimated skeleton, its empty eye sockets flickering with a sickly green glow.
+stats:
+  strength: 7
+  agility: 8
+  constitution: 6
+  willpower: 5
+  charisma: 2
+  focus: 6
+render:
+  debug_color: [218, 210, 185]
+  debug_size: 0.88
+  sprite_path: overworld_objects/skeleton/sprite.png
+  y_sort: true
+  animation:
+    sheet_path: overworld_objects/skeleton/sheet.png
+    frame_width: 32
+    frame_height: 48
+    sheet_columns: 4
+    sheet_rows: 2
+    clips:
+      idle:
+        row: 0
+        start_col: 0
+        frame_count: 4
+        fps: 3.0
+        looping: true
+      walk:
+        row: 1
+        start_col: 0
+        frame_count: 4
+        fps: 8.0
+        looping: true
