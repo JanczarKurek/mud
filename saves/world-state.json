@@ -1,6 +1,6 @@
 {
   "format_version": 2,
-  "saved_at_unix_seconds": 1776292965,
+  "saved_at_unix_seconds": 1776354153,
   "world_config": {
     "current_space_id": 1,
     "map_width": 40,
@@ -34,7 +34,7 @@
     }
   ],
   "object_registry": {
-    "next_runtime_id": 2171,
+    "next_runtime_id": 2209,
     "entries": [
       {
         "object_id": 300,
@@ -1763,6 +1763,196 @@
         "object_id": 2170,
         "type_id": "player",
         "properties": {}
+      },
+      {
+        "object_id": 2171,
+        "type_id": "bronze_sword",
+        "properties": {}
+      },
+      {
+        "object_id": 2172,
+        "type_id": "goblin",
+        "properties": {}
+      },
+      {
+        "object_id": 2173,
+        "type_id": "goblin",
+        "properties": {}
+      },
+      {
+        "object_id": 2174,
+        "type_id": "crystal_cluster",
+        "properties": {}
+      },
+      {
+        "object_id": 2175,
+        "type_id": "crystal_cluster",
+        "properties": {}
+      },
+      {
+        "object_id": 2176,
+        "type_id": "crystal_cluster",
+        "properties": {}
+      },
+      {
+        "object_id": 2177,
+        "type_id": "crystal_cluster",
+        "properties": {}
+      },
+      {
+        "object_id": 2178,
+        "type_id": "crystal_cluster",
+        "properties": {}
+      },
+      {
+        "object_id": 2179,
+        "type_id": "crystal_cluster",
+        "properties": {}
+      },
+      {
+        "object_id": 2180,
+        "type_id": "crystal_cluster",
+        "properties": {}
+      },
+      {
+        "object_id": 2181,
+        "type_id": "crystal_cluster",
+        "properties": {}
+      },
+      {
+        "object_id": 2182,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 2183,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 2184,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 2185,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 2186,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 2187,
+        "type_id": "silver_ring",
+        "properties": {}
+      },
+      {
+        "object_id": 2188,
+        "type_id": "silver_ring",
+        "properties": {}
+      },
+      {
+        "object_id": 2189,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 2190,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 2191,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 2192,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 2193,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 2194,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 2195,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 2196,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 2197,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 2198,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 2199,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 2200,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 2201,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 2202,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 2203,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 2204,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 2205,
+        "type_id": "stone",
+        "properties": {}
+      },
+      {
+        "object_id": 2206,
+        "type_id": "crystal_cluster",
+        "properties": {}
+      },
+      {
+        "object_id": 2207,
+        "type_id": "crystal_cluster",
+        "properties": {}
+      },
+      {
+        "object_id": 2208,
+        "type_id": "crystal_cluster",
+        "properties": {}
       }
     ]
   },
@@ -1775,12 +1965,12 @@
       "object_id": 2170,
       "space_id": 1,
       "tile_position": {
-        "x": 15,
-        "y": 15
+        "x": 26,
+        "y": 13
       },
       "inventory": {
         "backpack_slots": [
-          null,
+          919,
           null,
           null,
           null,
@@ -1838,14 +2028,14 @@
       },
       "chat_log": {
         "lines": [
+          "[Player is defeated]",
+          "[Narrator]: A rolled parchment scroll inscribed with Lesser Heal.",
+          "[Player]: \"Exura\"",
+          "[Narrator]: Cast Lesser Heal.",
           "[Goblin hit Player for 7 damage]",
-          "[Goblin hit Player for 5 damage]",
-          "[Goblin hit Player for 2 damage]",
-          "[Goblin hit Player for 3 damage]",
-          "[Goblin hit Player for 5 damage]",
-          "[Goblin hit Player for 4 damage]",
-          "[Goblin hit Player for 6 damage]",
-          "[Player is defeated]"
+          "[Narrator]: Decorative flowers scattered across the ground.",
+          "[Player]: \"Exori Vis\"",
+          "[Narrator]: Cast Spark Bolt on Goblin."
         ],
         "max_lines": 8
       },
@@ -1876,9 +2066,9 @@
         "storage_slots": 8
       },
       "vital_stats": {
-        "health": 0.0,
+        "health": 13.0,
         "max_health": 115.0,
-        "mana": 100.0,
+        "mana": 80.0,
         "max_mana": 100.0
       },
       "movement_cooldown": {
@@ -1930,7 +2120,7 @@
       "movable": true,
       "storable": false,
       "container_slots": [
-        602,
+        null,
         605,
         606,
         null,
@@ -2029,8 +2219,8 @@
       "definition_id": "villager",
       "space_id": 1,
       "tile_position": {
-        "x": 10,
-        "y": 24
+        "x": 7,
+        "y": 21
       },
       "collider": true,
       "movable": false,
@@ -2085,10 +2275,10 @@
         },
         "hostile_behavior": null,
         "roaming_step_timer": {
-          "remaining_seconds": 0.476544
+          "remaining_seconds": 0.49959695
         },
         "roaming_random_state": {
-          "seed": 4412694223413969356
+          "seed": 12124738933199098116
         }
       }
     },
@@ -2098,7 +2288,7 @@
       "space_id": 1,
       "tile_position": {
         "x": 28,
-        "y": 8
+        "y": 10
       },
       "collider": true,
       "movable": false,
@@ -2153,10 +2343,10 @@
         },
         "hostile_behavior": null,
         "roaming_step_timer": {
-          "remaining_seconds": 1.2289989
+          "remaining_seconds": 0.831861
         },
         "roaming_random_state": {
-          "seed": 12614862036731465278
+          "seed": 506440550312063504
         }
       }
     },
@@ -2165,8 +2355,8 @@
       "definition_id": "goblin",
       "space_id": 1,
       "tile_position": {
-        "x": 16,
-        "y": 16
+        "x": 23,
+        "y": 14
       },
       "collider": true,
       "movable": false,
@@ -2200,7 +2390,7 @@
           "storage_slots": 0
         },
         "vital_stats": {
-          "health": 107.0,
+          "health": 89.0,
           "max_health": 107.0,
           "mana": 82.0,
           "max_mana": 82.0
@@ -2226,10 +2416,10 @@
           "disengage_distance_tiles": 8
         },
         "roaming_step_timer": {
-          "remaining_seconds": 0.8369533
+          "remaining_seconds": 0.643498
         },
         "roaming_random_state": {
-          "seed": 13565716118542655009
+          "seed": 8503508646667195559
         }
       }
     },
@@ -2324,20 +2514,6 @@
       "tile_position": {
         "x": 21,
         "y": 18
-      },
-      "collider": false,
-      "movable": true,
-      "storable": true,
-      "container_slots": null,
-      "npc": null
-    },
-    {
-      "object_id": 910,
-      "definition_id": "scroll",
-      "space_id": 1,
-      "tile_position": {
-        "x": 30,
-        "y": 12
       },
       "collider": false,
       "movable": true,
@@ -2450,20 +2626,6 @@
       "tile_position": {
         "x": 33,
         "y": 11
-      },
-      "collider": false,
-      "movable": true,
-      "storable": true,
-      "container_slots": null,
-      "npc": null
-    },
-    {
-      "object_id": 919,
-      "definition_id": "flowers",
-      "space_id": 1,
-      "tile_position": {
-        "x": 30,
-        "y": 12
       },
       "collider": false,
       "movable": true,
@@ -3918,7 +4080,7 @@
           "disengage_distance_tiles": 7
         },
         "roaming_step_timer": {
-          "remaining_seconds": 0.727041
+          "remaining_seconds": 0.51525396
         },
         "roaming_random_state": {
           "seed": 17328592534436921143
@@ -3930,8 +4092,8 @@
       "definition_id": "goblin",
       "space_id": 0,
       "tile_position": {
-        "x": 21,
-        "y": 13
+        "x": 23,
+        "y": 14
       },
       "collider": true,
       "movable": false,
@@ -3991,10 +4153,10 @@
           "disengage_distance_tiles": 8
         },
         "roaming_step_timer": {
-          "remaining_seconds": 0.75444496
+          "remaining_seconds": 0.2733326
         },
         "roaming_random_state": {
-          "seed": 4639004494807474985
+          "seed": 14925837675655430468
         }
       }
     },
@@ -6259,6 +6421,496 @@
       "tile_position": {
         "x": 27,
         "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2174,
+      "definition_id": "crystal_cluster",
+      "space_id": 1,
+      "tile_position": {
+        "x": 9,
+        "y": 22
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2175,
+      "definition_id": "crystal_cluster",
+      "space_id": 1,
+      "tile_position": {
+        "x": 7,
+        "y": 23
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2176,
+      "definition_id": "crystal_cluster",
+      "space_id": 1,
+      "tile_position": {
+        "x": 8,
+        "y": 24
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2177,
+      "definition_id": "crystal_cluster",
+      "space_id": 1,
+      "tile_position": {
+        "x": 9,
+        "y": 24
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2178,
+      "definition_id": "crystal_cluster",
+      "space_id": 1,
+      "tile_position": {
+        "x": 10,
+        "y": 23
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2179,
+      "definition_id": "crystal_cluster",
+      "space_id": 1,
+      "tile_position": {
+        "x": 10,
+        "y": 22
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2180,
+      "definition_id": "crystal_cluster",
+      "space_id": 1,
+      "tile_position": {
+        "x": 11,
+        "y": 22
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2181,
+      "definition_id": "crystal_cluster",
+      "space_id": 1,
+      "tile_position": {
+        "x": 11,
+        "y": 23
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2182,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 12,
+        "y": 2
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2183,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 13,
+        "y": 2
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2184,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 14,
+        "y": 2
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2185,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 16,
+        "y": 2
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2186,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 15,
+        "y": 2
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2187,
+      "definition_id": "silver_ring",
+      "space_id": 1,
+      "tile_position": {
+        "x": 11,
+        "y": 11
+      },
+      "collider": false,
+      "movable": true,
+      "storable": true,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2188,
+      "definition_id": "silver_ring",
+      "space_id": 1,
+      "tile_position": {
+        "x": 12,
+        "y": 11
+      },
+      "collider": false,
+      "movable": true,
+      "storable": true,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2189,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 12,
+        "y": 12
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2190,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 14,
+        "y": 12
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2191,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 13,
+        "y": 11
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2192,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 13,
+        "y": 12
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2193,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 13,
+        "y": 13
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2194,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 14,
+        "y": 13
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2195,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 14,
+        "y": 11
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2196,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 15,
+        "y": 11
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2197,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 15,
+        "y": 12
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2198,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 16,
+        "y": 13
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2199,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 22,
+        "y": 12
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2200,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 23,
+        "y": 12
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2201,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 30,
+        "y": 12
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2202,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 32,
+        "y": 12
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2203,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 34,
+        "y": 12
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2204,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 35,
+        "y": 14
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2205,
+      "definition_id": "stone",
+      "space_id": 1,
+      "tile_position": {
+        "x": 35,
+        "y": 13
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2206,
+      "definition_id": "crystal_cluster",
+      "space_id": 1,
+      "tile_position": {
+        "x": 21,
+        "y": 27
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2207,
+      "definition_id": "crystal_cluster",
+      "space_id": 1,
+      "tile_position": {
+        "x": 27,
+        "y": 27
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null
+    },
+    {
+      "object_id": 2208,
+      "definition_id": "crystal_cluster",
+      "space_id": 1,
+      "tile_position": {
+        "x": 28,
+        "y": 26
       },
       "collider": true,
       "movable": false,

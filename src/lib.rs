@@ -1,5 +1,6 @@
 pub mod app;
 pub mod combat;
+pub mod editor;
 pub mod game;
 pub mod magic;
 pub mod network;

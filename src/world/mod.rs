@@ -9,6 +9,7 @@ pub mod systems;
 
 use bevy::prelude::*;
 
+use crate::app::state::ClientAppState;
 use crate::game::systems::apply_game_events_to_client_state;
 use crate::world::map_layout::SpaceDefinitions;
 use crate::world::object_definitions::OverworldObjectDefinitions;
@@ -85,7 +86,6 @@ impl Plugin for WorldClientPlugin {
                 sync_tile_transforms,
                 sync_player_z,
                 sync_combat_health_bars,
-                spawn_ground_tiles_for_current_space,
                 // Animation systems
                 attach_animated_sprite.after(sync_client_world_projection),
                 advance_animation_timers,
@@ -97,7 +97,12 @@ impl Plugin for WorldClientPlugin {
                 cleanup_just_moved.after(return_to_idle_animation),
                 tick_view_scroll,
                 tick_visual_offsets,
-            ),
+            )
+                .run_if(in_state(ClientAppState::InGame)),
+        )
+        .add_systems(
+            Update,
+            spawn_ground_tiles_for_current_space,
         );
     }
 }

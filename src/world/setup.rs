@@ -492,7 +492,7 @@ pub fn world_visual_for_definition(
     }
 }
 
-fn sprite_for_definition(
+pub fn sprite_for_definition(
     asset_server: &AssetServer,
     definition: &OverworldObjectDefinition,
     world_config: &WorldConfig,

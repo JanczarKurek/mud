@@ -4,6 +4,7 @@ pub mod systems;
 
 use bevy::prelude::*;
 
+use crate::app::state::simulation_active;
 use crate::combat::systems::resolve_battle_turn;
 use crate::game::resources::{
     ClientGameState, PendingGameCommands, PendingGameEvents, PendingGameUiEvents,
@@ -27,22 +28,29 @@ impl Plugin for GameServerPlugin {
             .insert_resource(ClientGameState::default())
             .add_systems(
                 Update,
-                tick_player_movement_cooldowns.after(move_player_on_grid),
+                tick_player_movement_cooldowns
+                    .after(move_player_on_grid)
+                    .run_if(simulation_active),
             )
             .add_systems(
                 Update,
-                process_game_commands.after(tick_player_movement_cooldowns),
+                process_game_commands
+                    .after(tick_player_movement_cooldowns)
+                    .run_if(simulation_active),
             )
             .add_systems(
                 Update,
                 collect_game_events_from_authority
                     .after(process_game_commands)
                     .after(update_roaming_npcs)
-                    .after(resolve_battle_turn),
+                    .after(resolve_battle_turn)
+                    .run_if(simulation_active),
             )
             .add_systems(
                 Update,
-                apply_game_events_to_client_state.after(collect_game_events_from_authority),
+                apply_game_events_to_client_state
+                    .after(collect_game_events_from_authority)
+                    .run_if(simulation_active),
             );
     }
 }

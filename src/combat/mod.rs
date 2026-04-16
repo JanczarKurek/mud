@@ -4,6 +4,7 @@ pub mod systems;
 
 use bevy::prelude::*;
 
+use crate::app::state::simulation_active;
 use crate::combat::resources::BattleTurnTimer;
 use crate::combat::systems::{clear_invalid_combat_targets, resolve_battle_turn};
 use crate::game::systems::process_game_commands;
@@ -18,7 +19,8 @@ impl Plugin for CombatPlugin {
             (clear_invalid_combat_targets, resolve_battle_turn)
                 .chain()
                 .after(process_game_commands)
-                .after(update_roaming_npcs),
+                .after(update_roaming_npcs)
+                .run_if(simulation_active),
         );
     }
 }

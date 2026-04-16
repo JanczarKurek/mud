@@ -39,6 +39,7 @@ struct TitleServerEntry {
 
 #[derive(Resource)]
 struct TitleScreenState {
+    runtime: AppRuntime,
     entries: Vec<TitleServerEntry>,
     selected_index: usize,
 }
@@ -74,6 +75,7 @@ impl TitleScreenState {
         }
 
         Self {
+            runtime,
             entries,
             selected_index: 0,
         }
@@ -91,6 +93,7 @@ struct TitleServerButton {
 #[derive(Component, Clone, Copy, Eq, PartialEq)]
 enum TitleAction {
     Connect,
+    OpenMapEditor,
     Exit,
 }
 
@@ -290,6 +293,13 @@ fn spawn_title_screen(
                                                 "Connect",
                                                 TitleAction::Connect,
                                             );
+                                            if title_state.runtime == AppRuntime::EmbeddedClient {
+                                                spawn_action_button(
+                                                    actions,
+                                                    "Map Editor",
+                                                    TitleAction::OpenMapEditor,
+                                                );
+                                            }
                                             spawn_action_button(actions, "Exit", TitleAction::Exit);
                                         });
                                 });
@@ -423,6 +433,9 @@ fn handle_title_screen_buttons(
                 }
 
                 next_state.set(ClientAppState::InGame);
+            }
+            TitleAction::OpenMapEditor => {
+                next_state.set(ClientAppState::MapEditor);
             }
             TitleAction::Exit => {
                 exit_messages.write(AppExit::Success);

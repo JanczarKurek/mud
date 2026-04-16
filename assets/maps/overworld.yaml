@@ -1,171 +1,293 @@
 authored_id: overworld
-permanence: persistent
 width: 40
 height: 30
 fill_object_type: grass
-
-legend:
-  "~": water
-  "T": tree
-  "#": wall
-  "f": flowers
-  "s": stone
-
-tiles: |
-  ........................................
-  ........................................
-  ........................................
-  ........................................
-  ....ff....~~............................
-  ....f.....~~............................
-  ........T.................T.T...........
-  ......TT.T.................T..T.........
-  ........T.~~~~~~~~......................
-  ..........~~~~~~~~......................
-  ........................................
-  ..................#######.......ff......
-  ..................#.....#.....f.........
-  ..................#.....#...............
-  ..............TT..#.....#...............
-  ................T.#.....#...............
-  ...............T..#...~~#~~~~...........
-  ..................##..###~~~~...........
-  ......................~~~~~~~...........
-  ...s.s................~~~~~~~...........
-  ....s.................~~~~~~~...........
-  ........................................
-  ............f...........................
-  .............f......................s...
-  ..................................ss....
-  ........................................
-  ........................................
-  ........................................
-  ........................................
-  ........................................
-
+permanence: persistent
 portals:
-  - id: starter_cellar
-    source: { x: 6, y: 18 }
-    destination_space_id: starter_cellar
-    destination_tile: { x: 6, y: 1 }
-    destination_permanence: ephemeral
-  - id: underworld_sinkhole
-    source: { x: 31, y: 23 }
-    destination_space_id: underworld
-    destination_tile: { x: 3, y: 14 }
-    destination_permanence: persistent
-
+- id: starter_cellar
+  source:
+    x: 6
+    y: 18
+  destination_space_id: starter_cellar
+  destination_tile:
+    x: 6
+    y: 1
+  destination_permanence: ephemeral
+- id: underworld_sinkhole
+  source:
+    x: 31
+    y: 23
+  destination_space_id: underworld
+  destination_tile:
+    x: 3
+    y: 14
+  destination_permanence: persistent
 objects:
-  # Water tiles that also have a wall on top (grid shows wall; water preserved here)
-  - type: water
-    placement:
-      - { x: 24, y: 16 }
-      - { x: 22, y: 17 }
-      - { x: 23, y: 17 }
-      - { x: 24, y: 17 }
-  # Loose items
-  - type: apple
-    placement:
-      - { x: 18, y: 18 }
-      - { x: 11, y: 14 }
-  - type: potion
-    placement:
-      - { x: 21, y: 18 }
-  - type: scroll
-    properties:
-      spell_id: spark_bolt
-    placement:
-      - { x: 30, y: 12 }
-  - type: silver_ring
-    placement:
-      - { x: 7, y: 20 }
-  - type: copper_amulet
-    placement:
-      - { x: 9, y: 21 }
-  - type: canvas_backpack
-    placement:
-      - { x: 28, y: 10 }
-  # Named instances
-  - id: 305
-    type: sinkhole
-    placement: { x: 31, y: 23 }
-  - id: 300
-    type: barrel
-    placement: { x: 20, y: 13 }
-    contents: [600, 601]
-  - id: 301
-    type: barrel
-    placement: { x: 21, y: 13 }
-    contents: [602, 605, 606]
-  - id: 302
-    type: barrel
-    placement: { x: 22, y: 15 }
-  - id: 303
-    type: barrel
-    placement: { x: 19, y: 16 }
-    contents: [607, 608]
-  - id: 304
-    type: barrel
-    placement: { x: 25, y: 12 }
-    contents: [603, 604, 609, 610]
-  - id: 600
-    type: apple
-  - id: 601
-    type: potion
-  - id: 602
-    type: scroll
-    properties:
-      spell_id: lesser_heal
-  - id: 603
-    type: apple
-  - id: 604
-    type: scroll
-    properties:
-      spell_id: spark_bolt
-  - id: 605
-    type: bronze_sword
-  - id: 606
-    type: wooden_shield
-  - id: 607
-    type: leather_helmet
-  - id: 608
-    type: leather_armor
-  - id: 609
-    type: leather_legs
-  - id: 610
-    type: traveler_boots
-  - id: 900
-    type: villager
-    placement: { x: 8, y: 23 }
-    behavior:
-      kind: roam
-      step_interval_seconds: 1.2
-      bounds:
-        min_x: 5
-        min_y: 21
-        max_x: 11
-        max_y: 25
-  - id: 901
-    type: villager
-    placement: { x: 31, y: 7 }
-    behavior:
-      kind: roam
-      step_interval_seconds: 1.6
-      bounds:
-        min_x: 28
-        min_y: 5
-        max_x: 35
-        max_y: 10
-  - id: 902
-    type: goblin
-    placement: { x: 18, y: 21 }
-    behavior:
-      kind: roam_and_chase
-      step_interval_seconds: 0.9
-      detect_distance_tiles: 5
-      disengage_distance_tiles: 8
-      bounds:
-        min_x: 15
-        min_y: 18
-        max_x: 21
-        max_y: 24
+- type: apple
+  placement:
+  - x: 11
+    y: 14
+  - x: 18
+    y: 18
+- type: barrel
+  placement:
+  - x: 25
+    y: 12
+  - x: 20
+    y: 13
+  - x: 21
+    y: 13
+  - x: 22
+    y: 15
+  - x: 19
+    y: 16
+- type: canvas_backpack
+  placement:
+  - x: 28
+    y: 10
+- type: copper_amulet
+  placement:
+  - x: 9
+    y: 21
+- type: flowers
+  placement:
+  - x: 4
+    y: 4
+  - x: 5
+    y: 4
+  - x: 4
+    y: 5
+  - x: 32
+    y: 11
+  - x: 33
+    y: 11
+  - x: 12
+    y: 22
+  - x: 13
+    y: 23
+- type: goblin
+  placement:
+  - x: 23
+    y: 14
+- type: player
+  placement:
+  - x: 26
+    y: 13
+- type: potion
+  placement:
+  - x: 21
+    y: 18
+- type: silver_ring
+  placement:
+  - x: 7
+    y: 20
+- type: sinkhole
+  placement:
+  - x: 31
+    y: 23
+- type: stone
+  placement:
+  - x: 3
+    y: 19
+  - x: 5
+    y: 19
+  - x: 4
+    y: 20
+  - x: 36
+    y: 23
+  - x: 34
+    y: 24
+  - x: 35
+    y: 24
+- type: tree
+  placement:
+  - x: 8
+    y: 6
+  - x: 26
+    y: 6
+  - x: 28
+    y: 6
+  - x: 6
+    y: 7
+  - x: 7
+    y: 7
+  - x: 9
+    y: 7
+  - x: 27
+    y: 7
+  - x: 30
+    y: 7
+  - x: 8
+    y: 8
+  - x: 14
+    y: 14
+  - x: 15
+    y: 14
+  - x: 16
+    y: 15
+  - x: 15
+    y: 16
+- type: villager
+  placement:
+  - x: 28
+    y: 10
+  - x: 7
+    y: 21
+- type: wall
+  placement:
+  - x: 18
+    y: 11
+  - x: 19
+    y: 11
+  - x: 20
+    y: 11
+  - x: 21
+    y: 11
+  - x: 22
+    y: 11
+  - x: 23
+    y: 11
+  - x: 24
+    y: 11
+  - x: 18
+    y: 12
+  - x: 24
+    y: 12
+  - x: 18
+    y: 13
+  - x: 24
+    y: 13
+  - x: 18
+    y: 14
+  - x: 24
+    y: 14
+  - x: 18
+    y: 15
+  - x: 24
+    y: 15
+  - x: 18
+    y: 16
+  - x: 24
+    y: 16
+  - x: 18
+    y: 17
+  - x: 19
+    y: 17
+  - x: 22
+    y: 17
+  - x: 23
+    y: 17
+  - x: 24
+    y: 17
+- type: water
+  placement:
+  - x: 10
+    y: 4
+  - x: 11
+    y: 4
+  - x: 10
+    y: 5
+  - x: 11
+    y: 5
+  - x: 10
+    y: 8
+  - x: 11
+    y: 8
+  - x: 12
+    y: 8
+  - x: 13
+    y: 8
+  - x: 14
+    y: 8
+  - x: 15
+    y: 8
+  - x: 16
+    y: 8
+  - x: 17
+    y: 8
+  - x: 10
+    y: 9
+  - x: 11
+    y: 9
+  - x: 12
+    y: 9
+  - x: 13
+    y: 9
+  - x: 14
+    y: 9
+  - x: 15
+    y: 9
+  - x: 16
+    y: 9
+  - x: 17
+    y: 9
+  - x: 22
+    y: 16
+  - x: 23
+    y: 16
+  - x: 24
+    y: 16
+  - x: 25
+    y: 16
+  - x: 26
+    y: 16
+  - x: 27
+    y: 16
+  - x: 28
+    y: 16
+  - x: 22
+    y: 17
+  - x: 23
+    y: 17
+  - x: 24
+    y: 17
+  - x: 25
+    y: 17
+  - x: 26
+    y: 17
+  - x: 27
+    y: 17
+  - x: 28
+    y: 17
+  - x: 22
+    y: 18
+  - x: 23
+    y: 18
+  - x: 24
+    y: 18
+  - x: 25
+    y: 18
+  - x: 26
+    y: 18
+  - x: 27
+    y: 18
+  - x: 28
+    y: 18
+  - x: 22
+    y: 19
+  - x: 23
+    y: 19
+  - x: 24
+    y: 19
+  - x: 25
+    y: 19
+  - x: 26
+    y: 19
+  - x: 27
+    y: 19
+  - x: 28
+    y: 19
+  - x: 22
+    y: 20
+  - x: 23
+    y: 20
+  - x: 24
+    y: 20
+  - x: 25
+    y: 20
+  - x: 26
+    y: 20
+  - x: 27
+    y: 20
+  - x: 28
+    y: 20

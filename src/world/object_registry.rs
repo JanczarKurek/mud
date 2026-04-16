@@ -87,6 +87,10 @@ impl ObjectRegistry {
         self.properties.get(&object_id)
     }
 
+    pub fn set_properties(&mut self, object_id: u64, properties: ObjectProperties) {
+        self.properties.insert(object_id, properties);
+    }
+
     pub fn next_runtime_id(&self) -> u64 {
         self.next_runtime_id
     }

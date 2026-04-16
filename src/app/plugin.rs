@@ -7,6 +7,7 @@ use bevy::window::Window;
 use crate::app::setup::setup_camera;
 use crate::app::state::ClientAppState;
 use crate::app::title_screen::TitleScreenPlugin;
+use crate::editor::EditorPlugin;
 use crate::combat::CombatPlugin;
 use crate::game::{GameClientPlugin, GameServerPlugin};
 use crate::magic::MagicPlugin;
@@ -69,6 +70,7 @@ impl Plugin for GameAppPlugin {
                     PlayerClientPlugin,
                     UiPlugin,
                     ScriptingPlugin,
+                    EditorPlugin,
                     TitleScreenPlugin {
                         runtime: self.runtime,
                         server_addr: self.server_addr.clone(),
