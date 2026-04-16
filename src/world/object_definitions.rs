@@ -12,7 +12,7 @@ const OBJECT_BASES_PATH: &str = "assets/object_bases";
 const OBJECT_DEFINITIONS_PATH: &str = "assets/overworld_objects";
 
 #[allow(dead_code)]
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct OverworldObjectDefinition {
     pub name: String,
@@ -41,7 +41,7 @@ pub struct OverworldObjectDefinition {
     pub sound_paths: Vec<String>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct StatModifiers {
     #[serde(default)]
@@ -64,7 +64,7 @@ pub struct StatModifiers {
     pub storage_slots: i32,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct UseEffects {
     #[serde(default)]
@@ -117,7 +117,7 @@ impl EquipmentSlot {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Default)]
+#[derive(Clone, Debug, Deserialize, Serialize, Default)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct AnimationClipDef {
     pub row: u32,
@@ -132,7 +132,7 @@ fn default_true() -> bool {
     true
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct AnimationSheetDef {
     pub sheet_path: String,
@@ -144,7 +144,7 @@ pub struct AnimationSheetDef {
 }
 
 #[allow(dead_code)]
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct RenderMetadata {
     pub z_index: f32,

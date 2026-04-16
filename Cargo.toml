@@ -19,3 +19,7 @@ gen-schemas = ["schemars"]
 name = "gen_schemas"
 path = "src/bin/gen_schemas.rs"
 required-features = ["gen-schemas"]
+
+[[bin]]
+name = "asset_viewer"
+path = "src/bin/asset_viewer.rs"

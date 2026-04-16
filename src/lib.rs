@@ -1,4 +1,5 @@
 pub mod app;
+pub mod asset_viewer;
 pub mod combat;
 pub mod editor;
 pub mod game;
