@@ -1,293 +1,286 @@
 authored_id: overworld
-width: 40
-height: 30
-fill_object_type: grass
 permanence: persistent
+width: 70
+height: 50
+fill_object_type: grass
+
 portals:
-- id: starter_cellar
-  source:
-    x: 6
-    y: 18
-  destination_space_id: starter_cellar
-  destination_tile:
-    x: 6
-    y: 1
-  destination_permanence: ephemeral
-- id: underworld_sinkhole
-  source:
-    x: 31
-    y: 23
-  destination_space_id: underworld
-  destination_tile:
-    x: 3
-    y: 14
-  destination_permanence: persistent
+  - id: starter_cellar_entrance
+    source: {x: 35, y: 20}
+    destination_space_id: starter_cellar
+    destination_tile: {x: 6, y: 1}
+    destination_permanence: ephemeral
+  - id: underworld_sinkhole
+    source: {x: 35, y: 46}
+    destination_space_id: underworld
+    destination_tile: {x: 3, y: 14}
+
+legend:
+  "#": wall
+  "~": water
+  "T": tree
+  "=": fence
+  "f": flowers
+  "s": stone
+  "c": cobblestone
+  "d": dirt_path
+  "a": sand
+
+tiles: |
+  ......................................................................
+  .............................................TTTTTT.TTTTTTTTTTT.T.TTT.
+  ..######...#######...........................TTTT.T.TT.TT.T.TTTTTTTTT.
+  ..#....#ccc#.....#...........................TTTTT.TTTTTT.TTT.TTTTTT..
+  ..#....#ccc#.....#........========....f.......TTT.TTTTTT.TT.TTTTT.TTT.
+  ..#....#ccc#.....#......ff=...f..=...........TT..TT...TTTT..TTT..TTTT.
+  ..#....#ccc###.###........=.f...f=......f....TTTTTT....TT..TTTTTTTTT..
+  ..###.##cccccccccc........=..f...=...........TTTTTT...TTTTTTTTTT..TTT.
+  ........cccccccccc........=...ff.=...........TT.TT..TTTTTTT.TT.....TT.
+  ........cccccccccc........=....f.=...........T.T.TT.....TTTTTT........
+  ...ff...cccccccccc........=......=...........TTTT.TTTTTT.T.TTT.....TT.
+  ........cccccccccc........=......=...........TTT.TTTTTTTTTT..T.....TT.
+  ........cccccccccc........=======.....................................
+  ..######ccc.......f....................f.....T........................
+  ..#....#ccc........f.........................TT..TTT.....TT.....T.T...
+  ..#....#ccc..............f...................T.TT.TTTT..TTT...T.T.TTT.
+  ..#....#ccc..............................f...TTTTTTTTT.TTTTTTTTT.TTTT.
+  ..#....#ccc..................................TTTT.T.TTTTTTTTTTTT..TTT.
+  ..##.###............................f........TT.TTTTTTT.TTTTTTTTTTTTT.
+  .....d.......................................T.TTT.T.T.T....T.T.TTTTT.
+  .....d.ff.............................f......TTTTTTTTTTTT...TTTT.TT.T.
+  .....d.......................................TTTT..TTTTTT...TTTTTTTTT.
+  .....d.......................................TTTTTTTTTTT.TTTT.TT.TT.T.
+  .....d.......................................TTTTTTTTTTTT..TTTT.TTTTT.
+  .....d.......................................TT.TT..TTTTT..T.T.TTT.T..
+  .....d................................................................
+  .....dddddddddddddddddddddddddddddd...................................
+  ..f.fs.f.....f......f....f....f....d..f...............................
+  ..asaaaaaaaaaaaaaaaaaaasaaa....f...d..........#####..######..#####....
+  ..saaaaaaaaaaaaaaaaaaaaaaaa........d....f.....#....................#..
+  ..aa~~~~~~~~~~~~~~~~~~~~~as........d..........#...s................#..
+  ..aa~~~~~~~~~~~~~~~~~~~~~aa........d..........#....................#..
+  ..aa~~~~~~~~~~~~~~~~~~~~~aa........d..........#.s..................#..
+  ..aa~~~~~~~~~~~~~~~~~~~~~aaf.......d......f...#....................#..
+  .faa~~~~~~~~~~~~~~~~~~~~~aa........d..................................
+  ..aa~~~~~~~~~~~~~~~~~~~~~aa..f.....d...........................s......
+  ..aa~~~~~~~~~~~~~~~~~~~~~aa........d..................................
+  ..aa~~~~~~~~~~~~~~~~~~~~~aa........d..................................
+  ..aa~~~~~~~~~~~~~~~~~~~~~aa........d..................................
+  .faa~~~~~~~~~~~~~~~~~~~~~aa........d..................................
+  ..aa~~~~~~~~~~~~~~~~~~~~~aaff......d..................................
+  ..aa~~~~~~~~~~~~~~~~~~~~~aa........d.......f..........................
+  ..aa~~~~~~~~~~~~~~~~~~~~~aa........d..................................
+  ..aa~~~~~~~~~~~~~~~~~~~~~aa........d........................s....s....
+  ..sa~~~~~~~~~~~~~~~~~~~~~aa......ssdss..............s.................
+  ..aa~~~~~~~~~~~~~~~~~~~~~sa...........................................
+  ..aa~~~~~~~~~~~~~~~~~~~~~aa......s...s..........s.....................
+  ..asaaaaaaaaaaaaaaaaaaaaaaa.....s.....s...............................
+  ..aaaaaaaaaaaaaaaaaaaaaaaaa....................###..#####..####.......
+  ......................................................................
+
 objects:
-- type: apple
-  placement:
-  - x: 11
-    y: 14
-  - x: 18
-    y: 18
-- type: barrel
-  placement:
-  - x: 25
-    y: 12
-  - x: 20
-    y: 13
-  - x: 21
-    y: 13
-  - x: 22
-    y: 15
-  - x: 19
-    y: 16
-- type: canvas_backpack
-  placement:
-  - x: 28
-    y: 10
-- type: copper_amulet
-  placement:
-  - x: 9
-    y: 21
-- type: flowers
-  placement:
-  - x: 4
-    y: 4
-  - x: 5
-    y: 4
-  - x: 4
-    y: 5
-  - x: 32
-    y: 11
-  - x: 33
-    y: 11
-  - x: 12
-    y: 22
-  - x: 13
-    y: 23
-- type: goblin
-  placement:
-  - x: 23
-    y: 14
-- type: player
-  placement:
-  - x: 26
-    y: 13
-- type: potion
-  placement:
-  - x: 21
-    y: 18
-- type: silver_ring
-  placement:
-  - x: 7
-    y: 20
-- type: sinkhole
-  placement:
-  - x: 31
-    y: 23
-- type: stone
-  placement:
-  - x: 3
-    y: 19
-  - x: 5
-    y: 19
-  - x: 4
-    y: 20
-  - x: 36
-    y: 23
-  - x: 34
-    y: 24
-  - x: 35
-    y: 24
-- type: tree
-  placement:
-  - x: 8
-    y: 6
-  - x: 26
-    y: 6
-  - x: 28
-    y: 6
-  - x: 6
-    y: 7
-  - x: 7
-    y: 7
-  - x: 9
-    y: 7
-  - x: 27
-    y: 7
-  - x: 30
-    y: 7
-  - x: 8
-    y: 8
-  - x: 14
-    y: 14
-  - x: 15
-    y: 14
-  - x: 16
-    y: 15
-  - x: 15
-    y: 16
-- type: villager
-  placement:
-  - x: 28
-    y: 10
-  - x: 7
-    y: 21
-- type: wall
-  placement:
-  - x: 18
-    y: 11
-  - x: 19
-    y: 11
-  - x: 20
-    y: 11
-  - x: 21
-    y: 11
-  - x: 22
-    y: 11
-  - x: 23
-    y: 11
-  - x: 24
-    y: 11
-  - x: 18
-    y: 12
-  - x: 24
-    y: 12
-  - x: 18
-    y: 13
-  - x: 24
-    y: 13
-  - x: 18
-    y: 14
-  - x: 24
-    y: 14
-  - x: 18
-    y: 15
-  - x: 24
-    y: 15
-  - x: 18
-    y: 16
-  - x: 24
-    y: 16
-  - x: 18
-    y: 17
-  - x: 19
-    y: 17
-  - x: 22
-    y: 17
-  - x: 23
-    y: 17
-  - x: 24
-    y: 17
-- type: water
-  placement:
-  - x: 10
-    y: 4
-  - x: 11
-    y: 4
-  - x: 10
-    y: 5
-  - x: 11
-    y: 5
-  - x: 10
-    y: 8
-  - x: 11
-    y: 8
-  - x: 12
-    y: 8
-  - x: 13
-    y: 8
-  - x: 14
-    y: 8
-  - x: 15
-    y: 8
-  - x: 16
-    y: 8
-  - x: 17
-    y: 8
-  - x: 10
-    y: 9
-  - x: 11
-    y: 9
-  - x: 12
-    y: 9
-  - x: 13
-    y: 9
-  - x: 14
-    y: 9
-  - x: 15
-    y: 9
-  - x: 16
-    y: 9
-  - x: 17
-    y: 9
-  - x: 22
-    y: 16
-  - x: 23
-    y: 16
-  - x: 24
-    y: 16
-  - x: 25
-    y: 16
-  - x: 26
-    y: 16
-  - x: 27
-    y: 16
-  - x: 28
-    y: 16
-  - x: 22
-    y: 17
-  - x: 23
-    y: 17
-  - x: 24
-    y: 17
-  - x: 25
-    y: 17
-  - x: 26
-    y: 17
-  - x: 27
-    y: 17
-  - x: 28
-    y: 17
-  - x: 22
-    y: 18
-  - x: 23
-    y: 18
-  - x: 24
-    y: 18
-  - x: 25
-    y: 18
-  - x: 26
-    y: 18
-  - x: 27
-    y: 18
-  - x: 28
-    y: 18
-  - x: 22
-    y: 19
-  - x: 23
-    y: 19
-  - x: 24
-    y: 19
-  - x: 25
-    y: 19
-  - x: 26
-    y: 19
-  - x: 27
-    y: 19
-  - x: 28
-    y: 19
-  - x: 22
-    y: 20
-  - x: 23
-    y: 20
-  - x: 24
-    y: 20
-  - x: 25
-    y: 20
-  - x: 26
-    y: 20
-  - x: 27
-    y: 20
-  - x: 28
-    y: 20
+  # IDs are in the 10000+ range so that anonymous tile objects (which get
+  # IDs from max_explicit+1 = 11000 upward) never collide with
+  # starter_cellar (1200-1202) or underworld (2000-2007).
+
+  # ── VILLAGE ZONE ────────────────────────────────────────────────────────
+
+  # Inn barrel with potion + apple
+  - id: 10100
+    type: barrel
+    placement: {x: 4, y: 4}
+    contents: [10101, 10102]
+  - id: 10101
+    type: potion
+  - id: 10102
+    type: apple
+
+  # Market — equipment on ground
+  - id: 10110
+    type: bronze_sword
+    placement: {x: 13, y: 3}
+  - id: 10111
+    type: leather_armor
+    placement: {x: 15, y: 3}
+
+  # Storage hut — gear
+  - id: 10120
+    type: canvas_backpack
+    placement: {x: 4, y: 15}
+  - id: 10121
+    type: leather_helmet
+    placement: {x: 6, y: 15}
+
+  # Village well
+  - id: 10130
+    type: well
+    placement: {x: 10, y: 9}
+
+  # Village campfire
+  - id: 10131
+    type: campfire
+    placement: {x: 10, y: 11}
+
+  # Village south sign
+  - id: 10132
+    type: sign_post
+    placement: {x: 5, y: 21}
+    properties:
+      text: "South road leads to the old dungeon. Adventurers beware!"
+
+  # Villagers
+  - id: 10140
+    type: villager
+    placement: {x: 9, y: 8}
+    behavior:
+      kind: roam
+      step_interval_seconds: 1.2
+      bounds: {min_x: 7, min_y: 7, max_x: 14, max_y: 13}
+  - id: 10141
+    type: villager
+    placement: {x: 14, y: 12}
+    behavior:
+      kind: roam
+      step_interval_seconds: 1.0
+      bounds: {min_x: 11, min_y: 9, max_x: 18, max_y: 15}
+
+  # Player spawn
+  - id: 10999
+    type: player
+    placement: {x: 10, y: 18}
+
+  # ── MEADOW ZONE ─────────────────────────────────────────────────────────
+
+  # Cellar portal sign
+  - id: 10150
+    type: sign_post
+    placement: {x: 34, y: 19}
+    properties:
+      text: "Step here to enter the cellar."
+
+  # Scattered meadow loot
+  - id: 10151
+    type: silver_ring
+    placement: {x: 38, y: 8}
+  - id: 10152
+    type: potion
+    placement: {x: 36, y: 14}
+  - id: 10153
+    type: scroll
+    placement: {x: 40, y: 16}
+    properties:
+      spell_id: lesser_heal
+
+  # ── FOREST ZONE ─────────────────────────────────────────────────────────
+
+  - id: 10160
+    type: apple
+    placement: {x: 52, y: 6}
+  - id: 10161
+    type: apple
+    placement: {x: 60, y: 14}
+  - id: 10162
+    type: copper_amulet
+    placement: {x: 64, y: 10}
+  - id: 10163
+    type: leather_legs
+    placement: {x: 58, y: 20}
+
+  # Forest goblin
+  - id: 10164
+    type: goblin
+    placement: {x: 48, y: 10}
+    behavior:
+      kind: roam_and_chase
+      step_interval_seconds: 0.9
+      detect_distance_tiles: 4
+      disengage_distance_tiles: 6
+      bounds: {min_x: 46, min_y: 5, max_x: 55, max_y: 18}
+
+  # ── DUNGEON APPROACH ────────────────────────────────────────────────────
+
+  # Sinkhole (portal trigger object)
+  - id: 10170
+    type: sinkhole
+    placement: {x: 35, y: 46}
+
+  # Portal arch visual
+  - id: 10171
+    type: portal_arch
+    placement: {x: 35, y: 44}
+
+  # Dungeon warning sign
+  - id: 10172
+    type: sign_post
+    placement: {x: 33, y: 43}
+    properties:
+      text: "The sinkhole ahead leads deep underground. Return is not guaranteed."
+
+  # Abandoned campfire near dungeon
+  - id: 10173
+    type: campfire
+    placement: {x: 32, y: 41}
+
+  # ── GOBLIN CAMP ─────────────────────────────────────────────────────────
+
+  # Camp campfire
+  - id: 10180
+    type: campfire
+    placement: {x: 56, y: 38}
+
+  # Loot barrel
+  - id: 10181
+    type: barrel
+    placement: {x: 55, y: 36}
+    contents: [10182, 10183, 10184]
+  - id: 10182
+    type: potion
+  - id: 10183
+    type: scroll
+    properties:
+      spell_id: spark_bolt
+  - id: 10184
+    type: potion
+
+  # Loot on ground
+  - id: 10185
+    type: bronze_sword
+    placement: {x: 60, y: 33}
+  - id: 10186
+    type: leather_legs
+    placement: {x: 62, y: 40}
+  - id: 10187
+    type: traveler_boots
+    placement: {x: 50, y: 42}
+  - id: 10188
+    type: wooden_shield
+    placement: {x: 58, y: 42}
+
+  # Goblin NPCs
+  - id: 10190
+    type: goblin
+    placement: {x: 52, y: 34}
+    behavior:
+      kind: roam_and_chase
+      step_interval_seconds: 0.85
+      detect_distance_tiles: 5
+      disengage_distance_tiles: 8
+      bounds: {min_x: 46, min_y: 29, max_x: 60, max_y: 42}
+  - id: 10191
+    type: goblin
+    placement: {x: 61, y: 38}
+    behavior:
+      kind: roam_and_chase
+      step_interval_seconds: 0.90
+      detect_distance_tiles: 5
+      disengage_distance_tiles: 7
+      bounds: {min_x: 50, min_y: 29, max_x: 67, max_y: 46}
+  - id: 10192
+    type: goblin
+    placement: {x: 54, y: 44}
+    behavior:
+      kind: roam_and_chase
+      step_interval_seconds: 1.0
+      detect_distance_tiles: 4
+      disengage_distance_tiles: 6
+      bounds: {min_x: 46, min_y: 38, max_x: 64, max_y: 48}

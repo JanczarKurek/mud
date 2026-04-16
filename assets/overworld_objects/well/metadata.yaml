@@ -1,0 +1,8 @@
+extends: obstacle
+name: Well
+description: A stone well. Cold water gleams far below.
+render:
+  z_index: 0.38
+  debug_color: [140, 130, 120]
+  debug_size: 0.82
+  sprite_path: overworld_objects/well/sprite.png

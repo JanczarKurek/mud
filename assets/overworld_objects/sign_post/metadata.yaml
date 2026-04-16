@@ -1,0 +1,10 @@
+extends: static_world
+fillable_properties:
+  - text
+name: Sign Post
+description: "{properties.text}"
+render:
+  z_index: 0.26
+  debug_color: [180, 130, 50]
+  debug_size: 0.62
+  sprite_path: overworld_objects/sign_post/sprite.png

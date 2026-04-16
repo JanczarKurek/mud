@@ -1,0 +1,8 @@
+extends: obstacle
+name: Fence
+description: A wooden fence segment. Keeps livestock in and adventurers out.
+render:
+  z_index: 0.28
+  debug_color: [160, 100, 40]
+  debug_size: 0.88
+  sprite_path: overworld_objects/fence/sprite.png

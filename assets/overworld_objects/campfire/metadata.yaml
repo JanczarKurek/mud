@@ -1,0 +1,21 @@
+extends: static_world
+name: Campfire
+description: A crackling fire. Someone was here recently.
+render:
+  z_index: 0.22
+  debug_color: [220, 100, 20]
+  debug_size: 0.55
+  sprite_path: overworld_objects/campfire/sheet.png
+  animation:
+    sheet_path: overworld_objects/campfire/sheet.png
+    frame_width: 32
+    frame_height: 32
+    sheet_columns: 4
+    sheet_rows: 1
+    clips:
+      burn:
+        row: 0
+        start_col: 0
+        frame_count: 4
+        fps: 8.0
+        looping: true
