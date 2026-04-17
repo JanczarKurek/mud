@@ -1,16 +1,16 @@
 {
   "format_version": 3,
-  "saved_at_unix_seconds": 1776448913,
+  "saved_at_unix_seconds": 1776468965,
   "world_config": {
-    "current_space_id": 0,
-    "map_width": 70,
-    "map_height": 50,
+    "current_space_id": 2,
+    "map_width": 12,
+    "map_height": 10,
     "tile_size": 48.0,
     "fill_object_type": "grass"
   },
   "map_layout": {
-    "width": 70,
-    "height": 50,
+    "width": 12,
+    "height": 10,
     "fill_object_type": "grass"
   },
   "spaces": [
@@ -31,6 +31,18 @@
       "fill_object_type": "cave_floor",
       "permanence": "persistent",
       "instance_owner": null
+    },
+    {
+      "id": 2,
+      "authored_id": "starter_cellar",
+      "width": 12,
+      "height": 10,
+      "fill_object_type": "grass",
+      "permanence": "ephemeral",
+      "instance_owner": {
+        "source_space_id": 0,
+        "portal_id": "starter_cellar_entrance"
+      }
     }
   ],
   "object_registry": {
@@ -7520,10 +7532,10 @@
     {
       "player_id": 0,
       "object_id": 11442,
-      "space_id": 0,
+      "space_id": 2,
       "tile_position": {
-        "x": 37,
-        "y": 23
+        "x": 1,
+        "y": 3
       },
       "inventory": {
         "backpack_slots": [
@@ -7585,14 +7597,14 @@
       },
       "chat_log": {
         "lines": [
-          "[Narrator]: two red apples.",
-          "[Narrator]: two red apples.",
-          "[Narrator]: two red apples.",
-          "[Narrator]: two red apples.",
-          "[Narrator]: A simple red apple that can be picked up.",
-          "[Narrator]: two red apples.",
-          "[Narrator]: two red apples.",
-          "[Narrator]: two red apples."
+          "[Player hit Goblin for 3 damage]",
+          "[Goblin hit Player for 4 damage]",
+          "[Player hit Goblin for 5 damage]",
+          "[Goblin hit Player for 4 damage]",
+          "[Player hit Goblin for 8 damage]",
+          "[Goblin hit Player for 3 damage]",
+          "[Player hit Goblin for 8 damage]",
+          "[Goblin dies]"
         ],
         "max_lines": 8
       },
@@ -7623,7 +7635,7 @@
         "storage_slots": 8
       },
       "vital_stats": {
-        "health": 115.0,
+        "health": 53.0,
         "max_health": 115.0,
         "mana": 100.0,
         "max_mana": 100.0
@@ -7642,6 +7654,618 @@
     }
   ],
   "world_objects": [
+    {
+      "object_id": 1200,
+      "definition_id": "barrel",
+      "space_id": 2,
+      "tile_position": {
+        "x": 5,
+        "y": 4
+      },
+      "collider": true,
+      "movable": true,
+      "storable": false,
+      "container_slots": [
+        {
+          "object_id": 1201,
+          "quantity": 1
+        },
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1203,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 0,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1204,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 1,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1205,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 2,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1206,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 3,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1207,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 4,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1208,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 6,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1209,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 7,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1210,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 8,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1211,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 9,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1212,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 10,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1213,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 11,
+        "y": 0
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1214,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 0,
+        "y": 1
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1215,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 11,
+        "y": 1
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1216,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 0,
+        "y": 2
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1217,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 11,
+        "y": 2
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1218,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 0,
+        "y": 3
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1219,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 11,
+        "y": 3
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1220,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 0,
+        "y": 4
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1221,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 11,
+        "y": 4
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1222,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 0,
+        "y": 5
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1223,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 11,
+        "y": 5
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1224,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 0,
+        "y": 6
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1225,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 11,
+        "y": 6
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1226,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 0,
+        "y": 7
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1227,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 11,
+        "y": 7
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1228,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 0,
+        "y": 8
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1229,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 11,
+        "y": 8
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1230,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 0,
+        "y": 9
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1231,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 1,
+        "y": 9
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1232,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 2,
+        "y": 9
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1233,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 3,
+        "y": 9
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1234,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 4,
+        "y": 9
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1235,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 5,
+        "y": 9
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1236,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 6,
+        "y": 9
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1237,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 7,
+        "y": 9
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1238,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 8,
+        "y": 9
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1239,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 9,
+        "y": 9
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1240,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 10,
+        "y": 9
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
+    {
+      "object_id": 1241,
+      "definition_id": "wall",
+      "space_id": 2,
+      "tile_position": {
+        "x": 11,
+        "y": 9
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null
+    },
     {
       "object_id": 2000,
       "definition_id": "portal_arch",
@@ -7722,7 +8346,7 @@
       "definition_id": "goblin",
       "space_id": 1,
       "tile_position": {
-        "x": 9,
+        "x": 13,
         "y": 10
       },
       "collider": true,
@@ -7783,10 +8407,10 @@
           "disengage_distance_tiles": 7
         },
         "roaming_step_timer": {
-          "remaining_seconds": 0.33683953
+          "remaining_seconds": 0.47245535
         },
         "roaming_random_state": {
-          "seed": 1526489366486826236
+          "seed": 11392313384373010786
         }
       },
       "quantity": null
@@ -7796,8 +8420,8 @@
       "definition_id": "goblin",
       "space_id": 1,
       "tile_position": {
-        "x": 15,
-        "y": 15
+        "x": 16,
+        "y": 12
       },
       "collider": true,
       "movable": false,
@@ -7857,10 +8481,10 @@
           "disengage_distance_tiles": 8
         },
         "roaming_step_timer": {
-          "remaining_seconds": 0.05232986
+          "remaining_seconds": 0.1725921
         },
         "roaming_random_state": {
-          "seed": 6575391059637926240
+          "seed": 6368728916583903310
         }
       },
       "quantity": null
@@ -29347,21 +29971,6 @@
       "container_slots": null,
       "npc": null,
       "quantity": null
-    },
-    {
-      "object_id": 11449,
-      "definition_id": "apple",
-      "space_id": 0,
-      "tile_position": {
-        "x": 38,
-        "y": 23
-      },
-      "collider": false,
-      "movable": true,
-      "storable": true,
-      "container_slots": null,
-      "npc": null,
-      "quantity": 2
     }
   ]
 }

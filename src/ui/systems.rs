@@ -285,62 +285,46 @@ pub fn sync_context_menu_root(
 
 pub fn sync_context_menu_open_button(
     context_menu_state: Res<ContextMenuState>,
-    mut open_button_query: Query<&mut Visibility, With<ContextMenuOpenButton>>,
+    mut open_button_query: Query<&mut Node, With<ContextMenuOpenButton>>,
 ) {
-    let Ok(mut open_visibility) = open_button_query.single_mut() else {
+    let Ok(mut node) = open_button_query.single_mut() else {
         return;
     };
 
-    *open_visibility = if context_menu_state.can_open {
-        Visibility::Visible
-    } else {
-        Visibility::Hidden
-    };
+    node.display = if context_menu_state.can_open { Display::Flex } else { Display::None };
 }
 
 pub fn sync_context_menu_attack_button(
     context_menu_state: Res<ContextMenuState>,
-    mut attack_button_query: Query<&mut Visibility, With<ContextMenuAttackButton>>,
+    mut attack_button_query: Query<&mut Node, With<ContextMenuAttackButton>>,
 ) {
-    let Ok(mut attack_visibility) = attack_button_query.single_mut() else {
+    let Ok(mut node) = attack_button_query.single_mut() else {
         return;
     };
 
-    *attack_visibility = if context_menu_state.can_attack {
-        Visibility::Visible
-    } else {
-        Visibility::Hidden
-    };
+    node.display = if context_menu_state.can_attack { Display::Flex } else { Display::None };
 }
 
 pub fn sync_context_menu_use_button(
     context_menu_state: Res<ContextMenuState>,
-    mut use_button_query: Query<&mut Visibility, With<ContextMenuUseButton>>,
+    mut use_button_query: Query<&mut Node, With<ContextMenuUseButton>>,
 ) {
-    let Ok(mut use_visibility) = use_button_query.single_mut() else {
+    let Ok(mut node) = use_button_query.single_mut() else {
         return;
     };
 
-    *use_visibility = if context_menu_state.can_use {
-        Visibility::Visible
-    } else {
-        Visibility::Hidden
-    };
+    node.display = if context_menu_state.can_use { Display::Flex } else { Display::None };
 }
 
 pub fn sync_context_menu_use_on_button(
     context_menu_state: Res<ContextMenuState>,
-    mut use_on_button_query: Query<&mut Visibility, With<ContextMenuUseOnButton>>,
+    mut use_on_button_query: Query<&mut Node, With<ContextMenuUseOnButton>>,
 ) {
-    let Ok(mut use_on_visibility) = use_on_button_query.single_mut() else {
+    let Ok(mut node) = use_on_button_query.single_mut() else {
         return;
     };
 
-    *use_on_visibility = if context_menu_state.can_use_on {
-        Visibility::Visible
-    } else {
-        Visibility::Hidden
-    };
+    node.display = if context_menu_state.can_use_on { Display::Flex } else { Display::None };
 }
 
 pub fn handle_context_menu_actions(
@@ -362,12 +346,12 @@ pub fn handle_context_menu_actions(
         ResMut<SpellTargetingState>,
     ),
     mut menu_queries: ParamSet<(
-        Query<(&ComputedNode, &UiGlobalTransform, &Visibility), With<ContextMenuAttackButton>>,
+        Query<(&ComputedNode, &UiGlobalTransform), With<ContextMenuAttackButton>>,
         Query<(&ComputedNode, &UiGlobalTransform), With<ContextMenuInspectButton>>,
-        Query<(&ComputedNode, &UiGlobalTransform, &Visibility), With<ContextMenuOpenButton>>,
-        Query<(&ComputedNode, &UiGlobalTransform, &Visibility), With<ContextMenuUseButton>>,
-        Query<(&ComputedNode, &UiGlobalTransform, &Visibility), With<ContextMenuUseOnButton>>,
-        Query<(&ComputedNode, &UiGlobalTransform, &Visibility), With<ContextMenuTakePartialButton>>,
+        Query<(&ComputedNode, &UiGlobalTransform), With<ContextMenuOpenButton>>,
+        Query<(&ComputedNode, &UiGlobalTransform), With<ContextMenuUseButton>>,
+        Query<(&ComputedNode, &UiGlobalTransform), With<ContextMenuUseOnButton>>,
+        Query<(&ComputedNode, &UiGlobalTransform), With<ContextMenuTakePartialButton>>,
     )>,
 ) {
     let (object_registry, definitions, spell_definitions) = static_resources;
@@ -389,7 +373,7 @@ pub fn handle_context_menu_actions(
         return;
     }
 
-    if is_cursor_over_visible_button(cursor_position, &menu_queries.p0()) {
+    if is_cursor_over_button(cursor_position, &menu_queries.p0()) {
         if let Some(ContextMenuTarget::World(object_id)) = context_menu_state.target {
             pending_commands.push(GameCommand::SetCombatTarget {
                 target_object_id: Some(object_id),
@@ -418,7 +402,7 @@ pub fn handle_context_menu_actions(
         return;
     }
 
-    if is_cursor_over_visible_button(cursor_position, &menu_queries.p3()) {
+    if is_cursor_over_button(cursor_position, &menu_queries.p3()) {
         if let Some(target) = context_menu_state.target {
             let object_id = context_target_object_id(target);
             if let Some(spell_id) =
@@ -443,7 +427,7 @@ pub fn handle_context_menu_actions(
         return;
     }
 
-    if is_cursor_over_visible_button(cursor_position, &menu_queries.p4()) {
+    if is_cursor_over_button(cursor_position, &menu_queries.p4()) {
         if let Some(target) = context_menu_state.target {
             let object_id = context_target_object_id(target);
             if object_is_usable(object_id, &object_registry, &definitions) {
@@ -455,7 +439,7 @@ pub fn handle_context_menu_actions(
         return;
     }
 
-    if is_cursor_over_visible_button(cursor_position, &menu_queries.p2()) {
+    if is_cursor_over_button(cursor_position, &menu_queries.p2()) {
         if let Some(ContextMenuTarget::World(object_id)) = context_menu_state.target {
             pending_commands.push(GameCommand::OpenContainer { object_id });
         }
@@ -463,7 +447,7 @@ pub fn handle_context_menu_actions(
         return;
     }
 
-    if is_cursor_over_visible_button(cursor_position, &menu_queries.p5()) {
+    if is_cursor_over_button(cursor_position, &menu_queries.p5()) {
         match context_menu_state.target {
             Some(ContextMenuTarget::Slot(slot_kind, _)) => {
                 if let Some(slot_ref) = item_slot_kind_to_ref(slot_kind, &docked_panel_state) {
@@ -1085,16 +1069,12 @@ pub fn sync_equipment_slot_images(
 
 pub fn sync_context_menu_take_partial_button(
     context_menu_state: Res<ContextMenuState>,
-    mut button_query: Query<&mut Visibility, With<ContextMenuTakePartialButton>>,
+    mut button_query: Query<&mut Node, With<ContextMenuTakePartialButton>>,
 ) {
-    let Ok(mut vis) = button_query.single_mut() else {
+    let Ok(mut node) = button_query.single_mut() else {
         return;
     };
-    *vis = if context_menu_state.can_take_partial {
-        Visibility::Visible
-    } else {
-        Visibility::Hidden
-    };
+    node.display = if context_menu_state.can_take_partial { Display::Flex } else { Display::None };
 }
 
 pub fn update_take_partial_popup_visibility(
@@ -1714,20 +1694,6 @@ fn is_cursor_over_button<M: Component>(
     let Ok((computed_node, global_transform)) = button_query.single() else {
         return false;
     };
-
-    point_in_ui_node(cursor_position, computed_node, global_transform)
-}
-
-fn is_cursor_over_visible_button<M: Component>(
-    cursor_position: Vec2,
-    button_query: &Query<(&ComputedNode, &UiGlobalTransform, &Visibility), With<M>>,
-) -> bool {
-    let Ok((computed_node, global_transform, visibility)) = button_query.single() else {
-        return false;
-    };
-    if *visibility == Visibility::Hidden {
-        return false;
-    }
 
     point_in_ui_node(cursor_position, computed_node, global_transform)
 }
