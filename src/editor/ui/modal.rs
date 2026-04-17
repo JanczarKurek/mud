@@ -119,7 +119,10 @@ pub fn spawn_or_rebuild_modal(
                     // Title
                     card.spawn((
                         Text::new(title_for(kind)),
-                        TextFont { font_size: 18.0, ..default() },
+                        TextFont {
+                            font_size: 18.0,
+                            ..default()
+                        },
                         TextColor(TEXT_HEADER),
                     ));
 
@@ -133,7 +136,10 @@ pub fn spawn_or_rebuild_modal(
                     card.spawn((
                         ModalErrorText,
                         Text::new(err_text),
-                        TextFont { font_size: 12.0, ..default() },
+                        TextFont {
+                            font_size: 12.0,
+                            ..default()
+                        },
                         TextColor(TEXT_ERROR),
                         err_visible,
                     ));
@@ -154,55 +160,69 @@ pub fn spawn_or_rebuild_modal(
                             row_gap: Val::Px(3.0),
                             ..default()
                         },))
-                        .with_children(|field_col| {
-                            field_col.spawn((
-                                Text::new(field.label.clone()),
-                                TextFont { font_size: 12.0, ..default() },
-                                TextColor(TEXT_LABEL),
-                            ));
-
-                            field_col
-                                .spawn((
-                                    ModalTextField { index: i },
-                                    Node {
-                                        width: Val::Percent(100.0),
-                                        padding: UiRect::axes(Val::Px(8.0), Val::Px(5.0)),
-                                        border: UiRect::all(Val::Px(1.0)),
+                            .with_children(|field_col| {
+                                field_col.spawn((
+                                    Text::new(field.label.clone()),
+                                    TextFont {
+                                        font_size: 12.0,
                                         ..default()
                                     },
-                                    BackgroundColor(Color::srgba(0.06, 0.04, 0.04, 0.90)),
-                                    BorderColor::all(if is_focused { BORDER_FOCUSED } else { BORDER }),
-                                ))
-                                .with_children(|input| {
-                                    if let Some(val) = display_value {
-                                        input.spawn((
-                                            Text::new(val),
-                                            TextFont { font_size: 13.0, ..default() },
-                                            TextColor(TEXT_VALUE),
-                                        ));
-                                    } else {
-                                        input.spawn((
-                                            Text::new(field.placeholder.clone()),
-                                            TextFont { font_size: 13.0, ..default() },
-                                            TextColor(TEXT_PLACEHOLDER),
-                                        ));
-                                    }
-                                });
-                        });
+                                    TextColor(TEXT_LABEL),
+                                ));
+
+                                field_col
+                                    .spawn((
+                                        ModalTextField { index: i },
+                                        Node {
+                                            width: Val::Percent(100.0),
+                                            padding: UiRect::axes(Val::Px(8.0), Val::Px(5.0)),
+                                            border: UiRect::all(Val::Px(1.0)),
+                                            ..default()
+                                        },
+                                        BackgroundColor(Color::srgba(0.06, 0.04, 0.04, 0.90)),
+                                        BorderColor::all(if is_focused {
+                                            BORDER_FOCUSED
+                                        } else {
+                                            BORDER
+                                        }),
+                                    ))
+                                    .with_children(|input| {
+                                        if let Some(val) = display_value {
+                                            input.spawn((
+                                                Text::new(val),
+                                                TextFont {
+                                                    font_size: 13.0,
+                                                    ..default()
+                                                },
+                                                TextColor(TEXT_VALUE),
+                                            ));
+                                        } else {
+                                            input.spawn((
+                                                Text::new(field.placeholder.clone()),
+                                                TextFont {
+                                                    font_size: 13.0,
+                                                    ..default()
+                                                },
+                                                TextColor(TEXT_PLACEHOLDER),
+                                            ));
+                                        }
+                                    });
+                            });
                     }
 
                     // File list (FileOpen only)
                     if is_list {
-                        card.spawn((Node {
-                            width: Val::Percent(100.0),
-                            max_height: Val::Px(240.0),
-                            flex_direction: FlexDirection::Column,
-                            overflow: Overflow::clip_y(),
-                            border: UiRect::all(Val::Px(1.0)),
-                            ..default()
-                        },
-                        BorderColor::all(BORDER),
-                        BackgroundColor(Color::srgba(0.05, 0.03, 0.03, 0.90)),
+                        card.spawn((
+                            Node {
+                                width: Val::Percent(100.0),
+                                max_height: Val::Px(240.0),
+                                flex_direction: FlexDirection::Column,
+                                overflow: Overflow::clip_y(),
+                                border: UiRect::all(Val::Px(1.0)),
+                                ..default()
+                            },
+                            BorderColor::all(BORDER),
+                            BackgroundColor(Color::srgba(0.05, 0.03, 0.03, 0.90)),
                         ))
                         .with_children(|list| {
                             for (i, name) in modal_state.list_items.iter().enumerate() {
@@ -226,7 +246,10 @@ pub fn spawn_or_rebuild_modal(
                                 .with_children(|btn| {
                                     btn.spawn((
                                         Text::new(name.clone()),
-                                        TextFont { font_size: 13.0, ..default() },
+                                        TextFont {
+                                            font_size: 13.0,
+                                            ..default()
+                                        },
                                         TextColor(if is_selected {
                                             Color::srgb(0.98, 0.90, 0.70)
                                         } else {
@@ -247,45 +270,51 @@ pub fn spawn_or_rebuild_modal(
                         margin: UiRect::top(Val::Px(4.0)),
                         ..default()
                     },))
-                    .with_children(|row| {
-                        row.spawn((
-                            Button,
-                            ModalCancelButton,
-                            Node {
-                                padding: UiRect::axes(Val::Px(14.0), Val::Px(6.0)),
-                                border: UiRect::all(Val::Px(1.0)),
-                                ..default()
-                            },
-                            BackgroundColor(BTN_NORMAL_BG),
-                            BorderColor::all(BORDER),
-                        ))
-                        .with_children(|b| {
-                            b.spawn((
-                                Text::new("Cancel"),
-                                TextFont { font_size: 13.0, ..default() },
-                                TextColor(TEXT_VALUE),
-                            ));
-                        });
+                        .with_children(|row| {
+                            row.spawn((
+                                Button,
+                                ModalCancelButton,
+                                Node {
+                                    padding: UiRect::axes(Val::Px(14.0), Val::Px(6.0)),
+                                    border: UiRect::all(Val::Px(1.0)),
+                                    ..default()
+                                },
+                                BackgroundColor(BTN_NORMAL_BG),
+                                BorderColor::all(BORDER),
+                            ))
+                            .with_children(|b| {
+                                b.spawn((
+                                    Text::new("Cancel"),
+                                    TextFont {
+                                        font_size: 13.0,
+                                        ..default()
+                                    },
+                                    TextColor(TEXT_VALUE),
+                                ));
+                            });
 
-                        row.spawn((
-                            Button,
-                            ModalConfirmButton,
-                            Node {
-                                padding: UiRect::axes(Val::Px(14.0), Val::Px(6.0)),
-                                border: UiRect::all(Val::Px(1.0)),
-                                ..default()
-                            },
-                            BackgroundColor(BTN_NORMAL_BG),
-                            BorderColor::all(BTN_CONFIRM_BORDER),
-                        ))
-                        .with_children(|b| {
-                            b.spawn((
-                                Text::new(confirm_label_for(kind)),
-                                TextFont { font_size: 13.0, ..default() },
-                                TextColor(Color::srgb(0.98, 0.90, 0.70)),
-                            ));
+                            row.spawn((
+                                Button,
+                                ModalConfirmButton,
+                                Node {
+                                    padding: UiRect::axes(Val::Px(14.0), Val::Px(6.0)),
+                                    border: UiRect::all(Val::Px(1.0)),
+                                    ..default()
+                                },
+                                BackgroundColor(BTN_NORMAL_BG),
+                                BorderColor::all(BTN_CONFIRM_BORDER),
+                            ))
+                            .with_children(|b| {
+                                b.spawn((
+                                    Text::new(confirm_label_for(kind)),
+                                    TextFont {
+                                        font_size: 13.0,
+                                        ..default()
+                                    },
+                                    TextColor(Color::srgb(0.98, 0.90, 0.70)),
+                                ));
+                            });
                         });
-                    });
                 });
         });
 }

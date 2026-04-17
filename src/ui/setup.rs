@@ -4,13 +4,16 @@ use bevy::text::{Justify, LineBreak, TextLayout};
 use crate::ui::components::{
     BackpackPanelContent, BackpackSlotRow, ChatLogText, ContainerPanelContent, ContainerSlotButton,
     ContainerSlotImage, ContextMenuAttackButton, ContextMenuInspectButton, ContextMenuOpenButton,
-    ContextMenuRoot, ContextMenuUseButton, ContextMenuUseOnButton, CurrentCombatTargetLabel,
-    CurrentTargetPanelContent, DockedPanelBody, DockedPanelCanvas, DockedPanelCloseButton,
-    DockedPanelDragHandle, DockedPanelResizeHandle, DockedPanelRoot, DockedPanelTitle,
-    DragPreviewLabel, DragPreviewRoot, EquipmentPanelContent, EquipmentSlotButton,
-    EquipmentSlotImage, HealthFill, HealthLabel, ItemSlotButton, ItemSlotImage, ItemSlotKind,
-    ManaFill, ManaLabel, PythonConsoleInput, PythonConsoleOutput, PythonConsoleOutputViewport,
-    PythonConsolePanel, PythonConsoleScrollbarThumb, RightSidebarRoot, StatusPanelContent,
+    ContextMenuRoot, ContextMenuTakePartialButton, ContextMenuUseButton, ContextMenuUseOnButton,
+    CurrentCombatTargetLabel, CurrentTargetPanelContent, DockedPanelBody, DockedPanelCanvas,
+    DockedPanelCloseButton, DockedPanelDragHandle, DockedPanelResizeHandle, DockedPanelRoot,
+    DockedPanelTitle, DragPreviewLabel, DragPreviewRoot, EquipmentPanelContent,
+    EquipmentSlotButton, EquipmentSlotImage, HealthFill, HealthLabel, ItemSlotButton,
+    ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ManaFill, ManaLabel, PythonConsoleInput,
+    PythonConsoleOutput, PythonConsoleOutputViewport, PythonConsolePanel,
+    PythonConsoleScrollbarThumb, RightSidebarRoot, StatusPanelContent, TakePartialAmountLabel,
+    TakePartialCancelButton, TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton,
+    TakePartialPopupRoot,
 };
 use crate::ui::resources::DockedPanelState;
 use crate::world::object_definitions::EquipmentSlot;
@@ -291,8 +294,122 @@ pub fn spawn_hud(mut commands: Commands) {
             spawn_context_button(menu, "Attack", ContextMenuAttackButton);
             spawn_context_button(menu, "Use", ContextMenuUseButton);
             spawn_context_button(menu, "Use On", ContextMenuUseOnButton);
+            spawn_context_button(menu, "Take...", ContextMenuTakePartialButton);
             spawn_context_button(menu, "Inspect", ContextMenuInspectButton);
             spawn_context_button(menu, "Open", ContextMenuOpenButton);
+        });
+
+    spawn_take_partial_popup(&mut commands);
+}
+
+fn spawn_take_partial_popup(commands: &mut Commands) {
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                width: percent(100.0),
+                height: percent(100.0),
+                left: px(0.0),
+                top: px(0.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            TakePartialPopupRoot,
+            Visibility::Hidden,
+            GlobalZIndex(i32::MAX - 5),
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
+        ))
+        .with_children(|overlay| {
+            overlay
+                .spawn((
+                    Node {
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::Center,
+                        row_gap: px(10.0),
+                        padding: UiRect::all(px(16.0)),
+                        border: UiRect::all(px(1.0)),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.10, 0.10, 0.12, 0.97)),
+                    BorderColor::all(Color::srgb(0.50, 0.44, 0.22)),
+                ))
+                .with_children(|dialog| {
+                    dialog.spawn((
+                        Text::new("How many?"),
+                        TextFont {
+                            font_size: 16.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.95, 0.89, 0.72)),
+                    ));
+
+                    dialog
+                        .spawn((Node {
+                            flex_direction: FlexDirection::Row,
+                            align_items: AlignItems::Center,
+                            column_gap: px(10.0),
+                            ..default()
+                        },))
+                        .with_children(|row| {
+                            spawn_small_button(row, "-", TakePartialDecButton);
+                            row.spawn((
+                                Text::new("1"),
+                                TakePartialAmountLabel,
+                                TextFont {
+                                    font_size: 18.0,
+                                    ..default()
+                                },
+                                TextColor(Color::srgb(1.0, 1.0, 0.8)),
+                                Node {
+                                    min_width: px(48.0),
+                                    justify_content: JustifyContent::Center,
+                                    ..default()
+                                },
+                            ));
+                            spawn_small_button(row, "+", TakePartialIncButton);
+                        });
+
+                    dialog
+                        .spawn((Node {
+                            flex_direction: FlexDirection::Row,
+                            column_gap: px(8.0),
+                            ..default()
+                        },))
+                        .with_children(|row| {
+                            spawn_small_button(row, "Take", TakePartialConfirmButton);
+                            spawn_small_button(row, "Cancel", TakePartialCancelButton);
+                        });
+                });
+        });
+}
+
+fn spawn_small_button<T: Component>(parent: &mut ChildSpawnerCommands, label: &str, marker: T) {
+    parent
+        .spawn((
+            Button,
+            marker,
+            Node {
+                min_width: px(52.0),
+                min_height: px(28.0),
+                padding: UiRect::axes(px(8.0), px(4.0)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                border: UiRect::all(px(1.0)),
+                ..default()
+            },
+            BorderColor::all(Color::srgb(0.52, 0.44, 0.22)),
+            BackgroundColor(Color::srgb(0.18, 0.15, 0.11)),
+        ))
+        .with_children(|button| {
+            button.spawn((
+                Text::new(label),
+                TextFont {
+                    font_size: 15.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.94, 0.88, 0.72)),
+            ));
         });
 }
 
@@ -700,6 +817,7 @@ fn spawn_backpack_slot(parent: &mut ChildSpawnerCommands, index: usize) {
                 border: UiRect::all(px(1.0)),
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
+                position_type: PositionType::Relative,
                 ..default()
             },
             BorderColor::all(Color::srgb(0.38, 0.34, 0.22)),
@@ -719,6 +837,24 @@ fn spawn_backpack_slot(parent: &mut ChildSpawnerCommands, index: usize) {
                 ContainerSlotImage,
                 Visibility::Hidden,
             ));
+            slot.spawn((
+                Text::new(""),
+                TextFont {
+                    font_size: 9.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(1.0, 1.0, 0.7)),
+                Node {
+                    position_type: PositionType::Absolute,
+                    bottom: px(1.0),
+                    right: px(2.0),
+                    ..default()
+                },
+                ItemSlotQuantityLabel {
+                    kind: ItemSlotKind::Backpack(index),
+                },
+                Visibility::Hidden,
+            ));
         });
 }
 
@@ -727,22 +863,22 @@ fn spawn_open_container_slot(
     panel_id: usize,
     slot_index: usize,
 ) {
+    let kind = ItemSlotKind::OpenContainer {
+        panel_id,
+        slot_index,
+    };
     parent
         .spawn((
             Button,
             ContainerSlotButton,
-            ItemSlotButton {
-                kind: ItemSlotKind::OpenContainer {
-                    panel_id,
-                    slot_index,
-                },
-            },
+            ItemSlotButton { kind },
             Node {
                 width: px(42.0),
                 height: px(42.0),
                 border: UiRect::all(px(1.0)),
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
+                position_type: PositionType::Relative,
                 ..default()
             },
             BorderColor::all(Color::srgb(0.38, 0.34, 0.22)),
@@ -756,13 +892,24 @@ fn spawn_open_container_slot(
                     ..default()
                 },
                 ImageNode::default(),
-                ItemSlotImage {
-                    kind: ItemSlotKind::OpenContainer {
-                        panel_id,
-                        slot_index,
-                    },
-                },
+                ItemSlotImage { kind },
                 ContainerSlotImage,
+                Visibility::Hidden,
+            ));
+            slot.spawn((
+                Text::new(""),
+                TextFont {
+                    font_size: 9.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(1.0, 1.0, 0.7)),
+                Node {
+                    position_type: PositionType::Absolute,
+                    bottom: px(1.0),
+                    right: px(2.0),
+                    ..default()
+                },
+                ItemSlotQuantityLabel { kind },
                 Visibility::Hidden,
             ));
         });

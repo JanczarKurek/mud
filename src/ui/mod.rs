@@ -8,20 +8,21 @@ use bevy::prelude::*;
 use crate::app::state::ClientAppState;
 use crate::ui::resources::{
     ContextMenuState, CursorState, DockedPanelDragState, DockedPanelResizeState, DockedPanelState,
-    DragState, SpellTargetingState, UseOnState,
+    DragState, SpellTargetingState, TakePartialState, UseOnState,
 };
 use crate::ui::setup::spawn_hud;
 use crate::ui::systems::{
     apply_game_ui_events, handle_context_menu_actions, handle_context_menu_opening,
     handle_docked_panel_close_buttons, handle_docked_panel_dragging, handle_docked_panel_resizing,
     handle_docked_panel_scrolling, handle_movable_dragging, handle_spell_targeting,
-    handle_use_on_targeting, manage_open_containers, print_right_sidebar_layout_debug,
-    setup_native_custom_cursor, sync_chat_log, sync_container_slot_images,
-    sync_context_menu_attack_button, sync_context_menu_open_button, sync_context_menu_root,
-    sync_context_menu_use_button, sync_context_menu_use_on_button, sync_current_combat_target,
-    sync_docked_panel_layout, sync_docked_panel_titles, sync_drag_preview,
-    sync_equipment_slot_images, sync_item_slot_button_visibility, sync_native_custom_cursor,
-    sync_vital_bars, toggle_cursor_mode,
+    handle_take_partial_buttons, handle_use_on_targeting, manage_open_containers,
+    print_right_sidebar_layout_debug, setup_native_custom_cursor, sync_chat_log,
+    sync_container_slot_images, sync_context_menu_attack_button, sync_context_menu_open_button,
+    sync_context_menu_root, sync_context_menu_take_partial_button, sync_context_menu_use_button,
+    sync_context_menu_use_on_button, sync_current_combat_target, sync_docked_panel_layout,
+    sync_docked_panel_titles, sync_drag_preview, sync_equipment_slot_images,
+    sync_item_slot_button_visibility, sync_native_custom_cursor, sync_take_partial_label,
+    sync_vital_bars, toggle_cursor_mode, update_take_partial_popup_visibility,
 };
 
 pub struct UiPlugin;
@@ -36,6 +37,7 @@ impl Plugin for UiPlugin {
             .insert_resource(CursorState::default())
             .insert_resource(UseOnState::default())
             .insert_resource(SpellTargetingState::default())
+            .insert_resource(TakePartialState::default())
             .add_systems(
                 OnEnter(ClientAppState::InGame),
                 (spawn_hud, setup_native_custom_cursor),
@@ -62,6 +64,16 @@ impl Plugin for UiPlugin {
             .add_systems(
                 Update,
                 (sync_item_slot_button_visibility, sync_container_slot_images)
+                    .run_if(in_state(ClientAppState::InGame)),
+            )
+            .add_systems(
+                Update,
+                (
+                    sync_context_menu_take_partial_button,
+                    update_take_partial_popup_visibility,
+                    sync_take_partial_label,
+                    handle_take_partial_buttons,
+                )
                     .run_if(in_state(ClientAppState::InGame)),
             )
             .add_systems(

@@ -66,10 +66,26 @@ pub fn serialize_and_save(
 ) {
     let mut items: Vec<(u64, String, HashMap<String, String>, TileCoordinate)> = Vec::new();
     for (obj, resident, tile) in objects.iter() {
-        if resident.space_id != ctx.space_id { continue; }
-        let type_id = object_registry.type_id(obj.object_id).unwrap_or(&obj.definition_id).to_owned();
-        let properties = object_registry.properties(obj.object_id).cloned().unwrap_or_default();
-        items.push((obj.object_id, type_id, properties, TileCoordinate { x: tile.x, y: tile.y }));
+        if resident.space_id != ctx.space_id {
+            continue;
+        }
+        let type_id = object_registry
+            .type_id(obj.object_id)
+            .unwrap_or(&obj.definition_id)
+            .to_owned();
+        let properties = object_registry
+            .properties(obj.object_id)
+            .cloned()
+            .unwrap_or_default();
+        items.push((
+            obj.object_id,
+            type_id,
+            properties,
+            TileCoordinate {
+                x: tile.x,
+                y: tile.y,
+            },
+        ));
     }
 
     let mut anonymous: HashMap<String, Vec<TileCoordinate>> = HashMap::new();
@@ -78,7 +94,12 @@ pub fn serialize_and_save(
         if properties.is_empty() {
             anonymous.entry(type_id).or_default().push(tile);
         } else {
-            explicit.push(ExplicitOutput { id: object_id, type_id, properties, placement: tile });
+            explicit.push(ExplicitOutput {
+                id: object_id,
+                type_id,
+                properties,
+                placement: tile,
+            });
         }
     }
 
@@ -87,18 +108,28 @@ pub fn serialize_and_save(
     anon_sorted.sort_by(|a, b| a.0.cmp(&b.0));
     for (type_id, mut placements) in anon_sorted {
         placements.sort_by(|a, b| a.y.cmp(&b.y).then(a.x.cmp(&b.x)));
-        object_entries.push(ObjectEntryOutput::Anonymous(AnonymousOutput { type_id, properties: HashMap::new(), placement: placements }));
+        object_entries.push(ObjectEntryOutput::Anonymous(AnonymousOutput {
+            type_id,
+            properties: HashMap::new(),
+            placement: placements,
+        }));
     }
     explicit.sort_by_key(|e| e.id);
-    for entry in explicit { object_entries.push(ObjectEntryOutput::Explicit(entry)); }
+    for entry in explicit {
+        object_entries.push(ObjectEntryOutput::Explicit(entry));
+    }
 
-    let portals = portal_buffer.portals.iter().map(|p| PortalOutput {
-        id: p.id.clone(),
-        source: p.source,
-        destination_space_id: p.destination_space_id.clone(),
-        destination_tile: p.destination_tile,
-        destination_permanence: p.destination_permanence,
-    }).collect::<Vec<_>>();
+    let portals = portal_buffer
+        .portals
+        .iter()
+        .map(|p| PortalOutput {
+            id: p.id.clone(),
+            source: p.source,
+            destination_space_id: p.destination_space_id.clone(),
+            destination_tile: p.destination_tile,
+            destination_permanence: p.destination_permanence,
+        })
+        .collect::<Vec<_>>();
 
     let output = SpaceOutput {
         authored_id: ctx.authored_id.clone(),

@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::player::components::PlayerId;
+use crate::player::components::{InventoryStack, PlayerId};
 
 #[derive(Component, Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct SpaceId(pub u64);
@@ -95,7 +95,7 @@ pub struct Storable;
 
 #[derive(Component)]
 pub struct Container {
-    pub slots: Vec<Option<u64>>,
+    pub slots: Vec<Option<InventoryStack>>,
 }
 
 #[derive(Component)]

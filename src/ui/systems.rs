@@ -12,19 +12,23 @@ use crate::game::resources::{
     ClientGameState, GameUiEvent, InventoryState, PendingGameCommands, PendingGameUiEvents,
 };
 use crate::magic::resources::{SpellDefinitions, SpellTargeting};
+use crate::player::components::InventoryStack;
 use crate::scripting::resources::PythonConsoleState;
 use crate::ui::components::{
     BackpackSlotRow, ChatLogText, ContainerSlotButton, ContainerSlotImage, ContextMenuAttackButton,
-    ContextMenuInspectButton, ContextMenuOpenButton, ContextMenuRoot, ContextMenuUseButton,
-    ContextMenuUseOnButton, CurrentCombatTargetLabel, DockedPanelBody, DockedPanelCanvas,
-    DockedPanelCloseButton, DockedPanelDragHandle, DockedPanelResizeHandle, DockedPanelRoot,
-    DockedPanelTitle, DragPreviewLabel, DragPreviewRoot, EquipmentSlotButton, EquipmentSlotImage,
-    HealthFill, ItemSlotButton, ItemSlotImage, ItemSlotKind, ManaFill, RightSidebarRoot,
+    ContextMenuInspectButton, ContextMenuOpenButton, ContextMenuRoot, ContextMenuTakePartialButton,
+    ContextMenuUseButton, ContextMenuUseOnButton, CurrentCombatTargetLabel, DockedPanelBody,
+    DockedPanelCanvas, DockedPanelCloseButton, DockedPanelDragHandle, DockedPanelResizeHandle,
+    DockedPanelRoot, DockedPanelTitle, DragPreviewLabel, DragPreviewRoot, EquipmentSlotButton,
+    EquipmentSlotImage, HealthFill, ItemSlotButton, ItemSlotImage, ItemSlotKind,
+    ItemSlotQuantityLabel, ManaFill, RightSidebarRoot, TakePartialAmountLabel,
+    TakePartialCancelButton, TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton,
+    TakePartialPopupRoot,
 };
 use crate::ui::resources::{
     ContextMenuState, ContextMenuTarget, CursorMode, CursorState, DockedPanelDragState,
     DockedPanelKind, DockedPanelResizeState, DockedPanelState, DragSource, DragState,
-    SpellTargetingState, UseOnState,
+    SpellTargetingState, TakePartialState, UseOnState,
 };
 use crate::world::components::TilePosition;
 use crate::world::object_definitions::OverworldObjectDefinitions;
@@ -348,6 +352,8 @@ pub fn handle_context_menu_actions(
         Res<SpellDefinitions>,
     ),
     mut pending_commands: ResMut<PendingGameCommands>,
+    client_state: Res<ClientGameState>,
+    mut take_partial_state: ResMut<TakePartialState>,
     ui_state: (
         ResMut<ContextMenuState>,
         Res<DockedPanelState>,
@@ -361,6 +367,7 @@ pub fn handle_context_menu_actions(
         Query<(&ComputedNode, &UiGlobalTransform, &Visibility), With<ContextMenuOpenButton>>,
         Query<(&ComputedNode, &UiGlobalTransform, &Visibility), With<ContextMenuUseButton>>,
         Query<(&ComputedNode, &UiGlobalTransform, &Visibility), With<ContextMenuUseOnButton>>,
+        Query<(&ComputedNode, &UiGlobalTransform, &Visibility), With<ContextMenuTakePartialButton>>,
     )>,
 ) {
     let (object_registry, definitions, spell_definitions) = static_resources;
@@ -442,6 +449,22 @@ pub fn handle_context_menu_actions(
     if is_cursor_over_visible_button(cursor_position, &menu_queries.p2()) {
         if let Some(ContextMenuTarget::World(object_id)) = context_menu_state.target {
             pending_commands.push(GameCommand::OpenContainer { object_id });
+        }
+        context_menu_state.hide();
+        return;
+    }
+
+    if is_cursor_over_visible_button(cursor_position, &menu_queries.p5()) {
+        if let Some(ContextMenuTarget::Slot(slot_kind, _)) = context_menu_state.target {
+            if let Some(slot_ref) = item_slot_kind_to_ref(slot_kind, &docked_panel_state) {
+                if let Some(stack) =
+                    stack_in_slot_kind(&client_state, &docked_panel_state, slot_kind)
+                {
+                    take_partial_state.source_slot = Some(slot_ref);
+                    take_partial_state.max_amount = stack.quantity;
+                    take_partial_state.selected_amount = 1;
+                }
+            }
         }
         context_menu_state.hide();
         return;
@@ -690,6 +713,9 @@ pub fn handle_context_menu_opening(
         );
         if let Some(object_id) = slot_object_id {
             let can_use = object_is_usable(object_id, &object_registry, &definitions);
+            let stack_qty = stack_in_slot_kind(&client_state, &docked_panel_state, slot_kind)
+                .map(|s| s.quantity)
+                .unwrap_or(1);
             context_menu_state.show(
                 cursor_position,
                 ContextMenuTarget::Slot(slot_kind, object_id),
@@ -702,6 +728,7 @@ pub fn handle_context_menu_opening(
                     &spell_definitions,
                 ),
                 false,
+                stack_qty > 1,
             );
             info!(
                 "context_open_slot_success slot={slot_kind:?} object_id={object_id} can_use={can_use}"
@@ -736,6 +763,7 @@ pub fn handle_context_menu_opening(
                 &spell_definitions,
             ),
             object.is_npc,
+            false,
         );
         info!(
             "context_open_world_success object_id={} has_container={} can_use={} can_attack={}",
@@ -765,6 +793,7 @@ pub fn handle_context_menu_opening(
                 &spell_definitions,
             ),
             true,
+            false,
         );
         info!(
             "context_open_remote_player_success object_id={} can_use={} can_attack=true",
@@ -916,9 +945,13 @@ pub fn sync_container_slot_images(
         (&ItemSlotImage, &mut ImageNode, &mut Visibility),
         With<ContainerSlotImage>,
     >,
+    mut label_query: Query<
+        (&ItemSlotQuantityLabel, &mut Text, &mut Visibility),
+        Without<ContainerSlotImage>,
+    >,
 ) {
     for (slot, mut image_node, mut visibility) in &mut image_query {
-        let object_id = match slot.kind {
+        let stack = match slot.kind {
             ItemSlotKind::Backpack(index) => client_state
                 .inventory
                 .backpack_slots
@@ -934,12 +967,12 @@ pub fn sync_container_slot_images(
                 .and_then(|slots| slots.get(slot_index).copied().flatten()),
             ItemSlotKind::Equipment(_) => None,
         };
-        let Some(object_id) = object_id else {
+        let Some(stack) = stack else {
             *visibility = Visibility::Hidden;
             continue;
         };
 
-        let Some(type_id) = object_registry.type_id(object_id) else {
+        let Some(type_id) = object_registry.type_id(stack.object_id) else {
             *visibility = Visibility::Hidden;
             continue;
         };
@@ -949,13 +982,45 @@ pub fn sync_container_slot_images(
             continue;
         };
 
-        let Some(sprite_path) = &definition.render.sprite_path else {
+        let Some(sprite_path) = definition
+            .sprite_for_count(stack.quantity)
+            .map(str::to_owned)
+        else {
             *visibility = Visibility::Hidden;
             continue;
         };
 
         image_node.image = asset_server.load(sprite_path);
         *visibility = Visibility::Visible;
+    }
+
+    for (label, mut text, mut visibility) in &mut label_query {
+        let stack = match label.kind {
+            ItemSlotKind::Backpack(index) => client_state
+                .inventory
+                .backpack_slots
+                .get(index)
+                .copied()
+                .flatten(),
+            ItemSlotKind::OpenContainer {
+                panel_id,
+                slot_index,
+            } => docked_panel_state
+                .container_object_id_for_panel(panel_id)
+                .and_then(|object_id| client_state.container_slots.get(&object_id))
+                .and_then(|slots| slots.get(slot_index).copied().flatten()),
+            ItemSlotKind::Equipment(_) => None,
+        };
+        match stack {
+            Some(s) if s.quantity > 1 => {
+                text.0 = s.quantity.to_string();
+                *visibility = Visibility::Visible;
+            }
+            _ => {
+                text.0.clear();
+                *visibility = Visibility::Hidden;
+            }
+        }
     }
 }
 
@@ -997,6 +1062,132 @@ pub fn sync_equipment_slot_images(
         image_node.image = asset_server.load(sprite_path);
         *visibility = Visibility::Visible;
     }
+}
+
+pub fn sync_context_menu_take_partial_button(
+    context_menu_state: Res<ContextMenuState>,
+    mut button_query: Query<&mut Visibility, With<ContextMenuTakePartialButton>>,
+) {
+    let Ok(mut vis) = button_query.single_mut() else {
+        return;
+    };
+    *vis = if context_menu_state.can_take_partial {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
+    };
+}
+
+pub fn update_take_partial_popup_visibility(
+    take_partial_state: Res<TakePartialState>,
+    mut popup_query: Query<&mut Visibility, With<TakePartialPopupRoot>>,
+) {
+    let Ok(mut vis) = popup_query.single_mut() else {
+        return;
+    };
+    *vis = if take_partial_state.source_slot.is_some() {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
+    };
+}
+
+pub fn sync_take_partial_label(
+    take_partial_state: Res<TakePartialState>,
+    mut label_query: Query<&mut Text, With<TakePartialAmountLabel>>,
+) {
+    let Ok(mut text) = label_query.single_mut() else {
+        return;
+    };
+    if take_partial_state.source_slot.is_some() {
+        text.0 = take_partial_state.selected_amount.to_string();
+    }
+}
+
+pub fn handle_take_partial_buttons(
+    mouse_input: Res<ButtonInput<MouseButton>>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    client_state: Res<ClientGameState>,
+    docked_panel_state: Res<DockedPanelState>,
+    mut take_partial_state: ResMut<TakePartialState>,
+    mut pending_commands: ResMut<PendingGameCommands>,
+    dec_query: Query<(&ComputedNode, &UiGlobalTransform), With<TakePartialDecButton>>,
+    inc_query: Query<(&ComputedNode, &UiGlobalTransform), With<TakePartialIncButton>>,
+    confirm_query: Query<(&ComputedNode, &UiGlobalTransform), With<TakePartialConfirmButton>>,
+    cancel_query: Query<(&ComputedNode, &UiGlobalTransform), With<TakePartialCancelButton>>,
+) {
+    if take_partial_state.source_slot.is_none() {
+        return;
+    }
+    if !mouse_input.just_pressed(MouseButton::Left) {
+        return;
+    }
+    let Ok(window) = window_query.single() else {
+        return;
+    };
+    let Some(cursor_position) = window.cursor_position() else {
+        return;
+    };
+
+    if is_cursor_over_button(cursor_position, &dec_query) {
+        take_partial_state.selected_amount =
+            take_partial_state.selected_amount.saturating_sub(1).max(1);
+        return;
+    }
+
+    if is_cursor_over_button(cursor_position, &inc_query) {
+        take_partial_state.selected_amount =
+            (take_partial_state.selected_amount + 1).min(take_partial_state.max_amount);
+        return;
+    }
+
+    if is_cursor_over_button(cursor_position, &confirm_query) {
+        let Some(source_slot) = take_partial_state.source_slot else {
+            return;
+        };
+        let amount = take_partial_state.selected_amount;
+        let destination =
+            find_best_take_destination(source_slot, &client_state, &docked_panel_state);
+        if let Some(destination) = destination {
+            pending_commands.push(GameCommand::TakeFromStack {
+                source: source_slot,
+                amount,
+                destination,
+            });
+        }
+        take_partial_state.source_slot = None;
+        return;
+    }
+
+    if is_cursor_over_button(cursor_position, &cancel_query) {
+        take_partial_state.source_slot = None;
+    }
+}
+
+fn find_best_take_destination(
+    source: ItemSlotRef,
+    client_state: &ClientGameState,
+    _docked_panel_state: &DockedPanelState,
+) -> Option<ItemDestination> {
+    let visible = client_state
+        .player_storage_slots
+        .min(client_state.inventory.backpack_slots.len());
+    // Find first empty backpack slot that isn't the source
+    for i in 0..visible {
+        if matches!(source, ItemSlotRef::Backpack(s) if s == i) {
+            continue;
+        }
+        if client_state
+            .inventory
+            .backpack_slots
+            .get(i)
+            .and_then(|s| *s)
+            .is_none()
+        {
+            return Some(ItemDestination::Slot(ItemSlotRef::Backpack(i)));
+        }
+    }
+    None
 }
 
 pub fn handle_movable_dragging(
@@ -1630,11 +1821,11 @@ fn point_in_ui_node(
     computed_node.contains_point(*global_transform, cursor_position)
 }
 
-fn object_id_in_slot_kind(
+fn stack_in_slot_kind(
     client_state: &ClientGameState,
     docked_panel_state: &DockedPanelState,
     slot_kind: ItemSlotKind,
-) -> Option<u64> {
+) -> Option<InventoryStack> {
     match slot_kind {
         ItemSlotKind::Backpack(slot_index) => client_state
             .inventory
@@ -1649,8 +1840,24 @@ fn object_id_in_slot_kind(
             .container_object_id_for_panel(panel_id)
             .and_then(|object_id| client_state.container_slots.get(&object_id))
             .and_then(|slots| slots.get(slot_index).copied().flatten()),
-        ItemSlotKind::Equipment(slot) => client_state.inventory.equipment_item(slot),
+        ItemSlotKind::Equipment(slot) => {
+            client_state
+                .inventory
+                .equipment_item(slot)
+                .map(|id| InventoryStack {
+                    object_id: id,
+                    quantity: 1,
+                })
+        }
     }
+}
+
+fn object_id_in_slot_kind(
+    client_state: &ClientGameState,
+    docked_panel_state: &DockedPanelState,
+    slot_kind: ItemSlotKind,
+) -> Option<u64> {
+    stack_in_slot_kind(client_state, docked_panel_state, slot_kind).map(|s| s.object_id)
 }
 
 fn drag_source_name(source: &DragSource) -> &'static str {

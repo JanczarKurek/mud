@@ -32,9 +32,13 @@ pub fn update_preview(
     mut inspector_buffer: ResMut<InspectorBuffer>,
     mut last_selection: Local<(Option<String>, AssetKind)>,
 ) {
-    if !viewer_state.is_changed() { return; }
+    if !viewer_state.is_changed() {
+        return;
+    }
     let current = (viewer_state.selected_id.clone(), viewer_state.selected_kind);
-    if *last_selection == current { return; }
+    if *last_selection == current {
+        return;
+    }
     *last_selection = current;
 
     if let Some(entity) = preview_state.preview_entity.take() {
@@ -68,7 +72,9 @@ pub fn update_preview(
                 .spawn((
                     sprite,
                     Transform::from_xyz(0.0, 0.0, 0.0),
-                    PreviewMarker { definition_id: id.clone() },
+                    PreviewMarker {
+                        definition_id: id.clone(),
+                    },
                 ))
                 .id();
             preview_state.preview_entity = Some(entity);
@@ -92,8 +98,12 @@ pub fn attach_preview_animation(
     query: Query<(Entity, &PreviewMarker), Without<AnimatedSprite>>,
 ) {
     for (entity, marker) in &query {
-        let Some(def) = definitions.get(&marker.definition_id) else { continue };
-        let Some(sheet) = &def.render.animation else { continue };
+        let Some(def) = definitions.get(&marker.definition_id) else {
+            continue;
+        };
+        let Some(sheet) = &def.render.animation else {
+            continue;
+        };
 
         let layout = TextureAtlasLayout::from_grid(
             UVec2::new(sheet.frame_width, sheet.frame_height),
@@ -111,9 +121,7 @@ pub fn attach_preview_animation(
             frame_index: 0,
             frame_timer: 0.0,
             frame_count: idle.map_or(1, |c| c.frame_count),
-            seconds_per_frame: idle.map_or(1.0, |c| {
-                if c.fps > 0.0 { 1.0 / c.fps } else { 1.0 }
-            }),
+            seconds_per_frame: idle.map_or(1.0, |c| if c.fps > 0.0 { 1.0 / c.fps } else { 1.0 }),
             atlas_columns: sheet.sheet_columns,
             clip_row: idle.map_or(0, |c| c.row),
             clip_start_col: idle.map_or(0, |c| c.start_col),
@@ -122,8 +130,14 @@ pub fn attach_preview_animation(
 
         let new_sprite = Sprite {
             image: image_handle,
-            custom_size: Some(Vec2::new(sheet.frame_width as f32, sheet.frame_height as f32)),
-            texture_atlas: Some(TextureAtlas { layout: layout_handle, index: 0 }),
+            custom_size: Some(Vec2::new(
+                sheet.frame_width as f32,
+                sheet.frame_height as f32,
+            )),
+            texture_atlas: Some(TextureAtlas {
+                layout: layout_handle,
+                index: 0,
+            }),
             ..default()
         };
 
@@ -136,13 +150,23 @@ pub fn apply_clip_change(
     definitions: Res<OverworldObjectDefinitions>,
     mut query: Query<(&PreviewMarker, &mut AnimatedSprite)>,
 ) {
-    if !preview_state.is_changed() { return; }
-    let Some(clip_name) = &preview_state.current_clip else { return };
+    if !preview_state.is_changed() {
+        return;
+    }
+    let Some(clip_name) = &preview_state.current_clip else {
+        return;
+    };
 
     for (marker, mut animated) in &mut query {
-        let Some(def) = definitions.get(&marker.definition_id) else { continue };
-        let Some(sheet) = &def.render.animation else { continue };
-        let Some(clip) = sheet.clips.get(clip_name) else { continue };
+        let Some(def) = definitions.get(&marker.definition_id) else {
+            continue;
+        };
+        let Some(sheet) = &def.render.animation else {
+            continue;
+        };
+        let Some(clip) = sheet.clips.get(clip_name) else {
+            continue;
+        };
 
         animated.current_clip = clip_name.clone();
         animated.frame_index = 0;
@@ -161,17 +185,29 @@ pub fn handle_keyboard(
     mut inspector_buffer: ResMut<InspectorBuffer>,
 ) {
     for event in keyboard_events.read() {
-        if !event.state.is_pressed() { continue; }
+        if !event.state.is_pressed() {
+            continue;
+        }
 
         if viewer_state.filter_focused {
             match event.key_code {
-                KeyCode::Escape => { viewer_state.filter_focused = false; }
-                KeyCode::Backspace => { viewer_state.filter.pop(); }
+                KeyCode::Escape => {
+                    viewer_state.filter_focused = false;
+                }
+                KeyCode::Backspace => {
+                    viewer_state.filter.pop();
+                }
                 _ => {
-                    if event.repeat { continue; }
+                    if event.repeat {
+                        continue;
+                    }
                     match &event.logical_key {
-                        Key::Character(ch) => { viewer_state.filter.push_str(ch.as_str()); }
-                        Key::Space => { viewer_state.filter.push(' '); }
+                        Key::Character(ch) => {
+                            viewer_state.filter.push_str(ch.as_str());
+                        }
+                        Key::Space => {
+                            viewer_state.filter.push(' ');
+                        }
                         _ => {}
                     }
                 }
@@ -185,12 +221,20 @@ pub fn handle_keyboard(
                 KeyCode::Enter | KeyCode::Tab => {
                     inspector_buffer.commit_edit();
                 }
-                KeyCode::Backspace => { inspector_buffer.edit_text.pop(); }
+                KeyCode::Backspace => {
+                    inspector_buffer.edit_text.pop();
+                }
                 _ => {
-                    if event.repeat { continue; }
+                    if event.repeat {
+                        continue;
+                    }
                     match &event.logical_key {
-                        Key::Character(ch) => { inspector_buffer.edit_text.push_str(ch.as_str()); }
-                        Key::Space => { inspector_buffer.edit_text.push(' '); }
+                        Key::Character(ch) => {
+                            inspector_buffer.edit_text.push_str(ch.as_str());
+                        }
+                        Key::Space => {
+                            inspector_buffer.edit_text.push(' ');
+                        }
                         _ => {}
                     }
                 }
@@ -203,7 +247,9 @@ pub fn handle_viewer_zoom(
     mut scroll_events: bevy::ecs::message::MessageReader<MouseWheel>,
     mut camera_query: Query<&mut Projection, With<AssetViewerCamera>>,
 ) {
-    let Ok(mut proj) = camera_query.single_mut() else { return };
+    let Ok(mut proj) = camera_query.single_mut() else {
+        return;
+    };
     for event in scroll_events.read() {
         if let Projection::Orthographic(ref mut ortho) = *proj {
             ortho.scale = (ortho.scale - event.y * 0.1).clamp(0.2, 5.0);
@@ -211,16 +257,11 @@ pub fn handle_viewer_zoom(
     }
 }
 
-
-
 // ── Palette ───────────────────────────────────────────────────────────────────
 
 pub fn handle_palette_clicks(
     mut viewer_state: ResMut<ViewerState>,
-    items: Query<
-        (&ViewerPaletteItem, &Interaction),
-        (Changed<Interaction>, With<Button>),
-    >,
+    items: Query<(&ViewerPaletteItem, &Interaction), (Changed<Interaction>, With<Button>)>,
 ) {
     for (item, interaction) in &items {
         if *interaction == Interaction::Pressed {
@@ -253,9 +294,7 @@ pub fn handle_tab_clicks(
     tabs: Query<(&ViewerTab, &Interaction), (Changed<Interaction>, With<Button>)>,
 ) {
     for (tab, interaction) in &tabs {
-        if *interaction == Interaction::Pressed
-            && viewer_state.selected_kind != tab.kind
-        {
+        if *interaction == Interaction::Pressed && viewer_state.selected_kind != tab.kind {
             viewer_state.selected_kind = tab.kind;
             viewer_state.selected_id = None;
         }
@@ -264,19 +303,24 @@ pub fn handle_tab_clicks(
 
 pub fn sync_palette(
     viewer_state: Res<ViewerState>,
-    mut items: Query<(
-        &ViewerPaletteItem,
-        &Interaction,
-        &mut BackgroundColor,
-        &mut BorderColor,
-        &mut Visibility,
-    ), With<Button>>,
+    mut items: Query<
+        (
+            &ViewerPaletteItem,
+            &Interaction,
+            &mut BackgroundColor,
+            &mut BorderColor,
+            &mut Visibility,
+        ),
+        With<Button>,
+    >,
     mut filter_box: Query<
         (&Interaction, &mut BackgroundColor, &mut BorderColor),
         (With<ViewerFilterBox>, Without<ViewerPaletteItem>),
     >,
 ) {
-    if !viewer_state.is_changed() { return; }
+    if !viewer_state.is_changed() {
+        return;
+    }
     let filter = viewer_state.filter.to_lowercase();
 
     for (item, interaction, mut bg, mut border, mut vis) in &mut items {
@@ -287,16 +331,33 @@ pub fn sync_palette(
         let matches = filter.is_empty()
             || item.id.to_lowercase().contains(&filter)
             || item.display_name.to_lowercase().contains(&filter);
-        *vis = if matches { Visibility::Visible } else { Visibility::Hidden };
-        if !matches { continue; }
+        *vis = if matches {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+        if !matches {
+            continue;
+        }
 
         let is_selected = viewer_state.selected_id.as_deref() == Some(&item.id);
         let (bg_color, border_color) = match (*interaction, is_selected) {
-            (Interaction::Pressed, _) => (Color::srgb(0.50, 0.28, 0.12), Color::srgb(0.98, 0.84, 0.58)),
-            (Interaction::Hovered, true) => (Color::srgb(0.35, 0.20, 0.10), Color::srgb(0.98, 0.84, 0.58)),
-            (Interaction::Hovered, false) => (Color::srgb(0.20, 0.13, 0.10), Color::srgb(0.60, 0.45, 0.28)),
-            (Interaction::None, true) => (Color::srgb(0.28, 0.16, 0.08), Color::srgb(0.90, 0.76, 0.50)),
-            (Interaction::None, false) => (Color::srgba(0.10, 0.07, 0.06, 0.80), Color::srgb(0.20, 0.15, 0.10)),
+            (Interaction::Pressed, _) => {
+                (Color::srgb(0.50, 0.28, 0.12), Color::srgb(0.98, 0.84, 0.58))
+            }
+            (Interaction::Hovered, true) => {
+                (Color::srgb(0.35, 0.20, 0.10), Color::srgb(0.98, 0.84, 0.58))
+            }
+            (Interaction::Hovered, false) => {
+                (Color::srgb(0.20, 0.13, 0.10), Color::srgb(0.60, 0.45, 0.28))
+            }
+            (Interaction::None, true) => {
+                (Color::srgb(0.28, 0.16, 0.08), Color::srgb(0.90, 0.76, 0.50))
+            }
+            (Interaction::None, false) => (
+                Color::srgba(0.10, 0.07, 0.06, 0.80),
+                Color::srgb(0.20, 0.15, 0.10),
+            ),
         };
         bg.0 = bg_color;
         *border = BorderColor::all(border_color);
@@ -304,11 +365,20 @@ pub fn sync_palette(
 
     for (interaction, mut bg, mut border) in &mut filter_box {
         let (b, br) = if viewer_state.filter_focused {
-            (Color::srgba(0.12, 0.08, 0.06, 0.95), Color::srgb(0.90, 0.72, 0.40))
+            (
+                Color::srgba(0.12, 0.08, 0.06, 0.95),
+                Color::srgb(0.90, 0.72, 0.40),
+            )
         } else {
             match *interaction {
-                Interaction::Hovered => (Color::srgba(0.12, 0.08, 0.06, 0.95), Color::srgb(0.50, 0.38, 0.22)),
-                _ => (Color::srgba(0.08, 0.05, 0.05, 0.90), Color::srgb(0.25, 0.18, 0.12)),
+                Interaction::Hovered => (
+                    Color::srgba(0.12, 0.08, 0.06, 0.95),
+                    Color::srgb(0.50, 0.38, 0.22),
+                ),
+                _ => (
+                    Color::srgba(0.08, 0.05, 0.05, 0.90),
+                    Color::srgb(0.25, 0.18, 0.12),
+                ),
             }
         };
         bg.0 = b;
@@ -322,9 +392,15 @@ pub fn sync_filter_text(
     children: Query<&Children>,
     mut texts: Query<&mut Text>,
 ) {
-    if !viewer_state.is_changed() { return; }
-    let Ok(box_entity) = filter_box.single() else { return };
-    let Ok(kids) = children.get(box_entity) else { return };
+    if !viewer_state.is_changed() {
+        return;
+    }
+    let Ok(box_entity) = filter_box.single() else {
+        return;
+    };
+    let Ok(kids) = children.get(box_entity) else {
+        return;
+    };
     for child in kids.iter() {
         if let Ok(mut text) = texts.get_mut(child) {
             text.0 = if viewer_state.filter_focused {
@@ -340,15 +416,29 @@ pub fn sync_filter_text(
 
 pub fn sync_tab_buttons(
     viewer_state: Res<ViewerState>,
-    mut tabs: Query<(&ViewerTab, &Interaction, &mut BackgroundColor, &mut BorderColor)>,
+    mut tabs: Query<(
+        &ViewerTab,
+        &Interaction,
+        &mut BackgroundColor,
+        &mut BorderColor,
+    )>,
 ) {
-    if !viewer_state.is_changed() { return; }
+    if !viewer_state.is_changed() {
+        return;
+    }
     for (tab, interaction, mut bg, mut border) in &mut tabs {
         let active = tab.kind == viewer_state.selected_kind;
         let (b, br) = match (*interaction, active) {
-            (Interaction::Pressed, _) | (_, true) => (Color::srgb(0.28, 0.16, 0.08), Color::srgb(0.90, 0.76, 0.50)),
-            (Interaction::Hovered, false) => (Color::srgb(0.15, 0.10, 0.08), Color::srgb(0.50, 0.38, 0.22)),
-            _ => (Color::srgba(0.08, 0.05, 0.05, 0.80), Color::srgb(0.20, 0.15, 0.10)),
+            (Interaction::Pressed, _) | (_, true) => {
+                (Color::srgb(0.28, 0.16, 0.08), Color::srgb(0.90, 0.76, 0.50))
+            }
+            (Interaction::Hovered, false) => {
+                (Color::srgb(0.15, 0.10, 0.08), Color::srgb(0.50, 0.38, 0.22))
+            }
+            _ => (
+                Color::srgba(0.08, 0.05, 0.05, 0.80),
+                Color::srgb(0.20, 0.15, 0.10),
+            ),
         };
         bg.0 = b;
         *border = BorderColor::all(br);
@@ -365,8 +455,12 @@ pub fn sync_inspector_panel(
     children_query: Query<&Children>,
     mut texts: Query<&mut Text>,
 ) {
-    if !buffer.is_changed() { return; }
-    let Ok(body_entity) = body_query.single() else { return };
+    if !buffer.is_changed() {
+        return;
+    }
+    let Ok(body_entity) = body_query.single() else {
+        return;
+    };
 
     commands.entity(body_entity).despawn_related::<Children>();
     commands.entity(body_entity).with_children(|parent| {
@@ -410,19 +504,34 @@ pub fn sync_inspector_panel(
                 .with_children(|row| {
                     row.spawn((
                         Text::new(label_with_indent),
-                        TextFont { font_size: 10.0, ..default() },
+                        TextFont {
+                            font_size: 10.0,
+                            ..default()
+                        },
                         TextColor(Color::srgb(0.70, 0.65, 0.55)),
-                        Node { width: Val::Percent(52.0), overflow: Overflow::clip_x(), flex_shrink: 0.0, ..default() },
+                        Node {
+                            width: Val::Percent(52.0),
+                            overflow: Overflow::clip_x(),
+                            flex_shrink: 0.0,
+                            ..default()
+                        },
                     ));
                     row.spawn((
                         Text::new(value_display),
-                        TextFont { font_size: 10.0, ..default() },
+                        TextFont {
+                            font_size: 10.0,
+                            ..default()
+                        },
                         TextColor(if is_editing {
                             Color::srgb(1.0, 0.85, 0.5)
                         } else {
                             Color::srgb(0.90, 0.84, 0.72)
                         }),
-                        Node { flex_grow: 1.0, overflow: Overflow::clip_x(), ..default() },
+                        Node {
+                            flex_grow: 1.0,
+                            overflow: Overflow::clip_x(),
+                            ..default()
+                        },
                     ));
                 });
         }
@@ -453,7 +562,9 @@ pub fn handle_inspector_row_click(
 ) {
     for (row, interaction) in &items {
         if *interaction == Interaction::Pressed {
-            if buffer.editing_index == Some(row.index) { continue; }
+            if buffer.editing_index == Some(row.index) {
+                continue;
+            }
             // Commit any previous edit first
             if buffer.editing_index.is_some() {
                 buffer.commit_edit();
@@ -482,18 +593,30 @@ pub fn handle_save_button(
 
 pub fn sync_save_button(
     buffer: Res<InspectorBuffer>,
-    mut buttons: Query<(&Interaction, &mut BackgroundColor, &mut BorderColor), With<ViewerSaveButton>>,
+    mut buttons: Query<
+        (&Interaction, &mut BackgroundColor, &mut BorderColor),
+        With<ViewerSaveButton>,
+    >,
 ) {
-    if !buffer.is_changed() { return; }
+    if !buffer.is_changed() {
+        return;
+    }
     for (interaction, mut bg, mut border) in &mut buttons {
         let (b, br) = if buffer.dirty {
             match *interaction {
-                Interaction::Pressed => (Color::srgb(0.60, 0.30, 0.10), Color::srgb(1.0, 0.85, 0.5)),
-                Interaction::Hovered => (Color::srgb(0.40, 0.22, 0.08), Color::srgb(0.98, 0.80, 0.45)),
+                Interaction::Pressed => {
+                    (Color::srgb(0.60, 0.30, 0.10), Color::srgb(1.0, 0.85, 0.5))
+                }
+                Interaction::Hovered => {
+                    (Color::srgb(0.40, 0.22, 0.08), Color::srgb(0.98, 0.80, 0.45))
+                }
                 _ => (Color::srgb(0.30, 0.18, 0.06), Color::srgb(0.90, 0.72, 0.38)),
             }
         } else {
-            (Color::srgba(0.10, 0.07, 0.06, 0.70), Color::srgb(0.22, 0.16, 0.12))
+            (
+                Color::srgba(0.10, 0.07, 0.06, 0.70),
+                Color::srgb(0.22, 0.16, 0.12),
+            )
         };
         bg.0 = b;
         *border = BorderColor::all(br);
@@ -510,17 +633,30 @@ pub fn sync_clip_buttons(
     container_query: Query<Entity, With<ClipButtonContainer>>,
     mut last_id: Local<Option<String>>,
 ) {
-    if !viewer_state.is_changed() && !preview_state.is_changed() { return; }
-    let current_id = viewer_state.selected_id.clone().filter(|_| viewer_state.selected_kind == AssetKind::Object);
-    if *last_id == current_id { return; }
+    if !viewer_state.is_changed() && !preview_state.is_changed() {
+        return;
+    }
+    let current_id = viewer_state
+        .selected_id
+        .clone()
+        .filter(|_| viewer_state.selected_kind == AssetKind::Object);
+    if *last_id == current_id {
+        return;
+    }
     *last_id = current_id.clone();
 
-    let Ok(container) = container_query.single() else { return };
+    let Ok(container) = container_query.single() else {
+        return;
+    };
     commands.entity(container).despawn_related::<Children>();
 
     let Some(id) = current_id else { return };
-    let Some(def) = object_defs.get(&id) else { return };
-    let Some(sheet) = &def.render.animation else { return };
+    let Some(def) = object_defs.get(&id) else {
+        return;
+    };
+    let Some(sheet) = &def.render.animation else {
+        return;
+    };
 
     let mut clip_names: Vec<String> = sheet.clips.keys().cloned().collect();
     clip_names.sort();
@@ -529,7 +665,9 @@ pub fn sync_clip_buttons(
         for clip_name in clip_names {
             row.spawn((
                 Button,
-                ClipButton { clip_name: clip_name.clone() },
+                ClipButton {
+                    clip_name: clip_name.clone(),
+                },
                 Node {
                     padding: UiRect::axes(Val::Px(10.0), Val::Px(5.0)),
                     border: UiRect::all(Val::Px(1.0)),
@@ -542,7 +680,10 @@ pub fn sync_clip_buttons(
             .with_children(|btn| {
                 btn.spawn((
                     Text::new(clip_name),
-                    TextFont { font_size: 11.0, ..default() },
+                    TextFont {
+                        font_size: 11.0,
+                        ..default()
+                    },
                     TextColor(Color::srgb(0.88, 0.84, 0.78)),
                 ));
             });
@@ -563,15 +704,27 @@ pub fn handle_clip_button_clicks(
 
 pub fn sync_clip_button_highlight(
     preview_state: Res<PreviewState>,
-    mut buttons: Query<(&ClipButton, &Interaction, &mut BackgroundColor, &mut BorderColor)>,
+    mut buttons: Query<(
+        &ClipButton,
+        &Interaction,
+        &mut BackgroundColor,
+        &mut BorderColor,
+    )>,
 ) {
-    if !preview_state.is_changed() { return; }
+    if !preview_state.is_changed() {
+        return;
+    }
     for (btn, interaction, mut bg, mut border) in &mut buttons {
         let active = preview_state.current_clip.as_deref() == Some(&btn.clip_name);
         let (b, br) = match (*interaction, active) {
             (_, true) => (Color::srgb(0.28, 0.16, 0.08), Color::srgb(0.90, 0.76, 0.50)),
-            (Interaction::Hovered, false) => (Color::srgb(0.15, 0.10, 0.08), Color::srgb(0.50, 0.38, 0.22)),
-            _ => (Color::srgba(0.10, 0.07, 0.06, 0.85), Color::srgb(0.30, 0.22, 0.15)),
+            (Interaction::Hovered, false) => {
+                (Color::srgb(0.15, 0.10, 0.08), Color::srgb(0.50, 0.38, 0.22))
+            }
+            _ => (
+                Color::srgba(0.10, 0.07, 0.06, 0.85),
+                Color::srgb(0.30, 0.22, 0.15),
+            ),
         };
         bg.0 = b;
         *border = BorderColor::all(br);
@@ -586,8 +739,12 @@ pub fn sync_top_bar_title(
     children: Query<&Children>,
     mut texts: Query<&mut Text>,
 ) {
-    if !viewer_state.is_changed() { return; }
-    let Ok(entity) = title_query.single() else { return };
+    if !viewer_state.is_changed() {
+        return;
+    }
+    let Ok(entity) = title_query.single() else {
+        return;
+    };
     let label = viewer_state
         .selected_id
         .as_deref()

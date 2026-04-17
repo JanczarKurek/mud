@@ -45,12 +45,18 @@ pub fn spawn_viewer_hud(
             .with_children(|bar| {
                 bar.spawn((
                     TopBarTitle,
-                    Node { flex_grow: 1.0, ..default() },
+                    Node {
+                        flex_grow: 1.0,
+                        ..default()
+                    },
                 ))
                 .with_children(|t| {
                     t.spawn((
                         Text::new("Asset Viewer"),
-                        TextFont { font_size: 14.0, ..default() },
+                        TextFont {
+                            font_size: 14.0,
+                            ..default()
+                        },
                         TextColor(Color::srgb(0.96, 0.84, 0.62)),
                     ));
                 });
@@ -72,7 +78,10 @@ pub fn spawn_viewer_hud(
                 .with_children(|btn| {
                     btn.spawn((
                         Text::new("Save"),
-                        TextFont { font_size: 12.0, ..default() },
+                        TextFont {
+                            font_size: 12.0,
+                            ..default()
+                        },
                         TextColor(Color::srgb(0.88, 0.84, 0.78)),
                     ));
                 });
@@ -86,34 +95,34 @@ pub fn spawn_viewer_hud(
                 overflow: Overflow::clip(),
                 ..default()
             },))
-            .with_children(|row| {
-                // Left sidebar — palette
-                spawn_palette_panel(row, &object_defs, &spell_defs);
+                .with_children(|row| {
+                    // Left sidebar — palette
+                    spawn_palette_panel(row, &object_defs, &spell_defs);
 
-                // Center — transparent (world renders here) + clip buttons
-                row.spawn((Node {
-                    flex_grow: 1.0,
-                    flex_direction: FlexDirection::Column,
-                    justify_content: JustifyContent::FlexEnd,
-                    padding: UiRect::bottom(Val::Px(10.0)),
-                    ..default()
-                },))
-                .with_children(|center| {
-                    // Clip button strip (populated dynamically by sync_clip_buttons)
-                    center.spawn((
-                        ClipButtonContainer,
-                        Node {
-                            flex_direction: FlexDirection::Row,
-                            column_gap: Val::Px(6.0),
-                            padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
-                            ..default()
-                        },
-                    ));
+                    // Center — transparent (world renders here) + clip buttons
+                    row.spawn((Node {
+                        flex_grow: 1.0,
+                        flex_direction: FlexDirection::Column,
+                        justify_content: JustifyContent::FlexEnd,
+                        padding: UiRect::bottom(Val::Px(10.0)),
+                        ..default()
+                    },))
+                        .with_children(|center| {
+                            // Clip button strip (populated dynamically by sync_clip_buttons)
+                            center.spawn((
+                                ClipButtonContainer,
+                                Node {
+                                    flex_direction: FlexDirection::Row,
+                                    column_gap: Val::Px(6.0),
+                                    padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
+                                    ..default()
+                                },
+                            ));
+                        });
+
+                    // Right sidebar — inspector
+                    spawn_inspector_panel(row);
                 });
-
-                // Right sidebar — inspector
-                spawn_inspector_panel(row);
-            });
         });
 }
 

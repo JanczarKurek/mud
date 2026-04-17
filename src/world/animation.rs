@@ -52,7 +52,16 @@ pub struct VisualOffset {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
-fn apply_clip(animated: &mut AnimatedSprite, clip_name: &str, atlas_columns: u32, row: u32, start_col: u32, frame_count: u32, fps: f32, looping: bool) {
+fn apply_clip(
+    animated: &mut AnimatedSprite,
+    clip_name: &str,
+    atlas_columns: u32,
+    row: u32,
+    start_col: u32,
+    frame_count: u32,
+    fps: f32,
+    looping: bool,
+) {
     animated.current_clip = clip_name.to_string();
     animated.frame_index = 0;
     animated.frame_timer = 0.0;
@@ -110,7 +119,8 @@ pub fn attach_animated_sprite(
             frame_index: 0,
             frame_timer: 0.0,
             frame_count: idle_clip.map_or(1, |c| c.frame_count),
-            seconds_per_frame: idle_clip.map_or(1.0, |c| if c.fps > 0.0 { 1.0 / c.fps } else { 1.0 }),
+            seconds_per_frame: idle_clip
+                .map_or(1.0, |c| if c.fps > 0.0 { 1.0 / c.fps } else { 1.0 }),
             atlas_columns: sheet.sheet_columns,
             clip_row: idle_clip.map_or(0, |c| c.row),
             clip_start_col: idle_clip.map_or(0, |c| c.start_col),
@@ -191,9 +201,12 @@ pub fn advance_animation_timers(
 /// Switches animated entities to their walk clip when they have `JustMoved`.
 pub fn trigger_movement_animation(
     definitions: Res<OverworldObjectDefinitions>,
-    mut world_obj_query: Query<
-        (&mut AnimatedSprite, &mut FacingDirection, &ClientProjectedWorldObject, &JustMoved),
-    >,
+    mut world_obj_query: Query<(
+        &mut AnimatedSprite,
+        &mut FacingDirection,
+        &ClientProjectedWorldObject,
+        &JustMoved,
+    )>,
     mut player_query: Query<
         (&mut AnimatedSprite, &mut FacingDirection, &JustMoved),
         (With<Player>, Without<ClientProjectedWorldObject>),
@@ -202,7 +215,10 @@ pub fn trigger_movement_animation(
     let try_walk = |animated: &mut AnimatedSprite,
                     facing: &mut FacingDirection,
                     just_moved: &JustMoved,
-                    clips: &std::collections::HashMap<String, crate::world::object_definitions::AnimationClipDef>,
+                    clips: &std::collections::HashMap<
+        String,
+        crate::world::object_definitions::AnimationClipDef,
+    >,
                     atlas_columns: u32| {
         facing.dx = just_moved.dx;
         facing.dy = just_moved.dy;
@@ -234,7 +250,13 @@ pub fn trigger_movement_animation(
         let Some(sheet) = &def.render.animation else {
             continue;
         };
-        try_walk(&mut animated, &mut facing, just_moved, &sheet.clips, sheet.sheet_columns);
+        try_walk(
+            &mut animated,
+            &mut facing,
+            just_moved,
+            &sheet.clips,
+            sheet.sheet_columns,
+        );
     }
 
     for (mut animated, mut facing, just_moved) in &mut player_query {
@@ -244,7 +266,13 @@ pub fn trigger_movement_animation(
         let Some(sheet) = &def.render.animation else {
             continue;
         };
-        try_walk(&mut animated, &mut facing, just_moved, &sheet.clips, sheet.sheet_columns);
+        try_walk(
+            &mut animated,
+            &mut facing,
+            just_moved,
+            &sheet.clips,
+            sheet.sheet_columns,
+        );
     }
 }
 
@@ -257,11 +285,18 @@ pub fn return_to_idle_animation(
     >,
     mut player_query: Query<
         &mut AnimatedSprite,
-        (With<Player>, Without<JustMoved>, Without<ClientProjectedWorldObject>),
+        (
+            With<Player>,
+            Without<JustMoved>,
+            Without<ClientProjectedWorldObject>,
+        ),
     >,
 ) {
     let try_idle = |animated: &mut AnimatedSprite,
-                    clips: &std::collections::HashMap<String, crate::world::object_definitions::AnimationClipDef>,
+                    clips: &std::collections::HashMap<
+        String,
+        crate::world::object_definitions::AnimationClipDef,
+    >,
                     atlas_columns: u32| {
         if !animated.current_clip.starts_with("walk") {
             return;

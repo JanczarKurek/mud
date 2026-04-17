@@ -32,11 +32,12 @@ pub fn handle_undo_redo(
     let ctrl = keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
     let shift = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
 
-    let do_undo = editor_state.undo_requested
-        || (ctrl && !shift && keyboard.just_pressed(KeyCode::KeyZ));
+    let do_undo =
+        editor_state.undo_requested || (ctrl && !shift && keyboard.just_pressed(KeyCode::KeyZ));
     let do_redo = editor_state.redo_requested
-        || ctrl && (keyboard.just_pressed(KeyCode::KeyY)
-            || (shift && keyboard.just_pressed(KeyCode::KeyZ)));
+        || ctrl
+            && (keyboard.just_pressed(KeyCode::KeyY)
+                || (shift && keyboard.just_pressed(KeyCode::KeyZ)));
     editor_state.undo_requested = false;
     editor_state.redo_requested = false;
 
@@ -103,12 +104,22 @@ fn execute_op(
                 let space_id = resident.space_id;
                 let tile = *tile;
                 commands.entity(entity).despawn();
-                UndoOp::Spawn { type_id, space_id, tile, properties }
+                UndoOp::Spawn {
+                    type_id,
+                    space_id,
+                    tile,
+                    properties,
+                }
             } else {
                 UndoOp::Despawn { object_id }
             }
         }
-        UndoOp::Spawn { type_id, space_id, tile, properties } => {
+        UndoOp::Spawn {
+            type_id,
+            space_id,
+            tile,
+            properties,
+        } => {
             let new_id = object_registry.allocate_runtime_id(type_id.clone());
             let entity = spawn_overworld_object(
                 commands,

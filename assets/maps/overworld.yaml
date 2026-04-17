@@ -1,349 +1,2652 @@
 authored_id: overworld
-permanence: persistent
 width: 70
 height: 50
 fill_object_type: grass
-
+permanence: persistent
 portals:
-  - id: starter_cellar_entrance
-    source: {x: 35, y: 20}
-    destination_space_id: starter_cellar
-    destination_tile: {x: 6, y: 1}
-    destination_permanence: ephemeral
-  - id: underworld_sinkhole
-    source: {x: 35, y: 46}
-    destination_space_id: underworld
-    destination_tile: {x: 3, y: 14}
-
-legend:
-  "#": wall
-  "~": water
-  "T": tree
-  "=": fence
-  "f": flowers
-  "s": stone
-  "c": cobblestone
-  "d": dirt_path
-  "a": sand
-
-tiles: |
-  ......................................................................
-  .............................................TTTTTT.TTTTTTTTTTT.T.TTT.
-  ..######...#######...........................TTTT.T.TT.TT.T.TTTTTTTTT.
-  ..#....#ccc#.....#...........................TTTTT.TTTTTT.TTT.TTTTTT..
-  ..#....#ccc#.....#........========....f.......TTT.TTTTTT.TT.TTTTT.TTT.
-  ..#....#ccc#.....#......ff=...f..=...........TT..TT...TTTT..TTT..TTTT.
-  ..#....#ccc###.###........=.f...f=......f....TTTTTT....TT..TTTTTTTTT..
-  ..###.##cccccccccc........=..f...=...........TTTTTT...TTTTTTTTTT..TTT.
-  ........cccccccccc........=...ff.=...........TT.TT..TTTTTTT.TT.....TT.
-  ........cccccccccc........=....f.=...........T.T.TT.....TTTTTT........
-  ...ff...cccccccccc........=......=...........TTTT.TTTTTT.T.TTT.....TT.
-  ........cccccccccc........=......=...........TTT.TTTTTTTTTT..T.....TT.
-  ........cccccccccc........=======.....................................
-  ..######ccc.......f....................f.....T........................
-  ..#....#ccc........f.........................TT..TTT.....TT.....T.T...
-  ..#....#ccc..............f...................T.TT.TTTT..TTT...T.T.TTT.
-  ..#....#ccc..............................f...TTTTTTTTT.TTTTTTTTT.TTTT.
-  ..#....#ccc..................................TTTT.T.TTTTTTTTTTTT..TTT.
-  ..##.###............................f........TT.TTTTTTT.TTTTTTTTTTTTT.
-  .....d.......................................T.TTT.T.T.T....T.T.TTTTT.
-  .....d.ff.............................f......TTTTTTTTTTTT...TTTT.TT.T.
-  .....d.......................................TTTT..TTTTTT...TTTTTTTTT.
-  .....d.......................................TTTTTTTTTTT.TTTT.TT.TT.T.
-  .....d.......................................TTTTTTTTTTTT..TTTT.TTTTT.
-  .....d.......................................TT.TT..TTTTT..T.T.TTT.T..
-  .....d................................................................
-  .....dddddddddddddddddddddddddddddd...................................
-  ..f.fs.f.....f......f....f....f....d..f...............................
-  ..asaaaaaaaaaaaaaaaaaaasaaa....f...d..........#####..######..#####....
-  ..saaaaaaaaaaaaaaaaaaaaaaaa........d....f.....#....................#..
-  ..aa~~~~~~~~~~~~~~~~~~~~~as........d..........#...s................#..
-  ..aa~~~~~~~~~~~~~~~~~~~~~aa........d..........#....................#..
-  ..aa~~~~~~~~~~~~~~~~~~~~~aa........d..........#.s..................#..
-  ..aa~~~~~~~~~~~~~~~~~~~~~aaf.......d......f...#....................#..
-  .faa~~~~~~~~~~~~~~~~~~~~~aa........d..................................
-  ..aa~~~~~~~~~~~~~~~~~~~~~aa..f.....d...........................s......
-  ..aa~~~~~~~~~~~~~~~~~~~~~aa........d..................................
-  ..aa~~~~~~~~~~~~~~~~~~~~~aa........d..................................
-  ..aa~~~~~~~~~~~~~~~~~~~~~aa........d..................................
-  .faa~~~~~~~~~~~~~~~~~~~~~aa........d..................................
-  ..aa~~~~~~~~~~~~~~~~~~~~~aaff......d..................................
-  ..aa~~~~~~~~~~~~~~~~~~~~~aa........d.......f..........................
-  ..aa~~~~~~~~~~~~~~~~~~~~~aa........d..................................
-  ..aa~~~~~~~~~~~~~~~~~~~~~aa........d........................s....s....
-  ..sa~~~~~~~~~~~~~~~~~~~~~aa......ssdss..............s.................
-  ..aa~~~~~~~~~~~~~~~~~~~~~sa...........................................
-  ..aa~~~~~~~~~~~~~~~~~~~~~aa......s...s..........s.....................
-  ..asaaaaaaaaaaaaaaaaaaaaaaa.....s.....s...............................
-  ..aaaaaaaaaaaaaaaaaaaaaaaaa....................###..#####..####.......
-  ......................................................................
-
+- id: starter_cellar_entrance
+  source:
+    x: 35
+    y: 20
+  destination_space_id: starter_cellar
+  destination_tile:
+    x: 6
+    y: 1
+  destination_permanence: ephemeral
+- id: underworld_sinkhole
+  source:
+    x: 35
+    y: 46
+  destination_space_id: underworld
+  destination_tile:
+    x: 3
+    y: 14
 objects:
-  # IDs are in the 10000+ range so that anonymous tile objects (which get
-  # IDs from max_explicit+1 = 11000 upward) never collide with
-  # starter_cellar (1200-1202) or underworld (2000-2007).
-
-  # ── VILLAGE ZONE ────────────────────────────────────────────────────────
-
-  # Inn barrel with potion + apple
-  - id: 10100
-    type: barrel
-    placement: {x: 4, y: 4}
-    contents: [10101, 10102]
-  - id: 10101
-    type: potion
-  - id: 10102
-    type: apple
-
-  # Market — equipment on ground
-  - id: 10110
-    type: bronze_sword
-    placement: {x: 13, y: 3}
-  - id: 10111
-    type: leather_armor
-    placement: {x: 15, y: 3}
-
-  # Storage hut — gear
-  - id: 10120
-    type: canvas_backpack
-    placement: {x: 4, y: 15}
-  - id: 10121
-    type: leather_helmet
-    placement: {x: 6, y: 15}
-
-  # Village well
-  - id: 10130
-    type: well
-    placement: {x: 10, y: 9}
-
-  # Village campfire
-  - id: 10131
-    type: campfire
-    placement: {x: 10, y: 11}
-
-  # Village south sign
-  - id: 10132
-    type: sign_post
-    placement: {x: 5, y: 21}
-    properties:
-      text: "South road leads to the old dungeon. Adventurers beware!"
-
-  # Villagers
-  - id: 10140
-    type: villager
-    placement: {x: 9, y: 8}
-    behavior:
-      kind: roam
-      step_interval_seconds: 1.2
-      bounds: {min_x: 7, min_y: 7, max_x: 14, max_y: 13}
-  - id: 10141
-    type: villager
-    placement: {x: 14, y: 12}
-    behavior:
-      kind: roam
-      step_interval_seconds: 1.0
-      bounds: {min_x: 11, min_y: 9, max_x: 18, max_y: 15}
-
-  # Player spawn
-  - id: 10999
-    type: player
-    placement: {x: 10, y: 18}
-
-  # ── MEADOW ZONE ─────────────────────────────────────────────────────────
-
-  # Cellar portal sign
-  - id: 10150
-    type: sign_post
-    placement: {x: 34, y: 19}
-    properties:
-      text: "Step here to enter the cellar."
-
-  # Scattered meadow loot
-  - id: 10151
-    type: silver_ring
-    placement: {x: 38, y: 8}
-  - id: 10152
-    type: potion
-    placement: {x: 36, y: 14}
-  - id: 10153
-    type: scroll
-    placement: {x: 40, y: 16}
-    properties:
-      spell_id: lesser_heal
-
-  # ── FOREST ZONE ─────────────────────────────────────────────────────────
-
-  - id: 10160
-    type: apple
-    placement: {x: 52, y: 6}
-  - id: 10161
-    type: apple
-    placement: {x: 60, y: 14}
-  - id: 10162
-    type: copper_amulet
-    placement: {x: 64, y: 10}
-  - id: 10163
-    type: leather_legs
-    placement: {x: 58, y: 20}
-
-  # Forest goblin
-  - id: 10164
-    type: goblin
-    placement: {x: 48, y: 10}
-    behavior:
-      kind: roam_and_chase
-      step_interval_seconds: 0.9
-      detect_distance_tiles: 4
-      disengage_distance_tiles: 6
-      bounds: {min_x: 46, min_y: 5, max_x: 55, max_y: 18}
-
-  # ── GIANT RATS (infest the sandy southern shoreline) ───────────────────────
-
-  - id: 10200
-    type: rat
-    placement: {x: 18, y: 34}
-    behavior:
-      kind: roam_and_chase
-      step_interval_seconds: 0.6
-      detect_distance_tiles: 5
-      disengage_distance_tiles: 8
-      bounds: {min_x: 4, min_y: 28, max_x: 28, max_y: 44}
-  - id: 10201
-    type: rat
-    placement: {x: 10, y: 40}
-    behavior:
-      kind: roam_and_chase
-      step_interval_seconds: 0.65
-      detect_distance_tiles: 5
-      disengage_distance_tiles: 7
-      bounds: {min_x: 4, min_y: 30, max_x: 25, max_y: 48}
-  - id: 10202
-    type: rat
-    placement: {x: 22, y: 44}
-    behavior:
-      kind: roam_and_chase
-      step_interval_seconds: 0.55
-      detect_distance_tiles: 6
-      disengage_distance_tiles: 8
-      bounds: {min_x: 5, min_y: 36, max_x: 30, max_y: 48}
-
-  # ── SKELETONS (haunt the dungeon approach road) ──────────────────────────────
-
-  - id: 10210
-    type: skeleton
-    placement: {x: 30, y: 38}
-    behavior:
-      kind: roam_and_chase
-      step_interval_seconds: 1.1
-      detect_distance_tiles: 5
-      disengage_distance_tiles: 7
-      bounds: {min_x: 26, min_y: 33, max_x: 40, max_y: 44}
-  - id: 10211
-    type: skeleton
-    placement: {x: 38, y: 42}
-    behavior:
-      kind: roam_and_chase
-      step_interval_seconds: 1.0
-      detect_distance_tiles: 4
-      disengage_distance_tiles: 7
-      bounds: {min_x: 30, min_y: 36, max_x: 44, max_y: 48}
-
-  # ── CYCLOPS (lone guardian, far south-east wilderness) ───────────────────────
-
-  - id: 10220
-    type: cyclops
-    placement: {x: 60, y: 44}
-    behavior:
-      kind: roam_and_chase
-      step_interval_seconds: 1.5
-      detect_distance_tiles: 6
-      disengage_distance_tiles: 9
-      bounds: {min_x: 52, min_y: 38, max_x: 68, max_y: 49}
-
-  # ── DUNGEON APPROACH ────────────────────────────────────────────────────
-
-  # Sinkhole (portal trigger object)
-  - id: 10170
-    type: sinkhole
-    placement: {x: 35, y: 46}
-
-  # Portal arch visual
-  - id: 10171
-    type: portal_arch
-    placement: {x: 35, y: 44}
-
-  # Dungeon warning sign
-  - id: 10172
-    type: sign_post
-    placement: {x: 33, y: 43}
-    properties:
-      text: "The sinkhole ahead leads deep underground. Return is not guaranteed."
-
-  # Abandoned campfire near dungeon
-  - id: 10173
-    type: campfire
-    placement: {x: 32, y: 41}
-
-  # ── GOBLIN CAMP ─────────────────────────────────────────────────────────
-
-  # Camp campfire
-  - id: 10180
-    type: campfire
-    placement: {x: 56, y: 38}
-
-  # Loot barrel
-  - id: 10181
-    type: barrel
-    placement: {x: 55, y: 36}
-    contents: [10182, 10183, 10184]
-  - id: 10182
-    type: potion
-  - id: 10183
-    type: scroll
-    properties:
-      spell_id: spark_bolt
-  - id: 10184
-    type: potion
-
-  # Loot on ground
-  - id: 10185
-    type: bronze_sword
-    placement: {x: 60, y: 33}
-  - id: 10186
-    type: leather_legs
-    placement: {x: 62, y: 40}
-  - id: 10187
-    type: traveler_boots
-    placement: {x: 50, y: 42}
-  - id: 10188
-    type: wooden_shield
-    placement: {x: 58, y: 42}
-
-  # Goblin NPCs
-  - id: 10190
-    type: goblin
-    placement: {x: 52, y: 34}
-    behavior:
-      kind: roam_and_chase
-      step_interval_seconds: 0.85
-      detect_distance_tiles: 5
-      disengage_distance_tiles: 8
-      bounds: {min_x: 46, min_y: 29, max_x: 60, max_y: 42}
-  - id: 10191
-    type: goblin
-    placement: {x: 61, y: 38}
-    behavior:
-      kind: roam_and_chase
-      step_interval_seconds: 0.90
-      detect_distance_tiles: 5
-      disengage_distance_tiles: 7
-      bounds: {min_x: 50, min_y: 29, max_x: 67, max_y: 46}
-  - id: 10192
-    type: goblin
-    placement: {x: 54, y: 44}
-    behavior:
-      kind: roam_and_chase
-      step_interval_seconds: 1.0
-      detect_distance_tiles: 4
-      disengage_distance_tiles: 6
-      bounds: {min_x: 46, min_y: 38, max_x: 64, max_y: 48}
+- type: apple
+  placement:
+  - x: 52
+    y: 6
+  - x: 60
+    y: 14
+  - x: 37
+    y: 22
+  - x: 38
+    y: 22
+  - x: 37
+    y: 23
+  - x: 38
+    y: 23
+- type: barrel
+  placement:
+  - x: 4
+    y: 4
+  - x: 55
+    y: 36
+- type: bronze_sword
+  placement:
+  - x: 13
+    y: 3
+  - x: 60
+    y: 33
+- type: campfire
+  placement:
+  - x: 10
+    y: 11
+  - x: 56
+    y: 38
+  - x: 32
+    y: 41
+- type: canvas_backpack
+  placement:
+  - x: 4
+    y: 15
+- type: cobblestone
+  placement:
+  - x: 8
+    y: 3
+  - x: 9
+    y: 3
+  - x: 10
+    y: 3
+  - x: 8
+    y: 4
+  - x: 9
+    y: 4
+  - x: 10
+    y: 4
+  - x: 8
+    y: 5
+  - x: 9
+    y: 5
+  - x: 10
+    y: 5
+  - x: 8
+    y: 6
+  - x: 9
+    y: 6
+  - x: 10
+    y: 6
+  - x: 8
+    y: 7
+  - x: 9
+    y: 7
+  - x: 10
+    y: 7
+  - x: 11
+    y: 7
+  - x: 12
+    y: 7
+  - x: 13
+    y: 7
+  - x: 14
+    y: 7
+  - x: 15
+    y: 7
+  - x: 16
+    y: 7
+  - x: 17
+    y: 7
+  - x: 8
+    y: 8
+  - x: 9
+    y: 8
+  - x: 10
+    y: 8
+  - x: 11
+    y: 8
+  - x: 12
+    y: 8
+  - x: 13
+    y: 8
+  - x: 14
+    y: 8
+  - x: 15
+    y: 8
+  - x: 16
+    y: 8
+  - x: 17
+    y: 8
+  - x: 8
+    y: 9
+  - x: 9
+    y: 9
+  - x: 10
+    y: 9
+  - x: 11
+    y: 9
+  - x: 12
+    y: 9
+  - x: 13
+    y: 9
+  - x: 14
+    y: 9
+  - x: 15
+    y: 9
+  - x: 16
+    y: 9
+  - x: 17
+    y: 9
+  - x: 8
+    y: 10
+  - x: 9
+    y: 10
+  - x: 10
+    y: 10
+  - x: 11
+    y: 10
+  - x: 12
+    y: 10
+  - x: 13
+    y: 10
+  - x: 14
+    y: 10
+  - x: 15
+    y: 10
+  - x: 16
+    y: 10
+  - x: 17
+    y: 10
+  - x: 8
+    y: 11
+  - x: 9
+    y: 11
+  - x: 10
+    y: 11
+  - x: 11
+    y: 11
+  - x: 12
+    y: 11
+  - x: 13
+    y: 11
+  - x: 14
+    y: 11
+  - x: 15
+    y: 11
+  - x: 16
+    y: 11
+  - x: 17
+    y: 11
+  - x: 8
+    y: 12
+  - x: 9
+    y: 12
+  - x: 10
+    y: 12
+  - x: 11
+    y: 12
+  - x: 12
+    y: 12
+  - x: 13
+    y: 12
+  - x: 14
+    y: 12
+  - x: 15
+    y: 12
+  - x: 16
+    y: 12
+  - x: 17
+    y: 12
+  - x: 8
+    y: 13
+  - x: 9
+    y: 13
+  - x: 10
+    y: 13
+  - x: 8
+    y: 14
+  - x: 9
+    y: 14
+  - x: 10
+    y: 14
+  - x: 8
+    y: 15
+  - x: 9
+    y: 15
+  - x: 10
+    y: 15
+  - x: 8
+    y: 16
+  - x: 9
+    y: 16
+  - x: 10
+    y: 16
+  - x: 8
+    y: 17
+  - x: 9
+    y: 17
+  - x: 10
+    y: 17
+- type: copper_amulet
+  placement:
+  - x: 64
+    y: 10
+- type: cyclops
+  placement:
+  - x: 58
+    y: 46
+- type: dirt_path
+  placement:
+  - x: 5
+    y: 19
+  - x: 5
+    y: 20
+  - x: 5
+    y: 21
+  - x: 5
+    y: 22
+  - x: 5
+    y: 23
+  - x: 5
+    y: 24
+  - x: 5
+    y: 25
+  - x: 5
+    y: 26
+  - x: 6
+    y: 26
+  - x: 7
+    y: 26
+  - x: 8
+    y: 26
+  - x: 9
+    y: 26
+  - x: 10
+    y: 26
+  - x: 11
+    y: 26
+  - x: 12
+    y: 26
+  - x: 13
+    y: 26
+  - x: 14
+    y: 26
+  - x: 15
+    y: 26
+  - x: 16
+    y: 26
+  - x: 17
+    y: 26
+  - x: 18
+    y: 26
+  - x: 19
+    y: 26
+  - x: 20
+    y: 26
+  - x: 21
+    y: 26
+  - x: 22
+    y: 26
+  - x: 23
+    y: 26
+  - x: 24
+    y: 26
+  - x: 25
+    y: 26
+  - x: 26
+    y: 26
+  - x: 27
+    y: 26
+  - x: 28
+    y: 26
+  - x: 29
+    y: 26
+  - x: 30
+    y: 26
+  - x: 31
+    y: 26
+  - x: 32
+    y: 26
+  - x: 33
+    y: 26
+  - x: 34
+    y: 26
+  - x: 35
+    y: 27
+  - x: 35
+    y: 28
+  - x: 35
+    y: 29
+  - x: 35
+    y: 30
+  - x: 35
+    y: 31
+  - x: 35
+    y: 32
+  - x: 35
+    y: 33
+  - x: 35
+    y: 34
+  - x: 35
+    y: 35
+  - x: 35
+    y: 36
+  - x: 35
+    y: 37
+  - x: 35
+    y: 38
+  - x: 35
+    y: 39
+  - x: 35
+    y: 40
+  - x: 35
+    y: 41
+  - x: 35
+    y: 42
+  - x: 35
+    y: 43
+  - x: 35
+    y: 44
+- type: fence
+  placement:
+  - x: 26
+    y: 4
+  - x: 27
+    y: 4
+  - x: 28
+    y: 4
+  - x: 29
+    y: 4
+  - x: 30
+    y: 4
+  - x: 31
+    y: 4
+  - x: 32
+    y: 4
+  - x: 33
+    y: 4
+  - x: 26
+    y: 5
+  - x: 33
+    y: 5
+  - x: 26
+    y: 6
+  - x: 33
+    y: 6
+  - x: 26
+    y: 7
+  - x: 33
+    y: 7
+  - x: 26
+    y: 8
+  - x: 33
+    y: 8
+  - x: 26
+    y: 9
+  - x: 33
+    y: 9
+  - x: 26
+    y: 10
+  - x: 33
+    y: 10
+  - x: 26
+    y: 11
+  - x: 33
+    y: 11
+  - x: 26
+    y: 12
+  - x: 27
+    y: 12
+  - x: 28
+    y: 12
+  - x: 29
+    y: 12
+  - x: 30
+    y: 12
+  - x: 31
+    y: 12
+  - x: 32
+    y: 12
+- type: flowers
+  placement:
+  - x: 38
+    y: 4
+  - x: 24
+    y: 5
+  - x: 25
+    y: 5
+  - x: 30
+    y: 5
+  - x: 28
+    y: 6
+  - x: 32
+    y: 6
+  - x: 40
+    y: 6
+  - x: 29
+    y: 7
+  - x: 30
+    y: 8
+  - x: 31
+    y: 8
+  - x: 31
+    y: 9
+  - x: 3
+    y: 10
+  - x: 4
+    y: 10
+  - x: 18
+    y: 13
+  - x: 39
+    y: 13
+  - x: 19
+    y: 14
+  - x: 25
+    y: 15
+  - x: 41
+    y: 16
+  - x: 36
+    y: 18
+  - x: 38
+    y: 20
+  - x: 2
+    y: 27
+  - x: 4
+    y: 27
+  - x: 7
+    y: 27
+  - x: 13
+    y: 27
+  - x: 20
+    y: 27
+  - x: 25
+    y: 27
+  - x: 30
+    y: 27
+  - x: 38
+    y: 27
+  - x: 31
+    y: 28
+  - x: 40
+    y: 29
+  - x: 27
+    y: 33
+  - x: 42
+    y: 33
+  - x: 1
+    y: 34
+  - x: 29
+    y: 35
+  - x: 1
+    y: 39
+  - x: 27
+    y: 40
+  - x: 28
+    y: 40
+  - x: 43
+    y: 41
+- type: goblin
+  placement:
+  - x: 48
+    y: 9
+  - x: 51
+    y: 30
+  - x: 56
+    y: 30
+  - x: 52
+    y: 45
+- type: leather_armor
+  placement:
+  - x: 15
+    y: 3
+- type: leather_helmet
+  placement:
+  - x: 6
+    y: 15
+- type: leather_legs
+  placement:
+  - x: 58
+    y: 20
+  - x: 62
+    y: 40
+- type: player
+  placement:
+  - x: 10
+    y: 18
+  - x: 18
+    y: 20
+- type: portal_arch
+  placement:
+  - x: 35
+    y: 44
+- type: potion
+  placement:
+  - x: 36
+    y: 14
+- type: rat
+  placement:
+  - x: 18
+    y: 34
+  - x: 10
+    y: 40
+  - x: 22
+    y: 44
+- type: sand
+  placement:
+  - x: 2
+    y: 28
+  - x: 4
+    y: 28
+  - x: 5
+    y: 28
+  - x: 6
+    y: 28
+  - x: 7
+    y: 28
+  - x: 8
+    y: 28
+  - x: 9
+    y: 28
+  - x: 10
+    y: 28
+  - x: 11
+    y: 28
+  - x: 12
+    y: 28
+  - x: 13
+    y: 28
+  - x: 14
+    y: 28
+  - x: 15
+    y: 28
+  - x: 16
+    y: 28
+  - x: 17
+    y: 28
+  - x: 18
+    y: 28
+  - x: 19
+    y: 28
+  - x: 20
+    y: 28
+  - x: 21
+    y: 28
+  - x: 22
+    y: 28
+  - x: 24
+    y: 28
+  - x: 25
+    y: 28
+  - x: 26
+    y: 28
+  - x: 3
+    y: 29
+  - x: 4
+    y: 29
+  - x: 5
+    y: 29
+  - x: 6
+    y: 29
+  - x: 7
+    y: 29
+  - x: 8
+    y: 29
+  - x: 9
+    y: 29
+  - x: 10
+    y: 29
+  - x: 11
+    y: 29
+  - x: 12
+    y: 29
+  - x: 13
+    y: 29
+  - x: 14
+    y: 29
+  - x: 15
+    y: 29
+  - x: 16
+    y: 29
+  - x: 17
+    y: 29
+  - x: 18
+    y: 29
+  - x: 19
+    y: 29
+  - x: 20
+    y: 29
+  - x: 21
+    y: 29
+  - x: 22
+    y: 29
+  - x: 23
+    y: 29
+  - x: 24
+    y: 29
+  - x: 25
+    y: 29
+  - x: 26
+    y: 29
+  - x: 2
+    y: 30
+  - x: 3
+    y: 30
+  - x: 25
+    y: 30
+  - x: 2
+    y: 31
+  - x: 3
+    y: 31
+  - x: 25
+    y: 31
+  - x: 26
+    y: 31
+  - x: 2
+    y: 32
+  - x: 3
+    y: 32
+  - x: 25
+    y: 32
+  - x: 26
+    y: 32
+  - x: 2
+    y: 33
+  - x: 3
+    y: 33
+  - x: 25
+    y: 33
+  - x: 26
+    y: 33
+  - x: 2
+    y: 34
+  - x: 3
+    y: 34
+  - x: 25
+    y: 34
+  - x: 26
+    y: 34
+  - x: 2
+    y: 35
+  - x: 3
+    y: 35
+  - x: 25
+    y: 35
+  - x: 26
+    y: 35
+  - x: 2
+    y: 36
+  - x: 3
+    y: 36
+  - x: 25
+    y: 36
+  - x: 26
+    y: 36
+  - x: 2
+    y: 37
+  - x: 3
+    y: 37
+  - x: 25
+    y: 37
+  - x: 26
+    y: 37
+  - x: 2
+    y: 38
+  - x: 3
+    y: 38
+  - x: 25
+    y: 38
+  - x: 26
+    y: 38
+  - x: 2
+    y: 39
+  - x: 3
+    y: 39
+  - x: 25
+    y: 39
+  - x: 26
+    y: 39
+  - x: 2
+    y: 40
+  - x: 3
+    y: 40
+  - x: 25
+    y: 40
+  - x: 26
+    y: 40
+  - x: 2
+    y: 41
+  - x: 3
+    y: 41
+  - x: 25
+    y: 41
+  - x: 26
+    y: 41
+  - x: 2
+    y: 42
+  - x: 3
+    y: 42
+  - x: 25
+    y: 42
+  - x: 26
+    y: 42
+  - x: 2
+    y: 43
+  - x: 3
+    y: 43
+  - x: 25
+    y: 43
+  - x: 26
+    y: 43
+  - x: 3
+    y: 44
+  - x: 25
+    y: 44
+  - x: 26
+    y: 44
+  - x: 2
+    y: 45
+  - x: 3
+    y: 45
+  - x: 26
+    y: 45
+  - x: 2
+    y: 46
+  - x: 3
+    y: 46
+  - x: 25
+    y: 46
+  - x: 26
+    y: 46
+  - x: 2
+    y: 47
+  - x: 4
+    y: 47
+  - x: 5
+    y: 47
+  - x: 6
+    y: 47
+  - x: 7
+    y: 47
+  - x: 8
+    y: 47
+  - x: 9
+    y: 47
+  - x: 10
+    y: 47
+  - x: 11
+    y: 47
+  - x: 12
+    y: 47
+  - x: 13
+    y: 47
+  - x: 14
+    y: 47
+  - x: 15
+    y: 47
+  - x: 16
+    y: 47
+  - x: 17
+    y: 47
+  - x: 18
+    y: 47
+  - x: 19
+    y: 47
+  - x: 20
+    y: 47
+  - x: 21
+    y: 47
+  - x: 22
+    y: 47
+  - x: 23
+    y: 47
+  - x: 24
+    y: 47
+  - x: 25
+    y: 47
+  - x: 26
+    y: 47
+  - x: 2
+    y: 48
+  - x: 3
+    y: 48
+  - x: 4
+    y: 48
+  - x: 5
+    y: 48
+  - x: 6
+    y: 48
+  - x: 7
+    y: 48
+  - x: 8
+    y: 48
+  - x: 9
+    y: 48
+  - x: 10
+    y: 48
+  - x: 11
+    y: 48
+  - x: 12
+    y: 48
+  - x: 13
+    y: 48
+  - x: 14
+    y: 48
+  - x: 15
+    y: 48
+  - x: 16
+    y: 48
+  - x: 17
+    y: 48
+  - x: 18
+    y: 48
+  - x: 19
+    y: 48
+  - x: 20
+    y: 48
+  - x: 21
+    y: 48
+  - x: 22
+    y: 48
+  - x: 23
+    y: 48
+  - x: 24
+    y: 48
+  - x: 25
+    y: 48
+  - x: 26
+    y: 48
+- type: silver_ring
+  placement:
+  - x: 38
+    y: 8
+- type: sinkhole
+  placement:
+  - x: 35
+    y: 46
+- type: skeleton
+  placement:
+  - x: 27
+    y: 34
+  - x: 43
+    y: 45
+- type: stone
+  placement:
+  - x: 5
+    y: 27
+  - x: 3
+    y: 28
+  - x: 23
+    y: 28
+  - x: 2
+    y: 29
+  - x: 26
+    y: 30
+  - x: 50
+    y: 30
+  - x: 48
+    y: 32
+  - x: 63
+    y: 35
+  - x: 36
+    y: 42
+  - x: 60
+    y: 43
+  - x: 65
+    y: 43
+  - x: 2
+    y: 44
+  - x: 33
+    y: 44
+  - x: 34
+    y: 44
+  - x: 36
+    y: 44
+  - x: 52
+    y: 44
+  - x: 25
+    y: 45
+  - x: 33
+    y: 46
+  - x: 37
+    y: 46
+  - x: 48
+    y: 46
+  - x: 3
+    y: 47
+  - x: 32
+    y: 47
+  - x: 38
+    y: 47
+- type: traveler_boots
+  placement:
+  - x: 50
+    y: 42
+- type: tree
+  placement:
+  - x: 45
+    y: 1
+  - x: 46
+    y: 1
+  - x: 47
+    y: 1
+  - x: 48
+    y: 1
+  - x: 49
+    y: 1
+  - x: 50
+    y: 1
+  - x: 52
+    y: 1
+  - x: 53
+    y: 1
+  - x: 54
+    y: 1
+  - x: 55
+    y: 1
+  - x: 56
+    y: 1
+  - x: 57
+    y: 1
+  - x: 58
+    y: 1
+  - x: 59
+    y: 1
+  - x: 60
+    y: 1
+  - x: 61
+    y: 1
+  - x: 62
+    y: 1
+  - x: 64
+    y: 1
+  - x: 66
+    y: 1
+  - x: 67
+    y: 1
+  - x: 68
+    y: 1
+  - x: 45
+    y: 2
+  - x: 46
+    y: 2
+  - x: 47
+    y: 2
+  - x: 48
+    y: 2
+  - x: 50
+    y: 2
+  - x: 52
+    y: 2
+  - x: 53
+    y: 2
+  - x: 55
+    y: 2
+  - x: 56
+    y: 2
+  - x: 58
+    y: 2
+  - x: 60
+    y: 2
+  - x: 61
+    y: 2
+  - x: 62
+    y: 2
+  - x: 63
+    y: 2
+  - x: 64
+    y: 2
+  - x: 65
+    y: 2
+  - x: 66
+    y: 2
+  - x: 67
+    y: 2
+  - x: 68
+    y: 2
+  - x: 45
+    y: 3
+  - x: 46
+    y: 3
+  - x: 47
+    y: 3
+  - x: 48
+    y: 3
+  - x: 49
+    y: 3
+  - x: 51
+    y: 3
+  - x: 52
+    y: 3
+  - x: 53
+    y: 3
+  - x: 54
+    y: 3
+  - x: 55
+    y: 3
+  - x: 56
+    y: 3
+  - x: 58
+    y: 3
+  - x: 59
+    y: 3
+  - x: 60
+    y: 3
+  - x: 62
+    y: 3
+  - x: 63
+    y: 3
+  - x: 64
+    y: 3
+  - x: 65
+    y: 3
+  - x: 66
+    y: 3
+  - x: 67
+    y: 3
+  - x: 46
+    y: 4
+  - x: 47
+    y: 4
+  - x: 48
+    y: 4
+  - x: 50
+    y: 4
+  - x: 51
+    y: 4
+  - x: 52
+    y: 4
+  - x: 53
+    y: 4
+  - x: 54
+    y: 4
+  - x: 55
+    y: 4
+  - x: 57
+    y: 4
+  - x: 58
+    y: 4
+  - x: 60
+    y: 4
+  - x: 61
+    y: 4
+  - x: 62
+    y: 4
+  - x: 63
+    y: 4
+  - x: 64
+    y: 4
+  - x: 66
+    y: 4
+  - x: 67
+    y: 4
+  - x: 68
+    y: 4
+  - x: 45
+    y: 5
+  - x: 46
+    y: 5
+  - x: 49
+    y: 5
+  - x: 50
+    y: 5
+  - x: 54
+    y: 5
+  - x: 55
+    y: 5
+  - x: 56
+    y: 5
+  - x: 57
+    y: 5
+  - x: 60
+    y: 5
+  - x: 61
+    y: 5
+  - x: 62
+    y: 5
+  - x: 65
+    y: 5
+  - x: 66
+    y: 5
+  - x: 67
+    y: 5
+  - x: 68
+    y: 5
+  - x: 45
+    y: 6
+  - x: 46
+    y: 6
+  - x: 47
+    y: 6
+  - x: 48
+    y: 6
+  - x: 49
+    y: 6
+  - x: 50
+    y: 6
+  - x: 55
+    y: 6
+  - x: 56
+    y: 6
+  - x: 59
+    y: 6
+  - x: 60
+    y: 6
+  - x: 61
+    y: 6
+  - x: 62
+    y: 6
+  - x: 63
+    y: 6
+  - x: 64
+    y: 6
+  - x: 65
+    y: 6
+  - x: 66
+    y: 6
+  - x: 67
+    y: 6
+  - x: 45
+    y: 7
+  - x: 46
+    y: 7
+  - x: 47
+    y: 7
+  - x: 48
+    y: 7
+  - x: 49
+    y: 7
+  - x: 50
+    y: 7
+  - x: 54
+    y: 7
+  - x: 55
+    y: 7
+  - x: 56
+    y: 7
+  - x: 57
+    y: 7
+  - x: 58
+    y: 7
+  - x: 59
+    y: 7
+  - x: 60
+    y: 7
+  - x: 61
+    y: 7
+  - x: 62
+    y: 7
+  - x: 63
+    y: 7
+  - x: 66
+    y: 7
+  - x: 67
+    y: 7
+  - x: 68
+    y: 7
+  - x: 45
+    y: 8
+  - x: 46
+    y: 8
+  - x: 48
+    y: 8
+  - x: 49
+    y: 8
+  - x: 52
+    y: 8
+  - x: 53
+    y: 8
+  - x: 54
+    y: 8
+  - x: 55
+    y: 8
+  - x: 56
+    y: 8
+  - x: 57
+    y: 8
+  - x: 58
+    y: 8
+  - x: 60
+    y: 8
+  - x: 61
+    y: 8
+  - x: 67
+    y: 8
+  - x: 68
+    y: 8
+  - x: 45
+    y: 9
+  - x: 47
+    y: 9
+  - x: 49
+    y: 9
+  - x: 50
+    y: 9
+  - x: 56
+    y: 9
+  - x: 57
+    y: 9
+  - x: 58
+    y: 9
+  - x: 59
+    y: 9
+  - x: 60
+    y: 9
+  - x: 61
+    y: 9
+  - x: 45
+    y: 10
+  - x: 46
+    y: 10
+  - x: 47
+    y: 10
+  - x: 48
+    y: 10
+  - x: 50
+    y: 10
+  - x: 51
+    y: 10
+  - x: 52
+    y: 10
+  - x: 53
+    y: 10
+  - x: 54
+    y: 10
+  - x: 55
+    y: 10
+  - x: 57
+    y: 10
+  - x: 59
+    y: 10
+  - x: 60
+    y: 10
+  - x: 61
+    y: 10
+  - x: 67
+    y: 10
+  - x: 68
+    y: 10
+  - x: 45
+    y: 11
+  - x: 46
+    y: 11
+  - x: 47
+    y: 11
+  - x: 49
+    y: 11
+  - x: 50
+    y: 11
+  - x: 51
+    y: 11
+  - x: 52
+    y: 11
+  - x: 53
+    y: 11
+  - x: 54
+    y: 11
+  - x: 55
+    y: 11
+  - x: 56
+    y: 11
+  - x: 57
+    y: 11
+  - x: 58
+    y: 11
+  - x: 61
+    y: 11
+  - x: 67
+    y: 11
+  - x: 68
+    y: 11
+  - x: 45
+    y: 13
+  - x: 45
+    y: 14
+  - x: 46
+    y: 14
+  - x: 49
+    y: 14
+  - x: 50
+    y: 14
+  - x: 51
+    y: 14
+  - x: 57
+    y: 14
+  - x: 58
+    y: 14
+  - x: 64
+    y: 14
+  - x: 66
+    y: 14
+  - x: 45
+    y: 15
+  - x: 47
+    y: 15
+  - x: 48
+    y: 15
+  - x: 50
+    y: 15
+  - x: 51
+    y: 15
+  - x: 52
+    y: 15
+  - x: 53
+    y: 15
+  - x: 56
+    y: 15
+  - x: 57
+    y: 15
+  - x: 58
+    y: 15
+  - x: 62
+    y: 15
+  - x: 64
+    y: 15
+  - x: 66
+    y: 15
+  - x: 67
+    y: 15
+  - x: 68
+    y: 15
+  - x: 45
+    y: 16
+  - x: 46
+    y: 16
+  - x: 47
+    y: 16
+  - x: 48
+    y: 16
+  - x: 49
+    y: 16
+  - x: 50
+    y: 16
+  - x: 51
+    y: 16
+  - x: 52
+    y: 16
+  - x: 53
+    y: 16
+  - x: 55
+    y: 16
+  - x: 56
+    y: 16
+  - x: 57
+    y: 16
+  - x: 58
+    y: 16
+  - x: 59
+    y: 16
+  - x: 60
+    y: 16
+  - x: 61
+    y: 16
+  - x: 62
+    y: 16
+  - x: 63
+    y: 16
+  - x: 65
+    y: 16
+  - x: 66
+    y: 16
+  - x: 67
+    y: 16
+  - x: 68
+    y: 16
+  - x: 45
+    y: 17
+  - x: 46
+    y: 17
+  - x: 47
+    y: 17
+  - x: 48
+    y: 17
+  - x: 50
+    y: 17
+  - x: 52
+    y: 17
+  - x: 53
+    y: 17
+  - x: 54
+    y: 17
+  - x: 55
+    y: 17
+  - x: 56
+    y: 17
+  - x: 57
+    y: 17
+  - x: 58
+    y: 17
+  - x: 59
+    y: 17
+  - x: 60
+    y: 17
+  - x: 61
+    y: 17
+  - x: 62
+    y: 17
+  - x: 63
+    y: 17
+  - x: 66
+    y: 17
+  - x: 67
+    y: 17
+  - x: 68
+    y: 17
+  - x: 45
+    y: 18
+  - x: 46
+    y: 18
+  - x: 48
+    y: 18
+  - x: 49
+    y: 18
+  - x: 50
+    y: 18
+  - x: 51
+    y: 18
+  - x: 52
+    y: 18
+  - x: 53
+    y: 18
+  - x: 54
+    y: 18
+  - x: 56
+    y: 18
+  - x: 57
+    y: 18
+  - x: 58
+    y: 18
+  - x: 59
+    y: 18
+  - x: 60
+    y: 18
+  - x: 61
+    y: 18
+  - x: 62
+    y: 18
+  - x: 63
+    y: 18
+  - x: 64
+    y: 18
+  - x: 65
+    y: 18
+  - x: 66
+    y: 18
+  - x: 67
+    y: 18
+  - x: 68
+    y: 18
+  - x: 45
+    y: 19
+  - x: 47
+    y: 19
+  - x: 48
+    y: 19
+  - x: 49
+    y: 19
+  - x: 51
+    y: 19
+  - x: 53
+    y: 19
+  - x: 55
+    y: 19
+  - x: 60
+    y: 19
+  - x: 62
+    y: 19
+  - x: 64
+    y: 19
+  - x: 65
+    y: 19
+  - x: 66
+    y: 19
+  - x: 67
+    y: 19
+  - x: 68
+    y: 19
+  - x: 45
+    y: 20
+  - x: 46
+    y: 20
+  - x: 47
+    y: 20
+  - x: 48
+    y: 20
+  - x: 49
+    y: 20
+  - x: 50
+    y: 20
+  - x: 51
+    y: 20
+  - x: 52
+    y: 20
+  - x: 53
+    y: 20
+  - x: 54
+    y: 20
+  - x: 55
+    y: 20
+  - x: 56
+    y: 20
+  - x: 60
+    y: 20
+  - x: 61
+    y: 20
+  - x: 62
+    y: 20
+  - x: 63
+    y: 20
+  - x: 65
+    y: 20
+  - x: 66
+    y: 20
+  - x: 68
+    y: 20
+  - x: 45
+    y: 21
+  - x: 46
+    y: 21
+  - x: 47
+    y: 21
+  - x: 48
+    y: 21
+  - x: 51
+    y: 21
+  - x: 52
+    y: 21
+  - x: 53
+    y: 21
+  - x: 54
+    y: 21
+  - x: 55
+    y: 21
+  - x: 56
+    y: 21
+  - x: 60
+    y: 21
+  - x: 61
+    y: 21
+  - x: 62
+    y: 21
+  - x: 63
+    y: 21
+  - x: 64
+    y: 21
+  - x: 65
+    y: 21
+  - x: 66
+    y: 21
+  - x: 67
+    y: 21
+  - x: 68
+    y: 21
+  - x: 45
+    y: 22
+  - x: 46
+    y: 22
+  - x: 47
+    y: 22
+  - x: 48
+    y: 22
+  - x: 49
+    y: 22
+  - x: 50
+    y: 22
+  - x: 51
+    y: 22
+  - x: 52
+    y: 22
+  - x: 53
+    y: 22
+  - x: 54
+    y: 22
+  - x: 55
+    y: 22
+  - x: 57
+    y: 22
+  - x: 58
+    y: 22
+  - x: 59
+    y: 22
+  - x: 60
+    y: 22
+  - x: 62
+    y: 22
+  - x: 63
+    y: 22
+  - x: 65
+    y: 22
+  - x: 66
+    y: 22
+  - x: 68
+    y: 22
+  - x: 45
+    y: 23
+  - x: 46
+    y: 23
+  - x: 47
+    y: 23
+  - x: 48
+    y: 23
+  - x: 49
+    y: 23
+  - x: 50
+    y: 23
+  - x: 51
+    y: 23
+  - x: 52
+    y: 23
+  - x: 53
+    y: 23
+  - x: 54
+    y: 23
+  - x: 55
+    y: 23
+  - x: 56
+    y: 23
+  - x: 59
+    y: 23
+  - x: 60
+    y: 23
+  - x: 61
+    y: 23
+  - x: 62
+    y: 23
+  - x: 64
+    y: 23
+  - x: 65
+    y: 23
+  - x: 66
+    y: 23
+  - x: 67
+    y: 23
+  - x: 68
+    y: 23
+  - x: 45
+    y: 24
+  - x: 46
+    y: 24
+  - x: 48
+    y: 24
+  - x: 49
+    y: 24
+  - x: 52
+    y: 24
+  - x: 53
+    y: 24
+  - x: 54
+    y: 24
+  - x: 55
+    y: 24
+  - x: 56
+    y: 24
+  - x: 59
+    y: 24
+  - x: 61
+    y: 24
+  - x: 63
+    y: 24
+  - x: 64
+    y: 24
+  - x: 65
+    y: 24
+  - x: 67
+    y: 24
+- type: villager
+  placement:
+  - x: 13
+    y: 7
+  - x: 18
+    y: 13
+- type: wall
+  placement:
+  - x: 2
+    y: 2
+  - x: 3
+    y: 2
+  - x: 4
+    y: 2
+  - x: 5
+    y: 2
+  - x: 6
+    y: 2
+  - x: 7
+    y: 2
+  - x: 11
+    y: 2
+  - x: 12
+    y: 2
+  - x: 13
+    y: 2
+  - x: 14
+    y: 2
+  - x: 15
+    y: 2
+  - x: 16
+    y: 2
+  - x: 17
+    y: 2
+  - x: 2
+    y: 3
+  - x: 7
+    y: 3
+  - x: 11
+    y: 3
+  - x: 17
+    y: 3
+  - x: 2
+    y: 4
+  - x: 7
+    y: 4
+  - x: 11
+    y: 4
+  - x: 17
+    y: 4
+  - x: 2
+    y: 5
+  - x: 7
+    y: 5
+  - x: 11
+    y: 5
+  - x: 17
+    y: 5
+  - x: 2
+    y: 6
+  - x: 7
+    y: 6
+  - x: 11
+    y: 6
+  - x: 12
+    y: 6
+  - x: 13
+    y: 6
+  - x: 15
+    y: 6
+  - x: 16
+    y: 6
+  - x: 17
+    y: 6
+  - x: 2
+    y: 7
+  - x: 3
+    y: 7
+  - x: 4
+    y: 7
+  - x: 6
+    y: 7
+  - x: 7
+    y: 7
+  - x: 2
+    y: 13
+  - x: 3
+    y: 13
+  - x: 4
+    y: 13
+  - x: 5
+    y: 13
+  - x: 6
+    y: 13
+  - x: 7
+    y: 13
+  - x: 2
+    y: 14
+  - x: 7
+    y: 14
+  - x: 2
+    y: 15
+  - x: 7
+    y: 15
+  - x: 2
+    y: 16
+  - x: 7
+    y: 16
+  - x: 2
+    y: 17
+  - x: 7
+    y: 17
+  - x: 2
+    y: 18
+  - x: 3
+    y: 18
+  - x: 5
+    y: 18
+  - x: 6
+    y: 18
+  - x: 7
+    y: 18
+  - x: 46
+    y: 28
+  - x: 47
+    y: 28
+  - x: 48
+    y: 28
+  - x: 49
+    y: 28
+  - x: 50
+    y: 28
+  - x: 53
+    y: 28
+  - x: 54
+    y: 28
+  - x: 55
+    y: 28
+  - x: 56
+    y: 28
+  - x: 57
+    y: 28
+  - x: 58
+    y: 28
+  - x: 61
+    y: 28
+  - x: 62
+    y: 28
+  - x: 63
+    y: 28
+  - x: 64
+    y: 28
+  - x: 65
+    y: 28
+  - x: 46
+    y: 29
+  - x: 67
+    y: 29
+  - x: 46
+    y: 30
+  - x: 67
+    y: 30
+  - x: 46
+    y: 31
+  - x: 67
+    y: 31
+  - x: 46
+    y: 32
+  - x: 67
+    y: 32
+  - x: 46
+    y: 33
+  - x: 67
+    y: 33
+  - x: 47
+    y: 48
+  - x: 48
+    y: 48
+  - x: 49
+    y: 48
+  - x: 52
+    y: 48
+  - x: 53
+    y: 48
+  - x: 54
+    y: 48
+  - x: 55
+    y: 48
+  - x: 56
+    y: 48
+  - x: 59
+    y: 48
+  - x: 60
+    y: 48
+  - x: 61
+    y: 48
+  - x: 62
+    y: 48
+- type: water
+  placement:
+  - x: 4
+    y: 30
+  - x: 5
+    y: 30
+  - x: 6
+    y: 30
+  - x: 7
+    y: 30
+  - x: 8
+    y: 30
+  - x: 9
+    y: 30
+  - x: 10
+    y: 30
+  - x: 11
+    y: 30
+  - x: 12
+    y: 30
+  - x: 13
+    y: 30
+  - x: 14
+    y: 30
+  - x: 15
+    y: 30
+  - x: 16
+    y: 30
+  - x: 17
+    y: 30
+  - x: 18
+    y: 30
+  - x: 19
+    y: 30
+  - x: 20
+    y: 30
+  - x: 21
+    y: 30
+  - x: 22
+    y: 30
+  - x: 23
+    y: 30
+  - x: 24
+    y: 30
+  - x: 4
+    y: 31
+  - x: 5
+    y: 31
+  - x: 6
+    y: 31
+  - x: 7
+    y: 31
+  - x: 8
+    y: 31
+  - x: 9
+    y: 31
+  - x: 10
+    y: 31
+  - x: 11
+    y: 31
+  - x: 12
+    y: 31
+  - x: 13
+    y: 31
+  - x: 14
+    y: 31
+  - x: 15
+    y: 31
+  - x: 16
+    y: 31
+  - x: 17
+    y: 31
+  - x: 18
+    y: 31
+  - x: 19
+    y: 31
+  - x: 20
+    y: 31
+  - x: 21
+    y: 31
+  - x: 22
+    y: 31
+  - x: 23
+    y: 31
+  - x: 24
+    y: 31
+  - x: 4
+    y: 32
+  - x: 5
+    y: 32
+  - x: 6
+    y: 32
+  - x: 7
+    y: 32
+  - x: 8
+    y: 32
+  - x: 9
+    y: 32
+  - x: 10
+    y: 32
+  - x: 11
+    y: 32
+  - x: 12
+    y: 32
+  - x: 13
+    y: 32
+  - x: 14
+    y: 32
+  - x: 15
+    y: 32
+  - x: 16
+    y: 32
+  - x: 17
+    y: 32
+  - x: 18
+    y: 32
+  - x: 19
+    y: 32
+  - x: 20
+    y: 32
+  - x: 21
+    y: 32
+  - x: 22
+    y: 32
+  - x: 23
+    y: 32
+  - x: 24
+    y: 32
+  - x: 4
+    y: 33
+  - x: 5
+    y: 33
+  - x: 6
+    y: 33
+  - x: 7
+    y: 33
+  - x: 8
+    y: 33
+  - x: 9
+    y: 33
+  - x: 10
+    y: 33
+  - x: 11
+    y: 33
+  - x: 12
+    y: 33
+  - x: 13
+    y: 33
+  - x: 14
+    y: 33
+  - x: 15
+    y: 33
+  - x: 16
+    y: 33
+  - x: 17
+    y: 33
+  - x: 18
+    y: 33
+  - x: 19
+    y: 33
+  - x: 20
+    y: 33
+  - x: 21
+    y: 33
+  - x: 22
+    y: 33
+  - x: 23
+    y: 33
+  - x: 24
+    y: 33
+  - x: 4
+    y: 34
+  - x: 5
+    y: 34
+  - x: 6
+    y: 34
+  - x: 7
+    y: 34
+  - x: 8
+    y: 34
+  - x: 9
+    y: 34
+  - x: 10
+    y: 34
+  - x: 11
+    y: 34
+  - x: 12
+    y: 34
+  - x: 13
+    y: 34
+  - x: 14
+    y: 34
+  - x: 15
+    y: 34
+  - x: 16
+    y: 34
+  - x: 17
+    y: 34
+  - x: 18
+    y: 34
+  - x: 19
+    y: 34
+  - x: 20
+    y: 34
+  - x: 21
+    y: 34
+  - x: 22
+    y: 34
+  - x: 23
+    y: 34
+  - x: 24
+    y: 34
+  - x: 4
+    y: 35
+  - x: 5
+    y: 35
+  - x: 6
+    y: 35
+  - x: 7
+    y: 35
+  - x: 8
+    y: 35
+  - x: 9
+    y: 35
+  - x: 10
+    y: 35
+  - x: 11
+    y: 35
+  - x: 12
+    y: 35
+  - x: 13
+    y: 35
+  - x: 14
+    y: 35
+  - x: 15
+    y: 35
+  - x: 16
+    y: 35
+  - x: 17
+    y: 35
+  - x: 18
+    y: 35
+  - x: 19
+    y: 35
+  - x: 20
+    y: 35
+  - x: 21
+    y: 35
+  - x: 22
+    y: 35
+  - x: 23
+    y: 35
+  - x: 24
+    y: 35
+  - x: 4
+    y: 36
+  - x: 5
+    y: 36
+  - x: 6
+    y: 36
+  - x: 7
+    y: 36
+  - x: 8
+    y: 36
+  - x: 9
+    y: 36
+  - x: 10
+    y: 36
+  - x: 11
+    y: 36
+  - x: 12
+    y: 36
+  - x: 13
+    y: 36
+  - x: 14
+    y: 36
+  - x: 15
+    y: 36
+  - x: 16
+    y: 36
+  - x: 17
+    y: 36
+  - x: 18
+    y: 36
+  - x: 19
+    y: 36
+  - x: 20
+    y: 36
+  - x: 21
+    y: 36
+  - x: 22
+    y: 36
+  - x: 23
+    y: 36
+  - x: 24
+    y: 36
+  - x: 4
+    y: 37
+  - x: 5
+    y: 37
+  - x: 6
+    y: 37
+  - x: 7
+    y: 37
+  - x: 8
+    y: 37
+  - x: 9
+    y: 37
+  - x: 10
+    y: 37
+  - x: 11
+    y: 37
+  - x: 12
+    y: 37
+  - x: 13
+    y: 37
+  - x: 14
+    y: 37
+  - x: 15
+    y: 37
+  - x: 16
+    y: 37
+  - x: 17
+    y: 37
+  - x: 18
+    y: 37
+  - x: 19
+    y: 37
+  - x: 20
+    y: 37
+  - x: 21
+    y: 37
+  - x: 22
+    y: 37
+  - x: 23
+    y: 37
+  - x: 24
+    y: 37
+  - x: 4
+    y: 38
+  - x: 5
+    y: 38
+  - x: 6
+    y: 38
+  - x: 7
+    y: 38
+  - x: 8
+    y: 38
+  - x: 9
+    y: 38
+  - x: 10
+    y: 38
+  - x: 11
+    y: 38
+  - x: 12
+    y: 38
+  - x: 13
+    y: 38
+  - x: 14
+    y: 38
+  - x: 15
+    y: 38
+  - x: 16
+    y: 38
+  - x: 17
+    y: 38
+  - x: 18
+    y: 38
+  - x: 19
+    y: 38
+  - x: 20
+    y: 38
+  - x: 21
+    y: 38
+  - x: 22
+    y: 38
+  - x: 23
+    y: 38
+  - x: 24
+    y: 38
+  - x: 4
+    y: 39
+  - x: 5
+    y: 39
+  - x: 6
+    y: 39
+  - x: 7
+    y: 39
+  - x: 8
+    y: 39
+  - x: 9
+    y: 39
+  - x: 10
+    y: 39
+  - x: 11
+    y: 39
+  - x: 12
+    y: 39
+  - x: 13
+    y: 39
+  - x: 14
+    y: 39
+  - x: 15
+    y: 39
+  - x: 16
+    y: 39
+  - x: 17
+    y: 39
+  - x: 18
+    y: 39
+  - x: 19
+    y: 39
+  - x: 20
+    y: 39
+  - x: 21
+    y: 39
+  - x: 22
+    y: 39
+  - x: 23
+    y: 39
+  - x: 24
+    y: 39
+  - x: 4
+    y: 40
+  - x: 5
+    y: 40
+  - x: 6
+    y: 40
+  - x: 7
+    y: 40
+  - x: 8
+    y: 40
+  - x: 9
+    y: 40
+  - x: 10
+    y: 40
+  - x: 11
+    y: 40
+  - x: 12
+    y: 40
+  - x: 13
+    y: 40
+  - x: 14
+    y: 40
+  - x: 15
+    y: 40
+  - x: 16
+    y: 40
+  - x: 17
+    y: 40
+  - x: 18
+    y: 40
+  - x: 19
+    y: 40
+  - x: 20
+    y: 40
+  - x: 21
+    y: 40
+  - x: 22
+    y: 40
+  - x: 23
+    y: 40
+  - x: 24
+    y: 40
+  - x: 4
+    y: 41
+  - x: 5
+    y: 41
+  - x: 6
+    y: 41
+  - x: 7
+    y: 41
+  - x: 8
+    y: 41
+  - x: 9
+    y: 41
+  - x: 10
+    y: 41
+  - x: 11
+    y: 41
+  - x: 12
+    y: 41
+  - x: 13
+    y: 41
+  - x: 14
+    y: 41
+  - x: 15
+    y: 41
+  - x: 16
+    y: 41
+  - x: 17
+    y: 41
+  - x: 18
+    y: 41
+  - x: 19
+    y: 41
+  - x: 20
+    y: 41
+  - x: 21
+    y: 41
+  - x: 22
+    y: 41
+  - x: 23
+    y: 41
+  - x: 24
+    y: 41
+  - x: 4
+    y: 42
+  - x: 5
+    y: 42
+  - x: 6
+    y: 42
+  - x: 7
+    y: 42
+  - x: 8
+    y: 42
+  - x: 9
+    y: 42
+  - x: 10
+    y: 42
+  - x: 11
+    y: 42
+  - x: 12
+    y: 42
+  - x: 13
+    y: 42
+  - x: 14
+    y: 42
+  - x: 15
+    y: 42
+  - x: 16
+    y: 42
+  - x: 17
+    y: 42
+  - x: 18
+    y: 42
+  - x: 19
+    y: 42
+  - x: 20
+    y: 42
+  - x: 21
+    y: 42
+  - x: 22
+    y: 42
+  - x: 23
+    y: 42
+  - x: 24
+    y: 42
+  - x: 4
+    y: 43
+  - x: 5
+    y: 43
+  - x: 6
+    y: 43
+  - x: 7
+    y: 43
+  - x: 8
+    y: 43
+  - x: 9
+    y: 43
+  - x: 10
+    y: 43
+  - x: 11
+    y: 43
+  - x: 12
+    y: 43
+  - x: 13
+    y: 43
+  - x: 14
+    y: 43
+  - x: 15
+    y: 43
+  - x: 16
+    y: 43
+  - x: 17
+    y: 43
+  - x: 18
+    y: 43
+  - x: 19
+    y: 43
+  - x: 20
+    y: 43
+  - x: 21
+    y: 43
+  - x: 22
+    y: 43
+  - x: 23
+    y: 43
+  - x: 24
+    y: 43
+  - x: 4
+    y: 44
+  - x: 5
+    y: 44
+  - x: 6
+    y: 44
+  - x: 7
+    y: 44
+  - x: 8
+    y: 44
+  - x: 9
+    y: 44
+  - x: 10
+    y: 44
+  - x: 11
+    y: 44
+  - x: 12
+    y: 44
+  - x: 13
+    y: 44
+  - x: 14
+    y: 44
+  - x: 15
+    y: 44
+  - x: 16
+    y: 44
+  - x: 17
+    y: 44
+  - x: 18
+    y: 44
+  - x: 19
+    y: 44
+  - x: 20
+    y: 44
+  - x: 21
+    y: 44
+  - x: 22
+    y: 44
+  - x: 23
+    y: 44
+  - x: 24
+    y: 44
+  - x: 4
+    y: 45
+  - x: 5
+    y: 45
+  - x: 6
+    y: 45
+  - x: 7
+    y: 45
+  - x: 8
+    y: 45
+  - x: 9
+    y: 45
+  - x: 10
+    y: 45
+  - x: 11
+    y: 45
+  - x: 12
+    y: 45
+  - x: 13
+    y: 45
+  - x: 14
+    y: 45
+  - x: 15
+    y: 45
+  - x: 16
+    y: 45
+  - x: 17
+    y: 45
+  - x: 18
+    y: 45
+  - x: 19
+    y: 45
+  - x: 20
+    y: 45
+  - x: 21
+    y: 45
+  - x: 22
+    y: 45
+  - x: 23
+    y: 45
+  - x: 24
+    y: 45
+  - x: 4
+    y: 46
+  - x: 5
+    y: 46
+  - x: 6
+    y: 46
+  - x: 7
+    y: 46
+  - x: 8
+    y: 46
+  - x: 9
+    y: 46
+  - x: 10
+    y: 46
+  - x: 11
+    y: 46
+  - x: 12
+    y: 46
+  - x: 13
+    y: 46
+  - x: 14
+    y: 46
+  - x: 15
+    y: 46
+  - x: 16
+    y: 46
+  - x: 17
+    y: 46
+  - x: 18
+    y: 46
+  - x: 19
+    y: 46
+  - x: 20
+    y: 46
+  - x: 21
+    y: 46
+  - x: 22
+    y: 46
+  - x: 23
+    y: 46
+  - x: 24
+    y: 46
+- type: well
+  placement:
+  - x: 10
+    y: 9
+- type: wooden_shield
+  placement:
+  - x: 58
+    y: 42
+- id: 10132
+  type: sign_post
+  properties:
+    text: South road leads to the old dungeon. Adventurers beware!
+  placement:
+    x: 5
+    y: 21
+- id: 10150
+  type: sign_post
+  properties:
+    text: Step here to enter the cellar.
+  placement:
+    x: 34
+    y: 19
+- id: 10153
+  type: scroll
+  properties:
+    spell_id: lesser_heal
+  placement:
+    x: 40
+    y: 16
+- id: 10172
+  type: sign_post
+  properties:
+    text: The sinkhole ahead leads deep underground. Return is not guaranteed.
+  placement:
+    x: 33
+    y: 43

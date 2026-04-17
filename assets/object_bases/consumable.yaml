@@ -1,1 +1,2 @@
 extends: pickup
+max_stack_size: 100

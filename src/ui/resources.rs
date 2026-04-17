@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 
+use crate::game::commands::ItemSlotRef;
 use crate::ui::components::ItemSlotKind;
 use crate::world::components::TilePosition;
 
@@ -17,6 +18,7 @@ pub struct ContextMenuState {
     pub can_use: bool,
     pub can_use_on: bool,
     pub can_attack: bool,
+    pub can_take_partial: bool,
 }
 
 impl ContextMenuState {
@@ -28,6 +30,7 @@ impl ContextMenuState {
         can_use: bool,
         can_use_on: bool,
         can_attack: bool,
+        can_take_partial: bool,
     ) {
         self.position = position;
         self.target = Some(target);
@@ -35,6 +38,7 @@ impl ContextMenuState {
         self.can_use = can_use;
         self.can_use_on = can_use_on;
         self.can_attack = can_attack;
+        self.can_take_partial = can_take_partial;
     }
 
     pub fn hide(&mut self) {
@@ -43,11 +47,19 @@ impl ContextMenuState {
         self.can_use = false;
         self.can_use_on = false;
         self.can_attack = false;
+        self.can_take_partial = false;
     }
 
     pub fn is_visible(&self) -> bool {
         self.target.is_some()
     }
+}
+
+#[derive(Resource, Default)]
+pub struct TakePartialState {
+    pub source_slot: Option<ItemSlotRef>,
+    pub max_amount: u32,
+    pub selected_amount: u32,
 }
 
 pub enum DragSource {

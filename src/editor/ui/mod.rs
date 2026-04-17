@@ -6,24 +6,31 @@ pub mod properties;
 use bevy::prelude::*;
 
 use crate::editor::resources::{EditorContext, EditorState, EditorTool, ModalState};
-use crate::editor::systems::{
-    open_file_dialog_impl, open_new_map_dialog_impl, open_save_as_impl,
-};
+use crate::editor::systems::{open_file_dialog_impl, open_new_map_dialog_impl, open_save_as_impl};
 use crate::editor::ui::palette::spawn_palette_panel;
 use crate::editor::ui::properties::spawn_properties_panel;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 
 // ── Component markers ─────────────────────────────────────────────────────────
 
-#[derive(Component)] pub struct EditorHudRoot;
-#[derive(Component)] pub struct EditorSaveButton;
-#[derive(Component)] pub struct EditorDirtyIndicator;
-#[derive(Component)] pub struct EditorOpenButton;
-#[derive(Component)] pub struct EditorSaveAsButton;
-#[derive(Component)] pub struct EditorNewMapButton;
-#[derive(Component)] pub struct EditorPortalToolButton;
-#[derive(Component)] pub struct EditorUndoButton;
-#[derive(Component)] pub struct EditorRedoButton;
+#[derive(Component)]
+pub struct EditorHudRoot;
+#[derive(Component)]
+pub struct EditorSaveButton;
+#[derive(Component)]
+pub struct EditorDirtyIndicator;
+#[derive(Component)]
+pub struct EditorOpenButton;
+#[derive(Component)]
+pub struct EditorSaveAsButton;
+#[derive(Component)]
+pub struct EditorNewMapButton;
+#[derive(Component)]
+pub struct EditorPortalToolButton;
+#[derive(Component)]
+pub struct EditorUndoButton;
+#[derive(Component)]
+pub struct EditorRedoButton;
 
 // ── Spawn HUD ─────────────────────────────────────────────────────────────────
 
@@ -61,13 +68,19 @@ pub fn spawn_editor_hud(
                 // Map name
                 bar.spawn((
                     Text::new(format!("Map Editor — {}", editor_context.authored_id)),
-                    TextFont { font_size: 15.0, ..default() },
+                    TextFont {
+                        font_size: 15.0,
+                        ..default()
+                    },
                     TextColor(Color::srgb(0.96, 0.84, 0.62)),
                 ));
                 bar.spawn((
                     EditorDirtyIndicator,
                     Text::new(""),
-                    TextFont { font_size: 13.0, ..default() },
+                    TextFont {
+                        font_size: 13.0,
+                        ..default()
+                    },
                     TextColor(Color::srgb(1.0, 0.6, 0.3)),
                 ));
 
@@ -81,7 +94,10 @@ pub fn spawn_editor_hud(
                 spawn_top_btn(bar, "Redo  Ctrl+Y", EditorRedoButton);
 
                 // Spacer
-                bar.spawn(Node { flex_grow: 1.0, ..default() });
+                bar.spawn(Node {
+                    flex_grow: 1.0,
+                    ..default()
+                });
 
                 // Portal tool toggle
                 spawn_top_btn(bar, "Portal Tool", EditorPortalToolButton);
@@ -103,7 +119,10 @@ pub fn spawn_editor_hud(
                 .with_children(|btn| {
                     btn.spawn((
                         Text::new("Save  Ctrl+S"),
-                        TextFont { font_size: 14.0, ..default() },
+                        TextFont {
+                            font_size: 14.0,
+                            ..default()
+                        },
                         TextColor(Color::srgb(0.95, 0.91, 0.80)),
                     ));
                 });
@@ -116,11 +135,14 @@ pub fn spawn_editor_hud(
                 flex_direction: FlexDirection::Row,
                 ..default()
             },))
-            .with_children(|row| {
-                spawn_palette_panel(row, &definitions);
-                row.spawn((Node { flex_grow: 1.0, ..default() },));
-                spawn_properties_panel(row);
-            });
+                .with_children(|row| {
+                    spawn_palette_panel(row, &definitions);
+                    row.spawn((Node {
+                        flex_grow: 1.0,
+                        ..default()
+                    },));
+                    spawn_properties_panel(row);
+                });
         });
 }
 
@@ -141,7 +163,10 @@ fn spawn_top_btn<M: Component>(parent: &mut ChildSpawnerCommands, label: &str, m
         .with_children(|btn| {
             btn.spawn((
                 Text::new(label.to_owned()),
-                TextFont { font_size: 12.0, ..default() },
+                TextFont {
+                    font_size: 12.0,
+                    ..default()
+                },
                 TextColor(Color::srgb(0.88, 0.84, 0.76)),
             ));
         });
@@ -149,10 +174,7 @@ fn spawn_top_btn<M: Component>(parent: &mut ChildSpawnerCommands, label: &str, m
 
 // ── Cleanup ───────────────────────────────────────────────────────────────────
 
-pub fn cleanup_editor_hud(
-    mut commands: Commands,
-    hud_query: Query<Entity, With<EditorHudRoot>>,
-) {
+pub fn cleanup_editor_hud(mut commands: Commands, hud_query: Query<Entity, With<EditorHudRoot>>) {
     for entity in &hud_query {
         commands.entity(entity).despawn();
     }
@@ -163,41 +185,61 @@ pub fn cleanup_editor_hud(
 pub fn sync_editor_top_bar(
     editor_state: Res<EditorState>,
     mut dirty_q: Query<&mut Text, With<EditorDirtyIndicator>>,
-    mut save_btn: Query<(&Interaction, &mut BackgroundColor, &mut BorderColor), With<EditorSaveButton>>,
+    mut save_btn: Query<
+        (&Interaction, &mut BackgroundColor, &mut BorderColor),
+        With<EditorSaveButton>,
+    >,
     mut portal_btn: Query<
         (&Interaction, &mut BackgroundColor, &mut BorderColor),
         (With<EditorPortalToolButton>, Without<EditorSaveButton>),
     >,
     mut undo_btn: Query<
         (&Interaction, &mut BackgroundColor, &mut BorderColor),
-        (With<EditorUndoButton>, Without<EditorSaveButton>, Without<EditorPortalToolButton>),
+        (
+            With<EditorUndoButton>,
+            Without<EditorSaveButton>,
+            Without<EditorPortalToolButton>,
+        ),
     >,
     mut redo_btn: Query<
         (&Interaction, &mut BackgroundColor, &mut BorderColor),
-        (With<EditorRedoButton>, Without<EditorSaveButton>, Without<EditorPortalToolButton>, Without<EditorUndoButton>),
+        (
+            With<EditorRedoButton>,
+            Without<EditorSaveButton>,
+            Without<EditorPortalToolButton>,
+            Without<EditorUndoButton>,
+        ),
     >,
 ) {
     if let Ok(mut text) = dirty_q.single_mut() {
-        text.0 = if editor_state.dirty { "[unsaved]".to_owned() } else { String::new() };
+        text.0 = if editor_state.dirty {
+            "[unsaved]".to_owned()
+        } else {
+            String::new()
+        };
     }
 
     let is_portal = editor_state.current_tool == EditorTool::Portal;
 
     for (interaction, mut bg, mut border) in &mut save_btn {
         let (b, br) = btn_colors(*interaction, false);
-        bg.0 = b; *border = BorderColor::all(br);
+        bg.0 = b;
+        *border = BorderColor::all(br);
     }
     for (interaction, mut bg, mut border) in &mut portal_btn {
         let (b, br) = btn_colors(*interaction, is_portal);
-        bg.0 = b; *border = BorderColor::all(br);
+        bg.0 = b;
+        *border = BorderColor::all(br);
     }
     for (interaction, mut bg, mut border) in &mut undo_btn {
         let (b, br) = btn_colors(*interaction, false);
-        bg.0 = b; *border = BorderColor::all(br);
+        bg.0 = b;
+        *border = BorderColor::all(br);
     }
     for (interaction, mut bg, mut border) in &mut redo_btn {
         let (b, br) = btn_colors(*interaction, false);
-        bg.0 = b; *border = BorderColor::all(br);
+        bg.0 = b;
+        *border = BorderColor::all(br);
     }
 }
 
@@ -206,7 +248,10 @@ fn btn_colors(interaction: Interaction, active: bool) -> (Color, Color) {
         (Interaction::Pressed, _) => (Color::srgb(0.55, 0.30, 0.14), Color::srgb(1.0, 0.88, 0.60)),
         (Interaction::Hovered, _) => (Color::srgb(0.28, 0.17, 0.10), Color::srgb(0.90, 0.75, 0.50)),
         (Interaction::None, true) => (Color::srgb(0.28, 0.16, 0.08), Color::srgb(0.90, 0.76, 0.50)),
-        (Interaction::None, false) => (Color::srgba(0.12, 0.08, 0.06, 0.90), Color::srgb(0.38, 0.28, 0.18)),
+        (Interaction::None, false) => (
+            Color::srgba(0.12, 0.08, 0.06, 0.90),
+            Color::srgb(0.38, 0.28, 0.18),
+        ),
     }
 }
 

@@ -14,9 +14,15 @@ pub struct PlayerIdentity {
     pub id: PlayerId,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+pub struct InventoryStack {
+    pub object_id: u64,
+    pub quantity: u32,
+}
+
 #[derive(Component, Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Inventory {
-    pub backpack_slots: Vec<Option<u64>>,
+    pub backpack_slots: Vec<Option<InventoryStack>>,
     pub equipment_slots: Vec<(EquipmentSlot, Option<u64>)>,
 }
 

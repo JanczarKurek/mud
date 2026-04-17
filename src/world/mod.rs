@@ -11,14 +11,13 @@ use bevy::prelude::*;
 
 use crate::app::state::ClientAppState;
 use crate::game::systems::apply_game_events_to_client_state;
+use crate::world::animation::{
+    advance_animation_timers, attach_animated_sprite, cleanup_just_moved, detect_player_movement,
+    return_to_idle_animation, tick_view_scroll, tick_visual_offsets, trigger_movement_animation,
+};
 use crate::world::map_layout::SpaceDefinitions;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
-use crate::world::animation::{
-    advance_animation_timers, attach_animated_sprite, cleanup_just_moved,
-    detect_player_movement, return_to_idle_animation, tick_view_scroll, tick_visual_offsets,
-    trigger_movement_animation,
-};
 use crate::world::resources::{
     ClientRemotePlayerProjectionState, ClientWorldProjectionState, SpaceManager, ViewScrollOffset,
 };
@@ -100,10 +99,7 @@ impl Plugin for WorldClientPlugin {
             )
                 .run_if(in_state(ClientAppState::InGame)),
         )
-        .add_systems(
-            Update,
-            spawn_ground_tiles_for_current_space,
-        );
+        .add_systems(Update, spawn_ground_tiles_for_current_space);
     }
 }
 

@@ -1,6 +1,10 @@
 extends: consumable
 name: Apple
-description: A simple red apple that can be picked up.
+description:
+  - text: A simple red apple that can be picked up.
+    stack_size: [1, 1]
+  - text: "{count_written} red apples."
+    stack_size: [2, ~]
 use_effects:
   restore_health: 15
 use_texts:

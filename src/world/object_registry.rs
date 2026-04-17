@@ -5,12 +5,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::magic::resources::SpellDefinitions;
 use crate::world::map_layout::{ObjectProperties, SpaceDefinitions};
-use crate::world::object_definitions::OverworldObjectDefinitions;
+use crate::world::object_definitions::{
+    number_to_customary, number_to_written, OverworldObjectDefinitions,
+};
 
 #[derive(Resource, Default)]
 pub struct ObjectRegistry {
     type_ids: HashMap<u64, String>,
     properties: HashMap<u64, ObjectProperties>,
+    /// World-object quantities > 1 (inventory quantities live in InventoryStack).
+    quantities: HashMap<u64, u32>,
     next_runtime_id: u64,
 }
 
@@ -19,6 +23,8 @@ pub struct ObjectRegistrySnapshotEntry {
     pub object_id: u64,
     pub type_id: String,
     pub properties: ObjectProperties,
+    #[serde(default)]
+    pub quantity: Option<u32>,
 }
 
 impl ObjectRegistry {
@@ -43,6 +49,7 @@ impl ObjectRegistry {
         Self {
             type_ids,
             properties,
+            quantities: HashMap::new(),
             next_runtime_id: max_id + 1,
         }
     }
@@ -50,15 +57,22 @@ impl ObjectRegistry {
     pub fn from_snapshot(entries: Vec<ObjectRegistrySnapshotEntry>, next_runtime_id: u64) -> Self {
         let mut type_ids = HashMap::new();
         let mut properties = HashMap::new();
+        let mut quantities = HashMap::new();
 
         for entry in entries {
             type_ids.insert(entry.object_id, entry.type_id);
             properties.insert(entry.object_id, entry.properties);
+            if let Some(q) = entry.quantity {
+                if q > 1 {
+                    quantities.insert(entry.object_id, q);
+                }
+            }
         }
 
         Self {
             type_ids,
             properties,
+            quantities,
             next_runtime_id,
         }
     }
@@ -95,6 +109,18 @@ impl ObjectRegistry {
         self.next_runtime_id
     }
 
+    pub fn world_object_quantity(&self, object_id: u64) -> u32 {
+        self.quantities.get(&object_id).copied().unwrap_or(1)
+    }
+
+    pub fn set_world_object_quantity(&mut self, object_id: u64, quantity: u32) {
+        if quantity <= 1 {
+            self.quantities.remove(&object_id);
+        } else {
+            self.quantities.insert(object_id, quantity);
+        }
+    }
+
     pub fn snapshot_entries(&self) -> Vec<ObjectRegistrySnapshotEntry> {
         let mut entries = self
             .type_ids
@@ -103,6 +129,7 @@ impl ObjectRegistry {
                 object_id: *object_id,
                 type_id: type_id.clone(),
                 properties: self.properties.get(object_id).cloned().unwrap_or_default(),
+                quantity: self.quantities.get(object_id).copied().filter(|&q| q > 1),
             })
             .collect::<Vec<_>>();
         entries.sort_by_key(|entry| entry.object_id);
@@ -117,7 +144,8 @@ impl ObjectRegistry {
     ) -> Option<String> {
         let type_id = self.type_id(object_id)?;
         let definition = definitions.get(type_id)?;
-        Some(self.render_template(object_id, &definition.name, spell_definitions))
+        let count = self.world_object_quantity(object_id);
+        Some(self.render_template(object_id, &definition.name, spell_definitions, count))
     }
 
     pub fn description(
@@ -128,7 +156,9 @@ impl ObjectRegistry {
     ) -> Option<String> {
         let type_id = self.type_id(object_id)?;
         let definition = definitions.get(type_id)?;
-        Some(self.render_template(object_id, &definition.description, spell_definitions))
+        let count = self.world_object_quantity(object_id);
+        let template = definition.description_for_count(count);
+        Some(self.render_template(object_id, template, spell_definitions, count))
     }
 
     pub fn resolved_spell_id(
@@ -139,10 +169,11 @@ impl ObjectRegistry {
     ) -> Option<String> {
         let type_id = self.type_id(object_id)?;
         let definition = definitions.get(type_id)?;
+        let count = self.world_object_quantity(object_id);
         definition
             .spell_id
             .as_ref()
-            .map(|template| self.render_template(object_id, template, spell_definitions))
+            .map(|template| self.render_template(object_id, template, spell_definitions, count))
     }
 
     fn render_template(
@@ -150,10 +181,9 @@ impl ObjectRegistry {
         object_id: u64,
         template: &str,
         spell_definitions: &SpellDefinitions,
+        count: u32,
     ) -> String {
-        let Some(properties) = self.properties(object_id) else {
-            return template.to_owned();
-        };
+        let properties = self.properties(object_id);
 
         let mut rendered = String::new();
         let mut rest = template;
@@ -167,15 +197,30 @@ impl ObjectRegistry {
             };
 
             let expression = &after_start[..end];
-            rendered.push_str(
-                &resolve_template_expression(expression, properties, spell_definitions)
-                    .unwrap_or_else(|| format!("{{{expression}}}")),
-            );
+            let resolved = resolve_count_expression(expression, count).or_else(|| {
+                properties.and_then(|p| {
+                    resolve_template_expression(expression, p, spell_definitions)
+                })
+            });
+            rendered.push_str(&resolved.unwrap_or_else(|| format!("{{{expression}}}")));
             rest = &after_start[end + 1..];
         }
 
         rendered.push_str(rest);
         rendered
+    }
+}
+
+fn resolve_count_expression(expression: &str, count: u32) -> Option<String> {
+    match expression {
+        "count" => Some(count.to_string()),
+        "count_written" => Some(number_to_written(count)),
+        "count_customary" => Some(
+            number_to_customary(count)
+                .map(str::to_owned)
+                .unwrap_or_else(|| number_to_written(count)),
+        ),
+        _ => None,
     }
 }
 

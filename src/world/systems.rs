@@ -259,7 +259,13 @@ pub fn sync_tile_transforms(
     world_config: Res<WorldConfig>,
     view_scroll: Res<ViewScrollOffset>,
     mut query: Query<
-        (&SpaceResident, &TilePosition, &WorldVisual, &mut Transform, Option<&VisualOffset>),
+        (
+            &SpaceResident,
+            &TilePosition,
+            &WorldVisual,
+            &mut Transform,
+            Option<&VisualOffset>,
+        ),
         Without<Player>,
     >,
 ) {

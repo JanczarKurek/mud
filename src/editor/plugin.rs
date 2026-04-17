@@ -8,14 +8,8 @@ use crate::editor::systems::{
     apply_modal_confirmed, attach_editor_visuals, handle_editor_camera_pan, handle_editor_escape,
     handle_editor_keyboard_input, handle_editor_left_click, handle_editor_right_click,
     handle_editor_save, handle_editor_zoom, init_editor_context, init_portal_buffer,
-    open_file_dialog_shortcut, open_save_as_shortcut, process_modal_confirm,
-    sync_portal_overlays, sync_tile_transforms_editor,
-};
-use crate::editor::undo::handle_undo_redo;
-use crate::editor::ui::{
-    cleanup_editor_hud, handle_new_map_button_click, handle_open_button_click,
-    handle_portal_tool_button_click, handle_redo_button_click, handle_save_as_button_click,
-    handle_save_button_click, handle_undo_button_click, spawn_editor_hud, sync_editor_top_bar,
+    open_file_dialog_shortcut, open_save_as_shortcut, process_modal_confirm, sync_portal_overlays,
+    sync_tile_transforms_editor,
 };
 use crate::editor::ui::modal::{
     handle_modal_buttons, handle_modal_keyboard_input, handle_modal_list_click,
@@ -28,6 +22,12 @@ use crate::editor::ui::palette::{
 use crate::editor::ui::properties::{
     handle_add_property_button, handle_property_row_click, sync_properties_panel,
 };
+use crate::editor::ui::{
+    cleanup_editor_hud, handle_new_map_button_click, handle_open_button_click,
+    handle_portal_tool_button_click, handle_redo_button_click, handle_save_as_button_click,
+    handle_save_button_click, handle_undo_button_click, spawn_editor_hud, sync_editor_top_bar,
+};
+use crate::editor::undo::handle_undo_redo;
 
 pub struct EditorPlugin;
 

@@ -82,7 +82,9 @@ impl InspectorBuffer {
 
     /// Commit the currently-edited field into raw_value and regenerate fields.
     pub fn commit_edit(&mut self) {
-        let Some(idx) = self.editing_index else { return };
+        let Some(idx) = self.editing_index else {
+            return;
+        };
         let text = std::mem::take(&mut self.edit_text);
         self.editing_index = None;
 
@@ -104,16 +106,15 @@ impl InspectorBuffer {
         let id = self.asset_id.clone().ok_or("No asset selected")?;
         let value = self.raw_value.as_ref().ok_or("No value to save")?;
 
-        let yaml_str = serde_yaml::to_string(value)
-            .map_err(|e| format!("Serialize error: {}", e))?;
+        let yaml_str =
+            serde_yaml::to_string(value).map_err(|e| format!("Serialize error: {}", e))?;
 
         let path = match self.kind {
             AssetKind::Object => format!("assets/overworld_objects/{}/metadata.yaml", id),
             AssetKind::Spell => format!("assets/spells/{}.yaml", id),
         };
 
-        std::fs::write(&path, yaml_str)
-            .map_err(|e| format!("Write error for {}: {}", path, e))?;
+        std::fs::write(&path, yaml_str).map_err(|e| format!("Write error for {}: {}", path, e))?;
 
         self.dirty = false;
         Ok(())
@@ -127,7 +128,9 @@ fn flatten_yaml(value: &serde_yaml::Value, prefix: &str) -> Vec<InspectorField> 
 }
 
 fn flatten_yaml_into(value: &serde_yaml::Value, prefix: &str, out: &mut Vec<InspectorField>) {
-    let serde_yaml::Value::Mapping(map) = value else { return };
+    let serde_yaml::Value::Mapping(map) = value else {
+        return;
+    };
     for (k, v) in map {
         let key_str = k.as_str().unwrap_or("?");
         let path = if prefix.is_empty() {
@@ -152,7 +155,11 @@ fn flatten_yaml_into(value: &serde_yaml::Value, prefix: &str, out: &mut Vec<Insp
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
-                out.push(InspectorField { display_path: path, display_value: display, yaml_path });
+                out.push(InspectorField {
+                    display_path: path,
+                    display_value: display,
+                    yaml_path,
+                });
             }
             _ => {
                 let display = match v {
@@ -162,15 +169,23 @@ fn flatten_yaml_into(value: &serde_yaml::Value, prefix: &str, out: &mut Vec<Insp
                     serde_yaml::Value::String(s) => s.clone(),
                     _ => "?".to_string(),
                 };
-                out.push(InspectorField { display_path: path, display_value: display, yaml_path });
+                out.push(InspectorField {
+                    display_path: path,
+                    display_value: display,
+                    yaml_path,
+                });
             }
         }
     }
 }
 
 fn apply_edit(root: &mut serde_yaml::Value, path: &[String], new_str: &str) {
-    if path.is_empty() { return; }
-    let serde_yaml::Value::Mapping(map) = root else { return };
+    if path.is_empty() {
+        return;
+    }
+    let serde_yaml::Value::Mapping(map) = root else {
+        return;
+    };
     let key = serde_yaml::Value::String(path[0].clone());
 
     if path.len() == 1 {

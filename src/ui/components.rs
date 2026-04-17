@@ -112,6 +112,9 @@ pub struct ContextMenuUseOnButton;
 pub struct ContextMenuAttackButton;
 
 #[derive(Component)]
+pub struct ContextMenuTakePartialButton;
+
+#[derive(Component)]
 pub struct CurrentTargetPanelContent;
 
 #[derive(Component)]
@@ -143,3 +146,26 @@ pub enum ItemSlotKind {
     OpenContainer { panel_id: usize, slot_index: usize },
     Equipment(EquipmentSlot),
 }
+
+#[derive(Component)]
+pub struct ItemSlotQuantityLabel {
+    pub kind: ItemSlotKind,
+}
+
+#[derive(Component)]
+pub struct TakePartialPopupRoot;
+
+#[derive(Component)]
+pub struct TakePartialDecButton;
+
+#[derive(Component)]
+pub struct TakePartialIncButton;
+
+#[derive(Component)]
+pub struct TakePartialConfirmButton;
+
+#[derive(Component)]
+pub struct TakePartialCancelButton;
+
+#[derive(Component)]
+pub struct TakePartialAmountLabel;

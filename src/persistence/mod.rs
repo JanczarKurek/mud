@@ -16,8 +16,8 @@ use crate::npc::components::{
     HostileBehavior, Npc, RoamingBehavior, RoamingRandomState, RoamingStepTimer,
 };
 use crate::player::components::{
-    BaseStats, ChatLog, DerivedStats, Inventory, MovementCooldown, Player, PlayerId,
-    PlayerIdentity, VitalStats,
+    BaseStats, ChatLog, DerivedStats, Inventory, InventoryStack, MovementCooldown, Player,
+    PlayerId, PlayerIdentity, VitalStats,
 };
 use crate::world::components::{
     Collider, Container, Movable, OverworldObject, SpaceResident, Storable, TilePosition,
@@ -166,7 +166,7 @@ pub struct WorldObjectStateDump {
     pub collider: bool,
     pub movable: bool,
     pub storable: bool,
-    pub container_slots: Option<Vec<Option<u64>>>,
+    pub container_slots: Option<Vec<Option<InventoryStack>>>,
     pub npc: Option<NpcStateDump>,
 }
 
@@ -371,7 +371,7 @@ fn save_world_on_app_exit(
     world_objects.sort_by_key(|object| object.object_id);
 
     let dump = WorldStateDump {
-        format_version: 2,
+        format_version: 3,
         spaces,
         saved_at_unix_seconds: SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -781,7 +781,7 @@ mod tests {
         let _ = std::fs::remove_file(&save_path);
 
         let dump = WorldStateDump {
-            format_version: 2,
+            format_version: 3,
             saved_at_unix_seconds: 0,
             world_config: WorldConfigDump {
                 current_space_id: Some(crate::world::components::SpaceId(7)),
@@ -811,11 +811,13 @@ mod tests {
                         object_id: 42,
                         type_id: "player".to_owned(),
                         properties: Default::default(),
+                        quantity: None,
                     },
                     ObjectRegistrySnapshotEntry {
                         object_id: 43,
                         type_id: "barrel".to_owned(),
                         properties: Default::default(),
+                        quantity: None,
                     },
                 ],
             },

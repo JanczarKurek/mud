@@ -37,43 +37,51 @@ pub fn spawn_palette_panel(
         ))
         .with_children(|panel| {
             // Header
-            panel.spawn((
-                Node {
-                    padding: UiRect::all(Val::Px(8.0)),
-                    border: UiRect::bottom(Val::Px(1.0)),
-                    ..default()
-                },
-                BorderColor::all(Color::srgb(0.30, 0.22, 0.15)),
-            ))
-            .with_children(|h| {
-                h.spawn((
-                    Text::new("Objects"),
-                    TextFont { font_size: 14.0, ..default() },
-                    TextColor(Color::srgb(0.96, 0.84, 0.62)),
-                ));
-            });
+            panel
+                .spawn((
+                    Node {
+                        padding: UiRect::all(Val::Px(8.0)),
+                        border: UiRect::bottom(Val::Px(1.0)),
+                        ..default()
+                    },
+                    BorderColor::all(Color::srgb(0.30, 0.22, 0.15)),
+                ))
+                .with_children(|h| {
+                    h.spawn((
+                        Text::new("Objects"),
+                        TextFont {
+                            font_size: 14.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.96, 0.84, 0.62)),
+                    ));
+                });
 
             // Filter row
-            panel.spawn((
-                EditorPaletteFilterBox,
-                Button,
-                Node {
-                    width: Val::Percent(100.0),
-                    padding: UiRect::axes(Val::Px(8.0), Val::Px(5.0)),
-                    border: UiRect::bottom(Val::Px(1.0)),
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-                BackgroundColor(Color::srgba(0.08, 0.05, 0.05, 0.90)),
-                BorderColor::all(Color::srgb(0.25, 0.18, 0.12)),
-            ))
-            .with_children(|row| {
-                row.spawn((
-                    Text::new("🔍 filter…"),
-                    TextFont { font_size: 11.0, ..default() },
-                    TextColor(Color::srgb(0.50, 0.46, 0.42)),
-                ));
-            });
+            panel
+                .spawn((
+                    EditorPaletteFilterBox,
+                    Button,
+                    Node {
+                        width: Val::Percent(100.0),
+                        padding: UiRect::axes(Val::Px(8.0), Val::Px(5.0)),
+                        border: UiRect::bottom(Val::Px(1.0)),
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.08, 0.05, 0.05, 0.90)),
+                    BorderColor::all(Color::srgb(0.25, 0.18, 0.12)),
+                ))
+                .with_children(|row| {
+                    row.spawn((
+                        Text::new("🔍 filter…"),
+                        TextFont {
+                            font_size: 11.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.50, 0.46, 0.42)),
+                    ));
+                });
 
             // Scrollable item list
             panel
@@ -88,7 +96,9 @@ pub fn spawn_palette_panel(
                     type_ids.sort();
 
                     for type_id in type_ids {
-                        let Some(def) = definitions.get(type_id) else { continue };
+                        let Some(def) = definitions.get(type_id) else {
+                            continue;
+                        };
                         let color = def.debug_color();
                         let display_name = def.name.clone();
 
@@ -111,14 +121,25 @@ pub fn spawn_palette_panel(
                         ))
                         .with_children(|btn| {
                             btn.spawn((
-                                Node { width: Val::Px(12.0), height: Val::Px(12.0), flex_shrink: 0.0, ..default() },
+                                Node {
+                                    width: Val::Px(12.0),
+                                    height: Val::Px(12.0),
+                                    flex_shrink: 0.0,
+                                    ..default()
+                                },
                                 BackgroundColor(color),
                             ));
                             btn.spawn((
                                 Text::new(display_name),
-                                TextFont { font_size: 11.0, ..default() },
+                                TextFont {
+                                    font_size: 11.0,
+                                    ..default()
+                                },
                                 TextColor(Color::srgb(0.88, 0.84, 0.78)),
-                                Node { overflow: Overflow::clip_x(), ..default() },
+                                Node {
+                                    overflow: Overflow::clip_x(),
+                                    ..default()
+                                },
                             ));
                         });
                     }
@@ -128,8 +149,20 @@ pub fn spawn_palette_panel(
 
 pub fn sync_palette_selection(
     editor_state: Res<EditorState>,
-    mut items: Query<(&EditorPaletteItem, &Interaction, &mut BackgroundColor, &mut BorderColor, &mut Visibility), With<Button>>,
-    mut filter_box: Query<(&Interaction, &mut BackgroundColor, &mut BorderColor), (With<EditorPaletteFilterBox>, Without<EditorPaletteItem>)>,
+    mut items: Query<
+        (
+            &EditorPaletteItem,
+            &Interaction,
+            &mut BackgroundColor,
+            &mut BorderColor,
+            &mut Visibility,
+        ),
+        With<Button>,
+    >,
+    mut filter_box: Query<
+        (&Interaction, &mut BackgroundColor, &mut BorderColor),
+        (With<EditorPaletteFilterBox>, Without<EditorPaletteItem>),
+    >,
 ) {
     let filter = editor_state.palette_filter.to_lowercase();
     let filter_focused = editor_state.palette_filter_focused;
@@ -139,17 +172,37 @@ pub fn sync_palette_selection(
         let matches = filter.is_empty()
             || item.type_id.to_lowercase().contains(&filter)
             || item.display_name.to_lowercase().contains(&filter);
-        *vis = if matches { Visibility::Visible } else { Visibility::Hidden };
+        *vis = if matches {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
 
-        if !matches { continue; }
+        if !matches {
+            continue;
+        }
 
-        let is_selected = editor_state.selected_type_id.as_deref().is_some_and(|id| id == item.type_id);
+        let is_selected = editor_state
+            .selected_type_id
+            .as_deref()
+            .is_some_and(|id| id == item.type_id);
         let (bg_color, border_color) = match (*interaction, is_selected) {
-            (Interaction::Pressed, _) => (Color::srgb(0.50, 0.28, 0.12), Color::srgb(0.98, 0.84, 0.58)),
-            (Interaction::Hovered, true) => (Color::srgb(0.35, 0.20, 0.10), Color::srgb(0.98, 0.84, 0.58)),
-            (Interaction::Hovered, false) => (Color::srgb(0.20, 0.13, 0.10), Color::srgb(0.60, 0.45, 0.28)),
-            (Interaction::None, true) => (Color::srgb(0.28, 0.16, 0.08), Color::srgb(0.90, 0.76, 0.50)),
-            (Interaction::None, false) => (Color::srgba(0.10, 0.07, 0.06, 0.80), Color::srgb(0.20, 0.15, 0.10)),
+            (Interaction::Pressed, _) => {
+                (Color::srgb(0.50, 0.28, 0.12), Color::srgb(0.98, 0.84, 0.58))
+            }
+            (Interaction::Hovered, true) => {
+                (Color::srgb(0.35, 0.20, 0.10), Color::srgb(0.98, 0.84, 0.58))
+            }
+            (Interaction::Hovered, false) => {
+                (Color::srgb(0.20, 0.13, 0.10), Color::srgb(0.60, 0.45, 0.28))
+            }
+            (Interaction::None, true) => {
+                (Color::srgb(0.28, 0.16, 0.08), Color::srgb(0.90, 0.76, 0.50))
+            }
+            (Interaction::None, false) => (
+                Color::srgba(0.10, 0.07, 0.06, 0.80),
+                Color::srgb(0.20, 0.15, 0.10),
+            ),
         };
         bg.0 = bg_color;
         *border = BorderColor::all(border_color);
@@ -158,11 +211,20 @@ pub fn sync_palette_selection(
     // Sync filter box appearance
     for (interaction, mut bg, mut border) in &mut filter_box {
         let (b, br) = if filter_focused {
-            (Color::srgba(0.12, 0.08, 0.06, 0.95), Color::srgb(0.90, 0.72, 0.40))
+            (
+                Color::srgba(0.12, 0.08, 0.06, 0.95),
+                Color::srgb(0.90, 0.72, 0.40),
+            )
         } else {
             match *interaction {
-                Interaction::Hovered => (Color::srgba(0.12, 0.08, 0.06, 0.95), Color::srgb(0.50, 0.38, 0.22)),
-                _ => (Color::srgba(0.08, 0.05, 0.05, 0.90), Color::srgb(0.25, 0.18, 0.12)),
+                Interaction::Hovered => (
+                    Color::srgba(0.12, 0.08, 0.06, 0.95),
+                    Color::srgb(0.50, 0.38, 0.22),
+                ),
+                _ => (
+                    Color::srgba(0.08, 0.05, 0.05, 0.90),
+                    Color::srgb(0.25, 0.18, 0.12),
+                ),
             }
         };
         bg.0 = b;
@@ -176,9 +238,15 @@ pub fn sync_palette_filter_text(
     children: Query<&Children>,
     mut texts: Query<&mut Text>,
 ) {
-    if !editor_state.is_changed() { return; }
-    let Ok(box_entity) = filter_box.single() else { return };
-    let Ok(kids) = children.get(box_entity) else { return };
+    if !editor_state.is_changed() {
+        return;
+    }
+    let Ok(box_entity) = filter_box.single() else {
+        return;
+    };
+    let Ok(kids) = children.get(box_entity) else {
+        return;
+    };
     for child in kids.iter() {
         if let Ok(mut text) = texts.get_mut(child) {
             text.0 = if editor_state.palette_filter_focused {

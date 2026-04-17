@@ -130,7 +130,8 @@ pub fn spawn_player_visual(
             .id(),
     };
 
-    let visual = crate::world::setup::world_visual_for_definition(definition, world_config.tile_size);
+    let visual =
+        crate::world::setup::world_visual_for_definition(definition, world_config.tile_size);
     let sprite_height = visual.sprite_height;
     let uses_y_sort = visual.y_sort;
 
@@ -143,13 +144,19 @@ pub fn spawn_player_visual(
         sprite,
         Transform::from_xyz(
             0.0,
-            if uses_y_sort { -world_config.tile_size * 0.5 } else { 0.0 },
+            if uses_y_sort {
+                -world_config.tile_size * 0.5
+            } else {
+                0.0
+            },
             definition.render.z_index,
         ),
     ));
 
     if uses_y_sort {
-        commands.entity(entity).insert(bevy::sprite::Anchor::BOTTOM_CENTER);
+        commands
+            .entity(entity)
+            .insert(bevy::sprite::Anchor::BOTTOM_CENTER);
     }
 
     attach_combat_health_bar(&mut commands, entity, world_config.tile_size, sprite_height);

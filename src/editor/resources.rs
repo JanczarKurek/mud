@@ -96,9 +96,18 @@ pub enum ModalKind {
 /// Filled by the confirm handler; consumed by `apply_modal_confirmed`.
 #[derive(Clone, Debug)]
 pub enum ModalConfirmed {
-    FileOpen { authored_id: String },
-    SaveAs { authored_id: String },
-    NewMap { authored_id: String, width: i32, height: i32, fill_type: String },
+    FileOpen {
+        authored_id: String,
+    },
+    SaveAs {
+        authored_id: String,
+    },
+    NewMap {
+        authored_id: String,
+        width: i32,
+        height: i32,
+        fill_type: String,
+    },
     PortalCreate {
         source_tile: TilePosition,
         id: String,

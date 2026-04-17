@@ -16,7 +16,7 @@ const OBJECT_DEFINITIONS_PATH: &str = "assets/overworld_objects";
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct OverworldObjectDefinition {
     pub name: String,
-    pub description: String,
+    pub description: DescriptionField,
     pub colliding: bool,
     pub movable: bool,
     pub storable: bool,
@@ -39,6 +39,95 @@ pub struct OverworldObjectDefinition {
     pub render: RenderMetadata,
     #[serde(default)]
     pub sound_paths: Vec<String>,
+    #[serde(default = "default_max_stack_size")]
+    pub max_stack_size: u32,
+    #[serde(default)]
+    pub stack_sprites: Vec<StackSpriteTier>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct StackSpriteTier {
+    pub min_count: u32,
+    pub sprite_path: String,
+}
+
+fn default_max_stack_size() -> u32 {
+    1
+}
+
+/// A description field that accepts either a plain string or a list of conditional entries.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(untagged)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub enum DescriptionField {
+    Plain(String),
+    Entries(Vec<DescriptionEntry>),
+}
+
+impl Default for DescriptionField {
+    fn default() -> Self {
+        Self::Plain(String::new())
+    }
+}
+
+/// One element of a description list. Either an unconditional string or a stack-size-gated text.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(untagged)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub enum DescriptionEntry {
+    Text(String),
+    Conditional {
+        text: String,
+        /// `[min, max]` — either bound may be `null` for open-ended.
+        stack_size: (Option<u32>, Option<u32>),
+    },
+}
+
+pub fn number_to_written(n: u32) -> String {
+    const ONES: &[&str] = &[
+        "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+        "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen",
+        "nineteen",
+    ];
+    const TENS: &[&str] = &[
+        "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety",
+    ];
+    if n < 20 {
+        return ONES[n as usize].to_owned();
+    }
+    if n < 100 {
+        let tens = TENS[(n / 10) as usize];
+        let unit = n % 10;
+        return if unit == 0 {
+            tens.to_owned()
+        } else {
+            format!("{}-{}", tens, ONES[unit as usize])
+        };
+    }
+    if n < 1000 {
+        let hundreds = n / 100;
+        let rest = n % 100;
+        return if rest == 0 {
+            format!("{} hundred", ONES[hundreds as usize])
+        } else {
+            format!("{} hundred and {}", ONES[hundreds as usize], number_to_written(rest))
+        };
+    }
+    n.to_string()
+}
+
+pub fn number_to_customary(n: u32) -> Option<&'static str> {
+    match n {
+        1 => Some("a singleton"),
+        2 => Some("a pair"),
+        3 => Some("a trio"),
+        12 => Some("a dozen"),
+        13 => Some("a baker's dozen"),
+        20 => Some("a score"),
+        144 => Some("a gross"),
+        _ => None,
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -180,6 +269,38 @@ impl RenderMetadata {
 }
 
 impl OverworldObjectDefinition {
+    /// Returns the raw description template text appropriate for `count` items.
+    /// The caller must still interpolate `{count}`, `{count_written}`, `{count_customary}`.
+    pub fn description_for_count(&self, count: u32) -> &str {
+        match &self.description {
+            DescriptionField::Plain(s) => s,
+            DescriptionField::Entries(entries) => {
+                for entry in entries {
+                    match entry {
+                        DescriptionEntry::Text(s) => return s,
+                        DescriptionEntry::Conditional { text, stack_size: (min, max) } => {
+                            let min_ok = min.map_or(true, |m| count >= m);
+                            let max_ok = max.map_or(true, |m| count <= m);
+                            if min_ok && max_ok {
+                                return text;
+                            }
+                        }
+                    }
+                }
+                ""
+            }
+        }
+    }
+
+    pub fn sprite_for_count(&self, count: u32) -> Option<&str> {
+        self.stack_sprites
+            .iter()
+            .rev()
+            .find(|tier| count >= tier.min_count)
+            .map(|tier| tier.sprite_path.as_str())
+            .or(self.render.sprite_path.as_deref())
+    }
+
     pub fn debug_color(&self) -> Color {
         Color::srgb_u8(
             self.render.debug_color[0],

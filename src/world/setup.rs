@@ -5,6 +5,7 @@ use crate::npc::components::{
     HostileBehavior, Npc, RoamBounds, RoamingBehavior, RoamingRandomState, RoamingStepTimer,
 };
 use crate::persistence::WorldSnapshotStatus;
+use crate::player::components::InventoryStack;
 use crate::player::components::{BaseStats, DerivedStats, VitalStats};
 use crate::world::components::{
     ClientProjectedWorldObject, ClientRemotePlayerVisual, Collider, CombatHealthBar, Container,
@@ -176,7 +177,18 @@ pub fn spawn_overworld_object_instance(
     let container_contents = if object.contents.is_empty() {
         None
     } else {
-        Some(object.contents.clone())
+        Some(
+            object
+                .contents
+                .iter()
+                .map(|&id| {
+                    Some(InventoryStack {
+                        object_id: id,
+                        quantity: 1,
+                    })
+                })
+                .collect(),
+        )
     };
 
     let entity = spawn_overworld_object(
@@ -344,7 +356,7 @@ pub fn spawn_overworld_object(
     definitions: &OverworldObjectDefinitions,
     object_id: u64,
     definition_id: &str,
-    container_contents: Option<Vec<u64>>,
+    container_contents: Option<Vec<Option<InventoryStack>>>,
     space_id: SpaceId,
     tile_position: TilePosition,
 ) -> Entity {
@@ -374,16 +386,16 @@ pub fn spawn_overworld_object(
     }
 
     if let Some(capacity) = definition.container_capacity {
-        entity.insert(Container {
-            slots: vec![None; capacity],
-        });
-
-        if let Some(container_contents) = container_contents {
-            let mut slots = vec![None; capacity];
-            for (index, object_id) in container_contents.into_iter().enumerate().take(capacity) {
-                slots[index] = Some(object_id);
+        if let Some(slots) = container_contents {
+            let mut padded = vec![None; capacity];
+            for (i, s) in slots.into_iter().enumerate().take(capacity) {
+                padded[i] = s;
             }
-            entity.insert(Container { slots });
+            entity.insert(Container { slots: padded });
+        } else {
+            entity.insert(Container {
+                slots: vec![None; capacity],
+            });
         }
     }
 

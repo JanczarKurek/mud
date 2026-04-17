@@ -70,6 +70,11 @@ pub enum GameCommand {
         source: ItemReference,
         destination: ItemDestination,
     },
+    TakeFromStack {
+        source: ItemSlotRef,
+        amount: u32,
+        destination: ItemDestination,
+    },
     AdminSpawn {
         type_id: String,
         tile_position: TilePosition,

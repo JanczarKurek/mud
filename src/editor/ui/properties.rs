@@ -78,13 +78,19 @@ pub fn spawn_properties_panel(parent: &mut ChildSpawnerCommands) {
                 .with_children(|h| {
                     h.spawn((
                         Text::new("Properties"),
-                        TextFont { font_size: 14.0, ..default() },
+                        TextFont {
+                            font_size: 14.0,
+                            ..default()
+                        },
                         TextColor(Color::srgb(0.96, 0.84, 0.62)),
                     ));
                     h.spawn((
                         EditorPropertiesHeader,
                         Text::new(""),
-                        TextFont { font_size: 11.0, ..default() },
+                        TextFont {
+                            font_size: 11.0,
+                            ..default()
+                        },
                         TextColor(Color::srgb(0.70, 0.66, 0.60)),
                     ));
                 });
@@ -149,7 +155,9 @@ pub fn sync_properties_panel(
     };
 
     // Despawn old property rows.
-    commands.entity(content_entity).despawn_related::<Children>();
+    commands
+        .entity(content_entity)
+        .despawn_related::<Children>();
 
     // Get current properties to display.
     let entries = if prop_buffer.object_id == Some(selected_id) {
@@ -158,7 +166,8 @@ pub fn sync_properties_panel(
         object_registry
             .properties(selected_id)
             .map(|p| {
-                let mut v: Vec<(String, String)> = p.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                let mut v: Vec<(String, String)> =
+                    p.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                 v.sort_by(|a, b| a.0.cmp(&b.0));
                 v
             })
@@ -170,7 +179,10 @@ pub fn sync_properties_panel(
         if entries.is_empty() {
             content.spawn((
                 Text::new("(no properties)"),
-                TextFont { font_size: 11.0, ..default() },
+                TextFont {
+                    font_size: 11.0,
+                    ..default()
+                },
                 TextColor(Color::srgb(0.55, 0.52, 0.48)),
             ));
         }
@@ -219,19 +231,31 @@ pub fn sync_properties_panel(
                     row.spawn((
                         EditorPropertyKeyText { index },
                         Text::new(displayed_key),
-                        TextFont { font_size: 11.0, ..default() },
+                        TextFont {
+                            font_size: 11.0,
+                            ..default()
+                        },
                         TextColor(Color::srgb(0.80, 0.76, 0.68)),
-                        Node { flex_shrink: 0.0, ..default() },
+                        Node {
+                            flex_shrink: 0.0,
+                            ..default()
+                        },
                     ));
                     row.spawn((
                         Text::new(":"),
-                        TextFont { font_size: 11.0, ..default() },
+                        TextFont {
+                            font_size: 11.0,
+                            ..default()
+                        },
                         TextColor(Color::srgb(0.55, 0.50, 0.45)),
                     ));
                     row.spawn((
                         EditorPropertyValueText { index },
                         Text::new(displayed_value),
-                        TextFont { font_size: 11.0, ..default() },
+                        TextFont {
+                            font_size: 11.0,
+                            ..default()
+                        },
                         TextColor(Color::srgb(0.96, 0.92, 0.80)),
                         Node {
                             overflow: Overflow::clip_x(),
@@ -243,39 +267,43 @@ pub fn sync_properties_panel(
         }
 
         // "Add property" row.
-        content.spawn((
-            Node {
-                width: Val::Percent(100.0),
-                margin: UiRect::top(Val::Px(6.0)),
-                border: UiRect::top(Val::Px(1.0)),
-                padding: UiRect::top(Val::Px(4.0)),
-                ..default()
-            },
-            BorderColor::all(Color::srgb(0.25, 0.18, 0.12)),
-        ))
-        .with_children(|footer| {
-            footer
-                .spawn((
-                    Button,
-                    EditorPropertyAddButton,
-                    Node {
-                        width: Val::Percent(100.0),
-                        padding: UiRect::axes(Val::Px(6.0), Val::Px(4.0)),
-                        justify_content: JustifyContent::Center,
-                        border: UiRect::all(Val::Px(1.0)),
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgba(0.12, 0.09, 0.06, 0.80)),
-                    BorderColor::all(Color::srgb(0.30, 0.22, 0.14)),
-                ))
-                .with_children(|btn| {
-                    btn.spawn((
-                        Text::new("+ Add property"),
-                        TextFont { font_size: 11.0, ..default() },
-                        TextColor(Color::srgb(0.85, 0.80, 0.70)),
-                    ));
-                });
-        });
+        content
+            .spawn((
+                Node {
+                    width: Val::Percent(100.0),
+                    margin: UiRect::top(Val::Px(6.0)),
+                    border: UiRect::top(Val::Px(1.0)),
+                    padding: UiRect::top(Val::Px(4.0)),
+                    ..default()
+                },
+                BorderColor::all(Color::srgb(0.25, 0.18, 0.12)),
+            ))
+            .with_children(|footer| {
+                footer
+                    .spawn((
+                        Button,
+                        EditorPropertyAddButton,
+                        Node {
+                            width: Val::Percent(100.0),
+                            padding: UiRect::axes(Val::Px(6.0), Val::Px(4.0)),
+                            justify_content: JustifyContent::Center,
+                            border: UiRect::all(Val::Px(1.0)),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.12, 0.09, 0.06, 0.80)),
+                        BorderColor::all(Color::srgb(0.30, 0.22, 0.14)),
+                    ))
+                    .with_children(|btn| {
+                        btn.spawn((
+                            Text::new("+ Add property"),
+                            TextFont {
+                                font_size: 11.0,
+                                ..default()
+                            },
+                            TextColor(Color::srgb(0.85, 0.80, 0.70)),
+                        ));
+                    });
+            });
     });
 }
 

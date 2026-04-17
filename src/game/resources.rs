@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::game::commands::GameCommand;
-use crate::player::components::{ChatLog, Inventory, PlayerId};
+use crate::player::components::{ChatLog, Inventory, InventoryStack, PlayerId};
 use crate::world::components::{SpacePosition, TilePosition};
 
 pub type InventoryState = Inventory;
@@ -119,7 +119,7 @@ pub enum GameEvent {
     },
     ContainerChanged {
         object_id: u64,
-        slots: Vec<Option<u64>>,
+        slots: Vec<Option<InventoryStack>>,
     },
     ContainerRemoved {
         object_id: u64,
@@ -156,6 +156,6 @@ pub struct ClientGameState {
     pub current_target_object_id: Option<u64>,
     pub local_player_object_id: Option<u64>,
     pub remote_players: HashMap<PlayerId, ClientRemotePlayerState>,
-    pub container_slots: HashMap<u64, Vec<Option<u64>>>,
+    pub container_slots: HashMap<u64, Vec<Option<InventoryStack>>>,
     pub world_objects: HashMap<u64, ClientWorldObjectState>,
 }

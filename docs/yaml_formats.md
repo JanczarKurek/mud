@@ -328,8 +328,36 @@ Top-level fields:
 - Meaning: display name of the object
 
 ### `description`
-- Type: string
-- Meaning: human-readable description of the object
+- Type: string **or** list of description entries
+- Meaning: human-readable description shown when the player inspects the object
+
+A plain string is the simplest form:
+
+```yaml
+description: A heavy wooden barrel.
+```
+
+For stackable items you can supply a list where each entry is either a plain string (always shown) or a mapping with a `text` field and an optional `stack_size` interval `[min, max]`. The first matching entry wins; use `null` for an open-ended bound.
+
+```yaml
+description:
+  - text: A single red apple.
+    stack_size: [1, 1]
+  - text: A pair of apples.
+    stack_size: [2, 2]
+  - text: "{count_written} apples."
+    stack_size: [3, ~]
+```
+
+The `text` value supports three count placeholders in addition to the normal `{properties.*}` templates:
+
+| Placeholder | Example output for 12 |
+|---|---|
+| `{count}` | `12` |
+| `{count_written}` | `twelve` |
+| `{count_customary}` | `a dozen` |
+
+`{count_customary}` uses built-in English customary names (singleton, pair, trio, dozen, baker's dozen, score, gross) and falls back to `{count_written}` when no customary name exists for the quantity.
 
 ### `extends`
 - Type: string
@@ -505,6 +533,27 @@ Top-level fields:
 - Default: empty list
 - Meaning: reserved list of audio asset paths associated with the object
 
+### `max_stack_size`
+- Type: integer
+- Optional: yes
+- Default: `1` (non-stackable); `consumable` base sets it to `100`
+- Meaning: maximum number of identical items that can occupy a single inventory slot; set to `1` for equipment
+- Example: `max_stack_size: 250`
+
+### `stack_sprites`
+- Type: list of mappings
+- Optional: yes
+- Default: empty (always use `render.sprite_path`)
+- Meaning: per-quantity sprite overrides; each entry has `min_count` (inclusive) and `sprite_path`; the highest-matching tier wins; falls back to `render.sprite_path` if no tier matches
+- Example:
+  ```yaml
+  stack_sprites:
+    - min_count: 100
+      sprite_path: overworld_objects/gold_coin/pile.png
+    - min_count: 10
+      sprite_path: overworld_objects/gold_coin/handful.png
+  ```
+
 `render` fields:
 
 ### `z_index`
@@ -672,8 +721,9 @@ Notes:
 - `extends` is resolved before deserializing the final object definition.
 - If `sprite_path` is omitted or `null`, the object falls back to colored debug rendering.
 - The current runtime uses these fields directly for world spawning, collision, pickup behavior, and container creation.
-- `name`, `description`, and `spell_id` support simple `{properties.<field>}` templating.
+- `name`, `description`, and `spell_id` support `{properties.<field>}` templating.
 - `{properties.<field>.name}` resolves the property value as a spell ID and inserts that spell's display name.
+- `description` additionally supports `{count}`, `{count_written}`, and `{count_customary}` placeholders that resolve to the current world-object or inventory stack quantity.
 
 Equippable item example:
 
