@@ -48,6 +48,10 @@ pub struct OverworldObject {
 #[derive(Component)]
 pub struct Collider;
 
+/// Stack size for a world object sitting on the ground. Absent means quantity = 1.
+#[derive(Component, Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Quantity(pub u32);
+
 #[derive(Component)]
 pub struct WorldVisual {
     pub z_index: f32,

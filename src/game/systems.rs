@@ -16,7 +16,8 @@ use crate::player::components::{
     DerivedStats, InventoryStack, MovementCooldown, Player, PlayerIdentity, VitalStats,
 };
 use crate::world::components::{
-    Collider, Container, Movable, OverworldObject, SpacePosition, SpaceResident, TilePosition,
+    Collider, Container, Movable, OverworldObject, Quantity, SpacePosition, SpaceResident,
+    TilePosition,
 };
 use crate::world::map_layout::SpaceDefinitions;
 use crate::world::object_definitions::{
@@ -80,6 +81,7 @@ pub fn process_game_commands(
         >,
     )>,
     mut npc_vitals_query: Query<(&mut VitalStats, &OverworldObject), (With<Npc>, Without<Player>)>,
+    quantity_query: Query<&Quantity>,
     mut commands: Commands,
 ) {
     let queued_commands = std::mem::take(&mut pending_commands.commands);
@@ -165,6 +167,9 @@ pub fn process_game_commands(
                 handle_inspect(
                     player_entity,
                     target,
+                    &mut container_query,
+                    &object_query,
+                    &quantity_query,
                     &mut player_queries.p2(),
                     &object_registry,
                     &definitions,
@@ -248,6 +253,7 @@ pub fn process_game_commands(
                     &collider_positions,
                     &movable_query,
                     &object_query,
+                    &quantity_query,
                     &mut object_registry,
                     &definitions,
                     &world_config,
@@ -286,6 +292,7 @@ pub fn process_game_commands(
                     &collider_positions,
                     &movable_query,
                     &object_query,
+                    &quantity_query,
                     &mut object_registry,
                     &definitions,
                     &world_config,
@@ -357,6 +364,7 @@ pub fn collect_game_events_from_authority(
             Has<Container>,
             Has<Npc>,
             Has<Movable>,
+            Option<&Quantity>,
         ),
         Without<Player>,
     >,
@@ -500,7 +508,7 @@ pub fn collect_game_events_from_authority(
     }
 
     let mut current_world_object_ids = Vec::new();
-    for (space_resident, tile_position, object, vitals, has_container, has_npc, has_movable) in
+    for (space_resident, tile_position, object, vitals, has_container, has_npc, has_movable, qty) in
         &world_object_query
     {
         if space_resident.space_id != local_space_id {
@@ -521,6 +529,7 @@ pub fn collect_game_events_from_authority(
             is_container: has_container,
             is_npc: has_npc,
             is_movable: has_movable,
+            quantity: qty.map(|q| q.0).unwrap_or(1),
         };
 
         if client_state.world_objects.get(&object.object_id) != Some(&projected_object) {
@@ -888,6 +897,9 @@ fn handle_open_container(
 fn handle_inspect(
     player_entity: Entity,
     target: InspectTarget,
+    container_query: &mut Query<&mut Container>,
+    object_query: &Query<(Entity, &SpaceResident, &TilePosition, &OverworldObject), Without<Player>>,
+    quantity_query: &Query<&Quantity>,
     player_query: &mut Query<
         (
             Entity,
@@ -906,15 +918,66 @@ fn handle_inspect(
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
 ) {
-    let Ok((_, _, _, mut chat_log_state, _, _, _, _, _)) = player_query.get_mut(player_entity)
-    else {
+    // Resolve (object_id, count) using a read-only borrow so it doesn't
+    // conflict with the mutable chat-log borrow below.
+    let result = {
+        let Ok((_, _, inventory_state, _, _, _, _, _, _)) = player_query.get(player_entity) else {
+            return;
+        };
+        match target {
+            InspectTarget::Object(id) => {
+                let entity = object_query
+                    .iter()
+                    .find(|(_, _, _, obj)| obj.object_id == id)
+                    .map(|(e, _, _, _)| e);
+                let count = entity
+                    .and_then(|e| quantity_query.get(e).ok())
+                    .map(|q| q.0)
+                    .unwrap_or(1);
+                Some((id, count))
+            }
+            InspectTarget::SlotItem(slot_ref) => match slot_ref {
+                ItemSlotRef::Backpack(idx) => inventory_state
+                    .backpack_slots
+                    .get(idx)
+                    .copied()
+                    .flatten()
+                    .map(|s| (s.object_id, s.quantity)),
+                ItemSlotRef::Equipment(slot) => inventory_state
+                    .equipment_item(slot)
+                    .map(|id| (id, 1u32)),
+                ItemSlotRef::Container { .. } => None, // resolved below with container_query
+            },
+        }
+    };
+
+    // Container slots require container_query (different query, no conflict).
+    let result = result.or_else(|| {
+        if let InspectTarget::SlotItem(ItemSlotRef::Container { object_id, slot_index }) = target {
+            let entity = find_container_entity(object_id, object_query)?;
+            let container = container_query.get_mut(entity).ok()?;
+            container
+                .slots
+                .get(slot_index)
+                .copied()
+                .flatten()
+                .map(|s| (s.object_id, s.quantity))
+        } else {
+            None
+        }
+    });
+
+    let Some((object_id, count)) = result else {
         return;
     };
-    let InspectTarget::Object(object_id) = target;
-    if let Some(description) =
-        object_description(object_id, object_registry, definitions, spell_definitions)
+
+    let description =
+        object_description(object_id, count, object_registry, definitions, spell_definitions);
+
+    if let (Some(desc), Ok((_, _, _, mut chat_log, _, _, _, _, _))) =
+        (description, player_query.get_mut(player_entity))
     {
-        chat_log_state.push_narrator(description);
+        chat_log.push_narrator(desc);
     }
 }
 
@@ -1232,6 +1295,7 @@ fn handle_move_item(
         (Entity, &SpaceResident, &TilePosition, &OverworldObject),
         Without<Player>,
     >,
+    quantity_query: &Query<&Quantity>,
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     world_config: &WorldConfig,
@@ -1263,7 +1327,7 @@ fn handle_move_item(
                 chat_log_state.push_narrator("That item is out of reach.");
                 return;
             }
-            let quantity = object_registry.world_object_quantity(object_id);
+            let quantity = quantity_query.get(entity).map(|q| q.0).unwrap_or(1);
             let stack = InventoryStack {
                 object_id,
                 quantity,
@@ -1279,7 +1343,6 @@ fn handle_move_item(
             ) {
                 return;
             }
-            object_registry.set_world_object_quantity(object_id, 1);
             commands.entity(entity).despawn();
         }
         (ItemReference::WorldObject(object_id), ItemDestination::WorldTile(target_tile)) => {
@@ -1296,6 +1359,7 @@ fn handle_move_item(
                     target_tile,
                     space_resident.space_id,
                     object_query,
+                    quantity_query,
                     object_registry,
                     definitions,
                     commands,
@@ -1354,6 +1418,37 @@ fn handle_move_item(
             ) else {
                 return;
             };
+
+            let Some(type_id) = object_registry.type_id(stack.object_id).map(str::to_owned) else {
+                restore_stack_to_slot_ref(
+                    &mut inventory_state,
+                    container_query,
+                    object_query,
+                    slot_ref,
+                    stack,
+                );
+                return;
+            };
+
+            // Try merging into an existing same-type ground stack at the exact target
+            // tile first, bypassing the "occupied by movable" rejection.
+            if is_near_player(&player_position, &target_tile)
+                && add_to_ground_stack(
+                    &type_id,
+                    stack.quantity,
+                    target_tile,
+                    space_resident.space_id,
+                    object_query,
+                    quantity_query,
+                    object_registry,
+                    definitions,
+                    commands,
+                )
+            {
+                return;
+            }
+
+            // No merge: find a valid drop tile and spawn a new world object.
             let Some(world_drop_tile) = find_nearest_valid_world_drop_tile(
                 target_tile,
                 None,
@@ -1374,28 +1469,17 @@ fn handle_move_item(
                 return;
             };
 
-            let Some(type_id) = object_registry.type_id(stack.object_id).map(str::to_owned) else {
-                restore_stack_to_slot_ref(
-                    &mut inventory_state,
-                    container_query,
-                    object_query,
-                    slot_ref,
-                    stack,
-                );
-                return;
-            };
-
-            // Try to merge with an existing same-type ground stack; spawn only if no merge.
             if !add_to_ground_stack(
                 &type_id,
                 stack.quantity,
                 world_drop_tile,
                 space_resident.space_id,
                 object_query,
+                quantity_query,
                 object_registry,
                 definitions,
+                commands,
             ) {
-                object_registry.set_world_object_quantity(stack.object_id, stack.quantity);
                 spawn_overworld_object(
                     commands,
                     definitions,
@@ -1404,6 +1488,7 @@ fn handle_move_item(
                     None,
                     space_resident.space_id,
                     world_drop_tile,
+                    Some(stack.quantity),
                 );
             }
         }
@@ -1413,7 +1498,7 @@ fn handle_move_item(
 #[allow(clippy::too_many_arguments)]
 fn handle_take_from_stack(
     player_entity: Entity,
-    source: ItemSlotRef,
+    source: ItemReference,
     amount: u32,
     destination: ItemDestination,
     container_query: &mut Query<&mut Container>,
@@ -1440,22 +1525,14 @@ fn handle_take_from_stack(
         (Entity, &SpaceResident, &TilePosition, &OverworldObject),
         Without<Player>,
     >,
+    quantity_query: &Query<&Quantity>,
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     world_config: &WorldConfig,
     commands: &mut Commands,
 ) {
-    let Ok((
-        _,
-        _,
-        mut inventory_state,
-        mut chat_log_state,
-        space_resident,
-        player_position,
-        _,
-        _,
-        _,
-    )) = player_query.get_mut(player_entity)
+    let Ok((_, _, mut inventory_state, mut chat_log_state, space_resident, player_position, _, _, _)) =
+        player_query.get_mut(player_entity)
     else {
         return;
     };
@@ -1464,126 +1541,184 @@ fn handle_take_from_stack(
         return;
     }
 
-    let Some(src_stack) =
-        stack_in_slot_ref(&inventory_state, container_query, object_query, source)
-    else {
-        return;
-    };
-    if amount > src_stack.quantity {
-        return;
-    }
+    match source {
+        // ── source is an inventory/container slot ──────────────────────────────
+        ItemReference::Slot(src_slot_ref) => {
+            let Some(src_stack) =
+                stack_in_slot_ref(&inventory_state, container_query, object_query, src_slot_ref)
+            else {
+                return;
+            };
+            if amount > src_stack.quantity {
+                return;
+            }
+            let Some(src_type_id) = object_registry
+                .type_id(src_stack.object_id)
+                .map(str::to_owned)
+            else {
+                return;
+            };
+            let max_stack = definitions
+                .get(&src_type_id)
+                .map(|d| d.max_stack_size)
+                .unwrap_or(1);
 
-    let Some(src_type_id) = object_registry
-        .type_id(src_stack.object_id)
-        .map(str::to_owned)
-    else {
-        return;
-    };
-    let max_stack = definitions
-        .get(&src_type_id)
-        .map(|d| d.max_stack_size)
-        .unwrap_or(1);
-
-    match destination {
-        ItemDestination::Slot(dst_slot_ref) => {
-            let dst_obj_id = object_id_in_slot_ref(
-                &inventory_state,
-                container_query,
-                object_query,
-                dst_slot_ref,
-            );
-            match dst_obj_id {
-                None => {
-                    let new_id = object_registry.allocate_runtime_id(src_type_id);
-                    let new_stack = InventoryStack {
-                        object_id: new_id,
-                        quantity: amount,
-                    };
-                    if place_stack_in_slot_ref(
-                        &mut inventory_state,
-                        container_query,
-                        object_query,
-                        new_stack,
-                        dst_slot_ref,
-                        object_registry,
-                        definitions,
-                    ) {
-                        reduce_slot_quantity(
-                            &mut inventory_state,
-                            container_query,
-                            object_query,
-                            source,
-                            amount,
-                        );
-                    }
-                }
-                Some(dst_id) => {
-                    let Some(dst_type) = object_registry.type_id(dst_id).map(str::to_owned) else {
-                        return;
-                    };
-                    if dst_type != src_type_id {
-                        chat_log_state.push_narrator("Can't mix different item types.");
-                        return;
-                    }
-                    let dst_stack = stack_in_slot_ref(
+            match destination {
+                ItemDestination::Slot(dst_slot_ref) => {
+                    let dst_obj_id = object_id_in_slot_ref(
                         &inventory_state,
                         container_query,
                         object_query,
                         dst_slot_ref,
                     );
-                    let dst_qty = dst_stack.map(|s| s.quantity).unwrap_or(0);
-                    if dst_qty + amount > max_stack {
-                        chat_log_state.push_narrator("Not enough space in that slot.");
-                        return;
+                    match dst_obj_id {
+                        None => {
+                            let new_id = object_registry.allocate_runtime_id(src_type_id);
+                            let new_stack = InventoryStack {
+                                object_id: new_id,
+                                quantity: amount,
+                            };
+                            if place_stack_in_slot_ref(
+                                &mut inventory_state,
+                                container_query,
+                                object_query,
+                                new_stack,
+                                dst_slot_ref,
+                                object_registry,
+                                definitions,
+                            ) {
+                                reduce_slot_quantity(
+                                    &mut inventory_state,
+                                    container_query,
+                                    object_query,
+                                    src_slot_ref,
+                                    amount,
+                                );
+                            }
+                        }
+                        Some(dst_id) => {
+                            let Some(dst_type) =
+                                object_registry.type_id(dst_id).map(str::to_owned)
+                            else {
+                                return;
+                            };
+                            if dst_type != src_type_id {
+                                chat_log_state.push_narrator("Can't mix different item types.");
+                                return;
+                            }
+                            let dst_qty = stack_in_slot_ref(
+                                &inventory_state,
+                                container_query,
+                                object_query,
+                                dst_slot_ref,
+                            )
+                            .map(|s| s.quantity)
+                            .unwrap_or(0);
+                            if dst_qty + amount > max_stack {
+                                chat_log_state.push_narrator("Not enough space in that slot.");
+                                return;
+                            }
+                            add_to_slot_quantity(
+                                &mut inventory_state,
+                                container_query,
+                                object_query,
+                                dst_slot_ref,
+                                amount,
+                            );
+                            reduce_slot_quantity(
+                                &mut inventory_state,
+                                container_query,
+                                object_query,
+                                src_slot_ref,
+                                amount,
+                            );
+                        }
                     }
-                    add_to_slot_quantity(
-                        &mut inventory_state,
-                        container_query,
-                        object_query,
-                        dst_slot_ref,
-                        amount,
+                }
+                ItemDestination::WorldTile(target_tile) => {
+                    let Some(world_drop_tile) = find_nearest_valid_world_drop_tile(
+                        target_tile,
+                        None,
+                        space_resident.space_id,
+                        &player_position,
+                        Entity::PLACEHOLDER,
+                        collider_positions,
+                        movable_query,
+                        world_config,
+                    ) else {
+                        return;
+                    };
+                    let new_id = object_registry.allocate_runtime_id(src_type_id.clone());
+                    spawn_overworld_object(
+                        commands,
+                        definitions,
+                        new_id,
+                        &src_type_id,
+                        None,
+                        space_resident.space_id,
+                        world_drop_tile,
+                        Some(amount),
                     );
                     reduce_slot_quantity(
                         &mut inventory_state,
                         container_query,
                         object_query,
-                        source,
+                        src_slot_ref,
                         amount,
                     );
                 }
             }
         }
-        ItemDestination::WorldTile(target_tile) => {
-            let Some(world_drop_tile) = find_nearest_valid_world_drop_tile(
-                target_tile,
-                None,
-                space_resident.space_id,
-                &player_position,
-                Entity::PLACEHOLDER,
-                collider_positions,
-                movable_query,
-                world_config,
-            ) else {
+
+        // ── source is a world object (ground stack) ────────────────────────────
+        ItemReference::WorldObject(object_id) => {
+            let Some((entity, tile_position)) =
+                find_movable_entity(object_id, space_resident.space_id, movable_query)
+            else {
                 return;
             };
-            let new_id = object_registry.allocate_runtime_id(src_type_id.clone());
-            object_registry.set_world_object_quantity(new_id, amount);
-            spawn_overworld_object(
-                commands,
-                definitions,
-                new_id,
-                &src_type_id,
-                None,
-                space_resident.space_id,
-                world_drop_tile,
-            );
-            reduce_slot_quantity(
+            if !is_near_player(&player_position, &tile_position) {
+                return;
+            }
+            let world_qty = quantity_query.get(entity).map(|q| q.0).unwrap_or(1);
+            let actual_amount = amount.min(world_qty);
+            let Some(src_type_id) = object_registry.type_id(object_id).map(str::to_owned) else {
+                return;
+            };
+
+            // Place taken amount into inventory
+            let new_id = object_registry.allocate_runtime_id(src_type_id);
+            let new_stack = InventoryStack {
+                object_id: new_id,
+                quantity: actual_amount,
+            };
+            let destination_slot = match destination {
+                ItemDestination::Slot(s) => s,
+                ItemDestination::WorldTile(_) => return,
+            };
+            if !place_stack_in_slot_ref(
                 &mut inventory_state,
                 container_query,
                 object_query,
-                source,
-                amount,
-            );
+                new_stack,
+                destination_slot,
+                object_registry,
+                definitions,
+            ) {
+                return;
+            }
+
+            // Update or despawn the world entity
+            if actual_amount >= world_qty {
+                commands.entity(entity).despawn();
+            } else {
+                let remaining = world_qty - actual_amount;
+                if remaining > 1 {
+                    commands.entity(entity).insert(Quantity(remaining));
+                } else {
+                    commands.entity(entity).remove::<Quantity>();
+                }
+            }
         }
     }
 }
@@ -1600,6 +1735,7 @@ fn merge_into_ground_stack(
         (Entity, &SpaceResident, &TilePosition, &OverworldObject),
         Without<Player>,
     >,
+    quantity_query: &Query<&Quantity>,
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     commands: &mut Commands,
@@ -1613,7 +1749,10 @@ fn merge_into_ground_stack(
     if def.max_stack_size <= 1 {
         return false;
     }
-    let dragged_qty = object_registry.world_object_quantity(dragged_object_id);
+    let dragged_qty = quantity_query
+        .get(dragged_entity)
+        .map(|q| q.0)
+        .unwrap_or(1);
 
     for (other_entity, other_resident, other_tile, other_object) in object_query.iter() {
         if other_entity == dragged_entity
@@ -1628,18 +1767,27 @@ fn merge_into_ground_stack(
         if other_type != type_id {
             continue;
         }
-        let other_qty = object_registry.world_object_quantity(other_object.object_id);
+        let other_qty = quantity_query.get(other_entity).map(|q| q.0).unwrap_or(1);
         if other_qty >= def.max_stack_size {
             continue;
         }
         let addable = (def.max_stack_size - other_qty).min(dragged_qty);
-        object_registry
-            .set_world_object_quantity(other_object.object_id, other_qty + addable);
+        let new_other_qty = other_qty + addable;
+        if new_other_qty > 1 {
+            commands.entity(other_entity).insert(Quantity(new_other_qty));
+        } else {
+            commands.entity(other_entity).remove::<Quantity>();
+        }
         if addable >= dragged_qty {
             commands.entity(dragged_entity).despawn();
         } else {
             // Partial merge — leave remainder on the dragged entity (stays at origin tile)
-            object_registry.set_world_object_quantity(dragged_object_id, dragged_qty - addable);
+            let remaining = dragged_qty - addable;
+            if remaining > 1 {
+                commands.entity(dragged_entity).insert(Quantity(remaining));
+            } else {
+                commands.entity(dragged_entity).remove::<Quantity>();
+            }
         }
         return true;
     }
@@ -1657,8 +1805,10 @@ fn add_to_ground_stack(
         (Entity, &SpaceResident, &TilePosition, &OverworldObject),
         Without<Player>,
     >,
+    quantity_query: &Query<&Quantity>,
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
+    commands: &mut Commands,
 ) -> bool {
     let Some(def) = definitions.get(type_id) else {
         return false;
@@ -1667,7 +1817,7 @@ fn add_to_ground_stack(
         return false;
     }
 
-    for (_, other_resident, other_tile, other_object) in object_query.iter() {
+    for (other_entity, other_resident, other_tile, other_object) in object_query.iter() {
         if other_resident.space_id != space_id || *other_tile != tile {
             continue;
         }
@@ -1677,12 +1827,17 @@ fn add_to_ground_stack(
         if other_type != type_id {
             continue;
         }
-        let other_qty = object_registry.world_object_quantity(other_object.object_id);
+        let other_qty = quantity_query.get(other_entity).map(|q| q.0).unwrap_or(1);
         if other_qty >= def.max_stack_size {
             continue;
         }
         let addable = (def.max_stack_size - other_qty).min(qty);
-        object_registry.set_world_object_quantity(other_object.object_id, other_qty + addable);
+        let new_qty = other_qty + addable;
+        if new_qty > 1 {
+            commands.entity(other_entity).insert(Quantity(new_qty));
+        } else {
+            commands.entity(other_entity).remove::<Quantity>();
+        }
         return addable >= qty;
     }
     false
@@ -1749,6 +1904,7 @@ fn handle_admin_spawn(
         None,
         space_resident.space_id,
         tile_position,
+        None,
     );
     chat_log_state.push_narrator(format!(
         "Spawned {} as id {} at ({}, {}).",
@@ -2236,6 +2392,7 @@ fn place_item_in_equipment_slot(
 
 fn object_description(
     object_id: u64,
+    count: u32,
     object_registry: &ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
@@ -2246,11 +2403,8 @@ fn object_description(
         .display_name(object_id, definitions, spell_definitions)
         .unwrap_or_else(|| definition.name.clone());
     let description_text = object_registry
-        .description(object_id, definitions, spell_definitions)
-        .unwrap_or_else(|| {
-            let count = object_registry.world_object_quantity(object_id);
-            definition.description_for_count(count).to_owned()
-        });
+        .description_with_count(object_id, count, definitions, spell_definitions)
+        .unwrap_or_else(|| definition.description_for_count(count).to_owned());
     let description = description_text.trim();
     if description.is_empty() {
         Some(format!("Just a {}.", display_name.to_lowercase()))

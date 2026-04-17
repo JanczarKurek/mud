@@ -13,8 +13,6 @@ use crate::world::object_definitions::{
 pub struct ObjectRegistry {
     type_ids: HashMap<u64, String>,
     properties: HashMap<u64, ObjectProperties>,
-    /// World-object quantities > 1 (inventory quantities live in InventoryStack).
-    quantities: HashMap<u64, u32>,
     next_runtime_id: u64,
 }
 
@@ -23,8 +21,6 @@ pub struct ObjectRegistrySnapshotEntry {
     pub object_id: u64,
     pub type_id: String,
     pub properties: ObjectProperties,
-    #[serde(default)]
-    pub quantity: Option<u32>,
 }
 
 impl ObjectRegistry {
@@ -49,7 +45,6 @@ impl ObjectRegistry {
         Self {
             type_ids,
             properties,
-            quantities: HashMap::new(),
             next_runtime_id: max_id + 1,
         }
     }
@@ -57,22 +52,15 @@ impl ObjectRegistry {
     pub fn from_snapshot(entries: Vec<ObjectRegistrySnapshotEntry>, next_runtime_id: u64) -> Self {
         let mut type_ids = HashMap::new();
         let mut properties = HashMap::new();
-        let mut quantities = HashMap::new();
 
         for entry in entries {
             type_ids.insert(entry.object_id, entry.type_id);
             properties.insert(entry.object_id, entry.properties);
-            if let Some(q) = entry.quantity {
-                if q > 1 {
-                    quantities.insert(entry.object_id, q);
-                }
-            }
         }
 
         Self {
             type_ids,
             properties,
-            quantities,
             next_runtime_id,
         }
     }
@@ -109,18 +97,6 @@ impl ObjectRegistry {
         self.next_runtime_id
     }
 
-    pub fn world_object_quantity(&self, object_id: u64) -> u32 {
-        self.quantities.get(&object_id).copied().unwrap_or(1)
-    }
-
-    pub fn set_world_object_quantity(&mut self, object_id: u64, quantity: u32) {
-        if quantity <= 1 {
-            self.quantities.remove(&object_id);
-        } else {
-            self.quantities.insert(object_id, quantity);
-        }
-    }
-
     pub fn snapshot_entries(&self) -> Vec<ObjectRegistrySnapshotEntry> {
         let mut entries = self
             .type_ids
@@ -129,7 +105,6 @@ impl ObjectRegistry {
                 object_id: *object_id,
                 type_id: type_id.clone(),
                 properties: self.properties.get(object_id).cloned().unwrap_or_default(),
-                quantity: self.quantities.get(object_id).copied().filter(|&q| q > 1),
             })
             .collect::<Vec<_>>();
         entries.sort_by_key(|entry| entry.object_id);
@@ -144,19 +119,18 @@ impl ObjectRegistry {
     ) -> Option<String> {
         let type_id = self.type_id(object_id)?;
         let definition = definitions.get(type_id)?;
-        let count = self.world_object_quantity(object_id);
-        Some(self.render_template(object_id, &definition.name, spell_definitions, count))
+        Some(self.render_template(object_id, &definition.name, spell_definitions, 1))
     }
 
-    pub fn description(
+    pub fn description_with_count(
         &self,
         object_id: u64,
+        count: u32,
         definitions: &OverworldObjectDefinitions,
         spell_definitions: &SpellDefinitions,
     ) -> Option<String> {
         let type_id = self.type_id(object_id)?;
         let definition = definitions.get(type_id)?;
-        let count = self.world_object_quantity(object_id);
         let template = definition.description_for_count(count);
         Some(self.render_template(object_id, template, spell_definitions, count))
     }
@@ -169,11 +143,10 @@ impl ObjectRegistry {
     ) -> Option<String> {
         let type_id = self.type_id(object_id)?;
         let definition = definitions.get(type_id)?;
-        let count = self.world_object_quantity(object_id);
         definition
             .spell_id
             .as_ref()
-            .map(|template| self.render_template(object_id, template, spell_definitions, count))
+            .map(|template| self.render_template(object_id, template, spell_definitions, 1))
     }
 
     fn render_template(

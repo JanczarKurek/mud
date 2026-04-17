@@ -37,7 +37,10 @@ pub enum UseTarget {
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub enum InspectTarget {
+    /// A world object — quantity is looked up from ObjectRegistry.
     Object(u64),
+    /// An inventory/container slot — quantity is read from the InventoryStack.
+    SlotItem(ItemSlotRef),
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -71,7 +74,7 @@ pub enum GameCommand {
         destination: ItemDestination,
     },
     TakeFromStack {
-        source: ItemSlotRef,
+        source: ItemReference,
         amount: u32,
         destination: ItemDestination,
     },

@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::game::commands::ItemSlotRef;
+use crate::game::commands::ItemReference;
 use crate::ui::components::ItemSlotKind;
 use crate::world::components::TilePosition;
 
@@ -57,7 +57,7 @@ impl ContextMenuState {
 
 #[derive(Resource, Default)]
 pub struct TakePartialState {
-    pub source_slot: Option<ItemSlotRef>,
+    pub source: Option<ItemReference>,
     pub max_amount: u32,
     pub selected_amount: u32,
 }

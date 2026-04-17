@@ -129,6 +129,7 @@ fn execute_op(
                 None,
                 space_id,
                 tile,
+                None,
             );
             if !properties.is_empty() {
                 object_registry.set_properties(new_id, properties.clone());

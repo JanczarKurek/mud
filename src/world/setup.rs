@@ -9,8 +9,8 @@ use crate::player::components::InventoryStack;
 use crate::player::components::{BaseStats, DerivedStats, VitalStats};
 use crate::world::components::{
     ClientProjectedWorldObject, ClientRemotePlayerVisual, Collider, CombatHealthBar, Container,
-    DisplayedVitalStats, HealthBarDisplayPolicy, Movable, OverworldObject, SpaceId, SpacePosition,
-    SpaceResident, Storable, TilePosition, WorldVisual,
+    DisplayedVitalStats, HealthBarDisplayPolicy, Movable, OverworldObject, Quantity, SpaceId,
+    SpacePosition, SpaceResident, Storable, TilePosition, WorldVisual,
 };
 use crate::world::map_layout::{
     MapBehavior, MapObjectInstance, PortalDefinition, SpaceDefinition, SpaceDefinitions,
@@ -199,6 +199,7 @@ pub fn spawn_overworld_object_instance(
         container_contents,
         space_id,
         tile_position,
+        None,
     );
 
     if let Some(behavior) = &object.behavior {
@@ -359,6 +360,7 @@ pub fn spawn_overworld_object(
     container_contents: Option<Vec<Option<InventoryStack>>>,
     space_id: SpaceId,
     tile_position: TilePosition,
+    quantity: Option<u32>,
 ) -> Entity {
     let mut entity = commands.spawn((
         OverworldObject {
@@ -396,6 +398,12 @@ pub fn spawn_overworld_object(
             entity.insert(Container {
                 slots: vec![None; capacity],
             });
+        }
+    }
+
+    if let Some(q) = quantity {
+        if q > 1 {
+            entity.insert(Quantity(q));
         }
     }
 

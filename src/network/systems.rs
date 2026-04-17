@@ -20,7 +20,8 @@ use crate::player::components::{
 };
 use crate::player::setup::spawn_player_authoritative_in_space;
 use crate::world::components::{
-    Collider, Container, Movable, OverworldObject, SpacePosition, SpaceResident, TilePosition,
+    Collider, Container, Movable, OverworldObject, Quantity, SpacePosition, SpaceResident,
+    TilePosition,
 };
 use crate::world::map_layout::SpaceDefinitions;
 use crate::world::object_registry::ObjectRegistry;
@@ -179,6 +180,7 @@ pub fn flush_server_messages(
             Has<Container>,
             Has<Npc>,
             Has<Movable>,
+            Option<&Quantity>,
         ),
         Without<Player>,
     >,
@@ -413,6 +415,7 @@ fn build_client_game_state(
             Has<Container>,
             Has<Npc>,
             Has<Movable>,
+            Option<&Quantity>,
         ),
         Without<Player>,
     >,
@@ -500,7 +503,7 @@ fn build_client_game_state(
             .insert(object.object_id, container.slots.clone());
     }
 
-    for (space_resident, tile_position, object, vitals, has_container, has_npc, has_movable) in
+    for (space_resident, tile_position, object, vitals, has_container, has_npc, has_movable, qty) in
         world_object_query.iter()
     {
         if space_resident.space_id != local_space_id {
@@ -522,6 +525,7 @@ fn build_client_game_state(
                 is_container: has_container,
                 is_npc: has_npc,
                 is_movable: has_movable,
+                quantity: qty.map(|q| q.0).unwrap_or(1),
             },
         );
     }

@@ -168,6 +168,8 @@ pub struct WorldObjectStateDump {
     pub storable: bool,
     pub container_slots: Option<Vec<Option<InventoryStack>>>,
     pub npc: Option<NpcStateDump>,
+    #[serde(default)]
+    pub quantity: Option<u32>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -223,6 +225,7 @@ fn save_world_on_app_exit(
             Option<&Container>,
             Has<Npc>,
             Option<&CombatTarget>,
+            Option<&crate::world::components::Quantity>,
         ),
         Without<Player>,
     >,
@@ -253,7 +256,7 @@ fn save_world_on_app_exit(
     for (entity, _, object, _, _, _, _, _, _, _, _, _, _, _) in player_query.iter() {
         entity_to_object_id.insert(entity, object.object_id);
     }
-    for (entity, object, _, _, _, _, _, _, _, _) in world_object_query.iter() {
+    for (entity, object, _, _, _, _, _, _, _, _, _) in world_object_query.iter() {
         entity_to_object_id.insert(entity, object.object_id);
     }
 
@@ -329,6 +332,7 @@ fn save_world_on_app_exit(
                 container,
                 is_npc,
                 combat_target,
+                quantity,
             )| WorldObjectStateDump {
                 object_id: object.object_id,
                 definition_id: object.definition_id.clone(),
@@ -338,6 +342,7 @@ fn save_world_on_app_exit(
                 movable,
                 storable,
                 container_slots: container.map(|container| container.slots.clone()),
+                quantity: quantity.map(|q| q.0).filter(|&q| q > 1),
                 npc: is_npc.then(|| {
                     let (
                         base_stats,
@@ -599,6 +604,11 @@ fn load_world_from_snapshot(
                 slots: container_slots,
             });
         }
+        if let Some(q) = object.quantity {
+            if q > 1 {
+                entity.insert(crate::world::components::Quantity(q));
+            }
+        }
         if let Some(npc) = object.npc {
             entity.insert(Npc);
             if let Some(base_stats) = npc.base_stats {
@@ -811,13 +821,11 @@ mod tests {
                         object_id: 42,
                         type_id: "player".to_owned(),
                         properties: Default::default(),
-                        quantity: None,
                     },
                     ObjectRegistrySnapshotEntry {
                         object_id: 43,
                         type_id: "barrel".to_owned(),
                         properties: Default::default(),
-                        quantity: None,
                     },
                 ],
             },
@@ -851,6 +859,7 @@ mod tests {
                 storable: false,
                 container_slots: Some(vec![None, None]),
                 npc: None,
+                quantity: None,
             }],
         };
         write_world_dump(&save_path, &dump).unwrap();

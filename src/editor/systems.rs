@@ -365,6 +365,7 @@ pub fn handle_editor_left_click(
         None,
         editor_context.space_id,
         tile,
+        None,
     );
     insert_editor_visuals(
         &mut commands.entity(entity),

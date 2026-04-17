@@ -73,6 +73,7 @@ pub struct ClientWorldObjectState {
     pub is_container: bool,
     pub is_npc: bool,
     pub is_movable: bool,
+    pub quantity: u32,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

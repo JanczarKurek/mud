@@ -401,9 +401,18 @@ pub fn handle_context_menu_actions(
 
     if is_cursor_over_button(cursor_position, &menu_queries.p1()) {
         if let Some(target) = context_menu_state.target {
-            pending_commands.push(GameCommand::Inspect {
-                target: InspectTarget::Object(context_target_object_id(target)),
-            });
+            let inspect_target = match target {
+                ContextMenuTarget::Slot(kind, _) => {
+                    item_slot_kind_to_ref(kind, &docked_panel_state).map_or(
+                        InspectTarget::Object(context_target_object_id(target)),
+                        InspectTarget::SlotItem,
+                    )
+                }
+                ContextMenuTarget::World(_) => {
+                    InspectTarget::Object(context_target_object_id(target))
+                }
+            };
+            pending_commands.push(GameCommand::Inspect { target: inspect_target });
         }
         context_menu_state.hide();
         return;
@@ -455,16 +464,26 @@ pub fn handle_context_menu_actions(
     }
 
     if is_cursor_over_visible_button(cursor_position, &menu_queries.p5()) {
-        if let Some(ContextMenuTarget::Slot(slot_kind, _)) = context_menu_state.target {
-            if let Some(slot_ref) = item_slot_kind_to_ref(slot_kind, &docked_panel_state) {
-                if let Some(stack) =
-                    stack_in_slot_kind(&client_state, &docked_panel_state, slot_kind)
-                {
-                    take_partial_state.source_slot = Some(slot_ref);
-                    take_partial_state.max_amount = stack.quantity;
+        match context_menu_state.target {
+            Some(ContextMenuTarget::Slot(slot_kind, _)) => {
+                if let Some(slot_ref) = item_slot_kind_to_ref(slot_kind, &docked_panel_state) {
+                    if let Some(stack) =
+                        stack_in_slot_kind(&client_state, &docked_panel_state, slot_kind)
+                    {
+                        take_partial_state.source = Some(ItemReference::Slot(slot_ref));
+                        take_partial_state.max_amount = stack.quantity;
+                        take_partial_state.selected_amount = 1;
+                    }
+                }
+            }
+            Some(ContextMenuTarget::World(object_id)) => {
+                if let Some(obj) = client_state.world_objects.get(&object_id) {
+                    take_partial_state.source = Some(ItemReference::WorldObject(object_id));
+                    take_partial_state.max_amount = obj.quantity;
                     take_partial_state.selected_amount = 1;
                 }
             }
+            None => {}
         }
         context_menu_state.hide();
         return;
@@ -763,7 +782,7 @@ pub fn handle_context_menu_opening(
                 &spell_definitions,
             ),
             object.is_npc,
-            false,
+            object.quantity > 1,
         );
         info!(
             "context_open_world_success object_id={} has_container={} can_use={} can_attack={}",
@@ -1085,7 +1104,7 @@ pub fn update_take_partial_popup_visibility(
     let Ok(mut vis) = popup_query.single_mut() else {
         return;
     };
-    *vis = if take_partial_state.source_slot.is_some() {
+    *vis = if take_partial_state.source.is_some() {
         Visibility::Visible
     } else {
         Visibility::Hidden
@@ -1099,7 +1118,7 @@ pub fn sync_take_partial_label(
     let Ok(mut text) = label_query.single_mut() else {
         return;
     };
-    if take_partial_state.source_slot.is_some() {
+    if take_partial_state.source.is_some() {
         text.0 = take_partial_state.selected_amount.to_string();
     }
 }
@@ -1116,7 +1135,7 @@ pub fn handle_take_partial_buttons(
     confirm_query: Query<(&ComputedNode, &UiGlobalTransform), With<TakePartialConfirmButton>>,
     cancel_query: Query<(&ComputedNode, &UiGlobalTransform), With<TakePartialCancelButton>>,
 ) {
-    if take_partial_state.source_slot.is_none() {
+    if take_partial_state.source.is_none() {
         return;
     }
     if !mouse_input.just_pressed(MouseButton::Left) {
@@ -1142,39 +1161,38 @@ pub fn handle_take_partial_buttons(
     }
 
     if is_cursor_over_button(cursor_position, &confirm_query) {
-        let Some(source_slot) = take_partial_state.source_slot else {
+        let Some(source) = take_partial_state.source else {
             return;
         };
         let amount = take_partial_state.selected_amount;
-        let destination =
-            find_best_take_destination(source_slot, &client_state, &docked_panel_state);
+        let destination = find_best_take_destination(source, &client_state, &docked_panel_state);
         if let Some(destination) = destination {
             pending_commands.push(GameCommand::TakeFromStack {
-                source: source_slot,
+                source,
                 amount,
                 destination,
             });
         }
-        take_partial_state.source_slot = None;
+        take_partial_state.source = None;
         return;
     }
 
     if is_cursor_over_button(cursor_position, &cancel_query) {
-        take_partial_state.source_slot = None;
+        take_partial_state.source = None;
     }
 }
 
 fn find_best_take_destination(
-    source: ItemSlotRef,
+    source: ItemReference,
     client_state: &ClientGameState,
     _docked_panel_state: &DockedPanelState,
 ) -> Option<ItemDestination> {
     let visible = client_state
         .player_storage_slots
         .min(client_state.inventory.backpack_slots.len());
-    // Find first empty backpack slot that isn't the source
+    // Find first empty backpack slot that isn't the source slot itself
     for i in 0..visible {
-        if matches!(source, ItemSlotRef::Backpack(s) if s == i) {
+        if matches!(source, ItemReference::Slot(ItemSlotRef::Backpack(s)) if s == i) {
             continue;
         }
         if client_state
