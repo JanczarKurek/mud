@@ -1,10 +1,13 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::fs;
 use std::path::Path;
 
 use bevy::log::info;
 use bevy::prelude::*;
+use serde::de::{self, Visitor};
 use serde::Deserialize;
+use serde::Deserializer;
 use serde::Serialize;
 use serde_yaml::{Mapping, Value};
 
@@ -43,6 +46,109 @@ pub struct OverworldObjectDefinition {
     pub max_stack_size: u32,
     #[serde(default)]
     pub stack_sprites: Vec<StackSpriteTier>,
+    #[serde(default, rename = "loot")]
+    pub loot_table: Option<LootTableDef>,
+}
+
+/// Quantity roll for a loot drop: either a fixed count or a uniform random range.
+#[derive(Clone, Debug, Serialize)]
+pub enum QuantityDistribution {
+    Fixed(u32),
+    /// Inclusive [min, max].
+    Uniform(u32, u32),
+}
+
+impl QuantityDistribution {
+    pub fn roll(&self) -> u32 {
+        match self {
+            QuantityDistribution::Fixed(n) => *n,
+            QuantityDistribution::Uniform(min, max) => {
+                if min >= max {
+                    return *min;
+                }
+                let nanos = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.subsec_nanos() as u64)
+                    .unwrap_or(0);
+                let range = (max - min + 1) as u64;
+                *min + (nanos % range) as u32
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for QuantityDistribution {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct QuantityVisitor;
+
+        impl<'de> Visitor<'de> for QuantityVisitor {
+            type Value = QuantityDistribution;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "an integer or a string like \"uniform(5, 10)\"")
+            }
+
+            fn visit_u64<E: de::Error>(self, v: u64) -> Result<Self::Value, E> {
+                Ok(QuantityDistribution::Fixed(v as u32))
+            }
+
+            fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
+                Ok(QuantityDistribution::Fixed(v.max(0) as u32))
+            }
+
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                let s = v.trim();
+                if let Some(inner) = s.strip_prefix("uniform(").and_then(|s| s.strip_suffix(')')) {
+                    let parts: Vec<&str> = inner.split(',').collect();
+                    if parts.len() == 2 {
+                        let min = parts[0].trim().parse::<u32>().map_err(de::Error::custom)?;
+                        let max = parts[1].trim().parse::<u32>().map_err(de::Error::custom)?;
+                        return Ok(QuantityDistribution::Uniform(min, max));
+                    }
+                }
+                Err(de::Error::custom(format!(
+                    "unrecognized quantity distribution: '{v}'"
+                )))
+            }
+        }
+
+        deserializer.deserialize_any(QuantityVisitor)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct LootDropDef {
+    pub type_id: String,
+    #[serde(default = "default_quantity")]
+    pub quantity: QuantityDistribution,
+    #[serde(default = "default_probability")]
+    pub probability: f32,
+}
+
+fn default_quantity() -> QuantityDistribution {
+    QuantityDistribution::Fixed(1)
+}
+
+fn default_probability() -> f32 {
+    1.0
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct LootTableDef {
+    #[serde(default = "default_corpse_type_id")]
+    pub corpse_type_id: String,
+    #[serde(default = "default_corpse_despawn_seconds")]
+    pub corpse_despawn_seconds: f32,
+    #[serde(default)]
+    pub drops: Vec<LootDropDef>,
+}
+
+fn default_corpse_type_id() -> String {
+    "generic_corpse".to_owned()
+}
+
+fn default_corpse_despawn_seconds() -> f32 {
+    60.0
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

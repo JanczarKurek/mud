@@ -1,0 +1,3 @@
+extends: corpse
+name: Corpse
+description: The remains of a fallen creature.

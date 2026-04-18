@@ -1,6 +1,12 @@
 extends: npc
 name: Goblin
 description: A wiry green nuisance with a mean stare and quick hands.
+loot:
+  corpse_despawn_seconds: 60
+  drops:
+    - type_id: apple
+      quantity: 1
+      probability: 0.5
 stats:
   strength: 8
   agility: 11

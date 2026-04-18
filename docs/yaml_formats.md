@@ -777,6 +777,45 @@ render:
   sprite_path: overworld_objects/scroll/sprite.png
 ```
 
+### NPC Loot Tables
+
+NPCs (objects that `extends: npc`) may include an optional `loot` section. When the NPC dies it spawns a corpse container at its tile. The corpse holds any rolled loot and disappears after `corpse_despawn_seconds`.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `corpse_type_id` | string | `generic_corpse` | Object definition ID to use for the corpse container. Create a custom one to give it a unique sprite/description. |
+| `corpse_despawn_seconds` | float | `60` | Time in seconds before the corpse (and uncollected loot) vanishes. |
+| `drops` | list | `[]` | List of potential item drops (see below). |
+
+Each entry in `drops`:
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `type_id` | string | required | Object definition ID of the item to drop. |
+| `quantity` | int or `uniform(min, max)` | `1` | How many to place. A bare integer gives a fixed count; `uniform(5, 10)` rolls a random integer in `[5, 10]` inclusive. |
+| `probability` | float | `1.0` | Chance (0.0–1.0) of this drop occurring. `1.0` = always, `0.5` = 50 % chance. |
+
+Example (goblin):
+
+```yaml
+loot:
+  corpse_despawn_seconds: 60
+  drops:
+    - type_id: gold_coin
+      quantity: uniform(3, 8)
+      probability: 1.0
+    - type_id: apple
+      quantity: 1
+      probability: 0.4
+    - type_id: leather_armor
+      quantity: 1
+      probability: 0.05
+```
+
+To use a custom corpse sprite, define a separate object (e.g. `goblin_corpse`) that `extends: corpse` with its own `render.sprite_path`, then set `corpse_type_id: goblin_corpse` in the loot block.
+
+The `corpse` base type (in `assets/object_bases/corpse.yaml`) extends `static_world` and provides a 20-slot container. It defaults to the generic skull-and-bones sprite (`overworld_objects/generic_corpse/sprite.png`).
+
 Map instance using the generic scroll:
 
 ```yaml

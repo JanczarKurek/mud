@@ -22,6 +22,7 @@ use crate::player::components::{
 use crate::world::components::{
     Collider, Container, Movable, OverworldObject, SpaceResident, Storable, TilePosition,
 };
+use crate::world::loot::CorpseTtl;
 use crate::world::map_layout::{SpaceDefinitions, SpacePermanence};
 use crate::world::object_registry::{ObjectRegistry, ObjectRegistrySnapshotEntry};
 use crate::world::resources::{RuntimeSpace, SpaceManager};
@@ -170,6 +171,8 @@ pub struct WorldObjectStateDump {
     pub npc: Option<NpcStateDump>,
     #[serde(default)]
     pub quantity: Option<u32>,
+    #[serde(default)]
+    pub remaining_ttl: Option<f32>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -226,6 +229,7 @@ fn save_world_on_app_exit(
             Has<Npc>,
             Option<&CombatTarget>,
             Option<&crate::world::components::Quantity>,
+            Option<&CorpseTtl>,
         ),
         Without<Player>,
     >,
@@ -256,7 +260,7 @@ fn save_world_on_app_exit(
     for (entity, _, object, _, _, _, _, _, _, _, _, _, _, _) in player_query.iter() {
         entity_to_object_id.insert(entity, object.object_id);
     }
-    for (entity, object, _, _, _, _, _, _, _, _, _) in world_object_query.iter() {
+    for (entity, object, _, _, _, _, _, _, _, _, _, _) in world_object_query.iter() {
         entity_to_object_id.insert(entity, object.object_id);
     }
 
@@ -333,6 +337,7 @@ fn save_world_on_app_exit(
                 is_npc,
                 combat_target,
                 quantity,
+                corpse_ttl,
             )| WorldObjectStateDump {
                 object_id: object.object_id,
                 definition_id: object.definition_id.clone(),
@@ -343,6 +348,7 @@ fn save_world_on_app_exit(
                 storable,
                 container_slots: container.map(|container| container.slots.clone()),
                 quantity: quantity.map(|q| q.0).filter(|&q| q > 1),
+                remaining_ttl: corpse_ttl.map(|ttl| ttl.remaining_seconds),
                 npc: is_npc.then(|| {
                     let (
                         base_stats,
@@ -609,6 +615,13 @@ fn load_world_from_snapshot(
                 entity.insert(crate::world::components::Quantity(q));
             }
         }
+        if let Some(remaining) = object.remaining_ttl {
+            if remaining > 0.0 {
+                entity.insert(CorpseTtl {
+                    remaining_seconds: remaining,
+                });
+            }
+        }
         if let Some(npc) = object.npc {
             entity.insert(Npc);
             if let Some(base_stats) = npc.base_stats {
@@ -860,6 +873,7 @@ mod tests {
                 container_slots: Some(vec![None, None]),
                 npc: None,
                 quantity: None,
+                remaining_ttl: None,
             }],
         };
         write_world_dump(&save_path, &dump).unwrap();

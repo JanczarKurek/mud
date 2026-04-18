@@ -494,16 +494,42 @@ objects:
     y: 40
   - x: 43
     y: 41
-- type: goblin
-  placement:
-  - x: 48
-    y: 9
-  - x: 51
-    y: 30
-  - x: 56
-    y: 30
-  - x: 52
-    y: 45
+- id: 20001
+  type: goblin
+  placement: { x: 48, y: 9 }
+  behavior:
+    kind: roam_and_chase
+    step_interval_seconds: 0.9
+    detect_distance_tiles: 5
+    disengage_distance_tiles: 8
+    bounds: { min_x: 44, min_y: 5, max_x: 52, max_y: 13 }
+- id: 20002
+  type: goblin
+  placement: { x: 51, y: 30 }
+  behavior:
+    kind: roam_and_chase
+    step_interval_seconds: 0.85
+    detect_distance_tiles: 5
+    disengage_distance_tiles: 8
+    bounds: { min_x: 47, min_y: 26, max_x: 55, max_y: 34 }
+- id: 20003
+  type: goblin
+  placement: { x: 56, y: 30 }
+  behavior:
+    kind: roam_and_chase
+    step_interval_seconds: 0.95
+    detect_distance_tiles: 5
+    disengage_distance_tiles: 8
+    bounds: { min_x: 52, min_y: 26, max_x: 60, max_y: 34 }
+- id: 20004
+  type: goblin
+  placement: { x: 52, y: 45 }
+  behavior:
+    kind: roam_and_chase
+    step_interval_seconds: 1.0
+    detect_distance_tiles: 5
+    disengage_distance_tiles: 8
+    bounds: { min_x: 48, min_y: 41, max_x: 56, max_y: 49 }
 - type: leather_armor
   placement:
   - x: 15
@@ -518,12 +544,6 @@ objects:
     y: 20
   - x: 62
     y: 40
-- type: player
-  placement:
-  - x: 10
-    y: 18
-  - x: 18
-    y: 20
 - type: portal_arch
   placement:
   - x: 35

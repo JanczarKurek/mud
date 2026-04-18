@@ -789,6 +789,7 @@ mod tests {
                     Has<crate::world::components::Container>,
                     Has<crate::npc::components::Npc>,
                     Has<crate::world::components::Movable>,
+                    Option<&'static crate::world::components::Quantity>,
                 ),
                 Without<Player>,
             >,

@@ -1,0 +1,13 @@
+extends: static_world
+colliding: false
+movable: false
+storable: false
+container_capacity: 20
+name: Corpse
+description: The remains of a fallen creature.
+render:
+  z_index: 0.1
+  debug_color: [150, 140, 115]
+  debug_size: 0.55
+  sprite_path: overworld_objects/generic_corpse/sprite.png
+  y_sort: false

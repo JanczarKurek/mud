@@ -1,5 +1,6 @@
 pub mod animation;
 pub mod components;
+pub mod loot;
 pub mod map_layout;
 pub mod object_definitions;
 pub mod object_registry;
@@ -53,7 +54,8 @@ impl Plugin for WorldServerPlugin {
             Startup,
             initialize_runtime_spaces.in_set(WorldStartupSet::InitializeRuntimeSpaces),
         )
-        .add_systems(Update, cleanup_empty_ephemeral_spaces);
+        .add_systems(Update, cleanup_empty_ephemeral_spaces)
+        .add_plugins(crate::world::loot::LootPlugin);
     }
 }
 

@@ -25,6 +25,7 @@ use crate::world::object_definitions::{
 };
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::resources::SpaceManager;
+use crate::world::loot::spawn_corpse_for_npc;
 use crate::world::setup::{resolve_portal_destination_space, spawn_overworld_object};
 use crate::world::WorldConfig;
 
@@ -217,7 +218,7 @@ pub fn process_game_commands(
                     &object_query,
                     &mut player_queries.p2(),
                     &mut npc_vitals_query,
-                    &object_registry,
+                    &mut object_registry,
                     &definitions,
                     &spell_definitions,
                     &mut commands,
@@ -1194,7 +1195,7 @@ fn handle_cast_spell_at(
         With<Player>,
     >,
     npc_vitals_query: &mut Query<(&mut VitalStats, &OverworldObject), (With<Npc>, Without<Player>)>,
-    object_registry: &ObjectRegistry,
+    object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
     commands: &mut Commands,
@@ -1261,6 +1262,19 @@ fn handle_cast_spell_at(
     chat_log_state.push_narrator(format!("Cast {} on {}.", spell.name, target_name));
 
     if target_vitals.health <= 0.0 {
+        if let Some(loot_table) = definitions
+            .get(&target_object.definition_id)
+            .and_then(|def| def.loot_table.as_ref())
+        {
+            spawn_corpse_for_npc(
+                commands,
+                definitions,
+                object_registry,
+                loot_table,
+                player_space_resident.space_id,
+                target_position,
+            );
+        }
         commands.entity(target_entity).despawn();
         chat_log_state.push_line(format!("[{target_name} dies]"));
     }

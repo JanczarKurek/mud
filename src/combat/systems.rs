@@ -7,6 +7,7 @@ use crate::magic::resources::SpellDefinitions;
 use crate::npc::components::Npc;
 use crate::player::components::{ChatLog, DerivedStats, Player, VitalStats};
 use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
+use crate::world::loot::spawn_corpse_for_npc;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
 
@@ -18,6 +19,7 @@ struct CombatantSnapshot {
     space_id: crate::world::components::SpaceId,
     position: TilePosition,
     name: String,
+    definition_id: String,
     strength: i32,
     health: f32,
 }
@@ -75,7 +77,7 @@ pub fn resolve_battle_turn(
         Query<(&mut VitalStats, Option<&Player>, Option<&Npc>)>,
     )>,
     definitions: Res<OverworldObjectDefinitions>,
-    object_registry: Res<ObjectRegistry>,
+    mut object_registry: ResMut<ObjectRegistry>,
     spell_definitions: Res<SpellDefinitions>,
     mut chat_log_query: Query<&mut ChatLog, With<Player>>,
     mut commands: Commands,
@@ -114,6 +116,7 @@ pub fn resolve_battle_turn(
                     &definitions,
                     &spell_definitions,
                 ),
+                definition_id: overworld_object.definition_id.clone(),
                 strength: derived_stats.attributes.strength,
                 health: vital_stats.health,
             },
@@ -173,6 +176,19 @@ pub fn resolve_battle_turn(
         }
 
         if is_npc.is_some() {
+            if let Some(loot_table) = definitions
+                .get(&target.definition_id)
+                .and_then(|def| def.loot_table.as_ref())
+            {
+                spawn_corpse_for_npc(
+                    &mut commands,
+                    &definitions,
+                    &mut object_registry,
+                    loot_table,
+                    target.space_id,
+                    target.position,
+                );
+            }
             commands.entity(target_entity).despawn();
             broadcast_chat_line(&mut chat_log_query, format!("[{} dies]", target.name));
             continue;
