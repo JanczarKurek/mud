@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::magic::resources::SpellDefinitions;
-use crate::world::map_layout::{ObjectProperties, SpaceDefinitions};
+use crate::world::map_layout::{MapBehavior, ObjectProperties, SpaceDefinitions};
 use crate::world::object_definitions::{
     number_to_customary, number_to_written, OverworldObjectDefinitions,
 };
@@ -13,6 +13,7 @@ use crate::world::object_definitions::{
 pub struct ObjectRegistry {
     type_ids: HashMap<u64, String>,
     properties: HashMap<u64, ObjectProperties>,
+    behaviors: HashMap<u64, MapBehavior>,
     next_runtime_id: u64,
 }
 
@@ -29,6 +30,8 @@ impl ObjectRegistry {
         let mut properties = HashMap::new();
         let mut max_id = 0;
 
+        let mut behaviors = HashMap::new();
+
         for definition in space_definitions.iter() {
             for object in &definition.resolved_objects {
                 let previous = type_ids.insert(object.id, object.type_id.clone());
@@ -38,6 +41,9 @@ impl ObjectRegistry {
                     object.id
                 );
                 properties.insert(object.id, object.properties.clone());
+                if let Some(behavior) = &object.behavior {
+                    behaviors.insert(object.id, behavior.clone());
+                }
                 max_id = max_id.max(object.id);
             }
         }
@@ -45,6 +51,7 @@ impl ObjectRegistry {
         Self {
             type_ids,
             properties,
+            behaviors,
             next_runtime_id: max_id + 1,
         }
     }
@@ -61,6 +68,7 @@ impl ObjectRegistry {
         Self {
             type_ids,
             properties,
+            behaviors: HashMap::new(),
             next_runtime_id,
         }
     }
@@ -87,6 +95,10 @@ impl ObjectRegistry {
 
     pub fn properties(&self, object_id: u64) -> Option<&ObjectProperties> {
         self.properties.get(&object_id)
+    }
+
+    pub fn behavior(&self, object_id: u64) -> Option<&MapBehavior> {
+        self.behaviors.get(&object_id)
     }
 
     pub fn set_properties(&mut self, object_id: u64, properties: ObjectProperties) {

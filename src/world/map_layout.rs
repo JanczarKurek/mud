@@ -104,7 +104,7 @@ pub struct AnonymousObjectPlacements {
     pub placement: Vec<TileCoordinate>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum MapBehavior {
@@ -127,7 +127,7 @@ pub struct TileCoordinate {
     pub y: i32,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct TileRectangle {
     pub min_x: i32,

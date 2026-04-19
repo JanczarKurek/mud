@@ -40,6 +40,28 @@
 
 ---
 
+## Player renders on top of large NPC sprites at same tile
+
+**Symptom**: When the player walks to the same tile as a large NPC (e.g. cyclops), the player character appears in front instead of behind it.
+
+**Root cause**: The `y_sort_z` function assigns the same z value to the player and any NPC at the same `tile_y`. With identical z, Bevy's render order is undefined and the player entity often wins.
+
+**Fix**: In `sync_player_z` (`src/world/systems.rs`), subtract 0.005 (half-tile sort step) from the computed z. This makes the player sort as if they are half a tile further back, so same-row NPCs and obstacles always render in front of the player.
+
+---
+
+## Stale XDG cache overrides local map with anonymous (no-behavior) NPC entries
+
+**Symptom**: NPCs that have `behavior:` blocks in `assets/maps/overworld.yaml` are stationary; other NPCs from the same file (whose entries existed before the cache was written) behave normally.
+
+**Root cause**: `AssetResolver::scan_dirs` puts the XDG cache (`~/.local/share/mud2/assets/`) after bundled assets so the cache wins. If the map editor saves a map, `ExplicitOutput` in `src/editor/serializer.rs` previously had no `behavior` field, dropping all NPC behaviors. The stale cached YAML (with anonymous entries) then overrides the correct local YAML on every launch.
+
+**Fix 1**: Added `behavior: Option<MapBehavior>` to `ExplicitOutput` in `src/editor/serializer.rs`, populated from `ObjectRegistry::behavior()`. Also added `behaviors: HashMap<u64, MapBehavior>` to `ObjectRegistry`, populated in `from_space_definitions`.
+
+**Fix 2**: Copy the corrected local YAML to the XDG cache: `cp assets/maps/overworld.yaml ~/.local/share/mud2/assets/maps/overworld.yaml`.
+
+---
+
 ## Remote player movement appears jagged
 
 **Symptom**: Other players' sprites snap to position rather than smoothly sliding.

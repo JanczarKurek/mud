@@ -5,7 +5,7 @@ use serde::Serialize;
 
 use crate::editor::resources::{EditorContext, EditorPortalBuffer};
 use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
-use crate::world::map_layout::{SpacePermanence, TileCoordinate};
+use crate::world::map_layout::{MapBehavior, SpacePermanence, TileCoordinate};
 use crate::world::object_registry::ObjectRegistry;
 
 #[derive(Serialize)]
@@ -55,6 +55,8 @@ struct ExplicitOutput {
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     properties: HashMap<String, String>,
     placement: TileCoordinate,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    behavior: Option<MapBehavior>,
 }
 
 /// Collect objects from ECS, serialize as YAML, write to disk.
@@ -64,7 +66,8 @@ pub fn serialize_and_save(
     object_registry: &ObjectRegistry,
     objects: &bevy::prelude::Query<(&OverworldObject, &SpaceResident, &TilePosition)>,
 ) {
-    let mut items: Vec<(u64, String, HashMap<String, String>, TileCoordinate)> = Vec::new();
+    let mut items: Vec<(u64, String, HashMap<String, String>, Option<MapBehavior>, TileCoordinate)> =
+        Vec::new();
     for (obj, resident, tile) in objects.iter() {
         if resident.space_id != ctx.space_id {
             continue;
@@ -77,10 +80,12 @@ pub fn serialize_and_save(
             .properties(obj.object_id)
             .cloned()
             .unwrap_or_default();
+        let behavior = object_registry.behavior(obj.object_id).cloned();
         items.push((
             obj.object_id,
             type_id,
             properties,
+            behavior,
             TileCoordinate {
                 x: tile.x,
                 y: tile.y,
@@ -90,8 +95,8 @@ pub fn serialize_and_save(
 
     let mut anonymous: HashMap<String, Vec<TileCoordinate>> = HashMap::new();
     let mut explicit: Vec<ExplicitOutput> = Vec::new();
-    for (object_id, type_id, properties, tile) in items {
-        if properties.is_empty() {
+    for (object_id, type_id, properties, behavior, tile) in items {
+        if properties.is_empty() && behavior.is_none() {
             anonymous.entry(type_id).or_default().push(tile);
         } else {
             explicit.push(ExplicitOutput {
@@ -99,6 +104,7 @@ pub fn serialize_and_save(
                 type_id,
                 properties,
                 placement: tile,
+                behavior,
             });
         }
     }

@@ -130,6 +130,9 @@ pub fn spawn_player_visual(
                 Player,
                 VitalStats::full(1.0, 0.0),
                 TilePosition::new(world_config.map_width / 2, world_config.map_height / 2),
+                SpaceResident {
+                    space_id: world_config.current_space_id,
+                },
             ))
             .id(),
     };

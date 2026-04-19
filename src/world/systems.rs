@@ -334,7 +334,8 @@ pub fn sync_player_z(
 
     if world_visual.y_sort {
         let _ = client_state.player_position;
-        let new_z = y_sort_z(tile_position.y);
+        // Subtract half-tile epsilon so world objects at the same tile_y always render in front.
+        let new_z = y_sort_z(tile_position.y) - 0.005;
         if (transform.translation.z - new_z).abs() > 0.001 {
             info!(
                 "player z update: tile_y={} z_index={} -> z={}",
