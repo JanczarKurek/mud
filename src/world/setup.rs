@@ -17,7 +17,7 @@ use crate::world::map_layout::{
     SpacePermanence,
 };
 use crate::world::object_definitions::{OverworldObjectDefinition, OverworldObjectDefinitions};
-use crate::world::resources::{PortalInstanceKey, RuntimeSpace, SpaceManager};
+use crate::world::resources::{GroundTileConfig, PortalInstanceKey, RuntimeSpace, SpaceManager};
 use crate::world::WorldConfig;
 
 #[derive(SystemSet, Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -143,11 +143,35 @@ pub fn spawn_ground_tiles_for_current_space(
     asset_server: Res<AssetServer>,
     definitions: Res<OverworldObjectDefinitions>,
     world_config: Res<WorldConfig>,
+    mut last_config: ResMut<GroundTileConfig>,
     current_ground_tiles: Query<Entity, With<crate::world::components::ClientGroundTile>>,
 ) {
-    if !world_config.is_changed() {
+    if world_config.fill_object_type.is_empty() {
         return;
     }
+
+    let current = GroundTileConfig {
+        space_id: Some(world_config.current_space_id),
+        width: world_config.map_width,
+        height: world_config.map_height,
+        fill_type: world_config.fill_object_type.clone(),
+    };
+
+    if *last_config == current {
+        return;
+    }
+
+    *last_config = current;
+
+    let existing_count = current_ground_tiles.iter().count();
+    bevy::log::info!(
+        "spawning ground tiles: space={} fill='{}' size={}x{} replacing={}",
+        world_config.current_space_id.0,
+        world_config.fill_object_type,
+        world_config.map_width,
+        world_config.map_height,
+        existing_count,
+    );
 
     for entity in &current_ground_tiles {
         commands.entity(entity).despawn();

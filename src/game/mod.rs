@@ -46,11 +46,13 @@ impl Plugin for GameServerPlugin {
                     .after(resolve_battle_turn)
                     .run_if(simulation_active),
             )
+            // Unconditional — mirrors GameClientPlugin so that WorldClientPlugin's
+            // .after(apply_game_events_to_client_state) ordering resolves identically
+            // in EmbeddedClient mode and TcpClient mode.
             .add_systems(
                 Update,
                 apply_game_events_to_client_state
-                    .after(collect_game_events_from_authority)
-                    .run_if(simulation_active),
+                    .after(collect_game_events_from_authority),
             );
     }
 }

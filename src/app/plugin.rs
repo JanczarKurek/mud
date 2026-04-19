@@ -4,6 +4,7 @@ use bevy::app::{ScheduleRunnerPlugin, TerminalCtrlCHandlerPlugin};
 use bevy::prelude::*;
 use bevy::window::Window;
 
+use crate::app::asset_sync_screen::AssetSyncScreenPlugin;
 use crate::app::setup::setup_camera;
 use crate::app::state::ClientAppState;
 use crate::app::title_screen::TitleScreenPlugin;
@@ -104,6 +105,7 @@ impl Plugin for GameAppPlugin {
                         runtime: self.runtime,
                         server_addr: self.server_addr.clone(),
                     },
+                    AssetSyncScreenPlugin,
                 ));
             }
             AppRuntime::HeadlessServer => {

@@ -1,6 +1,6 @@
 {
   "format_version": 3,
-  "saved_at_unix_seconds": 1776556438,
+  "saved_at_unix_seconds": 1776634838,
   "world_config": {
     "current_space_id": 1,
     "map_width": 70,
@@ -34,7 +34,7 @@
     }
   ],
   "object_registry": {
-    "next_runtime_id": 21271,
+    "next_runtime_id": 21268,
     "entries": [
       {
         "object_id": 1200,
@@ -340,42 +340,42 @@
       },
       {
         "object_id": 2018,
-        "type_id": "crystal_cluster",
+        "type_id": "cave_wall",
         "properties": {}
       },
       {
         "object_id": 2019,
-        "type_id": "crystal_cluster",
+        "type_id": "cave_wall",
         "properties": {}
       },
       {
         "object_id": 2020,
-        "type_id": "crystal_cluster",
+        "type_id": "cave_wall",
         "properties": {}
       },
       {
         "object_id": 2021,
-        "type_id": "crystal_cluster",
+        "type_id": "cave_wall",
         "properties": {}
       },
       {
         "object_id": 2022,
-        "type_id": "crystal_cluster",
+        "type_id": "cave_wall",
         "properties": {}
       },
       {
         "object_id": 2023,
-        "type_id": "crystal_cluster",
+        "type_id": "cave_wall",
         "properties": {}
       },
       {
         "object_id": 2024,
-        "type_id": "crystal_cluster",
+        "type_id": "cave_wall",
         "properties": {}
       },
       {
         "object_id": 2025,
-        "type_id": "crystal_cluster",
+        "type_id": "cave_wall",
         "properties": {}
       },
       {
@@ -1060,42 +1060,42 @@
       },
       {
         "object_id": 2162,
-        "type_id": "cave_wall",
+        "type_id": "crystal_cluster",
         "properties": {}
       },
       {
         "object_id": 2163,
-        "type_id": "cave_wall",
+        "type_id": "crystal_cluster",
         "properties": {}
       },
       {
         "object_id": 2164,
-        "type_id": "cave_wall",
+        "type_id": "crystal_cluster",
         "properties": {}
       },
       {
         "object_id": 2165,
-        "type_id": "cave_wall",
+        "type_id": "crystal_cluster",
         "properties": {}
       },
       {
         "object_id": 2166,
-        "type_id": "cave_wall",
+        "type_id": "crystal_cluster",
         "properties": {}
       },
       {
         "object_id": 2167,
-        "type_id": "cave_wall",
+        "type_id": "crystal_cluster",
         "properties": {}
       },
       {
         "object_id": 2168,
-        "type_id": "cave_wall",
+        "type_id": "crystal_cluster",
         "properties": {}
       },
       {
         "object_id": 2169,
-        "type_id": "cave_wall",
+        "type_id": "crystal_cluster",
         "properties": {}
       },
       {
@@ -7460,21 +7460,6 @@
         "object_id": 21267,
         "type_id": "wooden_shield",
         "properties": {}
-      },
-      {
-        "object_id": 21268,
-        "type_id": "player",
-        "properties": {}
-      },
-      {
-        "object_id": 21269,
-        "type_id": "apple",
-        "properties": {}
-      },
-      {
-        "object_id": 21270,
-        "type_id": "generic_corpse",
-        "properties": {}
       }
     ]
   },
@@ -7487,15 +7472,12 @@
       "object_id": 21268,
       "space_id": 1,
       "tile_position": {
-        "x": 43,
-        "y": 26
+        "x": 56,
+        "y": 47
       },
       "inventory": {
         "backpack_slots": [
-          {
-            "object_id": 20010,
-            "quantity": 1
-          },
+          null,
           null,
           null,
           null,
@@ -7553,14 +7535,9 @@
       },
       "chat_log": {
         "lines": [
-          "[Player hit Goblin for 8 damage]",
-          "[Goblin hit Player for 2 damage]",
-          "[Player hit Goblin for 8 damage]",
-          "[Goblin dies]",
-          "[Narrator]: The remains of a fallen creature.",
-          "[Narrator]: A simple red apple that can be picked up.",
-          "[Narrator]: You eat the apple.",
-          "[Narrator]: The remains of a fallen creature."
+          "[Narrator]: Right-click an item to inspect it.",
+          "[Narrator]: Right-click a nearby barrel to open it.",
+          "[Narrator]: A hulking one-eyed giant with a massive club and a short temper."
         ],
         "max_lines": 8
       },
@@ -7591,7 +7568,7 @@
         "storage_slots": 8
       },
       "vital_stats": {
-        "health": 47.0,
+        "health": 115.0,
         "max_health": 115.0,
         "mana": 100.0,
         "max_mana": 100.0
@@ -7695,7 +7672,7 @@
       "space_id": 0,
       "tile_position": {
         "x": 13,
-        "y": 10
+        "y": 5
       },
       "collider": true,
       "movable": false,
@@ -7755,10 +7732,10 @@
           "disengage_distance_tiles": 7
         },
         "roaming_step_timer": {
-          "remaining_seconds": 0.7552237
+          "remaining_seconds": 0.6690964
         },
         "roaming_random_state": {
-          "seed": 5831926002674731710
+          "seed": 7893179596216253773
         }
       },
       "quantity": null,
@@ -7769,8 +7746,8 @@
       "definition_id": "goblin",
       "space_id": 0,
       "tile_position": {
-        "x": 24,
-        "y": 15
+        "x": 22,
+        "y": 14
       },
       "collider": true,
       "movable": false,
@@ -7830,10 +7807,10 @@
           "disengage_distance_tiles": 8
         },
         "roaming_step_timer": {
-          "remaining_seconds": 0.52406096
+          "remaining_seconds": 0.58755296
         },
         "roaming_random_state": {
-          "seed": 670545993046023499
+          "seed": 14466088919655558772
         }
       },
       "quantity": null,
@@ -8001,11 +7978,11 @@
     },
     {
       "object_id": 2018,
-      "definition_id": "crystal_cluster",
+      "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 10,
-        "y": 2
+        "x": 0,
+        "y": 0
       },
       "collider": true,
       "movable": false,
@@ -8017,11 +7994,11 @@
     },
     {
       "object_id": 2019,
-      "definition_id": "crystal_cluster",
+      "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 5,
-        "y": 5
+        "x": 1,
+        "y": 0
       },
       "collider": true,
       "movable": false,
@@ -8033,11 +8010,11 @@
     },
     {
       "object_id": 2020,
-      "definition_id": "crystal_cluster",
+      "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 23,
-        "y": 5
+        "x": 2,
+        "y": 0
       },
       "collider": true,
       "movable": false,
@@ -8049,11 +8026,11 @@
     },
     {
       "object_id": 2021,
-      "definition_id": "crystal_cluster",
+      "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 16,
-        "y": 6
+        "x": 3,
+        "y": 0
       },
       "collider": true,
       "movable": false,
@@ -8065,11 +8042,11 @@
     },
     {
       "object_id": 2022,
-      "definition_id": "crystal_cluster",
+      "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 12,
-        "y": 9
+        "x": 4,
+        "y": 0
       },
       "collider": true,
       "movable": false,
@@ -8081,11 +8058,11 @@
     },
     {
       "object_id": 2023,
-      "definition_id": "crystal_cluster",
+      "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 24,
-        "y": 12
+        "x": 5,
+        "y": 0
       },
       "collider": true,
       "movable": false,
@@ -8097,11 +8074,11 @@
     },
     {
       "object_id": 2024,
-      "definition_id": "crystal_cluster",
+      "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
         "x": 6,
-        "y": 13
+        "y": 0
       },
       "collider": true,
       "movable": false,
@@ -8113,11 +8090,11 @@
     },
     {
       "object_id": 2025,
-      "definition_id": "crystal_cluster",
+      "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 18,
-        "y": 15
+        "x": 7,
+        "y": 0
       },
       "collider": true,
       "movable": false,
@@ -8132,7 +8109,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 0,
+        "x": 8,
         "y": 0
       },
       "collider": true,
@@ -8148,7 +8125,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 1,
+        "x": 9,
         "y": 0
       },
       "collider": true,
@@ -8164,7 +8141,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 2,
+        "x": 10,
         "y": 0
       },
       "collider": true,
@@ -8180,7 +8157,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 3,
+        "x": 11,
         "y": 0
       },
       "collider": true,
@@ -8196,7 +8173,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 4,
+        "x": 12,
         "y": 0
       },
       "collider": true,
@@ -8212,7 +8189,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 5,
+        "x": 13,
         "y": 0
       },
       "collider": true,
@@ -8228,7 +8205,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 6,
+        "x": 14,
         "y": 0
       },
       "collider": true,
@@ -8244,7 +8221,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 7,
+        "x": 15,
         "y": 0
       },
       "collider": true,
@@ -8260,7 +8237,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 8,
+        "x": 16,
         "y": 0
       },
       "collider": true,
@@ -8276,7 +8253,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 9,
+        "x": 17,
         "y": 0
       },
       "collider": true,
@@ -8292,7 +8269,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 10,
+        "x": 18,
         "y": 0
       },
       "collider": true,
@@ -8308,7 +8285,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 11,
+        "x": 19,
         "y": 0
       },
       "collider": true,
@@ -8324,7 +8301,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 12,
+        "x": 20,
         "y": 0
       },
       "collider": true,
@@ -8340,7 +8317,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 13,
+        "x": 21,
         "y": 0
       },
       "collider": true,
@@ -8356,7 +8333,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 14,
+        "x": 22,
         "y": 0
       },
       "collider": true,
@@ -8372,7 +8349,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 15,
+        "x": 23,
         "y": 0
       },
       "collider": true,
@@ -8388,7 +8365,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 16,
+        "x": 24,
         "y": 0
       },
       "collider": true,
@@ -8404,7 +8381,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 17,
+        "x": 25,
         "y": 0
       },
       "collider": true,
@@ -8420,7 +8397,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 18,
+        "x": 26,
         "y": 0
       },
       "collider": true,
@@ -8436,7 +8413,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 19,
+        "x": 27,
         "y": 0
       },
       "collider": true,
@@ -8452,8 +8429,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 20,
-        "y": 0
+        "x": 0,
+        "y": 1
       },
       "collider": true,
       "movable": false,
@@ -8468,8 +8445,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 21,
-        "y": 0
+        "x": 27,
+        "y": 1
       },
       "collider": true,
       "movable": false,
@@ -8484,8 +8461,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 22,
-        "y": 0
+        "x": 0,
+        "y": 2
       },
       "collider": true,
       "movable": false,
@@ -8500,8 +8477,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 23,
-        "y": 0
+        "x": 27,
+        "y": 2
       },
       "collider": true,
       "movable": false,
@@ -8516,8 +8493,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 24,
-        "y": 0
+        "x": 0,
+        "y": 3
       },
       "collider": true,
       "movable": false,
@@ -8532,8 +8509,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 25,
-        "y": 0
+        "x": 27,
+        "y": 3
       },
       "collider": true,
       "movable": false,
@@ -8548,8 +8525,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 26,
-        "y": 0
+        "x": 0,
+        "y": 4
       },
       "collider": true,
       "movable": false,
@@ -8564,8 +8541,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 27,
-        "y": 0
+        "x": 7,
+        "y": 4
       },
       "collider": true,
       "movable": false,
@@ -8580,8 +8557,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 0,
-        "y": 1
+        "x": 8,
+        "y": 4
       },
       "collider": true,
       "movable": false,
@@ -8596,8 +8573,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 27,
-        "y": 1
+        "x": 9,
+        "y": 4
       },
       "collider": true,
       "movable": false,
@@ -8612,8 +8589,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 0,
-        "y": 2
+        "x": 10,
+        "y": 4
       },
       "collider": true,
       "movable": false,
@@ -8628,8 +8605,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 27,
-        "y": 2
+        "x": 11,
+        "y": 4
       },
       "collider": true,
       "movable": false,
@@ -8644,8 +8621,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 0,
-        "y": 3
+        "x": 12,
+        "y": 4
       },
       "collider": true,
       "movable": false,
@@ -8660,8 +8637,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 27,
-        "y": 3
+        "x": 14,
+        "y": 4
       },
       "collider": true,
       "movable": false,
@@ -8676,7 +8653,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 0,
+        "x": 15,
         "y": 4
       },
       "collider": true,
@@ -8692,7 +8669,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 7,
+        "x": 16,
         "y": 4
       },
       "collider": true,
@@ -8708,7 +8685,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 8,
+        "x": 17,
         "y": 4
       },
       "collider": true,
@@ -8724,7 +8701,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 9,
+        "x": 18,
         "y": 4
       },
       "collider": true,
@@ -8740,7 +8717,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 10,
+        "x": 19,
         "y": 4
       },
       "collider": true,
@@ -8756,7 +8733,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 11,
+        "x": 20,
         "y": 4
       },
       "collider": true,
@@ -8772,7 +8749,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 12,
+        "x": 27,
         "y": 4
       },
       "collider": true,
@@ -8788,8 +8765,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 14,
-        "y": 4
+        "x": 0,
+        "y": 5
       },
       "collider": true,
       "movable": false,
@@ -8804,8 +8781,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 15,
-        "y": 4
+        "x": 7,
+        "y": 5
       },
       "collider": true,
       "movable": false,
@@ -8820,8 +8797,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 16,
-        "y": 4
+        "x": 20,
+        "y": 5
       },
       "collider": true,
       "movable": false,
@@ -8836,8 +8813,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 17,
-        "y": 4
+        "x": 27,
+        "y": 5
       },
       "collider": true,
       "movable": false,
@@ -8852,8 +8829,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 18,
-        "y": 4
+        "x": 0,
+        "y": 6
       },
       "collider": true,
       "movable": false,
@@ -8868,8 +8845,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 19,
-        "y": 4
+        "x": 7,
+        "y": 6
       },
       "collider": true,
       "movable": false,
@@ -8884,8 +8861,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 20,
-        "y": 4
+        "x": 14,
+        "y": 6
       },
       "collider": true,
       "movable": false,
@@ -8900,8 +8877,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 27,
-        "y": 4
+        "x": 20,
+        "y": 6
       },
       "collider": true,
       "movable": false,
@@ -8916,8 +8893,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 0,
-        "y": 5
+        "x": 22,
+        "y": 6
       },
       "collider": true,
       "movable": false,
@@ -8932,8 +8909,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 7,
-        "y": 5
+        "x": 27,
+        "y": 6
       },
       "collider": true,
       "movable": false,
@@ -8948,8 +8925,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 20,
-        "y": 5
+        "x": 0,
+        "y": 7
       },
       "collider": true,
       "movable": false,
@@ -8964,8 +8941,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 27,
-        "y": 5
+        "x": 7,
+        "y": 7
       },
       "collider": true,
       "movable": false,
@@ -8980,8 +8957,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 0,
-        "y": 6
+        "x": 14,
+        "y": 7
       },
       "collider": true,
       "movable": false,
@@ -8996,8 +8973,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 7,
-        "y": 6
+        "x": 20,
+        "y": 7
       },
       "collider": true,
       "movable": false,
@@ -9012,8 +8989,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 14,
-        "y": 6
+        "x": 22,
+        "y": 7
       },
       "collider": true,
       "movable": false,
@@ -9028,8 +9005,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 20,
-        "y": 6
+        "x": 27,
+        "y": 7
       },
       "collider": true,
       "movable": false,
@@ -9044,8 +9021,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 22,
-        "y": 6
+        "x": 0,
+        "y": 8
       },
       "collider": true,
       "movable": false,
@@ -9060,8 +9037,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 27,
-        "y": 6
+        "x": 7,
+        "y": 8
       },
       "collider": true,
       "movable": false,
@@ -9076,8 +9053,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 0,
-        "y": 7
+        "x": 14,
+        "y": 8
       },
       "collider": true,
       "movable": false,
@@ -9092,8 +9069,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 7,
-        "y": 7
+        "x": 20,
+        "y": 8
       },
       "collider": true,
       "movable": false,
@@ -9108,8 +9085,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 14,
-        "y": 7
+        "x": 22,
+        "y": 8
       },
       "collider": true,
       "movable": false,
@@ -9124,8 +9101,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 20,
-        "y": 7
+        "x": 23,
+        "y": 8
       },
       "collider": true,
       "movable": false,
@@ -9140,8 +9117,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 22,
-        "y": 7
+        "x": 24,
+        "y": 8
       },
       "collider": true,
       "movable": false,
@@ -9157,7 +9134,7 @@
       "space_id": 0,
       "tile_position": {
         "x": 27,
-        "y": 7
+        "y": 8
       },
       "collider": true,
       "movable": false,
@@ -9173,7 +9150,7 @@
       "space_id": 0,
       "tile_position": {
         "x": 0,
-        "y": 8
+        "y": 9
       },
       "collider": true,
       "movable": false,
@@ -9189,7 +9166,7 @@
       "space_id": 0,
       "tile_position": {
         "x": 7,
-        "y": 8
+        "y": 9
       },
       "collider": true,
       "movable": false,
@@ -9204,8 +9181,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 14,
-        "y": 8
+        "x": 20,
+        "y": 9
       },
       "collider": true,
       "movable": false,
@@ -9220,8 +9197,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 20,
-        "y": 8
+        "x": 24,
+        "y": 9
       },
       "collider": true,
       "movable": false,
@@ -9236,8 +9213,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 22,
-        "y": 8
+        "x": 27,
+        "y": 9
       },
       "collider": true,
       "movable": false,
@@ -9252,8 +9229,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 23,
-        "y": 8
+        "x": 0,
+        "y": 10
       },
       "collider": true,
       "movable": false,
@@ -9268,8 +9245,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 24,
-        "y": 8
+        "x": 7,
+        "y": 10
       },
       "collider": true,
       "movable": false,
@@ -9284,8 +9261,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 27,
-        "y": 8
+        "x": 20,
+        "y": 10
       },
       "collider": true,
       "movable": false,
@@ -9297,134 +9274,6 @@
     },
     {
       "object_id": 2099,
-      "definition_id": "cave_wall",
-      "space_id": 0,
-      "tile_position": {
-        "x": 0,
-        "y": 9
-      },
-      "collider": true,
-      "movable": false,
-      "storable": false,
-      "container_slots": null,
-      "npc": null,
-      "quantity": null,
-      "remaining_ttl": null
-    },
-    {
-      "object_id": 2100,
-      "definition_id": "cave_wall",
-      "space_id": 0,
-      "tile_position": {
-        "x": 7,
-        "y": 9
-      },
-      "collider": true,
-      "movable": false,
-      "storable": false,
-      "container_slots": null,
-      "npc": null,
-      "quantity": null,
-      "remaining_ttl": null
-    },
-    {
-      "object_id": 2101,
-      "definition_id": "cave_wall",
-      "space_id": 0,
-      "tile_position": {
-        "x": 20,
-        "y": 9
-      },
-      "collider": true,
-      "movable": false,
-      "storable": false,
-      "container_slots": null,
-      "npc": null,
-      "quantity": null,
-      "remaining_ttl": null
-    },
-    {
-      "object_id": 2102,
-      "definition_id": "cave_wall",
-      "space_id": 0,
-      "tile_position": {
-        "x": 24,
-        "y": 9
-      },
-      "collider": true,
-      "movable": false,
-      "storable": false,
-      "container_slots": null,
-      "npc": null,
-      "quantity": null,
-      "remaining_ttl": null
-    },
-    {
-      "object_id": 2103,
-      "definition_id": "cave_wall",
-      "space_id": 0,
-      "tile_position": {
-        "x": 27,
-        "y": 9
-      },
-      "collider": true,
-      "movable": false,
-      "storable": false,
-      "container_slots": null,
-      "npc": null,
-      "quantity": null,
-      "remaining_ttl": null
-    },
-    {
-      "object_id": 2104,
-      "definition_id": "cave_wall",
-      "space_id": 0,
-      "tile_position": {
-        "x": 0,
-        "y": 10
-      },
-      "collider": true,
-      "movable": false,
-      "storable": false,
-      "container_slots": null,
-      "npc": null,
-      "quantity": null,
-      "remaining_ttl": null
-    },
-    {
-      "object_id": 2105,
-      "definition_id": "cave_wall",
-      "space_id": 0,
-      "tile_position": {
-        "x": 7,
-        "y": 10
-      },
-      "collider": true,
-      "movable": false,
-      "storable": false,
-      "container_slots": null,
-      "npc": null,
-      "quantity": null,
-      "remaining_ttl": null
-    },
-    {
-      "object_id": 2106,
-      "definition_id": "cave_wall",
-      "space_id": 0,
-      "tile_position": {
-        "x": 20,
-        "y": 10
-      },
-      "collider": true,
-      "movable": false,
-      "storable": false,
-      "container_slots": null,
-      "npc": null,
-      "quantity": null,
-      "remaining_ttl": null
-    },
-    {
-      "object_id": 2107,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -9440,7 +9289,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2108,
+      "object_id": 2100,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -9456,7 +9305,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2109,
+      "object_id": 2101,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -9472,7 +9321,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2110,
+      "object_id": 2102,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -9488,7 +9337,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2111,
+      "object_id": 2103,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -9504,7 +9353,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2112,
+      "object_id": 2104,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -9520,7 +9369,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2113,
+      "object_id": 2105,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -9536,7 +9385,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2114,
+      "object_id": 2106,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -9552,11 +9401,139 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2115,
+      "object_id": 2107,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
         "x": 0,
+        "y": 12
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null,
+      "remaining_ttl": null
+    },
+    {
+      "object_id": 2108,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 8,
+        "y": 12
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null,
+      "remaining_ttl": null
+    },
+    {
+      "object_id": 2109,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 9,
+        "y": 12
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null,
+      "remaining_ttl": null
+    },
+    {
+      "object_id": 2110,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 11,
+        "y": 12
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null,
+      "remaining_ttl": null
+    },
+    {
+      "object_id": 2111,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 12,
+        "y": 12
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null,
+      "remaining_ttl": null
+    },
+    {
+      "object_id": 2112,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 13,
+        "y": 12
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null,
+      "remaining_ttl": null
+    },
+    {
+      "object_id": 2113,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 14,
+        "y": 12
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null,
+      "remaining_ttl": null
+    },
+    {
+      "object_id": 2114,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 15,
+        "y": 12
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null,
+      "remaining_ttl": null
+    },
+    {
+      "object_id": 2115,
+      "definition_id": "cave_wall",
+      "space_id": 0,
+      "tile_position": {
+        "x": 17,
         "y": 12
       },
       "collider": true,
@@ -9572,7 +9549,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 8,
+        "x": 18,
         "y": 12
       },
       "collider": true,
@@ -9588,7 +9565,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 9,
+        "x": 19,
         "y": 12
       },
       "collider": true,
@@ -9604,7 +9581,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 11,
+        "x": 20,
         "y": 12
       },
       "collider": true,
@@ -9620,7 +9597,7 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 12,
+        "x": 27,
         "y": 12
       },
       "collider": true,
@@ -9636,8 +9613,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 13,
-        "y": 12
+        "x": 0,
+        "y": 13
       },
       "collider": true,
       "movable": false,
@@ -9652,8 +9629,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 14,
-        "y": 12
+        "x": 27,
+        "y": 13
       },
       "collider": true,
       "movable": false,
@@ -9668,8 +9645,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 15,
-        "y": 12
+        "x": 0,
+        "y": 14
       },
       "collider": true,
       "movable": false,
@@ -9684,8 +9661,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 17,
-        "y": 12
+        "x": 11,
+        "y": 14
       },
       "collider": true,
       "movable": false,
@@ -9700,8 +9677,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 18,
-        "y": 12
+        "x": 12,
+        "y": 14
       },
       "collider": true,
       "movable": false,
@@ -9716,8 +9693,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 19,
-        "y": 12
+        "x": 13,
+        "y": 14
       },
       "collider": true,
       "movable": false,
@@ -9732,8 +9709,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 20,
-        "y": 12
+        "x": 17,
+        "y": 14
       },
       "collider": true,
       "movable": false,
@@ -9748,8 +9725,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 27,
-        "y": 12
+        "x": 18,
+        "y": 14
       },
       "collider": true,
       "movable": false,
@@ -9764,8 +9741,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 0,
-        "y": 13
+        "x": 19,
+        "y": 14
       },
       "collider": true,
       "movable": false,
@@ -9781,7 +9758,7 @@
       "space_id": 0,
       "tile_position": {
         "x": 27,
-        "y": 13
+        "y": 14
       },
       "collider": true,
       "movable": false,
@@ -9797,7 +9774,7 @@
       "space_id": 0,
       "tile_position": {
         "x": 0,
-        "y": 14
+        "y": 15
       },
       "collider": true,
       "movable": false,
@@ -9812,8 +9789,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 11,
-        "y": 14
+        "x": 27,
+        "y": 15
       },
       "collider": true,
       "movable": false,
@@ -9828,8 +9805,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 12,
-        "y": 14
+        "x": 0,
+        "y": 16
       },
       "collider": true,
       "movable": false,
@@ -9844,8 +9821,8 @@
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
-        "x": 13,
-        "y": 14
+        "x": 27,
+        "y": 16
       },
       "collider": true,
       "movable": false,
@@ -9857,134 +9834,6 @@
     },
     {
       "object_id": 2134,
-      "definition_id": "cave_wall",
-      "space_id": 0,
-      "tile_position": {
-        "x": 17,
-        "y": 14
-      },
-      "collider": true,
-      "movable": false,
-      "storable": false,
-      "container_slots": null,
-      "npc": null,
-      "quantity": null,
-      "remaining_ttl": null
-    },
-    {
-      "object_id": 2135,
-      "definition_id": "cave_wall",
-      "space_id": 0,
-      "tile_position": {
-        "x": 18,
-        "y": 14
-      },
-      "collider": true,
-      "movable": false,
-      "storable": false,
-      "container_slots": null,
-      "npc": null,
-      "quantity": null,
-      "remaining_ttl": null
-    },
-    {
-      "object_id": 2136,
-      "definition_id": "cave_wall",
-      "space_id": 0,
-      "tile_position": {
-        "x": 19,
-        "y": 14
-      },
-      "collider": true,
-      "movable": false,
-      "storable": false,
-      "container_slots": null,
-      "npc": null,
-      "quantity": null,
-      "remaining_ttl": null
-    },
-    {
-      "object_id": 2137,
-      "definition_id": "cave_wall",
-      "space_id": 0,
-      "tile_position": {
-        "x": 27,
-        "y": 14
-      },
-      "collider": true,
-      "movable": false,
-      "storable": false,
-      "container_slots": null,
-      "npc": null,
-      "quantity": null,
-      "remaining_ttl": null
-    },
-    {
-      "object_id": 2138,
-      "definition_id": "cave_wall",
-      "space_id": 0,
-      "tile_position": {
-        "x": 0,
-        "y": 15
-      },
-      "collider": true,
-      "movable": false,
-      "storable": false,
-      "container_slots": null,
-      "npc": null,
-      "quantity": null,
-      "remaining_ttl": null
-    },
-    {
-      "object_id": 2139,
-      "definition_id": "cave_wall",
-      "space_id": 0,
-      "tile_position": {
-        "x": 27,
-        "y": 15
-      },
-      "collider": true,
-      "movable": false,
-      "storable": false,
-      "container_slots": null,
-      "npc": null,
-      "quantity": null,
-      "remaining_ttl": null
-    },
-    {
-      "object_id": 2140,
-      "definition_id": "cave_wall",
-      "space_id": 0,
-      "tile_position": {
-        "x": 0,
-        "y": 16
-      },
-      "collider": true,
-      "movable": false,
-      "storable": false,
-      "container_slots": null,
-      "npc": null,
-      "quantity": null,
-      "remaining_ttl": null
-    },
-    {
-      "object_id": 2141,
-      "definition_id": "cave_wall",
-      "space_id": 0,
-      "tile_position": {
-        "x": 27,
-        "y": 16
-      },
-      "collider": true,
-      "movable": false,
-      "storable": false,
-      "container_slots": null,
-      "npc": null,
-      "quantity": null,
-      "remaining_ttl": null
-    },
-    {
-      "object_id": 2142,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -10000,7 +9849,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2143,
+      "object_id": 2135,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -10016,7 +9865,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2144,
+      "object_id": 2136,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -10032,7 +9881,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2145,
+      "object_id": 2137,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -10048,7 +9897,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2146,
+      "object_id": 2138,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -10064,7 +9913,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2147,
+      "object_id": 2139,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -10080,7 +9929,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2148,
+      "object_id": 2140,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -10096,7 +9945,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2149,
+      "object_id": 2141,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -10112,7 +9961,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2150,
+      "object_id": 2142,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -10128,7 +9977,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2151,
+      "object_id": 2143,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -10144,7 +9993,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2152,
+      "object_id": 2144,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -10160,7 +10009,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2153,
+      "object_id": 2145,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -10176,7 +10025,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2154,
+      "object_id": 2146,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -10192,7 +10041,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2155,
+      "object_id": 2147,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -10208,7 +10057,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2156,
+      "object_id": 2148,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -10224,7 +10073,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2157,
+      "object_id": 2149,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -10240,7 +10089,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2158,
+      "object_id": 2150,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -10256,7 +10105,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2159,
+      "object_id": 2151,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -10272,7 +10121,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2160,
+      "object_id": 2152,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -10288,7 +10137,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2161,
+      "object_id": 2153,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -10304,7 +10153,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2162,
+      "object_id": 2154,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -10320,7 +10169,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2163,
+      "object_id": 2155,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -10336,7 +10185,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2164,
+      "object_id": 2156,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -10352,7 +10201,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2165,
+      "object_id": 2157,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -10368,7 +10217,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2166,
+      "object_id": 2158,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -10384,7 +10233,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2167,
+      "object_id": 2159,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -10400,7 +10249,7 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2168,
+      "object_id": 2160,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
@@ -10416,12 +10265,140 @@
       "remaining_ttl": null
     },
     {
-      "object_id": 2169,
+      "object_id": 2161,
       "definition_id": "cave_wall",
       "space_id": 0,
       "tile_position": {
         "x": 27,
         "y": 17
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null,
+      "remaining_ttl": null
+    },
+    {
+      "object_id": 2162,
+      "definition_id": "crystal_cluster",
+      "space_id": 0,
+      "tile_position": {
+        "x": 10,
+        "y": 2
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null,
+      "remaining_ttl": null
+    },
+    {
+      "object_id": 2163,
+      "definition_id": "crystal_cluster",
+      "space_id": 0,
+      "tile_position": {
+        "x": 5,
+        "y": 5
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null,
+      "remaining_ttl": null
+    },
+    {
+      "object_id": 2164,
+      "definition_id": "crystal_cluster",
+      "space_id": 0,
+      "tile_position": {
+        "x": 23,
+        "y": 5
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null,
+      "remaining_ttl": null
+    },
+    {
+      "object_id": 2165,
+      "definition_id": "crystal_cluster",
+      "space_id": 0,
+      "tile_position": {
+        "x": 16,
+        "y": 6
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null,
+      "remaining_ttl": null
+    },
+    {
+      "object_id": 2166,
+      "definition_id": "crystal_cluster",
+      "space_id": 0,
+      "tile_position": {
+        "x": 12,
+        "y": 9
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null,
+      "remaining_ttl": null
+    },
+    {
+      "object_id": 2167,
+      "definition_id": "crystal_cluster",
+      "space_id": 0,
+      "tile_position": {
+        "x": 24,
+        "y": 12
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null,
+      "remaining_ttl": null
+    },
+    {
+      "object_id": 2168,
+      "definition_id": "crystal_cluster",
+      "space_id": 0,
+      "tile_position": {
+        "x": 6,
+        "y": 13
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null,
+      "remaining_ttl": null
+    },
+    {
+      "object_id": 2169,
+      "definition_id": "crystal_cluster",
+      "space_id": 0,
+      "tile_position": {
+        "x": 18,
+        "y": 15
       },
       "collider": true,
       "movable": false,
@@ -10561,97 +10538,22 @@
           "disengage_distance_tiles": 8
         },
         "roaming_step_timer": {
-          "remaining_seconds": 0.756782
+          "remaining_seconds": 0.6762553
         },
         "roaming_random_state": {
-          "seed": 7879288988405209255
+          "seed": 18341032159992304319
         }
       },
       "quantity": null,
       "remaining_ttl": null
     },
     {
-      "object_id": 20003,
+      "object_id": 20002,
       "definition_id": "goblin",
       "space_id": 1,
       "tile_position": {
-        "x": 47,
-        "y": 30
-      },
-      "collider": true,
-      "movable": false,
-      "storable": false,
-      "container_slots": null,
-      "npc": {
-        "base_stats": {
-          "attributes": {
-            "strength": 9,
-            "agility": 9,
-            "constitution": 9,
-            "willpower": 8,
-            "charisma": 7,
-            "focus": 8
-          },
-          "max_health": 0,
-          "max_mana": 0,
-          "storage_slots": 0
-        },
-        "derived_stats": {
-          "attributes": {
-            "strength": 9,
-            "agility": 9,
-            "constitution": 9,
-            "willpower": 8,
-            "charisma": 7,
-            "focus": 8
-          },
-          "max_health": 107,
-          "max_mana": 82,
-          "storage_slots": 0
-        },
-        "vital_stats": {
-          "health": 107.0,
-          "max_health": 107.0,
-          "mana": 82.0,
-          "max_mana": 82.0
-        },
-        "attack_profile": {
-          "kind": "Melee"
-        },
-        "combat_leash": {
-          "max_distance_tiles": 8
-        },
-        "combat_target_object_id": 21268,
-        "roaming_behavior": {
-          "bounds": {
-            "min_x": 52,
-            "min_y": 26,
-            "max_x": 60,
-            "max_y": 34
-          },
-          "step_interval_seconds": 0.95
-        },
-        "hostile_behavior": {
-          "detect_distance_tiles": 5,
-          "disengage_distance_tiles": 8
-        },
-        "roaming_step_timer": {
-          "remaining_seconds": 0.52406096
-        },
-        "roaming_random_state": {
-          "seed": 1533185745542981420
-        }
-      },
-      "quantity": null,
-      "remaining_ttl": null
-    },
-    {
-      "object_id": 20004,
-      "definition_id": "goblin",
-      "space_id": 1,
-      "tile_position": {
-        "x": 56,
-        "y": 49
+        "x": 51,
+        "y": 28
       },
       "collider": true,
       "movable": false,
@@ -10699,6 +10601,156 @@
         "combat_target_object_id": null,
         "roaming_behavior": {
           "bounds": {
+            "min_x": 47,
+            "min_y": 26,
+            "max_x": 55,
+            "max_y": 34
+          },
+          "step_interval_seconds": 0.85
+        },
+        "hostile_behavior": {
+          "detect_distance_tiles": 5,
+          "disengage_distance_tiles": 8
+        },
+        "roaming_step_timer": {
+          "remaining_seconds": 0.6690964
+        },
+        "roaming_random_state": {
+          "seed": 16107570565796936201
+        }
+      },
+      "quantity": null,
+      "remaining_ttl": null
+    },
+    {
+      "object_id": 20003,
+      "definition_id": "goblin",
+      "space_id": 1,
+      "tile_position": {
+        "x": 57,
+        "y": 33
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": {
+        "base_stats": {
+          "attributes": {
+            "strength": 9,
+            "agility": 9,
+            "constitution": 9,
+            "willpower": 8,
+            "charisma": 7,
+            "focus": 8
+          },
+          "max_health": 0,
+          "max_mana": 0,
+          "storage_slots": 0
+        },
+        "derived_stats": {
+          "attributes": {
+            "strength": 9,
+            "agility": 9,
+            "constitution": 9,
+            "willpower": 8,
+            "charisma": 7,
+            "focus": 8
+          },
+          "max_health": 107,
+          "max_mana": 82,
+          "storage_slots": 0
+        },
+        "vital_stats": {
+          "health": 107.0,
+          "max_health": 107.0,
+          "mana": 82.0,
+          "max_mana": 82.0
+        },
+        "attack_profile": {
+          "kind": "Melee"
+        },
+        "combat_leash": {
+          "max_distance_tiles": 8
+        },
+        "combat_target_object_id": null,
+        "roaming_behavior": {
+          "bounds": {
+            "min_x": 52,
+            "min_y": 26,
+            "max_x": 60,
+            "max_y": 34
+          },
+          "step_interval_seconds": 0.95
+        },
+        "hostile_behavior": {
+          "detect_distance_tiles": 5,
+          "disengage_distance_tiles": 8
+        },
+        "roaming_step_timer": {
+          "remaining_seconds": 0.58755296
+        },
+        "roaming_random_state": {
+          "seed": 434749643932279760
+        }
+      },
+      "quantity": null,
+      "remaining_ttl": null
+    },
+    {
+      "object_id": 20004,
+      "definition_id": "goblin",
+      "space_id": 1,
+      "tile_position": {
+        "x": 57,
+        "y": 46
+      },
+      "collider": true,
+      "movable": false,
+      "storable": false,
+      "container_slots": null,
+      "npc": {
+        "base_stats": {
+          "attributes": {
+            "strength": 9,
+            "agility": 9,
+            "constitution": 9,
+            "willpower": 8,
+            "charisma": 7,
+            "focus": 8
+          },
+          "max_health": 0,
+          "max_mana": 0,
+          "storage_slots": 0
+        },
+        "derived_stats": {
+          "attributes": {
+            "strength": 9,
+            "agility": 9,
+            "constitution": 9,
+            "willpower": 8,
+            "charisma": 7,
+            "focus": 8
+          },
+          "max_health": 107,
+          "max_mana": 82,
+          "storage_slots": 0
+        },
+        "vital_stats": {
+          "health": 107.0,
+          "max_health": 107.0,
+          "mana": 82.0,
+          "max_mana": 82.0
+        },
+        "attack_profile": {
+          "kind": "Melee"
+        },
+        "combat_leash": {
+          "max_distance_tiles": 8
+        },
+        "combat_target_object_id": 21268,
+        "roaming_behavior": {
+          "bounds": {
             "min_x": 48,
             "min_y": 41,
             "max_x": 56,
@@ -10711,10 +10763,10 @@
           "disengage_distance_tiles": 8
         },
         "roaming_step_timer": {
-          "remaining_seconds": 0.4279447
+          "remaining_seconds": 0.36197826
         },
         "roaming_random_state": {
-          "seed": 9910873158120229799
+          "seed": 9771394655249507220
         }
       },
       "quantity": null,
@@ -10790,6 +10842,22 @@
       "space_id": 1,
       "tile_position": {
         "x": 37,
+        "y": 23
+      },
+      "collider": false,
+      "movable": true,
+      "storable": true,
+      "container_slots": null,
+      "npc": null,
+      "quantity": null,
+      "remaining_ttl": null
+    },
+    {
+      "object_id": 20010,
+      "definition_id": "apple",
+      "space_id": 1,
+      "tile_position": {
+        "x": 38,
         "y": 23
       },
       "collider": false,

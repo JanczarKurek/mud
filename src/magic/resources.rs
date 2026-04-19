@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-const SPELL_DEFINITIONS_PATH: &str = "assets/spells";
+use crate::assets::AssetResolver;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
@@ -46,39 +45,43 @@ pub struct SpellDefinitions {
 
 impl SpellDefinitions {
     pub fn load_from_disk() -> Self {
+        let resolver = AssetResolver::new();
         let mut definitions = HashMap::new();
-        let definitions_path = Path::new(SPELL_DEFINITIONS_PATH);
-        let Ok(entries) = fs::read_dir(definitions_path) else {
-            return Self { definitions };
-        };
 
-        for entry in entries {
-            let entry = entry.expect("Failed to read spell definition entry");
-            let path = entry.path();
-
-            if !path.is_file() || path.extension().and_then(|ext| ext.to_str()) != Some("yaml") {
+        for scan_dir in resolver.scan_dirs("spells") {
+            let Ok(entries) = fs::read_dir(&scan_dir) else {
                 continue;
-            }
+            };
 
-            let spell_id = path
-                .file_stem()
-                .and_then(|stem| stem.to_str())
-                .expect("Spell definition file has invalid name")
-                .to_owned();
-            let yaml = fs::read_to_string(&path).unwrap_or_else(|error| {
-                panic!(
-                    "Failed to read spell definition {}: {error}",
-                    path.display()
-                )
-            });
-            let definition =
-                serde_yaml::from_str::<SpellDefinition>(&yaml).unwrap_or_else(|error| {
+            for entry in entries {
+                let entry = entry.expect("Failed to read spell definition entry");
+                let path = entry.path();
+
+                if !path.is_file() || path.extension().and_then(|ext| ext.to_str()) != Some("yaml")
+                {
+                    continue;
+                }
+
+                let spell_id = path
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .expect("Spell definition file has invalid name")
+                    .to_owned();
+                let yaml = fs::read_to_string(&path).unwrap_or_else(|error| {
                     panic!(
-                        "Failed to parse spell definition {}: {error}",
+                        "Failed to read spell definition {}: {error}",
                         path.display()
                     )
                 });
-            definitions.insert(spell_id, definition);
+                let definition =
+                    serde_yaml::from_str::<SpellDefinition>(&yaml).unwrap_or_else(|error| {
+                        panic!(
+                            "Failed to parse spell definition {}: {error}",
+                            path.display()
+                        )
+                    });
+                definitions.insert(spell_id, definition);
+            }
         }
 
         Self { definitions }

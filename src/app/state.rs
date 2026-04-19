@@ -4,6 +4,7 @@ use bevy::prelude::*;
 pub enum ClientAppState {
     #[default]
     TitleScreen,
+    AssetSync,
     InGame,
     MapEditor,
 }

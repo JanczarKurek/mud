@@ -22,14 +22,18 @@ pub fn spawn_embedded_player_authoritative(
     snapshot_status: Option<Res<WorldSnapshotStatus>>,
     player_query: Query<Option<&PlayerIdentity>, With<Player>>,
 ) {
-    if snapshot_status.as_ref().is_some_and(|status| status.loaded) {
+    // If the snapshot loaded player entities, don't create a duplicate.
+    // But if the snapshot had NO players (e.g. server saved after all clients left),
+    // we still need to spawn the local player.
+    if snapshot_status
+        .as_ref()
+        .is_some_and(|s| s.loaded && s.players_restored)
+    {
         return;
     }
 
-    if player_query
-        .iter()
-        .any(|identity| identity.is_none_or(|identity| identity.id == PlayerId(0)))
-    {
+    // Don't spawn if any player entity already exists.
+    if player_query.iter().next().is_some() {
         return;
     }
 

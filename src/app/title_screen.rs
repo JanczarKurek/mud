@@ -430,9 +430,10 @@ fn handle_title_screen_buttons(
                         tcp_config.server_addr = server_addr;
                     }
                     tcp_config.active = true;
+                    next_state.set(ClientAppState::AssetSync);
+                } else {
+                    next_state.set(ClientAppState::InGame);
                 }
-
-                next_state.set(ClientAppState::InGame);
             }
             TitleAction::OpenMapEditor => {
                 next_state.set(ClientAppState::MapEditor);

@@ -67,3 +67,4 @@ The world consists of multiple independent spaces (Overworld, Underworld, epheme
 - `PLAN.md`: Detailed project plan
 - `AGENTS.md`: Repository contribution guidelines
 - `docs/yaml_formats.md`: YAML schema reference
+- `common_issues.md`: Recurring bugs and root causes (read before debugging rendering/NPC issues)

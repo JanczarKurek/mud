@@ -1,18 +1,24 @@
 use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::path::PathBuf;
 
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use bevy::log::{error, info, warn};
 use bevy::prelude::*;
 
+use crate::app::state::ClientAppState;
+use crate::assets::AssetResolver;
 use crate::combat::components::CombatTarget;
 use crate::game::resources::{
     ClientGameState, ClientRemotePlayerState, ClientSpaceState, ClientVitalStats,
     ClientWorldObjectState, PendingGameCommands, PendingGameUiEvents,
 };
+use crate::network::asset_sync::{build_server_manifest, hash_bytes};
 use crate::network::protocol::{ClientMessage, ServerMessage};
 use crate::network::resources::{
-    ConnectionId, TcpClientConfig, TcpClientConnection, TcpServerConfig, TcpServerPeer,
-    TcpServerState,
+    AssetSyncState, ConnectionId, ServerAssetManifest, TcpClientConfig, TcpClientConnection,
+    TcpServerConfig, TcpServerPeer, TcpServerState,
 };
 use crate::npc::components::Npc;
 use crate::player::components::{
@@ -27,6 +33,157 @@ use crate::world::map_layout::SpaceDefinitions;
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::resources::SpaceManager;
 use crate::world::WorldConfig;
+
+pub fn build_and_store_manifest(mut commands: Commands) {
+    let manifest = build_server_manifest();
+    info!("asset manifest built: {} files", manifest.len());
+    commands.insert_resource(ServerAssetManifest(manifest));
+}
+
+pub fn send_asset_manifest_to_new_peers(
+    manifest: Res<ServerAssetManifest>,
+    mut server_state: ResMut<TcpServerState>,
+) {
+    for peer in server_state.peers.values_mut() {
+        if peer.manifest_sent {
+            continue;
+        }
+        info!(
+            "sending asset manifest ({} files) to peer {}",
+            manifest.0.len(),
+            peer.connection_id.0
+        );
+        let mut disconnected = false;
+        write_message(
+            &mut peer.stream,
+            &ServerMessage::AssetManifest(manifest.0.clone()),
+            &mut disconnected,
+        );
+        peer.manifest_sent = true;
+    }
+}
+
+pub fn poll_tcp_asset_sync_messages(
+    config: Res<TcpClientConfig>,
+    mut connection: ResMut<TcpClientConnection>,
+    resolver: Res<AssetResolver>,
+    mut sync_state: ResMut<AssetSyncState>,
+    mut next_state: ResMut<NextState<ClientAppState>>,
+) {
+    ensure_tcp_client_connected(&config, &mut connection);
+
+    let mut read_buffer = std::mem::take(&mut connection.read_buffer);
+    let Some(stream) = &mut connection.stream else {
+        connection.read_buffer = read_buffer;
+        return;
+    };
+
+    let mut disconnected = false;
+    let mut files_to_write: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut request_paths: Option<Vec<String>> = None;
+    let mut send_sync_complete = false;
+    let mut transition_to_ingame = false;
+
+    while let Some(line) = read_next_line(stream, &mut read_buffer, &mut disconnected) {
+        match serde_json::from_str::<ServerMessage>(&line) {
+            Ok(ServerMessage::AssetManifest(entries)) => {
+                let missing: Vec<String> = entries
+                    .iter()
+                    .filter(|e| !is_asset_current(&e.path, &e.hash, &resolver))
+                    .map(|e| e.path.clone())
+                    .collect();
+
+                sync_state.manifest_received = true;
+                sync_state.total_needed = missing.len();
+                sync_state.received_count = 0;
+                sync_state.pending_paths.clone_from(&missing);
+
+                if missing.is_empty() {
+                    info!("asset sync: all {} assets up to date", entries.len());
+                    send_sync_complete = true;
+                    transition_to_ingame = true;
+                } else {
+                    info!("asset sync: need {} of {} assets", missing.len(), entries.len());
+                    request_paths = Some(missing);
+                }
+            }
+            Ok(ServerMessage::AssetData { path, data }) => {
+                match BASE64.decode(&data) {
+                    Ok(bytes) => {
+                        files_to_write.push((path.clone(), bytes));
+                        sync_state.pending_paths.retain(|p| p != &path);
+                        sync_state.received_count += 1;
+                        let msg = format!(
+                            "[{}/{}] {}",
+                            sync_state.received_count, sync_state.total_needed, path
+                        );
+                        info!("asset sync: {}", msg);
+                        sync_state.log_messages.push(msg);
+
+                        if sync_state.pending_paths.is_empty() {
+                            info!("asset sync: all assets downloaded");
+                            send_sync_complete = true;
+                            transition_to_ingame = true;
+                        }
+                    }
+                    Err(err) => warn!("asset sync: failed to decode {}: {err}", path),
+                }
+            }
+            Ok(_) => {}
+            Err(error) => warn!("asset sync: failed to parse server message: {error}"),
+        }
+    }
+
+    if let Some(paths) = request_paths {
+        let mut disc = false;
+        write_message(stream, &ClientMessage::AssetRequest(paths), &mut disc);
+    }
+    if send_sync_complete {
+        let mut disc = false;
+        write_message(stream, &ClientMessage::SyncComplete, &mut disc);
+    }
+
+    if disconnected {
+        warn!("lost TCP connection to {} during asset sync", config.server_addr);
+        connection.stream = None;
+        connection.read_buffer.clear();
+    } else {
+        connection.read_buffer = read_buffer;
+    }
+
+    if let Some(xdg_dir) = resolver.xdg_assets_dir() {
+        for (path, bytes) in files_to_write {
+            let target = xdg_dir.join(&path);
+            if let Some(parent) = target.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if let Err(err) = std::fs::write(&target, &bytes) {
+                warn!("asset sync: failed to write {}: {err}", path);
+            }
+        }
+    }
+
+    if transition_to_ingame {
+        next_state.set(ClientAppState::InGame);
+    }
+}
+
+fn is_asset_current(path: &str, expected_hash: &str, resolver: &AssetResolver) -> bool {
+    let bundled = PathBuf::from("assets").join(path);
+    let candidates: Vec<PathBuf> = resolver
+        .xdg_assets_dir()
+        .map(|d| vec![d.join(path), bundled.clone()])
+        .unwrap_or_else(|| vec![bundled]);
+
+    for candidate in &candidates {
+        if let Ok(data) = std::fs::read(candidate) {
+            if hash_bytes(&data) == expected_hash {
+                return true;
+            }
+        }
+    }
+    false
+}
 
 pub fn start_tcp_server(config: Res<TcpServerConfig>, mut server_state: ResMut<TcpServerState>) {
     if server_state.listener.is_some() {
@@ -105,6 +262,8 @@ pub fn accept_tcp_client_connections(
                         stream,
                         read_buffer: Vec::new(),
                         last_snapshot: None,
+                        sync_complete: false,
+                        manifest_sent: false,
                     },
                 );
             }
@@ -137,6 +296,41 @@ pub fn poll_tcp_server_messages(
             match serde_json::from_str::<ClientMessage>(&line) {
                 Ok(ClientMessage::Command(command)) => {
                     pending_commands.push_for_player(peer.player_id, command);
+                }
+                Ok(ClientMessage::AssetRequest(paths)) => {
+                    info!(
+                        "peer {} requested {} assets",
+                        peer.connection_id.0,
+                        paths.len()
+                    );
+                    for path in &paths {
+                        let file_path = PathBuf::from("assets").join(path);
+                        match std::fs::read(&file_path) {
+                            Ok(data) => {
+                                let encoded = BASE64.encode(&data);
+                                let mut disc = false;
+                                write_message(
+                                    &mut peer.stream,
+                                    &ServerMessage::AssetData {
+                                        path: path.clone(),
+                                        data: encoded,
+                                    },
+                                    &mut disc,
+                                );
+                                if disc {
+                                    disconnected = true;
+                                    break;
+                                }
+                            }
+                            Err(err) => {
+                                warn!("asset sync: failed to read {}: {err}", path);
+                            }
+                        }
+                    }
+                }
+                Ok(ClientMessage::SyncComplete) => {
+                    info!("peer {} asset sync complete", peer.connection_id.0);
+                    peer.sync_complete = true;
                 }
                 Err(error) => warn!("failed to parse client message: {error}"),
             }
@@ -199,37 +393,40 @@ pub fn flush_server_messages(
             continue;
         };
 
-        let snapshot = build_client_game_state(
-            peer.player_id,
-            &player_query,
-            &object_query,
-            &world_object_query,
-            &container_query,
-            &space_manager,
-        );
-
         let mut disconnected = false;
-        if peer.last_snapshot.as_ref() != Some(&snapshot) {
-            if !write_message(
-                &mut peer.stream,
-                &ServerMessage::Snapshot(snapshot.clone()),
-                &mut disconnected,
-            ) {
-                warn!("failed to send snapshot to TCP client");
-            } else {
-                peer.last_snapshot = Some(snapshot);
-            }
-        }
 
-        if let Some(events) = peer_ui_events.get(&peer.player_id) {
-            if !events.is_empty()
-                && !write_message(
+        if peer.sync_complete {
+            let snapshot = build_client_game_state(
+                peer.player_id,
+                &player_query,
+                &object_query,
+                &world_object_query,
+                &container_query,
+                &space_manager,
+            );
+
+            if peer.last_snapshot.as_ref() != Some(&snapshot) {
+                if !write_message(
                     &mut peer.stream,
-                    &ServerMessage::UiEvents(events.clone()),
+                    &ServerMessage::Snapshot(snapshot.clone()),
                     &mut disconnected,
-                )
-            {
-                warn!("failed to send UI events to TCP client");
+                ) {
+                    warn!("failed to send snapshot to TCP client");
+                } else {
+                    peer.last_snapshot = Some(snapshot);
+                }
+            }
+
+            if let Some(events) = peer_ui_events.get(&peer.player_id) {
+                if !events.is_empty()
+                    && !write_message(
+                        &mut peer.stream,
+                        &ServerMessage::UiEvents(events.clone()),
+                        &mut disconnected,
+                    )
+                {
+                    warn!("failed to send UI events to TCP client");
+                }
             }
         }
 
@@ -296,6 +493,7 @@ pub fn poll_tcp_client_messages(
             Ok(ServerMessage::UiEvents(events)) => {
                 pending_ui_events.events.extend(events);
             }
+            Ok(ServerMessage::AssetManifest(_) | ServerMessage::AssetData { .. }) => {}
             Err(error) => warn!("failed to parse server message: {error}"),
         }
     }

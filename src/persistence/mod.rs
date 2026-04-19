@@ -43,6 +43,10 @@ pub enum PersistenceStartupSet {
 #[derive(Resource, Clone, Copy, Debug, Default)]
 pub struct WorldSnapshotStatus {
     pub loaded: bool,
+    /// True when the snapshot had ≥1 player entries — used by
+    /// `spawn_embedded_player_authoritative` to avoid spawning a duplicate
+    /// when the snapshot was empty (e.g. server saved after all clients left).
+    pub players_restored: bool,
 }
 
 #[derive(Resource, Clone, Debug)]
@@ -191,7 +195,7 @@ pub struct NpcStateDump {
 
 fn save_world_on_app_exit(
     mut app_exit_reader: MessageReader<AppExit>,
-    app_state: Res<State<crate::app::state::ClientAppState>>,
+    app_state: Option<Res<State<crate::app::state::ClientAppState>>>,
     save_config: Res<WorldSaveConfig>,
     world_config: Res<WorldConfig>,
     space_manager: Res<SpaceManager>,
@@ -252,7 +256,7 @@ fn save_world_on_app_exit(
         return;
     }
 
-    if *app_state == crate::app::state::ClientAppState::MapEditor {
+    if app_state.is_some_and(|s| *s == crate::app::state::ClientAppState::MapEditor) {
         return;
     }
 
@@ -471,7 +475,9 @@ fn load_world_from_snapshot(
         .unwrap_or_else(|| "grass".to_owned());
 
     if dump_spaces.is_empty() {
-        let bootstrap_definition = authored_spaces.bootstrap_space();
+        let bootstrap_definition = authored_spaces
+            .bootstrap_space()
+            .expect("bootstrap space required when loading world save");
         let space_id = space_manager.allocate_space_id();
         space_manager.insert_space(RuntimeSpace {
             id: space_id,
@@ -541,6 +547,8 @@ fn load_world_from_snapshot(
 
     let mut object_entities = std::collections::HashMap::new();
     let mut pending_combat_targets = Vec::new();
+
+    let players_restored = !players.is_empty();
 
     let mut seen_players = HashSet::new();
     for player in players {
@@ -673,7 +681,12 @@ fn load_world_from_snapshot(
     }
 
     snapshot_status.loaded = true;
-    info!("loaded world state from {}", save_config.path.display());
+    snapshot_status.players_restored = players_restored;
+    info!(
+        "loaded world state from {} ({} players restored)",
+        save_config.path.display(),
+        if players_restored { "some" } else { "no" }
+    );
 }
 
 fn write_world_dump(path: &Path, dump: &WorldStateDump) -> std::io::Result<()> {

@@ -375,6 +375,17 @@ pub fn collect_game_events_from_authority(
     pending_game_events.events.clear();
     let mut authoritative_local_space_id = None;
 
+    match player_query.single() {
+        Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => {
+            bevy::log::warn!("collect_game_events: no Player entity found");
+        }
+        Err(bevy::ecs::query::QuerySingleError::MultipleEntities(_)) => {
+            let count = player_query.iter().count();
+            bevy::log::warn!("collect_game_events: {} Player entities found (expected 1)", count);
+        }
+        Ok(_) => {}
+    }
+
     if let Ok((
         player_identity,
         inventory_state,

@@ -11,8 +11,7 @@ use serde::Deserializer;
 use serde::Serialize;
 use serde_yaml::{Mapping, Value};
 
-const OBJECT_BASES_PATH: &str = "assets/object_bases";
-const OBJECT_DEFINITIONS_PATH: &str = "assets/overworld_objects";
+use crate::assets::AssetResolver;
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -429,42 +428,43 @@ pub struct OverworldObjectDefinitions {
 
 impl OverworldObjectDefinitions {
     pub fn load_from_disk() -> Self {
-        let object_definitions_path = Path::new(OBJECT_DEFINITIONS_PATH);
-        info!(
-            "loading overworld object definitions from {}",
-            object_definitions_path.display()
-        );
-        let object_entries = fs::read_dir(object_definitions_path).unwrap_or_else(|error| {
-            panic!(
-                "Failed to read overworld object definitions from {}: {error}",
-                object_definitions_path.display()
-            )
-        });
+        let resolver = AssetResolver::new();
+        let scan_dirs = resolver.scan_dirs("overworld_objects");
 
-        let base_values = load_base_values();
+        let base_values = load_base_values(&resolver);
         let mut raw_definition_values = HashMap::new();
 
-        for entry in object_entries {
-            let entry = entry.expect("Failed to read overworld object directory entry");
-            let path = entry.path();
-
-            if !path.is_dir() {
-                continue;
-            }
-
-            let Some(directory_name) = path.file_name().and_then(|name| name.to_str()) else {
+        for scan_dir in &scan_dirs {
+            info!(
+                "loading overworld object definitions from {}",
+                scan_dir.display()
+            );
+            let Ok(object_entries) = fs::read_dir(scan_dir) else {
                 continue;
             };
 
-            let metadata_path = path.join("metadata.yaml");
-            info!(
-                "loading overworld object metadata {}",
-                metadata_path.display()
-            );
-            raw_definition_values.insert(
-                directory_name.to_owned(),
-                load_yaml_value(&metadata_path, "overworld object metadata"),
-            );
+            for entry in object_entries {
+                let entry = entry.expect("Failed to read overworld object directory entry");
+                let path = entry.path();
+
+                if !path.is_dir() {
+                    continue;
+                }
+
+                let Some(directory_name) = path.file_name().and_then(|name| name.to_str()) else {
+                    continue;
+                };
+
+                let metadata_path = path.join("metadata.yaml");
+                info!(
+                    "loading overworld object metadata {}",
+                    metadata_path.display()
+                );
+                raw_definition_values.insert(
+                    directory_name.to_owned(),
+                    load_yaml_value(&metadata_path, "overworld object metadata"),
+                );
+            }
         }
 
         let mut resolved_definition_values = HashMap::new();
@@ -510,33 +510,35 @@ impl OverworldObjectDefinitions {
     }
 }
 
-fn load_base_values() -> HashMap<String, Value> {
-    let base_path = Path::new(OBJECT_BASES_PATH);
-    info!(
-        "loading overworld object base metadata from {}",
-        base_path.display()
-    );
-    let Ok(entries) = fs::read_dir(base_path) else {
-        return HashMap::new();
-    };
-
+fn load_base_values(resolver: &AssetResolver) -> HashMap<String, Value> {
     let mut base_values = HashMap::new();
-    for entry in entries {
-        let entry = entry.expect("Failed to read object base directory entry");
-        let path = entry.path();
 
-        if !path.is_file() || path.extension().and_then(|ext| ext.to_str()) != Some("yaml") {
-            continue;
-        }
-
-        let Some(base_id) = path.file_stem().and_then(|stem| stem.to_str()) else {
+    for scan_dir in resolver.scan_dirs("object_bases") {
+        info!(
+            "loading overworld object base metadata from {}",
+            scan_dir.display()
+        );
+        let Ok(entries) = fs::read_dir(&scan_dir) else {
             continue;
         };
 
-        base_values.insert(
-            base_id.to_owned(),
-            load_yaml_value(&path, "object base metadata"),
-        );
+        for entry in entries {
+            let entry = entry.expect("Failed to read object base directory entry");
+            let path = entry.path();
+
+            if !path.is_file() || path.extension().and_then(|ext| ext.to_str()) != Some("yaml") {
+                continue;
+            }
+
+            let Some(base_id) = path.file_stem().and_then(|stem| stem.to_str()) else {
+                continue;
+            };
+
+            base_values.insert(
+                base_id.to_owned(),
+                load_yaml_value(&path, "object base metadata"),
+            );
+        }
     }
 
     base_values

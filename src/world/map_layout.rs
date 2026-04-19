@@ -1,14 +1,13 @@
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
 
 use bevy::log::info;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::assets::AssetResolver;
 use crate::world::components::TilePosition;
 
-const MAP_LAYOUTS_PATH: &str = "assets/maps";
 const DEFAULT_BOOTSTRAP_SPACE_ID: &str = "overworld";
 
 pub type ObjectProperties = HashMap<String, String>;
@@ -145,71 +144,67 @@ impl TileCoordinate {
 
 impl SpaceDefinitions {
     pub fn load_from_disk() -> Self {
-        let path = Path::new(MAP_LAYOUTS_PATH);
+        let resolver = AssetResolver::new();
         let mut spaces = HashMap::new();
-        info!("loading map layouts from {}", path.display());
 
-        let entries = fs::read_dir(path).unwrap_or_else(|error| {
-            panic!(
-                "Failed to read map layouts directory {}: {error}",
-                path.display()
-            )
-        });
-
-        for entry in entries {
-            let entry = entry.unwrap_or_else(|error| {
-                panic!(
-                    "Failed to read map layout entry in {}: {error}",
-                    path.display()
-                )
-            });
-            let file_path = entry.path();
-            if !file_path.is_file()
-                || file_path.extension().and_then(|ext| ext.to_str()) != Some("yaml")
-            {
+        for scan_dir in resolver.scan_dirs("maps") {
+            info!("loading map layouts from {}", scan_dir.display());
+            let Ok(entries) = fs::read_dir(&scan_dir) else {
                 continue;
-            }
+            };
 
-            let yaml = fs::read_to_string(&file_path).unwrap_or_else(|error| {
-                panic!("Failed to read map layout {}: {error}", file_path.display())
-            });
-
-            let mut definition: SpaceDefinition =
-                serde_yaml::from_str(&yaml).unwrap_or_else(|error| {
+            for entry in entries {
+                let entry = entry.unwrap_or_else(|error| {
                     panic!(
-                        "Failed to parse map layout {}: {error}",
-                        file_path.display()
+                        "Failed to read map layout entry in {}: {error}",
+                        scan_dir.display()
                     )
                 });
+                let file_path = entry.path();
+                if !file_path.is_file()
+                    || file_path.extension().and_then(|ext| ext.to_str()) != Some("yaml")
+                {
+                    continue;
+                }
 
-            if definition.authored_id.trim().is_empty() {
-                definition.authored_id = file_path
-                    .file_stem()
-                    .and_then(|stem| stem.to_str())
-                    .unwrap_or_else(|| {
+                let yaml = fs::read_to_string(&file_path).unwrap_or_else(|error| {
+                    panic!("Failed to read map layout {}: {error}", file_path.display())
+                });
+
+                let mut definition: SpaceDefinition =
+                    serde_yaml::from_str(&yaml).unwrap_or_else(|error| {
                         panic!(
-                            "Failed to derive authored space id from {}",
+                            "Failed to parse map layout {}: {error}",
                             file_path.display()
                         )
-                    })
-                    .to_owned();
-            }
+                    });
 
-            definition.validate();
-            let previous = spaces.insert(definition.authored_id.clone(), definition);
-            assert!(
-                previous.is_none(),
-                "Duplicate authored space id found while loading {}",
-                file_path.display()
-            );
-            info!("loaded map layout {}", file_path.display());
+                if definition.authored_id.trim().is_empty() {
+                    definition.authored_id = file_path
+                        .file_stem()
+                        .and_then(|stem| stem.to_str())
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "Failed to derive authored space id from {}",
+                                file_path.display()
+                            )
+                        })
+                        .to_owned();
+                }
+
+                definition.validate();
+                spaces.insert(definition.authored_id.clone(), definition);
+                info!("loaded map layout {}", file_path.display());
+            }
         }
 
-        assert!(
-            spaces.contains_key(DEFAULT_BOOTSTRAP_SPACE_ID),
-            "Missing bootstrap space definition '{}'",
-            DEFAULT_BOOTSTRAP_SPACE_ID
-        );
+        if !spaces.is_empty() {
+            assert!(
+                spaces.contains_key(DEFAULT_BOOTSTRAP_SPACE_ID),
+                "Missing bootstrap space definition '{}'",
+                DEFAULT_BOOTSTRAP_SPACE_ID
+            );
+        }
 
         for definition in spaces.values() {
             for portal in &definition.portals {
@@ -229,13 +224,8 @@ impl SpaceDefinitions {
         }
     }
 
-    pub fn bootstrap_space(&self) -> &SpaceDefinition {
-        self.get(&self.bootstrap_space_id).unwrap_or_else(|| {
-            panic!(
-                "Missing bootstrap space definition '{}'",
-                self.bootstrap_space_id
-            )
-        })
+    pub fn bootstrap_space(&self) -> Option<&SpaceDefinition> {
+        self.get(&self.bootstrap_space_id)
     }
 
     pub fn get(&self, authored_id: &str) -> Option<&SpaceDefinition> {

@@ -74,7 +74,7 @@ fn pump_server(app: &mut App, ticks: usize) {
 fn latest_snapshot(messages: &[ServerMessage]) -> Option<mud2::game::resources::ClientGameState> {
     messages.iter().rev().find_map(|message| match message {
         ServerMessage::Snapshot(snapshot) => Some(snapshot.clone()),
-        ServerMessage::UiEvents(_) => None,
+        _ => None,
     })
 }
 

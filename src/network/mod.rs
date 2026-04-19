@@ -1,3 +1,4 @@
+pub mod asset_sync;
 pub mod protocol;
 pub mod resources;
 pub mod systems;
@@ -7,11 +8,12 @@ use bevy::prelude::*;
 use crate::app::state::ClientAppState;
 use crate::game::systems::{apply_game_events_to_client_state, process_game_commands};
 use crate::network::resources::{
-    TcpClientConfig, TcpClientConnection, TcpServerConfig, TcpServerState,
+    AssetSyncState, TcpClientConfig, TcpClientConnection, TcpServerConfig, TcpServerState,
 };
 use crate::network::systems::{
-    accept_tcp_client_connections, flush_client_commands_to_server, flush_server_messages,
-    poll_tcp_client_messages, poll_tcp_server_messages, start_tcp_server,
+    accept_tcp_client_connections, build_and_store_manifest, flush_client_commands_to_server,
+    flush_server_messages, poll_tcp_asset_sync_messages, poll_tcp_client_messages,
+    poll_tcp_server_messages, send_asset_manifest_to_new_peers, start_tcp_server,
 };
 
 pub struct TcpClientPlugin {
@@ -29,6 +31,11 @@ impl Plugin for TcpClientPlugin {
             active: false,
         })
         .insert_resource(TcpClientConnection::default())
+        .insert_resource(AssetSyncState::default())
+        .add_systems(
+            Update,
+            poll_tcp_asset_sync_messages.run_if(in_state(ClientAppState::AssetSync)),
+        )
         .add_systems(
             Update,
             flush_client_commands_to_server.run_if(in_state(ClientAppState::InGame)),
@@ -48,8 +55,9 @@ impl Plugin for TcpServerPlugin {
             bind_addr: self.bind_addr.clone(),
         })
         .insert_resource(TcpServerState::default())
-        .add_systems(Startup, start_tcp_server)
+        .add_systems(Startup, (start_tcp_server, build_and_store_manifest))
         .add_systems(Update, accept_tcp_client_connections)
+        .add_systems(Update, send_asset_manifest_to_new_peers)
         .add_systems(
             Update,
             poll_tcp_server_messages.before(process_game_commands),

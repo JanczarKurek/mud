@@ -31,6 +31,7 @@ pub fn sync_client_world_projection(
     )>,
 ) {
     let Some(current_space) = client_state.current_space.as_ref() else {
+        info!("sync_client_world_projection: current_space is None, skipping (world_objects={})", client_state.world_objects.len());
         return;
     };
 
@@ -224,7 +225,25 @@ pub fn sync_remote_player_projection(
         }
 
         space_resident.space_id = remote_player.position.space_id;
+        let old_tile = *tile_position;
         *tile_position = remote_player.position.tile_position;
+        if old_tile != *tile_position {
+            let dx = tile_position.x - old_tile.x;
+            let dy = tile_position.y - old_tile.y;
+            if dx.abs() <= 1 && dy.abs() <= 1 {
+                commands.entity(query_entity).insert((
+                    JustMoved { dx, dy },
+                    VisualOffset {
+                        current: Vec2::new(
+                            -dx as f32 * world_config.tile_size,
+                            -dy as f32 * world_config.tile_size,
+                        ),
+                        elapsed: 0.0,
+                        duration: 0.18,
+                    },
+                ));
+            }
+        }
         displayed_vitals.health = remote_player.vitals.health;
         displayed_vitals.max_health = remote_player.vitals.max_health;
         displayed_vitals.mana = remote_player.vitals.mana;
