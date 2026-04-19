@@ -96,6 +96,14 @@ pub struct ClientSpaceState {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum GameEvent {
+    /// Emitted once per peer when the bootstrap stream begins so the client
+    /// learns its own `PlayerId` + player `object_id`. These two fields cannot be
+    /// reconstructed from any other event, so without this variant a wire-only
+    /// client has no way to distinguish its own avatar from remote players.
+    LocalPlayerIdentified {
+        player_id: PlayerId,
+        object_id: u64,
+    },
     InventoryChanged {
         inventory: Inventory,
     },

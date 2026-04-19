@@ -1,6 +1,6 @@
 {
   "format_version": 3,
-  "saved_at_unix_seconds": 1776637950,
+  "saved_at_unix_seconds": 1776641389,
   "world_config": {
     "current_space_id": 1,
     "map_width": 70,
@@ -34,7 +34,7 @@
     }
   ],
   "object_registry": {
-    "next_runtime_id": 21271,
+    "next_runtime_id": 21272,
     "entries": [
       {
         "object_id": 1200,
@@ -7475,11 +7475,16 @@
         "object_id": 21270,
         "type_id": "player",
         "properties": {}
+      },
+      {
+        "object_id": 21271,
+        "type_id": "player",
+        "properties": {}
       }
     ]
   },
   "network": {
-    "next_connection_id": 3
+    "next_connection_id": 4
   },
   "players": [],
   "world_objects": [
@@ -7567,8 +7572,8 @@
       "definition_id": "goblin",
       "space_id": 0,
       "tile_position": {
-        "x": 8,
-        "y": 10
+        "x": 9,
+        "y": 5
       },
       "collider": true,
       "movable": false,
@@ -7628,10 +7633,10 @@
           "disengage_distance_tiles": 7
         },
         "roaming_step_timer": {
-          "remaining_seconds": 0.49820447
+          "remaining_seconds": 0.6488537
         },
         "roaming_random_state": {
-          "seed": 886294214417526567
+          "seed": 12088604979218134561
         }
       },
       "quantity": null,
@@ -7642,8 +7647,8 @@
       "definition_id": "goblin",
       "space_id": 0,
       "tile_position": {
-        "x": 20,
-        "y": 14
+        "x": 23,
+        "y": 13
       },
       "collider": true,
       "movable": false,
@@ -7703,10 +7708,10 @@
           "disengage_distance_tiles": 8
         },
         "roaming_step_timer": {
-          "remaining_seconds": 0.8158581
+          "remaining_seconds": 0.7320133
         },
         "roaming_random_state": {
-          "seed": 1017314987741270790
+          "seed": 4245703131805548772
         }
       },
       "quantity": null,
@@ -10434,10 +10439,10 @@
           "disengage_distance_tiles": 8
         },
         "roaming_step_timer": {
-          "remaining_seconds": 0.32980147
+          "remaining_seconds": 0.09913099
         },
         "roaming_random_state": {
-          "seed": 17395486812190658064
+          "seed": 5251337352813958359
         }
       },
       "quantity": null,
@@ -10509,10 +10514,10 @@
           "disengage_distance_tiles": 8
         },
         "roaming_step_timer": {
-          "remaining_seconds": 0.49820447
+          "remaining_seconds": 0.6488537
         },
         "roaming_random_state": {
-          "seed": 16363034164402920067
+          "seed": 12659424115485836267
         }
       },
       "quantity": null,
@@ -10523,8 +10528,8 @@
       "definition_id": "goblin",
       "space_id": 1,
       "tile_position": {
-        "x": 60,
-        "y": 30
+        "x": 52,
+        "y": 27
       },
       "collider": true,
       "movable": false,
@@ -10584,10 +10589,10 @@
           "disengage_distance_tiles": 8
         },
         "roaming_step_timer": {
-          "remaining_seconds": 0.8158581
+          "remaining_seconds": 0.7320133
         },
         "roaming_random_state": {
-          "seed": 13585939361531328803
+          "seed": 7131719415027724188
         }
       },
       "quantity": null,
@@ -10598,8 +10603,8 @@
       "definition_id": "goblin",
       "space_id": 1,
       "tile_position": {
-        "x": 54,
-        "y": 42
+        "x": 55,
+        "y": 47
       },
       "collider": true,
       "movable": false,
@@ -10659,10 +10664,10 @@
           "disengage_distance_tiles": 8
         },
         "roaming_step_timer": {
-          "remaining_seconds": 0.7485727
+          "remaining_seconds": 0.8660396
         },
         "roaming_random_state": {
-          "seed": 13851796419887310319
+          "seed": 4033820080708317706
         }
       },
       "quantity": null,
@@ -10729,10 +10734,10 @@
         },
         "hostile_behavior": null,
         "roaming_step_timer": {
-          "remaining_seconds": 0.080984555
+          "remaining_seconds": 0.34919834
         },
         "roaming_random_state": {
-          "seed": 3791962525018577876
+          "seed": 9327159689704550757
         }
       },
       "quantity": null,
@@ -10799,10 +10804,10 @@
         },
         "hostile_behavior": null,
         "roaming_step_timer": {
-          "remaining_seconds": 0.46608958
+          "remaining_seconds": 0.248273
         },
         "roaming_random_state": {
-          "seed": 12402295321295207791
+          "seed": 11967030221933868144
         }
       },
       "quantity": null,
@@ -10869,10 +10874,10 @@
         },
         "hostile_behavior": null,
         "roaming_step_timer": {
-          "remaining_seconds": 0.38293627
+          "remaining_seconds": 0.008211752
         },
         "roaming_random_state": {
-          "seed": 1676138495442639311
+          "seed": 10678022778729466757
         }
       },
       "quantity": null,
@@ -10883,8 +10888,8 @@
       "definition_id": "skeleton",
       "space_id": 1,
       "tile_position": {
-        "x": 30,
-        "y": 37
+        "x": 27,
+        "y": 31
       },
       "collider": true,
       "movable": false,
@@ -10944,10 +10949,10 @@
           "disengage_distance_tiles": 7
         },
         "roaming_step_timer": {
-          "remaining_seconds": 0.7485727
+          "remaining_seconds": 0.8660396
         },
         "roaming_random_state": {
-          "seed": 15182157272841904008
+          "seed": 3223898258838146639
         }
       },
       "quantity": null,
@@ -10958,8 +10963,8 @@
       "definition_id": "skeleton",
       "space_id": 1,
       "tile_position": {
-        "x": 40,
-        "y": 44
+        "x": 41,
+        "y": 43
       },
       "collider": true,
       "movable": false,
@@ -11019,10 +11024,10 @@
           "disengage_distance_tiles": 7
         },
         "roaming_step_timer": {
-          "remaining_seconds": 0.9996339
+          "remaining_seconds": 0.08146455
         },
         "roaming_random_state": {
-          "seed": 13314590895814335545
+          "seed": 15668179827638055003
         }
       },
       "quantity": null,
@@ -11033,8 +11038,8 @@
       "definition_id": "villager",
       "space_id": 1,
       "tile_position": {
-        "x": 12,
-        "y": 9
+        "x": 11,
+        "y": 10
       },
       "collider": true,
       "movable": false,
@@ -11089,10 +11094,10 @@
         },
         "hostile_behavior": null,
         "roaming_step_timer": {
-          "remaining_seconds": 1.0212833
+          "remaining_seconds": 1.3836067
         },
         "roaming_random_state": {
-          "seed": 4328382690976424631
+          "seed": 255355064471551479
         }
       },
       "quantity": null,
@@ -11103,8 +11108,8 @@
       "definition_id": "villager",
       "space_id": 1,
       "tile_position": {
-        "x": 21,
-        "y": 12
+        "x": 20,
+        "y": 14
       },
       "collider": true,
       "movable": false,
@@ -11159,10 +11164,10 @@
         },
         "hostile_behavior": null,
         "roaming_step_timer": {
-          "remaining_seconds": 1.4374613
+          "remaining_seconds": 0.12730029
         },
         "roaming_random_state": {
-          "seed": 12255015095974998809
+          "seed": 2689166718925403924
         }
       },
       "quantity": null,
@@ -11191,70 +11196,6 @@
       "tile_position": {
         "x": 60,
         "y": 14
-      },
-      "collider": false,
-      "movable": true,
-      "storable": true,
-      "container_slots": null,
-      "npc": null,
-      "quantity": null,
-      "remaining_ttl": null
-    },
-    {
-      "object_id": 20015,
-      "definition_id": "apple",
-      "space_id": 1,
-      "tile_position": {
-        "x": 37,
-        "y": 22
-      },
-      "collider": false,
-      "movable": true,
-      "storable": true,
-      "container_slots": null,
-      "npc": null,
-      "quantity": null,
-      "remaining_ttl": null
-    },
-    {
-      "object_id": 20016,
-      "definition_id": "apple",
-      "space_id": 1,
-      "tile_position": {
-        "x": 38,
-        "y": 22
-      },
-      "collider": false,
-      "movable": true,
-      "storable": true,
-      "container_slots": null,
-      "npc": null,
-      "quantity": null,
-      "remaining_ttl": null
-    },
-    {
-      "object_id": 20017,
-      "definition_id": "apple",
-      "space_id": 1,
-      "tile_position": {
-        "x": 37,
-        "y": 23
-      },
-      "collider": false,
-      "movable": true,
-      "storable": true,
-      "container_slots": null,
-      "npc": null,
-      "quantity": null,
-      "remaining_ttl": null
-    },
-    {
-      "object_id": 20018,
-      "definition_id": "apple",
-      "space_id": 1,
-      "tile_position": {
-        "x": 38,
-        "y": 23
       },
       "collider": false,
       "movable": true,
@@ -14809,22 +14750,6 @@
       "tile_position": {
         "x": 58,
         "y": 20
-      },
-      "collider": false,
-      "movable": true,
-      "storable": true,
-      "container_slots": null,
-      "npc": null,
-      "quantity": null,
-      "remaining_ttl": null
-    },
-    {
-      "object_id": 20240,
-      "definition_id": "leather_legs",
-      "space_id": 1,
-      "tile_position": {
-        "x": 62,
-        "y": 40
       },
       "collider": false,
       "movable": true,

@@ -12,7 +12,9 @@ use crate::editor::resources::{
 use crate::editor::serializer::serialize_and_save;
 use crate::player::components::Player;
 use crate::world::animation::VisualOffset;
-use crate::world::components::{OverworldObject, SpaceResident, TilePosition, WorldVisual};
+use crate::world::components::{
+    OverworldObject, SpaceResident, TilePosition, ViewPosition, WorldVisual,
+};
 use crate::world::map_layout::{PortalDefinition, SpaceDefinitions, TileCoordinate};
 use crate::world::object_definitions::{OverworldObjectDefinition, OverworldObjectDefinitions};
 use crate::world::object_registry::ObjectRegistry;
@@ -1006,6 +1008,10 @@ pub fn sync_portal_overlays(
                 space_id: editor_context.space_id,
             },
             tile,
+            ViewPosition {
+                space_id: editor_context.space_id,
+                tile,
+            },
             WorldVisual {
                 z_index: 8.0,
                 y_sort: false,

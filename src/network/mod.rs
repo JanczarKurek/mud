@@ -6,7 +6,8 @@ pub mod systems;
 use bevy::prelude::*;
 
 use crate::app::state::ClientAppState;
-use crate::game::systems::{apply_game_events_to_client_state, process_game_commands};
+use crate::game::projection::apply_game_events_to_client_state;
+use crate::game::systems::process_game_commands;
 use crate::network::resources::{
     AssetSyncState, TcpClientConfig, TcpClientConnection, TcpServerConfig, TcpServerState,
 };

@@ -31,6 +31,14 @@ cargo clippy                                    # Lint (fix warnings before merg
 3. Server produces **game events** via `PendingGameEvents`
 4. Client applies events to local state via `ClientGameState`
 
+### The EmbeddedClient Invariant
+EmbeddedClient mode = HeadlessServer + TcpClient running in the same `App`. The wire protocol is *bypassed* but the data flow must be identical, otherwise offline play will drift from networked play. Keep these rules when adding systems:
+- **Server-side systems** must emit changes through `PendingGameEvents`. Never mutate `ClientGameState` directly.
+- **Client-side (presentation) systems** must read from `ClientGameState` or from view-only components (`DisplayedVitalStats`, `ViewPosition`). Never query authoritative components (`VitalStats`, `SpaceResident`, `TilePosition`) from presentation code. Projected entities (`ClientProjectedWorldObject`, `ClientRemotePlayerVisual`, the projected local player in TcpClient mode) carry *only* `ViewPosition`, never the authoritative pair.
+- `apply_game_events_to_client_state` is the single fold function that turns events into client state. Both `GameServerPlugin` and `GameClientPlugin` register it so system-graph ordering is identical in all three runtime modes (`src/game/mod.rs`).
+- **Two event channels, two roles.** `GameEvent` (via `ServerMessage::Events`) is state replication — every field of `ClientGameState` is reachable through a `GameEvent` variant, and `compute_events_for_peer` is the sole serializer. `GameUiEvent` (via `ServerMessage::UiEvents`) is a one-shot signal bus orthogonal to state (e.g. "open this container now"); do not use it to replicate state.
+- Before adding a new code path, ask: "would this still work if the server were on another machine?" If no, it belongs on the presentation side.
+
 ### Module Layout (`src/`)
 - **app/**: Bevy app setup, plugins, state machine, title screen
 - **game/**: Core command/event loop (commands.rs, resources.rs, systems.rs)

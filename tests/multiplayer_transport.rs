@@ -71,11 +71,23 @@ fn pump_server(app: &mut App, ticks: usize) {
     }
 }
 
-fn latest_snapshot(messages: &[ServerMessage]) -> Option<mud2::game::resources::ClientGameState> {
-    messages.iter().rev().find_map(|message| match message {
-        ServerMessage::Snapshot(snapshot) => Some(snapshot.clone()),
-        _ => None,
-    })
+/// Folds any `Events` messages in `messages` into `baseline` in order, updating
+/// the caller's running view of server state. The wire protocol no longer sends
+/// full snapshots — clients track state by accumulating event deltas.
+fn fold_events(
+    baseline: &mut mud2::game::resources::ClientGameState,
+    messages: &[ServerMessage],
+) -> bool {
+    let mut saw_events = false;
+    for message in messages {
+        if let ServerMessage::Events(events) = message {
+            saw_events = true;
+            for event in events {
+                mud2::game::projection::apply_event_to_state(baseline, event.clone());
+            }
+        }
+    }
+    saw_events
 }
 
 fn wait_for_snapshot<F>(
@@ -87,20 +99,17 @@ where
     F: Fn(&mud2::game::resources::ClientGameState) -> bool,
 {
     let deadline = Instant::now() + Duration::from_secs(3);
-    let mut latest = None;
+    let mut baseline = mud2::game::resources::ClientGameState::default();
 
     while Instant::now() < deadline {
         pump_server(app, 2);
         let messages = client.read_messages();
-        if let Some(snapshot) = latest_snapshot(&messages) {
-            if predicate(&snapshot) {
-                return snapshot;
-            }
-            latest = Some(snapshot);
+        if fold_events(&mut baseline, &messages) && predicate(&baseline) {
+            return baseline;
         }
     }
 
-    panic!("timed out waiting for matching snapshot; latest={latest:?}");
+    panic!("timed out waiting for matching snapshot; latest={baseline:?}");
 }
 
 fn server_addr(app: &App) -> std::net::SocketAddr {

@@ -431,7 +431,7 @@ impl OverworldObjectDefinitions {
         let resolver = AssetResolver::new();
         let scan_dirs = resolver.scan_dirs("overworld_objects");
 
-        let base_values = load_base_values(&resolver);
+        let base_values = load_base_values();
         let mut raw_definition_values = HashMap::new();
 
         for scan_dir in &scan_dirs {
@@ -510,37 +510,17 @@ impl OverworldObjectDefinitions {
     }
 }
 
-fn load_base_values(resolver: &AssetResolver) -> HashMap<String, Value> {
+fn load_base_values() -> HashMap<String, Value> {
     let mut base_values = HashMap::new();
-
-    for scan_dir in resolver.scan_dirs("object_bases") {
-        info!(
-            "loading overworld object base metadata from {}",
-            scan_dir.display()
-        );
-        let Ok(entries) = fs::read_dir(&scan_dir) else {
-            continue;
-        };
-
-        for entry in entries {
-            let entry = entry.expect("Failed to read object base directory entry");
-            let path = entry.path();
-
-            if !path.is_file() || path.extension().and_then(|ext| ext.to_str()) != Some("yaml") {
-                continue;
-            }
-
-            let Some(base_id) = path.file_stem().and_then(|stem| stem.to_str()) else {
-                continue;
-            };
-
-            base_values.insert(
-                base_id.to_owned(),
-                load_yaml_value(&path, "object base metadata"),
-            );
-        }
+    for asset in crate::assets::discover_yaml_assets("object_bases", "object base metadata") {
+        let value = serde_yaml::from_str::<Value>(&asset.contents).unwrap_or_else(|error| {
+            panic!(
+                "Failed to parse object base metadata {}: {error}",
+                asset.path.display()
+            )
+        });
+        base_values.insert(asset.id, value);
     }
-
     base_values
 }
 

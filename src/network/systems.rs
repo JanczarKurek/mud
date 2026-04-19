@@ -9,26 +9,16 @@ use bevy::prelude::*;
 
 use crate::app::state::ClientAppState;
 use crate::assets::AssetResolver;
-use crate::combat::components::CombatTarget;
-use crate::game::resources::{
-    ClientGameState, ClientRemotePlayerState, ClientSpaceState, ClientVitalStats,
-    ClientWorldObjectState, PendingGameCommands, PendingGameUiEvents,
-};
+use crate::game::resources::{ClientGameState, PendingGameCommands, PendingGameUiEvents};
 use crate::network::asset_sync::{build_server_manifest, hash_bytes};
 use crate::network::protocol::{ClientMessage, ServerMessage};
 use crate::network::resources::{
     AssetSyncState, ConnectionId, ServerAssetManifest, TcpClientConfig, TcpClientConnection,
     TcpServerConfig, TcpServerPeer, TcpServerState,
 };
-use crate::npc::components::Npc;
-use crate::player::components::{
-    ChatLog, DerivedStats, Inventory, Player, PlayerId, PlayerIdentity, VitalStats,
-};
+use crate::player::components::{Player, PlayerId};
 use crate::player::setup::spawn_player_authoritative_in_space;
-use crate::world::components::{
-    Collider, Container, Movable, OverworldObject, Quantity, SpacePosition, SpaceResident,
-    TilePosition,
-};
+use crate::world::components::{Collider, SpaceResident, TilePosition};
 use crate::world::map_layout::SpaceDefinitions;
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::resources::SpaceManager;
@@ -261,7 +251,7 @@ pub fn accept_tcp_client_connections(
                         player_entity,
                         stream,
                         read_buffer: Vec::new(),
-                        last_snapshot: None,
+                        last_projection: None,
                         sync_complete: false,
                         manifest_sent: false,
                     },
@@ -349,36 +339,10 @@ pub fn poll_tcp_server_messages(
 pub fn flush_server_messages(
     mut pending_ui_events: ResMut<PendingGameUiEvents>,
     mut server_state: ResMut<TcpServerState>,
-    player_query: Query<
-        (
-            Entity,
-            &PlayerIdentity,
-            &Inventory,
-            &ChatLog,
-            &SpaceResident,
-            &TilePosition,
-            &VitalStats,
-            &DerivedStats,
-            Option<&CombatTarget>,
-            &OverworldObject,
-        ),
-        With<Player>,
-    >,
-    object_query: Query<&OverworldObject>,
-    world_object_query: Query<
-        (
-            &SpaceResident,
-            &TilePosition,
-            &OverworldObject,
-            Option<&VitalStats>,
-            Has<Container>,
-            Has<Npc>,
-            Has<Movable>,
-            Option<&Quantity>,
-        ),
-        Without<Player>,
-    >,
-    container_query: Query<(&Container, &OverworldObject, &SpaceResident), Without<Player>>,
+    player_query: crate::game::projection::ProjectionPlayerQuery,
+    object_query: crate::game::projection::ProjectionObjectQuery,
+    world_object_query: crate::game::projection::ProjectionWorldObjectQuery,
+    container_query: crate::game::projection::ProjectionContainerQuery,
     space_manager: Res<SpaceManager>,
     mut commands: Commands,
 ) {
@@ -396,24 +360,37 @@ pub fn flush_server_messages(
         let mut disconnected = false;
 
         if peer.sync_complete {
-            let snapshot = build_client_game_state(
+            // Per-peer event stream — the sole state-replication path. Passing the
+            // peer's last projection as the baseline (or default, for bootstrap)
+            // produces the exact delta the peer needs; apply_event_to_state then
+            // advances the baseline so subsequent diffs stay coherent.
+            let default_baseline = ClientGameState::default();
+            let baseline = peer
+                .last_projection
+                .as_ref()
+                .unwrap_or(&default_baseline);
+            let events = crate::game::projection::compute_events_for_peer(
                 peer.player_id,
+                baseline,
                 &player_query,
                 &object_query,
                 &world_object_query,
                 &container_query,
                 &space_manager,
             );
-
-            if peer.last_snapshot.as_ref() != Some(&snapshot) {
+            if !events.is_empty() {
                 if !write_message(
                     &mut peer.stream,
-                    &ServerMessage::Snapshot(snapshot.clone()),
+                    &ServerMessage::Events(events.clone()),
                     &mut disconnected,
                 ) {
-                    warn!("failed to send snapshot to TCP client");
+                    warn!("failed to send events to TCP client");
                 } else {
-                    peer.last_snapshot = Some(snapshot);
+                    let mut next_baseline = peer.last_projection.take().unwrap_or_default();
+                    for event in events {
+                        crate::game::projection::apply_event_to_state(&mut next_baseline, event);
+                    }
+                    peer.last_projection = Some(next_baseline);
                 }
             }
 
@@ -473,7 +450,7 @@ pub fn flush_client_commands_to_server(
 pub fn poll_tcp_client_messages(
     config: Res<TcpClientConfig>,
     mut connection: ResMut<TcpClientConnection>,
-    mut client_state: ResMut<ClientGameState>,
+    mut pending_game_events: ResMut<crate::game::resources::PendingGameEvents>,
     mut pending_ui_events: ResMut<PendingGameUiEvents>,
 ) {
     ensure_tcp_client_connected(&config, &mut connection);
@@ -487,8 +464,8 @@ pub fn poll_tcp_client_messages(
     let mut disconnected = false;
     while let Some(line) = read_next_line(stream, &mut read_buffer, &mut disconnected) {
         match serde_json::from_str::<ServerMessage>(&line) {
-            Ok(ServerMessage::Snapshot(snapshot)) => {
-                *client_state = snapshot;
+            Ok(ServerMessage::Events(events)) => {
+                pending_game_events.events.extend(events);
             }
             Ok(ServerMessage::UiEvents(events)) => {
                 pending_ui_events.events.extend(events);
@@ -584,151 +561,6 @@ fn find_spawn_location(
     }
 
     None
-}
-
-fn build_client_game_state(
-    local_player_id: PlayerId,
-    player_query: &Query<
-        (
-            Entity,
-            &PlayerIdentity,
-            &Inventory,
-            &ChatLog,
-            &SpaceResident,
-            &TilePosition,
-            &VitalStats,
-            &DerivedStats,
-            Option<&CombatTarget>,
-            &OverworldObject,
-        ),
-        With<Player>,
-    >,
-    object_query: &Query<&OverworldObject>,
-    world_object_query: &Query<
-        (
-            &SpaceResident,
-            &TilePosition,
-            &OverworldObject,
-            Option<&VitalStats>,
-            Has<Container>,
-            Has<Npc>,
-            Has<Movable>,
-            Option<&Quantity>,
-        ),
-        Without<Player>,
-    >,
-    container_query: &Query<(&Container, &OverworldObject, &SpaceResident), Without<Player>>,
-    space_manager: &SpaceManager,
-) -> ClientGameState {
-    let mut state = ClientGameState {
-        local_player_id: Some(local_player_id),
-        ..default()
-    };
-    let mut local_space_id = None;
-
-    for (
-        _entity,
-        identity,
-        inventory,
-        chat_log,
-        space_resident,
-        tile_position,
-        vital_stats,
-        derived_stats,
-        combat_target,
-        player_object,
-    ) in player_query.iter()
-    {
-        let projected_vitals = ClientVitalStats {
-            health: vital_stats.health,
-            max_health: vital_stats.max_health,
-            mana: vital_stats.mana,
-            max_mana: vital_stats.max_mana,
-        };
-
-        if identity.id == local_player_id {
-            state.inventory = inventory.clone();
-            state.chat_log_lines = chat_log.lines.clone();
-            state.player_position =
-                Some(SpacePosition::new(space_resident.space_id, *tile_position));
-            state.player_tile_position = Some(*tile_position);
-            state.player_vitals = Some(projected_vitals);
-            state.player_storage_slots = derived_stats.storage_slots;
-            state.local_player_object_id = Some(player_object.object_id);
-            local_space_id = Some(space_resident.space_id);
-            state.current_target_object_id = combat_target
-                .and_then(|combat_target| object_query.get(combat_target.entity).ok())
-                .map(|object| object.object_id);
-        } else {
-            let position = SpacePosition::new(space_resident.space_id, *tile_position);
-            state.remote_players.insert(
-                identity.id,
-                ClientRemotePlayerState {
-                    player_id: identity.id,
-                    object_id: player_object.object_id,
-                    position,
-                    tile_position: *tile_position,
-                    vitals: projected_vitals,
-                },
-            );
-        }
-    }
-
-    let Some(local_space_id) = local_space_id else {
-        return state;
-    };
-    let Some(runtime_space) = space_manager.get(local_space_id) else {
-        return state;
-    };
-    state.current_space = Some(ClientSpaceState {
-        space_id: runtime_space.id,
-        authored_id: runtime_space.authored_id.clone(),
-        width: runtime_space.width,
-        height: runtime_space.height,
-        fill_object_type: runtime_space.fill_object_type.clone(),
-    });
-
-    state
-        .remote_players
-        .retain(|_, remote_player| remote_player.position.space_id == local_space_id);
-
-    for (container, object, resident) in container_query.iter() {
-        if resident.space_id != local_space_id {
-            continue;
-        }
-        state
-            .container_slots
-            .insert(object.object_id, container.slots.clone());
-    }
-
-    for (space_resident, tile_position, object, vitals, has_container, has_npc, has_movable, qty) in
-        world_object_query.iter()
-    {
-        if space_resident.space_id != local_space_id {
-            continue;
-        }
-        state.world_objects.insert(
-            object.object_id,
-            ClientWorldObjectState {
-                object_id: object.object_id,
-                definition_id: object.definition_id.clone(),
-                position: SpacePosition::new(space_resident.space_id, *tile_position),
-                tile_position: *tile_position,
-                vitals: vitals.map(|vitals| ClientVitalStats {
-                    health: vitals.health,
-                    max_health: vitals.max_health,
-                    mana: vitals.mana,
-                    max_mana: vitals.max_mana,
-                }),
-                is_container: has_container,
-                is_npc: has_npc,
-                is_movable: has_movable,
-                quantity: qty.map(|q| q.0).unwrap_or(1),
-            },
-        );
-    }
-
-    state
 }
 
 fn read_next_line(
@@ -951,89 +783,133 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_builder_separates_local_and_remote_players() {
+    fn peer_projection_separates_local_and_remote_players() {
         let mut app = setup_server_app();
         spawn_player(&mut app, 1, 10, 10);
         spawn_player(&mut app, 2, 12, 10);
         let barrel_id = spawn_container(&mut app, "barrel", 11, 10);
 
-        type SnapshotState<'w, 's> = SystemState<(
-            Query<
-                'w,
-                's,
-                (
-                    Entity,
-                    &'static crate::player::components::PlayerIdentity,
-                    &'static crate::player::components::Inventory,
-                    &'static crate::player::components::ChatLog,
-                    &'static crate::world::components::SpaceResident,
-                    &'static crate::world::components::TilePosition,
-                    &'static crate::player::components::VitalStats,
-                    &'static crate::player::components::DerivedStats,
-                    Option<&'static crate::combat::components::CombatTarget>,
-                    &'static crate::world::components::OverworldObject,
-                ),
-                With<Player>,
-            >,
-            Query<'w, 's, &'static crate::world::components::OverworldObject>,
-            Query<
-                'w,
-                's,
-                (
-                    &'static crate::world::components::SpaceResident,
-                    &'static crate::world::components::TilePosition,
-                    &'static crate::world::components::OverworldObject,
-                    Option<&'static crate::player::components::VitalStats>,
-                    Has<crate::world::components::Container>,
-                    Has<crate::npc::components::Npc>,
-                    Has<crate::world::components::Movable>,
-                    Option<&'static crate::world::components::Quantity>,
-                ),
-                Without<Player>,
-            >,
-            Query<
-                'w,
-                's,
-                (
-                    &'static crate::world::components::Container,
-                    &'static crate::world::components::OverworldObject,
-                    &'static crate::world::components::SpaceResident,
-                ),
-                Without<Player>,
-            >,
+        type PeerProjectionState<'w, 's> = SystemState<(
+            crate::game::projection::ProjectionPlayerQuery<'w, 's>,
+            crate::game::projection::ProjectionObjectQuery<'w, 's>,
+            crate::game::projection::ProjectionWorldObjectQuery<'w, 's>,
+            crate::game::projection::ProjectionContainerQuery<'w, 's>,
             Res<'w, crate::world::resources::SpaceManager>,
         )>;
-        let mut state: SnapshotState = SystemState::new(app.world_mut());
+        let mut state: PeerProjectionState = SystemState::new(app.world_mut());
         let (player_query, object_query, world_object_query, container_query, space_manager) =
             state.get(app.world_mut());
 
-        let snapshot = build_client_game_state(
+        // Fold the bootstrap events (diff from default) into a baseline; this is
+        // exactly what a freshly connected peer would do on the client side.
+        let events = crate::game::projection::compute_events_for_peer(
             PlayerId(1),
+            &ClientGameState::default(),
             &player_query,
             &object_query,
             &world_object_query,
             &container_query,
             &space_manager,
         );
+        let mut projection = ClientGameState::default();
+        for event in events {
+            crate::game::projection::apply_event_to_state(&mut projection, event);
+        }
 
-        assert_eq!(snapshot.local_player_id, Some(PlayerId(1)));
+        assert_eq!(projection.local_player_id, Some(PlayerId(1)));
         assert_eq!(
-            snapshot.player_tile_position,
+            projection.player_tile_position,
             Some(crate::world::components::TilePosition::new(10, 10))
         );
-        assert_eq!(snapshot.remote_players.len(), 1);
+        assert_eq!(projection.remote_players.len(), 1);
         assert_eq!(
-            snapshot
+            projection
                 .remote_players
                 .get(&PlayerId(2))
                 .unwrap()
                 .tile_position,
             crate::world::components::TilePosition::new(12, 10)
         );
-        assert!(snapshot.container_slots.contains_key(&barrel_id));
-        assert!(snapshot
+        assert!(projection.container_slots.contains_key(&barrel_id));
+        assert!(projection
             .world_objects
             .values()
             .any(|object| object.vitals.is_none()));
+    }
+
+    #[test]
+    fn peer_projection_emits_only_deltas_after_bootstrap() {
+        // Bootstrap one peer into a baseline, then verify that with no ECS changes
+        // the next compute_events_for_peer call emits zero events, and that a
+        // single player move emits exactly one PlayerPositionChanged event.
+        use crate::game::resources::GameEvent;
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+
+        type PeerProjectionState<'w, 's> = SystemState<(
+            crate::game::projection::ProjectionPlayerQuery<'w, 's>,
+            crate::game::projection::ProjectionObjectQuery<'w, 's>,
+            crate::game::projection::ProjectionWorldObjectQuery<'w, 's>,
+            crate::game::projection::ProjectionContainerQuery<'w, 's>,
+            Res<'w, crate::world::resources::SpaceManager>,
+        )>;
+
+        let mut state: PeerProjectionState = SystemState::new(app.world_mut());
+        let (player_query, object_query, world_object_query, container_query, space_manager) =
+            state.get(app.world_mut());
+
+        let bootstrap = crate::game::projection::compute_events_for_peer(
+            PlayerId(1),
+            &ClientGameState::default(),
+            &player_query,
+            &object_query,
+            &world_object_query,
+            &container_query,
+            &space_manager,
+        );
+        let mut baseline = ClientGameState::default();
+        for event in bootstrap {
+            crate::game::projection::apply_event_to_state(&mut baseline, event);
+        }
+
+        // Idle tick with no ECS changes — must emit zero events.
+        let idle_events = crate::game::projection::compute_events_for_peer(
+            PlayerId(1),
+            &baseline,
+            &player_query,
+            &object_query,
+            &world_object_query,
+            &container_query,
+            &space_manager,
+        );
+        assert!(
+            idle_events.is_empty(),
+            "expected zero events when nothing changed, got: {idle_events:?}"
+        );
+        drop((player_query, object_query, world_object_query, container_query, space_manager));
+
+        // Move the player; the next diff should contain exactly one PlayerPositionChanged.
+        app.world_mut()
+            .entity_mut(player)
+            .insert(crate::world::components::TilePosition::new(11, 10));
+
+        let mut state: PeerProjectionState = SystemState::new(app.world_mut());
+        let (player_query, object_query, world_object_query, container_query, space_manager) =
+            state.get(app.world_mut());
+
+        let move_events = crate::game::projection::compute_events_for_peer(
+            PlayerId(1),
+            &baseline,
+            &player_query,
+            &object_query,
+            &world_object_query,
+            &container_query,
+            &space_manager,
+        );
+        let position_change_count = move_events
+            .iter()
+            .filter(|event| matches!(event, GameEvent::PlayerPositionChanged { .. }))
+            .count();
+        assert_eq!(position_change_count, 1, "events: {move_events:?}");
     }
 }

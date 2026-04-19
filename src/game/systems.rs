@@ -1,4 +1,3 @@
-use bevy::log::{debug, info};
 use bevy::prelude::*;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -6,18 +5,17 @@ use crate::combat::components::CombatTarget;
 use crate::game::commands::{
     GameCommand, InspectTarget, ItemDestination, ItemReference, ItemSlotRef, MoveDelta, UseTarget,
 };
+use crate::game::helpers::{colliders_in_space, player_space_id};
 use crate::game::resources::{
-    ChatLogState, ClientGameState, ClientVitalStats, ClientWorldObjectState, GameEvent,
-    GameUiEvent, InventoryState, PendingGameCommands, PendingGameEvents, PendingGameUiEvents,
+    ChatLogState, GameUiEvent, InventoryState, PendingGameCommands, PendingGameUiEvents,
 };
 use crate::magic::resources::{SpellDefinition, SpellDefinitions};
 use crate::npc::components::Npc;
 use crate::player::components::{
-    DerivedStats, InventoryStack, MovementCooldown, Player, PlayerIdentity, VitalStats,
+    InventoryStack, MovementCooldown, Player, PlayerIdentity, VitalStats,
 };
 use crate::world::components::{
-    Collider, Container, Movable, OverworldObject, Quantity, SpacePosition, SpaceResident,
-    TilePosition,
+    Collider, Container, Movable, OverworldObject, Quantity, SpaceResident, TilePosition,
 };
 use crate::world::map_layout::SpaceDefinitions;
 use crate::world::object_definitions::{
@@ -96,23 +94,11 @@ pub fn process_game_commands(
 
         match queued_command.command {
             GameCommand::MovePlayer { delta } => {
-                let Some(source_space_id) =
-                    player_queries
-                        .p1()
-                        .iter()
-                        .find_map(|(entity, _, resident, _, _)| {
-                            (entity == player_entity).then_some(resident.space_id)
-                        })
+                let Some(source_space_id) = player_space_id(player_entity, &player_queries.p1())
                 else {
                     continue;
                 };
-                let collider_positions = player_queries
-                    .p0()
-                    .iter()
-                    .filter_map(|(resident, tile_position)| {
-                        (resident.space_id == source_space_id).then_some(*tile_position)
-                    })
-                    .collect::<Vec<_>>();
+                let collider_positions = colliders_in_space(source_space_id, &player_queries.p0());
                 handle_move_player(
                     player_entity,
                     delta,
@@ -125,13 +111,7 @@ pub fn process_game_commands(
                 );
             }
             GameCommand::SetCombatTarget { target_object_id } => {
-                let Some(source_space_id) =
-                    player_queries
-                        .p1()
-                        .iter()
-                        .find_map(|(entity, _, resident, _, _)| {
-                            (entity == player_entity).then_some(resident.space_id)
-                        })
+                let Some(source_space_id) = player_space_id(player_entity, &player_queries.p1())
                 else {
                     continue;
                 };
@@ -228,23 +208,11 @@ pub fn process_game_commands(
                 source,
                 destination,
             } => {
-                let Some(source_space_id) =
-                    player_queries
-                        .p1()
-                        .iter()
-                        .find_map(|(entity, _, resident, _, _)| {
-                            (entity == player_entity).then_some(resident.space_id)
-                        })
+                let Some(source_space_id) = player_space_id(player_entity, &player_queries.p1())
                 else {
                     continue;
                 };
-                let collider_positions = player_queries
-                    .p0()
-                    .iter()
-                    .filter_map(|(resident, tile_position)| {
-                        (resident.space_id == source_space_id).then_some(*tile_position)
-                    })
-                    .collect::<Vec<_>>();
+                let collider_positions = colliders_in_space(source_space_id, &player_queries.p0());
                 handle_move_item(
                     player_entity,
                     source,
@@ -266,23 +234,11 @@ pub fn process_game_commands(
                 amount,
                 destination,
             } => {
-                let Some(source_space_id) =
-                    player_queries
-                        .p1()
-                        .iter()
-                        .find_map(|(entity, _, resident, _, _)| {
-                            (entity == player_entity).then_some(resident.space_id)
-                        })
+                let Some(source_space_id) = player_space_id(player_entity, &player_queries.p1())
                 else {
                     continue;
                 };
-                let collider_positions = player_queries
-                    .p0()
-                    .iter()
-                    .filter_map(|(resident, tile_position)| {
-                        (resident.space_id == source_space_id).then_some(*tile_position)
-                    })
-                    .collect::<Vec<_>>();
+                let collider_positions = colliders_in_space(source_space_id, &player_queries.p0());
                 handle_take_from_stack(
                     player_entity,
                     source,
@@ -304,23 +260,11 @@ pub fn process_game_commands(
                 type_id,
                 tile_position,
             } => {
-                let Some(source_space_id) =
-                    player_queries
-                        .p1()
-                        .iter()
-                        .find_map(|(entity, _, resident, _, _)| {
-                            (entity == player_entity).then_some(resident.space_id)
-                        })
+                let Some(source_space_id) = player_space_id(player_entity, &player_queries.p1())
                 else {
                     continue;
                 };
-                let collider_positions = player_queries
-                    .p0()
-                    .iter()
-                    .filter_map(|(resident, tile_position)| {
-                        (resident.space_id == source_space_id).then_some(*tile_position)
-                    })
-                    .collect::<Vec<_>>();
+                let collider_positions = colliders_in_space(source_space_id, &player_queries.p0());
                 handle_admin_spawn(
                     player_entity,
                     &type_id,
@@ -333,399 +277,6 @@ pub fn process_game_commands(
                     &mut player_queries.p2(),
                 );
             }
-        }
-    }
-}
-
-pub fn collect_game_events_from_authority(
-    mut client_state: ResMut<ClientGameState>,
-    _world_config: Res<WorldConfig>,
-    space_manager: Res<SpaceManager>,
-    player_query: Query<
-        (
-            &PlayerIdentity,
-            &InventoryState,
-            &ChatLogState,
-            &SpaceResident,
-            &TilePosition,
-            &VitalStats,
-            &DerivedStats,
-            &OverworldObject,
-            Option<&CombatTarget>,
-        ),
-        With<Player>,
-    >,
-    object_query: Query<&OverworldObject>,
-    world_object_query: Query<
-        (
-            &SpaceResident,
-            &TilePosition,
-            &OverworldObject,
-            Option<&VitalStats>,
-            Has<Container>,
-            Has<Npc>,
-            Has<Movable>,
-            Option<&Quantity>,
-        ),
-        Without<Player>,
-    >,
-    container_query: Query<(&Container, &OverworldObject, &SpaceResident), Without<Player>>,
-    mut pending_game_events: ResMut<PendingGameEvents>,
-) {
-    pending_game_events.events.clear();
-    let mut authoritative_local_space_id = None;
-
-    match player_query.single() {
-        Err(bevy::ecs::query::QuerySingleError::NoEntities(_)) => {
-            bevy::log::warn!("collect_game_events: no Player entity found");
-        }
-        Err(bevy::ecs::query::QuerySingleError::MultipleEntities(_)) => {
-            let count = player_query.iter().count();
-            bevy::log::warn!("collect_game_events: {} Player entities found (expected 1)", count);
-        }
-        Ok(_) => {}
-    }
-
-    if let Ok((
-        player_identity,
-        inventory_state,
-        chat_log_state,
-        player_space_resident,
-        player_tile_position,
-        vital_stats,
-        derived_stats,
-        player_object,
-        combat_target,
-    )) = player_query.single()
-    {
-        authoritative_local_space_id = Some(player_space_resident.space_id);
-
-        if client_state.inventory != *inventory_state {
-            pending_game_events
-                .events
-                .push(GameEvent::InventoryChanged {
-                    inventory: inventory_state.clone(),
-                });
-        }
-
-        if client_state.chat_log_lines != chat_log_state.lines {
-            pending_game_events.events.push(GameEvent::ChatLogChanged {
-                lines: chat_log_state.lines.clone(),
-            });
-        }
-
-        let current_player_position =
-            SpacePosition::new(player_space_resident.space_id, *player_tile_position);
-
-        if client_state.player_position != Some(current_player_position) {
-            pending_game_events
-                .events
-                .push(GameEvent::PlayerPositionChanged {
-                    position: current_player_position,
-                    tile_position: *player_tile_position,
-                });
-        }
-
-        let current_vitals = ClientVitalStats {
-            health: vital_stats.health,
-            max_health: vital_stats.max_health,
-            mana: vital_stats.mana,
-            max_mana: vital_stats.max_mana,
-        };
-        if client_state.player_vitals != Some(current_vitals) {
-            pending_game_events
-                .events
-                .push(GameEvent::PlayerVitalsChanged {
-                    vitals: current_vitals,
-                });
-        }
-
-        if client_state.player_storage_slots != derived_stats.storage_slots {
-            pending_game_events
-                .events
-                .push(GameEvent::PlayerStorageChanged {
-                    storage_slots: derived_stats.storage_slots,
-                });
-        }
-
-        let current_target_object_id = combat_target
-            .and_then(|combat_target| object_query.get(combat_target.entity).ok())
-            .map(|object| object.object_id);
-        if client_state.current_target_object_id != current_target_object_id {
-            pending_game_events
-                .events
-                .push(GameEvent::CombatTargetChanged {
-                    target_object_id: current_target_object_id,
-                });
-        }
-
-        if client_state.local_player_id != Some(player_identity.id) {
-            client_state.local_player_id = Some(player_identity.id);
-        }
-        if client_state.local_player_object_id != Some(player_object.object_id) {
-            client_state.local_player_object_id = Some(player_object.object_id);
-        }
-
-        if let Some(runtime_space) = space_manager.get(player_space_resident.space_id) {
-            let current_space = crate::game::resources::ClientSpaceState {
-                space_id: runtime_space.id,
-                authored_id: runtime_space.authored_id.clone(),
-                width: runtime_space.width,
-                height: runtime_space.height,
-                fill_object_type: runtime_space.fill_object_type.clone(),
-            };
-            if client_state.current_space.as_ref() != Some(&current_space) {
-                pending_game_events
-                    .events
-                    .push(GameEvent::CurrentSpaceChanged {
-                        space: current_space,
-                    });
-            }
-        }
-    }
-
-    let mut current_container_ids = Vec::new();
-    let local_space_id = authoritative_local_space_id
-        .or_else(|| {
-            client_state
-                .player_position
-                .map(|position| position.space_id)
-        })
-        .unwrap_or(crate::world::components::SpaceId(0));
-
-    for (container, object, resident) in &container_query {
-        if resident.space_id != local_space_id {
-            continue;
-        }
-        current_container_ids.push(object.object_id);
-        let current_slots = container.slots.clone();
-        if client_state.container_slots.get(&object.object_id) != Some(&current_slots) {
-            pending_game_events
-                .events
-                .push(GameEvent::ContainerChanged {
-                    object_id: object.object_id,
-                    slots: current_slots,
-                });
-        }
-    }
-
-    for stale_object_id in client_state.container_slots.keys() {
-        if !current_container_ids.contains(stale_object_id) {
-            pending_game_events
-                .events
-                .push(GameEvent::ContainerRemoved {
-                    object_id: *stale_object_id,
-                });
-        }
-    }
-
-    let mut current_world_object_ids = Vec::new();
-    for (space_resident, tile_position, object, vitals, has_container, has_npc, has_movable, qty) in
-        &world_object_query
-    {
-        if space_resident.space_id != local_space_id {
-            continue;
-        }
-        current_world_object_ids.push(object.object_id);
-        let projected_object = ClientWorldObjectState {
-            object_id: object.object_id,
-            definition_id: object.definition_id.clone(),
-            position: SpacePosition::new(space_resident.space_id, *tile_position),
-            tile_position: *tile_position,
-            vitals: vitals.map(|vitals| ClientVitalStats {
-                health: vitals.health,
-                max_health: vitals.max_health,
-                mana: vitals.mana,
-                max_mana: vitals.max_mana,
-            }),
-            is_container: has_container,
-            is_npc: has_npc,
-            is_movable: has_movable,
-            quantity: qty.map(|q| q.0).unwrap_or(1),
-        };
-
-        if client_state.world_objects.get(&object.object_id) != Some(&projected_object) {
-            pending_game_events
-                .events
-                .push(GameEvent::WorldObjectUpserted {
-                    object: projected_object,
-                });
-        }
-    }
-
-    for stale_object_id in client_state.world_objects.keys() {
-        if !current_world_object_ids.contains(stale_object_id) {
-            pending_game_events
-                .events
-                .push(GameEvent::WorldObjectRemoved {
-                    object_id: *stale_object_id,
-                });
-        }
-    }
-}
-
-pub fn apply_game_events_to_client_state(
-    mut client_state: ResMut<ClientGameState>,
-    mut pending_game_events: ResMut<PendingGameEvents>,
-) {
-    let events = std::mem::take(&mut pending_game_events.events);
-
-    for event in events {
-        log_client_game_event(&client_state, &event);
-        match event {
-            GameEvent::InventoryChanged { inventory } => {
-                client_state.inventory = inventory;
-            }
-            GameEvent::ChatLogChanged { lines } => {
-                client_state.chat_log_lines = lines;
-            }
-            GameEvent::PlayerPositionChanged {
-                position,
-                tile_position,
-            } => {
-                client_state.player_position = Some(position);
-                client_state.player_tile_position = Some(tile_position);
-            }
-            GameEvent::CurrentSpaceChanged { space } => {
-                client_state.current_space = Some(space);
-            }
-            GameEvent::PlayerVitalsChanged { vitals } => {
-                client_state.player_vitals = Some(vitals);
-            }
-            GameEvent::PlayerStorageChanged { storage_slots } => {
-                client_state.player_storage_slots = storage_slots;
-            }
-            GameEvent::CombatTargetChanged { target_object_id } => {
-                client_state.current_target_object_id = target_object_id;
-            }
-            GameEvent::ContainerChanged { object_id, slots } => {
-                client_state.container_slots.insert(object_id, slots);
-            }
-            GameEvent::ContainerRemoved { object_id } => {
-                client_state.container_slots.remove(&object_id);
-            }
-            GameEvent::WorldObjectUpserted { object } => {
-                client_state.world_objects.insert(object.object_id, object);
-            }
-            GameEvent::WorldObjectRemoved { object_id } => {
-                client_state.world_objects.remove(&object_id);
-            }
-            GameEvent::RemotePlayerUpserted { player } => {
-                client_state.remote_players.insert(player.player_id, player);
-            }
-            GameEvent::RemotePlayerRemoved { player_id } => {
-                client_state.remote_players.remove(&player_id);
-            }
-        }
-    }
-}
-
-fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
-    match event {
-        GameEvent::InventoryChanged { inventory } => info!(
-            "client inventory updated: {} backpack slots used, {} equipped slots occupied",
-            inventory
-                .backpack_slots
-                .iter()
-                .flatten()
-                .count(),
-            inventory
-                .equipment_slots
-                .iter()
-                .filter_map(|(_, object_id)| *object_id)
-                .count(),
-        ),
-        GameEvent::ChatLogChanged { lines } => {
-            let previous_count = client_state.chat_log_lines.len();
-            let new_count = lines.len();
-            if new_count > previous_count {
-                if let Some(last_line) = lines.last() {
-                    info!("client chat log appended: {last_line}");
-                }
-            } else {
-                debug!(
-                    "client chat log replaced: {} -> {} lines",
-                    previous_count,
-                    new_count
-                );
-            }
-        }
-        GameEvent::PlayerPositionChanged { position, .. } => info!(
-            "client player position updated: {:?} -> space {} at ({}, {})",
-            client_state.player_position,
-            position.space_id.0,
-            position.tile_position.x,
-            position.tile_position.y
-        ),
-        GameEvent::CurrentSpaceChanged { space } => info!(
-            "client current space updated: {:?} -> {} ({})",
-            client_state
-                .current_space
-                .as_ref()
-                .map(|current| current.space_id.0),
-            space.space_id.0,
-            space.authored_id
-        ),
-        GameEvent::PlayerVitalsChanged { vitals } => info!(
-            "client player vitals updated: hp {:.1}/{:.1} -> {:.1}/{:.1}, mana {:.1}/{:.1} -> {:.1}/{:.1}",
-            client_state
-                .player_vitals
-                .map(|current| current.health)
-                .unwrap_or_default(),
-            client_state
-                .player_vitals
-                .map(|current| current.max_health)
-                .unwrap_or_default(),
-            vitals.health,
-            vitals.max_health,
-            client_state
-                .player_vitals
-                .map(|current| current.mana)
-                .unwrap_or_default(),
-            client_state
-                .player_vitals
-                .map(|current| current.max_mana)
-                .unwrap_or_default(),
-            vitals.mana,
-            vitals.max_mana
-        ),
-        GameEvent::PlayerStorageChanged { storage_slots } => info!(
-            "client player storage updated: {} -> {}",
-            client_state.player_storage_slots,
-            storage_slots
-        ),
-        GameEvent::CombatTargetChanged { target_object_id } => info!(
-            "client combat target updated: {:?} -> {:?}",
-            client_state.current_target_object_id,
-            target_object_id
-        ),
-        GameEvent::ContainerChanged { object_id, slots } => debug!(
-            "client container {} updated: {} slots",
-            object_id,
-            slots.len()
-        ),
-        GameEvent::ContainerRemoved { object_id } => {
-            debug!("client container {} removed from projection", object_id)
-        }
-        GameEvent::WorldObjectUpserted { object } => debug!(
-            "client projected object upserted: {} ({}) at ({}, {})",
-            object.object_id,
-            object.definition_id,
-            object.tile_position.x,
-            object.tile_position.y
-        ),
-        GameEvent::WorldObjectRemoved { object_id } => {
-            debug!("client projected object removed: {}", object_id)
-        }
-        GameEvent::RemotePlayerUpserted { player } => debug!(
-            "client remote player upserted: {} object {} at ({}, {})",
-            player.player_id.0,
-            player.object_id,
-            player.tile_position.x,
-            player.tile_position.y
-        ),
-        GameEvent::RemotePlayerRemoved { player_id } => {
-            debug!("client remote player removed: {}", player_id.0)
         }
     }
 }
@@ -2505,6 +2056,7 @@ mod tests {
     use crate::game::commands::{
         GameCommand, ItemDestination, ItemReference, ItemSlotRef, MoveDelta,
     };
+    use crate::game::resources::ClientGameState;
     use crate::game::GameServerPlugin;
     use crate::magic::MagicPlugin;
     use crate::player::components::{
@@ -2574,6 +2126,8 @@ mod tests {
         object_id: u64,
         tile: TilePosition,
     ) -> Entity {
+        use crate::apply_overworld_definition_components;
+
         let current_space_id = app.world().resource::<WorldConfig>().current_space_id;
         let definition = app
             .world()
@@ -2591,20 +2145,7 @@ mod tests {
             },
             tile,
         ));
-        if definition.colliding {
-            entity.insert(Collider);
-        }
-        if definition.movable {
-            entity.insert(crate::world::components::Movable);
-        }
-        if definition.storable {
-            entity.insert(crate::world::components::Storable);
-        }
-        if let Some(capacity) = definition.container_capacity {
-            entity.insert(crate::world::components::Container {
-                slots: vec![None; capacity],
-            });
-        }
+        apply_overworld_definition_components!(entity, &definition, None, None);
 
         entity.id()
     }

@@ -12,7 +12,7 @@ use bevy::prelude::*;
 
 use crate::app::state::ClientAppState;
 use crate::assets::AssetResolver;
-use crate::game::systems::apply_game_events_to_client_state;
+use crate::game::projection::apply_game_events_to_client_state;
 use crate::magic::resources::SpellDefinitions;
 use crate::world::animation::{
     advance_animation_timers, attach_animated_sprite, cleanup_just_moved, detect_player_movement,
@@ -29,8 +29,9 @@ use crate::world::setup::{
     initialize_runtime_spaces, spawn_ground_tiles_for_current_space, WorldStartupSet,
 };
 use crate::world::systems::{
-    cleanup_empty_ephemeral_spaces, sync_client_world_projection, sync_combat_health_bars,
-    sync_player_z, sync_remote_player_projection, sync_tile_transforms,
+    cleanup_empty_ephemeral_spaces, sync_authoritative_world_object_position_view,
+    sync_client_world_projection, sync_combat_health_bars, sync_player_z,
+    sync_remote_player_projection, sync_tile_transforms,
 };
 
 pub struct WorldServerPlugin;
@@ -106,6 +107,9 @@ impl Plugin for WorldClientPlugin {
             (
                 sync_client_world_projection.after(apply_game_events_to_client_state),
                 sync_remote_player_projection.after(apply_game_events_to_client_state),
+                sync_authoritative_world_object_position_view
+                    .after(apply_game_events_to_client_state)
+                    .before(sync_tile_transforms),
                 sync_tile_transforms.after(detect_player_movement),
                 sync_player_z,
                 sync_combat_health_bars,

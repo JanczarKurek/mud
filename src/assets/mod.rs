@@ -1,3 +1,4 @@
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use bevy::prelude::*;
@@ -42,4 +43,54 @@ impl Default for AssetResolver {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// A YAML asset discovered on disk. `id` is the file stem.
+pub struct DiscoveredYamlAsset {
+    pub id: String,
+    pub path: PathBuf,
+    pub contents: String,
+}
+
+/// Scans `subdir` across all asset roots (bundled then XDG overrides) for flat
+/// `.yaml` files and returns them as discovered assets keyed by file stem.
+///
+/// Later entries shadow earlier ones when callers insert into a HashMap, giving
+/// XDG overrides precedence. `kind` is used only in panic messages.
+pub fn discover_yaml_assets(subdir: &str, kind: &str) -> Vec<DiscoveredYamlAsset> {
+    let resolver = AssetResolver::new();
+    let mut out = Vec::new();
+
+    for scan_dir in resolver.scan_dirs(subdir) {
+        info!("loading {kind} from {}", scan_dir.display());
+        let Ok(entries) = fs::read_dir(&scan_dir) else {
+            continue;
+        };
+
+        for entry in entries {
+            let entry = entry.unwrap_or_else(|error| {
+                panic!(
+                    "Failed to read {kind} directory entry in {}: {error}",
+                    scan_dir.display()
+                )
+            });
+            let path = entry.path();
+            if !path.is_file() || path.extension().and_then(|ext| ext.to_str()) != Some("yaml") {
+                continue;
+            }
+
+            let id = path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or_else(|| panic!("{kind} file has invalid name: {}", path.display()))
+                .to_owned();
+
+            let contents = fs::read_to_string(&path)
+                .unwrap_or_else(|error| panic!("Failed to read {kind} {}: {error}", path.display()));
+
+            out.push(DiscoveredYamlAsset { id, path, contents });
+        }
+    }
+
+    out
 }

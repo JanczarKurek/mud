@@ -5,7 +5,7 @@ use crate::player::components::Player;
 use crate::world::animation::{JustMoved, VisualOffset};
 use crate::world::components::{
     ClientProjectedWorldObject, ClientRemotePlayerVisual, CombatHealthBar, DisplayedVitalStats,
-    HealthBarDisplayPolicy, SpaceResident, TilePosition, WorldVisual,
+    HealthBarDisplayPolicy, SpaceResident, TilePosition, ViewPosition, WorldVisual,
 };
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::resources::{
@@ -25,8 +25,7 @@ pub fn sync_client_world_projection(
         Entity,
         &ClientProjectedWorldObject,
         &mut DisplayedVitalStats,
-        &mut SpaceResident,
-        &mut TilePosition,
+        &mut ViewPosition,
         &mut WorldVisual,
     )>,
 ) {
@@ -68,8 +67,7 @@ pub fn sync_client_world_projection(
             query_entity,
             projected_object,
             mut displayed_vitals,
-            mut space_resident,
-            mut tile_position,
+            mut view,
             mut world_visual,
         )) = projected_query.get_mut(entity)
         else {
@@ -105,12 +103,12 @@ pub fn sync_client_world_projection(
             continue;
         }
 
-        space_resident.space_id = object.position.space_id;
-        let old_tile = *tile_position;
-        *tile_position = object.position.tile_position;
-        if old_tile != *tile_position {
-            let dx = tile_position.x - old_tile.x;
-            let dy = tile_position.y - old_tile.y;
+        view.space_id = object.position.space_id;
+        let old_tile = view.tile;
+        view.tile = object.position.tile_position;
+        if old_tile != view.tile {
+            let dx = view.tile.x - old_tile.x;
+            let dy = view.tile.y - old_tile.y;
             commands.entity(query_entity).insert((
                 JustMoved { dx, dy },
                 VisualOffset {
@@ -161,8 +159,7 @@ pub fn sync_remote_player_projection(
         Entity,
         &ClientRemotePlayerVisual,
         &mut DisplayedVitalStats,
-        &mut SpaceResident,
-        &mut TilePosition,
+        &mut ViewPosition,
         &mut WorldVisual,
     )>,
 ) {
@@ -187,8 +184,7 @@ pub fn sync_remote_player_projection(
             query_entity,
             projected_player,
             mut displayed_vitals,
-            mut space_resident,
-            mut tile_position,
+            mut view,
             mut world_visual,
         )) = projected_query.get_mut(entity)
         else {
@@ -224,12 +220,12 @@ pub fn sync_remote_player_projection(
             continue;
         }
 
-        space_resident.space_id = remote_player.position.space_id;
-        let old_tile = *tile_position;
-        *tile_position = remote_player.position.tile_position;
-        if old_tile != *tile_position {
-            let dx = tile_position.x - old_tile.x;
-            let dy = tile_position.y - old_tile.y;
+        view.space_id = remote_player.position.space_id;
+        let old_tile = view.tile;
+        view.tile = remote_player.position.tile_position;
+        if old_tile != view.tile {
+            let dx = view.tile.x - old_tile.x;
+            let dy = view.tile.y - old_tile.y;
             if dx.abs() <= 1 && dy.abs() <= 1 {
                 commands.entity(query_entity).insert((
                     JustMoved { dx, dy },
@@ -277,28 +273,19 @@ pub fn sync_tile_transforms(
     client_state: Res<ClientGameState>,
     world_config: Res<WorldConfig>,
     view_scroll: Res<ViewScrollOffset>,
-    mut query: Query<
-        (
-            &SpaceResident,
-            &TilePosition,
-            &WorldVisual,
-            &mut Transform,
-            Option<&VisualOffset>,
-        ),
-        Without<Player>,
-    >,
+    mut query: Query<(&ViewPosition, &WorldVisual, &mut Transform, Option<&VisualOffset>), Without<Player>>,
 ) {
     let Some(player_position) = client_state.player_position else {
         return;
     };
 
-    for (space_resident, tile_position, world_visual, mut transform, visual_offset) in &mut query {
-        let is_active = space_resident.space_id == player_position.space_id;
+    for (view, world_visual, mut transform, visual_offset) in &mut query {
+        let is_active = view.space_id == player_position.space_id;
 
         let z = if !is_active {
             -10_000.0
         } else if world_visual.y_sort {
-            y_sort_z(tile_position.y)
+            y_sort_z(view.tile.y)
         } else {
             world_visual.z_index
         };
@@ -312,10 +299,10 @@ pub fn sync_tile_transforms(
         let entity_offset = visual_offset.map_or(Vec2::ZERO, |o| o.current);
 
         transform.translation = Vec3::new(
-            (tile_position.x - player_position.tile_position.x) as f32 * world_config.tile_size
+            (view.tile.x - player_position.tile_position.x) as f32 * world_config.tile_size
                 + view_scroll.current.x
                 + entity_offset.x,
-            (tile_position.y - player_position.tile_position.y) as f32 * world_config.tile_size
+            (view.tile.y - player_position.tile_position.y) as f32 * world_config.tile_size
                 + anchor_y_offset
                 + view_scroll.current.y
                 + entity_offset.y,
@@ -326,20 +313,20 @@ pub fn sync_tile_transforms(
 
 pub fn sync_player_z(
     client_state: Res<ClientGameState>,
-    mut query: Query<(&WorldVisual, &TilePosition, &mut Transform), With<Player>>,
+    mut query: Query<(&WorldVisual, &ViewPosition, &mut Transform), With<Player>>,
 ) {
-    let Ok((world_visual, tile_position, mut transform)) = query.single_mut() else {
+    let Ok((world_visual, view, mut transform)) = query.single_mut() else {
         return;
     };
 
     if world_visual.y_sort {
         let _ = client_state.player_position;
         // Subtract half-tile epsilon so world objects at the same tile_y always render in front.
-        let new_z = y_sort_z(tile_position.y) - 0.005;
+        let new_z = y_sort_z(view.tile.y) - 0.005;
         if (transform.translation.z - new_z).abs() > 0.001 {
             info!(
                 "player z update: tile_y={} z_index={} -> z={}",
-                tile_position.y, world_visual.z_index, new_z
+                view.tile.y, world_visual.z_index, new_z
             );
         }
         transform.translation.z = new_z;
@@ -348,6 +335,29 @@ pub fn sync_player_z(
             "player y_sort=false, z_index={}, z={}",
             world_visual.z_index, transform.translation.z
         );
+    }
+}
+
+/// Mirrors authoritative `SpaceResident` + `TilePosition` onto the presentation-only
+/// `ViewPosition` for every entity that is *not* a client-only projection. In
+/// EmbeddedClient mode this covers NPCs, ground tiles, containers, and every other
+/// server-spawned world object that renders locally. Projected entities
+/// (`ClientProjectedWorldObject`, `ClientRemotePlayerVisual`) get their view written
+/// by the projection sync systems instead. `Player` entities are handled by
+/// `sync_authoritative_player_position_view`.
+pub fn sync_authoritative_world_object_position_view(
+    mut query: Query<
+        (&SpaceResident, &TilePosition, &mut ViewPosition),
+        (
+            Without<crate::player::components::Player>,
+            Without<ClientProjectedWorldObject>,
+            Without<ClientRemotePlayerVisual>,
+        ),
+    >,
+) {
+    for (space_resident, tile_position, mut view) in &mut query {
+        view.space_id = space_resident.space_id;
+        view.tile = *tile_position;
     }
 }
 

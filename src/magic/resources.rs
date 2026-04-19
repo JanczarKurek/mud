@@ -1,10 +1,9 @@
 use std::collections::HashMap;
-use std::fs;
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::assets::AssetResolver;
+use crate::assets::discover_yaml_assets;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
@@ -45,45 +44,17 @@ pub struct SpellDefinitions {
 
 impl SpellDefinitions {
     pub fn load_from_disk() -> Self {
-        let resolver = AssetResolver::new();
         let mut definitions = HashMap::new();
-
-        for scan_dir in resolver.scan_dirs("spells") {
-            let Ok(entries) = fs::read_dir(&scan_dir) else {
-                continue;
-            };
-
-            for entry in entries {
-                let entry = entry.expect("Failed to read spell definition entry");
-                let path = entry.path();
-
-                if !path.is_file() || path.extension().and_then(|ext| ext.to_str()) != Some("yaml")
-                {
-                    continue;
-                }
-
-                let spell_id = path
-                    .file_stem()
-                    .and_then(|stem| stem.to_str())
-                    .expect("Spell definition file has invalid name")
-                    .to_owned();
-                let yaml = fs::read_to_string(&path).unwrap_or_else(|error| {
+        for asset in discover_yaml_assets("spells", "spell definition") {
+            let definition = serde_yaml::from_str::<SpellDefinition>(&asset.contents)
+                .unwrap_or_else(|error| {
                     panic!(
-                        "Failed to read spell definition {}: {error}",
-                        path.display()
+                        "Failed to parse spell definition {}: {error}",
+                        asset.path.display()
                     )
                 });
-                let definition =
-                    serde_yaml::from_str::<SpellDefinition>(&yaml).unwrap_or_else(|error| {
-                        panic!(
-                            "Failed to parse spell definition {}: {error}",
-                            path.display()
-                        )
-                    });
-                definitions.insert(spell_id, definition);
-            }
+            definitions.insert(asset.id, definition);
         }
-
         Self { definitions }
     }
 

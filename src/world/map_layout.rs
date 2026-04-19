@@ -1,11 +1,9 @@
 use std::collections::HashMap;
-use std::fs;
 
-use bevy::log::info;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::assets::AssetResolver;
+use crate::assets::discover_yaml_assets;
 use crate::world::components::TilePosition;
 
 const DEFAULT_BOOTSTRAP_SPACE_ID: &str = "overworld";
@@ -144,58 +142,24 @@ impl TileCoordinate {
 
 impl SpaceDefinitions {
     pub fn load_from_disk() -> Self {
-        let resolver = AssetResolver::new();
         let mut spaces = HashMap::new();
 
-        for scan_dir in resolver.scan_dirs("maps") {
-            info!("loading map layouts from {}", scan_dir.display());
-            let Ok(entries) = fs::read_dir(&scan_dir) else {
-                continue;
-            };
-
-            for entry in entries {
-                let entry = entry.unwrap_or_else(|error| {
+        for asset in discover_yaml_assets("maps", "map layout") {
+            let mut definition: SpaceDefinition = serde_yaml::from_str(&asset.contents)
+                .unwrap_or_else(|error| {
                     panic!(
-                        "Failed to read map layout entry in {}: {error}",
-                        scan_dir.display()
+                        "Failed to parse map layout {}: {error}",
+                        asset.path.display()
                     )
                 });
-                let file_path = entry.path();
-                if !file_path.is_file()
-                    || file_path.extension().and_then(|ext| ext.to_str()) != Some("yaml")
-                {
-                    continue;
-                }
 
-                let yaml = fs::read_to_string(&file_path).unwrap_or_else(|error| {
-                    panic!("Failed to read map layout {}: {error}", file_path.display())
-                });
-
-                let mut definition: SpaceDefinition =
-                    serde_yaml::from_str(&yaml).unwrap_or_else(|error| {
-                        panic!(
-                            "Failed to parse map layout {}: {error}",
-                            file_path.display()
-                        )
-                    });
-
-                if definition.authored_id.trim().is_empty() {
-                    definition.authored_id = file_path
-                        .file_stem()
-                        .and_then(|stem| stem.to_str())
-                        .unwrap_or_else(|| {
-                            panic!(
-                                "Failed to derive authored space id from {}",
-                                file_path.display()
-                            )
-                        })
-                        .to_owned();
-                }
-
-                definition.validate();
-                spaces.insert(definition.authored_id.clone(), definition);
-                info!("loaded map layout {}", file_path.display());
+            if definition.authored_id.trim().is_empty() {
+                definition.authored_id = asset.id.clone();
             }
+
+            definition.validate();
+            spaces.insert(definition.authored_id.clone(), definition);
+            info!("loaded map layout {}", asset.path.display());
         }
 
         if !spaces.is_empty() {

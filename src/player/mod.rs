@@ -7,7 +7,8 @@ use bevy::prelude::*;
 use crate::app::state::ClientAppState;
 use crate::player::setup::spawn_player_visual;
 use crate::player::systems::{
-    move_player_on_grid, refresh_derived_player_stats, sync_player_client_state,
+    move_player_on_grid, refresh_derived_player_stats, sync_authoritative_player_display,
+    sync_authoritative_player_position_view, sync_projected_player_from_client_state,
 };
 
 pub struct PlayerServerPlugin;
@@ -25,7 +26,12 @@ impl Plugin for PlayerClientPlugin {
         app.add_systems(OnEnter(ClientAppState::InGame), spawn_player_visual)
             .add_systems(
                 Update,
-                (sync_player_client_state, move_player_on_grid)
+                (
+                    sync_authoritative_player_display,
+                    sync_authoritative_player_position_view,
+                    sync_projected_player_from_client_state,
+                    move_player_on_grid,
+                )
                     .run_if(in_state(ClientAppState::InGame)),
             );
     }

@@ -38,6 +38,17 @@ pub struct SpaceResident {
     pub space_id: SpaceId,
 }
 
+/// Presentation-only position for client-side rendering. Mirrors authoritative
+/// `SpaceResident` + `TilePosition` on entities the local process simulates, and
+/// is the sole position component on projected entities (see EmbeddedClient
+/// Invariant in CLAUDE.md). Every presentation system reads from this, never
+/// from the authoritative pair.
+#[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ViewPosition {
+    pub space_id: SpaceId,
+    pub tile: TilePosition,
+}
+
 #[derive(Component)]
 #[allow(dead_code)]
 pub struct OverworldObject {

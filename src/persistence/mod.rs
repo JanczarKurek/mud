@@ -21,6 +21,7 @@ use crate::player::components::{
 };
 use crate::world::components::{
     Collider, Container, Movable, OverworldObject, SpaceResident, Storable, TilePosition,
+    ViewPosition,
 };
 use crate::world::loot::CorpseTtl;
 use crate::world::map_layout::{SpaceDefinitions, SpacePermanence};
@@ -583,6 +584,10 @@ fn load_world_from_snapshot(
                 },
                 SpaceResident { space_id },
                 player.tile_position,
+                ViewPosition {
+                    space_id,
+                    tile: player.tile_position,
+                },
             ))
             .id();
         object_entities.insert(player.object_id, entity);
@@ -603,6 +608,10 @@ fn load_world_from_snapshot(
 
         if let Some(tile_position) = object.tile_position {
             entity.insert(tile_position);
+            entity.insert(ViewPosition {
+                space_id,
+                tile: tile_position,
+            });
         }
         if object.collider {
             entity.insert(Collider);

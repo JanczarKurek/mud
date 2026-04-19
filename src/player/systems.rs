@@ -7,7 +7,7 @@ use crate::player::components::{
     AttributeSet, BaseStats, DerivedStats, Player, PlayerIdentity, VitalStats,
 };
 use crate::scripting::resources::PythonConsoleState;
-use crate::world::components::{DisplayedVitalStats, SpaceResident, TilePosition};
+use crate::world::components::{DisplayedVitalStats, SpaceResident, TilePosition, ViewPosition};
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::WorldConfig;
@@ -86,64 +86,70 @@ pub fn move_player_on_grid(
     pending_commands.push(GameCommand::MovePlayer { delta });
 }
 
-pub fn sync_player_client_state(
+/// View-sync for the locally-simulated (authoritative) player. Copies authoritative
+/// `VitalStats` into the presentation-only `DisplayedVitalStats` component. Runs in
+/// EmbeddedClient mode where a `PlayerIdentity` is present on the single Player entity.
+pub fn sync_authoritative_player_display(
+    mut player_query: Query<
+        (&VitalStats, &mut DisplayedVitalStats),
+        (With<Player>, With<PlayerIdentity>),
+    >,
+) {
+    let Ok((vital_stats, mut displayed_vitals)) = player_query.single_mut() else {
+        return;
+    };
+    displayed_vitals.health = vital_stats.health;
+    displayed_vitals.max_health = vital_stats.max_health;
+    displayed_vitals.mana = vital_stats.mana;
+    displayed_vitals.max_mana = vital_stats.max_mana;
+}
+
+/// Mirrors the authoritative `SpaceResident` + `TilePosition` onto the presentation-only
+/// `ViewPosition` for the locally-simulated player in EmbeddedClient mode. In TcpClient
+/// mode the projected player has no `PlayerIdentity`, so this system is a no-op and
+/// `sync_projected_player_from_client_state` drives the view instead.
+pub fn sync_authoritative_player_position_view(
+    mut query: Query<
+        (&SpaceResident, &TilePosition, &mut ViewPosition),
+        (With<Player>, With<PlayerIdentity>),
+    >,
+) {
+    for (space_resident, tile_position, mut view) in &mut query {
+        view.space_id = space_resident.space_id;
+        view.tile = *tile_position;
+    }
+}
+
+/// View-sync for the projected (remote-authoritative) player in TcpClient mode.
+/// Reads from `ClientGameState` — the single source of truth on the client — and
+/// writes to view components only. Never touches the authoritative `VitalStats`,
+/// `SpaceResident`, or `TilePosition` components, which are inert on a projected
+/// entity (see EmbeddedClient Invariant in CLAUDE.md).
+pub fn sync_projected_player_from_client_state(
     client_state: Res<ClientGameState>,
     world_config: Res<WorldConfig>,
     mut player_query: Query<
-        (
-            &mut SpaceResident,
-            &mut TilePosition,
-            &mut VitalStats,
-            &mut DisplayedVitalStats,
-            Option<&PlayerIdentity>,
-        ),
-        With<Player>,
+        (&mut ViewPosition, &mut DisplayedVitalStats),
+        (With<Player>, Without<PlayerIdentity>),
     >,
 ) {
-    let Ok((
-        mut space_resident,
-        mut tile_position,
-        mut vital_stats,
-        mut displayed_vitals,
-        player_identity,
-    )) = player_query.single_mut()
-    else {
+    let Ok((mut view, mut displayed_vitals)) = player_query.single_mut() else {
         return;
     };
 
-    let is_projected_client_player = player_identity.is_none();
-
-    if is_projected_client_player {
-        if let Some(client_position) = client_state.player_position {
-            space_resident.space_id = client_position.space_id;
-            *tile_position = client_position.tile_position;
-        } else {
-            *tile_position =
-                TilePosition::new(world_config.map_width / 2, world_config.map_height / 2);
-            space_resident.space_id = world_config.current_space_id;
-        }
-
-        if let Some(client_vitals) = client_state.player_vitals {
-            vital_stats.health = client_vitals.health;
-            vital_stats.max_health = client_vitals.max_health;
-            vital_stats.mana = client_vitals.mana;
-            vital_stats.max_mana = client_vitals.max_mana;
-        }
+    if let Some(client_position) = client_state.player_position {
+        view.space_id = client_position.space_id;
+        view.tile = client_position.tile_position;
+    } else {
+        view.tile = TilePosition::new(world_config.map_width / 2, world_config.map_height / 2);
+        view.space_id = world_config.current_space_id;
     }
 
-    if let Some(client_vitals) = client_state
-        .player_vitals
-        .filter(|_| is_projected_client_player)
-    {
+    if let Some(client_vitals) = client_state.player_vitals {
         displayed_vitals.health = client_vitals.health;
         displayed_vitals.max_health = client_vitals.max_health;
         displayed_vitals.mana = client_vitals.mana;
         displayed_vitals.max_mana = client_vitals.max_mana;
-    } else {
-        displayed_vitals.health = vital_stats.health;
-        displayed_vitals.max_health = vital_stats.max_health;
-        displayed_vitals.mana = vital_stats.mana;
-        displayed_vitals.max_mana = vital_stats.max_mana;
     }
 }
 
@@ -179,7 +185,7 @@ mod tests {
     }
 
     #[test]
-    fn authoritative_embedded_player_keeps_authoritative_vitals() {
+    fn authoritative_embedded_player_mirrors_position_and_vitals() {
         let mut app = App::new();
         app.insert_resource(default_world_config());
         app.insert_resource(ClientGameState {
@@ -203,6 +209,10 @@ mod tests {
                     space_id: SpaceId(1),
                 },
                 TilePosition::new(2, 3),
+                ViewPosition {
+                    space_id: SpaceId(0),
+                    tile: TilePosition::new(0, 0),
+                },
                 VitalStats {
                     health: 14.0,
                     max_health: 35.0,
@@ -213,17 +223,24 @@ mod tests {
             ))
             .id();
 
-        app.add_systems(Update, sync_player_client_state);
+        app.add_systems(
+            Update,
+            (
+                sync_authoritative_player_display,
+                sync_authoritative_player_position_view,
+                sync_projected_player_from_client_state,
+            ),
+        );
         app.update();
 
         let entity_ref = app.world().entity(entity);
-        let space_resident = entity_ref.get::<SpaceResident>().unwrap();
-        let tile_position = entity_ref.get::<TilePosition>().unwrap();
+        let view = entity_ref.get::<ViewPosition>().unwrap();
         let vital_stats = entity_ref.get::<VitalStats>().unwrap();
         let displayed_vitals = entity_ref.get::<DisplayedVitalStats>().unwrap();
 
-        assert_eq!(space_resident.space_id, SpaceId(1));
-        assert_eq!(*tile_position, TilePosition::new(2, 3));
+        // View mirrors authoritative position — ClientGameState is ignored for this entity.
+        assert_eq!(view.space_id, SpaceId(1));
+        assert_eq!(view.tile, TilePosition::new(2, 3));
         assert_eq!(vital_stats.health, 14.0);
         assert_eq!(vital_stats.max_health, 35.0);
         assert_eq!(displayed_vitals.health, 14.0);
@@ -248,28 +265,39 @@ mod tests {
             .world_mut()
             .spawn((
                 Player,
-                SpaceResident {
+                ViewPosition {
                     space_id: SpaceId(1),
+                    tile: TilePosition::new(0, 0),
                 },
-                TilePosition::new(0, 0),
                 VitalStats::full(1.0, 0.0),
                 DisplayedVitalStats::default(),
             ))
             .id();
 
-        app.add_systems(Update, sync_player_client_state);
+        app.add_systems(
+            Update,
+            (
+                sync_authoritative_player_display,
+                sync_authoritative_player_position_view,
+                sync_projected_player_from_client_state,
+            ),
+        );
         app.update();
 
         let entity_ref = app.world().entity(entity);
-        let space_resident = entity_ref.get::<SpaceResident>().unwrap();
-        let tile_position = entity_ref.get::<TilePosition>().unwrap();
+        let view = entity_ref.get::<ViewPosition>().unwrap();
         let vital_stats = entity_ref.get::<VitalStats>().unwrap();
         let displayed_vitals = entity_ref.get::<DisplayedVitalStats>().unwrap();
 
-        assert_eq!(space_resident.space_id, SpaceId(5));
-        assert_eq!(*tile_position, TilePosition::new(10, 11));
-        assert_eq!(vital_stats.health, 12.0);
-        assert_eq!(vital_stats.max_health, 40.0);
+        // Projected player reads ClientGameState and writes only to view components.
+        assert_eq!(view.space_id, SpaceId(5));
+        assert_eq!(view.tile, TilePosition::new(10, 11));
+        // Authoritative VitalStats on a projected entity is inert — presentation
+        // layer reads DisplayedVitalStats instead.
+        assert_eq!(vital_stats.health, 1.0);
+        assert_eq!(vital_stats.max_health, 1.0);
+        assert_eq!(displayed_vitals.health, 12.0);
+        assert_eq!(displayed_vitals.max_health, 40.0);
         assert_eq!(displayed_vitals.mana, 6.0);
         assert_eq!(displayed_vitals.max_mana, 18.0);
     }

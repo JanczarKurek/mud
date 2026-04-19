@@ -8,9 +8,9 @@ use crate::persistence::WorldSnapshotStatus;
 use crate::player::components::InventoryStack;
 use crate::player::components::{BaseStats, DerivedStats, VitalStats};
 use crate::world::components::{
-    ClientProjectedWorldObject, ClientRemotePlayerVisual, Collider, CombatHealthBar, Container,
-    DisplayedVitalStats, HealthBarDisplayPolicy, Movable, OverworldObject, Quantity, SpaceId,
-    SpacePosition, SpaceResident, Storable, TilePosition, WorldVisual,
+    ClientProjectedWorldObject, ClientRemotePlayerVisual, CombatHealthBar, DisplayedVitalStats,
+    HealthBarDisplayPolicy, OverworldObject, SpaceId, SpacePosition, SpaceResident, TilePosition,
+    ViewPosition, WorldVisual,
 };
 use crate::world::map_layout::{
     MapBehavior, MapObjectInstance, PortalDefinition, SpaceDefinition, SpaceDefinitions,
@@ -366,6 +366,10 @@ fn spawn_ground_tile(
             space_id: world_config.current_space_id,
         },
         tile_position,
+        ViewPosition {
+            space_id: world_config.current_space_id,
+            tile: tile_position,
+        },
         WorldVisual {
             z_index: definition.render.z_index,
             y_sort: false,
@@ -374,6 +378,48 @@ fn spawn_ground_tile(
         sprite,
         Transform::from_xyz(0.0, 0.0, definition.render.z_index),
     ));
+}
+
+/// Applies the definition-driven optional components (Collider, Movable, Storable,
+/// Container, Quantity) to a freshly spawned overworld-object entity. Works with any
+/// receiver that exposes Bevy's `.insert(Bundle)` method — i.e. `EntityCommands` or
+/// `EntityWorldMut` — which is why this is a macro: there is no shared trait in Bevy.
+#[macro_export]
+macro_rules! apply_overworld_definition_components {
+    ($entity:expr, $definition:expr, $container_contents:expr, $quantity:expr) => {{
+        let __definition: &$crate::world::object_definitions::OverworldObjectDefinition =
+            $definition;
+        let __provided: Option<Vec<Option<$crate::player::components::InventoryStack>>> =
+            $container_contents;
+        let __quantity: Option<u32> = $quantity;
+        if __definition.colliding {
+            $entity.insert($crate::world::components::Collider);
+        }
+        if __definition.movable {
+            $entity.insert($crate::world::components::Movable);
+        }
+        if __definition.storable {
+            $entity.insert($crate::world::components::Storable);
+        }
+        if let Some(capacity) = __definition.container_capacity {
+            let slots: Vec<Option<$crate::player::components::InventoryStack>> = match __provided {
+                Some(provided) => {
+                    let mut padded = vec![None; capacity];
+                    for (i, s) in provided.into_iter().enumerate().take(capacity) {
+                        padded[i] = s;
+                    }
+                    padded
+                }
+                None => vec![None; capacity],
+            };
+            $entity.insert($crate::world::components::Container { slots });
+        }
+        if let Some(__q) = __quantity {
+            if __q > 1 {
+                $entity.insert($crate::world::components::Quantity(__q));
+            }
+        }
+    }};
 }
 
 pub fn spawn_overworld_object(
@@ -393,43 +439,17 @@ pub fn spawn_overworld_object(
         },
         SpaceResident { space_id },
         tile_position,
+        ViewPosition {
+            space_id,
+            tile: tile_position,
+        },
     ));
 
     let definition = definitions
         .get(definition_id)
         .unwrap_or_else(|| panic!("Missing overworld object definition for id '{definition_id}'"));
 
-    if definition.colliding {
-        entity.insert(Collider);
-    }
-
-    if definition.movable {
-        entity.insert(Movable);
-    }
-
-    if definition.storable {
-        entity.insert(Storable);
-    }
-
-    if let Some(capacity) = definition.container_capacity {
-        if let Some(slots) = container_contents {
-            let mut padded = vec![None; capacity];
-            for (i, s) in slots.into_iter().enumerate().take(capacity) {
-                padded[i] = s;
-            }
-            entity.insert(Container { slots: padded });
-        } else {
-            entity.insert(Container {
-                slots: vec![None; capacity],
-            });
-        }
-    }
-
-    if let Some(q) = quantity {
-        if q > 1 {
-            entity.insert(Quantity(q));
-        }
-    }
+    apply_overworld_definition_components!(entity, definition, container_contents, quantity);
 
     entity.id()
 }
@@ -456,10 +476,10 @@ pub fn spawn_client_projected_world_object(
             object_id,
             definition_id: definition_id.to_owned(),
         },
-        SpaceResident {
+        ViewPosition {
             space_id: position.space_id,
+            tile: position.tile_position,
         },
-        position.tile_position,
         visual,
         DisplayedVitalStats::default(),
         sprite,
@@ -503,10 +523,10 @@ pub fn spawn_client_remote_player(
             player_id,
             object_id,
         },
-        SpaceResident {
+        ViewPosition {
             space_id: position.space_id,
+            tile: position.tile_position,
         },
-        position.tile_position,
         visual,
         DisplayedVitalStats::default(),
         sprite,

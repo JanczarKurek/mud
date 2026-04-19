@@ -1,4 +1,6 @@
 pub mod commands;
+pub mod helpers;
+pub mod projection;
 pub mod resources;
 pub mod systems;
 
@@ -6,13 +8,13 @@ use bevy::prelude::*;
 
 use crate::app::state::simulation_active;
 use crate::combat::systems::resolve_battle_turn;
+use crate::game::projection::{
+    apply_game_events_to_client_state, collect_game_events_from_authority,
+};
 use crate::game::resources::{
     ClientGameState, PendingGameCommands, PendingGameEvents, PendingGameUiEvents,
 };
-use crate::game::systems::{
-    apply_game_events_to_client_state, collect_game_events_from_authority, process_game_commands,
-    tick_player_movement_cooldowns,
-};
+use crate::game::systems::{process_game_commands, tick_player_movement_cooldowns};
 use crate::npc::systems::update_roaming_npcs;
 use crate::player::systems::move_player_on_grid;
 

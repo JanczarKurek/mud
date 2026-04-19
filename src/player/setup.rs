@@ -8,7 +8,7 @@ use crate::player::components::{
 };
 use crate::world::components::{
     Collider, DisplayedVitalStats, HealthBarDisplayPolicy, OverworldObject, SpaceId, SpaceResident,
-    TilePosition,
+    TilePosition, ViewPosition,
 };
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
@@ -97,6 +97,10 @@ pub fn spawn_player_authoritative_in_space(
             },
             SpaceResident { space_id },
             tile_position,
+            ViewPosition {
+                space_id,
+                tile: tile_position,
+            },
         ))
         .id()
 }
@@ -125,16 +129,20 @@ pub fn spawn_player_visual(
 
     let entity = match player_query.single() {
         Ok(entity) => entity,
-        Err(_) => commands
-            .spawn((
-                Player,
-                VitalStats::full(1.0, 0.0),
-                TilePosition::new(world_config.map_width / 2, world_config.map_height / 2),
-                SpaceResident {
-                    space_id: world_config.current_space_id,
-                },
-            ))
-            .id(),
+        Err(_) => {
+            let spawn_tile =
+                TilePosition::new(world_config.map_width / 2, world_config.map_height / 2);
+            commands
+                .spawn((
+                    Player,
+                    VitalStats::full(1.0, 0.0),
+                    ViewPosition {
+                        space_id: world_config.current_space_id,
+                        tile: spawn_tile,
+                    },
+                ))
+                .id()
+        }
     };
 
     let visual =
