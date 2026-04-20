@@ -13,7 +13,7 @@ use crate::editor::systems::{
 };
 use crate::editor::ui::modal::{
     handle_modal_buttons, handle_modal_keyboard_input, handle_modal_list_click,
-    spawn_or_rebuild_modal, sync_modal_button_colours, sync_modal_error_text,
+    spawn_or_rebuild_modal, sync_modal_error_text,
 };
 use crate::editor::ui::palette::{
     handle_palette_clicks, handle_palette_filter_click, sync_palette_filter_text,
@@ -102,7 +102,6 @@ impl Plugin for EditorPlugin {
                         .after(handle_modal_keyboard_input),
                     apply_modal_confirmed.after(process_modal_confirm),
                     spawn_or_rebuild_modal,
-                    sync_modal_button_colours,
                     sync_modal_error_text,
                 )
                     .run_if(in_state(ClientAppState::MapEditor)),

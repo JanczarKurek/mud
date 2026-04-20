@@ -3,6 +3,8 @@ use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::prelude::*;
 
 use crate::editor::resources::{ModalKind, ModalState};
+use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton, ThemedPanel};
+use crate::ui::theme::{Palette, UiThemeAssets};
 
 // ── Component markers ─────────────────────────────────────────────────────────
 
@@ -28,22 +30,6 @@ pub struct ModalCancelButton;
 #[derive(Component)]
 pub struct ModalErrorText;
 
-// ── Colours (match title-screen / editor palette) ─────────────────────────────
-
-const BG_OVERLAY: Color = Color::srgba(0.0, 0.0, 0.0, 0.72);
-const BG_CARD: Color = Color::srgba(0.08, 0.05, 0.04, 0.97);
-const BORDER: Color = Color::srgb(0.48, 0.36, 0.22);
-const BORDER_FOCUSED: Color = Color::srgb(0.90, 0.72, 0.40);
-const TEXT_HEADER: Color = Color::srgb(0.96, 0.84, 0.62);
-const TEXT_LABEL: Color = Color::srgb(0.75, 0.70, 0.62);
-const TEXT_VALUE: Color = Color::srgb(0.96, 0.92, 0.80);
-const TEXT_PLACEHOLDER: Color = Color::srgb(0.45, 0.42, 0.38);
-const TEXT_ERROR: Color = Color::srgb(1.0, 0.45, 0.30);
-const BTN_NORMAL_BG: Color = Color::srgba(0.14, 0.10, 0.08, 0.96);
-const BTN_HOVER_BG: Color = Color::srgb(0.28, 0.17, 0.10);
-const BTN_PRESS_BG: Color = Color::srgb(0.55, 0.30, 0.14);
-const BTN_CONFIRM_BORDER: Color = Color::srgb(0.70, 0.55, 0.28);
-
 fn title_for(kind: ModalKind) -> &'static str {
     match kind {
         ModalKind::FileOpen => "Open Map",
@@ -68,6 +54,8 @@ fn confirm_label_for(kind: ModalKind) -> &'static str {
 pub fn spawn_or_rebuild_modal(
     modal_state: Res<ModalState>,
     existing: Query<Entity, With<ModalOverlayRoot>>,
+    theme: Res<UiThemeAssets>,
+    palette: Res<Palette>,
     mut commands: Commands,
 ) {
     if !modal_state.is_changed() {
@@ -82,6 +70,8 @@ pub fn spawn_or_rebuild_modal(
         return;
     };
 
+    let theme = theme.clone();
+    let palette = *palette;
     let is_list = kind == ModalKind::FileOpen;
 
     commands
@@ -97,13 +87,14 @@ pub fn spawn_or_rebuild_modal(
                 align_items: AlignItems::Center,
                 ..default()
             },
-            BackgroundColor(BG_OVERLAY),
+            BackgroundColor(palette.surface_overlay_strong),
             // Consume all interaction so nothing behind the modal is clickable.
             Button,
         ))
         .with_children(|overlay| {
             overlay
                 .spawn((
+                    ThemedPanel,
                     Node {
                         width: Val::Px(380.0),
                         flex_direction: FlexDirection::Column,
@@ -112,8 +103,11 @@ pub fn spawn_or_rebuild_modal(
                         border: UiRect::all(Val::Px(1.0)),
                         ..default()
                     },
-                    BackgroundColor(BG_CARD),
-                    BorderColor::all(BORDER),
+                    ImageNode::new(theme.panel_frame.clone())
+                        .with_mode(theme.panel_image_mode())
+                        .with_color(palette.surface_panel),
+                    BackgroundColor(Color::NONE),
+                    BorderColor::all(palette.border_idle),
                 ))
                 .with_children(|card| {
                     // Title
@@ -123,7 +117,7 @@ pub fn spawn_or_rebuild_modal(
                             font_size: 18.0,
                             ..default()
                         },
-                        TextColor(TEXT_HEADER),
+                        TextColor(palette.text_accent),
                     ));
 
                     // Error / info message
@@ -140,7 +134,7 @@ pub fn spawn_or_rebuild_modal(
                             font_size: 12.0,
                             ..default()
                         },
-                        TextColor(TEXT_ERROR),
+                        TextColor(palette.text_danger),
                         err_visible,
                     ));
 
@@ -167,7 +161,7 @@ pub fn spawn_or_rebuild_modal(
                                         font_size: 12.0,
                                         ..default()
                                     },
-                                    TextColor(TEXT_LABEL),
+                                    TextColor(palette.text_muted),
                                 ));
 
                                 field_col
@@ -181,9 +175,9 @@ pub fn spawn_or_rebuild_modal(
                                         },
                                         BackgroundColor(Color::srgba(0.06, 0.04, 0.04, 0.90)),
                                         BorderColor::all(if is_focused {
-                                            BORDER_FOCUSED
+                                            palette.border_focus
                                         } else {
-                                            BORDER
+                                            palette.border_idle
                                         }),
                                     ))
                                     .with_children(|input| {
@@ -194,7 +188,7 @@ pub fn spawn_or_rebuild_modal(
                                                     font_size: 13.0,
                                                     ..default()
                                                 },
-                                                TextColor(TEXT_VALUE),
+                                                TextColor(palette.text_value),
                                             ));
                                         } else {
                                             input.spawn((
@@ -203,7 +197,7 @@ pub fn spawn_or_rebuild_modal(
                                                     font_size: 13.0,
                                                     ..default()
                                                 },
-                                                TextColor(TEXT_PLACEHOLDER),
+                                                TextColor(palette.text_placeholder),
                                             ));
                                         }
                                     });
@@ -221,14 +215,20 @@ pub fn spawn_or_rebuild_modal(
                                 border: UiRect::all(Val::Px(1.0)),
                                 ..default()
                             },
-                            BorderColor::all(BORDER),
+                            BorderColor::all(palette.border_idle),
                             BackgroundColor(Color::srgba(0.05, 0.03, 0.03, 0.90)),
                         ))
                         .with_children(|list| {
                             for (i, name) in modal_state.list_items.iter().enumerate() {
-                                let is_selected = modal_state.selected_list_item == Some(i);
+                                let selected = modal_state.selected_list_item == Some(i);
+                                let (bg, border, _) =
+                                    idle_colors(&palette, ButtonStyle::Slot, selected);
                                 list.spawn((
                                     Button,
+                                    ThemedButton {
+                                        style: ButtonStyle::Slot,
+                                        selected,
+                                    },
                                     ModalListItem { index: i },
                                     Node {
                                         width: Val::Percent(100.0),
@@ -236,12 +236,11 @@ pub fn spawn_or_rebuild_modal(
                                         border: UiRect::bottom(Val::Px(1.0)),
                                         ..default()
                                     },
-                                    BackgroundColor(if is_selected {
-                                        Color::srgb(0.28, 0.16, 0.08)
-                                    } else {
-                                        Color::srgba(0.0, 0.0, 0.0, 0.0)
-                                    }),
-                                    BorderColor::all(Color::srgb(0.20, 0.14, 0.10)),
+                                    ImageNode::new(theme.button_frame.clone())
+                                        .with_mode(theme.button_image_mode())
+                                        .with_color(bg),
+                                    BackgroundColor(Color::NONE),
+                                    BorderColor::all(border),
                                 ))
                                 .with_children(|btn| {
                                     btn.spawn((
@@ -250,10 +249,10 @@ pub fn spawn_or_rebuild_modal(
                                             font_size: 13.0,
                                             ..default()
                                         },
-                                        TextColor(if is_selected {
-                                            Color::srgb(0.98, 0.90, 0.70)
+                                        TextColor(if selected {
+                                            palette.text_accent
                                         } else {
-                                            TEXT_VALUE
+                                            palette.text_value
                                         }),
                                     ));
                                 });
@@ -271,51 +270,61 @@ pub fn spawn_or_rebuild_modal(
                         ..default()
                     },))
                         .with_children(|row| {
-                            row.spawn((
-                                Button,
+                            spawn_modal_button(
+                                row,
+                                &theme,
+                                &palette,
+                                ButtonStyle::Secondary,
+                                "Cancel",
                                 ModalCancelButton,
-                                Node {
-                                    padding: UiRect::axes(Val::Px(14.0), Val::Px(6.0)),
-                                    border: UiRect::all(Val::Px(1.0)),
-                                    ..default()
-                                },
-                                BackgroundColor(BTN_NORMAL_BG),
-                                BorderColor::all(BORDER),
-                            ))
-                            .with_children(|b| {
-                                b.spawn((
-                                    Text::new("Cancel"),
-                                    TextFont {
-                                        font_size: 13.0,
-                                        ..default()
-                                    },
-                                    TextColor(TEXT_VALUE),
-                                ));
-                            });
-
-                            row.spawn((
-                                Button,
+                            );
+                            spawn_modal_button(
+                                row,
+                                &theme,
+                                &palette,
+                                ButtonStyle::Primary,
+                                confirm_label_for(kind),
                                 ModalConfirmButton,
-                                Node {
-                                    padding: UiRect::axes(Val::Px(14.0), Val::Px(6.0)),
-                                    border: UiRect::all(Val::Px(1.0)),
-                                    ..default()
-                                },
-                                BackgroundColor(BTN_NORMAL_BG),
-                                BorderColor::all(BTN_CONFIRM_BORDER),
-                            ))
-                            .with_children(|b| {
-                                b.spawn((
-                                    Text::new(confirm_label_for(kind)),
-                                    TextFont {
-                                        font_size: 13.0,
-                                        ..default()
-                                    },
-                                    TextColor(Color::srgb(0.98, 0.90, 0.70)),
-                                ));
-                            });
+                            );
                         });
                 });
+        });
+}
+
+fn spawn_modal_button<T: Component>(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+    style: ButtonStyle,
+    label: &str,
+    marker: T,
+) {
+    let (bg, border, text) = idle_colors(palette, style, false);
+    parent
+        .spawn((
+            Button,
+            ThemedButton::new(style),
+            marker,
+            Node {
+                padding: UiRect::axes(Val::Px(14.0), Val::Px(6.0)),
+                border: UiRect::all(Val::Px(1.0)),
+                ..default()
+            },
+            ImageNode::new(theme.button_frame.clone())
+                .with_mode(theme.button_image_mode())
+                .with_color(bg),
+            BackgroundColor(Color::NONE),
+            BorderColor::all(border),
+        ))
+        .with_children(|b| {
+            b.spawn((
+                Text::new(label),
+                TextFont {
+                    font_size: 13.0,
+                    ..default()
+                },
+                TextColor(text),
+            ));
         });
 }
 
@@ -390,37 +399,6 @@ pub fn handle_modal_buttons(
         if *interaction == Interaction::Pressed {
             modal_state.confirm_triggered = true;
         }
-    }
-}
-
-/// Sync button colours each frame (hover / press / normal).
-pub fn sync_modal_button_colours(
-    mut confirm_q: Query<
-        (&Interaction, &mut BackgroundColor, &mut BorderColor),
-        With<ModalConfirmButton>,
-    >,
-    mut cancel_q: Query<
-        (&Interaction, &mut BackgroundColor, &mut BorderColor),
-        (With<ModalCancelButton>, Without<ModalConfirmButton>),
-    >,
-) {
-    for (interaction, mut bg, mut border) in &mut confirm_q {
-        let (bg_c, b_c) = match *interaction {
-            Interaction::Pressed => (BTN_PRESS_BG, Color::srgb(1.0, 0.88, 0.60)),
-            Interaction::Hovered => (BTN_HOVER_BG, Color::srgb(0.90, 0.75, 0.50)),
-            Interaction::None => (BTN_NORMAL_BG, BTN_CONFIRM_BORDER),
-        };
-        bg.0 = bg_c;
-        *border = BorderColor::all(b_c);
-    }
-    for (interaction, mut bg, mut border) in &mut cancel_q {
-        let (bg_c, b_c) = match *interaction {
-            Interaction::Pressed => (BTN_PRESS_BG, Color::srgb(0.80, 0.65, 0.45)),
-            Interaction::Hovered => (BTN_HOVER_BG, Color::srgb(0.65, 0.50, 0.32)),
-            Interaction::None => (BTN_NORMAL_BG, BORDER),
-        };
-        bg.0 = bg_c;
-        *border = BorderColor::all(b_c);
     }
 }
 

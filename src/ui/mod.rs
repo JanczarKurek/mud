@@ -4,6 +4,7 @@ pub mod minimap;
 pub mod resources;
 pub mod setup;
 pub mod systems;
+pub mod theme;
 
 use bevy::prelude::*;
 
@@ -33,12 +34,14 @@ use crate::ui::systems::{
     sync_take_partial_label, sync_vital_bars, toggle_cursor_mode,
     update_take_partial_popup_visibility,
 };
+use crate::ui::theme::UiThemePlugin;
 
 pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(ContextMenuState::default())
+        app.add_plugins(UiThemePlugin)
+            .insert_resource(ContextMenuState::default())
             .insert_resource(DockedPanelState::default())
             .insert_resource(DockedPanelResizeState::default())
             .insert_resource(DockedPanelDragState::default())

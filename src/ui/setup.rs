@@ -21,6 +21,8 @@ use crate::ui::components::{
 use crate::ui::menu_bar::{spawn_menu_bar, MENU_BAR_HEIGHT};
 use crate::ui::minimap::{make_minimap_image, FULL_MAP_BODY_SIZE, HUD_MINIMAP_SIZE};
 use crate::ui::resources::{DockedPanelState, FullMapWindowState, HudMinimapSettings};
+use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton, ThemedPanel};
+use crate::ui::theme::{Palette, UiThemeAssets};
 use crate::world::object_definitions::EquipmentSlot;
 
 pub fn spawn_hud(
@@ -28,7 +30,11 @@ pub fn spawn_hud(
     mut images: ResMut<Assets<Image>>,
     hud_minimap_settings: Res<HudMinimapSettings>,
     full_map_state: Res<FullMapWindowState>,
+    theme: Res<UiThemeAssets>,
+    palette: Res<Palette>,
 ) {
+    let theme = theme.clone();
+    let palette = *palette;
     commands
         .spawn((
             Node {
@@ -63,7 +69,7 @@ pub fn spawn_hud(
                         ..default()
                     },
                     RightSidebarRoot,
-                    BackgroundColor(Color::srgba(0.06, 0.06, 0.08, 0.88)),
+                    BackgroundColor(palette.surface_sidebar),
                 ))
                 .with_children(|sidebar| {
                     sidebar
@@ -84,20 +90,40 @@ pub fn spawn_hud(
                                 DockedPanelState::MINIMAP_PANEL_ID,
                                 &mut images,
                                 hud_minimap_settings.zoom,
+                                &theme,
+                                &palette,
                             );
-                            spawn_status_panel(dock_canvas, DockedPanelState::STATUS_PANEL_ID);
+                            spawn_status_panel(
+                                dock_canvas,
+                                DockedPanelState::STATUS_PANEL_ID,
+                                &theme,
+                                &palette,
+                            );
                             spawn_equipment_panel(
                                 dock_canvas,
                                 DockedPanelState::EQUIPMENT_PANEL_ID,
+                                &theme,
+                                &palette,
                             );
-                            spawn_backpack_panel(dock_canvas, DockedPanelState::BACKPACK_PANEL_ID);
-                            spawn_docked_panel_canvas(dock_canvas);
+                            spawn_backpack_panel(
+                                dock_canvas,
+                                DockedPanelState::BACKPACK_PANEL_ID,
+                                &theme,
+                                &palette,
+                            );
+                            spawn_docked_panel_canvas(dock_canvas, &theme, &palette);
                         });
                 });
         });
 
-    spawn_full_map_window(&mut commands, &mut images, full_map_state.zoom);
-    spawn_menu_bar(&mut commands);
+    spawn_full_map_window(
+        &mut commands,
+        &mut images,
+        full_map_state.zoom,
+        &theme,
+        &palette,
+    );
+    spawn_menu_bar(&mut commands, &theme, &palette);
 
     commands
         .spawn((
@@ -123,10 +149,10 @@ pub fn spawn_hud(
                         padding: UiRect::all(px(12.0)),
                         ..default()
                     },
-                    BackgroundColor(Color::srgba(0.07, 0.08, 0.10, 0.90)),
+                    BackgroundColor(palette.surface_chat),
                 ))
                 .with_children(|chat_panel| {
-                    spawn_panel_label(chat_panel, "Chat");
+                    spawn_panel_label(chat_panel, "Chat", &palette);
                     chat_panel.spawn((
                         Text::new(""),
                         ChatLogText,
@@ -134,7 +160,7 @@ pub fn spawn_hud(
                             font_size: 16.0,
                             ..default()
                         },
-                        TextColor(Color::srgb(0.82, 0.83, 0.85)),
+                        TextColor(palette.text_muted),
                         TextLayout::new(Justify::Left, LineBreak::WordOrCharacter),
                         Node {
                             width: percent(100.0),
@@ -154,10 +180,10 @@ pub fn spawn_hud(
                         ..default()
                     },
                     PythonConsolePanel,
-                    BackgroundColor(Color::srgba(0.07, 0.08, 0.10, 0.90)),
+                    BackgroundColor(palette.surface_chat),
                 ))
                 .with_children(|chat_panel| {
-                    spawn_panel_label(chat_panel, "Python Console");
+                    spawn_panel_label(chat_panel, "Python Console", &palette);
 
                     chat_panel
                         .spawn((
@@ -186,7 +212,7 @@ pub fn spawn_hud(
                                         ..default()
                                     },
                                     PythonConsoleOutputViewport,
-                                    BackgroundColor(Color::srgba(0.04, 0.05, 0.07, 0.92)),
+                                    BackgroundColor(palette.surface_console_output),
                                 ))
                                 .with_children(|output_viewport| {
                                     output_viewport.spawn((
@@ -196,7 +222,7 @@ pub fn spawn_hud(
                                             font_size: 16.0,
                                             ..default()
                                         },
-                                        TextColor(Color::srgb(0.82, 0.83, 0.85)),
+                                        TextColor(palette.text_muted),
                                         TextLayout::new(Justify::Left, LineBreak::WordOrCharacter),
                                         Node {
                                             width: percent(100.0),
@@ -213,7 +239,7 @@ pub fn spawn_hud(
                                         padding: UiRect::vertical(px(2.0)),
                                         ..default()
                                     },
-                                    BackgroundColor(Color::srgba(0.10, 0.10, 0.11, 0.95)),
+                                    BackgroundColor(palette.surface_scrollbar_track),
                                 ))
                                 .with_children(|track| {
                                     track
@@ -237,7 +263,7 @@ pub fn spawn_hud(
                                                     ..default()
                                                 },
                                                 PythonConsoleScrollbarThumb,
-                                                BackgroundColor(Color::srgb(0.66, 0.60, 0.38)),
+                                                BackgroundColor(palette.surface_scrollbar_thumb),
                                             ));
                                         });
                                 });
@@ -250,14 +276,14 @@ pub fn spawn_hud(
                             padding: UiRect::axes(px(6.0), px(4.0)),
                             ..default()
                         },
-                        BackgroundColor(Color::srgba(0.11, 0.10, 0.09, 0.96)),
+                        BackgroundColor(palette.surface_console_input),
                         Text::new(">>> "),
                         PythonConsoleInput,
                         TextFont {
                             font_size: 18.0,
                             ..default()
                         },
-                        TextColor(Color::srgb(0.96, 0.92, 0.72)),
+                        TextColor(palette.text_accent),
                     ));
                 });
         });
@@ -273,12 +299,16 @@ pub fn spawn_hud(
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
                 padding: UiRect::axes(px(8.0), px(4.0)),
+                border: UiRect::all(px(1.0)),
                 ..default()
             },
             DragPreviewRoot,
             Visibility::Hidden,
-            BackgroundColor(Color::srgba(0.09, 0.09, 0.10, 0.92)),
-            BorderColor::all(Color::srgb(0.60, 0.52, 0.22)),
+            ImageNode::new(theme.panel_frame.clone())
+                .with_mode(theme.panel_image_mode())
+                .with_color(palette.surface_panel),
+            BackgroundColor(Color::NONE),
+            BorderColor::all(palette.border_accent),
         ))
         .with_children(|preview| {
             preview.spawn((
@@ -288,7 +318,7 @@ pub fn spawn_hud(
                     font_size: 16.0,
                     ..default()
                 },
-                TextColor(Color::srgb(0.96, 0.92, 0.72)),
+                TextColor(palette.text_accent),
             ));
         });
 
@@ -302,27 +332,37 @@ pub fn spawn_hud(
                 flex_direction: FlexDirection::Column,
                 padding: UiRect::all(px(6.0)),
                 row_gap: px(4.0),
+                border: UiRect::all(px(1.0)),
                 ..default()
             },
             ContextMenuRoot,
             Visibility::Hidden,
             GlobalZIndex(i32::MAX - 10),
-            BackgroundColor(Color::srgba(0.09, 0.08, 0.07, 0.97)),
-            BorderColor::all(Color::srgb(0.52, 0.44, 0.22)),
+            ImageNode::new(theme.panel_frame.clone())
+                .with_mode(theme.panel_image_mode())
+                .with_color(palette.surface_panel),
+            BackgroundColor(Color::NONE),
+            BorderColor::all(palette.border_accent),
         ))
         .with_children(|menu| {
-            spawn_context_button(menu, "Attack", ContextMenuAttackButton);
-            spawn_context_button(menu, "Use", ContextMenuUseButton);
-            spawn_context_button(menu, "Use On", ContextMenuUseOnButton);
-            spawn_context_button(menu, "Take...", ContextMenuTakePartialButton);
-            spawn_context_button(menu, "Inspect", ContextMenuInspectButton);
-            spawn_context_button(menu, "Open", ContextMenuOpenButton);
+            spawn_context_button(menu, &theme, &palette, "Attack", ContextMenuAttackButton);
+            spawn_context_button(menu, &theme, &palette, "Use", ContextMenuUseButton);
+            spawn_context_button(menu, &theme, &palette, "Use On", ContextMenuUseOnButton);
+            spawn_context_button(
+                menu,
+                &theme,
+                &palette,
+                "Take...",
+                ContextMenuTakePartialButton,
+            );
+            spawn_context_button(menu, &theme, &palette, "Inspect", ContextMenuInspectButton);
+            spawn_context_button(menu, &theme, &palette, "Open", ContextMenuOpenButton);
         });
 
-    spawn_take_partial_popup(&mut commands);
+    spawn_take_partial_popup(&mut commands, &theme, &palette);
 }
 
-fn spawn_take_partial_popup(commands: &mut Commands) {
+fn spawn_take_partial_popup(commands: &mut Commands, theme: &UiThemeAssets, palette: &Palette) {
     commands
         .spawn((
             Node {
@@ -338,11 +378,12 @@ fn spawn_take_partial_popup(commands: &mut Commands) {
             TakePartialPopupRoot,
             Visibility::Hidden,
             GlobalZIndex(i32::MAX - 5),
-            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
+            BackgroundColor(palette.surface_overlay_dim),
         ))
         .with_children(|overlay| {
             overlay
                 .spawn((
+                    ThemedPanel,
                     Node {
                         flex_direction: FlexDirection::Column,
                         align_items: AlignItems::Center,
@@ -351,8 +392,11 @@ fn spawn_take_partial_popup(commands: &mut Commands) {
                         border: UiRect::all(px(1.0)),
                         ..default()
                     },
-                    BackgroundColor(Color::srgba(0.10, 0.10, 0.12, 0.97)),
-                    BorderColor::all(Color::srgb(0.50, 0.44, 0.22)),
+                    ImageNode::new(theme.panel_frame.clone())
+                        .with_mode(theme.panel_image_mode())
+                        .with_color(palette.surface_panel),
+                    BackgroundColor(Color::NONE),
+                    BorderColor::all(palette.border_accent),
                 ))
                 .with_children(|dialog| {
                     dialog.spawn((
@@ -361,7 +405,7 @@ fn spawn_take_partial_popup(commands: &mut Commands) {
                             font_size: 16.0,
                             ..default()
                         },
-                        TextColor(Color::srgb(0.95, 0.89, 0.72)),
+                        TextColor(palette.text_primary),
                     ));
 
                     dialog
@@ -372,7 +416,14 @@ fn spawn_take_partial_popup(commands: &mut Commands) {
                             ..default()
                         },))
                         .with_children(|row| {
-                            spawn_small_button(row, "-", TakePartialDecButton);
+                            spawn_small_button(
+                                row,
+                                theme,
+                                palette,
+                                ButtonStyle::Secondary,
+                                "-",
+                                TakePartialDecButton,
+                            );
                             row.spawn((
                                 Text::new("1"),
                                 TakePartialAmountLabel,
@@ -380,14 +431,21 @@ fn spawn_take_partial_popup(commands: &mut Commands) {
                                     font_size: 18.0,
                                     ..default()
                                 },
-                                TextColor(Color::srgb(1.0, 1.0, 0.8)),
+                                TextColor(palette.text_quantity),
                                 Node {
                                     min_width: px(48.0),
                                     justify_content: JustifyContent::Center,
                                     ..default()
                                 },
                             ));
-                            spawn_small_button(row, "+", TakePartialIncButton);
+                            spawn_small_button(
+                                row,
+                                theme,
+                                palette,
+                                ButtonStyle::Secondary,
+                                "+",
+                                TakePartialIncButton,
+                            );
                         });
 
                     dialog
@@ -397,17 +455,40 @@ fn spawn_take_partial_popup(commands: &mut Commands) {
                             ..default()
                         },))
                         .with_children(|row| {
-                            spawn_small_button(row, "Take", TakePartialConfirmButton);
-                            spawn_small_button(row, "Cancel", TakePartialCancelButton);
+                            spawn_small_button(
+                                row,
+                                theme,
+                                palette,
+                                ButtonStyle::Primary,
+                                "Take",
+                                TakePartialConfirmButton,
+                            );
+                            spawn_small_button(
+                                row,
+                                theme,
+                                palette,
+                                ButtonStyle::Secondary,
+                                "Cancel",
+                                TakePartialCancelButton,
+                            );
                         });
                 });
         });
 }
 
-fn spawn_small_button<T: Component>(parent: &mut ChildSpawnerCommands, label: &str, marker: T) {
+fn spawn_small_button<T: Component>(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+    style: ButtonStyle,
+    label: &str,
+    marker: T,
+) {
+    let (bg, border, text) = idle_colors(palette, style, false);
     parent
         .spawn((
             Button,
+            ThemedButton::new(style),
             marker,
             Node {
                 min_width: px(52.0),
@@ -418,8 +499,11 @@ fn spawn_small_button<T: Component>(parent: &mut ChildSpawnerCommands, label: &s
                 border: UiRect::all(px(1.0)),
                 ..default()
             },
-            BorderColor::all(Color::srgb(0.52, 0.44, 0.22)),
-            BackgroundColor(Color::srgb(0.18, 0.15, 0.11)),
+            ImageNode::new(theme.button_frame.clone())
+                .with_mode(theme.button_image_mode())
+                .with_color(bg),
+            BackgroundColor(Color::NONE),
+            BorderColor::all(border),
         ))
         .with_children(|button| {
             button.spawn((
@@ -428,13 +512,18 @@ fn spawn_small_button<T: Component>(parent: &mut ChildSpawnerCommands, label: &s
                     font_size: 15.0,
                     ..default()
                 },
-                TextColor(Color::srgb(0.94, 0.88, 0.72)),
+                TextColor(text),
             ));
         });
 }
 
-fn spawn_status_panel(parent: &mut ChildSpawnerCommands, panel_id: usize) {
-    spawn_docked_panel(parent, panel_id, |body| {
+fn spawn_status_panel(
+    parent: &mut ChildSpawnerCommands,
+    panel_id: usize,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+) {
+    spawn_docked_panel(parent, panel_id, theme, palette, |body| {
         body.spawn((
             Node {
                 width: percent(100.0),
@@ -448,15 +537,17 @@ fn spawn_status_panel(parent: &mut ChildSpawnerCommands, panel_id: usize) {
         .with_children(|panel| {
             spawn_vital_bar(
                 panel,
+                palette,
                 "HP",
-                Color::srgb(0.70, 0.16, 0.18),
+                palette.vital_health_fill,
                 HealthFill,
                 HealthLabel,
             );
             spawn_vital_bar(
                 panel,
+                palette,
                 "MP",
-                Color::srgb(0.14, 0.35, 0.78),
+                palette.vital_mana_fill,
                 ManaFill,
                 ManaLabel,
             );
@@ -464,8 +555,13 @@ fn spawn_status_panel(parent: &mut ChildSpawnerCommands, panel_id: usize) {
     });
 }
 
-fn spawn_equipment_panel(parent: &mut ChildSpawnerCommands, panel_id: usize) {
-    spawn_docked_panel(parent, panel_id, |body| {
+fn spawn_equipment_panel(
+    parent: &mut ChildSpawnerCommands,
+    panel_id: usize,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+) {
+    spawn_docked_panel(parent, panel_id, theme, palette, |body| {
         body.spawn((
             Node {
                 width: percent(100.0),
@@ -478,17 +574,22 @@ fn spawn_equipment_panel(parent: &mut ChildSpawnerCommands, panel_id: usize) {
             BackgroundColor(Color::NONE),
         ))
         .with_children(|paperdoll| {
-            spawn_slot_row(paperdoll, &["Amulet"]);
-            spawn_slot_row(paperdoll, &["Helmet"]);
-            spawn_slot_row(paperdoll, &["Weapon", "Armor", "Shield"]);
-            spawn_slot_row(paperdoll, &["Legs", "Backpack", "Ring"]);
-            spawn_slot_row(paperdoll, &["Boots", "Ammo"]);
+            spawn_slot_row(paperdoll, theme, palette, &["Amulet"]);
+            spawn_slot_row(paperdoll, theme, palette, &["Helmet"]);
+            spawn_slot_row(paperdoll, theme, palette, &["Weapon", "Armor", "Shield"]);
+            spawn_slot_row(paperdoll, theme, palette, &["Legs", "Backpack", "Ring"]);
+            spawn_slot_row(paperdoll, theme, palette, &["Boots", "Ammo"]);
         });
     });
 }
 
-fn spawn_backpack_panel(parent: &mut ChildSpawnerCommands, panel_id: usize) {
-    spawn_docked_panel(parent, panel_id, |body| {
+fn spawn_backpack_panel(
+    parent: &mut ChildSpawnerCommands,
+    panel_id: usize,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+) {
+    spawn_docked_panel(parent, panel_id, theme, palette, |body| {
         body.spawn((
             Node {
                 width: percent(100.0),
@@ -513,7 +614,7 @@ fn spawn_backpack_panel(parent: &mut ChildSpawnerCommands, panel_id: usize) {
                 .with_children(|row| {
                     for column in 0..4 {
                         let index = row_index * 4 + column;
-                        spawn_backpack_slot(row, index);
+                        spawn_backpack_slot(row, theme, palette, index);
                     }
                 });
             }
@@ -521,35 +622,59 @@ fn spawn_backpack_panel(parent: &mut ChildSpawnerCommands, panel_id: usize) {
     });
 }
 
-fn spawn_docked_panel_canvas(parent: &mut ChildSpawnerCommands) {
-    spawn_current_target_panel(parent);
+fn spawn_docked_panel_canvas(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+) {
+    spawn_current_target_panel(parent, theme, palette);
 
     for offset in 0..DockedPanelState::MAX_OPEN_CONTAINERS {
-        spawn_container_panel(parent, DockedPanelState::FIRST_CONTAINER_PANEL_ID + offset);
+        spawn_container_panel(
+            parent,
+            DockedPanelState::FIRST_CONTAINER_PANEL_ID + offset,
+            theme,
+            palette,
+        );
     }
 }
 
-fn spawn_current_target_panel(parent: &mut ChildSpawnerCommands) {
-    spawn_docked_panel(parent, DockedPanelState::CURRENT_TARGET_PANEL_ID, |body| {
-        body.spawn((
-            Text::new("Target: none"),
-            CurrentCombatTargetLabel,
-            CurrentTargetPanelContent,
-            TextFont {
-                font_size: 14.0,
-                ..default()
-            },
-            TextColor(Color::srgb(0.86, 0.84, 0.78)),
-            Node {
-                width: percent(100.0),
-                ..default()
-            },
-        ));
-    });
+fn spawn_current_target_panel(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+) {
+    spawn_docked_panel(
+        parent,
+        DockedPanelState::CURRENT_TARGET_PANEL_ID,
+        theme,
+        palette,
+        |body| {
+            body.spawn((
+                Text::new("Target: none"),
+                CurrentCombatTargetLabel,
+                CurrentTargetPanelContent,
+                TextFont {
+                    font_size: 14.0,
+                    ..default()
+                },
+                TextColor(palette.text_muted),
+                Node {
+                    width: percent(100.0),
+                    ..default()
+                },
+            ));
+        },
+    );
 }
 
-fn spawn_container_panel(parent: &mut ChildSpawnerCommands, panel_id: usize) {
-    spawn_docked_panel(parent, panel_id, |body| {
+fn spawn_container_panel(
+    parent: &mut ChildSpawnerCommands,
+    panel_id: usize,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+) {
+    spawn_docked_panel(parent, panel_id, theme, palette, |body| {
         body.spawn((
             Node {
                 width: percent(100.0),
@@ -573,7 +698,7 @@ fn spawn_container_panel(parent: &mut ChildSpawnerCommands, panel_id: usize) {
                 .with_children(|row| {
                     for column in 0..4 {
                         let slot_index = row_index * 4 + column;
-                        spawn_open_container_slot(row, panel_id, slot_index);
+                        spawn_open_container_slot(row, theme, palette, panel_id, slot_index);
                     }
                 });
             }
@@ -584,6 +709,8 @@ fn spawn_container_panel(parent: &mut ChildSpawnerCommands, panel_id: usize) {
 fn spawn_docked_panel(
     parent: &mut ChildSpawnerCommands,
     panel_id: usize,
+    theme: &UiThemeAssets,
+    palette: &Palette,
     spawn_body: impl FnOnce(&mut ChildSpawnerCommands),
 ) {
     parent
@@ -599,9 +726,13 @@ fn spawn_docked_panel(
                 ..default()
             },
             DockedPanelRoot { panel_id },
+            ThemedPanel,
             Visibility::Hidden,
-            BackgroundColor(Color::srgba(0.10, 0.10, 0.12, 0.92)),
-            BorderColor::all(Color::srgb(0.38, 0.34, 0.22)),
+            ImageNode::new(theme.panel_frame.clone())
+                .with_mode(theme.panel_image_mode())
+                .with_color(palette.surface_panel),
+            BackgroundColor(Color::NONE),
+            BorderColor::all(palette.border_slot),
         ))
         .with_children(|panel| {
             panel
@@ -616,7 +747,10 @@ fn spawn_docked_panel(
                         ..default()
                     },
                     DockedPanelDragHandle { panel_id },
-                    BackgroundColor(Color::srgb(0.13, 0.12, 0.10)),
+                    ImageNode::new(theme.title_bar.clone())
+                        .with_mode(theme.title_bar_image_mode())
+                        .with_color(palette.surface_title_bar),
+                    BackgroundColor(Color::NONE),
                 ))
                 .with_children(|title_row| {
                     title_row.spawn((
@@ -626,34 +760,15 @@ fn spawn_docked_panel(
                             font_size: 16.0,
                             ..default()
                         },
-                        TextColor(Color::srgb(0.95, 0.89, 0.72)),
+                        TextColor(palette.text_primary),
                     ));
 
-                    title_row
-                        .spawn((
-                            Button,
-                            DockedPanelCloseButton { panel_id },
-                            Node {
-                                width: px(22.0),
-                                height: px(22.0),
-                                border: UiRect::all(px(1.0)),
-                                align_items: AlignItems::Center,
-                                justify_content: JustifyContent::Center,
-                                ..default()
-                            },
-                            BorderColor::all(Color::srgb(0.52, 0.30, 0.20)),
-                            BackgroundColor(Color::srgb(0.22, 0.11, 0.10)),
-                        ))
-                        .with_children(|button| {
-                            button.spawn((
-                                Text::new("x"),
-                                TextFont {
-                                    font_size: 14.0,
-                                    ..default()
-                                },
-                                TextColor(Color::srgb(0.94, 0.82, 0.74)),
-                            ));
-                        });
+                    spawn_close_button(
+                        title_row,
+                        theme,
+                        palette,
+                        DockedPanelCloseButton { panel_id },
+                    );
                 });
 
             panel
@@ -679,24 +794,63 @@ fn spawn_docked_panel(
                     ..default()
                 },
                 DockedPanelResizeHandle { panel_id },
-                BackgroundColor(Color::srgb(0.18, 0.16, 0.12)),
+                BackgroundColor(palette.surface_resize_handle),
             ));
         });
 }
 
-fn spawn_panel_label(parent: &mut ChildSpawnerCommands, label: &str) {
+fn spawn_close_button<T: Component>(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+    marker: T,
+) {
+    let (bg, border, text) = idle_colors(palette, ButtonStyle::Danger, false);
+    parent
+        .spawn((
+            Button,
+            ThemedButton::new(ButtonStyle::Danger),
+            marker,
+            Node {
+                width: px(22.0),
+                height: px(22.0),
+                border: UiRect::all(px(1.0)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            ImageNode::new(theme.button_frame.clone())
+                .with_mode(theme.button_image_mode())
+                .with_color(bg),
+            BackgroundColor(Color::NONE),
+            BorderColor::all(border),
+        ))
+        .with_children(|button| {
+            button.spawn((
+                Text::new("x"),
+                TextFont {
+                    font_size: 14.0,
+                    ..default()
+                },
+                TextColor(text),
+            ));
+        });
+}
+
+fn spawn_panel_label(parent: &mut ChildSpawnerCommands, label: &str, palette: &Palette) {
     parent.spawn((
         Text::new(label),
         TextFont {
             font_size: 18.0,
             ..default()
         },
-        TextColor(Color::srgb(0.95, 0.89, 0.72)),
+        TextColor(palette.text_primary),
     ));
 }
 
 fn spawn_vital_bar<T: Component>(
     parent: &mut ChildSpawnerCommands,
+    palette: &Palette,
     label: &str,
     fill_color: Color,
     marker: T,
@@ -722,7 +876,7 @@ fn spawn_vital_bar<T: Component>(
                     font_size: 13.0,
                     ..default()
                 },
-                TextColor(Color::srgb(0.86, 0.84, 0.78)),
+                TextColor(palette.text_muted),
                 Node {
                     width: px(28.0),
                     ..default()
@@ -738,7 +892,7 @@ fn spawn_vital_bar<T: Component>(
                         align_items: AlignItems::Center,
                         ..default()
                     },
-                    BackgroundColor(Color::srgb(0.18, 0.18, 0.20)),
+                    BackgroundColor(palette.surface_vital_bg),
                 ))
                 .with_children(|bar_container| {
                     bar_container.spawn((
@@ -754,7 +908,12 @@ fn spawn_vital_bar<T: Component>(
         });
 }
 
-fn spawn_slot_row(parent: &mut ChildSpawnerCommands, labels: &[&str]) {
+fn spawn_slot_row(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+    labels: &[&str],
+) {
     parent
         .spawn((
             Node {
@@ -765,20 +924,27 @@ fn spawn_slot_row(parent: &mut ChildSpawnerCommands, labels: &[&str]) {
         ))
         .with_children(|row| {
             for label in labels {
-                spawn_equipment_slot(row, Some(label));
+                spawn_equipment_slot(row, theme, palette, Some(label));
             }
         });
 }
 
-fn spawn_equipment_slot(parent: &mut ChildSpawnerCommands, label: Option<&str>) {
+fn spawn_equipment_slot(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+    label: Option<&str>,
+) {
     let slot = EquipmentSlot::ALL
         .into_iter()
         .find(|slot| Some(slot.label()) == label)
         .expect("Unknown equipment slot label");
+    let (bg, border, _) = idle_colors(palette, ButtonStyle::Slot, false);
 
     parent
         .spawn((
             Button,
+            ThemedButton::new(ButtonStyle::Slot),
             EquipmentSlotButton,
             ItemSlotButton {
                 kind: ItemSlotKind::Equipment(slot),
@@ -791,8 +957,11 @@ fn spawn_equipment_slot(parent: &mut ChildSpawnerCommands, label: Option<&str>) 
                 justify_content: JustifyContent::Center,
                 ..default()
             },
-            BorderColor::all(Color::srgb(0.38, 0.34, 0.22)),
-            BackgroundColor(Color::srgb(0.16, 0.15, 0.12)),
+            ImageNode::new(theme.slot_frame.clone())
+                .with_mode(theme.slot_image_mode())
+                .with_color(bg),
+            BackgroundColor(Color::NONE),
+            BorderColor::all(border),
         ))
         .with_children(|slot_node| {
             slot_node.spawn((
@@ -817,16 +986,23 @@ fn spawn_equipment_slot(parent: &mut ChildSpawnerCommands, label: Option<&str>) 
                         font_size: 8.0,
                         ..default()
                     },
-                    TextColor(Color::srgb(0.80, 0.77, 0.69)),
+                    TextColor(palette.text_label_slot),
                 ));
             }
         });
 }
 
-fn spawn_backpack_slot(parent: &mut ChildSpawnerCommands, index: usize) {
+fn spawn_backpack_slot(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+    index: usize,
+) {
+    let (bg, border, _) = idle_colors(palette, ButtonStyle::Slot, false);
     parent
         .spawn((
             Button,
+            ThemedButton::new(ButtonStyle::Slot),
             ContainerSlotButton,
             ItemSlotButton {
                 kind: ItemSlotKind::Backpack(index),
@@ -840,8 +1016,11 @@ fn spawn_backpack_slot(parent: &mut ChildSpawnerCommands, index: usize) {
                 position_type: PositionType::Relative,
                 ..default()
             },
-            BorderColor::all(Color::srgb(0.38, 0.34, 0.22)),
-            BackgroundColor(Color::srgb(0.16, 0.15, 0.12)),
+            ImageNode::new(theme.slot_frame.clone())
+                .with_mode(theme.slot_image_mode())
+                .with_color(bg),
+            BackgroundColor(Color::NONE),
+            BorderColor::all(border),
         ))
         .with_children(|slot| {
             slot.spawn((
@@ -863,7 +1042,7 @@ fn spawn_backpack_slot(parent: &mut ChildSpawnerCommands, index: usize) {
                     font_size: 9.0,
                     ..default()
                 },
-                TextColor(Color::srgb(1.0, 1.0, 0.7)),
+                TextColor(palette.text_quantity),
                 Node {
                     position_type: PositionType::Absolute,
                     bottom: px(1.0),
@@ -880,6 +1059,8 @@ fn spawn_backpack_slot(parent: &mut ChildSpawnerCommands, index: usize) {
 
 fn spawn_open_container_slot(
     parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
     panel_id: usize,
     slot_index: usize,
 ) {
@@ -887,9 +1068,11 @@ fn spawn_open_container_slot(
         panel_id,
         slot_index,
     };
+    let (bg, border, _) = idle_colors(palette, ButtonStyle::Slot, false);
     parent
         .spawn((
             Button,
+            ThemedButton::new(ButtonStyle::Slot),
             ContainerSlotButton,
             ItemSlotButton { kind },
             Node {
@@ -901,8 +1084,11 @@ fn spawn_open_container_slot(
                 position_type: PositionType::Relative,
                 ..default()
             },
-            BorderColor::all(Color::srgb(0.38, 0.34, 0.22)),
-            BackgroundColor(Color::srgb(0.16, 0.15, 0.12)),
+            ImageNode::new(theme.slot_frame.clone())
+                .with_mode(theme.slot_image_mode())
+                .with_color(bg),
+            BackgroundColor(Color::NONE),
+            BorderColor::all(border),
         ))
         .with_children(|slot| {
             slot.spawn((
@@ -922,7 +1108,7 @@ fn spawn_open_container_slot(
                     font_size: 9.0,
                     ..default()
                 },
-                TextColor(Color::srgb(1.0, 1.0, 0.7)),
+                TextColor(palette.text_quantity),
                 Node {
                     position_type: PositionType::Absolute,
                     bottom: px(1.0),
@@ -935,19 +1121,32 @@ fn spawn_open_container_slot(
         });
 }
 
-fn spawn_context_button<T: Component>(parent: &mut ChildSpawnerCommands, label: &str, marker: T) {
+fn spawn_context_button<T: Component>(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+    label: &str,
+    marker: T,
+) {
+    let (bg, border, text) = idle_colors(palette, ButtonStyle::Secondary, false);
     parent
         .spawn((
             Button,
+            ThemedButton::new(ButtonStyle::Secondary),
             marker,
             Node {
                 width: percent(100.0),
                 min_height: px(28.0),
                 padding: UiRect::axes(px(8.0), px(4.0)),
                 align_items: AlignItems::Center,
+                border: UiRect::all(px(1.0)),
                 ..default()
             },
-            BackgroundColor(Color::srgb(0.18, 0.15, 0.11)),
+            ImageNode::new(theme.button_frame.clone())
+                .with_mode(theme.button_image_mode())
+                .with_color(bg),
+            BackgroundColor(Color::NONE),
+            BorderColor::all(border),
         ))
         .with_children(|button| {
             button.spawn((
@@ -956,7 +1155,7 @@ fn spawn_context_button<T: Component>(parent: &mut ChildSpawnerCommands, label: 
                     font_size: 16.0,
                     ..default()
                 },
-                TextColor(Color::srgb(0.94, 0.88, 0.72)),
+                TextColor(text),
             ));
         });
 }
@@ -966,9 +1165,11 @@ fn spawn_minimap_panel(
     panel_id: usize,
     images: &mut Assets<Image>,
     zoom: crate::ui::resources::MinimapZoom,
+    theme: &UiThemeAssets,
+    palette: &Palette,
 ) {
     let image_handle = images.add(make_minimap_image(zoom));
-    spawn_docked_panel(parent, panel_id, move |body| {
+    spawn_docked_panel(parent, panel_id, theme, palette, move |body| {
         body.spawn((Node {
             width: percent(100.0),
             flex_direction: FlexDirection::Column,
@@ -985,7 +1186,7 @@ fn spawn_minimap_panel(
                         overflow: Overflow::clip(),
                         ..default()
                     },
-                    BackgroundColor(Color::srgb(0.04, 0.04, 0.05)),
+                    BackgroundColor(palette.surface_minimap_bg),
                     ImageNode::new(image_handle.clone()).with_mode(NodeImageMode::Stretch),
                     MinimapView {
                         mode: MinimapMode::HudSmall,
@@ -1006,7 +1207,7 @@ fn spawn_minimap_panel(
                         ..default()
                     },))
                     .with_children(|row| {
-                        spawn_zoom_button(row, "-", HudMinimapZoomOutButton);
+                        spawn_zoom_button(row, theme, palette, "-", HudMinimapZoomOutButton);
                         row.spawn((
                             Text::new(zoom.label()),
                             HudMinimapZoomLabel,
@@ -1014,23 +1215,31 @@ fn spawn_minimap_panel(
                                 font_size: 14.0,
                                 ..default()
                             },
-                            TextColor(Color::srgb(0.94, 0.88, 0.72)),
+                            TextColor(palette.text_primary),
                             Node {
                                 min_width: px(64.0),
                                 justify_content: JustifyContent::Center,
                                 ..default()
                             },
                         ));
-                        spawn_zoom_button(row, "+", HudMinimapZoomInButton);
+                        spawn_zoom_button(row, theme, palette, "+", HudMinimapZoomInButton);
                     });
             });
     });
 }
 
-fn spawn_zoom_button<T: Component>(parent: &mut ChildSpawnerCommands, label: &str, marker: T) {
+fn spawn_zoom_button<T: Component>(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+    label: &str,
+    marker: T,
+) {
+    let (bg, border, text) = idle_colors(palette, ButtonStyle::Secondary, false);
     parent
         .spawn((
             Button,
+            ThemedButton::new(ButtonStyle::Secondary),
             marker,
             Node {
                 width: px(26.0),
@@ -1040,8 +1249,11 @@ fn spawn_zoom_button<T: Component>(parent: &mut ChildSpawnerCommands, label: &st
                 border: UiRect::all(px(1.0)),
                 ..default()
             },
-            BorderColor::all(Color::srgb(0.44, 0.40, 0.22)),
-            BackgroundColor(Color::srgb(0.17, 0.15, 0.11)),
+            ImageNode::new(theme.button_frame.clone())
+                .with_mode(theme.button_image_mode())
+                .with_color(bg),
+            BackgroundColor(Color::NONE),
+            BorderColor::all(border),
         ))
         .with_children(|button| {
             button.spawn((
@@ -1050,7 +1262,7 @@ fn spawn_zoom_button<T: Component>(parent: &mut ChildSpawnerCommands, label: &st
                     font_size: 14.0,
                     ..default()
                 },
-                TextColor(Color::srgb(0.94, 0.88, 0.72)),
+                TextColor(text),
             ));
         });
 }
@@ -1059,6 +1271,8 @@ fn spawn_full_map_window(
     commands: &mut Commands,
     images: &mut Assets<Image>,
     zoom: crate::ui::resources::MinimapZoom,
+    theme: &UiThemeAssets,
+    palette: &Palette,
 ) {
     let image_handle = images.add(make_minimap_image(zoom));
     commands
@@ -1076,11 +1290,12 @@ fn spawn_full_map_window(
             },
             FullMapWindowRoot,
             GlobalZIndex(i32::MAX - 8),
-            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.55)),
+            BackgroundColor(palette.surface_overlay_dim),
         ))
         .with_children(|overlay| {
             overlay
                 .spawn((
+                    ThemedPanel,
                     Node {
                         flex_direction: FlexDirection::Column,
                         padding: UiRect::all(px(10.0)),
@@ -1089,8 +1304,11 @@ fn spawn_full_map_window(
                         align_items: AlignItems::Center,
                         ..default()
                     },
-                    BackgroundColor(Color::srgb(0.08, 0.08, 0.10)),
-                    BorderColor::all(Color::srgb(0.44, 0.40, 0.22)),
+                    ImageNode::new(theme.panel_frame.clone())
+                        .with_mode(theme.panel_image_mode())
+                        .with_color(palette.surface_panel),
+                    BackgroundColor(Color::NONE),
+                    BorderColor::all(palette.border_accent),
                 ))
                 .with_children(|window| {
                     window
@@ -1109,7 +1327,7 @@ fn spawn_full_map_window(
                                     font_size: 18.0,
                                     ..default()
                                 },
-                                TextColor(Color::srgb(0.95, 0.89, 0.72)),
+                                TextColor(palette.text_primary),
                             ));
 
                             title_row
@@ -1120,7 +1338,13 @@ fn spawn_full_map_window(
                                     ..default()
                                 },))
                                 .with_children(|controls| {
-                                    spawn_zoom_button(controls, "-", FullMapZoomOutButton);
+                                    spawn_zoom_button(
+                                        controls,
+                                        theme,
+                                        palette,
+                                        "-",
+                                        FullMapZoomOutButton,
+                                    );
                                     controls.spawn((
                                         Text::new(zoom.label()),
                                         FullMapZoomLabel,
@@ -1128,40 +1352,26 @@ fn spawn_full_map_window(
                                             font_size: 14.0,
                                             ..default()
                                         },
-                                        TextColor(Color::srgb(0.94, 0.88, 0.72)),
+                                        TextColor(palette.text_primary),
                                         Node {
                                             min_width: px(64.0),
                                             justify_content: JustifyContent::Center,
                                             ..default()
                                         },
                                     ));
-                                    spawn_zoom_button(controls, "+", FullMapZoomInButton);
-                                    controls
-                                        .spawn((
-                                            Button,
-                                            FullMapCloseButton,
-                                            Node {
-                                                width: px(26.0),
-                                                height: px(22.0),
-                                                align_items: AlignItems::Center,
-                                                justify_content: JustifyContent::Center,
-                                                border: UiRect::all(px(1.0)),
-                                                margin: UiRect::left(px(6.0)),
-                                                ..default()
-                                            },
-                                            BorderColor::all(Color::srgb(0.52, 0.30, 0.20)),
-                                            BackgroundColor(Color::srgb(0.22, 0.11, 0.10)),
-                                        ))
-                                        .with_children(|button| {
-                                            button.spawn((
-                                                Text::new("x"),
-                                                TextFont {
-                                                    font_size: 14.0,
-                                                    ..default()
-                                                },
-                                                TextColor(Color::srgb(0.94, 0.82, 0.74)),
-                                            ));
-                                        });
+                                    spawn_zoom_button(
+                                        controls,
+                                        theme,
+                                        palette,
+                                        "+",
+                                        FullMapZoomInButton,
+                                    );
+                                    spawn_close_button(
+                                        controls,
+                                        theme,
+                                        palette,
+                                        FullMapCloseButton,
+                                    );
                                 });
                         });
 
@@ -1173,7 +1383,7 @@ fn spawn_full_map_window(
                             overflow: Overflow::clip(),
                             ..default()
                         },
-                        BackgroundColor(Color::srgb(0.04, 0.04, 0.05)),
+                        BackgroundColor(palette.surface_minimap_bg),
                         ImageNode::new(image_handle.clone()).with_mode(NodeImageMode::Stretch),
                         FullMapBodyRoot,
                         MinimapView {

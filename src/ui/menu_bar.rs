@@ -9,14 +9,10 @@ use crate::ui::resources::{
     DockedPanelKind, DockedPanelState, FullMapWindowState, MenuAction, MenuBarId, OpenMenuState,
     PendingMenuActions,
 };
+use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton, ThemedPanel};
+use crate::ui::theme::{Palette, UiThemeAssets};
 
 pub const MENU_BAR_HEIGHT: f32 = 26.0;
-
-const MENU_BG: Color = Color::srgb(0.11, 0.11, 0.13);
-const MENU_BORDER: Color = Color::srgb(0.30, 0.28, 0.22);
-const ITEM_TEXT: Color = Color::srgb(0.94, 0.92, 0.82);
-const ITEM_HOVER: Color = Color::srgb(0.20, 0.18, 0.14);
-const DROPDOWN_BG: Color = Color::srgb(0.10, 0.10, 0.12);
 
 struct MenuDefinition {
     id: MenuBarId,
@@ -52,7 +48,9 @@ const MENU_DEFINITIONS: &[MenuDefinition] = &[
     },
 ];
 
-pub fn spawn_menu_bar(commands: &mut Commands) {
+pub fn spawn_menu_bar(commands: &mut Commands, theme: &UiThemeAssets, palette: &Palette) {
+    let (ghost_bg, _, ghost_text) = idle_colors(palette, ButtonStyle::Ghost, false);
+
     commands
         .spawn((
             Node {
@@ -67,14 +65,18 @@ pub fn spawn_menu_bar(commands: &mut Commands) {
                 ..default()
             },
             MenuBarRoot,
-            BackgroundColor(MENU_BG),
-            BorderColor::all(MENU_BORDER),
+            ImageNode::new(theme.title_bar.clone())
+                .with_mode(theme.title_bar_image_mode())
+                .with_color(palette.surface_title_bar),
+            BackgroundColor(Color::NONE),
+            BorderColor::all(palette.border_muted),
             GlobalZIndex(i32::MAX - 20),
         ))
         .with_children(|bar| {
             for definition in MENU_DEFINITIONS {
                 bar.spawn((
                     Button,
+                    ThemedButton::new(ButtonStyle::Ghost),
                     MenuBarItemButton {
                         menu: definition.id,
                     },
@@ -84,7 +86,7 @@ pub fn spawn_menu_bar(commands: &mut Commands) {
                         justify_content: JustifyContent::Center,
                         ..default()
                     },
-                    BackgroundColor(Color::NONE),
+                    BackgroundColor(ghost_bg),
                 ))
                 .with_children(|item| {
                     item.spawn((
@@ -93,7 +95,7 @@ pub fn spawn_menu_bar(commands: &mut Commands) {
                             font_size: 14.0,
                             ..default()
                         },
-                        TextColor(ITEM_TEXT),
+                        TextColor(ghost_text),
                     ));
                 });
             }
@@ -105,6 +107,7 @@ pub fn spawn_menu_bar(commands: &mut Commands) {
         }
         commands
             .spawn((
+                ThemedPanel,
                 Node {
                     position_type: PositionType::Absolute,
                     top: Val::Px(MENU_BAR_HEIGHT),
@@ -119,8 +122,11 @@ pub fn spawn_menu_bar(commands: &mut Commands) {
                 MenuDropdownRoot {
                     menu: definition.id,
                 },
-                BackgroundColor(DROPDOWN_BG),
-                BorderColor::all(MENU_BORDER),
+                ImageNode::new(theme.panel_frame.clone())
+                    .with_mode(theme.panel_image_mode())
+                    .with_color(palette.surface_panel),
+                BackgroundColor(Color::NONE),
+                BorderColor::all(palette.border_muted),
                 GlobalZIndex(i32::MAX - 19),
             ))
             .with_children(|dropdown| {
@@ -128,13 +134,14 @@ pub fn spawn_menu_bar(commands: &mut Commands) {
                     dropdown
                         .spawn((
                             Button,
+                            ThemedButton::new(ButtonStyle::Ghost),
                             MenuDropdownEntryButton { action: *action },
                             Node {
                                 padding: UiRect::axes(Val::Px(10.0), Val::Px(6.0)),
                                 width: Val::Percent(100.0),
                                 ..default()
                             },
-                            BackgroundColor(Color::NONE),
+                            BackgroundColor(ghost_bg),
                         ))
                         .with_children(|entry| {
                             entry.spawn((
@@ -143,7 +150,7 @@ pub fn spawn_menu_bar(commands: &mut Commands) {
                                     font_size: 14.0,
                                     ..default()
                                 },
-                                TextColor(ITEM_TEXT),
+                                TextColor(ghost_text),
                             ));
                         });
                 }
@@ -151,33 +158,30 @@ pub fn spawn_menu_bar(commands: &mut Commands) {
     }
 }
 
+/// Routes menu-bar and dropdown clicks. Hover/press recoloring is handled by
+/// the shared `apply_themed_button_tint` system, but we still need to mark
+/// the currently-open top-level menu so it stays highlighted while its
+/// dropdown is visible — we do that by toggling `ThemedButton.selected`.
 pub fn handle_menu_bar_clicks(
     mut open_menu: ResMut<OpenMenuState>,
     mut pending: ResMut<PendingMenuActions>,
     mut items: Query<
-        (&Interaction, &MenuBarItemButton, &mut BackgroundColor),
+        (&Interaction, &MenuBarItemButton, &mut ThemedButton),
         Without<MenuDropdownEntryButton>,
     >,
-    mut entries: Query<
-        (&Interaction, &MenuDropdownEntryButton, &mut BackgroundColor),
-        Without<MenuBarItemButton>,
-    >,
+    entries: Query<(&Interaction, &MenuDropdownEntryButton), Without<MenuBarItemButton>>,
     mouse: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
 ) {
     let mut any_hovered = false;
 
-    for (interaction, button, mut bg) in &mut items {
+    for (interaction, button, mut themed) in &mut items {
         let hovered = *interaction == Interaction::Hovered || *interaction == Interaction::Pressed;
         if hovered {
             any_hovered = true;
         }
         let active = open_menu.open_id == Some(button.menu);
-        bg.0 = if active || hovered {
-            ITEM_HOVER
-        } else {
-            Color::NONE
-        };
+        themed.selected = active;
         if *interaction == Interaction::Pressed && mouse.just_pressed(MouseButton::Left) {
             if open_menu.open_id == Some(button.menu) {
                 open_menu.open_id = None;
@@ -187,12 +191,11 @@ pub fn handle_menu_bar_clicks(
         }
     }
 
-    for (interaction, entry, mut bg) in &mut entries {
+    for (interaction, entry) in &entries {
         let hovered = *interaction == Interaction::Hovered || *interaction == Interaction::Pressed;
         if hovered {
             any_hovered = true;
         }
-        bg.0 = if hovered { ITEM_HOVER } else { Color::NONE };
         if *interaction == Interaction::Pressed && mouse.just_pressed(MouseButton::Left) {
             pending.actions.push(entry.action);
             open_menu.open_id = None;

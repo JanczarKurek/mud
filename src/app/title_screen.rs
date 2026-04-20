@@ -4,6 +4,8 @@ use bevy::prelude::*;
 use crate::app::plugin::AppRuntime;
 use crate::app::state::ClientAppState;
 use crate::network::resources::TcpClientConfig;
+use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton, ThemedPanel};
+use crate::ui::theme::{Palette, UiThemeAssets};
 
 pub struct TitleScreenPlugin {
     pub runtime: AppRuntime,
@@ -19,11 +21,7 @@ impl Plugin for TitleScreenPlugin {
         .add_systems(OnEnter(ClientAppState::TitleScreen), spawn_title_screen)
         .add_systems(
             Update,
-            (
-                sync_server_selection_buttons,
-                sync_title_action_buttons,
-                handle_title_screen_buttons,
-            )
+            (sync_server_selection_buttons, handle_title_screen_buttons)
                 .run_if(in_state(ClientAppState::TitleScreen)),
         )
         .add_systems(OnExit(ClientAppState::TitleScreen), cleanup_title_screen);
@@ -106,7 +104,12 @@ fn spawn_title_screen(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     title_state: Res<TitleScreenState>,
+    theme: Res<UiThemeAssets>,
+    palette: Res<Palette>,
 ) {
+    let theme = theme.clone();
+    let palette = *palette;
+
     commands
         .spawn((
             TitleScreenRoot,
@@ -151,6 +154,7 @@ fn spawn_title_screen(
                 .with_children(|layout| {
                     layout
                         .spawn((
+                            ThemedPanel,
                             Node {
                                 width: px(520.0),
                                 max_width: percent(100.0),
@@ -160,8 +164,11 @@ fn spawn_title_screen(
                                 border: UiRect::all(px(1.0)),
                                 ..default()
                             },
-                            BackgroundColor(Color::srgba(0.08, 0.05, 0.05, 0.84)),
-                            BorderColor::all(Color::srgb(0.72, 0.59, 0.41)),
+                            ImageNode::new(theme.panel_frame.clone())
+                                .with_mode(theme.panel_image_mode())
+                                .with_color(palette.surface_panel),
+                            BackgroundColor(Color::NONE),
+                            BorderColor::all(palette.border_accent),
                         ))
                         .with_children(|panel| {
                             panel.spawn((
@@ -170,7 +177,7 @@ fn spawn_title_screen(
                                     font_size: 46.0,
                                     ..default()
                                 },
-                                TextColor(Color::srgb(0.95, 0.90, 0.78)),
+                                TextColor(palette.text_primary),
                             ));
 
                             panel.spawn((
@@ -179,7 +186,7 @@ fn spawn_title_screen(
                                     font_size: 18.0,
                                     ..default()
                                 },
-                                TextColor(Color::srgb(0.84, 0.80, 0.72)),
+                                TextColor(palette.text_muted),
                             ));
 
                             panel
@@ -196,13 +203,20 @@ fn spawn_title_screen(
                                             font_size: 20.0,
                                             ..default()
                                         },
-                                        TextColor(Color::srgb(0.96, 0.84, 0.62)),
+                                        TextColor(palette.text_accent),
                                     ));
 
                                     for (index, entry) in title_state.entries.iter().enumerate() {
+                                        let selected = index == title_state.selected_index;
+                                        let (bg, border, _text) =
+                                            idle_colors(&palette, ButtonStyle::Slot, selected);
                                         server_list
                                             .spawn((
                                                 Button,
+                                                ThemedButton {
+                                                    style: ButtonStyle::Slot,
+                                                    selected,
+                                                },
                                                 TitleServerButton { index },
                                                 Node {
                                                     width: percent(100.0),
@@ -213,10 +227,11 @@ fn spawn_title_screen(
                                                     row_gap: px(4.0),
                                                     ..default()
                                                 },
-                                                BorderColor::all(Color::srgb(0.40, 0.31, 0.22)),
-                                                BackgroundColor(Color::srgba(
-                                                    0.14, 0.10, 0.10, 0.94,
-                                                )),
+                                                ImageNode::new(theme.button_frame.clone())
+                                                    .with_mode(theme.button_image_mode())
+                                                    .with_color(bg),
+                                                BackgroundColor(Color::NONE),
+                                                BorderColor::all(border),
                                             ))
                                             .with_children(|button| {
                                                 button.spawn((
@@ -225,7 +240,7 @@ fn spawn_title_screen(
                                                         font_size: 22.0,
                                                         ..default()
                                                     },
-                                                    TextColor(Color::srgb(0.95, 0.91, 0.83)),
+                                                    TextColor(palette.text_primary),
                                                 ));
                                                 button.spawn((
                                                     Text::new(entry.description.clone()),
@@ -233,7 +248,7 @@ fn spawn_title_screen(
                                                         font_size: 16.0,
                                                         ..default()
                                                     },
-                                                    TextColor(Color::srgb(0.80, 0.76, 0.70)),
+                                                    TextColor(palette.text_muted),
                                                 ));
                                             });
                                     }
@@ -249,6 +264,7 @@ fn spawn_title_screen(
                                 .with_children(|footer| {
                                     footer
                                         .spawn((
+                                            ThemedPanel,
                                             Node {
                                                 width: percent(58.0),
                                                 flex_direction: FlexDirection::Column,
@@ -257,8 +273,11 @@ fn spawn_title_screen(
                                                 border: UiRect::all(px(1.0)),
                                                 ..default()
                                             },
-                                            BackgroundColor(Color::srgba(0.10, 0.08, 0.08, 0.88)),
-                                            BorderColor::all(Color::srgb(0.36, 0.29, 0.20)),
+                                            ImageNode::new(theme.panel_frame.clone())
+                                                .with_mode(theme.panel_image_mode())
+                                                .with_color(palette.surface_panel),
+                                            BackgroundColor(Color::NONE),
+                                            BorderColor::all(palette.border_idle),
                                         ))
                                         .with_children(|authors| {
                                             authors.spawn((
@@ -267,7 +286,7 @@ fn spawn_title_screen(
                                                     font_size: 20.0,
                                                     ..default()
                                                 },
-                                                TextColor(Color::srgb(0.96, 0.84, 0.62)),
+                                                TextColor(palette.text_accent),
                                             ));
                                             authors.spawn((
                                                 Text::new("1. Codex\n2. Janczar Knurek"),
@@ -275,7 +294,7 @@ fn spawn_title_screen(
                                                     font_size: 18.0,
                                                     ..default()
                                                 },
-                                                TextColor(Color::srgb(0.89, 0.86, 0.80)),
+                                                TextColor(palette.text_value),
                                             ));
                                         });
 
@@ -290,17 +309,27 @@ fn spawn_title_screen(
                                         .with_children(|actions| {
                                             spawn_action_button(
                                                 actions,
+                                                &theme,
+                                                &palette,
                                                 "Connect",
                                                 TitleAction::Connect,
                                             );
                                             if title_state.runtime == AppRuntime::EmbeddedClient {
                                                 spawn_action_button(
                                                     actions,
+                                                    &theme,
+                                                    &palette,
                                                     "Map Editor",
                                                     TitleAction::OpenMapEditor,
                                                 );
                                             }
-                                            spawn_action_button(actions, "Exit", TitleAction::Exit);
+                                            spawn_action_button(
+                                                actions,
+                                                &theme,
+                                                &palette,
+                                                "Exit",
+                                                TitleAction::Exit,
+                                            );
                                         });
                                 });
                         });
@@ -317,10 +346,18 @@ fn spawn_title_screen(
         });
 }
 
-fn spawn_action_button(parent: &mut ChildSpawnerCommands, label: &str, action: TitleAction) {
+fn spawn_action_button(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+    label: &str,
+    action: TitleAction,
+) {
+    let (bg, border, text) = idle_colors(palette, ButtonStyle::Primary, false);
     parent
         .spawn((
             Button,
+            ThemedButton::new(ButtonStyle::Primary),
             TitleActionButton { action },
             Node {
                 width: percent(100.0),
@@ -330,8 +367,11 @@ fn spawn_action_button(parent: &mut ChildSpawnerCommands, label: &str, action: T
                 border: UiRect::all(px(1.0)),
                 ..default()
             },
-            BorderColor::all(Color::srgb(0.48, 0.36, 0.24)),
-            BackgroundColor(Color::srgba(0.18, 0.12, 0.10, 0.96)),
+            ImageNode::new(theme.button_frame.clone())
+                .with_mode(theme.button_image_mode())
+                .with_color(bg),
+            BackgroundColor(Color::NONE),
+            BorderColor::all(border),
         ))
         .with_children(|button| {
             button.spawn((
@@ -340,63 +380,19 @@ fn spawn_action_button(parent: &mut ChildSpawnerCommands, label: &str, action: T
                     font_size: 22.0,
                     ..default()
                 },
-                TextColor(Color::srgb(0.96, 0.92, 0.82)),
+                TextColor(text),
             ));
         });
 }
 
+/// Keeps `ThemedButton.selected` in sync with `TitleScreenState.selected_index`
+/// so the shared recolor system shows the active server with its selected tint.
 fn sync_server_selection_buttons(
     title_state: Res<TitleScreenState>,
-    mut button_query: Query<
-        (
-            &TitleServerButton,
-            &Interaction,
-            &mut BackgroundColor,
-            &mut BorderColor,
-        ),
-        With<Button>,
-    >,
+    mut button_query: Query<(&TitleServerButton, &mut ThemedButton), With<Button>>,
 ) {
-    for (button, interaction, mut background, mut border) in &mut button_query {
-        let is_selected = button.index == title_state.selected_index;
-        let (background_color, border_color) = match (*interaction, is_selected) {
-            (Interaction::Pressed, _) => {
-                (Color::srgb(0.54, 0.31, 0.17), Color::srgb(0.98, 0.85, 0.60))
-            }
-            (Interaction::Hovered, true) => {
-                (Color::srgb(0.40, 0.22, 0.12), Color::srgb(0.98, 0.85, 0.60))
-            }
-            (Interaction::Hovered, false) => {
-                (Color::srgb(0.25, 0.16, 0.12), Color::srgb(0.84, 0.68, 0.45))
-            }
-            (Interaction::None, true) => {
-                (Color::srgb(0.30, 0.17, 0.10), Color::srgb(0.92, 0.78, 0.55))
-            }
-            (Interaction::None, false) => {
-                (Color::srgb(0.14, 0.10, 0.10), Color::srgb(0.40, 0.31, 0.22))
-            }
-        };
-
-        background.0 = background_color;
-        *border = BorderColor::all(border_color);
-    }
-}
-
-fn sync_title_action_buttons(
-    mut button_query: Query<
-        (&Interaction, &mut BackgroundColor, &mut BorderColor),
-        (With<Button>, With<TitleActionButton>),
-    >,
-) {
-    for (interaction, mut background, mut border) in &mut button_query {
-        let (background_color, border_color) = match *interaction {
-            Interaction::Pressed => (Color::srgb(0.62, 0.32, 0.14), Color::srgb(1.0, 0.88, 0.64)),
-            Interaction::Hovered => (Color::srgb(0.34, 0.18, 0.10), Color::srgb(0.92, 0.78, 0.55)),
-            Interaction::None => (Color::srgb(0.18, 0.12, 0.10), Color::srgb(0.48, 0.36, 0.24)),
-        };
-
-        background.0 = background_color;
-        *border = BorderColor::all(border_color);
+    for (button, mut themed) in &mut button_query {
+        themed.selected = button.index == title_state.selected_index;
     }
 }
 
