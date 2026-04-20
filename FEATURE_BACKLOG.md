@@ -8,36 +8,6 @@ We've reached a point where the core loop works locally and over TCP: movement, 
 
 ---
 
-## 1. The headline large feature: Stacked overworld floors (z-levels)
-
-Tibia-style traversable floors, rendered on top of each other so the player can see a few levels down through holes / off cliffs, and the level above fades out when you walk under a roof.
-
-### Why it's a big feature
-Touches the position primitive, so it ripples everywhere: collision, rendering, sorting, persistence, networking, map YAML, editor. Best to design it before more systems bake in a 2D-only assumption.
-
-### Current state
-- `TilePosition { x, y }` — no z field (`src/world/components.rs:10`).
-- `SpacePosition` wraps `SpaceId + TilePosition` — also 2D (`src/world/components.rs:22`).
-- Multi-space exists (overworld / underworld / starter_cellar) but spaces are *separate maps joined by portals*, not visually stacked.
-- Y-sort depth already uses a float `z_index` per `WorldVisual` (`src/world/components.rs:67`, `y_sort_z` in `src/world/systems.rs:268`), so the rendering layer already has some room for floor offsets.
-- Map YAML (`docs/yaml_formats.md`, `assets/maps/*.yaml`) has no floor concept.
-- No stairs, ladders, ropes, holes, or level-transition objects exist in `assets/overworld_objects/`.
-
-### Scope sketch
-1. **Data model** — extend `TilePosition` → `{ x, y, z }` (or add a separate `Floor` component; decide based on how often code would carry both). Propagate through `SpacePosition`, `SpaceResident`, `ViewPosition`, collision queries, and the single-resident-per-tile rules.
-2. **Map YAML** — add `floor` per object (default 0), `floors: 0..N` on space definition. Extend portal destinations to include a floor.
-3. **Rendering** — compute sprite z as `floor * FLOOR_Z_STEP + y_sort_offset`. Floors below the player render slightly dimmed; floors above the player are hidden when the player stands under them (roof-hiding).
-4. **Floor transitions** — new object kinds: `stairs_up`, `stairs_down`, `ladder`, `hole`, `rope_spot`. Each carries a target-floor delta (usually ±1). Walking onto stairs triggers the transition; ropes/shovels require an item.
-5. **Collision / AI** — `can_move_to(space, x, y, z)`; NPC spawns/roam bounds become 3D; leash includes floor equality.
-6. **Editor** — floor selector (tab bar or numeric spinner); render other floors at reduced opacity for authoring.
-7. **Persistence / network** — snapshot and events include floor. This is a wire-format change; worth versioning the save file (`v3` → `v4`).
-8. **UI** — floor indicator ("Floor 2" or "+2 / ground / -1") somewhere in the HUD; later, minimap with floor tabs.
-
-### Pairs well with
-Stairs / ladders / ropes / holes (section 3), floor-aware minimap (section 3), persistence versioning (section 3).
-
----
-
 ## 2. Other large features (each is a multi-week effort)
 
 Grouped by system, not ranked.
