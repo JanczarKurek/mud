@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 
+use crate::ui::resources::{MenuAction, MenuBarId, MinimapZoom};
 use crate::world::object_definitions::EquipmentSlot;
 
 #[derive(Component)]
@@ -169,3 +170,71 @@ pub struct TakePartialCancelButton;
 
 #[derive(Component)]
 pub struct TakePartialAmountLabel;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MinimapMode {
+    HudSmall,
+    FullscreenLarge,
+}
+
+#[derive(Component)]
+pub struct MinimapView {
+    pub mode: MinimapMode,
+}
+
+/// Holds the `Image` asset handle backing the tile window for a `MinimapView`.
+/// Swapped out when zoom changes (tile span dictates image size); otherwise
+/// the bytes inside are rewritten in place each frame.
+#[derive(Component)]
+pub struct MinimapCanvas {
+    pub image_handle: Handle<Image>,
+    pub last_zoom: Option<MinimapZoom>,
+}
+
+#[derive(Component)]
+pub struct MinimapOverlayDot;
+
+#[derive(Component)]
+pub struct HudMinimapZoomLabel;
+
+#[derive(Component)]
+pub struct HudMinimapZoomInButton;
+
+#[derive(Component)]
+pub struct HudMinimapZoomOutButton;
+
+#[derive(Component)]
+pub struct FullMapWindowRoot;
+
+#[derive(Component)]
+pub struct FullMapZoomLabel;
+
+#[derive(Component)]
+pub struct FullMapZoomInButton;
+
+#[derive(Component)]
+pub struct FullMapZoomOutButton;
+
+#[derive(Component)]
+pub struct FullMapCloseButton;
+
+#[derive(Component)]
+pub struct FullMapBodyRoot;
+
+#[derive(Component)]
+pub struct MenuBarRoot;
+
+#[derive(Component)]
+pub struct MenuBarItemButton {
+    pub menu: MenuBarId,
+}
+
+#[derive(Component)]
+pub struct MenuDropdownRoot {
+    pub menu: MenuBarId,
+}
+
+#[derive(Component)]
+pub struct MenuDropdownEntryButton {
+    pub action: MenuAction,
+}

@@ -1,4 +1,6 @@
 pub mod components;
+pub mod menu_bar;
+pub mod minimap;
 pub mod resources;
 pub mod setup;
 pub mod systems;
@@ -6,9 +8,15 @@ pub mod systems;
 use bevy::prelude::*;
 
 use crate::app::state::ClientAppState;
+use crate::ui::menu_bar::{apply_menu_actions, handle_menu_bar_clicks, sync_menu_dropdowns};
+use crate::ui::minimap::{
+    handle_minimap_keybinds, handle_minimap_scroll_wheel, handle_minimap_zoom_buttons,
+    sync_full_map_window_visibility, sync_minimap_zoom_labels, update_minimap_images,
+};
 use crate::ui::resources::{
     ContextMenuState, CursorState, DockedPanelDragState, DockedPanelResizeState, DockedPanelState,
-    DragState, SpellTargetingState, TakePartialState, UseOnState,
+    DragState, FullMapWindowState, HudMinimapSettings, OpenMenuState, PendingMenuActions,
+    SpellTargetingState, TakePartialState, UseOnState,
 };
 use crate::ui::setup::spawn_hud;
 use crate::ui::systems::{
@@ -38,6 +46,10 @@ impl Plugin for UiPlugin {
             .insert_resource(UseOnState::default())
             .insert_resource(SpellTargetingState::default())
             .insert_resource(TakePartialState::default())
+            .insert_resource(HudMinimapSettings::default())
+            .insert_resource(FullMapWindowState::default())
+            .insert_resource(OpenMenuState::default())
+            .insert_resource(PendingMenuActions::default())
             .add_systems(
                 OnEnter(ClientAppState::InGame),
                 (spawn_hud, setup_native_custom_cursor),
@@ -133,6 +145,27 @@ impl Plugin for UiPlugin {
             .add_systems(
                 Update,
                 sync_drag_preview.run_if(in_state(ClientAppState::InGame)),
+            )
+            .add_systems(
+                Update,
+                (
+                    handle_minimap_keybinds,
+                    handle_minimap_scroll_wheel,
+                    handle_minimap_zoom_buttons,
+                    sync_full_map_window_visibility,
+                    sync_minimap_zoom_labels,
+                    update_minimap_images,
+                )
+                    .run_if(in_state(ClientAppState::InGame)),
+            )
+            .add_systems(
+                Update,
+                (
+                    handle_menu_bar_clicks,
+                    sync_menu_dropdowns.after(handle_menu_bar_clicks),
+                    apply_menu_actions.after(handle_menu_bar_clicks),
+                )
+                    .run_if(in_state(ClientAppState::InGame)),
             );
     }
 }

@@ -126,7 +126,8 @@ pub fn manage_open_containers(
     let player_position = client_state.player_tile_position;
 
     docked_panel_state.panels.retain(|panel| match panel.kind {
-        DockedPanelKind::Status
+        DockedPanelKind::Minimap
+        | DockedPanelKind::Status
         | DockedPanelKind::Equipment
         | DockedPanelKind::Backpack
         | DockedPanelKind::CurrentTarget => true,
@@ -187,7 +188,8 @@ pub fn handle_docked_panel_close_buttons(
                 Some(DockedPanelKind::Container { .. }) => {
                     docked_panel_state.close_panel(button.panel_id);
                 }
-                Some(DockedPanelKind::Status)
+                Some(DockedPanelKind::Minimap)
+                | Some(DockedPanelKind::Status)
                 | Some(DockedPanelKind::Equipment)
                 | Some(DockedPanelKind::Backpack) => {}
                 None => {}
@@ -874,6 +876,7 @@ pub fn sync_docked_panel_titles(
             .panel(title.panel_id)
             .map(|panel| panel.kind)
         {
+            Some(DockedPanelKind::Minimap) => "Minimap".to_owned(),
             Some(DockedPanelKind::Status) => "Status".to_owned(),
             Some(DockedPanelKind::Equipment) => "Equipment".to_owned(),
             Some(DockedPanelKind::Backpack) => "Backpack".to_owned(),

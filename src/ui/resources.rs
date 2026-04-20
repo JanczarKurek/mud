@@ -69,6 +69,7 @@ pub enum DragSource {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DockedPanelKind {
+    Minimap,
     Status,
     Equipment,
     Backpack,
@@ -98,14 +99,16 @@ impl DockedPanelState {
     pub const BACKPACK_PANEL_ID: usize = 2;
     pub const CURRENT_TARGET_PANEL_ID: usize = 3;
     pub const FIRST_CONTAINER_PANEL_ID: usize = 4;
+    pub const MINIMAP_PANEL_ID: usize = 10;
     pub const MAX_OPEN_CONTAINERS: usize = 4;
     pub const DEFAULT_STATUS_PANEL_HEIGHT: f32 = 96.0;
     pub const DEFAULT_EQUIPMENT_PANEL_HEIGHT: f32 = 248.0;
     pub const DEFAULT_BACKPACK_PANEL_HEIGHT: f32 = 184.0;
     pub const DEFAULT_TARGET_PANEL_HEIGHT: f32 = 88.0;
     pub const DEFAULT_CONTAINER_PANEL_HEIGHT: f32 = 182.0;
+    pub const DEFAULT_MINIMAP_PANEL_HEIGHT: f32 = 220.0;
     pub const MIN_PANEL_HEIGHT: f32 = 84.0;
-    pub const MAX_PANEL_HEIGHT: f32 = 420.0;
+    pub const MAX_PANEL_HEIGHT: f32 = 480.0;
 
     pub fn open_current_target(&mut self) {
         let panel = DockedPanel {
@@ -166,7 +169,8 @@ impl DockedPanelState {
     pub fn container_object_id_for_panel(&self, panel_id: usize) -> Option<u64> {
         match self.panel(panel_id).map(|panel| panel.kind) {
             Some(DockedPanelKind::Container { object_id }) => Some(object_id),
-            Some(DockedPanelKind::Status)
+            Some(DockedPanelKind::Minimap)
+            | Some(DockedPanelKind::Status)
             | Some(DockedPanelKind::Equipment)
             | Some(DockedPanelKind::Backpack)
             | Some(DockedPanelKind::CurrentTarget)
@@ -216,7 +220,8 @@ impl DockedPanelState {
     fn oldest_container_panel_id(&self) -> Option<usize> {
         self.panels.iter().find_map(|panel| match panel.kind {
             DockedPanelKind::Container { .. } => Some(panel.id),
-            DockedPanelKind::Status
+            DockedPanelKind::Minimap
+            | DockedPanelKind::Status
             | DockedPanelKind::Equipment
             | DockedPanelKind::Backpack
             | DockedPanelKind::CurrentTarget => None,
@@ -242,6 +247,15 @@ impl Default for DockedPanelState {
     fn default() -> Self {
         Self {
             panels: vec![
+                DockedPanel {
+                    id: Self::MINIMAP_PANEL_ID,
+                    kind: DockedPanelKind::Minimap,
+                    title: "Minimap".to_owned(),
+                    height: Self::DEFAULT_MINIMAP_PANEL_HEIGHT,
+                    closable: false,
+                    resizable: true,
+                    movable: true,
+                },
                 DockedPanel {
                     id: Self::STATUS_PANEL_ID,
                     kind: DockedPanelKind::Status,
@@ -317,4 +331,106 @@ impl CursorMode {}
 #[derive(Resource, Default)]
 pub struct CursorState {
     pub mode: CursorMode,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MinimapZoom {
+    Close,
+    Medium,
+    Far,
+}
+
+impl Default for MinimapZoom {
+    fn default() -> Self {
+        Self::Medium
+    }
+}
+
+impl MinimapZoom {
+    pub const fn tile_span(self) -> i32 {
+        match self {
+            Self::Close => 15,
+            Self::Medium => 33,
+            Self::Far => 65,
+        }
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Close => "Close",
+            Self::Medium => "Medium",
+            Self::Far => "Far",
+        }
+    }
+
+    pub fn zoom_in(self) -> Self {
+        match self {
+            Self::Far => Self::Medium,
+            Self::Medium => Self::Close,
+            Self::Close => Self::Close,
+        }
+    }
+
+    pub fn zoom_out(self) -> Self {
+        match self {
+            Self::Close => Self::Medium,
+            Self::Medium => Self::Far,
+            Self::Far => Self::Far,
+        }
+    }
+}
+
+#[derive(Resource)]
+pub struct HudMinimapSettings {
+    pub zoom: MinimapZoom,
+}
+
+impl Default for HudMinimapSettings {
+    fn default() -> Self {
+        Self {
+            zoom: MinimapZoom::Medium,
+        }
+    }
+}
+
+#[derive(Resource)]
+pub struct FullMapWindowState {
+    pub open: bool,
+    pub zoom: MinimapZoom,
+}
+
+impl Default for FullMapWindowState {
+    fn default() -> Self {
+        Self {
+            open: false,
+            zoom: MinimapZoom::Far,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MenuBarId {
+    File,
+    View,
+    Window,
+    Help,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MenuAction {
+    ToggleFullMap,
+    ToggleStatus,
+    ToggleBackpack,
+    ToggleEquipment,
+    Quit,
+}
+
+#[derive(Resource, Default)]
+pub struct OpenMenuState {
+    pub open_id: Option<MenuBarId>,
+}
+
+#[derive(Resource, Default)]
+pub struct PendingMenuActions {
+    pub actions: Vec<MenuAction>,
 }

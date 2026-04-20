@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy::text::{Justify, LineBreak, TextLayout};
+use bevy::ui::widget::NodeImageMode;
 
 use crate::ui::components::{
     BackpackPanelContent, BackpackSlotRow, ChatLogText, ContainerPanelContent, ContainerSlotButton,
@@ -8,23 +9,34 @@ use crate::ui::components::{
     CurrentCombatTargetLabel, CurrentTargetPanelContent, DockedPanelBody, DockedPanelCanvas,
     DockedPanelCloseButton, DockedPanelDragHandle, DockedPanelResizeHandle, DockedPanelRoot,
     DockedPanelTitle, DragPreviewLabel, DragPreviewRoot, EquipmentPanelContent,
-    EquipmentSlotButton, EquipmentSlotImage, HealthFill, HealthLabel, ItemSlotButton,
-    ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ManaFill, ManaLabel, PythonConsoleInput,
+    EquipmentSlotButton, EquipmentSlotImage, FullMapBodyRoot, FullMapCloseButton,
+    FullMapWindowRoot, FullMapZoomInButton, FullMapZoomLabel, FullMapZoomOutButton, HealthFill,
+    HealthLabel, HudMinimapZoomInButton, HudMinimapZoomLabel, HudMinimapZoomOutButton,
+    ItemSlotButton, ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ManaFill, ManaLabel,
+    MinimapCanvas, MinimapMode, MinimapView, PythonConsoleInput,
     PythonConsoleOutput, PythonConsoleOutputViewport, PythonConsolePanel,
     PythonConsoleScrollbarThumb, RightSidebarRoot, StatusPanelContent, TakePartialAmountLabel,
     TakePartialCancelButton, TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton,
     TakePartialPopupRoot,
 };
-use crate::ui::resources::DockedPanelState;
+use crate::ui::menu_bar::{spawn_menu_bar, MENU_BAR_HEIGHT};
+use crate::ui::minimap::{make_minimap_image, FULL_MAP_BODY_SIZE, HUD_MINIMAP_SIZE};
+use crate::ui::resources::{DockedPanelState, FullMapWindowState, HudMinimapSettings};
 use crate::world::object_definitions::EquipmentSlot;
 
-pub fn spawn_hud(mut commands: Commands) {
+pub fn spawn_hud(
+    mut commands: Commands,
+    mut images: ResMut<Assets<Image>>,
+    hud_minimap_settings: Res<HudMinimapSettings>,
+    full_map_state: Res<FullMapWindowState>,
+) {
     commands
         .spawn((
             Node {
                 width: percent(100.0),
                 height: percent(100.0),
                 position_type: PositionType::Absolute,
+                top: px(MENU_BAR_HEIGHT),
                 justify_content: JustifyContent::SpaceBetween,
                 align_items: AlignItems::Stretch,
                 ..default()
@@ -68,6 +80,12 @@ pub fn spawn_hud(mut commands: Commands) {
                             BackgroundColor(Color::NONE),
                         ))
                         .with_children(|dock_canvas| {
+                            spawn_minimap_panel(
+                                dock_canvas,
+                                DockedPanelState::MINIMAP_PANEL_ID,
+                                &mut images,
+                                hud_minimap_settings.zoom,
+                            );
                             spawn_status_panel(dock_canvas, DockedPanelState::STATUS_PANEL_ID);
                             spawn_equipment_panel(
                                 dock_canvas,
@@ -78,6 +96,9 @@ pub fn spawn_hud(mut commands: Commands) {
                         });
                 });
         });
+
+    spawn_full_map_window(&mut commands, &mut images, full_map_state.zoom);
+    spawn_menu_bar(&mut commands);
 
     commands
         .spawn((
@@ -938,5 +959,237 @@ fn spawn_context_button<T: Component>(parent: &mut ChildSpawnerCommands, label: 
                 },
                 TextColor(Color::srgb(0.94, 0.88, 0.72)),
             ));
+        });
+}
+
+fn spawn_minimap_panel(
+    parent: &mut ChildSpawnerCommands,
+    panel_id: usize,
+    images: &mut Assets<Image>,
+    zoom: crate::ui::resources::MinimapZoom,
+) {
+    let image_handle = images.add(make_minimap_image(zoom));
+    spawn_docked_panel(parent, panel_id, move |body| {
+        body.spawn((Node {
+            width: percent(100.0),
+            flex_direction: FlexDirection::Column,
+            align_items: AlignItems::Center,
+            row_gap: px(6.0),
+            ..default()
+        },))
+        .with_children(|container| {
+            container
+                .spawn((
+                    Node {
+                        width: px(HUD_MINIMAP_SIZE),
+                        height: px(HUD_MINIMAP_SIZE),
+                        position_type: PositionType::Relative,
+                        overflow: Overflow::clip(),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgb(0.04, 0.04, 0.05)),
+                    ImageNode::new(image_handle.clone()).with_mode(NodeImageMode::Stretch),
+                    MinimapView {
+                        mode: MinimapMode::HudSmall,
+                    },
+                    MinimapCanvas {
+                        image_handle: image_handle.clone(),
+                        last_zoom: Some(zoom),
+                    },
+                ));
+
+            container
+                .spawn((Node {
+                    width: percent(100.0),
+                    flex_direction: FlexDirection::Row,
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    column_gap: px(6.0),
+                    ..default()
+                },))
+                .with_children(|row| {
+                    spawn_zoom_button(row, "-", HudMinimapZoomOutButton);
+                    row.spawn((
+                        Text::new(zoom.label()),
+                        HudMinimapZoomLabel,
+                        TextFont {
+                            font_size: 14.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.94, 0.88, 0.72)),
+                        Node {
+                            min_width: px(64.0),
+                            justify_content: JustifyContent::Center,
+                            ..default()
+                        },
+                    ));
+                    spawn_zoom_button(row, "+", HudMinimapZoomInButton);
+                });
+        });
+    });
+}
+
+fn spawn_zoom_button<T: Component>(
+    parent: &mut ChildSpawnerCommands,
+    label: &str,
+    marker: T,
+) {
+    parent
+        .spawn((
+            Button,
+            marker,
+            Node {
+                width: px(26.0),
+                height: px(22.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                border: UiRect::all(px(1.0)),
+                ..default()
+            },
+            BorderColor::all(Color::srgb(0.44, 0.40, 0.22)),
+            BackgroundColor(Color::srgb(0.17, 0.15, 0.11)),
+        ))
+        .with_children(|button| {
+            button.spawn((
+                Text::new(label),
+                TextFont {
+                    font_size: 14.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.94, 0.88, 0.72)),
+            ));
+        });
+}
+
+fn spawn_full_map_window(
+    commands: &mut Commands,
+    images: &mut Assets<Image>,
+    zoom: crate::ui::resources::MinimapZoom,
+) {
+    let image_handle = images.add(make_minimap_image(zoom));
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                width: percent(100.0),
+                height: percent(100.0),
+                left: px(0.0),
+                top: px(0.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                display: Display::None,
+                ..default()
+            },
+            FullMapWindowRoot,
+            GlobalZIndex(i32::MAX - 8),
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.55)),
+        ))
+        .with_children(|overlay| {
+            overlay
+                .spawn((
+                    Node {
+                        flex_direction: FlexDirection::Column,
+                        padding: UiRect::all(px(10.0)),
+                        row_gap: px(8.0),
+                        border: UiRect::all(px(1.0)),
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgb(0.08, 0.08, 0.10)),
+                    BorderColor::all(Color::srgb(0.44, 0.40, 0.22)),
+                ))
+                .with_children(|window| {
+                    window
+                        .spawn((Node {
+                            flex_direction: FlexDirection::Row,
+                            align_items: AlignItems::Center,
+                            justify_content: JustifyContent::SpaceBetween,
+                            column_gap: px(12.0),
+                            width: px(FULL_MAP_BODY_SIZE),
+                            ..default()
+                        },))
+                        .with_children(|title_row| {
+                            title_row.spawn((
+                                Text::new("Full Map"),
+                                TextFont {
+                                    font_size: 18.0,
+                                    ..default()
+                                },
+                                TextColor(Color::srgb(0.95, 0.89, 0.72)),
+                            ));
+
+                            title_row
+                                .spawn((Node {
+                                    flex_direction: FlexDirection::Row,
+                                    align_items: AlignItems::Center,
+                                    column_gap: px(6.0),
+                                    ..default()
+                                },))
+                                .with_children(|controls| {
+                                    spawn_zoom_button(controls, "-", FullMapZoomOutButton);
+                                    controls.spawn((
+                                        Text::new(zoom.label()),
+                                        FullMapZoomLabel,
+                                        TextFont {
+                                            font_size: 14.0,
+                                            ..default()
+                                        },
+                                        TextColor(Color::srgb(0.94, 0.88, 0.72)),
+                                        Node {
+                                            min_width: px(64.0),
+                                            justify_content: JustifyContent::Center,
+                                            ..default()
+                                        },
+                                    ));
+                                    spawn_zoom_button(controls, "+", FullMapZoomInButton);
+                                    controls
+                                        .spawn((
+                                            Button,
+                                            FullMapCloseButton,
+                                            Node {
+                                                width: px(26.0),
+                                                height: px(22.0),
+                                                align_items: AlignItems::Center,
+                                                justify_content: JustifyContent::Center,
+                                                border: UiRect::all(px(1.0)),
+                                                margin: UiRect::left(px(6.0)),
+                                                ..default()
+                                            },
+                                            BorderColor::all(Color::srgb(0.52, 0.30, 0.20)),
+                                            BackgroundColor(Color::srgb(0.22, 0.11, 0.10)),
+                                        ))
+                                        .with_children(|button| {
+                                            button.spawn((
+                                                Text::new("x"),
+                                                TextFont {
+                                                    font_size: 14.0,
+                                                    ..default()
+                                                },
+                                                TextColor(Color::srgb(0.94, 0.82, 0.74)),
+                                            ));
+                                        });
+                                });
+                        });
+
+                    window.spawn((
+                        Node {
+                            width: px(FULL_MAP_BODY_SIZE),
+                            height: px(FULL_MAP_BODY_SIZE),
+                            position_type: PositionType::Relative,
+                            overflow: Overflow::clip(),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgb(0.04, 0.04, 0.05)),
+                        ImageNode::new(image_handle.clone()).with_mode(NodeImageMode::Stretch),
+                        FullMapBodyRoot,
+                        MinimapView {
+                            mode: MinimapMode::FullscreenLarge,
+                        },
+                        MinimapCanvas {
+                            image_handle: image_handle.clone(),
+                            last_zoom: Some(zoom),
+                        },
+                    ));
+                });
         });
 }
