@@ -13,11 +13,10 @@ use crate::ui::components::{
     FullMapWindowRoot, FullMapZoomInButton, FullMapZoomLabel, FullMapZoomOutButton, HealthFill,
     HealthLabel, HudMinimapZoomInButton, HudMinimapZoomLabel, HudMinimapZoomOutButton,
     ItemSlotButton, ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ManaFill, ManaLabel,
-    MinimapCanvas, MinimapMode, MinimapView, PythonConsoleInput,
-    PythonConsoleOutput, PythonConsoleOutputViewport, PythonConsolePanel,
-    PythonConsoleScrollbarThumb, RightSidebarRoot, StatusPanelContent, TakePartialAmountLabel,
-    TakePartialCancelButton, TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton,
-    TakePartialPopupRoot,
+    MinimapCanvas, MinimapMode, MinimapView, PythonConsoleInput, PythonConsoleOutput,
+    PythonConsoleOutputViewport, PythonConsolePanel, PythonConsoleScrollbarThumb, RightSidebarRoot,
+    StatusPanelContent, TakePartialAmountLabel, TakePartialCancelButton, TakePartialConfirmButton,
+    TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot,
 };
 use crate::ui::menu_bar::{spawn_menu_bar, MENU_BAR_HEIGHT};
 use crate::ui::minimap::{make_minimap_image, FULL_MAP_BODY_SIZE, HUD_MINIMAP_SIZE};
@@ -977,9 +976,8 @@ fn spawn_minimap_panel(
             row_gap: px(6.0),
             ..default()
         },))
-        .with_children(|container| {
-            container
-                .spawn((
+            .with_children(|container| {
+                container.spawn((
                     Node {
                         width: px(HUD_MINIMAP_SIZE),
                         height: px(HUD_MINIMAP_SIZE),
@@ -998,42 +996,38 @@ fn spawn_minimap_panel(
                     },
                 ));
 
-            container
-                .spawn((Node {
-                    width: percent(100.0),
-                    flex_direction: FlexDirection::Row,
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    column_gap: px(6.0),
-                    ..default()
-                },))
-                .with_children(|row| {
-                    spawn_zoom_button(row, "-", HudMinimapZoomOutButton);
-                    row.spawn((
-                        Text::new(zoom.label()),
-                        HudMinimapZoomLabel,
-                        TextFont {
-                            font_size: 14.0,
-                            ..default()
-                        },
-                        TextColor(Color::srgb(0.94, 0.88, 0.72)),
-                        Node {
-                            min_width: px(64.0),
-                            justify_content: JustifyContent::Center,
-                            ..default()
-                        },
-                    ));
-                    spawn_zoom_button(row, "+", HudMinimapZoomInButton);
-                });
-        });
+                container
+                    .spawn((Node {
+                        width: percent(100.0),
+                        flex_direction: FlexDirection::Row,
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        column_gap: px(6.0),
+                        ..default()
+                    },))
+                    .with_children(|row| {
+                        spawn_zoom_button(row, "-", HudMinimapZoomOutButton);
+                        row.spawn((
+                            Text::new(zoom.label()),
+                            HudMinimapZoomLabel,
+                            TextFont {
+                                font_size: 14.0,
+                                ..default()
+                            },
+                            TextColor(Color::srgb(0.94, 0.88, 0.72)),
+                            Node {
+                                min_width: px(64.0),
+                                justify_content: JustifyContent::Center,
+                                ..default()
+                            },
+                        ));
+                        spawn_zoom_button(row, "+", HudMinimapZoomInButton);
+                    });
+            });
     });
 }
 
-fn spawn_zoom_button<T: Component>(
-    parent: &mut ChildSpawnerCommands,
-    label: &str,
-    marker: T,
-) {
+fn spawn_zoom_button<T: Component>(parent: &mut ChildSpawnerCommands, label: &str, marker: T) {
     parent
         .spawn((
             Button,

@@ -87,47 +87,47 @@ impl Plugin for WorldClientPlugin {
         let object_registry = ObjectRegistry::from_space_definitions(&authored_spaces);
 
         app.insert_resource(AssetResolver::new())
-        .insert_resource(world_config)
-        .insert_resource(authored_spaces)
-        .insert_resource(object_registry)
-        .insert_resource(OverworldObjectDefinitions::load_from_disk())
-        .insert_resource(ClientWorldProjectionState::default())
-        .insert_resource(ClientRemotePlayerProjectionState::default())
-        .insert_resource(ViewScrollOffset::default())
-        .insert_resource(GroundTileConfig::default())
-        .add_systems(
-            OnEnter(ClientAppState::InGame),
-            (
-                reload_client_definitions.before(crate::player::setup::spawn_player_visual),
-                spawn_ground_tiles_for_current_space.after(reload_client_definitions),
-            ),
-        )
-        .add_systems(
-            Update,
-            (
-                sync_client_world_projection.after(apply_game_events_to_client_state),
-                sync_remote_player_projection.after(apply_game_events_to_client_state),
-                sync_authoritative_world_object_position_view
-                    .after(apply_game_events_to_client_state)
-                    .before(sync_tile_transforms),
-                sync_tile_transforms.after(detect_player_movement),
-                sync_player_z,
-                sync_combat_health_bars,
-                spawn_ground_tiles_for_current_space,
-                // Animation systems
-                attach_animated_sprite.after(sync_client_world_projection),
-                advance_animation_timers,
-                detect_player_movement.after(apply_game_events_to_client_state),
-                trigger_movement_animation
-                    .after(sync_client_world_projection)
-                    .after(detect_player_movement),
-                return_to_idle_animation.after(trigger_movement_animation),
-                cleanup_just_moved.after(return_to_idle_animation),
-                tick_view_scroll,
-                tick_visual_offsets,
+            .insert_resource(world_config)
+            .insert_resource(authored_spaces)
+            .insert_resource(object_registry)
+            .insert_resource(OverworldObjectDefinitions::load_from_disk())
+            .insert_resource(ClientWorldProjectionState::default())
+            .insert_resource(ClientRemotePlayerProjectionState::default())
+            .insert_resource(ViewScrollOffset::default())
+            .insert_resource(GroundTileConfig::default())
+            .add_systems(
+                OnEnter(ClientAppState::InGame),
+                (
+                    reload_client_definitions.before(crate::player::setup::spawn_player_visual),
+                    spawn_ground_tiles_for_current_space.after(reload_client_definitions),
+                ),
             )
-                .run_if(in_state(ClientAppState::InGame)),
-        );
+            .add_systems(
+                Update,
+                (
+                    sync_client_world_projection.after(apply_game_events_to_client_state),
+                    sync_remote_player_projection.after(apply_game_events_to_client_state),
+                    sync_authoritative_world_object_position_view
+                        .after(apply_game_events_to_client_state)
+                        .before(sync_tile_transforms),
+                    sync_tile_transforms.after(detect_player_movement),
+                    sync_player_z,
+                    sync_combat_health_bars,
+                    spawn_ground_tiles_for_current_space,
+                    // Animation systems
+                    attach_animated_sprite.after(sync_client_world_projection),
+                    advance_animation_timers,
+                    detect_player_movement.after(apply_game_events_to_client_state),
+                    trigger_movement_animation
+                        .after(sync_client_world_projection)
+                        .after(detect_player_movement),
+                    return_to_idle_animation.after(trigger_movement_animation),
+                    cleanup_just_moved.after(return_to_idle_animation),
+                    tick_view_scroll,
+                    tick_visual_offsets,
+                )
+                    .run_if(in_state(ClientAppState::InGame)),
+            );
     }
 }
 

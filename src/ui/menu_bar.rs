@@ -75,7 +75,9 @@ pub fn spawn_menu_bar(commands: &mut Commands) {
             for definition in MENU_DEFINITIONS {
                 bar.spawn((
                     Button,
-                    MenuBarItemButton { menu: definition.id },
+                    MenuBarItemButton {
+                        menu: definition.id,
+                    },
                     Node {
                         padding: UiRect::axes(Val::Px(10.0), Val::Px(4.0)),
                         align_items: AlignItems::Center,
@@ -114,7 +116,9 @@ pub fn spawn_menu_bar(commands: &mut Commands) {
                     display: Display::None,
                     ..default()
                 },
-                MenuDropdownRoot { menu: definition.id },
+                MenuDropdownRoot {
+                    menu: definition.id,
+                },
                 BackgroundColor(DROPDOWN_BG),
                 BorderColor::all(MENU_BORDER),
                 GlobalZIndex(i32::MAX - 19),

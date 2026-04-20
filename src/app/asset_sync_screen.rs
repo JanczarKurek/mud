@@ -44,16 +44,17 @@ fn spawn_asset_sync_screen(mut commands: Commands) {
             BackgroundColor(Color::srgba(0.04, 0.03, 0.03, 0.96)),
         ))
         .with_children(|root| {
-            root.spawn((Node {
-                width: Val::Px(480.0),
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(16.0),
-                padding: UiRect::all(Val::Px(28.0)),
-                border: UiRect::all(Val::Px(1.0)),
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.08, 0.07, 0.07, 0.92)),
-            BorderColor::all(Color::srgba(0.30, 0.25, 0.20, 0.50)),
+            root.spawn((
+                Node {
+                    width: Val::Px(480.0),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(16.0),
+                    padding: UiRect::all(Val::Px(28.0)),
+                    border: UiRect::all(Val::Px(1.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.08, 0.07, 0.07, 0.92)),
+                BorderColor::all(Color::srgba(0.30, 0.25, 0.20, 0.50)),
             ))
             .with_children(|panel| {
                 // Title
@@ -79,14 +80,15 @@ fn spawn_asset_sync_screen(mut commands: Commands) {
 
                 // Progress bar background
                 panel
-                    .spawn((Node {
-                        width: Val::Percent(100.0),
-                        height: Val::Px(14.0),
-                        border: UiRect::all(Val::Px(1.0)),
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgb(0.12, 0.11, 0.10)),
-                    BorderColor::all(Color::srgba(0.30, 0.25, 0.20, 0.40)),
+                    .spawn((
+                        Node {
+                            width: Val::Percent(100.0),
+                            height: Val::Px(14.0),
+                            border: UiRect::all(Val::Px(1.0)),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgb(0.12, 0.11, 0.10)),
+                        BorderColor::all(Color::srgba(0.30, 0.25, 0.20, 0.40)),
                     ))
                     .with_children(|bar| {
                         bar.spawn((

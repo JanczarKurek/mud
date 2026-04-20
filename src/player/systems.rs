@@ -154,6 +154,10 @@ pub fn sync_projected_player_from_client_state(
 }
 
 fn movement_direction(keyboard_input: &ButtonInput<KeyCode>) -> Option<MoveDelta> {
+    if keyboard_input.pressed(KeyCode::ControlLeft) || keyboard_input.pressed(KeyCode::ControlRight)
+    {
+        return None;
+    }
     if keyboard_input.pressed(KeyCode::ArrowUp) || keyboard_input.pressed(KeyCode::KeyW) {
         Some(MoveDelta { x: 0, y: 1 })
     } else if keyboard_input.pressed(KeyCode::ArrowDown) || keyboard_input.pressed(KeyCode::KeyS) {

@@ -72,6 +72,16 @@ pub fn toggle_cursor_mode(
             CursorMode::Default => CursorMode::UseOn,
             CursorMode::UseOn => CursorMode::Default,
             CursorMode::SpellTarget => CursorMode::SpellTarget,
+            CursorMode::AttackTarget => CursorMode::AttackTarget,
+        };
+    }
+
+    let ctrl_held = keyboard_input.pressed(KeyCode::ControlLeft)
+        || keyboard_input.pressed(KeyCode::ControlRight);
+    if ctrl_held && keyboard_input.just_pressed(KeyCode::KeyA) {
+        cursor_state.mode = match cursor_state.mode {
+            CursorMode::AttackTarget => CursorMode::Default,
+            _ => CursorMode::AttackTarget,
         };
     }
 }
@@ -107,6 +117,7 @@ fn cursor_icon_for_mode(cursor_mode: CursorMode, asset_server: &AssetServer) -> 
         CursorMode::Default => "cursors/default_cursor.png",
         CursorMode::UseOn => "cursors/use_on_cursor.png",
         CursorMode::SpellTarget => "cursors/spell_target_cursor.png",
+        CursorMode::AttackTarget => "cursors/attack_cursor.png",
     };
 
     CursorIcon::Custom(CustomCursor::Image(CustomCursorImage {
@@ -293,7 +304,11 @@ pub fn sync_context_menu_open_button(
         return;
     };
 
-    node.display = if context_menu_state.can_open { Display::Flex } else { Display::None };
+    node.display = if context_menu_state.can_open {
+        Display::Flex
+    } else {
+        Display::None
+    };
 }
 
 pub fn sync_context_menu_attack_button(
@@ -304,7 +319,11 @@ pub fn sync_context_menu_attack_button(
         return;
     };
 
-    node.display = if context_menu_state.can_attack { Display::Flex } else { Display::None };
+    node.display = if context_menu_state.can_attack {
+        Display::Flex
+    } else {
+        Display::None
+    };
 }
 
 pub fn sync_context_menu_use_button(
@@ -315,7 +334,11 @@ pub fn sync_context_menu_use_button(
         return;
     };
 
-    node.display = if context_menu_state.can_use { Display::Flex } else { Display::None };
+    node.display = if context_menu_state.can_use {
+        Display::Flex
+    } else {
+        Display::None
+    };
 }
 
 pub fn sync_context_menu_use_on_button(
@@ -326,7 +349,11 @@ pub fn sync_context_menu_use_on_button(
         return;
     };
 
-    node.display = if context_menu_state.can_use_on { Display::Flex } else { Display::None };
+    node.display = if context_menu_state.can_use_on {
+        Display::Flex
+    } else {
+        Display::None
+    };
 }
 
 pub fn handle_context_menu_actions(
@@ -398,7 +425,9 @@ pub fn handle_context_menu_actions(
                     InspectTarget::Object(context_target_object_id(target))
                 }
             };
-            pending_commands.push(GameCommand::Inspect { target: inspect_target });
+            pending_commands.push(GameCommand::Inspect {
+                target: inspect_target,
+            });
         }
         context_menu_state.hide();
         return;
@@ -614,6 +643,64 @@ pub fn handle_spell_targeting(
     cursor_state.mode = CursorMode::Default;
 }
 
+pub fn handle_attack_targeting(
+    mouse_input: Res<ButtonInput<MouseButton>>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    world_config: Res<WorldConfig>,
+    context_menu_state: Res<ContextMenuState>,
+    client_state: Res<ClientGameState>,
+    mut pending_commands: ResMut<PendingGameCommands>,
+    mut cursor_state: ResMut<CursorState>,
+) {
+    if cursor_state.mode != CursorMode::AttackTarget {
+        return;
+    }
+
+    if keyboard_input.just_pressed(KeyCode::Escape) || mouse_input.just_pressed(MouseButton::Right)
+    {
+        cursor_state.mode = CursorMode::Default;
+        return;
+    }
+
+    if context_menu_state.is_visible() || !mouse_input.just_pressed(MouseButton::Left) {
+        return;
+    }
+
+    let Ok(window) = window_query.single() else {
+        return;
+    };
+    let Some(cursor_position) = window.cursor_position() else {
+        return;
+    };
+    let Some(player_position) = client_state.player_tile_position else {
+        return;
+    };
+
+    let target_tile = cursor_to_tile(window, cursor_position, &player_position, &world_config);
+
+    let world_target = client_state
+        .world_objects
+        .values()
+        .find(|object| object.is_npc && object.tile_position == target_tile)
+        .map(|object| object.object_id);
+    let remote_target = client_state
+        .remote_players
+        .values()
+        .find(|player| player.tile_position == target_tile)
+        .map(|player| player.object_id);
+
+    let Some(target_object_id) = world_target.or(remote_target) else {
+        return;
+    };
+
+    pending_commands.push(GameCommand::SetCombatTarget {
+        target_object_id: Some(target_object_id),
+    });
+
+    cursor_state.mode = CursorMode::Default;
+}
+
 pub fn handle_context_menu_opening(
     mouse_input: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
@@ -751,28 +838,26 @@ pub fn handle_context_menu_opening(
         if object.tile_position != target_tile {
             continue;
         }
-        if !is_near_player(&player_position, &object.tile_position) {
-            continue;
-        }
 
-        let can_use = object_is_usable(object.object_id, &object_registry, &definitions);
+        let near = is_near_player(&player_position, &object.tile_position);
+        let can_use = near && object_is_usable(object.object_id, &object_registry, &definitions);
         context_menu_state.show(
             cursor_position,
             ContextMenuTarget::World(object.object_id),
-            object.is_container,
+            near && object.is_container,
             can_use,
-            can_use_on(
+            near && can_use_on(
                 object.object_id,
                 &object_registry,
                 &definitions,
                 &spell_definitions,
             ),
             object.is_npc,
-            object.quantity > 1,
+            near && object.quantity > 1,
         );
         info!(
-            "context_open_world_success object_id={} has_container={} can_use={} can_attack={}",
-            object.object_id, object.is_container, can_use, object.is_npc
+            "context_open_world_success object_id={} has_container={} can_use={} can_attack={} near={}",
+            object.object_id, object.is_container, can_use, object.is_npc, near
         );
         return;
     }
@@ -781,17 +866,16 @@ pub fn handle_context_menu_opening(
         if remote_player.tile_position != target_tile {
             continue;
         }
-        if !is_near_player(&player_position, &remote_player.tile_position) {
-            continue;
-        }
 
-        let can_use = object_is_usable(remote_player.object_id, &object_registry, &definitions);
+        let near = is_near_player(&player_position, &remote_player.tile_position);
+        let can_use =
+            near && object_is_usable(remote_player.object_id, &object_registry, &definitions);
         context_menu_state.show(
             cursor_position,
             ContextMenuTarget::World(remote_player.object_id),
             false,
             can_use,
-            can_use_on(
+            near && can_use_on(
                 remote_player.object_id,
                 &object_registry,
                 &definitions,
@@ -801,8 +885,8 @@ pub fn handle_context_menu_opening(
             false,
         );
         info!(
-            "context_open_remote_player_success object_id={} can_use={} can_attack=true",
-            remote_player.object_id, can_use
+            "context_open_remote_player_success object_id={} can_use={} can_attack=true near={}",
+            remote_player.object_id, can_use, near
         );
         return;
     }
@@ -1077,7 +1161,11 @@ pub fn sync_context_menu_take_partial_button(
     let Ok(mut node) = button_query.single_mut() else {
         return;
     };
-    node.display = if context_menu_state.can_take_partial { Display::Flex } else { Display::None };
+    node.display = if context_menu_state.can_take_partial {
+        Display::Flex
+    } else {
+        Display::None
+    };
 }
 
 pub fn update_take_partial_popup_visibility(

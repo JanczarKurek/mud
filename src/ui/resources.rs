@@ -324,6 +324,7 @@ pub enum CursorMode {
     Default,
     UseOn,
     SpellTarget,
+    AttackTarget,
 }
 
 impl CursorMode {}

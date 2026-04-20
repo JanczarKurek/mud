@@ -20,11 +20,9 @@ pub type ColliderQuery<'w, 's> =
     Query<'w, 's, (&'static SpaceResident, &'static TilePosition), With<Collider>>;
 
 pub fn player_space_id(player_entity: Entity, query: &PlayerLookupQuery) -> Option<SpaceId> {
-    query
-        .iter()
-        .find_map(|(entity, _, resident, _, _)| {
-            (entity == player_entity).then_some(resident.space_id)
-        })
+    query.iter().find_map(|(entity, _, resident, _, _)| {
+        (entity == player_entity).then_some(resident.space_id)
+    })
 }
 
 pub fn colliders_in_space(space_id: SpaceId, query: &ColliderQuery) -> Vec<TilePosition> {

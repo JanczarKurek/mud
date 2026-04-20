@@ -85,8 +85,9 @@ pub fn discover_yaml_assets(subdir: &str, kind: &str) -> Vec<DiscoveredYamlAsset
                 .unwrap_or_else(|| panic!("{kind} file has invalid name: {}", path.display()))
                 .to_owned();
 
-            let contents = fs::read_to_string(&path)
-                .unwrap_or_else(|error| panic!("Failed to read {kind} {}: {error}", path.display()));
+            let contents = fs::read_to_string(&path).unwrap_or_else(|error| {
+                panic!("Failed to read {kind} {}: {error}", path.display())
+            });
 
             out.push(DiscoveredYamlAsset { id, path, contents });
         }

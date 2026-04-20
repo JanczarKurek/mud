@@ -47,6 +47,10 @@ pub struct OverworldObjectDefinition {
     pub stack_sprites: Vec<StackSpriteTier>,
     #[serde(default, rename = "loot")]
     pub loot_table: Option<LootTableDef>,
+    /// Base number of tiles from which this object can be identified on `Inspect`.
+    /// When `None`, callers apply a sensible default (currently 3).
+    #[serde(default)]
+    pub inspect_range: Option<i32>,
 }
 
 /// Quantity roll for a loot drop: either a fixed count or a uniform random range.
@@ -191,8 +195,25 @@ pub enum DescriptionEntry {
 
 pub fn number_to_written(n: u32) -> String {
     const ONES: &[&str] = &[
-        "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
-        "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen",
+        "zero",
+        "one",
+        "two",
+        "three",
+        "four",
+        "five",
+        "six",
+        "seven",
+        "eight",
+        "nine",
+        "ten",
+        "eleven",
+        "twelve",
+        "thirteen",
+        "fourteen",
+        "fifteen",
+        "sixteen",
+        "seventeen",
+        "eighteen",
         "nineteen",
     ];
     const TENS: &[&str] = &[
@@ -216,7 +237,11 @@ pub fn number_to_written(n: u32) -> String {
         return if rest == 0 {
             format!("{} hundred", ONES[hundreds as usize])
         } else {
-            format!("{} hundred and {}", ONES[hundreds as usize], number_to_written(rest))
+            format!(
+                "{} hundred and {}",
+                ONES[hundreds as usize],
+                number_to_written(rest)
+            )
         };
     }
     n.to_string()
@@ -383,7 +408,10 @@ impl OverworldObjectDefinition {
                 for entry in entries {
                     match entry {
                         DescriptionEntry::Text(s) => return s,
-                        DescriptionEntry::Conditional { text, stack_size: (min, max) } => {
+                        DescriptionEntry::Conditional {
+                            text,
+                            stack_size: (min, max),
+                        } => {
                             let min_ok = min.map_or(true, |m| count >= m);
                             let max_ok = max.map_or(true, |m| count <= m);
                             if min_ok && max_ok {

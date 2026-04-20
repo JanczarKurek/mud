@@ -26,5 +26,8 @@ pub enum ServerMessage {
     /// container"). Not delta-coded; sent once, acted on once.
     UiEvents(Vec<GameUiEvent>),
     AssetManifest(Vec<AssetEntry>),
-    AssetData { path: String, data: String },
+    AssetData {
+        path: String,
+        data: String,
+    },
 }

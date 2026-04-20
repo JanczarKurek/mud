@@ -540,6 +540,13 @@ The `text` value supports three count placeholders in addition to the normal `{p
 - Meaning: maximum number of identical items that can occupy a single inventory slot; set to `1` for equipment
 - Example: `max_stack_size: 250`
 
+### `inspect_range`
+- Type: integer (tiles)
+- Optional: yes
+- Default: `3` when absent
+- Meaning: base Chebyshev-distance from which a player can identify this object with the Inspect action. The server's effective range is `inspect_range + floor(focus / 5)`; beyond that the player sees only "You stand too far to see it clearly." Set higher (e.g. `6`) for large/bright landmarks (signs, fires, statues) or lower (e.g. `1`) for tiny items (coins, gems).
+- Example: `inspect_range: 5`
+
 ### `stack_sprites`
 - Type: list of mappings
 - Optional: yes

@@ -66,8 +66,13 @@ pub fn serialize_and_save(
     object_registry: &ObjectRegistry,
     objects: &bevy::prelude::Query<(&OverworldObject, &SpaceResident, &TilePosition)>,
 ) {
-    let mut items: Vec<(u64, String, HashMap<String, String>, Option<MapBehavior>, TileCoordinate)> =
-        Vec::new();
+    let mut items: Vec<(
+        u64,
+        String,
+        HashMap<String, String>,
+        Option<MapBehavior>,
+        TileCoordinate,
+    )> = Vec::new();
     for (obj, resident, tile) in objects.iter() {
         if resident.space_id != ctx.space_id {
             continue;

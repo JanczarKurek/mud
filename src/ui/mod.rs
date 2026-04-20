@@ -20,17 +20,18 @@ use crate::ui::resources::{
 };
 use crate::ui::setup::spawn_hud;
 use crate::ui::systems::{
-    apply_game_ui_events, handle_context_menu_actions, handle_context_menu_opening,
-    handle_docked_panel_close_buttons, handle_docked_panel_dragging, handle_docked_panel_resizing,
-    handle_docked_panel_scrolling, handle_movable_dragging, handle_spell_targeting,
-    handle_take_partial_buttons, handle_use_on_targeting, manage_open_containers,
-    print_right_sidebar_layout_debug, setup_native_custom_cursor, sync_chat_log,
-    sync_container_slot_images, sync_context_menu_attack_button, sync_context_menu_open_button,
-    sync_context_menu_root, sync_context_menu_take_partial_button, sync_context_menu_use_button,
-    sync_context_menu_use_on_button, sync_current_combat_target, sync_docked_panel_layout,
-    sync_docked_panel_titles, sync_drag_preview, sync_equipment_slot_images,
-    sync_item_slot_button_visibility, sync_native_custom_cursor, sync_take_partial_label,
-    sync_vital_bars, toggle_cursor_mode, update_take_partial_popup_visibility,
+    apply_game_ui_events, handle_attack_targeting, handle_context_menu_actions,
+    handle_context_menu_opening, handle_docked_panel_close_buttons, handle_docked_panel_dragging,
+    handle_docked_panel_resizing, handle_docked_panel_scrolling, handle_movable_dragging,
+    handle_spell_targeting, handle_take_partial_buttons, handle_use_on_targeting,
+    manage_open_containers, print_right_sidebar_layout_debug, setup_native_custom_cursor,
+    sync_chat_log, sync_container_slot_images, sync_context_menu_attack_button,
+    sync_context_menu_open_button, sync_context_menu_root, sync_context_menu_take_partial_button,
+    sync_context_menu_use_button, sync_context_menu_use_on_button, sync_current_combat_target,
+    sync_docked_panel_layout, sync_docked_panel_titles, sync_drag_preview,
+    sync_equipment_slot_images, sync_item_slot_button_visibility, sync_native_custom_cursor,
+    sync_take_partial_label, sync_vital_bars, toggle_cursor_mode,
+    update_take_partial_popup_visibility,
 };
 
 pub struct UiPlugin;
@@ -126,6 +127,10 @@ impl Plugin for UiPlugin {
             )
             .add_systems(
                 Update,
+                handle_attack_targeting.run_if(in_state(ClientAppState::InGame)),
+            )
+            .add_systems(
+                Update,
                 handle_movable_dragging.run_if(in_state(ClientAppState::InGame)),
             )
             .add_systems(
@@ -140,6 +145,7 @@ impl Plugin for UiPlugin {
                     .after(handle_context_menu_opening)
                     .after(handle_use_on_targeting)
                     .after(handle_spell_targeting)
+                    .after(handle_attack_targeting)
                     .run_if(in_state(ClientAppState::InGame)),
             )
             .add_systems(

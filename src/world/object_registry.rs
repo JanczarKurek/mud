@@ -183,9 +183,8 @@ impl ObjectRegistry {
 
             let expression = &after_start[..end];
             let resolved = resolve_count_expression(expression, count).or_else(|| {
-                properties.and_then(|p| {
-                    resolve_template_expression(expression, p, spell_definitions)
-                })
+                properties
+                    .and_then(|p| resolve_template_expression(expression, p, spell_definitions))
             });
             rendered.push_str(&resolved.unwrap_or_else(|| format!("{{{expression}}}")));
             rest = &after_start[end + 1..];

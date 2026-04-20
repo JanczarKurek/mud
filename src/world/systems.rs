@@ -30,7 +30,10 @@ pub fn sync_client_world_projection(
     )>,
 ) {
     let Some(current_space) = client_state.current_space.as_ref() else {
-        info!("sync_client_world_projection: current_space is None, skipping (world_objects={})", client_state.world_objects.len());
+        info!(
+            "sync_client_world_projection: current_space is None, skipping (world_objects={})",
+            client_state.world_objects.len()
+        );
         return;
     };
 
@@ -63,13 +66,8 @@ pub fn sync_client_world_projection(
             continue;
         };
 
-        let Ok((
-            query_entity,
-            projected_object,
-            mut displayed_vitals,
-            mut view,
-            mut world_visual,
-        )) = projected_query.get_mut(entity)
+        let Ok((query_entity, projected_object, mut displayed_vitals, mut view, mut world_visual)) =
+            projected_query.get_mut(entity)
         else {
             let entity = spawn_client_projected_world_object(
                 &mut commands,
@@ -180,13 +178,8 @@ pub fn sync_remote_player_projection(
             continue;
         };
 
-        let Ok((
-            query_entity,
-            projected_player,
-            mut displayed_vitals,
-            mut view,
-            mut world_visual,
-        )) = projected_query.get_mut(entity)
+        let Ok((query_entity, projected_player, mut displayed_vitals, mut view, mut world_visual)) =
+            projected_query.get_mut(entity)
         else {
             let entity = spawn_client_remote_player(
                 &mut commands,
@@ -273,7 +266,15 @@ pub fn sync_tile_transforms(
     client_state: Res<ClientGameState>,
     world_config: Res<WorldConfig>,
     view_scroll: Res<ViewScrollOffset>,
-    mut query: Query<(&ViewPosition, &WorldVisual, &mut Transform, Option<&VisualOffset>), Without<Player>>,
+    mut query: Query<
+        (
+            &ViewPosition,
+            &WorldVisual,
+            &mut Transform,
+            Option<&VisualOffset>,
+        ),
+        Without<Player>,
+    >,
 ) {
     let Some(player_position) = client_state.player_position else {
         return;

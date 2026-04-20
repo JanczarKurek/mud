@@ -133,7 +133,6 @@ pub fn update_minimap_images(
             let tile_ui_y = view_height / span as f32;
             let tile_ui = tile_ui_x.min(tile_ui_y);
 
-
             let player_dot_size = tile_ui.min(12.0).max(2.0);
             let other_dot_size = (tile_ui * 0.75).min(10.0).max(2.0);
 
@@ -437,7 +436,11 @@ pub fn handle_minimap_scroll_wheel(
     windows: Query<&Window>,
     hud_views: Query<(&MinimapView, &ComputedNode, &UiGlobalTransform)>,
 ) {
-    let Some(cursor) = windows.iter().next().and_then(|window| window.cursor_position()) else {
+    let Some(cursor) = windows
+        .iter()
+        .next()
+        .and_then(|window| window.cursor_position())
+    else {
         scroll_events.clear();
         return;
     };

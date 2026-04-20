@@ -53,8 +53,7 @@ impl Plugin for GameServerPlugin {
             // in EmbeddedClient mode and TcpClient mode.
             .add_systems(
                 Update,
-                apply_game_events_to_client_state
-                    .after(collect_game_events_from_authority),
+                apply_game_events_to_client_state.after(collect_game_events_from_authority),
             );
     }
 }

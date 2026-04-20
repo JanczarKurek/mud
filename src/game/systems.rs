@@ -12,18 +12,18 @@ use crate::game::resources::{
 use crate::magic::resources::{SpellDefinition, SpellDefinitions};
 use crate::npc::components::Npc;
 use crate::player::components::{
-    InventoryStack, MovementCooldown, Player, PlayerIdentity, VitalStats,
+    DerivedStats, InventoryStack, MovementCooldown, Player, PlayerIdentity, VitalStats,
 };
 use crate::world::components::{
     Collider, Container, Movable, OverworldObject, Quantity, SpaceResident, TilePosition,
 };
+use crate::world::loot::spawn_corpse_for_npc;
 use crate::world::map_layout::SpaceDefinitions;
 use crate::world::object_definitions::{
     EquipmentSlot, OverworldObjectDefinition, OverworldObjectDefinitions,
 };
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::resources::SpaceManager;
-use crate::world::loot::spawn_corpse_for_npc;
 use crate::world::setup::{resolve_portal_destination_space, spawn_overworld_object};
 use crate::world::WorldConfig;
 
@@ -81,6 +81,7 @@ pub fn process_game_commands(
     )>,
     mut npc_vitals_query: Query<(&mut VitalStats, &OverworldObject), (With<Npc>, Without<Player>)>,
     quantity_query: Query<&Quantity>,
+    player_derived_stats_query: Query<&DerivedStats, With<Player>>,
     mut commands: Commands,
 ) {
     let queued_commands = std::mem::take(&mut pending_commands.commands);
@@ -152,6 +153,7 @@ pub fn process_game_commands(
                     &object_query,
                     &quantity_query,
                     &mut player_queries.p2(),
+                    &player_derived_stats_query,
                     &object_registry,
                     &definitions,
                     &spell_definitions,
@@ -461,7 +463,10 @@ fn handle_inspect(
     player_entity: Entity,
     target: InspectTarget,
     container_query: &mut Query<&mut Container>,
-    object_query: &Query<(Entity, &SpaceResident, &TilePosition, &OverworldObject), Without<Player>>,
+    object_query: &Query<
+        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
+        Without<Player>,
+    >,
     quantity_query: &Query<&Quantity>,
     player_query: &mut Query<
         (
@@ -477,27 +482,27 @@ fn handle_inspect(
         ),
         With<Player>,
     >,
+    player_derived_stats_query: &Query<&DerivedStats, With<Player>>,
     object_registry: &ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
 ) {
-    // Resolve (object_id, count) using a read-only borrow so it doesn't
-    // conflict with the mutable chat-log borrow below.
+    // Resolve (object_id, count) and, for world targets, the object's tile.
     let result = {
         let Ok((_, _, inventory_state, _, _, _, _, _, _)) = player_query.get(player_entity) else {
             return;
         };
         match target {
             InspectTarget::Object(id) => {
-                let entity = object_query
+                let entry = object_query
                     .iter()
                     .find(|(_, _, _, obj)| obj.object_id == id)
-                    .map(|(e, _, _, _)| e);
-                let count = entity
-                    .and_then(|e| quantity_query.get(e).ok())
+                    .map(|(e, _, tile, _)| (e, *tile));
+                let count = entry
+                    .and_then(|(e, _)| quantity_query.get(e).ok())
                     .map(|q| q.0)
                     .unwrap_or(1);
-                Some((id, count))
+                Some((id, count, entry.map(|(_, tile)| tile)))
             }
             InspectTarget::SlotItem(slot_ref) => match slot_ref {
                 ItemSlotRef::Backpack(idx) => inventory_state
@@ -505,18 +510,21 @@ fn handle_inspect(
                     .get(idx)
                     .copied()
                     .flatten()
-                    .map(|s| (s.object_id, s.quantity)),
+                    .map(|s| (s.object_id, s.quantity, None)),
                 ItemSlotRef::Equipment(slot) => inventory_state
                     .equipment_item(slot)
-                    .map(|id| (id, 1u32)),
+                    .map(|id| (id, 1u32, None)),
                 ItemSlotRef::Container { .. } => None, // resolved below with container_query
             },
         }
     };
 
-    // Container slots require container_query (different query, no conflict).
     let result = result.or_else(|| {
-        if let InspectTarget::SlotItem(ItemSlotRef::Container { object_id, slot_index }) = target {
+        if let InspectTarget::SlotItem(ItemSlotRef::Container {
+            object_id,
+            slot_index,
+        }) = target
+        {
             let entity = find_container_entity(object_id, object_query)?;
             let container = container_query.get_mut(entity).ok()?;
             container
@@ -524,18 +532,51 @@ fn handle_inspect(
                 .get(slot_index)
                 .copied()
                 .flatten()
-                .map(|s| (s.object_id, s.quantity))
+                .map(|s| (s.object_id, s.quantity, None))
         } else {
             None
         }
     });
 
-    let Some((object_id, count)) = result else {
+    let Some((object_id, count, world_tile)) = result else {
         return;
     };
 
-    let description =
-        object_description(object_id, count, object_registry, definitions, spell_definitions);
+    // For world-object inspects, gate on perception-driven distance.
+    let too_far = if let Some(target_tile) = world_tile {
+        let Ok((_, _, _, _, _, player_position, _, _, _)) = player_query.get(player_entity) else {
+            return;
+        };
+        let player_position = *player_position;
+        let focus = player_derived_stats_query
+            .get(player_entity)
+            .map(|stats| stats.attributes.focus)
+            .unwrap_or(0);
+        let base = object_registry
+            .type_id(object_id)
+            .and_then(|type_id| definitions.get(type_id))
+            .and_then(|def| def.inspect_range)
+            .unwrap_or(DEFAULT_INSPECT_RANGE);
+        let effective_range = (base + focus / FOCUS_TILES_PER_POINT).max(1);
+        chebyshev_distance_tiles(player_position, target_tile) > effective_range
+    } else {
+        false
+    };
+
+    if too_far {
+        if let Ok((_, _, _, mut chat_log, _, _, _, _, _)) = player_query.get_mut(player_entity) {
+            chat_log.push_narrator("You stand too far to see it clearly.");
+        }
+        return;
+    }
+
+    let description = object_description(
+        object_id,
+        count,
+        object_registry,
+        definitions,
+        spell_definitions,
+    );
 
     if let (Some(desc), Ok((_, _, _, mut chat_log, _, _, _, _, _))) =
         (description, player_query.get_mut(player_entity))
@@ -543,6 +584,9 @@ fn handle_inspect(
         chat_log.push_narrator(desc);
     }
 }
+
+const DEFAULT_INSPECT_RANGE: i32 = 3;
+const FOCUS_TILES_PER_POINT: i32 = 5;
 
 fn handle_use_item(
     player_entity: Entity,
@@ -571,11 +615,35 @@ fn handle_use_item(
     spell_definitions: &SpellDefinitions,
     commands: &mut Commands,
 ) {
-    let Ok((_, _, mut inventory_state, mut chat_log_state, _, _, _, mut vital_stats, _)) =
-        player_query.get_mut(player_entity)
+    let Ok((
+        _,
+        _,
+        mut inventory_state,
+        mut chat_log_state,
+        _,
+        player_position,
+        _,
+        mut vital_stats,
+        _,
+    )) = player_query.get_mut(player_entity)
     else {
         return;
     };
+    let player_position = *player_position;
+
+    if let ItemReference::WorldObject(world_object_id) = source {
+        let Some((_, world_tile)) = object_query
+            .iter()
+            .find(|(_, _, _, obj)| obj.object_id == world_object_id)
+            .map(|(e, _, tile, _)| (e, *tile))
+        else {
+            return;
+        };
+        if !is_near_player(&player_position, &world_tile) {
+            chat_log_state.push_narrator("That item is out of reach.");
+            return;
+        }
+    }
 
     let object_id =
         item_reference_object_id(source, &inventory_state, container_query, object_query);
@@ -700,6 +768,19 @@ fn handle_use_item_on(
             else {
                 return;
             };
+            if let ItemReference::WorldObject(world_source_id) = source {
+                let Some((_, source_tile)) = object_query
+                    .iter()
+                    .find(|(_, _, _, obj)| obj.object_id == world_source_id)
+                    .map(|(e, _, tile, _)| (e, *tile))
+                else {
+                    return;
+                };
+                if !is_near_player(&player_position, &source_tile) {
+                    chat_log_state.push_narrator("That item is out of reach.");
+                    return;
+                }
+            }
             let Some(source_type_id) = object_registry.type_id(source_object_id) else {
                 return;
             };
@@ -1107,8 +1188,17 @@ fn handle_take_from_stack(
     world_config: &WorldConfig,
     commands: &mut Commands,
 ) {
-    let Ok((_, _, mut inventory_state, mut chat_log_state, space_resident, player_position, _, _, _)) =
-        player_query.get_mut(player_entity)
+    let Ok((
+        _,
+        _,
+        mut inventory_state,
+        mut chat_log_state,
+        space_resident,
+        player_position,
+        _,
+        _,
+        _,
+    )) = player_query.get_mut(player_entity)
     else {
         return;
     };
@@ -1120,9 +1210,12 @@ fn handle_take_from_stack(
     match source {
         // ── source is an inventory/container slot ──────────────────────────────
         ItemReference::Slot(src_slot_ref) => {
-            let Some(src_stack) =
-                stack_in_slot_ref(&inventory_state, container_query, object_query, src_slot_ref)
-            else {
+            let Some(src_stack) = stack_in_slot_ref(
+                &inventory_state,
+                container_query,
+                object_query,
+                src_slot_ref,
+            ) else {
                 return;
             };
             if amount > src_stack.quantity {
@@ -1173,8 +1266,7 @@ fn handle_take_from_stack(
                             }
                         }
                         Some(dst_id) => {
-                            let Some(dst_type) =
-                                object_registry.type_id(dst_id).map(str::to_owned)
+                            let Some(dst_type) = object_registry.type_id(dst_id).map(str::to_owned)
                             else {
                                 return;
                             };
@@ -1316,7 +1408,10 @@ fn merge_into_ground_stack(
     definitions: &OverworldObjectDefinitions,
     commands: &mut Commands,
 ) -> bool {
-    let Some(type_id) = object_registry.type_id(dragged_object_id).map(str::to_owned) else {
+    let Some(type_id) = object_registry
+        .type_id(dragged_object_id)
+        .map(str::to_owned)
+    else {
         return false;
     };
     let Some(def) = definitions.get(&type_id) else {
@@ -1325,10 +1420,7 @@ fn merge_into_ground_stack(
     if def.max_stack_size <= 1 {
         return false;
     }
-    let dragged_qty = quantity_query
-        .get(dragged_entity)
-        .map(|q| q.0)
-        .unwrap_or(1);
+    let dragged_qty = quantity_query.get(dragged_entity).map(|q| q.0).unwrap_or(1);
 
     for (other_entity, other_resident, other_tile, other_object) in object_query.iter() {
         if other_entity == dragged_entity
@@ -1350,7 +1442,9 @@ fn merge_into_ground_stack(
         let addable = (def.max_stack_size - other_qty).min(dragged_qty);
         let new_other_qty = other_qty + addable;
         if new_other_qty > 1 {
-            commands.entity(other_entity).insert(Quantity(new_other_qty));
+            commands
+                .entity(other_entity)
+                .insert(Quantity(new_other_qty));
         } else {
             commands.entity(other_entity).remove::<Quantity>();
         }
@@ -2228,6 +2322,77 @@ mod tests {
     }
 
     #[test]
+    fn inspect_respects_perception_based_range() {
+        // Default BaseStats gives focus = 10 -> focus/5 = 2 bonus tiles.
+        // An apple has no inspect_range set, so default_inspect_range = 3 applies.
+        // Effective range = 3 + 2 = 5 tiles (Chebyshev).
+
+        // Case A: player one tile beyond effective range -> "too far" message.
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 0, 0);
+        let apple_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("apple");
+        // Place the apple at Chebyshev distance 6 (just past effective range 5).
+        spawn_world_object(&mut app, "apple", apple_id, TilePosition::new(6, 0));
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                crate::player::components::PlayerId(1),
+                GameCommand::Inspect {
+                    target: InspectTarget::Object(apple_id),
+                },
+            );
+        app.update();
+
+        let chat_log = app.world().get::<ChatLog>(player).unwrap();
+        assert!(
+            chat_log
+                .lines
+                .last()
+                .map(|line| line.contains("too far"))
+                .unwrap_or(false),
+            "expected 'too far' message; got {:?}",
+            chat_log.lines
+        );
+
+        // Case B: within effective range -> real description replaces the log.
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 0, 0);
+        let apple_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("apple");
+        // Chebyshev distance 5 == effective range, should succeed.
+        spawn_world_object(&mut app, "apple", apple_id, TilePosition::new(5, 0));
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                crate::player::components::PlayerId(1),
+                GameCommand::Inspect {
+                    target: InspectTarget::Object(apple_id),
+                },
+            );
+        app.update();
+
+        let chat_log = app.world().get::<ChatLog>(player).unwrap();
+        let last = chat_log.lines.last().cloned().unwrap_or_default();
+        assert!(
+            !last.contains("too far"),
+            "expected a real description; got {:?}",
+            chat_log.lines
+        );
+        assert!(
+            last.starts_with("[Narrator]:") && last.to_lowercase().contains("apple"),
+            "expected narrator line mentioning apple; got {:?}",
+            last
+        );
+    }
+
+    #[test]
     fn players_block_other_players_movement() {
         let mut app = setup_server_app();
         spawn_player(&mut app, 1, 10, 10);
@@ -2286,7 +2451,10 @@ mod tests {
 
         assert_eq!(
             inventories[&1][0],
-            Some(InventoryStack { object_id: apple_id, quantity: 1 })
+            Some(InventoryStack {
+                object_id: apple_id,
+                quantity: 1
+            })
         );
         assert_eq!(inventories[&2][0], None);
 

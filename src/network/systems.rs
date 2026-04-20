@@ -2,8 +2,8 @@ use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 
-use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine;
 use bevy::log::{error, info, warn};
 use bevy::prelude::*;
 
@@ -93,32 +93,34 @@ pub fn poll_tcp_asset_sync_messages(
                     send_sync_complete = true;
                     transition_to_ingame = true;
                 } else {
-                    info!("asset sync: need {} of {} assets", missing.len(), entries.len());
+                    info!(
+                        "asset sync: need {} of {} assets",
+                        missing.len(),
+                        entries.len()
+                    );
                     request_paths = Some(missing);
                 }
             }
-            Ok(ServerMessage::AssetData { path, data }) => {
-                match BASE64.decode(&data) {
-                    Ok(bytes) => {
-                        files_to_write.push((path.clone(), bytes));
-                        sync_state.pending_paths.retain(|p| p != &path);
-                        sync_state.received_count += 1;
-                        let msg = format!(
-                            "[{}/{}] {}",
-                            sync_state.received_count, sync_state.total_needed, path
-                        );
-                        info!("asset sync: {}", msg);
-                        sync_state.log_messages.push(msg);
+            Ok(ServerMessage::AssetData { path, data }) => match BASE64.decode(&data) {
+                Ok(bytes) => {
+                    files_to_write.push((path.clone(), bytes));
+                    sync_state.pending_paths.retain(|p| p != &path);
+                    sync_state.received_count += 1;
+                    let msg = format!(
+                        "[{}/{}] {}",
+                        sync_state.received_count, sync_state.total_needed, path
+                    );
+                    info!("asset sync: {}", msg);
+                    sync_state.log_messages.push(msg);
 
-                        if sync_state.pending_paths.is_empty() {
-                            info!("asset sync: all assets downloaded");
-                            send_sync_complete = true;
-                            transition_to_ingame = true;
-                        }
+                    if sync_state.pending_paths.is_empty() {
+                        info!("asset sync: all assets downloaded");
+                        send_sync_complete = true;
+                        transition_to_ingame = true;
                     }
-                    Err(err) => warn!("asset sync: failed to decode {}: {err}", path),
                 }
-            }
+                Err(err) => warn!("asset sync: failed to decode {}: {err}", path),
+            },
             Ok(_) => {}
             Err(error) => warn!("asset sync: failed to parse server message: {error}"),
         }
@@ -134,7 +136,10 @@ pub fn poll_tcp_asset_sync_messages(
     }
 
     if disconnected {
-        warn!("lost TCP connection to {} during asset sync", config.server_addr);
+        warn!(
+            "lost TCP connection to {} during asset sync",
+            config.server_addr
+        );
         connection.stream = None;
         connection.read_buffer.clear();
     } else {
@@ -365,10 +370,7 @@ pub fn flush_server_messages(
             // produces the exact delta the peer needs; apply_event_to_state then
             // advances the baseline so subsequent diffs stay coherent.
             let default_baseline = ClientGameState::default();
-            let baseline = peer
-                .last_projection
-                .as_ref()
-                .unwrap_or(&default_baseline);
+            let baseline = peer.last_projection.as_ref().unwrap_or(&default_baseline);
             let events = crate::game::projection::compute_events_for_peer(
                 peer.player_id,
                 baseline,
@@ -886,7 +888,13 @@ mod tests {
             idle_events.is_empty(),
             "expected zero events when nothing changed, got: {idle_events:?}"
         );
-        drop((player_query, object_query, world_object_query, container_query, space_manager));
+        drop((
+            player_query,
+            object_query,
+            world_object_query,
+            container_query,
+            space_manager,
+        ));
 
         // Move the player; the next diff should contain exactly one PlayerPositionChanged.
         app.world_mut()
