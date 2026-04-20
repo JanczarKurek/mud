@@ -7,17 +7,21 @@ use base64::Engine;
 use bevy::log::{error, info, warn};
 use bevy::prelude::*;
 
+use crate::accounts::{AccountDbHandle, AuthError};
 use crate::app::state::ClientAppState;
 use crate::assets::AssetResolver;
 use crate::game::resources::{ClientGameState, PendingGameCommands, PendingGameUiEvents};
 use crate::network::asset_sync::{build_server_manifest, hash_bytes};
 use crate::network::protocol::{ClientMessage, ServerMessage};
 use crate::network::resources::{
-    AssetSyncState, ConnectionId, ServerAssetManifest, TcpClientConfig, TcpClientConnection,
-    TcpServerConfig, TcpServerPeer, TcpServerState,
+    AssetSyncState, ConnectionId, PeerAuthState, PendingPlayerSaves, ServerAssetManifest,
+    TcpClientConfig, TcpClientConnection, TcpServerConfig, TcpServerPeer, TcpServerState,
 };
-use crate::player::components::{Player, PlayerId};
-use crate::player::setup::spawn_player_authoritative_in_space;
+use crate::network::transport::{ClientTransport, ServerTransport};
+use crate::player::components::{Inventory, Player, PlayerId};
+use crate::player::setup::{
+    seed_starter_inventory, spawn_player_authoritative_in_space, spawn_player_from_dump,
+};
 use crate::world::components::{Collider, SpaceResident, TilePosition};
 use crate::world::map_layout::SpaceDefinitions;
 use crate::world::object_registry::ObjectRegistry;
@@ -35,7 +39,7 @@ pub fn send_asset_manifest_to_new_peers(
     mut server_state: ResMut<TcpServerState>,
 ) {
     for peer in server_state.peers.values_mut() {
-        if peer.manifest_sent {
+        if peer.manifest_sent || !peer.is_authed() {
             continue;
         }
         info!(
@@ -200,13 +204,7 @@ pub fn start_tcp_server(config: Res<TcpServerConfig>, mut server_state: ResMut<T
 
 pub fn accept_tcp_client_connections(
     mut server_state: ResMut<TcpServerState>,
-    world_config: Res<WorldConfig>,
-    authored_spaces: Res<SpaceDefinitions>,
-    space_manager: Res<SpaceManager>,
-    collider_query: Query<(&SpaceResident, &TilePosition), With<Collider>>,
-    player_position_query: Query<(&SpaceResident, &TilePosition), With<Player>>,
-    mut object_registry: ResMut<ObjectRegistry>,
-    mut commands: Commands,
+    server_config: Res<TcpServerConfig>,
 ) {
     let Some(listener) = server_state
         .listener
@@ -224,40 +222,31 @@ pub fn accept_tcp_client_connections(
                     continue;
                 }
 
-                let Some((spawn_space_id, spawn_tile)) = find_spawn_location(
-                    &world_config,
-                    &authored_spaces,
-                    &space_manager,
-                    &collider_query,
-                    &player_position_query,
-                ) else {
-                    warn!("rejecting TCP client from {address}: no free spawn tile");
-                    continue;
+                let transport = match &server_config.tls_config {
+                    Some(tls_config) => match rustls::ServerConnection::new(tls_config.clone()) {
+                        Ok(conn) => {
+                            ServerTransport::Tls(Box::new(rustls::StreamOwned::new(conn, stream)))
+                        }
+                        Err(err) => {
+                            warn!("failed to create TLS server connection for {address}: {err}");
+                            continue;
+                        }
+                    },
+                    None => ServerTransport::Plain(stream),
                 };
 
                 let connection_id = ConnectionId(server_state.next_connection_id);
                 server_state.next_connection_id += 1;
-                let player_id = PlayerId(connection_id.0);
-                let object_id = object_registry.allocate_runtime_id("player");
-                let player_entity = spawn_player_authoritative_in_space(
-                    &mut commands,
-                    player_id,
-                    object_id,
-                    spawn_space_id,
-                    spawn_tile,
-                );
-                let mut starter = crate::player::components::Inventory::default();
-                crate::player::setup::seed_starter_inventory(&mut starter, &mut object_registry);
-                commands.entity(player_entity).insert(starter);
 
-                info!("TCP client connected from {address}");
+                info!("TCP client connected from {address} (awaiting auth)");
                 server_state.peers.insert(
                     connection_id,
                     TcpServerPeer {
                         connection_id,
-                        player_id,
-                        player_entity,
-                        stream,
+                        auth_state: PeerAuthState::AwaitingAuth,
+                        player_id: None,
+                        player_entity: None,
+                        stream: transport,
                         read_buffer: Vec::new(),
                         last_projection: None,
                         sync_complete: false,
@@ -277,6 +266,14 @@ pub fn accept_tcp_client_connections(
 pub fn poll_tcp_server_messages(
     mut server_state: ResMut<TcpServerState>,
     mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_saves: ResMut<PendingPlayerSaves>,
+    db: Option<Res<AccountDbHandle>>,
+    world_config: Res<WorldConfig>,
+    authored_spaces: Res<SpaceDefinitions>,
+    space_manager: Res<SpaceManager>,
+    collider_query: Query<(&SpaceResident, &TilePosition), With<Collider>>,
+    player_position_query: Query<(&SpaceResident, &TilePosition), With<Player>>,
+    mut object_registry: ResMut<ObjectRegistry>,
     mut commands: Commands,
 ) {
     let connection_ids = server_state.peers.keys().copied().collect::<Vec<_>>();
@@ -287,15 +284,68 @@ pub fn poll_tcp_server_messages(
             continue;
         };
 
+        // Drain messages into a local vec before dispatching so we don't hold
+        // a borrow of `peer` across auth spawning (which mutates other
+        // resources via the shared `commands`).
         let mut disconnected = false;
+        let mut incoming: Vec<String> = Vec::new();
         while let Some(line) =
             read_next_line(&mut peer.stream, &mut peer.read_buffer, &mut disconnected)
         {
+            incoming.push(line);
+        }
+
+        for line in incoming {
+            let Some(peer) = server_state.peers.get_mut(&connection_id) else {
+                break;
+            };
             match serde_json::from_str::<ClientMessage>(&line) {
+                Ok(ClientMessage::Login { username, password }) => {
+                    let is_register = false;
+                    handle_auth_attempt(
+                        peer,
+                        &username,
+                        &password,
+                        is_register,
+                        db.as_deref(),
+                        &mut commands,
+                        &world_config,
+                        &authored_spaces,
+                        &space_manager,
+                        &collider_query,
+                        &player_position_query,
+                        &mut object_registry,
+                        &mut disconnected,
+                    );
+                }
+                Ok(ClientMessage::Register { username, password }) => {
+                    let is_register = true;
+                    handle_auth_attempt(
+                        peer,
+                        &username,
+                        &password,
+                        is_register,
+                        db.as_deref(),
+                        &mut commands,
+                        &world_config,
+                        &authored_spaces,
+                        &space_manager,
+                        &collider_query,
+                        &player_position_query,
+                        &mut object_registry,
+                        &mut disconnected,
+                    );
+                }
                 Ok(ClientMessage::Command(command)) => {
-                    pending_commands.push_for_player(peer.player_id, command);
+                    if let Some(player_id) = peer.player_id {
+                        pending_commands.push_for_player(player_id, command);
+                    }
+                    // Commands from unauthed peers are silently dropped.
                 }
                 Ok(ClientMessage::AssetRequest(paths)) => {
+                    if !peer.is_authed() {
+                        continue;
+                    }
                     info!(
                         "peer {} requested {} assets",
                         peer.connection_id.0,
@@ -327,6 +377,9 @@ pub fn poll_tcp_server_messages(
                     }
                 }
                 Ok(ClientMessage::SyncComplete) => {
+                    if !peer.is_authed() {
+                        continue;
+                    }
                     info!("peer {} asset sync complete", peer.connection_id.0);
                     peer.sync_complete = true;
                 }
@@ -340,13 +393,159 @@ pub fn poll_tcp_server_messages(
     }
 
     for connection_id in disconnected_peers {
-        disconnect_peer(&mut server_state, connection_id, &mut commands);
+        disconnect_peer(
+            &mut server_state,
+            connection_id,
+            &mut pending_saves,
+            &mut commands,
+        );
+    }
+}
+
+/// Attempts to authenticate a peer against the account DB, then spawns the
+/// player entity (either loaded from the DB or freshly initialized). Writes an
+/// `AuthResult` to the peer either way.
+#[allow(clippy::too_many_arguments)]
+fn handle_auth_attempt(
+    peer: &mut TcpServerPeer,
+    username: &str,
+    password: &str,
+    is_register: bool,
+    db: Option<&AccountDbHandle>,
+    commands: &mut Commands,
+    world_config: &WorldConfig,
+    authored_spaces: &SpaceDefinitions,
+    space_manager: &SpaceManager,
+    collider_query: &Query<(&SpaceResident, &TilePosition), With<Collider>>,
+    player_position_query: &Query<(&SpaceResident, &TilePosition), With<Player>>,
+    object_registry: &mut ObjectRegistry,
+    disconnected: &mut bool,
+) {
+    if peer.is_authed() {
+        // Auth attempted on an already-authed peer — ignore, don't respond.
+        return;
+    }
+
+    let Some(db) = db else {
+        warn!(
+            "peer {} attempted auth but no account DB is configured",
+            peer.connection_id.0
+        );
+        send_auth_failure(peer, "server has no account database", disconnected);
+        return;
+    };
+
+    let auth_result = {
+        let mut guard = db.lock();
+        if is_register {
+            guard
+                .create_account(username, password)
+                .and_then(|account_id| {
+                    // After create, log them in to record last_login_at and to
+                    // exercise the same code path as Login.
+                    guard.verify_login(username, password)?;
+                    Ok(account_id)
+                })
+        } else {
+            guard.verify_login(username, password)
+        }
+    };
+
+    let account_id = match auth_result {
+        Ok(id) => id,
+        Err(err) => {
+            info!("peer {} auth rejected: {err}", peer.connection_id.0);
+            let reason = reason_for_auth_error(&err);
+            send_auth_failure(peer, &reason, disconnected);
+            return;
+        }
+    };
+
+    // Resolve the player entity — either restored from the DB or spawned fresh.
+    let player_id = PlayerId(account_id as u64);
+    let existing = db.lock().load_character(account_id).ok().flatten();
+
+    let entity = if let Some(dump) = existing {
+        let (entity, _combat_target) = spawn_player_from_dump(
+            commands,
+            object_registry,
+            dump,
+            world_config.current_space_id,
+        );
+        entity
+    } else {
+        let Some((spawn_space_id, spawn_tile)) = find_spawn_location(
+            world_config,
+            authored_spaces,
+            space_manager,
+            collider_query,
+            player_position_query,
+        ) else {
+            warn!(
+                "peer {} authenticated but no free spawn tile is available",
+                peer.connection_id.0
+            );
+            send_auth_failure(peer, "no free spawn location", disconnected);
+            return;
+        };
+        let object_id = object_registry.allocate_runtime_id("player");
+        let entity = spawn_player_authoritative_in_space(
+            commands,
+            player_id,
+            object_id,
+            spawn_space_id,
+            spawn_tile,
+        );
+        let mut starter = Inventory::default();
+        seed_starter_inventory(&mut starter, object_registry);
+        commands.entity(entity).insert(starter);
+        entity
+    };
+
+    peer.auth_state = PeerAuthState::Authed { account_id };
+    peer.player_id = Some(player_id);
+    peer.player_entity = Some(entity);
+    info!(
+        "peer {} authenticated as account {account_id} ({username})",
+        peer.connection_id.0
+    );
+    write_message(
+        &mut peer.stream,
+        &ServerMessage::AuthResult {
+            ok: true,
+            reason: None,
+        },
+        disconnected,
+    );
+}
+
+fn send_auth_failure(peer: &mut TcpServerPeer, reason: &str, disconnected: &mut bool) {
+    write_message(
+        &mut peer.stream,
+        &ServerMessage::AuthResult {
+            ok: false,
+            reason: Some(reason.to_owned()),
+        },
+        disconnected,
+    );
+}
+
+fn reason_for_auth_error(err: &AuthError) -> String {
+    match err {
+        AuthError::UsernameInvalid(msg) => format!("username invalid: {msg}"),
+        AuthError::PasswordInvalid(msg) => format!("password invalid: {msg}"),
+        AuthError::UsernameTaken => "username already taken".to_owned(),
+        AuthError::UnknownUser => "unknown user".to_owned(),
+        AuthError::WrongPassword => "wrong password".to_owned(),
+        // Don't leak internal errors to the client.
+        AuthError::Database(_) | AuthError::Hashing(_) => "internal server error".to_owned(),
     }
 }
 
 pub fn flush_server_messages(
     mut pending_ui_events: ResMut<PendingGameUiEvents>,
     mut server_state: ResMut<TcpServerState>,
+    mut pending_saves: ResMut<PendingPlayerSaves>,
     player_query: crate::game::projection::ProjectionPlayerQuery,
     object_query: crate::game::projection::ProjectionObjectQuery,
     world_object_query: crate::game::projection::ProjectionWorldObjectQuery,
@@ -365,9 +564,16 @@ pub fn flush_server_messages(
             continue;
         };
 
+        if !peer.is_authed() {
+            continue;
+        }
+
         let mut disconnected = false;
 
         if peer.sync_complete {
+            let Some(player_id) = peer.player_id else {
+                continue;
+            };
             // Per-peer event stream — the sole state-replication path. Passing the
             // peer's last projection as the baseline (or default, for bootstrap)
             // produces the exact delta the peer needs; apply_event_to_state then
@@ -375,7 +581,7 @@ pub fn flush_server_messages(
             let default_baseline = ClientGameState::default();
             let baseline = peer.last_projection.as_ref().unwrap_or(&default_baseline);
             let events = crate::game::projection::compute_events_for_peer(
-                peer.player_id,
+                player_id,
                 baseline,
                 &player_query,
                 &object_query,
@@ -399,10 +605,8 @@ pub fn flush_server_messages(
                 }
             }
 
-            let mut outgoing_ui_events = peer_ui_events
-                .get(&peer.player_id)
-                .cloned()
-                .unwrap_or_default();
+            let mut outgoing_ui_events =
+                peer_ui_events.get(&player_id).cloned().unwrap_or_default();
             outgoing_ui_events.extend(broadcast_ui_events.iter().cloned());
             if !outgoing_ui_events.is_empty()
                 && !write_message(
@@ -421,7 +625,12 @@ pub fn flush_server_messages(
     }
 
     for connection_id in disconnected_peers {
-        disconnect_peer(&mut server_state, connection_id, &mut commands);
+        disconnect_peer(
+            &mut server_state,
+            connection_id,
+            &mut pending_saves,
+            &mut commands,
+        );
     }
 }
 
@@ -479,6 +688,10 @@ pub fn poll_tcp_client_messages(
                 pending_ui_events.events.extend(events);
             }
             Ok(ServerMessage::AssetManifest(_) | ServerMessage::AssetData { .. }) => {}
+            Ok(ServerMessage::AuthResult { .. }) => {
+                // AuthResult is handled by the Authenticating-state systems;
+                // reaching InGame means auth already succeeded.
+            }
             Err(error) => warn!("failed to parse server message: {error}"),
         }
     }
@@ -492,7 +705,7 @@ pub fn poll_tcp_client_messages(
     }
 }
 
-fn ensure_tcp_client_connected(config: &TcpClientConfig, connection: &mut TcpClientConnection) {
+pub fn ensure_tcp_client_connected(config: &TcpClientConfig, connection: &mut TcpClientConnection) {
     if !config.active {
         return;
     }
@@ -509,18 +722,56 @@ fn ensure_tcp_client_connected(config: &TcpClientConfig, connection: &mut TcpCli
         return;
     }
 
-    info!("connected to TCP server at {}", config.server_addr);
-    connection.stream = Some(stream);
+    let transport = match &config.tls {
+        Some(tls) => {
+            let server_name = match rustls::pki_types::ServerName::try_from(tls.server_name.clone())
+            {
+                Ok(name) => name,
+                Err(err) => {
+                    warn!("invalid TLS server_name {:?}: {err}", tls.server_name);
+                    return;
+                }
+            };
+            match rustls::ClientConnection::new(tls.config.clone(), server_name) {
+                Ok(conn) => ClientTransport::Tls(Box::new(rustls::StreamOwned::new(conn, stream))),
+                Err(err) => {
+                    warn!("failed to create TLS client connection: {err}");
+                    return;
+                }
+            }
+        }
+        None => ClientTransport::Plain(stream),
+    };
+
+    info!(
+        "connected to TCP server at {} (TLS: {})",
+        config.server_addr,
+        config.tls.is_some()
+    );
+    connection.stream = Some(transport);
 }
 
 fn disconnect_peer(
     server_state: &mut TcpServerState,
     connection_id: ConnectionId,
+    pending_saves: &mut PendingPlayerSaves,
     commands: &mut Commands,
 ) {
     if let Some(peer) = server_state.peers.remove(&connection_id) {
         info!("TCP client disconnected");
-        commands.entity(peer.player_entity).despawn();
+        if let (Some(account_id), Some(player_entity)) = (peer.account_id(), peer.player_entity) {
+            // Defer the snapshot+despawn to `persist_disconnected_players` in
+            // the `Last` schedule — that system holds the heavy player query
+            // needed to build a `PlayerStateDump`.
+            pending_saves
+                .entries
+                .push(crate::network::resources::PendingPlayerSave {
+                    account_id,
+                    player_entity,
+                });
+        } else if let Some(entity) = peer.player_entity {
+            commands.entity(entity).despawn();
+        }
     }
 }
 
@@ -571,8 +822,8 @@ fn find_spawn_location(
     None
 }
 
-fn read_next_line(
-    stream: &mut TcpStream,
+pub fn read_next_line<S: Read>(
+    stream: &mut S,
     buffer: &mut Vec<u8>,
     disconnected: &mut bool,
 ) -> Option<String> {
@@ -599,8 +850,8 @@ fn read_next_line(
     String::from_utf8(payload.to_vec()).ok()
 }
 
-fn write_message(
-    stream: &mut TcpStream,
+pub fn write_message<S: Write>(
+    stream: &mut S,
     message: &impl serde::Serialize,
     disconnected: &mut bool,
 ) -> bool {

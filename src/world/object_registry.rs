@@ -109,6 +109,19 @@ impl ObjectRegistry {
         self.next_runtime_id
     }
 
+    /// Re-register an object id that was allocated in a previous session (e.g.
+    /// loaded from an account DB row) so future `allocate_runtime_id` calls do
+    /// not collide with it. Leaves existing properties untouched.
+    pub fn register_existing(&mut self, object_id: u64, type_id: impl Into<String>) {
+        self.type_ids.insert(object_id, type_id.into());
+        if !self.properties.contains_key(&object_id) {
+            self.properties.insert(object_id, ObjectProperties::new());
+        }
+        if self.next_runtime_id <= object_id {
+            self.next_runtime_id = object_id + 1;
+        }
+    }
+
     pub fn snapshot_entries(&self) -> Vec<ObjectRegistrySnapshotEntry> {
         let mut entries = self
             .type_ids

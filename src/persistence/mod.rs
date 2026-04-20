@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -17,7 +16,7 @@ use crate::npc::components::{
 };
 use crate::player::components::{
     BaseStats, ChatLog, DerivedStats, Inventory, InventoryStack, MovementCooldown, Player,
-    PlayerId, PlayerIdentity, VitalStats, WeaponDamage,
+    PlayerId, PlayerIdentity, VitalStats,
 };
 use crate::world::components::{
     Collider, Container, Movable, OverworldObject, SpaceResident, Storable, TilePosition,
@@ -94,7 +93,6 @@ pub struct WorldStateDump {
     pub spaces: Vec<RuntimeSpaceDump>,
     pub object_registry: ObjectRegistryDump,
     pub network: NetworkStateDump,
-    pub players: Vec<PlayerStateDump>,
     pub world_objects: Vec<WorldObjectStateDump>,
 }
 
@@ -162,6 +160,42 @@ pub struct PlayerStateDump {
     pub combat_target_object_id: Option<u64>,
 }
 
+/// Build a `PlayerStateDump` from the components of a single player entity.
+/// Shared between world snapshot writes and per-account DB saves so both paths
+/// serialize the same fields.
+#[allow(clippy::too_many_arguments)]
+pub fn build_player_state_dump(
+    identity: &PlayerIdentity,
+    object: &OverworldObject,
+    space_resident: &SpaceResident,
+    tile_position: &TilePosition,
+    inventory: &Inventory,
+    chat_log: &ChatLog,
+    base_stats: &BaseStats,
+    derived_stats: &DerivedStats,
+    vital_stats: &VitalStats,
+    movement_cooldown: &MovementCooldown,
+    attack_profile: &AttackProfile,
+    combat_leash: &CombatLeash,
+    combat_target_object_id: Option<u64>,
+) -> PlayerStateDump {
+    PlayerStateDump {
+        player_id: identity.id,
+        object_id: object.object_id,
+        space_id: Some(space_resident.space_id),
+        tile_position: *tile_position,
+        inventory: inventory.clone(),
+        chat_log: chat_log.clone(),
+        base_stats: base_stats.clone(),
+        derived_stats: derived_stats.clone(),
+        vital_stats: vital_stats.clone(),
+        movement_cooldown: movement_cooldown.clone(),
+        attack_profile: *attack_profile,
+        combat_leash: *combat_leash,
+        combat_target_object_id,
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorldObjectStateDump {
     pub object_id: u64,
@@ -202,25 +236,6 @@ fn save_world_on_app_exit(
     space_manager: Res<SpaceManager>,
     object_registry: Res<ObjectRegistry>,
     tcp_server_state: Option<Res<TcpServerState>>,
-    player_query: Query<
-        (
-            Entity,
-            &PlayerIdentity,
-            &OverworldObject,
-            &SpaceResident,
-            &TilePosition,
-            &Inventory,
-            &ChatLog,
-            &BaseStats,
-            &DerivedStats,
-            &VitalStats,
-            &MovementCooldown,
-            &AttackProfile,
-            &CombatLeash,
-            Option<&CombatTarget>,
-        ),
-        With<Player>,
-    >,
     world_object_query: Query<
         (
             Entity,
@@ -262,9 +277,6 @@ fn save_world_on_app_exit(
     }
 
     let mut entity_to_object_id = std::collections::HashMap::new();
-    for (entity, _, object, _, _, _, _, _, _, _, _, _, _, _) in player_query.iter() {
-        entity_to_object_id.insert(entity, object.object_id);
-    }
     for (entity, object, _, _, _, _, _, _, _, _, _, _) in world_object_query.iter() {
         entity_to_object_id.insert(entity, object.object_id);
     }
@@ -288,44 +300,6 @@ fn save_world_on_app_exit(
         })
         .collect::<Vec<_>>();
     spaces.sort_by_key(|space| space.id.0);
-
-    let mut players = player_query
-        .iter()
-        .map(
-            |(
-                _entity,
-                identity,
-                object,
-                space_resident,
-                tile_position,
-                inventory,
-                chat_log,
-                base_stats,
-                derived_stats,
-                vital_stats,
-                movement_cooldown,
-                attack_profile,
-                combat_leash,
-                combat_target,
-            )| PlayerStateDump {
-                player_id: identity.id,
-                object_id: object.object_id,
-                space_id: Some(space_resident.space_id),
-                tile_position: *tile_position,
-                inventory: inventory.clone(),
-                chat_log: chat_log.clone(),
-                base_stats: base_stats.clone(),
-                derived_stats: derived_stats.clone(),
-                vital_stats: vital_stats.clone(),
-                movement_cooldown: movement_cooldown.clone(),
-                attack_profile: *attack_profile,
-                combat_leash: *combat_leash,
-                combat_target_object_id: combat_target
-                    .and_then(|target| entity_to_object_id.get(&target.entity).copied()),
-            },
-        )
-        .collect::<Vec<_>>();
-    players.sort_by_key(|player| player.player_id.0);
 
     let mut world_objects = world_object_query
         .iter()
@@ -387,7 +361,7 @@ fn save_world_on_app_exit(
     world_objects.sort_by_key(|object| object.object_id);
 
     let dump = WorldStateDump {
-        format_version: 4,
+        format_version: 5,
         spaces,
         saved_at_unix_seconds: SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -415,7 +389,6 @@ fn save_world_on_app_exit(
                 .map(|state| state.next_connection_id)
                 .unwrap_or_default(),
         },
-        players,
         world_objects,
     };
 
@@ -465,7 +438,6 @@ fn load_world_from_snapshot(
         spaces: dump_spaces,
         object_registry: dump_registry,
         network: dump_network,
-        players,
         world_objects,
         ..
     } = dump;
@@ -550,54 +522,10 @@ fn load_world_from_snapshot(
     let mut object_entities = std::collections::HashMap::new();
     let mut pending_combat_targets = Vec::new();
 
-    let players_restored = !players.is_empty();
-
-    let mut seen_players = HashSet::new();
-    for player in players {
-        let player_key = (player.player_id.0, player.object_id);
-        if !seen_players.insert(player_key) {
-            warn!(
-                "skipping duplicate player entry from snapshot: player_id={} object_id={}",
-                player.player_id.0, player.object_id
-            );
-            continue;
-        }
-
-        let space_id = player.space_id.unwrap_or(current_space_id);
-        let mut player_inventory = player.inventory;
-        player_inventory.ensure_slots();
-        let entity = commands
-            .spawn((
-                Player,
-                PlayerIdentity {
-                    id: player.player_id,
-                },
-                player_inventory,
-                player.chat_log,
-                player.base_stats,
-                player.derived_stats,
-                player.vital_stats,
-                player.movement_cooldown,
-                (player.attack_profile, WeaponDamage::default()),
-                player.combat_leash,
-                Collider,
-                OverworldObject {
-                    object_id: player.object_id,
-                    definition_id: "player".to_owned(),
-                },
-                SpaceResident { space_id },
-                player.tile_position,
-                ViewPosition {
-                    space_id,
-                    tile: player.tile_position,
-                },
-            ))
-            .id();
-        object_entities.insert(player.object_id, entity);
-        if let Some(target_object_id) = player.combat_target_object_id {
-            pending_combat_targets.push((player.object_id, target_object_id));
-        }
-    }
+    // Players no longer ride in the world snapshot — they live per-account in
+    // the accounts DB now. On load, no player entities are spawned here; the
+    // auth path (or embedded mode's DB restore) creates them.
+    let players_restored = false;
 
     for object in world_objects {
         let space_id = object.space_id.unwrap_or(current_space_id);
@@ -707,9 +635,8 @@ fn load_world_from_snapshot(
 
 fn write_world_dump(path: &Path, dump: &WorldStateDump) -> std::io::Result<()> {
     info!(
-        "writing world snapshot to {} ({} players, {} world objects, {} spaces)",
+        "writing world snapshot to {} ({} world objects, {} spaces)",
         path.display(),
-        dump.players.len(),
         dump.world_objects.len(),
         dump.spaces.len()
     );
@@ -804,24 +731,17 @@ mod tests {
             serde_json::from_str::<WorldStateDump>(&std::fs::read_to_string(&save_path).unwrap())
                 .unwrap();
 
-        assert_eq!(dump.format_version, 4);
+        assert_eq!(dump.format_version, 5);
         assert!(!dump.spaces.is_empty());
-        assert_eq!(
-            dump.players
-                .iter()
-                .find(|player| player.player_id == PlayerId(42))
-                .and_then(|player| player.space_id),
-            Some(world_config.current_space_id)
-        );
-        assert!(dump
-            .players
-            .iter()
-            .any(|player| player.player_id == PlayerId(42)));
+        // Players are no longer persisted in the world snapshot — they live in
+        // the accounts DB. The object registry still tracks the player's id so
+        // subsequent object allocations don't collide.
         assert!(dump
             .object_registry
             .entries
             .iter()
             .any(|entry| entry.object_id == object_id && entry.type_id == "player"));
+        let _ = world_config.current_space_id;
 
         let _ = std::fs::remove_file(save_path);
     }
@@ -874,23 +794,6 @@ mod tests {
             network: NetworkStateDump {
                 next_connection_id: 77,
             },
-            players: vec![PlayerStateDump {
-                player_id: PlayerId(7),
-                object_id: 42,
-                space_id: Some(crate::world::components::SpaceId(7)),
-                tile_position: TilePosition::ground(5, 6),
-                inventory: Inventory::default(),
-                chat_log: ChatLog::default(),
-                base_stats: BaseStats::default(),
-                derived_stats: DerivedStats::default(),
-                vital_stats: VitalStats::full(10.0, 5.0),
-                movement_cooldown: MovementCooldown::default(),
-                attack_profile: AttackProfile::melee(),
-                combat_leash: CombatLeash {
-                    max_distance_tiles: 6,
-                },
-                combat_target_object_id: None,
-            }],
             world_objects: vec![WorldObjectStateDump {
                 object_id: 43,
                 definition_id: "barrel".to_owned(),
@@ -925,16 +828,19 @@ mod tests {
             .get(crate::world::components::SpaceId(7))
             .is_some());
 
+        // Players are no longer restored from the world snapshot; the DB path
+        // handles that.
         let restored_players = {
             let world = app.world_mut();
-            let mut player_query =
-                world.query::<(&PlayerIdentity, &TilePosition, &OverworldObject)>();
+            let mut player_query = world.query::<&PlayerIdentity>();
             player_query.iter(world).collect::<Vec<_>>()
         };
-        assert_eq!(restored_players.len(), 1);
-        assert_eq!(restored_players[0].0.id, PlayerId(7));
-        assert_eq!(*restored_players[0].1, TilePosition::ground(5, 6));
-        assert_eq!(restored_players[0].2.object_id, 42);
+        assert!(
+            !restored_players
+                .iter()
+                .any(|identity| identity.id == PlayerId(7)),
+            "snapshot should no longer restore PlayerId(7)"
+        );
 
         let has_restored_object = {
             let world = app.world_mut();

@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use crate::combat::components::{AttackProfile, CombatLeash};
-use crate::persistence::WorldSnapshotStatus;
+use crate::persistence::{PlayerStateDump, WorldSnapshotStatus};
 use crate::player::components::{
     BaseStats, ChatLog, DerivedStats, Inventory, MovementCooldown, Player, PlayerId,
     PlayerIdentity, VitalStats, WeaponDamage,
@@ -30,6 +30,7 @@ pub fn spawn_embedded_player_authoritative(
     mut object_registry: ResMut<ObjectRegistry>,
     snapshot_status: Option<Res<WorldSnapshotStatus>>,
     player_query: Query<Option<&PlayerIdentity>, With<Player>>,
+    db: Option<Res<crate::accounts::AccountDbHandle>>,
 ) {
     // If the snapshot loaded player entities, don't create a duplicate.
     // But if the snapshot had NO players (e.g. server saved after all clients left),
@@ -46,12 +47,23 @@ pub fn spawn_embedded_player_authoritative(
         return;
     }
 
+    // Prefer restoring the local character from the account DB if one exists —
+    // this is how embedded-mode persistence round-trips now that player state
+    // lives in the accounts DB rather than the world snapshot.
+    if let Some(db) = db.as_deref() {
+        if let Ok(Some(dump)) = db.lock().load_character(crate::accounts::LOCAL_ACCOUNT_ID) {
+            let fallback_space_id = world_config.current_space_id;
+            spawn_player_from_dump(&mut commands, &mut object_registry, dump, fallback_space_id);
+            return;
+        }
+    }
+
     let spawn_tile = TilePosition::ground(world_config.map_width / 2, world_config.map_height / 2);
     let object_id = object_registry.allocate_runtime_id("player");
     let entity = spawn_player_authoritative(
         &mut commands,
         &world_config,
-        PlayerId(0),
+        PlayerId(crate::accounts::LOCAL_ACCOUNT_ID as u64),
         object_id,
         spawn_tile,
     );
@@ -74,6 +86,51 @@ pub fn spawn_player_authoritative(
         world_config.current_space_id,
         tile_position,
     )
+}
+
+/// Spawn a player entity from a previously-persisted `PlayerStateDump` (restored
+/// from an account DB row or a world snapshot). Reserves `dump.object_id` in
+/// the `ObjectRegistry` so future allocations don't collide. Returns the entity
+/// and the combat-target object id (if any) so the caller can resolve it once
+/// all other entities have been spawned.
+pub fn spawn_player_from_dump(
+    commands: &mut Commands,
+    object_registry: &mut ObjectRegistry,
+    dump: PlayerStateDump,
+    fallback_space_id: SpaceId,
+) -> (Entity, Option<u64>) {
+    let space_id = dump.space_id.unwrap_or(fallback_space_id);
+    let mut inventory = dump.inventory;
+    inventory.ensure_slots();
+    object_registry.register_existing(dump.object_id, "player");
+
+    let entity = commands
+        .spawn((
+            Player,
+            PlayerIdentity { id: dump.player_id },
+            inventory,
+            dump.chat_log,
+            dump.base_stats,
+            dump.derived_stats,
+            dump.vital_stats,
+            dump.movement_cooldown,
+            (dump.attack_profile, WeaponDamage::default()),
+            dump.combat_leash,
+            Collider,
+            OverworldObject {
+                object_id: dump.object_id,
+                definition_id: "player".to_owned(),
+            },
+            SpaceResident { space_id },
+            dump.tile_position,
+            ViewPosition {
+                space_id,
+                tile: dump.tile_position,
+            },
+        ))
+        .id();
+
+    (entity, dump.combat_target_object_id)
 }
 
 pub fn spawn_player_authoritative_in_space(

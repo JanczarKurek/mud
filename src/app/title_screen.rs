@@ -1,6 +1,9 @@
 use bevy::app::AppExit;
+use bevy::ecs::message::MessageReader;
+use bevy::input::keyboard::{Key, KeyCode, KeyboardInput};
 use bevy::prelude::*;
 
+use crate::app::auth_screen::PendingAuthRequest;
 use crate::app::plugin::AppRuntime;
 use crate::app::state::ClientAppState;
 use crate::network::resources::TcpClientConfig;
@@ -21,7 +24,15 @@ impl Plugin for TitleScreenPlugin {
         .add_systems(OnEnter(ClientAppState::TitleScreen), spawn_title_screen)
         .add_systems(
             Update,
-            (sync_server_selection_buttons, handle_title_screen_buttons)
+            (
+                sync_server_selection_buttons,
+                handle_login_field_clicks,
+                handle_login_field_keyboard,
+                sync_login_field_text,
+                sync_login_field_focus_style,
+                sync_auth_error_text,
+                handle_title_screen_buttons,
+            )
                 .run_if(in_state(ClientAppState::TitleScreen)),
         )
         .add_systems(OnExit(ClientAppState::TitleScreen), cleanup_title_screen);
@@ -35,11 +46,21 @@ struct TitleServerEntry {
     server_addr: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LoginField {
+    Username,
+    Password,
+}
+
 #[derive(Resource)]
 struct TitleScreenState {
     runtime: AppRuntime,
     entries: Vec<TitleServerEntry>,
     selected_index: usize,
+    username: String,
+    password: String,
+    register: bool,
+    focused: LoginField,
 }
 
 impl TitleScreenState {
@@ -76,7 +97,15 @@ impl TitleScreenState {
             runtime,
             entries,
             selected_index: 0,
+            username: String::new(),
+            password: String::new(),
+            register: false,
+            focused: LoginField::Username,
         }
+    }
+
+    fn is_tcp(&self) -> bool {
+        matches!(self.runtime, AppRuntime::TcpClient)
     }
 }
 
@@ -91,6 +120,7 @@ struct TitleServerButton {
 #[derive(Component, Clone, Copy, Eq, PartialEq)]
 enum TitleAction {
     Connect,
+    ToggleRegister,
     OpenMapEditor,
     Exit,
 }
@@ -99,6 +129,26 @@ enum TitleAction {
 struct TitleActionButton {
     action: TitleAction,
 }
+
+/// Clickable region that focuses a specific login field.
+#[derive(Component, Clone, Copy)]
+struct LoginFieldTarget(LoginField);
+
+/// Text node whose displayed content mirrors one of the login fields.
+#[derive(Component, Clone, Copy)]
+struct LoginFieldText(LoginField);
+
+/// Border of a login field — recolored based on whether the field is focused.
+#[derive(Component, Clone, Copy)]
+struct LoginFieldBorder(LoginField);
+
+/// Text node that displays the last auth error, if any.
+#[derive(Component)]
+struct AuthErrorText;
+
+/// Text inside the Register toggle button (to flip the checkbox glyph).
+#[derive(Component)]
+struct RegisterToggleText;
 
 fn spawn_title_screen(
     mut commands: Commands,
@@ -254,6 +304,81 @@ fn spawn_title_screen(
                                     }
                                 });
 
+                            if title_state.is_tcp() {
+                                panel
+                                    .spawn((Node {
+                                        width: percent(100.0),
+                                        flex_direction: FlexDirection::Column,
+                                        row_gap: px(8.0),
+                                        ..default()
+                                    },))
+                                    .with_children(|login| {
+                                        login.spawn((
+                                            Text::new("Account"),
+                                            TextFont {
+                                                font_size: 20.0,
+                                                ..default()
+                                            },
+                                            TextColor(palette.text_accent),
+                                        ));
+
+                                        spawn_login_field(
+                                            login,
+                                            &palette,
+                                            LoginField::Username,
+                                            "Username",
+                                            &title_state.username,
+                                            title_state.focused == LoginField::Username,
+                                            false,
+                                        );
+                                        spawn_login_field(
+                                            login,
+                                            &palette,
+                                            LoginField::Password,
+                                            "Password",
+                                            &title_state.password,
+                                            title_state.focused == LoginField::Password,
+                                            true,
+                                        );
+
+                                        login
+                                            .spawn((
+                                                Button,
+                                                TitleActionButton {
+                                                    action: TitleAction::ToggleRegister,
+                                                },
+                                                Node {
+                                                    padding: UiRect::axes(px(10.0), px(6.0)),
+                                                    border: UiRect::all(px(1.0)),
+                                                    ..default()
+                                                },
+                                                BackgroundColor(Color::srgba(0.1, 0.1, 0.1, 0.5)),
+                                                BorderColor::all(palette.border_idle),
+                                            ))
+                                            .with_children(|button| {
+                                                button.spawn((
+                                                    RegisterToggleText,
+                                                    Text::new(register_label(title_state.register)),
+                                                    TextFont {
+                                                        font_size: 16.0,
+                                                        ..default()
+                                                    },
+                                                    TextColor(palette.text_primary),
+                                                ));
+                                            });
+
+                                        login.spawn((
+                                            AuthErrorText,
+                                            Text::new(""),
+                                            TextFont {
+                                                font_size: 14.0,
+                                                ..default()
+                                            },
+                                            TextColor(Color::srgb(0.95, 0.35, 0.35)),
+                                        ));
+                                    });
+                            }
+
                             panel
                                 .spawn((Node {
                                     width: percent(100.0),
@@ -400,6 +525,7 @@ fn handle_title_screen_buttons(
     mut title_state: ResMut<TitleScreenState>,
     mut next_state: ResMut<NextState<ClientAppState>>,
     mut tcp_config: Option<ResMut<TcpClientConfig>>,
+    mut pending_auth: Option<ResMut<PendingAuthRequest>>,
     mut exit_messages: MessageWriter<AppExit>,
     server_buttons: Query<(&Interaction, &TitleServerButton), (Changed<Interaction>, With<Button>)>,
     action_buttons: Query<(&Interaction, &TitleActionButton), (Changed<Interaction>, With<Button>)>,
@@ -426,10 +552,35 @@ fn handle_title_screen_buttons(
                         tcp_config.server_addr = server_addr;
                     }
                     tcp_config.active = true;
-                    next_state.set(ClientAppState::AssetSync);
+
+                    if let Some(pending) = pending_auth.as_mut() {
+                        if title_state.username.trim().is_empty() {
+                            pending.error_message =
+                                Some("enter a username before connecting".to_owned());
+                            continue;
+                        }
+                        if title_state.password.is_empty() {
+                            pending.error_message =
+                                Some("enter a password before connecting".to_owned());
+                            continue;
+                        }
+                        pending.username = title_state.username.clone();
+                        pending.password = title_state.password.clone();
+                        pending.is_register = title_state.register;
+                        pending.sent = false;
+                        pending.error_message = None;
+                        next_state.set(ClientAppState::Authenticating);
+                    } else {
+                        // No auth plugin (shouldn't happen in TcpClient mode);
+                        // fall through to asset sync.
+                        next_state.set(ClientAppState::AssetSync);
+                    }
                 } else {
                     next_state.set(ClientAppState::InGame);
                 }
+            }
+            TitleAction::ToggleRegister => {
+                title_state.register = !title_state.register;
             }
             TitleAction::OpenMapEditor => {
                 next_state.set(ClientAppState::MapEditor);
@@ -444,5 +595,194 @@ fn handle_title_screen_buttons(
 fn cleanup_title_screen(mut commands: Commands, root_query: Query<Entity, With<TitleScreenRoot>>) {
     for entity in &root_query {
         commands.entity(entity).despawn();
+    }
+}
+
+fn register_label(register: bool) -> String {
+    if register {
+        "[X] Register new account".to_owned()
+    } else {
+        "[ ] Register new account".to_owned()
+    }
+}
+
+fn field_display(value: &str, is_password: bool) -> String {
+    if is_password {
+        "•".repeat(value.chars().count())
+    } else {
+        value.to_owned()
+    }
+}
+
+fn spawn_login_field(
+    parent: &mut ChildSpawnerCommands,
+    palette: &Palette,
+    field: LoginField,
+    label: &str,
+    value: &str,
+    focused: bool,
+    is_password: bool,
+) {
+    let border_color = if focused {
+        palette.border_accent
+    } else {
+        palette.border_idle
+    };
+    parent
+        .spawn((Node {
+            width: percent(100.0),
+            flex_direction: FlexDirection::Column,
+            row_gap: px(2.0),
+            ..default()
+        },))
+        .with_children(|container| {
+            container.spawn((
+                Text::new(label),
+                TextFont {
+                    font_size: 14.0,
+                    ..default()
+                },
+                TextColor(palette.text_muted),
+            ));
+            container
+                .spawn((
+                    Button,
+                    LoginFieldTarget(field),
+                    LoginFieldBorder(field),
+                    Node {
+                        width: percent(100.0),
+                        height: px(28.0),
+                        align_items: AlignItems::Center,
+                        padding: UiRect::axes(px(10.0), px(4.0)),
+                        border: UiRect::all(px(1.0)),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.08, 0.08, 0.08, 0.65)),
+                    BorderColor::all(border_color),
+                ))
+                .with_children(|inner| {
+                    inner.spawn((
+                        LoginFieldText(field),
+                        Text::new(field_display(value, is_password)),
+                        TextFont {
+                            font_size: 18.0,
+                            ..default()
+                        },
+                        TextColor(palette.text_primary),
+                    ));
+                });
+        });
+}
+
+fn handle_login_field_clicks(
+    mut title_state: ResMut<TitleScreenState>,
+    targets: Query<(&Interaction, &LoginFieldTarget), Changed<Interaction>>,
+) {
+    for (interaction, target) in &targets {
+        if *interaction == Interaction::Pressed {
+            title_state.focused = target.0;
+        }
+    }
+}
+
+fn handle_login_field_keyboard(
+    mut title_state: ResMut<TitleScreenState>,
+    mut keyboard_events: MessageReader<KeyboardInput>,
+) {
+    if !title_state.is_tcp() {
+        return;
+    }
+
+    for event in keyboard_events.read() {
+        if !event.state.is_pressed() {
+            continue;
+        }
+
+        match event.key_code {
+            KeyCode::Tab => {
+                title_state.focused = match title_state.focused {
+                    LoginField::Username => LoginField::Password,
+                    LoginField::Password => LoginField::Username,
+                };
+            }
+            KeyCode::Backspace => {
+                let target = active_field_buffer(&mut title_state);
+                target.pop();
+            }
+            _ => {
+                if event.repeat {
+                    continue;
+                }
+                if let Key::Character(character) = &event.logical_key {
+                    let target = active_field_buffer(&mut title_state);
+                    // Filter out control chars; tolerate spaces in passwords.
+                    for ch in character.chars() {
+                        if !ch.is_control() {
+                            target.push(ch);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn active_field_buffer(state: &mut TitleScreenState) -> &mut String {
+    match state.focused {
+        LoginField::Username => &mut state.username,
+        LoginField::Password => &mut state.password,
+    }
+}
+
+fn sync_login_field_text(
+    title_state: Res<TitleScreenState>,
+    mut text_query: Query<(&LoginFieldText, &mut Text)>,
+    mut register_text: Query<&mut Text, (With<RegisterToggleText>, Without<LoginFieldText>)>,
+) {
+    for (label, mut text) in &mut text_query {
+        let (value, is_password) = match label.0 {
+            LoginField::Username => (&title_state.username, false),
+            LoginField::Password => (&title_state.password, true),
+        };
+        let desired = field_display(value, is_password);
+        if text.0 != desired {
+            text.0 = desired;
+        }
+    }
+    for mut text in &mut register_text {
+        let desired = register_label(title_state.register);
+        if text.0 != desired {
+            text.0 = desired;
+        }
+    }
+}
+
+fn sync_login_field_focus_style(
+    title_state: Res<TitleScreenState>,
+    palette: Res<Palette>,
+    mut borders: Query<(&LoginFieldBorder, &mut BorderColor)>,
+) {
+    for (field, mut border) in &mut borders {
+        let color = if title_state.focused == field.0 {
+            palette.border_accent
+        } else {
+            palette.border_idle
+        };
+        *border = BorderColor::all(color);
+    }
+}
+
+fn sync_auth_error_text(
+    pending_auth: Option<Res<PendingAuthRequest>>,
+    mut error_text: Query<&mut Text, With<AuthErrorText>>,
+) {
+    let desired = pending_auth
+        .as_ref()
+        .and_then(|p| p.error_message.clone())
+        .unwrap_or_default();
+    for mut text in &mut error_text {
+        if text.0 != desired {
+            text.0 = desired.clone();
+        }
     }
 }

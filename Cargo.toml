@@ -15,8 +15,21 @@ sha2 = "0.10"
 dirs = "5"
 base64 = "0.22"
 
+# Account persistence — version matched to rustpython-stdlib's libsqlite3-sys
+# (links="sqlite3" can only appear once in the dep graph).
+rusqlite = "0.31"
+argon2 = "0.5"
+rand_core = { version = "0.6", features = ["std"] }
+
+# TLS
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-pemfile = "2"
+webpki-roots = "0.26"
+rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"], optional = true }
+
 [features]
 gen-schemas = ["schemars"]
+dev-self-signed = ["rcgen"]
 
 [[bin]]
 name = "gen_schemas"

@@ -2,6 +2,13 @@
 
 ## Active
 
+- Account admin tool (`mud2-admin` binary) for password reset, account ban, account deletion.
+- Add `--ca-cert PATH` client TLS trust anchor so self-signed dev certs can be verified without `--insecure`.
+- TOFU (trust-on-first-use) fingerprint pinning for client TLS; store fingerprints in `~/.local/share/mud2/known_hosts`.
+- Multiple characters per account — schema migration (reintroduce a `characters` table) plus `ListCharacters` / `SelectCharacter` / `CreateCharacter` protocol variants and a character-select screen.
+- Rate limiting on auth attempts (currently unbounded — an open server is susceptible to brute force).
+- Username / password validation policy beyond the v1 minimums (length, allowed chars, leaked-password check).
+- When `--tls` is off and the server binds to a non-loopback address, emit a startup warning so operators don't accidentally run cleartext over the public internet.
 - Decide whether to introduce a dedicated `shared/` crate before networking or only after the local prototype.
 - Finish migrating remaining presentation systems to consume replicated/view state instead of directly reading authoritative ECS/resources.
 - Decide when to delete the now-obsolete direct-mutation helpers still left in `ui::systems`.
@@ -58,6 +65,8 @@
 - Added a persistent underworld space with dedicated cave assets and a two-way portal connection from the overworld.
 - Added a first title screen with splash art, server selection, author credits, connect flow, and exit action for client builds.
 - Made embedded/client-only play load and save the same world snapshot path as headless server mode, fixed local combat HP desync caused by client projection writing over authoritative player state, and added first-pass logging for client state changes plus snapshot/YAML loads.
+- Added account-level persistence: sqlite DB at `~/.local/share/mud2/accounts.db`, Argon2 password hashing, Login/Register protocol with per-character save on disconnect/autosave/exit. Embedded mode uses the reserved `account_id = 0` local account. World snapshot format bumped to v5; players no longer ride in `WorldStateDump`.
+- Added TLS support via `rustls` (sync nonblocking; no tokio). Server: `--tls --tls-cert --tls-key`, `--generate-cert` with the `dev-self-signed` feature for self-signed dev pairs. Client: `--tls` (webpki-roots) or `--insecure`, plus `tls://host:port` URL shorthand.
 
 ## Later Ideas
 

@@ -2,14 +2,19 @@ pub mod asset_sync;
 pub mod protocol;
 pub mod resources;
 pub mod systems;
+pub mod transport;
+
+use std::sync::Arc;
 
 use bevy::prelude::*;
+use rustls::ServerConfig;
 
 use crate::app::state::ClientAppState;
 use crate::game::projection::apply_game_events_to_client_state;
 use crate::game::systems::process_game_commands;
 use crate::network::resources::{
-    AssetSyncState, TcpClientConfig, TcpClientConnection, TcpServerConfig, TcpServerState,
+    AssetSyncState, PendingPlayerSaves, TcpClientConfig, TcpClientConnection, TcpClientTlsConfig,
+    TcpServerConfig, TcpServerState,
 };
 use crate::network::systems::{
     accept_tcp_client_connections, build_and_store_manifest, flush_client_commands_to_server,
@@ -19,10 +24,15 @@ use crate::network::systems::{
 
 pub struct TcpClientPlugin {
     pub server_addr: String,
+    /// When `Some`, the client wraps its outgoing connection in TLS. The
+    /// `server_name` inside is passed as the SNI hostname.
+    pub tls: Option<TcpClientTlsConfig>,
 }
 
 pub struct TcpServerPlugin {
     pub bind_addr: String,
+    /// When `Some`, accepted connections are wrapped in TLS.
+    pub tls_config: Option<Arc<ServerConfig>>,
 }
 
 impl Plugin for TcpClientPlugin {
@@ -30,6 +40,7 @@ impl Plugin for TcpClientPlugin {
         app.insert_resource(TcpClientConfig {
             server_addr: self.server_addr.clone(),
             active: false,
+            tls: self.tls.clone(),
         })
         .insert_resource(TcpClientConnection::default())
         .insert_resource(AssetSyncState::default())
@@ -54,8 +65,10 @@ impl Plugin for TcpServerPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(TcpServerConfig {
             bind_addr: self.bind_addr.clone(),
+            tls_config: self.tls_config.clone(),
         })
         .insert_resource(TcpServerState::default())
+        .insert_resource(PendingPlayerSaves::default())
         .add_systems(Startup, (start_tcp_server, build_and_store_manifest))
         .add_systems(Update, accept_tcp_client_connections)
         .add_systems(Update, send_asset_manifest_to_new_peers)

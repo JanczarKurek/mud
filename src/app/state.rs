@@ -4,6 +4,10 @@ use bevy::prelude::*;
 pub enum ClientAppState {
     #[default]
     TitleScreen,
+    /// TCP-only: credentials have been entered; we're waiting for the server
+    /// to accept the login/register. Transitions to `AssetSync` on success or
+    /// back to `TitleScreen` on failure.
+    Authenticating,
     AssetSync,
     InGame,
     MapEditor,

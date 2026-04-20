@@ -40,17 +40,32 @@ EmbeddedClient mode = HeadlessServer + TcpClient running in the same `App`. The 
 - Before adding a new code path, ask: "would this still work if the server were on another machine?" If no, it belongs on the presentation side.
 
 ### Module Layout (`src/`)
-- **app/**: Bevy app setup, plugins, state machine, title screen
+- **accounts/**: sqlite-backed account database (Argon2 hashed passwords), per-character save/load, autosave system
+- **app/**: Bevy app setup, plugins, state machine, title screen, auth screen
 - **game/**: Core command/event loop (commands.rs, resources.rs, systems.rs)
 - **world/**: Map spaces, tiles, objects, object registry, collision
 - **player/**: Player components (stats, inventory, chat), input handling
 - **combat/**: Battle system, damage resolution, attack profiles
 - **magic/**: Spell definitions loaded from YAML
 - **npc/**: NPC AI (roaming, hostile chase behavior)
-- **network/**: TCP protocol, connection management, message ser/de
-- **persistence/**: World snapshot save/load (JSON format)
+- **network/**: TCP protocol, connection management, message ser/de, TLS transport wrapper
+- **persistence/**: World snapshot save/load (JSON format; players live in `accounts.db`, not this snapshot)
 - **ui/**: HUD, docked panels, context menus, cursor management
 - **scripting/**: Embedded RustPython console
+
+### Auth & Persistence
+
+- Every TCP connection must `Login` / `Register` before the server will send the asset manifest or any gameplay events. The peer state machine is `AwaitingAuth → Authed { account_id }` (`src/network/resources.rs`).
+- `PlayerId(account_id as u64)` — the auth path sets a player's identity from their DB row, and embedded mode uses the reserved `LOCAL_ACCOUNT_ID = 0` (`src/accounts/db.rs`).
+- Account DB path defaults to `~/.local/share/mud2/accounts.db` (via `dirs::data_dir()`); override with `--db-path PATH` or `MUD2_DB_PATH`.
+- Per-character saves happen on disconnect (`PendingPlayerSaves` queue drained by `persist_disconnected_players` in the `Last` schedule), every 60s via `autosave_all_players`, and on `AppExit`.
+- `WorldStateDump` **does not carry player data** (as of `format_version = 5`). If you need to save anything about a player, route it through the accounts DB.
+
+### TLS
+
+- `ServerTransport` / `ClientTransport` (`src/network/transport.rs`) wrap the raw `TcpStream` with optional TLS via `rustls::StreamOwned`. Sync nonblocking throughout — no tokio.
+- Server: `--tls --tls-cert PATH --tls-key PATH`, plus `--generate-cert` (requires `dev-self-signed` Cargo feature) to emit a self-signed pair.
+- Client: `--tls` uses `webpki-roots` trust anchors; `--insecure` skips verification (dev only). `--connect tls://host:port` is shorthand for both.
 
 ### Data-Driven Design
 - Map layouts: `assets/maps/*.yaml`

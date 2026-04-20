@@ -14,6 +14,16 @@ pub enum ClientMessage {
     Command(GameCommand),
     AssetRequest(Vec<String>),
     SyncComplete,
+    /// Pre-auth only: present credentials for an existing account.
+    Login {
+        username: String,
+        password: String,
+    },
+    /// Pre-auth only: create a new account + log in in one step.
+    Register {
+        username: String,
+        password: String,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -29,5 +39,13 @@ pub enum ServerMessage {
     AssetData {
         path: String,
         data: String,
+    },
+    /// Response to `ClientMessage::Login` / `Register`. On `ok = true` the peer
+    /// transitions to authed; the asset sync + gameplay stream follow. On
+    /// `ok = false`, `reason` is a short human-readable string for the client
+    /// to display.
+    AuthResult {
+        ok: bool,
+        reason: Option<String>,
     },
 }
