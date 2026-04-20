@@ -1,0 +1,9 @@
+extends: static_world
+name: Wooden Floor
+description: Planks that form the floor of an upper storey.
+render:
+  z_index: 0.05
+  debug_color: [156, 118, 72]
+  debug_size: 0.98
+  occludes_floor_above: true
+  walkable_surface: true

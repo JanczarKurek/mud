@@ -188,7 +188,7 @@ pub fn spawn_ground_tiles_for_current_space(
                 &definitions,
                 &world_config,
                 &world_config.fill_object_type,
-                TilePosition::new(x, y),
+                TilePosition::ground(x, y),
             );
         }
     }

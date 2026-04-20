@@ -92,6 +92,7 @@ pub fn update_minimap_images(
                     space_id,
                     tile.x,
                     tile.y,
+                    tile.z,
                     fill_color,
                     &client_state,
                     &object_definitions,
@@ -152,6 +153,9 @@ pub fn update_minimap_images(
                     if remote.position.space_id != space_id {
                         continue;
                     }
+                    if remote.tile_position.z != tile.z {
+                        continue;
+                    }
                     let dx = remote.tile_position.x - tile.x;
                     let dy = remote.tile_position.y - tile.y;
                     if dx.abs() > half_span || dy.abs() > half_span {
@@ -171,6 +175,9 @@ pub fn update_minimap_images(
 
                 for object in client_state.world_objects.values() {
                     if object.position.space_id != space_id {
+                        continue;
+                    }
+                    if object.tile_position.z != tile.z {
                         continue;
                     }
                     if !object.is_npc && !object.is_container {
@@ -231,6 +238,7 @@ fn paint_tile_window(
     space_id: SpaceId,
     player_x: i32,
     player_y: i32,
+    player_z: i32,
     fill: [u8; 4],
     client_state: &ClientGameState,
     definitions: &OverworldObjectDefinitions,
@@ -284,6 +292,9 @@ fn paint_tile_window(
 
     for object in client_state.world_objects.values() {
         if object.position.space_id != space_id {
+            continue;
+        }
+        if object.tile_position.z != player_z {
             continue;
         }
         if object.is_npc || object.is_movable || object.is_container {

@@ -194,7 +194,7 @@ pub fn sync_projected_player_from_client_state(
         view.space_id = client_position.space_id;
         view.tile = client_position.tile_position;
     } else {
-        view.tile = TilePosition::new(world_config.map_width / 2, world_config.map_height / 2);
+        view.tile = TilePosition::ground(world_config.map_width / 2, world_config.map_height / 2);
         view.space_id = world_config.current_space_id;
     }
 
@@ -246,7 +246,7 @@ mod tests {
         let mut app = App::new();
         app.insert_resource(default_world_config());
         app.insert_resource(ClientGameState {
-            player_position: Some(SpacePosition::new(SpaceId(9), TilePosition::new(7, 8))),
+            player_position: Some(SpacePosition::new(SpaceId(9), TilePosition::ground(7, 8))),
             player_vitals: Some(ClientVitalStats {
                 health: 99.0,
                 max_health: 120.0,
@@ -265,10 +265,10 @@ mod tests {
                 SpaceResident {
                     space_id: SpaceId(1),
                 },
-                TilePosition::new(2, 3),
+                TilePosition::ground(2, 3),
                 ViewPosition {
                     space_id: SpaceId(0),
-                    tile: TilePosition::new(0, 0),
+                    tile: TilePosition::ground(0, 0),
                 },
                 VitalStats {
                     health: 14.0,
@@ -297,7 +297,7 @@ mod tests {
 
         // View mirrors authoritative position — ClientGameState is ignored for this entity.
         assert_eq!(view.space_id, SpaceId(1));
-        assert_eq!(view.tile, TilePosition::new(2, 3));
+        assert_eq!(view.tile, TilePosition::ground(2, 3));
         assert_eq!(vital_stats.health, 14.0);
         assert_eq!(vital_stats.max_health, 35.0);
         assert_eq!(displayed_vitals.health, 14.0);
@@ -309,7 +309,7 @@ mod tests {
         let mut app = App::new();
         app.insert_resource(default_world_config());
         app.insert_resource(ClientGameState {
-            player_position: Some(SpacePosition::new(SpaceId(5), TilePosition::new(10, 11))),
+            player_position: Some(SpacePosition::new(SpaceId(5), TilePosition::ground(10, 11))),
             player_vitals: Some(ClientVitalStats {
                 health: 12.0,
                 max_health: 40.0,
@@ -324,7 +324,7 @@ mod tests {
                 Player,
                 ViewPosition {
                     space_id: SpaceId(1),
-                    tile: TilePosition::new(0, 0),
+                    tile: TilePosition::ground(0, 0),
                 },
                 VitalStats::full(1.0, 0.0),
                 DisplayedVitalStats::default(),
@@ -348,7 +348,7 @@ mod tests {
 
         // Projected player reads ClientGameState and writes only to view components.
         assert_eq!(view.space_id, SpaceId(5));
-        assert_eq!(view.tile, TilePosition::new(10, 11));
+        assert_eq!(view.tile, TilePosition::ground(10, 11));
         // Authoritative VitalStats on a projected entity is inert — presentation
         // layer reads DisplayedVitalStats instead.
         assert_eq!(vital_stats.health, 1.0);

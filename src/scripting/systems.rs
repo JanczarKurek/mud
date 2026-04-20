@@ -181,7 +181,7 @@ fn apply_spawn_requests(
     for request in spawn_requests {
         pending_commands.push(GameCommand::AdminSpawn {
             type_id: request.type_id.clone(),
-            tile_position: TilePosition::new(request.x, request.y),
+            tile_position: TilePosition::ground(request.x, request.y),
         });
         console_state.push_output(format!(
             "spawn requested: {} at ({}, {})",

@@ -1,0 +1,10 @@
+extends: static_world
+name: Stairs (down)
+description: A flight of steps descending to the floor below.
+floor_transition:
+  delta: -1
+render:
+  z_index: 0.2
+  debug_color: [120, 92, 62]
+  debug_size: 0.86
+  walkable_surface: true

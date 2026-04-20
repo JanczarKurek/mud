@@ -2073,10 +2073,14 @@ fn cursor_to_tile(
     TilePosition::new(
         player_position.x + tile_offset_x,
         player_position.y + tile_offset_y,
+        player_position.z,
     )
 }
 
 fn is_near_player(player_position: &TilePosition, target_position: &TilePosition) -> bool {
+    if player_position.z != target_position.z {
+        return false;
+    }
     let delta_x = (player_position.x - target_position.x).abs();
     let delta_y = (player_position.y - target_position.y).abs();
 

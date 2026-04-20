@@ -123,6 +123,12 @@ pub enum MapBehavior {
 pub struct TileCoordinate {
     pub x: i32,
     pub y: i32,
+    #[serde(default, skip_serializing_if = "is_default_z")]
+    pub z: i32,
+}
+
+fn is_default_z(z: &i32) -> bool {
+    *z == 0
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -136,7 +142,7 @@ pub struct TileRectangle {
 
 impl TileCoordinate {
     pub const fn to_tile_position(self) -> TilePosition {
-        TilePosition::new(self.x, self.y)
+        TilePosition::new(self.x, self.y, self.z)
     }
 }
 
@@ -393,6 +399,7 @@ impl SpaceDefinition {
                         .push(TileCoordinate {
                             x: col_idx as i32,
                             y: row_idx as i32,
+                            z: TilePosition::GROUND_FLOOR,
                         });
                 }
             }

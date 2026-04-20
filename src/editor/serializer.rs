@@ -94,6 +94,7 @@ pub fn serialize_and_save(
             TileCoordinate {
                 x: tile.x,
                 y: tile.y,
+                z: tile.z,
             },
         ));
     }

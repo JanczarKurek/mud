@@ -46,7 +46,7 @@ pub fn spawn_embedded_player_authoritative(
         return;
     }
 
-    let spawn_tile = TilePosition::new(world_config.map_width / 2, world_config.map_height / 2);
+    let spawn_tile = TilePosition::ground(world_config.map_width / 2, world_config.map_height / 2);
     let object_id = object_registry.allocate_runtime_id("player");
     let entity = spawn_player_authoritative(
         &mut commands,
@@ -143,7 +143,7 @@ pub fn spawn_player_visual(
         Ok(entity) => entity,
         Err(_) => {
             let spawn_tile =
-                TilePosition::new(world_config.map_width / 2, world_config.map_height / 2);
+                TilePosition::ground(world_config.map_width / 2, world_config.map_height / 2);
             commands
                 .spawn((
                     Player,

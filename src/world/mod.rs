@@ -1,5 +1,6 @@
 pub mod animation;
 pub mod components;
+pub mod floors;
 pub mod loot;
 pub mod map_layout;
 pub mod object_definitions;
@@ -18,6 +19,7 @@ use crate::world::animation::{
     advance_animation_timers, attach_animated_sprite, cleanup_just_moved, detect_player_movement,
     return_to_idle_animation, tick_view_scroll, tick_visual_offsets, trigger_movement_animation,
 };
+use crate::world::floors::{recompute_visible_floors, VisibleFloorRange};
 use crate::world::map_layout::SpaceDefinitions;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
@@ -95,6 +97,7 @@ impl Plugin for WorldClientPlugin {
             .insert_resource(ClientRemotePlayerProjectionState::default())
             .insert_resource(ViewScrollOffset::default())
             .insert_resource(GroundTileConfig::default())
+            .insert_resource(VisibleFloorRange::default())
             .add_systems(
                 OnEnter(ClientAppState::InGame),
                 (
@@ -108,6 +111,9 @@ impl Plugin for WorldClientPlugin {
                     sync_client_world_projection.after(apply_game_events_to_client_state),
                     sync_remote_player_projection.after(apply_game_events_to_client_state),
                     sync_authoritative_world_object_position_view
+                        .after(apply_game_events_to_client_state)
+                        .before(sync_tile_transforms),
+                    recompute_visible_floors
                         .after(apply_game_events_to_client_state)
                         .before(sync_tile_transforms),
                     sync_tile_transforms.after(detect_player_movement),

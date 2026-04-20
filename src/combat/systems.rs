@@ -320,5 +320,8 @@ fn combatant_name(
 }
 
 fn chebyshev_distance(a: &TilePosition, b: &TilePosition) -> i32 {
+    if a.z != b.z {
+        return i32::MAX;
+    }
     (a.x - b.x).abs().max((a.y - b.y).abs())
 }

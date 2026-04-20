@@ -6,15 +6,29 @@ use crate::player::components::{InventoryStack, PlayerId};
 #[derive(Component, Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct SpaceId(pub u64);
 
-#[derive(Component, Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Component, Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct TilePosition {
     pub x: i32,
     pub y: i32,
+    #[serde(default)]
+    pub z: i32,
 }
 
 impl TilePosition {
-    pub const fn new(x: i32, y: i32) -> Self {
-        Self { x, y }
+    pub const GROUND_FLOOR: i32 = 0;
+
+    pub const fn new(x: i32, y: i32, z: i32) -> Self {
+        Self { x, y, z }
+    }
+
+    /// Convenience for the ground floor (z = 0). Preferred at 2D-only call sites
+    /// so later floor-aware refactors can grep for `::new(` to find them.
+    pub const fn ground(x: i32, y: i32) -> Self {
+        Self {
+            x,
+            y,
+            z: Self::GROUND_FLOOR,
+        }
     }
 }
 

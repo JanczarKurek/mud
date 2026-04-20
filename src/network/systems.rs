@@ -538,7 +538,7 @@ fn find_spawn_location(
         .get(bootstrap_space_id)
         .map(|space| (space.width, space.height))
         .unwrap_or((world_config.map_width, world_config.map_height));
-    let origin = TilePosition::new(width / 2, height / 2);
+    let origin = TilePosition::ground(width / 2, height / 2);
 
     for radius in 0..width.max(height) {
         for y in -radius..=radius {
@@ -547,7 +547,7 @@ fn find_spawn_location(
                     continue;
                 }
 
-                let candidate = TilePosition::new(origin.x + x, origin.y + y);
+                let candidate = TilePosition::ground(origin.x + x, origin.y + y);
                 if candidate.x < 0
                     || candidate.y < 0
                     || candidate.x >= width
@@ -687,7 +687,7 @@ mod tests {
                 crate::world::components::SpaceResident {
                     space_id: current_space_id,
                 },
-                crate::world::components::TilePosition::new(x, y),
+                crate::world::components::TilePosition::ground(x, y),
             ))
             .id()
     }
@@ -712,7 +712,7 @@ mod tests {
             crate::world::components::SpaceResident {
                 space_id: current_space_id,
             },
-            crate::world::components::TilePosition::new(x, y),
+            crate::world::components::TilePosition::ground(x, y),
         ));
         if definition.colliding {
             entity.insert(Collider);
@@ -741,7 +741,7 @@ mod tests {
                 fill_object_type: config.fill_object_type.clone(),
             }
         };
-        let center = crate::world::components::TilePosition::new(
+        let center = crate::world::components::TilePosition::ground(
             world_config.map_width / 2,
             world_config.map_height / 2,
         );
@@ -786,7 +786,7 @@ mod tests {
         assert_ne!(spawn_tile, center);
         assert_ne!(
             spawn_tile,
-            crate::world::components::TilePosition::new(center.x + 1, center.y)
+            crate::world::components::TilePosition::ground(center.x + 1, center.y)
         );
     }
 
@@ -827,7 +827,7 @@ mod tests {
         assert_eq!(projection.local_player_id, Some(PlayerId(1)));
         assert_eq!(
             projection.player_tile_position,
-            Some(crate::world::components::TilePosition::new(10, 10))
+            Some(crate::world::components::TilePosition::ground(10, 10))
         );
         assert_eq!(projection.remote_players.len(), 1);
         assert_eq!(
@@ -836,7 +836,7 @@ mod tests {
                 .get(&PlayerId(2))
                 .unwrap()
                 .tile_position,
-            crate::world::components::TilePosition::new(12, 10)
+            crate::world::components::TilePosition::ground(12, 10)
         );
         assert!(projection.container_slots.contains_key(&barrel_id));
         assert!(projection
@@ -905,7 +905,7 @@ mod tests {
         // Move the player; the next diff should contain exactly one PlayerPositionChanged.
         app.world_mut()
             .entity_mut(player)
-            .insert(crate::world::components::TilePosition::new(11, 10));
+            .insert(crate::world::components::TilePosition::ground(11, 10));
 
         let mut state: PeerProjectionState = SystemState::new(app.world_mut());
         let (player_query, object_query, world_object_query, container_query, space_manager) =

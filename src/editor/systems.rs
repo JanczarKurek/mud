@@ -221,9 +221,9 @@ pub fn sync_tile_transforms_editor(
         let z = if !is_active {
             -10_000.0
         } else if world_visual.y_sort {
-            1.0 - tile_position.y as f32 * 0.01
+            crate::world::systems::y_sort_z(tile_position.y, tile_position.z)
         } else {
-            world_visual.z_index
+            crate::world::systems::flat_floor_z(world_visual.z_index, tile_position.z)
         };
         let anchor_y_offset = if world_visual.y_sort {
             -effective_size * 0.5
@@ -251,7 +251,7 @@ fn cursor_to_tile(
     let effective_size = world_config.tile_size * camera.zoom_level;
     let center = Vec2::new(window.width() * 0.5, window.height() * 0.5);
     let offset = cursor - center;
-    TilePosition::new(
+    TilePosition::ground(
         (camera.center.x + offset.x / effective_size).round() as i32,
         (camera.center.y - offset.y / effective_size).round() as i32,
     )
@@ -970,11 +970,13 @@ pub fn apply_modal_confirmed(
                 source: TileCoordinate {
                     x: source_tile.x,
                     y: source_tile.y,
+                    z: source_tile.z,
                 },
                 destination_space_id: dest_space_id,
                 destination_tile: TileCoordinate {
                     x: dest_tile_x,
                     y: dest_tile_y,
+                    z: 0,
                 },
                 destination_permanence: None,
             };

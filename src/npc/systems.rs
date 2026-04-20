@@ -143,6 +143,7 @@ fn choose_roaming_step(
             tile_position
                 .y
                 .clamp(behavior.bounds.min_y, behavior.bounds.max_y),
+            tile_position.z,
         );
 
         return choose_seek_step(
@@ -168,8 +169,11 @@ fn choose_roaming_step(
 
     for offset_index in 0..offsets.len() {
         let delta = offsets[(start_index + offset_index) % offsets.len()];
-        let target_position =
-            TilePosition::new(tile_position.x + delta.x, tile_position.y + delta.y);
+        let target_position = TilePosition::new(
+            tile_position.x + delta.x,
+            tile_position.y + delta.y,
+            tile_position.z,
+        );
 
         if blocker_query.iter().any(|(resident, blocker_position)| {
             resident.space_id == space_id && *blocker_position == target_position
@@ -306,6 +310,7 @@ fn choose_kiting_step(
         let away_goal = TilePosition::new(
             2 * tile_position.x - chase_target.x,
             2 * tile_position.y - chase_target.y,
+            tile_position.z,
         );
         return choose_seek_step(
             entity,
@@ -344,7 +349,11 @@ fn choose_seek_step(
     }
 
     candidate_offsets.sort_by_key(|delta| {
-        let candidate = TilePosition::new(tile_position.x + delta.x, tile_position.y + delta.y);
+        let candidate = TilePosition::new(
+            tile_position.x + delta.x,
+            tile_position.y + delta.y,
+            tile_position.z,
+        );
         (
             chebyshev_distance(candidate, seek_target),
             i32::from(delta.x != 0 && delta.y != 0),
@@ -352,8 +361,11 @@ fn choose_seek_step(
     });
 
     for delta in candidate_offsets {
-        let target_position =
-            TilePosition::new(tile_position.x + delta.x, tile_position.y + delta.y);
+        let target_position = TilePosition::new(
+            tile_position.x + delta.x,
+            tile_position.y + delta.y,
+            tile_position.z,
+        );
         if is_blocked_position(
             entity,
             space_id,
@@ -403,6 +415,9 @@ fn is_blocked_position(
 }
 
 fn chebyshev_distance(a: TilePosition, b: TilePosition) -> i32 {
+    if a.z != b.z {
+        return i32::MAX;
+    }
     (a.x - b.x).abs().max((a.y - b.y).abs())
 }
 
@@ -481,7 +496,7 @@ mod tests {
             SpaceResident {
                 space_id: crate::world::components::SpaceId(0),
             },
-            TilePosition::new(5, 5),
+            TilePosition::ground(5, 5),
             VitalStats::full(10.0, 0.0),
         ));
         let near_player = app
@@ -494,7 +509,7 @@ mod tests {
                 SpaceResident {
                     space_id: crate::world::components::SpaceId(0),
                 },
-                TilePosition::new(2, 2),
+                TilePosition::ground(2, 2),
                 VitalStats::full(10.0, 0.0),
             ))
             .id();
@@ -506,7 +521,7 @@ mod tests {
                 SpaceResident {
                     space_id: crate::world::components::SpaceId(0),
                 },
-                TilePosition::new(1, 1),
+                TilePosition::ground(1, 1),
                 RoamingBehavior {
                     bounds: RoamBounds {
                         min_x: 0,
@@ -541,15 +556,15 @@ mod tests {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
 
-        spawn_player(&mut app, 1, TilePosition::new(5, 6));
-        let archer = spawn_archer(&mut app, TilePosition::new(5, 5), 6);
+        spawn_player(&mut app, 1, TilePosition::ground(5, 6));
+        let archer = spawn_archer(&mut app, TilePosition::ground(5, 5), 6);
 
         app.add_systems(Update, update_roaming_npcs);
         app.update();
 
         let archer_position = *app.world().get::<TilePosition>(archer).unwrap();
         assert!(
-            chebyshev_distance(archer_position, TilePosition::new(5, 6)) >= 2,
+            chebyshev_distance(archer_position, TilePosition::ground(5, 6)) >= 2,
             "archer should retreat; ended at {archer_position:?}"
         );
     }
@@ -559,15 +574,15 @@ mod tests {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
 
-        spawn_player(&mut app, 1, TilePosition::new(5, 8));
-        let archer = spawn_archer(&mut app, TilePosition::new(5, 5), 6);
+        spawn_player(&mut app, 1, TilePosition::ground(5, 8));
+        let archer = spawn_archer(&mut app, TilePosition::ground(5, 5), 6);
 
         app.add_systems(Update, update_roaming_npcs);
         app.update();
 
         assert_eq!(
             *app.world().get::<TilePosition>(archer).unwrap(),
-            TilePosition::new(5, 5),
+            TilePosition::ground(5, 5),
             "archer at preferred distance should stand still"
         );
     }
@@ -578,15 +593,15 @@ mod tests {
             let mut app = App::new();
             app.add_plugins(MinimalPlugins);
 
-            spawn_player(&mut app, 1, TilePosition::new(5, player_y));
-            let archer = spawn_archer(&mut app, TilePosition::new(5, 5), 6);
+            spawn_player(&mut app, 1, TilePosition::ground(5, player_y));
+            let archer = spawn_archer(&mut app, TilePosition::ground(5, 5), 6);
 
             app.add_systems(Update, update_roaming_npcs);
             app.update();
 
             assert_eq!(
                 *app.world().get::<TilePosition>(archer).unwrap(),
-                TilePosition::new(5, 5),
+                TilePosition::ground(5, 5),
                 "archer should hold when player at y={player_y} (distance inside dead-band)"
             );
         }
@@ -597,15 +612,15 @@ mod tests {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
 
-        spawn_player(&mut app, 1, TilePosition::new(5, 10));
-        let archer = spawn_archer(&mut app, TilePosition::new(5, 5), 6);
+        spawn_player(&mut app, 1, TilePosition::ground(5, 10));
+        let archer = spawn_archer(&mut app, TilePosition::ground(5, 5), 6);
 
         app.add_systems(Update, update_roaming_npcs);
         app.update();
 
         let archer_position = *app.world().get::<TilePosition>(archer).unwrap();
         assert_eq!(
-            chebyshev_distance(archer_position, TilePosition::new(5, 10)),
+            chebyshev_distance(archer_position, TilePosition::ground(5, 10)),
             4,
             "archer should close one tile; ended at {archer_position:?}"
         );
@@ -616,8 +631,8 @@ mod tests {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
 
-        spawn_player(&mut app, 1, TilePosition::new(5, 6));
-        let archer = spawn_archer(&mut app, TilePosition::new(5, 5), 6);
+        spawn_player(&mut app, 1, TilePosition::ground(5, 6));
+        let archer = spawn_archer(&mut app, TilePosition::ground(5, 5), 6);
 
         for (x, y) in [(4, 4), (5, 4), (6, 4), (4, 5), (6, 5), (4, 6), (6, 6)] {
             app.world_mut().spawn((
@@ -625,7 +640,7 @@ mod tests {
                 SpaceResident {
                     space_id: TEST_SPACE,
                 },
-                TilePosition::new(x, y),
+                TilePosition::ground(x, y),
             ));
         }
 
@@ -634,7 +649,7 @@ mod tests {
 
         assert_eq!(
             *app.world().get::<TilePosition>(archer).unwrap(),
-            TilePosition::new(5, 5),
+            TilePosition::ground(5, 5),
             "cornered archer with no retreat tile should stand still"
         );
     }
@@ -644,7 +659,7 @@ mod tests {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
 
-        spawn_player(&mut app, 1, TilePosition::new(5, 8));
+        spawn_player(&mut app, 1, TilePosition::ground(5, 8));
         let npc = app
             .world_mut()
             .spawn((
@@ -652,7 +667,7 @@ mod tests {
                 SpaceResident {
                     space_id: TEST_SPACE,
                 },
-                TilePosition::new(5, 5),
+                TilePosition::ground(5, 5),
                 RoamingBehavior {
                     bounds: RoamBounds {
                         min_x: 0,
@@ -679,9 +694,55 @@ mod tests {
 
         let npc_position = *app.world().get::<TilePosition>(npc).unwrap();
         assert_eq!(
-            chebyshev_distance(npc_position, TilePosition::new(5, 8)),
+            chebyshev_distance(npc_position, TilePosition::ground(5, 8)),
             2,
             "melee NPC should close one tile; ended at {npc_position:?}"
+        );
+    }
+
+    #[test]
+    fn npc_does_not_chase_player_on_different_floor() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+
+        // Player is one tile away but on floor 1; NPC is on floor 0 and must
+        // not acquire them as a target (z-mismatched distance is infinite).
+        spawn_player(&mut app, 1, TilePosition::new(5, 6, 1));
+        let npc = app
+            .world_mut()
+            .spawn((
+                Npc,
+                SpaceResident {
+                    space_id: TEST_SPACE,
+                },
+                TilePosition::ground(5, 5),
+                RoamingBehavior {
+                    bounds: RoamBounds {
+                        min_x: 0,
+                        min_y: 0,
+                        max_x: 20,
+                        max_y: 20,
+                    },
+                    step_interval_seconds: 0.1,
+                },
+                HostileBehavior {
+                    detect_distance_tiles: 20,
+                    disengage_distance_tiles: 20,
+                },
+                AttackProfile::melee(),
+                RoamingStepTimer {
+                    remaining_seconds: 0.0,
+                },
+                RoamingRandomState { seed: 1 },
+            ))
+            .id();
+
+        app.add_systems(Update, update_roaming_npcs);
+        app.update();
+
+        assert!(
+            app.world().get::<CombatTarget>(npc).is_none(),
+            "NPC should not target a player on a different floor"
         );
     }
 }

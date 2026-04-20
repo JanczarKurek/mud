@@ -397,8 +397,10 @@ pub fn detect_player_movement(
     if let Some(old_tile) = *last_tile {
         let dx = new_tile.x - old_tile.x;
         let dy = new_tile.y - old_tile.y;
-        // Only animate single-tile steps; skip teleports (portal jumps).
-        if (dx != 0 || dy != 0) && dx.abs() <= 1 && dy.abs() <= 1 {
+        let dz = new_tile.z - old_tile.z;
+        // Only animate single-tile steps; skip teleports (portal jumps) and
+        // floor transitions (stairs), which shouldn't play the walk clip.
+        if dz == 0 && (dx != 0 || dy != 0) && dx.abs() <= 1 && dy.abs() <= 1 {
             view_scroll.current = Vec2::new(
                 dx as f32 * world_config.tile_size,
                 dy as f32 * world_config.tile_size,

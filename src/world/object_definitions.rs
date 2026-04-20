@@ -59,6 +59,16 @@ pub struct OverworldObjectDefinition {
     pub ammo_type: Option<String>,
     #[serde(default)]
     pub damage: Option<String>,
+    /// When present, walking onto this object's tile shifts the player's floor
+    /// by `delta` (±1 for stairs_up / stairs_down, etc.).
+    #[serde(default)]
+    pub floor_transition: Option<FloorTransitionDef>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct FloorTransitionDef {
+    pub delta: i32,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -404,6 +414,16 @@ pub struct RenderMetadata {
     pub y_sort: bool,
     #[serde(default)]
     pub animation: Option<AnimationSheetDef>,
+    /// Tiles on floor N with this flag hide everything on floor N+1 and
+    /// above from view when the player stands directly beneath them.
+    /// Walls and floor planks opt in so buildings feel enclosed.
+    #[serde(default)]
+    pub occludes_floor_above: bool,
+    /// Upper floors are empty space by default; a tile on z > 0 is only
+    /// walkable if some object at that tile has this flag set. Floor planks
+    /// and stair tiles opt in. The ground floor is always walkable.
+    #[serde(default)]
+    pub walkable_surface: bool,
 }
 
 impl RenderMetadata {

@@ -7,6 +7,7 @@ use crate::world::components::{
     ClientProjectedWorldObject, ClientRemotePlayerVisual, CombatHealthBar, DisplayedVitalStats,
     HealthBarDisplayPolicy, SpaceResident, TilePosition, ViewPosition, WorldVisual,
 };
+use crate::world::floors::{VisibleFloorRange, DIMMED_FLOOR_ALPHA};
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::resources::{
     ClientRemotePlayerProjectionState, ClientWorldProjectionState, SpaceManager, ViewScrollOffset,
@@ -104,7 +105,7 @@ pub fn sync_client_world_projection(
         view.space_id = object.position.space_id;
         let old_tile = view.tile;
         view.tile = object.position.tile_position;
-        if old_tile != view.tile {
+        if old_tile != view.tile && old_tile.z == view.tile.z {
             let dx = view.tile.x - old_tile.x;
             let dy = view.tile.y - old_tile.y;
             commands.entity(query_entity).insert((
@@ -216,7 +217,7 @@ pub fn sync_remote_player_projection(
         view.space_id = remote_player.position.space_id;
         let old_tile = view.tile;
         view.tile = remote_player.position.tile_position;
-        if old_tile != view.tile {
+        if old_tile != view.tile && old_tile.z == view.tile.z {
             let dx = view.tile.x - old_tile.x;
             let dy = view.tile.y - old_tile.y;
             if dx.abs() <= 1 && dy.abs() <= 1 {
@@ -256,21 +257,37 @@ pub fn sync_remote_player_projection(
     }
 }
 
+/// Vertical spacing between floors in world-z space. Must exceed the span of
+/// y-sort for any single floor (~1.5 on the largest authored maps) so every
+/// entity on floor N renders above every entity on floor N-1.
+pub const FLOOR_Z_STEP: f32 = 10.0;
+
 /// Y-sorted entities live above all flat layers (ground, pickups).
 /// Lower tile_y = lower on screen = closer to viewer = higher z.
-fn y_sort_z(tile_y: i32) -> f32 {
-    1.0 - tile_y as f32 * 0.01
+/// Floor offsets are additive and dominate y-sort so upper floors always
+/// render above lower ones when both are visible.
+pub fn y_sort_z(tile_y: i32, floor: i32) -> f32 {
+    floor as f32 * FLOOR_Z_STEP + 1.0 - tile_y as f32 * 0.01
+}
+
+/// Flat-layer z for a non-y-sorted entity (ground tiles, pickups). Combines
+/// the definition-supplied z_index with the entity's floor so e.g. a
+/// floor-plank on floor 1 never sorts behind grass on floor 0.
+pub fn flat_floor_z(base_z_index: f32, floor: i32) -> f32 {
+    floor as f32 * FLOOR_Z_STEP + base_z_index
 }
 
 pub fn sync_tile_transforms(
     client_state: Res<ClientGameState>,
     world_config: Res<WorldConfig>,
     view_scroll: Res<ViewScrollOffset>,
+    visible_floors: Res<VisibleFloorRange>,
     mut query: Query<
         (
             &ViewPosition,
             &WorldVisual,
             &mut Transform,
+            Option<&mut Sprite>,
             Option<&VisualOffset>,
         ),
         Without<Player>,
@@ -280,15 +297,16 @@ pub fn sync_tile_transforms(
         return;
     };
 
-    for (view, world_visual, mut transform, visual_offset) in &mut query {
+    for (view, world_visual, mut transform, mut sprite, visual_offset) in &mut query {
         let is_active = view.space_id == player_position.space_id;
+        let floor_visible = visible_floors.contains(view.tile.z);
 
-        let z = if !is_active {
+        let z = if !is_active || !floor_visible {
             -10_000.0
         } else if world_visual.y_sort {
-            y_sort_z(view.tile.y)
+            y_sort_z(view.tile.y, view.tile.z)
         } else {
-            world_visual.z_index
+            flat_floor_z(world_visual.z_index, view.tile.z)
         };
 
         let anchor_y_offset = if world_visual.y_sort {
@@ -309,6 +327,15 @@ pub fn sync_tile_transforms(
                 + entity_offset.y,
             z,
         );
+
+        if let Some(sprite) = sprite.as_mut() {
+            let alpha = if is_active && floor_visible && view.tile.z < visible_floors.player_floor {
+                DIMMED_FLOOR_ALPHA
+            } else {
+                1.0
+            };
+            sprite.color.set_alpha(alpha);
+        }
     }
 }
 
@@ -323,11 +350,11 @@ pub fn sync_player_z(
     if world_visual.y_sort {
         let _ = client_state.player_position;
         // Subtract half-tile epsilon so world objects at the same tile_y always render in front.
-        let new_z = y_sort_z(view.tile.y) - 0.005;
+        let new_z = y_sort_z(view.tile.y, view.tile.z) - 0.005;
         if (transform.translation.z - new_z).abs() > 0.001 {
             info!(
-                "player z update: tile_y={} z_index={} -> z={}",
-                view.tile.y, world_visual.z_index, new_z
+                "player z update: tile_y={} tile_z={} z_index={} -> z={}",
+                view.tile.y, view.tile.z, world_visual.z_index, new_z
             );
         }
         transform.translation.z = new_z;

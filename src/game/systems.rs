@@ -104,6 +104,7 @@ pub fn process_game_commands(
                     player_entity,
                     delta,
                     &collider_positions,
+                    &object_query,
                     &mut player_queries.p2(),
                     &authored_spaces,
                     &definitions,
@@ -287,6 +288,10 @@ fn handle_move_player(
     player_entity: Entity,
     delta: MoveDelta,
     collider_positions: &[TilePosition],
+    object_query: &Query<
+        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
+        Without<Player>,
+    >,
     player_query: &mut Query<
         (
             Entity,
@@ -306,8 +311,17 @@ fn handle_move_player(
     space_manager: &mut SpaceManager,
     commands: &mut Commands,
 ) {
-    let Ok((_, _, _, _, mut space_resident, mut tile_position, mut movement_cooldown, _, _)) =
-        player_query.get_mut(player_entity)
+    let Ok((
+        _,
+        _,
+        _,
+        mut chat_log_state,
+        mut space_resident,
+        mut tile_position,
+        mut movement_cooldown,
+        _,
+        _,
+    )) = player_query.get_mut(player_entity)
     else {
         return;
     };
@@ -323,18 +337,53 @@ fn handle_move_player(
     let target_position = TilePosition::new(
         (tile_position.x + delta.x).clamp(0, runtime_space.width - 1),
         (tile_position.y + delta.y).clamp(0, runtime_space.height - 1),
+        tile_position.z,
     );
 
-    let blocked = collider_positions
-        .iter()
-        .any(|collider_position| *collider_position == target_position);
-
-    if blocked {
+    if !is_walkable_tile(
+        target_position,
+        space_resident.space_id,
+        collider_positions,
+        object_query,
+        definitions,
+    ) {
         return;
     }
 
     *tile_position = target_position;
     movement_cooldown.remaining_seconds = movement_cooldown.step_interval_seconds;
+
+    // Stair transition: if the tile the player just stepped onto carries a
+    // `floor_transition`, bump z by its delta (unless the destination is blocked).
+    let stairs_delta = object_query
+        .iter()
+        .filter(|(_, resident, tile, _)| {
+            resident.space_id == space_resident.space_id && **tile == target_position
+        })
+        .find_map(|(_, _, _, object)| {
+            definitions
+                .get(&object.definition_id)
+                .and_then(|def| def.floor_transition.as_ref())
+                .map(|transition| transition.delta)
+        });
+    if let Some(delta_z) = stairs_delta {
+        let stair_destination = TilePosition::new(
+            target_position.x,
+            target_position.y,
+            target_position.z + delta_z,
+        );
+        if is_walkable_tile(
+            stair_destination,
+            space_resident.space_id,
+            collider_positions,
+            object_query,
+            definitions,
+        ) {
+            *tile_position = stair_destination;
+        } else {
+            chat_log_state.push_narrator("The way is blocked.");
+        }
+    }
 
     let Some(space_definition) = authored_spaces.get(&runtime_space.authored_id) else {
         return;
@@ -2155,7 +2204,48 @@ fn apply_spell_effects(spell: &SpellDefinition, vital_stats: &mut VitalStats) {
 }
 
 fn chebyshev_distance_tiles(a: TilePosition, b: TilePosition) -> i32 {
+    if a.z != b.z {
+        return i32::MAX;
+    }
     (a.x - b.x).abs().max((a.y - b.y).abs())
+}
+
+/// Central walkability check for player moves (and, later, teleport targets).
+///
+/// Ground floor is walkable anywhere a collider isn't present. Upper floors
+/// (`z != 0`) require at least one object at the target tile whose definition
+/// has `walkable_surface: true` — floor planks and stairs opt in. This makes
+/// upper floors "built from positive-space tiles" rather than infinite planes,
+/// so players can't walk past the edge of an authored building.
+fn is_walkable_tile(
+    target: TilePosition,
+    space_id: crate::world::components::SpaceId,
+    collider_positions: &[TilePosition],
+    object_query: &Query<
+        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
+        Without<Player>,
+    >,
+    definitions: &OverworldObjectDefinitions,
+) -> bool {
+    if collider_positions
+        .iter()
+        .any(|collider_position| *collider_position == target)
+    {
+        return false;
+    }
+
+    if target.z == TilePosition::GROUND_FLOOR {
+        return true;
+    }
+
+    object_query
+        .iter()
+        .filter(|(_, resident, tile, _)| resident.space_id == space_id && **tile == target)
+        .any(|(_, _, _, object)| {
+            definitions
+                .get(&object.definition_id)
+                .is_some_and(|def| def.render.walkable_surface)
+        })
 }
 
 #[cfg(test)]
@@ -2226,7 +2316,7 @@ mod tests {
                 SpaceResident {
                     space_id: current_space_id,
                 },
-                TilePosition::new(x, y),
+                TilePosition::ground(x, y),
             ))
             .id()
     }
@@ -2283,7 +2373,7 @@ mod tests {
             .resource_mut::<ObjectRegistry>()
             .allocate_runtime_id("apple");
         let world_object =
-            spawn_world_object(&mut app, "apple", object_id, TilePosition::new(5, 4));
+            spawn_world_object(&mut app, "apple", object_id, TilePosition::ground(5, 4));
         app.world_mut()
             .entity_mut(world_object)
             .insert(SpaceResident {
@@ -2332,8 +2422,8 @@ mod tests {
             .map(|(identity, position)| (identity.id.0, *position))
             .collect::<std::collections::HashMap<_, _>>();
 
-        assert_eq!(positions[&1], TilePosition::new(11, 10));
-        assert_eq!(positions[&2], TilePosition::new(12, 10));
+        assert_eq!(positions[&1], TilePosition::ground(11, 10));
+        assert_eq!(positions[&2], TilePosition::ground(12, 10));
         assert!(app.world().get_entity(player_one).is_ok());
         assert!(app.world().get_entity(player_two).is_ok());
     }
@@ -2352,7 +2442,7 @@ mod tests {
             .resource_mut::<ObjectRegistry>()
             .allocate_runtime_id("apple");
         // Place the apple at Chebyshev distance 6 (just past effective range 5).
-        spawn_world_object(&mut app, "apple", apple_id, TilePosition::new(6, 0));
+        spawn_world_object(&mut app, "apple", apple_id, TilePosition::ground(6, 0));
 
         app.world_mut()
             .resource_mut::<PendingGameCommands>()
@@ -2383,7 +2473,7 @@ mod tests {
             .resource_mut::<ObjectRegistry>()
             .allocate_runtime_id("apple");
         // Chebyshev distance 5 == effective range, should succeed.
-        spawn_world_object(&mut app, "apple", apple_id, TilePosition::new(5, 0));
+        spawn_world_object(&mut app, "apple", apple_id, TilePosition::ground(5, 0));
 
         app.world_mut()
             .resource_mut::<PendingGameCommands>()
@@ -2432,8 +2522,8 @@ mod tests {
             .map(|(identity, position)| (identity.id.0, *position))
             .collect::<std::collections::HashMap<_, _>>();
 
-        assert_eq!(positions[&1], TilePosition::new(10, 10));
-        assert_eq!(positions[&2], TilePosition::new(11, 10));
+        assert_eq!(positions[&1], TilePosition::ground(10, 10));
+        assert_eq!(positions[&2], TilePosition::ground(11, 10));
     }
 
     #[test]
@@ -2446,7 +2536,7 @@ mod tests {
             .world_mut()
             .resource_mut::<ObjectRegistry>()
             .allocate_runtime_id("apple");
-        spawn_world_object(&mut app, "apple", apple_id, TilePosition::new(11, 10));
+        spawn_world_object(&mut app, "apple", apple_id, TilePosition::ground(11, 10));
 
         app.world_mut()
             .resource_mut::<PendingGameCommands>()
@@ -2482,10 +2572,168 @@ mod tests {
             .iter(app.world())
             .any(|object| object.object_id == apple_id));
     }
+
+    #[test]
+    fn stairs_transition_teleports_player_up_one_floor() {
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+
+        let stairs_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("stairs_up");
+        spawn_world_object(
+            &mut app,
+            "stairs_up",
+            stairs_id,
+            TilePosition::ground(11, 10),
+        );
+        // Upper-floor walkability rule: the destination of the stair transition
+        // needs a walkable-surface object underneath.
+        let plank_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("floor_plank");
+        spawn_world_object(
+            &mut app,
+            "floor_plank",
+            plank_id,
+            TilePosition::new(11, 10, 1),
+        );
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                crate::player::components::PlayerId(1),
+                GameCommand::MovePlayer {
+                    delta: MoveDelta { x: 1, y: 0 },
+                },
+            );
+        app.update();
+
+        let tile = *app.world().get::<TilePosition>(player).unwrap();
+        assert_eq!(tile, TilePosition::new(11, 10, 1));
+    }
+
+    #[test]
+    fn upper_floor_walk_requires_walkable_surface() {
+        let mut app = setup_server_app();
+        // Player already on floor 1 standing on a plank; no plank to the east.
+        let player = spawn_player(&mut app, 1, 10, 10);
+        app.world_mut()
+            .entity_mut(player)
+            .insert(TilePosition::new(10, 10, 1));
+
+        let plank_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("floor_plank");
+        spawn_world_object(
+            &mut app,
+            "floor_plank",
+            plank_id,
+            TilePosition::new(10, 10, 1),
+        );
+
+        // Attempt to walk east into "empty air" on floor 1.
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                crate::player::components::PlayerId(1),
+                GameCommand::MovePlayer {
+                    delta: MoveDelta { x: 1, y: 0 },
+                },
+            );
+        app.update();
+
+        let tile = *app.world().get::<TilePosition>(player).unwrap();
+        assert_eq!(
+            tile,
+            TilePosition::new(10, 10, 1),
+            "player should not walk off the edge of the plank"
+        );
+
+        // Add a plank to the east and retry — now the move should succeed.
+        let plank_east_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("floor_plank");
+        spawn_world_object(
+            &mut app,
+            "floor_plank",
+            plank_east_id,
+            TilePosition::new(11, 10, 1),
+        );
+
+        // Clear the movement cooldown so the next step fires immediately.
+        app.world_mut()
+            .entity_mut(player)
+            .insert(MovementCooldown::default());
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                crate::player::components::PlayerId(1),
+                GameCommand::MovePlayer {
+                    delta: MoveDelta { x: 1, y: 0 },
+                },
+            );
+        app.update();
+
+        let tile = *app.world().get::<TilePosition>(player).unwrap();
+        assert_eq!(tile, TilePosition::new(11, 10, 1));
+    }
+
+    #[test]
+    fn stairs_blocked_destination_prevents_transition() {
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+
+        let stairs_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("stairs_up");
+        spawn_world_object(
+            &mut app,
+            "stairs_up",
+            stairs_id,
+            TilePosition::ground(11, 10),
+        );
+
+        // Wall at the destination floor blocks the transition.
+        let wall_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("wall");
+        spawn_world_object(&mut app, "wall", wall_id, TilePosition::new(11, 10, 1));
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                crate::player::components::PlayerId(1),
+                GameCommand::MovePlayer {
+                    delta: MoveDelta { x: 1, y: 0 },
+                },
+            );
+        app.update();
+
+        let tile = *app.world().get::<TilePosition>(player).unwrap();
+        assert_eq!(tile, TilePosition::ground(11, 10));
+        let chat_log = app.world().get::<ChatLog>(player).unwrap();
+        assert!(
+            chat_log
+                .lines
+                .last()
+                .map(|line| line.contains("blocked"))
+                .unwrap_or(false),
+            "expected 'blocked' narrator line; got {:?}",
+            chat_log.lines
+        );
+    }
 }
 
 fn is_near_player(player_position: &TilePosition, target_position: &TilePosition) -> bool {
-    (player_position.x - target_position.x).abs() <= 1
+    player_position.z == target_position.z
+        && (player_position.x - target_position.x).abs() <= 1
         && (player_position.y - target_position.y).abs() <= 1
 }
 
@@ -2550,7 +2798,11 @@ fn find_nearest_valid_world_drop_tile(
     let mut candidates = Vec::new();
     for y in -1..=1 {
         for x in -1..=1 {
-            candidates.push(TilePosition::new(target_tile.x + x, target_tile.y + y));
+            candidates.push(TilePosition::new(
+                target_tile.x + x,
+                target_tile.y + y,
+                target_tile.z,
+            ));
         }
     }
 

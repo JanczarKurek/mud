@@ -6,3 +6,4 @@ render:
   debug_color: [120, 114, 103]
   debug_size: 0.94
   sprite_path: overworld_objects/wall/sprite.png
+  occludes_floor_above: true

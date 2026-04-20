@@ -1,0 +1,10 @@
+extends: static_world
+name: Stairs (up)
+description: A flight of steps leading to the floor above.
+floor_transition:
+  delta: 1
+render:
+  z_index: 0.2
+  debug_color: [196, 162, 118]
+  debug_size: 0.86
+  walkable_surface: true

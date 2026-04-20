@@ -387,7 +387,7 @@ fn save_world_on_app_exit(
     world_objects.sort_by_key(|object| object.object_id);
 
     let dump = WorldStateDump {
-        format_version: 3,
+        format_version: 4,
         spaces,
         saved_at_unix_seconds: SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -775,7 +775,7 @@ mod tests {
             .allocate_runtime_id("player");
         let spawn_tile = {
             let world_config = app.world().resource::<WorldConfig>();
-            TilePosition::new(world_config.map_width / 2, world_config.map_height / 2)
+            TilePosition::ground(world_config.map_width / 2, world_config.map_height / 2)
         };
         let world_config = WorldConfig {
             current_space_id: app.world().resource::<WorldConfig>().current_space_id,
@@ -804,7 +804,7 @@ mod tests {
             serde_json::from_str::<WorldStateDump>(&std::fs::read_to_string(&save_path).unwrap())
                 .unwrap();
 
-        assert_eq!(dump.format_version, 2);
+        assert_eq!(dump.format_version, 4);
         assert!(!dump.spaces.is_empty());
         assert_eq!(
             dump.players
@@ -878,7 +878,7 @@ mod tests {
                 player_id: PlayerId(7),
                 object_id: 42,
                 space_id: Some(crate::world::components::SpaceId(7)),
-                tile_position: TilePosition::new(5, 6),
+                tile_position: TilePosition::ground(5, 6),
                 inventory: Inventory::default(),
                 chat_log: ChatLog::default(),
                 base_stats: BaseStats::default(),
@@ -895,7 +895,7 @@ mod tests {
                 object_id: 43,
                 definition_id: "barrel".to_owned(),
                 space_id: Some(crate::world::components::SpaceId(7)),
-                tile_position: Some(TilePosition::new(7, 6)),
+                tile_position: Some(TilePosition::ground(7, 6)),
                 collider: false,
                 movable: false,
                 storable: false,
@@ -933,7 +933,7 @@ mod tests {
         };
         assert_eq!(restored_players.len(), 1);
         assert_eq!(restored_players[0].0.id, PlayerId(7));
-        assert_eq!(*restored_players[0].1, TilePosition::new(5, 6));
+        assert_eq!(*restored_players[0].1, TilePosition::ground(5, 6));
         assert_eq!(restored_players[0].2.object_id, 42);
 
         let has_restored_object = {
@@ -942,7 +942,7 @@ mod tests {
                 world.query_filtered::<(&OverworldObject, &TilePosition), Without<Player>>();
             object_query
                 .iter(world)
-                .any(|(object, tile)| object.object_id == 43 && *tile == TilePosition::new(7, 6))
+                .any(|(object, tile)| object.object_id == 43 && *tile == TilePosition::ground(7, 6))
         };
         assert!(has_restored_object);
 
