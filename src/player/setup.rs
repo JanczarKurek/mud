@@ -17,10 +17,7 @@ use crate::world::WorldConfig;
 
 /// Populate a fresh player's inventory with a starter shortbow + arrows so the
 /// ranged-combat showcase is immediately playable.
-pub fn seed_starter_inventory(
-    inventory: &mut Inventory,
-    object_registry: &mut ObjectRegistry,
-) {
+pub fn seed_starter_inventory(inventory: &mut Inventory, object_registry: &mut ObjectRegistry) {
     let bow_id = object_registry.allocate_runtime_id("bow");
     inventory.restore_equipment_item(EquipmentSlot::Weapon, bow_id);
     let arrow_id = object_registry.allocate_runtime_id("arrow");

@@ -1830,13 +1830,9 @@ fn place_stack_in_slot_ref(
             };
             place_stack_in_option_slot(slot, stack, object_registry, definitions)
         }
-        ItemSlotRef::Equipment(slot) => place_item_in_equipment_slot(
-            inventory_state,
-            object_registry,
-            definitions,
-            slot,
-            stack,
-        ),
+        ItemSlotRef::Equipment(slot) => {
+            place_item_in_equipment_slot(inventory_state, object_registry, definitions, slot, stack)
+        }
         ItemSlotRef::Container {
             object_id: container_object_id,
             slot_index,

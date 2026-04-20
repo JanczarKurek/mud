@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::combat::components::CombatTarget;
+use crate::combat::components::{AttackKind, AttackProfile, CombatTarget};
 use crate::npc::components::{
     HostileBehavior, Npc, RoamingBehavior, RoamingRandomState, RoamingStepTimer,
 };
@@ -18,6 +18,7 @@ pub fn update_roaming_npcs(
             &mut TilePosition,
             &RoamingBehavior,
             Option<&HostileBehavior>,
+            Option<&AttackProfile>,
             Option<&mut CombatTarget>,
             &mut RoamingStepTimer,
             &mut RoamingRandomState,
@@ -42,6 +43,7 @@ pub fn update_roaming_npcs(
         mut tile_position,
         behavior,
         hostile_behavior,
+        attack_profile,
         combat_target,
         mut timer,
         mut random_state,
@@ -73,6 +75,8 @@ pub fn update_roaming_npcs(
             resident.space_id,
             *tile_position,
             behavior,
+            hostile_behavior,
+            attack_profile,
             chase_target,
             &mut random_state,
             &blocker_query,
@@ -91,6 +95,8 @@ fn choose_roaming_step(
     space_id: SpaceId,
     tile_position: TilePosition,
     behavior: &RoamingBehavior,
+    hostile_behavior: Option<&HostileBehavior>,
+    attack_profile: Option<&AttackProfile>,
     chase_target: Option<TilePosition>,
     random_state: &mut RoamingRandomState,
     blocker_query: &Query<(&SpaceResident, &TilePosition), (With<Collider>, Without<Npc>)>,
@@ -98,6 +104,26 @@ fn choose_roaming_step(
     npc_positions: &[(Entity, SpaceId, TilePosition)],
 ) -> Option<TilePosition> {
     if let Some(chase_target) = chase_target {
+        if let (
+            Some(AttackProfile {
+                kind: AttackKind::Ranged { range_tiles },
+            }),
+            Some(hostile),
+        ) = (attack_profile, hostile_behavior)
+        {
+            return choose_kiting_step(
+                entity,
+                space_id,
+                tile_position,
+                chase_target,
+                *range_tiles,
+                hostile.disengage_distance_tiles,
+                blocker_query,
+                player_position,
+                npc_positions,
+            );
+        }
+
         return choose_chase_step(
             entity,
             space_id,
@@ -248,6 +274,54 @@ fn choose_chase_step(
     )
 }
 
+fn choose_kiting_step(
+    entity: Entity,
+    space_id: SpaceId,
+    tile_position: TilePosition,
+    chase_target: TilePosition,
+    range_tiles: i32,
+    disengage_distance_tiles: i32,
+    blocker_query: &Query<(&SpaceResident, &TilePosition), (With<Collider>, Without<Npc>)>,
+    player_position: Option<TilePosition>,
+    npc_positions: &[(Entity, SpaceId, TilePosition)],
+) -> Option<TilePosition> {
+    let preferred_cap = (disengage_distance_tiles - 1).max(0);
+    let preferred = (range_tiles / 2).clamp(0, preferred_cap);
+    let tolerance: i32 = 1;
+    let distance = chebyshev_distance(tile_position, chase_target);
+
+    if distance > preferred + tolerance {
+        return choose_chase_step(
+            entity,
+            space_id,
+            tile_position,
+            chase_target,
+            blocker_query,
+            player_position,
+            npc_positions,
+        );
+    }
+
+    if distance < preferred - tolerance {
+        let away_goal = TilePosition::new(
+            2 * tile_position.x - chase_target.x,
+            2 * tile_position.y - chase_target.y,
+        );
+        return choose_seek_step(
+            entity,
+            space_id,
+            tile_position,
+            away_goal,
+            blocker_query,
+            player_position,
+            npc_positions,
+            true,
+        );
+    }
+
+    None
+}
+
 fn choose_seek_step(
     entity: Entity,
     space_id: SpaceId,
@@ -337,14 +411,62 @@ mod tests {
     use bevy::prelude::*;
 
     use super::*;
-    use crate::combat::components::CombatTarget;
+    use crate::combat::components::{AttackProfile, CombatTarget};
     use crate::npc::components::{
         HostileBehavior, Npc, RoamBounds, RoamingBehavior, RoamingRandomState, RoamingStepTimer,
     };
     use crate::player::components::{
         ChatLog, Inventory, Player, PlayerId, PlayerIdentity, VitalStats,
     };
-    use crate::world::components::SpaceResident;
+    use crate::world::components::{Collider, SpaceResident};
+
+    const TEST_SPACE: crate::world::components::SpaceId = crate::world::components::SpaceId(0);
+
+    fn spawn_player(app: &mut App, id: u64, position: TilePosition) -> Entity {
+        app.world_mut()
+            .spawn((
+                Player,
+                PlayerIdentity { id: PlayerId(id) },
+                Inventory::default(),
+                ChatLog::default(),
+                SpaceResident {
+                    space_id: TEST_SPACE,
+                },
+                position,
+                VitalStats::full(10.0, 0.0),
+            ))
+            .id()
+    }
+
+    fn spawn_archer(app: &mut App, position: TilePosition, range: i32) -> Entity {
+        app.world_mut()
+            .spawn((
+                Npc,
+                SpaceResident {
+                    space_id: TEST_SPACE,
+                },
+                position,
+                RoamingBehavior {
+                    bounds: RoamBounds {
+                        min_x: 0,
+                        min_y: 0,
+                        max_x: 20,
+                        max_y: 20,
+                    },
+                    step_interval_seconds: 0.1,
+                },
+                HostileBehavior {
+                    detect_distance_tiles: 20,
+                    disengage_distance_tiles: 20,
+                },
+                AttackProfile::ranged(range),
+                RoamingStepTimer {
+                    remaining_seconds: 0.0,
+                },
+                RoamingRandomState { seed: 1 },
+            ))
+            .id()
+    }
 
     #[test]
     fn hostile_npc_targets_the_nearest_player() {
@@ -411,6 +533,155 @@ mod tests {
         assert_eq!(
             app.world().get::<CombatTarget>(npc).unwrap().entity,
             near_player
+        );
+    }
+
+    #[test]
+    fn archer_retreats_when_player_too_close() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+
+        spawn_player(&mut app, 1, TilePosition::new(5, 6));
+        let archer = spawn_archer(&mut app, TilePosition::new(5, 5), 6);
+
+        app.add_systems(Update, update_roaming_npcs);
+        app.update();
+
+        let archer_position = *app.world().get::<TilePosition>(archer).unwrap();
+        assert!(
+            chebyshev_distance(archer_position, TilePosition::new(5, 6)) >= 2,
+            "archer should retreat; ended at {archer_position:?}"
+        );
+    }
+
+    #[test]
+    fn archer_holds_at_preferred_distance() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+
+        spawn_player(&mut app, 1, TilePosition::new(5, 8));
+        let archer = spawn_archer(&mut app, TilePosition::new(5, 5), 6);
+
+        app.add_systems(Update, update_roaming_npcs);
+        app.update();
+
+        assert_eq!(
+            *app.world().get::<TilePosition>(archer).unwrap(),
+            TilePosition::new(5, 5),
+            "archer at preferred distance should stand still"
+        );
+    }
+
+    #[test]
+    fn archer_holds_within_dead_band() {
+        for player_y in [7, 9] {
+            let mut app = App::new();
+            app.add_plugins(MinimalPlugins);
+
+            spawn_player(&mut app, 1, TilePosition::new(5, player_y));
+            let archer = spawn_archer(&mut app, TilePosition::new(5, 5), 6);
+
+            app.add_systems(Update, update_roaming_npcs);
+            app.update();
+
+            assert_eq!(
+                *app.world().get::<TilePosition>(archer).unwrap(),
+                TilePosition::new(5, 5),
+                "archer should hold when player at y={player_y} (distance inside dead-band)"
+            );
+        }
+    }
+
+    #[test]
+    fn archer_chases_when_player_flees_past_band() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+
+        spawn_player(&mut app, 1, TilePosition::new(5, 10));
+        let archer = spawn_archer(&mut app, TilePosition::new(5, 5), 6);
+
+        app.add_systems(Update, update_roaming_npcs);
+        app.update();
+
+        let archer_position = *app.world().get::<TilePosition>(archer).unwrap();
+        assert_eq!(
+            chebyshev_distance(archer_position, TilePosition::new(5, 10)),
+            4,
+            "archer should close one tile; ended at {archer_position:?}"
+        );
+    }
+
+    #[test]
+    fn archer_cornered_stands_still() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+
+        spawn_player(&mut app, 1, TilePosition::new(5, 6));
+        let archer = spawn_archer(&mut app, TilePosition::new(5, 5), 6);
+
+        for (x, y) in [(4, 4), (5, 4), (6, 4), (4, 5), (6, 5), (4, 6), (6, 6)] {
+            app.world_mut().spawn((
+                Collider,
+                SpaceResident {
+                    space_id: TEST_SPACE,
+                },
+                TilePosition::new(x, y),
+            ));
+        }
+
+        app.add_systems(Update, update_roaming_npcs);
+        app.update();
+
+        assert_eq!(
+            *app.world().get::<TilePosition>(archer).unwrap(),
+            TilePosition::new(5, 5),
+            "cornered archer with no retreat tile should stand still"
+        );
+    }
+
+    #[test]
+    fn melee_npc_closes_to_adjacent() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+
+        spawn_player(&mut app, 1, TilePosition::new(5, 8));
+        let npc = app
+            .world_mut()
+            .spawn((
+                Npc,
+                SpaceResident {
+                    space_id: TEST_SPACE,
+                },
+                TilePosition::new(5, 5),
+                RoamingBehavior {
+                    bounds: RoamBounds {
+                        min_x: 0,
+                        min_y: 0,
+                        max_x: 20,
+                        max_y: 20,
+                    },
+                    step_interval_seconds: 0.1,
+                },
+                HostileBehavior {
+                    detect_distance_tiles: 20,
+                    disengage_distance_tiles: 20,
+                },
+                AttackProfile::melee(),
+                RoamingStepTimer {
+                    remaining_seconds: 0.0,
+                },
+                RoamingRandomState { seed: 1 },
+            ))
+            .id();
+
+        app.add_systems(Update, update_roaming_npcs);
+        app.update();
+
+        let npc_position = *app.world().get::<TilePosition>(npc).unwrap();
+        assert_eq!(
+            chebyshev_distance(npc_position, TilePosition::new(5, 8)),
+            2,
+            "melee NPC should close one tile; ended at {npc_position:?}"
         );
     }
 }

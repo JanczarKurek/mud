@@ -203,10 +203,7 @@ pub fn resolve_battle_turn(
             }
         }
 
-        let damage = attacker
-            .damage_expr
-            .roll(&attacker.attributes)
-            .max(1);
+        let damage = attacker.damage_expr.roll(&attacker.attributes).max(1);
 
         if is_ranged {
             let sprite_id = attacker
@@ -268,7 +265,6 @@ pub fn resolve_battle_turn(
             );
         }
     }
-
 }
 
 fn ranged_sprite_id(

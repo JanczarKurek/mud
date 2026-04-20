@@ -247,10 +247,7 @@ pub fn accept_tcp_client_connections(
                     spawn_tile,
                 );
                 let mut starter = crate::player::components::Inventory::default();
-                crate::player::setup::seed_starter_inventory(
-                    &mut starter,
-                    &mut object_registry,
-                );
+                crate::player::setup::seed_starter_inventory(&mut starter, &mut object_registry);
                 commands.entity(player_entity).insert(starter);
 
                 info!("TCP client connected from {address}");
