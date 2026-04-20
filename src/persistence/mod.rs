@@ -17,7 +17,7 @@ use crate::npc::components::{
 };
 use crate::player::components::{
     BaseStats, ChatLog, DerivedStats, Inventory, InventoryStack, MovementCooldown, Player,
-    PlayerId, PlayerIdentity, VitalStats,
+    PlayerId, PlayerIdentity, VitalStats, WeaponDamage,
 };
 use crate::world::components::{
     Collider, Container, Movable, OverworldObject, SpaceResident, Storable, TilePosition,
@@ -439,6 +439,7 @@ fn load_world_from_snapshot(
     mut object_registry: ResMut<ObjectRegistry>,
     mut space_manager: ResMut<SpaceManager>,
     mut tcp_server_state: Option<ResMut<TcpServerState>>,
+    object_definitions: Res<crate::world::object_definitions::OverworldObjectDefinitions>,
 ) {
     let dump = match read_world_dump(&save_config.path) {
         Ok(dump) => dump,
@@ -563,19 +564,21 @@ fn load_world_from_snapshot(
         }
 
         let space_id = player.space_id.unwrap_or(current_space_id);
+        let mut player_inventory = player.inventory;
+        player_inventory.ensure_slots();
         let entity = commands
             .spawn((
                 Player,
                 PlayerIdentity {
                     id: player.player_id,
                 },
-                player.inventory,
+                player_inventory,
                 player.chat_log,
                 player.base_stats,
                 player.derived_stats,
                 player.vital_stats,
                 player.movement_cooldown,
-                player.attack_profile,
+                (player.attack_profile, WeaponDamage::default()),
                 player.combat_leash,
                 Collider,
                 OverworldObject {
@@ -598,6 +601,7 @@ fn load_world_from_snapshot(
 
     for object in world_objects {
         let space_id = object.space_id.unwrap_or(current_space_id);
+        let definition_id_for_lookup = object.definition_id.clone();
         let mut entity = commands.spawn((
             OverworldObject {
                 object_id: object.object_id,
@@ -650,9 +654,12 @@ fn load_world_from_snapshot(
             if let Some(vital_stats) = npc.vital_stats {
                 entity.insert(vital_stats);
             }
-            if let Some(attack_profile) = npc.attack_profile {
-                entity.insert(attack_profile);
-            }
+            let (derived_profile, derived_damage) =
+                crate::world::setup::attack_profile_for_definition(
+                    object_definitions.get(&definition_id_for_lookup),
+                );
+            let resolved_profile = npc.attack_profile.unwrap_or(derived_profile);
+            entity.insert((resolved_profile, derived_damage));
             if let Some(combat_leash) = npc.combat_leash {
                 entity.insert(combat_leash);
             }

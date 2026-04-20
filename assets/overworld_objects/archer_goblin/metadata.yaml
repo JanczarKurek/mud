@@ -1,0 +1,48 @@
+extends: npc
+name: Archer Goblin
+description: A wiry goblin wielding a crude shortbow. Keep your distance — that's exactly what it wants.
+loot:
+  corpse_despawn_seconds: 60
+  drops:
+    - type_id: arrow
+      quantity: 5
+      probability: 1.0
+    - type_id: bow
+      quantity: 1
+      probability: 0.1
+stats:
+  strength: 7
+  agility: 13
+  constitution: 7
+  willpower: 6
+  charisma: 4
+  focus: 7
+attack_profile:
+  kind: ranged
+base_range_tiles: 6
+ammo_type: arrow
+damage: "1d6+agility/2"
+render:
+  debug_color: [112, 176, 92]
+  debug_size: 0.92
+  sprite_path: overworld_objects/archer_goblin/sprite.png
+  y_sort: true
+  animation:
+    sheet_path: overworld_objects/archer_goblin/sheet.png
+    frame_width: 32
+    frame_height: 48
+    sheet_columns: 4
+    sheet_rows: 2
+    clips:
+      idle:
+        row: 0
+        start_col: 0
+        frame_count: 4
+        fps: 3.0
+        looping: true
+      walk:
+        row: 1
+        start_col: 0
+        frame_count: 4
+        fps: 16.0
+        looping: true

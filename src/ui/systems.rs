@@ -46,6 +46,9 @@ pub fn apply_game_ui_events(
             GameUiEvent::OpenContainer { object_id } => {
                 docked_panel_state.open(object_id);
             }
+            other @ GameUiEvent::ProjectileFired { .. } => {
+                pending_ui_events.events.push(other);
+            }
         }
     }
 }
@@ -1099,7 +1102,13 @@ pub fn sync_container_slot_images(
                 .container_object_id_for_panel(panel_id)
                 .and_then(|object_id| client_state.container_slots.get(&object_id))
                 .and_then(|slots| slots.get(slot_index).copied().flatten()),
-            ItemSlotKind::Equipment(_) => None,
+            ItemSlotKind::Equipment(slot) => {
+                if slot == crate::world::object_definitions::EquipmentSlot::Ammo {
+                    client_state.inventory.ammo_stack()
+                } else {
+                    None
+                }
+            }
         };
         match stack {
             Some(s) if s.quantity > 1 => {

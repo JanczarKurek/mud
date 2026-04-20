@@ -1,4 +1,5 @@
 pub mod components;
+pub mod damage_expr;
 pub mod resources;
 pub mod systems;
 

@@ -1,12 +1,13 @@
 use bevy::prelude::*;
 
 use crate::combat::components::{AttackProfile, CombatLeash};
+use crate::combat::damage_expr::DamageExpr;
 use crate::npc::components::{
     HostileBehavior, Npc, RoamBounds, RoamingBehavior, RoamingRandomState, RoamingStepTimer,
 };
 use crate::persistence::WorldSnapshotStatus;
 use crate::player::components::InventoryStack;
-use crate::player::components::{BaseStats, DerivedStats, VitalStats};
+use crate::player::components::{BaseStats, DerivedStats, VitalStats, WeaponDamage};
 use crate::world::components::{
     ClientProjectedWorldObject, ClientRemotePlayerVisual, CombatHealthBar, DisplayedVitalStats,
     HealthBarDisplayPolicy, OverworldObject, SpaceId, SpacePosition, SpaceResident, TilePosition,
@@ -16,7 +17,9 @@ use crate::world::map_layout::{
     MapBehavior, MapObjectInstance, PortalDefinition, SpaceDefinition, SpaceDefinitions,
     SpacePermanence,
 };
-use crate::world::object_definitions::{OverworldObjectDefinition, OverworldObjectDefinitions};
+use crate::world::object_definitions::{
+    AttackProfileKindDef, OverworldObjectDefinition, OverworldObjectDefinitions,
+};
 use crate::world::resources::{GroundTileConfig, PortalInstanceKey, RuntimeSpace, SpaceManager};
 use crate::world::WorldConfig;
 
@@ -231,11 +234,14 @@ pub fn spawn_overworld_object_instance(
         let derived_stats = DerivedStats::from_base(&base_stats);
         let max_health = derived_stats.max_health as f32;
         let max_mana = derived_stats.max_mana as f32;
+        let (attack_profile, weapon_damage) =
+            attack_profile_for_definition(definitions.get(&object.type_id));
         {
             let mut entity_commands = commands.entity(entity);
             entity_commands.insert((
                 Npc,
-                AttackProfile::melee(),
+                attack_profile,
+                weapon_damage,
                 base_stats,
                 derived_stats,
                 VitalStats::full(max_health, max_mana),
@@ -574,4 +580,29 @@ pub fn sprite_for_definition(
     sprite.image_mode = SpriteImageMode::Auto;
 
     sprite
+}
+
+pub fn attack_profile_for_definition(
+    definition: Option<&OverworldObjectDefinition>,
+) -> (AttackProfile, WeaponDamage) {
+    let Some(definition) = definition else {
+        return (AttackProfile::melee(), WeaponDamage::default());
+    };
+    let damage = definition
+        .damage
+        .as_deref()
+        .and_then(|raw| DamageExpr::parse(raw).ok())
+        .map(WeaponDamage)
+        .unwrap_or_default();
+    let profile = match definition.attack_profile {
+        Some(def) => match def.kind {
+            AttackProfileKindDef::Melee => AttackProfile::melee(),
+            AttackProfileKindDef::Ranged => {
+                let range = definition.base_range_tiles.unwrap_or(4).max(1);
+                AttackProfile::ranged(range)
+            }
+        },
+        None => AttackProfile::melee(),
+    };
+    (profile, damage)
 }

@@ -21,7 +21,7 @@ tiles: |
 
 portals:
   - id: cellar_exit
-    source: { x: 6, y: 0 }
+    source: { x: 5, y: 0 }
     destination_space_id: overworld
     destination_tile: { x: 6, y: 18 }
     destination_permanence: persistent

@@ -482,7 +482,7 @@ fn spawn_equipment_panel(parent: &mut ChildSpawnerCommands, panel_id: usize) {
             spawn_slot_row(paperdoll, &["Helmet"]);
             spawn_slot_row(paperdoll, &["Weapon", "Armor", "Shield"]);
             spawn_slot_row(paperdoll, &["Legs", "Backpack", "Ring"]);
-            spawn_slot_row(paperdoll, &["Boots"]);
+            spawn_slot_row(paperdoll, &["Boots", "Ammo"]);
         });
     });
 }

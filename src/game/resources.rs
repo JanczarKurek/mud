@@ -10,9 +10,16 @@ use crate::world::components::{SpacePosition, TilePosition};
 pub type InventoryState = Inventory;
 pub type ChatLogState = ChatLog;
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum GameUiEvent {
-    OpenContainer { object_id: u64 },
+    OpenContainer {
+        object_id: u64,
+    },
+    ProjectileFired {
+        from_tile: TilePosition,
+        to_tile: TilePosition,
+        sprite_definition_id: String,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -50,8 +57,12 @@ pub struct PendingGameUiEvents {
 
 impl PendingGameUiEvents {
     pub fn push(&mut self, player_id: PlayerId, event: GameUiEvent) {
-        self.events.push(event);
+        self.events.push(event.clone());
         self.peer_events.entry(player_id).or_default().push(event);
+    }
+
+    pub fn push_broadcast(&mut self, event: GameUiEvent) {
+        self.events.push(event);
     }
 }
 

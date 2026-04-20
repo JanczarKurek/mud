@@ -1,14 +1,18 @@
 use bevy::input::keyboard::KeyCode;
 use bevy::prelude::*;
 
+use crate::combat::components::AttackProfile;
+use crate::combat::damage_expr::DamageExpr;
 use crate::game::commands::{GameCommand, MoveDelta};
 use crate::game::resources::{ClientGameState, InventoryState, PendingGameCommands};
 use crate::player::components::{
-    AttributeSet, BaseStats, DerivedStats, Player, PlayerIdentity, VitalStats,
+    AttributeSet, BaseStats, DerivedStats, Player, PlayerIdentity, VitalStats, WeaponDamage,
 };
 use crate::scripting::resources::PythonConsoleState;
 use crate::world::components::{DisplayedVitalStats, SpaceResident, TilePosition, ViewPosition};
-use crate::world::object_definitions::OverworldObjectDefinitions;
+use crate::world::object_definitions::{
+    AttackProfileKindDef, EquipmentSlot, OverworldObjectDefinitions,
+};
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::WorldConfig;
 
@@ -21,17 +25,28 @@ pub fn refresh_derived_player_stats(
             &InventoryState,
             &mut DerivedStats,
             &mut VitalStats,
+            &mut AttackProfile,
+            &mut WeaponDamage,
         ),
         With<Player>,
     >,
 ) {
-    for (base_stats, inventory_state, mut derived_stats, mut vital_stats) in &mut player_query {
+    for (
+        base_stats,
+        inventory_state,
+        mut derived_stats,
+        mut vital_stats,
+        mut attack_profile,
+        mut weapon_damage,
+    ) in &mut player_query
+    {
         let mut attributes = base_stats.attributes;
         let mut max_health = base_stats.max_health;
         let mut max_mana = base_stats.max_mana;
         let mut storage_slots = base_stats.storage_slots;
+        let mut equipped_weapon_def_id: Option<String> = None;
 
-        for (_, equipped_item) in &inventory_state.equipment_slots {
+        for (slot, equipped_item) in &inventory_state.equipment_slots {
             let Some(object_id) = equipped_item else {
                 continue;
             };
@@ -53,6 +68,10 @@ pub fn refresh_derived_player_stats(
             max_health += definition.stats.max_health;
             max_mana += definition.stats.max_mana;
             storage_slots += definition.stats.storage_slots;
+
+            if *slot == EquipmentSlot::Weapon {
+                equipped_weapon_def_id = Some(type_id.to_owned());
+            }
         }
 
         let effective_base = BaseStats {
@@ -67,6 +86,40 @@ pub fn refresh_derived_player_stats(
         vital_stats.max_mana = derived_stats.max_mana as f32;
         vital_stats.health = vital_stats.health.clamp(0.0, vital_stats.max_health);
         vital_stats.mana = vital_stats.mana.clamp(0.0, vital_stats.max_mana);
+
+        let mut next_profile = AttackProfile::melee();
+        let mut next_damage = DamageExpr::melee_default();
+        if let Some(def_id) = equipped_weapon_def_id {
+            if let Some(definition) = definitions.get(&def_id) {
+                if let Some(expr) = definition
+                    .damage
+                    .as_deref()
+                    .and_then(|raw| DamageExpr::parse(raw).ok())
+                {
+                    next_damage = expr;
+                }
+                if let Some(profile_def) = definition.attack_profile {
+                    match profile_def.kind {
+                        AttackProfileKindDef::Melee => {
+                            next_profile = AttackProfile::melee();
+                        }
+                        AttackProfileKindDef::Ranged => {
+                            let base_range = definition.base_range_tiles.unwrap_or(4).max(1);
+                            let agility_bonus = derived_stats.attributes.agility / 4;
+                            next_profile =
+                                AttackProfile::ranged((base_range + agility_bonus).max(1));
+                        }
+                    }
+                }
+            }
+        }
+
+        if *attack_profile != next_profile {
+            *attack_profile = next_profile;
+        }
+        if weapon_damage.0 != next_damage {
+            weapon_damage.0 = next_damage;
+        }
     }
 }
 

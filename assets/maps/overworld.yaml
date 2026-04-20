@@ -535,6 +535,15 @@ objects:
     detect_distance_tiles: 5
     disengage_distance_tiles: 8
     bounds: { min_x: 48, min_y: 41, max_x: 56, max_y: 49 }
+- id: 20013
+  type: archer_goblin
+  placement: { x: 58, y: 12 }
+  behavior:
+    kind: roam_and_chase
+    step_interval_seconds: 1.0
+    detect_distance_tiles: 8
+    disengage_distance_tiles: 14
+    bounds: { min_x: 54, min_y: 8, max_x: 62, max_y: 16 }
 - type: leather_armor
   placement:
   - x: 15

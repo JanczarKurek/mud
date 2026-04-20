@@ -1,7 +1,17 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::combat::damage_expr::DamageExpr;
 use crate::world::object_definitions::EquipmentSlot;
+
+#[derive(Component, Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct WeaponDamage(pub DamageExpr);
+
+impl Default for WeaponDamage {
+    fn default() -> Self {
+        Self(DamageExpr::melee_default())
+    }
+}
 
 #[derive(Component)]
 pub struct Player;
@@ -24,6 +34,11 @@ pub struct InventoryStack {
 pub struct Inventory {
     pub backpack_slots: Vec<Option<InventoryStack>>,
     pub equipment_slots: Vec<(EquipmentSlot, Option<u64>)>,
+    /// Quantity of the stack currently occupying `EquipmentSlot::Ammo`.
+    /// Kept as a sidecar field so existing `equipment_slots` saves (which
+    /// only store `Option<u64>`) stay backwards-compatible.
+    #[serde(default)]
+    pub ammo_quantity: u32,
 }
 
 impl Default for Inventory {
@@ -34,6 +49,7 @@ impl Default for Inventory {
                 .into_iter()
                 .map(|slot| (slot, None))
                 .collect(),
+            ammo_quantity: 0,
         }
     }
 }
@@ -88,6 +104,59 @@ impl Inventory {
             }
         }
     }
+
+    /// Ensure every `EquipmentSlot` variant is represented. Called after loading
+    /// saves from before a new slot was added so older saves gain the new slot
+    /// as empty instead of iteration silently skipping it.
+    pub fn ensure_slots(&mut self) {
+        for slot in EquipmentSlot::ALL {
+            let present = self
+                .equipment_slots
+                .iter()
+                .any(|(existing, _)| *existing == slot);
+            if !present {
+                self.equipment_slots.push((slot, None));
+            }
+        }
+        if self.equipment_item(EquipmentSlot::Ammo).is_none() {
+            self.ammo_quantity = 0;
+        }
+    }
+
+    pub fn ammo_stack(&self) -> Option<InventoryStack> {
+        let object_id = self.equipment_item(EquipmentSlot::Ammo)?;
+        Some(InventoryStack {
+            object_id,
+            quantity: self.ammo_quantity,
+        })
+    }
+
+    pub fn set_ammo(&mut self, object_id: u64, quantity: u32) {
+        self.restore_equipment_item(EquipmentSlot::Ammo, object_id);
+        self.ammo_quantity = quantity;
+    }
+
+    /// Decrement the ammo stack by one. Returns the `object_id` of the now-empty
+    /// ammo entry if the decrement emptied the slot (so the caller can release
+    /// the registry entry), or `None` if ammo remains / is absent.
+    pub fn consume_one_ammo(&mut self) -> AmmoConsumption {
+        if self.equipment_item(EquipmentSlot::Ammo).is_none() || self.ammo_quantity == 0 {
+            return AmmoConsumption::None;
+        }
+        self.ammo_quantity -= 1;
+        if self.ammo_quantity == 0 {
+            let removed = self.take_equipment_item(EquipmentSlot::Ammo);
+            return AmmoConsumption::Emptied { object_id: removed };
+        }
+        AmmoConsumption::Decremented
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AmmoConsumption {
+    None,
+    Decremented,
+    Emptied { object_id: Option<u64> },
 }
 
 #[derive(Component, Clone, Debug, Deserialize, PartialEq, Serialize)]

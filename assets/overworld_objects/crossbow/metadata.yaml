@@ -1,0 +1,13 @@
+extends: equipment
+name: Crossbow
+description: A slower, heavier ranged weapon. Bolts load into the ammo slot.
+equipment_slot: weapon
+attack_profile:
+  kind: ranged
+base_range_tiles: 6
+ammo_type: bolt
+damage: "2d4+agility"
+render:
+  debug_color: [92, 68, 40]
+  debug_size: 0.62
+  sprite_path: overworld_objects/crossbow/sprite.png

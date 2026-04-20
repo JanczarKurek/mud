@@ -1742,11 +1742,18 @@ fn take_item_from_slot_ref(
             inventory_state.backpack_slots.get_mut(slot_index)?.take()
         }
         ItemSlotRef::Equipment(slot) => {
+            let quantity = if slot == EquipmentSlot::Ammo {
+                let q = inventory_state.ammo_quantity.max(1);
+                inventory_state.ammo_quantity = 0;
+                q
+            } else {
+                1
+            };
             inventory_state
                 .take_equipment_item(slot)
                 .map(|id| InventoryStack {
                     object_id: id,
-                    quantity: 1,
+                    quantity,
                 })
         }
         ItemSlotRef::Container {
@@ -1828,7 +1835,7 @@ fn place_stack_in_slot_ref(
             object_registry,
             definitions,
             slot,
-            stack.object_id,
+            stack,
         ),
         ItemSlotRef::Container {
             object_id: container_object_id,
@@ -1865,7 +1872,10 @@ fn restore_stack_to_slot_ref(
             }
         }
         ItemSlotRef::Equipment(slot) => {
-            inventory_state.restore_equipment_item(slot, stack.object_id)
+            inventory_state.restore_equipment_item(slot, stack.object_id);
+            if slot == EquipmentSlot::Ammo {
+                inventory_state.ammo_quantity = stack.quantity.max(1);
+            }
         }
         ItemSlotRef::Container {
             object_id: container_object_id,
@@ -1904,7 +1914,14 @@ fn consume_one_from_slot_ref(
             }
         }
         ItemSlotRef::Equipment(slot) => {
-            inventory_state.take_equipment_item(slot);
+            if slot == EquipmentSlot::Ammo && inventory_state.ammo_quantity > 1 {
+                inventory_state.ammo_quantity -= 1;
+            } else {
+                inventory_state.take_equipment_item(slot);
+                if slot == EquipmentSlot::Ammo {
+                    inventory_state.ammo_quantity = 0;
+                }
+            }
         }
         ItemSlotRef::Container {
             object_id,
@@ -2045,9 +2062,9 @@ fn place_item_in_equipment_slot(
     object_registry: &ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     slot: EquipmentSlot,
-    object_id: u64,
+    stack: InventoryStack,
 ) -> bool {
-    let Some(type_id) = object_registry.type_id(object_id) else {
+    let Some(type_id) = object_registry.type_id(stack.object_id) else {
         return false;
     };
     let Some(definition) = definitions.get(type_id) else {
@@ -2057,7 +2074,11 @@ fn place_item_in_equipment_slot(
         return false;
     }
 
-    inventory_state.place_equipment_item(slot, object_id)
+    let placed = inventory_state.place_equipment_item(slot, stack.object_id);
+    if placed && slot == EquipmentSlot::Ammo {
+        inventory_state.ammo_quantity = stack.quantity.max(1);
+    }
+    placed
 }
 
 fn object_description(
@@ -2155,7 +2176,7 @@ mod tests {
     use crate::magic::MagicPlugin;
     use crate::player::components::{
         BaseStats, ChatLog, DerivedStats, Inventory, MovementCooldown, Player, PlayerId,
-        PlayerIdentity, VitalStats,
+        PlayerIdentity, VitalStats, WeaponDamage,
     };
     use crate::player::PlayerServerPlugin;
     use crate::world::components::{Collider, OverworldObject};
@@ -2197,7 +2218,7 @@ mod tests {
                 derived_stats,
                 VitalStats::full(max_health, max_mana),
                 MovementCooldown::default(),
-                AttackProfile::melee(),
+                (AttackProfile::melee(), WeaponDamage::default()),
                 CombatLeash {
                     max_distance_tiles: 6,
                 },

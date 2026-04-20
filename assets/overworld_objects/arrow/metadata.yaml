@@ -1,0 +1,8 @@
+extends: consumable
+name: Arrow
+description: A fletched arrow. Equip in the ammo slot to shoot with a bow.
+equipment_slot: ammo
+render:
+  debug_color: [170, 150, 110]
+  debug_size: 0.35
+  sprite_path: overworld_objects/arrow/sprite.png

@@ -246,6 +246,12 @@ pub fn accept_tcp_client_connections(
                     spawn_space_id,
                     spawn_tile,
                 );
+                let mut starter = crate::player::components::Inventory::default();
+                crate::player::setup::seed_starter_inventory(
+                    &mut starter,
+                    &mut object_registry,
+                );
+                commands.entity(player_entity).insert(starter);
 
                 info!("TCP client connected from {address}");
                 server_state.peers.insert(
@@ -352,7 +358,7 @@ pub fn flush_server_messages(
     mut commands: Commands,
 ) {
     let peer_ui_events = std::mem::take(&mut pending_ui_events.peer_events);
-    pending_ui_events.events.clear();
+    let broadcast_ui_events = std::mem::take(&mut pending_ui_events.events);
 
     let connection_ids = server_state.peers.keys().copied().collect::<Vec<_>>();
     let mut disconnected_peers = Vec::new();
@@ -396,16 +402,19 @@ pub fn flush_server_messages(
                 }
             }
 
-            if let Some(events) = peer_ui_events.get(&peer.player_id) {
-                if !events.is_empty()
-                    && !write_message(
-                        &mut peer.stream,
-                        &ServerMessage::UiEvents(events.clone()),
-                        &mut disconnected,
-                    )
-                {
-                    warn!("failed to send UI events to TCP client");
-                }
+            let mut outgoing_ui_events = peer_ui_events
+                .get(&peer.player_id)
+                .cloned()
+                .unwrap_or_default();
+            outgoing_ui_events.extend(broadcast_ui_events.iter().cloned());
+            if !outgoing_ui_events.is_empty()
+                && !write_message(
+                    &mut peer.stream,
+                    &ServerMessage::UiEvents(outgoing_ui_events),
+                    &mut disconnected,
+                )
+            {
+                warn!("failed to send UI events to TCP client");
             }
         }
 
@@ -626,7 +635,7 @@ mod tests {
     use crate::npc::NpcPlugin;
     use crate::player::components::{
         BaseStats, ChatLog, DerivedStats, Inventory, MovementCooldown, Player, PlayerId,
-        PlayerIdentity, VitalStats,
+        PlayerIdentity, VitalStats, WeaponDamage,
     };
     use crate::player::PlayerServerPlugin;
     use crate::world::components::{Collider, OverworldObject};
@@ -669,7 +678,7 @@ mod tests {
                 derived_stats,
                 VitalStats::full(max_health, max_mana),
                 MovementCooldown::default(),
-                AttackProfile::melee(),
+                (AttackProfile::melee(), WeaponDamage::default()),
                 CombatLeash {
                     max_distance_tiles: 6,
                 },

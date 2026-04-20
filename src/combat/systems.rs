@@ -1,11 +1,15 @@
 use bevy::prelude::*;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::combat::components::{AttackKind, AttackProfile, CombatLeash, CombatTarget};
+use crate::combat::damage_expr::DamageExpr;
 use crate::combat::resources::BattleTurnTimer;
+use crate::game::resources::{GameUiEvent, PendingGameUiEvents};
 use crate::magic::resources::SpellDefinitions;
 use crate::npc::components::Npc;
-use crate::player::components::{ChatLog, DerivedStats, Player, VitalStats};
+use crate::player::components::{
+    AmmoConsumption, AttributeSet, ChatLog, DerivedStats, Inventory, Player, PlayerIdentity,
+    VitalStats, WeaponDamage,
+};
 use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
 use crate::world::loot::spawn_corpse_for_npc;
 use crate::world::object_definitions::OverworldObjectDefinitions;
@@ -20,8 +24,11 @@ struct CombatantSnapshot {
     position: TilePosition,
     name: String,
     definition_id: String,
-    strength: i32,
+    attributes: AttributeSet,
+    damage_expr: DamageExpr,
     health: f32,
+    is_player: bool,
+    ranged_projectile_sprite: Option<String>,
 }
 
 pub fn clear_invalid_combat_targets(
@@ -73,13 +80,18 @@ pub fn resolve_battle_turn(
             &OverworldObject,
             &DerivedStats,
             &VitalStats,
+            Option<&WeaponDamage>,
+            Option<&PlayerIdentity>,
+            Option<&Inventory>,
         )>,
         Query<(&mut VitalStats, Option<&Player>, Option<&Npc>)>,
+        Query<&mut Inventory, With<Player>>,
     )>,
     definitions: Res<OverworldObjectDefinitions>,
     mut object_registry: ResMut<ObjectRegistry>,
     spell_definitions: Res<SpellDefinitions>,
     mut chat_log_query: Query<&mut ChatLog, With<Player>>,
+    mut ui_events: ResMut<PendingGameUiEvents>,
     mut commands: Commands,
 ) {
     battle_turn_timer.remaining_seconds -= time.delta_secs();
@@ -104,21 +116,43 @@ pub fn resolve_battle_turn(
                 overworld_object,
                 derived_stats,
                 vital_stats,
-            )| CombatantSnapshot {
-                entity,
-                target: combat_target.map(|target| target.entity),
-                attack_profile: *attack_profile,
-                space_id: space_resident.space_id,
-                position: *position,
-                name: combatant_name(
-                    overworld_object,
+                weapon_damage,
+                player_identity,
+                inventory,
+            )| {
+                let damage_expr = weapon_damage
+                    .map(|wd| wd.0.clone())
+                    .unwrap_or_else(DamageExpr::melee_default);
+                let is_player = player_identity.is_some();
+                let ammo_object_id = inventory.and_then(|inv| {
+                    inv.equipment_item(crate::world::object_definitions::EquipmentSlot::Ammo)
+                });
+                let ranged_projectile_sprite = ranged_sprite_id(
+                    is_player,
+                    ammo_object_id,
+                    &overworld_object.definition_id,
                     &object_registry,
                     &definitions,
-                    &spell_definitions,
-                ),
-                definition_id: overworld_object.definition_id.clone(),
-                strength: derived_stats.attributes.strength,
-                health: vital_stats.health,
+                );
+                CombatantSnapshot {
+                    entity,
+                    target: combat_target.map(|target| target.entity),
+                    attack_profile: *attack_profile,
+                    space_id: space_resident.space_id,
+                    position: *position,
+                    name: combatant_name(
+                        overworld_object,
+                        &object_registry,
+                        &definitions,
+                        &spell_definitions,
+                    ),
+                    definition_id: overworld_object.definition_id.clone(),
+                    attributes: derived_stats.attributes,
+                    damage_expr,
+                    health: vital_stats.health,
+                    is_player,
+                    ranged_projectile_sprite,
+                }
             },
         )
         .collect();
@@ -151,7 +185,40 @@ pub fn resolve_battle_turn(
             continue;
         }
 
-        let damage = attack_damage(attacker.attack_profile.kind, attacker.strength).max(1);
+        let is_ranged = matches!(attacker.attack_profile.kind, AttackKind::Ranged { .. });
+        if is_ranged && attacker.is_player {
+            let mut inventory_query = combat_queries.p2();
+            let Ok(mut inventory) = inventory_query.get_mut(attacker.entity) else {
+                continue;
+            };
+            match inventory.consume_one_ammo() {
+                AmmoConsumption::None => {
+                    broadcast_chat_line(
+                        &mut chat_log_query,
+                        format!("[{} is out of ammo]", attacker.name),
+                    );
+                    continue;
+                }
+                AmmoConsumption::Decremented | AmmoConsumption::Emptied { .. } => {}
+            }
+        }
+
+        let damage = attacker
+            .damage_expr
+            .roll(&attacker.attributes)
+            .max(1);
+
+        if is_ranged {
+            let sprite_id = attacker
+                .ranged_projectile_sprite
+                .clone()
+                .unwrap_or_else(|| "arrow".to_owned());
+            ui_events.push_broadcast(GameUiEvent::ProjectileFired {
+                from_tile: attacker.position,
+                to_tile: target.position,
+                sprite_definition_id: sprite_id,
+            });
+        }
 
         let mut target_query = combat_queries.p1();
         let Ok((mut target_vitals, is_player, is_npc)) = target_query.get_mut(target_entity) else {
@@ -201,6 +268,27 @@ pub fn resolve_battle_turn(
             );
         }
     }
+
+}
+
+fn ranged_sprite_id(
+    is_player: bool,
+    ammo_object_id: Option<u64>,
+    attacker_def_id: &str,
+    object_registry: &ObjectRegistry,
+    definitions: &OverworldObjectDefinitions,
+) -> Option<String> {
+    if is_player {
+        let ammo_id = ammo_object_id?;
+        let type_id = object_registry.type_id(ammo_id)?;
+        return Some(type_id.to_owned());
+    }
+    if let Some(def) = definitions.get(attacker_def_id) {
+        if let Some(ammo) = &def.ammo_type {
+            return Some(ammo.clone());
+        }
+    }
+    Some("arrow".to_owned())
 }
 
 fn broadcast_chat_line(chat_log_query: &mut Query<&mut ChatLog, With<Player>>, message: String) {
@@ -209,32 +297,18 @@ fn broadcast_chat_line(chat_log_query: &mut Query<&mut ChatLog, With<Player>>, m
     }
 }
 
-fn attack_damage(attack_kind: AttackKind, strength: i32) -> i32 {
-    match attack_kind {
-        AttackKind::Melee => roll_die(6) + strength / 5,
-    }
-}
-
-fn roll_die(sides: usize) -> i32 {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.subsec_nanos() as usize)
-        .unwrap_or(0);
-
-    (nanos % sides + 1) as i32
-}
-
 fn is_target_in_range(
     attack_kind: AttackKind,
     attacker_position: &TilePosition,
     target_position: &TilePosition,
 ) -> bool {
+    let distance = chebyshev_distance(attacker_position, target_position);
+    if distance == 0 {
+        return false;
+    }
     match attack_kind {
-        AttackKind::Melee => {
-            let delta_x = (attacker_position.x - target_position.x).abs();
-            let delta_y = (attacker_position.y - target_position.y).abs();
-            delta_x <= 1 && delta_y <= 1 && (delta_x != 0 || delta_y != 0)
-        }
+        AttackKind::Melee => distance <= 1,
+        AttackKind::Ranged { range_tiles } => distance <= range_tiles,
     }
 }
 

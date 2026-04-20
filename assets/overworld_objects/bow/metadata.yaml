@@ -1,0 +1,15 @@
+extends: equipment
+name: Shortbow
+description: A sturdy shortbow strung with gut. Needs arrows in the ammo slot.
+equipment_slot: weapon
+attack_profile:
+  kind: ranged
+base_range_tiles: 5
+ammo_type: arrow
+damage: "1d6+strength"
+stats:
+  agility: 1
+render:
+  debug_color: [140, 95, 48]
+  debug_size: 0.6
+  sprite_path: overworld_objects/bow/sprite.png

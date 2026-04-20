@@ -8,6 +8,7 @@ use crate::app::asset_sync_screen::AssetSyncScreenPlugin;
 use crate::app::setup::setup_camera;
 use crate::app::state::ClientAppState;
 use crate::app::title_screen::TitleScreenPlugin;
+use crate::client_effects::ClientEffectsPlugin;
 use crate::combat::CombatPlugin;
 use crate::editor::EditorPlugin;
 use crate::game::{GameClientPlugin, GameServerPlugin};
@@ -38,6 +39,8 @@ pub struct GameAppPlugin {
 
 impl Plugin for GameAppPlugin {
     fn build(&self, app: &mut App) {
+        crate::assets::set_xdg_overrides_enabled(matches!(self.runtime, AppRuntime::TcpClient));
+
         match self.runtime {
             AppRuntime::EmbeddedClient => {
                 app.add_plugins((
@@ -70,6 +73,7 @@ impl Plugin for GameAppPlugin {
                     WorldClientPlugin,
                     PlayerClientPlugin,
                     UiPlugin,
+                    ClientEffectsPlugin,
                     ScriptingPlugin,
                     EditorPlugin,
                     TitleScreenPlugin {
@@ -94,6 +98,7 @@ impl Plugin for GameAppPlugin {
                     PlayerClientPlugin,
                     MagicPlugin,
                     UiPlugin,
+                    ClientEffectsPlugin,
                     ScriptingPlugin,
                     TcpClientPlugin {
                         server_addr: self

@@ -51,6 +51,28 @@ pub struct OverworldObjectDefinition {
     /// When `None`, callers apply a sensible default (currently 3).
     #[serde(default)]
     pub inspect_range: Option<i32>,
+    #[serde(default)]
+    pub attack_profile: Option<AttackProfileDef>,
+    #[serde(default)]
+    pub base_range_tiles: Option<i32>,
+    #[serde(default)]
+    pub ammo_type: Option<String>,
+    #[serde(default)]
+    pub damage: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum AttackProfileKindDef {
+    Melee,
+    Ranged,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct AttackProfileDef {
+    pub kind: AttackProfileKindDef,
 }
 
 /// Quantity roll for a loot drop: either a fixed count or a uniform random range.
@@ -306,10 +328,11 @@ pub enum EquipmentSlot {
     Backpack,
     Ring,
     Boots,
+    Ammo,
 }
 
 impl EquipmentSlot {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Amulet,
         Self::Helmet,
         Self::Weapon,
@@ -319,6 +342,7 @@ impl EquipmentSlot {
         Self::Backpack,
         Self::Ring,
         Self::Boots,
+        Self::Ammo,
     ];
 
     pub const fn label(self) -> &'static str {
@@ -332,6 +356,7 @@ impl EquipmentSlot {
             Self::Backpack => "Backpack",
             Self::Ring => "Ring",
             Self::Boots => "Boots",
+            Self::Ammo => "Ammo",
         }
     }
 }

@@ -22,9 +22,16 @@ impl AttackProfile {
             kind: AttackKind::Melee,
         }
     }
+
+    pub const fn ranged(range_tiles: i32) -> Self {
+        Self {
+            kind: AttackKind::Ranged { range_tiles },
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum AttackKind {
     Melee,
+    Ranged { range_tiles: i32 },
 }

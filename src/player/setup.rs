@@ -4,16 +4,28 @@ use crate::combat::components::{AttackProfile, CombatLeash};
 use crate::persistence::WorldSnapshotStatus;
 use crate::player::components::{
     BaseStats, ChatLog, DerivedStats, Inventory, MovementCooldown, Player, PlayerId,
-    PlayerIdentity, VitalStats,
+    PlayerIdentity, VitalStats, WeaponDamage,
 };
 use crate::world::components::{
     Collider, DisplayedVitalStats, HealthBarDisplayPolicy, OverworldObject, SpaceId, SpaceResident,
     TilePosition, ViewPosition,
 };
-use crate::world::object_definitions::OverworldObjectDefinitions;
+use crate::world::object_definitions::{EquipmentSlot, OverworldObjectDefinitions};
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::setup::attach_combat_health_bar;
 use crate::world::WorldConfig;
+
+/// Populate a fresh player's inventory with a starter shortbow + arrows so the
+/// ranged-combat showcase is immediately playable.
+pub fn seed_starter_inventory(
+    inventory: &mut Inventory,
+    object_registry: &mut ObjectRegistry,
+) {
+    let bow_id = object_registry.allocate_runtime_id("bow");
+    inventory.restore_equipment_item(EquipmentSlot::Weapon, bow_id);
+    let arrow_id = object_registry.allocate_runtime_id("arrow");
+    inventory.set_ammo(arrow_id, 20);
+}
 
 pub fn spawn_embedded_player_authoritative(
     mut commands: Commands,
@@ -39,13 +51,16 @@ pub fn spawn_embedded_player_authoritative(
 
     let spawn_tile = TilePosition::new(world_config.map_width / 2, world_config.map_height / 2);
     let object_id = object_registry.allocate_runtime_id("player");
-    let _ = spawn_player_authoritative(
+    let entity = spawn_player_authoritative(
         &mut commands,
         &world_config,
         PlayerId(0),
         object_id,
         spawn_tile,
     );
+    let mut starter = Inventory::default();
+    seed_starter_inventory(&mut starter, &mut object_registry);
+    commands.entity(entity).insert(starter);
 }
 
 pub fn spawn_player_authoritative(
@@ -86,7 +101,7 @@ pub fn spawn_player_authoritative_in_space(
             derived_stats,
             VitalStats::full(max_health, max_mana),
             MovementCooldown::default(),
-            AttackProfile::melee(),
+            (AttackProfile::melee(), WeaponDamage::default()),
             CombatLeash {
                 max_distance_tiles: 6,
             },

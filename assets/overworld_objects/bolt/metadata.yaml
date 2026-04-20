@@ -1,0 +1,8 @@
+extends: consumable
+name: Bolt
+description: A short, heavy crossbow bolt. Fits the ammo slot.
+equipment_slot: ammo
+render:
+  debug_color: [120, 110, 92]
+  debug_size: 0.35
+  sprite_path: overworld_objects/bolt/sprite.png
