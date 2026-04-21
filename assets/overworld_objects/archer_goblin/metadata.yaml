@@ -22,6 +22,7 @@ attack_profile:
 base_range_tiles: 6
 ammo_type: arrow
 damage: "1d6+agility/2"
+hp: "1d8+30+constitution*3"
 render:
   debug_color: [112, 176, 92]
   debug_size: 0.92

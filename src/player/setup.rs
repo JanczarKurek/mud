@@ -3,8 +3,8 @@ use bevy::prelude::*;
 use crate::combat::components::{AttackProfile, CombatLeash};
 use crate::persistence::{PlayerStateDump, WorldSnapshotStatus};
 use crate::player::components::{
-    BaseStats, ChatLog, DerivedStats, Inventory, InventoryStack, MovementCooldown, Player, PlayerId,
-    PlayerIdentity, VitalStats, WeaponDamage,
+    BaseStats, ChatLog, DerivedStats, Inventory, InventoryStack, MovementCooldown, Player,
+    PlayerId, PlayerIdentity, VitalStats, WeaponDamage,
 };
 use crate::world::components::{
     Collider, DisplayedVitalStats, HealthBarDisplayPolicy, OverworldObject, SpaceId, SpaceResident,

@@ -24,14 +24,13 @@ pub fn install(
     player_id: u64,
 ) {
     let snapshot = snapshots.by_player.clone();
-    runner.library_mut().add_function(
-        "has_item",
-        move |type_id: String, count: f32| -> bool {
+    runner
+        .library_mut()
+        .add_function("has_item", move |type_id: String, count: f32| -> bool {
             let guard = snapshot.read().expect("inventory snapshot RwLock poisoned");
             guard
                 .get(&player_id)
                 .and_then(|per_player| per_player.get(&type_id))
                 .is_some_and(|total| *total >= count.max(0.0) as u32)
-        },
-    );
+        });
 }

@@ -376,13 +376,14 @@ fn handle_give_item(
             .iter()
             .position(|slot| slot.is_none())
         else {
-            chat_log.push_narrator(format!(
-                "You cannot carry any more {}.",
-                definition.name
-            ));
+            chat_log.push_narrator(format!("You cannot carry any more {}.", definition.name));
             break;
         };
-        let grant = if max_stack > 1 { remaining.min(max_stack) } else { 1 };
+        let grant = if max_stack > 1 {
+            remaining.min(max_stack)
+        } else {
+            1
+        };
         let object_id = object_registry.allocate_runtime_id(type_id.to_owned());
         inventory.backpack_slots[empty_index] = Some(InventoryStack {
             object_id,
@@ -391,7 +392,11 @@ fn handle_give_item(
         remaining -= grant;
     }
 
-    chat_log.push_narrator(format!("You receive {} {}.", count - remaining, definition.name));
+    chat_log.push_narrator(format!(
+        "You receive {} {}.",
+        count - remaining,
+        definition.name
+    ));
 }
 
 fn handle_take_item(

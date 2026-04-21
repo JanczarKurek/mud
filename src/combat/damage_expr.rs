@@ -256,6 +256,19 @@ mod tests {
     }
 
     #[test]
+    fn parses_hp_style_expression_without_dice() {
+        let expr = DamageExpr::parse("50+constitution*5").unwrap();
+        assert_eq!(expr.dice, None);
+        assert_eq!(expr.bonus, 50);
+        assert_eq!(expr.stats.len(), 1);
+        assert_eq!(expr.stats[0].kind, AttributeKind::Constitution);
+        assert_eq!(expr.stats[0].multiplier, 5);
+        assert_eq!(expr.stats[0].divisor, 1);
+        let attrs = AttributeSet::new(10, 10, 12, 10, 10, 10);
+        assert_eq!(expr.roll(&attrs), 50 + 12 * 5);
+    }
+
+    #[test]
     fn roll_honors_divisor() {
         let expr = DamageExpr {
             dice: None,

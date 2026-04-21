@@ -14,6 +14,8 @@ stats:
   willpower: 6
   charisma: 4
   focus: 7
+damage: "1d4+strength/5"
+hp: "1d6+25+constitution*3"
 render:
   debug_color:
   - 92

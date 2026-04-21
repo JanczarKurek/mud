@@ -107,17 +107,17 @@ impl VariableStorage for PersistentVariableStorage {
 
     fn get(&self, name: &str) -> Result<YarnValue, VariableStorageError> {
         Self::validate_name(name)?;
-        self.inner.read().unwrap().get(name).cloned().ok_or_else(|| {
-            VariableStorageError::VariableNotFound {
+        self.inner
+            .read()
+            .unwrap()
+            .get(name)
+            .cloned()
+            .ok_or_else(|| VariableStorageError::VariableNotFound {
                 name: name.to_owned(),
-            }
-        })
+            })
     }
 
-    fn extend(
-        &mut self,
-        values: HashMap<String, YarnValue>,
-    ) -> Result<(), VariableStorageError> {
+    fn extend(&mut self, values: HashMap<String, YarnValue>) -> Result<(), VariableStorageError> {
         for name in values.keys() {
             Self::validate_name(name)?;
         }

@@ -59,6 +59,8 @@ pub struct OverworldObjectDefinition {
     pub ammo_type: Option<String>,
     #[serde(default)]
     pub damage: Option<String>,
+    #[serde(default)]
+    pub hp: Option<String>,
     /// When present, walking onto this object's tile shifts the player's floor
     /// by `delta` (±1 for stairs_up / stairs_down, etc.).
     #[serde(default)]

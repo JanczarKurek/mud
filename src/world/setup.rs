@@ -7,7 +7,7 @@ use crate::npc::components::{
 };
 use crate::persistence::WorldSnapshotStatus;
 use crate::player::components::InventoryStack;
-use crate::player::components::{BaseStats, DerivedStats, VitalStats, WeaponDamage};
+use crate::player::components::{AttributeSet, BaseStats, DerivedStats, VitalStats, WeaponDamage};
 use crate::world::components::{
     ClientProjectedWorldObject, ClientRemotePlayerVisual, CombatHealthBar, DisplayedVitalStats,
     HealthBarDisplayPolicy, OverworldObject, SpaceId, SpacePosition, SpaceResident, TilePosition,
@@ -18,7 +18,7 @@ use crate::world::map_layout::{
     SpacePermanence,
 };
 use crate::world::object_definitions::{
-    AttackProfileKindDef, OverworldObjectDefinition, OverworldObjectDefinitions,
+    AttackProfileKindDef, OverworldObjectDefinition, OverworldObjectDefinitions, StatModifiers,
 };
 use crate::world::resources::{GroundTileConfig, PortalInstanceKey, RuntimeSpace, SpaceManager};
 use crate::world::WorldConfig;
@@ -230,12 +230,16 @@ pub fn spawn_overworld_object_instance(
     );
 
     if let Some(behavior) = &object.behavior {
-        let base_stats = BaseStats::npc_default();
+        let definition = definitions.get(&object.type_id);
+        let base_stats = npc_base_stats_from_definition(definition);
         let derived_stats = DerivedStats::from_base(&base_stats);
-        let max_health = derived_stats.max_health as f32;
+        let max_health = definition
+            .and_then(|d| d.hp.as_deref())
+            .and_then(|raw| DamageExpr::parse(raw).ok())
+            .map(|expr| expr.roll(&derived_stats.attributes).max(1))
+            .unwrap_or(derived_stats.max_health) as f32;
         let max_mana = derived_stats.max_mana as f32;
-        let (attack_profile, weapon_damage) =
-            attack_profile_for_definition(definitions.get(&object.type_id));
+        let (attack_profile, weapon_damage) = attack_profile_for_definition(definition);
         {
             let mut entity_commands = commands.entity(entity);
             entity_commands.insert((
@@ -587,6 +591,54 @@ pub fn sprite_for_definition(
     sprite
 }
 
+pub fn npc_base_stats_from_definition(definition: Option<&OverworldObjectDefinition>) -> BaseStats {
+    match definition {
+        Some(def) => npc_base_stats_from_modifiers(&def.stats),
+        None => BaseStats::npc_default(),
+    }
+}
+
+fn npc_base_stats_from_modifiers(stats: &StatModifiers) -> BaseStats {
+    let mut base = BaseStats::npc_default();
+    let defaults = base.attributes;
+    base.attributes = AttributeSet::new(
+        if stats.strength != 0 {
+            stats.strength
+        } else {
+            defaults.strength
+        },
+        if stats.agility != 0 {
+            stats.agility
+        } else {
+            defaults.agility
+        },
+        if stats.constitution != 0 {
+            stats.constitution
+        } else {
+            defaults.constitution
+        },
+        if stats.willpower != 0 {
+            stats.willpower
+        } else {
+            defaults.willpower
+        },
+        if stats.charisma != 0 {
+            stats.charisma
+        } else {
+            defaults.charisma
+        },
+        if stats.focus != 0 {
+            stats.focus
+        } else {
+            defaults.focus
+        },
+    );
+    base.max_health = stats.max_health;
+    base.max_mana = stats.max_mana;
+    base.storage_slots = stats.storage_slots;
+    base
+}
+
 pub fn attack_profile_for_definition(
     definition: Option<&OverworldObjectDefinition>,
 ) -> (AttackProfile, WeaponDamage) {
@@ -610,4 +662,58 @@ pub fn attack_profile_for_definition(
         None => AttackProfile::melee(),
     };
     (profile, damage)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn npc_stats_fall_back_to_default_when_none() {
+        let base = npc_base_stats_from_definition(None);
+        let default = BaseStats::npc_default();
+        assert_eq!(base.attributes, default.attributes);
+        assert_eq!(base.max_health, default.max_health);
+        assert_eq!(base.max_mana, default.max_mana);
+        assert_eq!(base.storage_slots, default.storage_slots);
+    }
+
+    #[test]
+    fn npc_stats_fall_back_per_field_when_modifier_is_zero() {
+        let base = npc_base_stats_from_modifiers(&StatModifiers::default());
+        assert_eq!(base.attributes, BaseStats::npc_default().attributes);
+    }
+
+    #[test]
+    fn npc_stats_override_when_modifier_is_set() {
+        let stats = StatModifiers {
+            strength: 18,
+            agility: 5,
+            constitution: 16,
+            willpower: 7,
+            charisma: 4,
+            focus: 7,
+            max_health: 0,
+            max_mana: 0,
+            storage_slots: 0,
+        };
+        let base = npc_base_stats_from_modifiers(&stats);
+        assert_eq!(base.attributes, AttributeSet::new(18, 5, 16, 7, 4, 7));
+    }
+
+    #[test]
+    fn npc_stats_partial_override_keeps_defaults_for_zero_fields() {
+        let stats = StatModifiers {
+            strength: 20,
+            ..StatModifiers::default()
+        };
+        let base = npc_base_stats_from_modifiers(&stats);
+        let defaults = BaseStats::npc_default().attributes;
+        assert_eq!(base.attributes.strength, 20);
+        assert_eq!(base.attributes.agility, defaults.agility);
+        assert_eq!(base.attributes.constitution, defaults.constitution);
+        assert_eq!(base.attributes.willpower, defaults.willpower);
+        assert_eq!(base.attributes.charisma, defaults.charisma);
+        assert_eq!(base.attributes.focus, defaults.focus);
+    }
 }

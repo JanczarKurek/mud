@@ -58,7 +58,10 @@ impl CharacterVarStores {
 
     /// Returns the player's current variable snapshot, or an empty map if
     /// they've never opened a dialog this session.
-    pub fn snapshot_for(&self, player_id: u64) -> HashMap<String, crate::dialog::variable_storage::YarnValueDump> {
+    pub fn snapshot_for(
+        &self,
+        player_id: u64,
+    ) -> HashMap<String, crate::dialog::variable_storage::YarnValueDump> {
         self.by_player
             .get(&player_id)
             .map(|store| store.snapshot())

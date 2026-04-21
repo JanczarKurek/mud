@@ -8,6 +8,8 @@ stats:
   willpower: 7
   charisma: 4
   focus: 7
+damage: "1d12+strength/2"
+hp: "2d20+80+constitution*6"
 render:
   debug_color: [110, 130, 75]
   debug_size: 1.4

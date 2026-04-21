@@ -414,7 +414,7 @@ The `text` value supports three count placeholders in addition to the normal `{p
 - Type: mapping
 - Optional: yes
 - Default: empty mapping with zero bonuses
-- Meaning: additive stat modifiers granted by the object, typically while equipped
+- Meaning: for equippable items, additive stat modifiers granted while equipped. For NPC definitions (objects that `extends: npc` and are spawned with a map `behavior`), these values are the NPC's **absolute base attributes** rather than modifiers. Per-attribute fallback: any field left at `0` falls back to the NPC default (strength/agility/constitution = 9, willpower/focus = 8, charisma = 7).
 
 `stats` fields:
 
@@ -471,6 +471,43 @@ The `text` value supports three count placeholders in addition to the normal `{p
 - Optional: yes
 - Default: `0`
 - Meaning: increases or decreases available backpack storage slots
+
+### `attack_profile`
+- Type: mapping or `null`
+- Optional: yes
+- Meaning: for weapons and NPCs, how this entity attacks in melee or ranged combat
+- Fields:
+  - `kind`: `melee` or `ranged`
+
+### `base_range_tiles`
+- Type: integer
+- Optional: yes
+- Default: `4` when `attack_profile.kind` is `ranged` and this field is absent
+- Meaning: maximum Chebyshev distance (in tiles) at which a ranged attack can engage
+
+### `ammo_type`
+- Type: string
+- Optional: yes
+- Meaning: object ID used as the projectile sprite for ranged NPC attacks
+
+### `damage`
+- Type: damage expression string
+- Optional: yes
+- Default: `1d6+strength/5` (melee default)
+- Meaning: damage formula evaluated on each attack. The expression is a `+`-separated list of terms:
+  - A dice term `NdM` (at most one per expression, e.g. `1d6`, `2d4`)
+  - A stat term `<stat>`, `<stat>*<multiplier>`, or `<stat>/<divisor>` (`strength`, `agility`, `constitution`, `willpower`, `charisma`, `focus`, plus the abbreviations `str`/`agi`/`con`/`wil`/`cha`/`foc`)
+  - A plain integer bonus
+- Examples: `1d6+strength`, `2d4+agility`, `1d12+strength/2+5`
+- Both weapons (when equipped by the player) and NPCs read this field.
+
+### `hp`
+- Type: damage expression string
+- Optional: yes
+- Default: unset — the NPC uses the derived HP formula `35 + constitution*6 + strength*2 + stats.max_health`
+- Meaning: NPC maximum health formula. Uses the same expression syntax as `damage`. Rolled once per spawn using the NPC's own attributes, so dice terms produce per-instance variance.
+- Examples: `1d8+30+constitution*3`, `2d20+80+constitution*6`, `50+constitution*5` (deterministic)
+- Player HP is unaffected by this field.
 
 ### `use_effects`
 - Type: mapping

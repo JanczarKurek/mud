@@ -191,7 +191,7 @@ impl ChatLog {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AttributeSet {
     pub strength: i32,
     pub agility: i32,

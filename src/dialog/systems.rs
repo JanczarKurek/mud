@@ -18,7 +18,7 @@ use crate::game::commands::GameCommand;
 use crate::game::resources::{
     GameUiEvent, InventoryState, PendingGameCommands, PendingGameUiEvents,
 };
-use crate::player::components::{Player, PlayerIdentity, PlayerId as PlayerIdType};
+use crate::player::components::{Player, PlayerId as PlayerIdType, PlayerIdentity};
 use crate::world::components::OverworldObject;
 use crate::world::object_registry::ObjectRegistry;
 
@@ -246,7 +246,10 @@ pub fn refresh_inventory_snapshots(
     registry: Res<ObjectRegistry>,
     players: Query<(&PlayerIdentity, &InventoryState), With<Player>>,
 ) {
-    let mut snapshot_write = snapshots.by_player.write().expect("snapshot RwLock poisoned");
+    let mut snapshot_write = snapshots
+        .by_player
+        .write()
+        .expect("snapshot RwLock poisoned");
     snapshot_write.clear();
     for (identity, inventory) in &players {
         let mut totals: HashMap<String, u32> = HashMap::new();
@@ -296,9 +299,7 @@ pub fn handle_yarn_item_commands(
                 YarnValue::String(s) => match s.parse::<u32>() {
                     Ok(c) => c,
                     Err(err) => {
-                        bevy::log::warn!(
-                            "yarn <<{name}>>: second arg {s:?} not a u32: {err}"
-                        );
+                        bevy::log::warn!("yarn <<{name}>>: second arg {s:?} not a u32: {err}");
                         return;
                     }
                 },

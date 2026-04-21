@@ -163,7 +163,8 @@ pub struct PlayerStateDump {
     /// at login before any `DialogueRunner` is built. `#[serde(default)]` so
     /// saves written before this field existed still deserialize.
     #[serde(default)]
-    pub yarn_vars: std::collections::HashMap<String, crate::dialog::variable_storage::YarnValueDump>,
+    pub yarn_vars:
+        std::collections::HashMap<String, crate::dialog::variable_storage::YarnValueDump>,
 }
 
 /// Build a `PlayerStateDump` from the components of a single player entity.
