@@ -19,6 +19,7 @@ pub struct ContextMenuState {
     pub can_use_on: bool,
     pub can_attack: bool,
     pub can_take_partial: bool,
+    pub can_talk: bool,
 }
 
 impl ContextMenuState {
@@ -31,6 +32,7 @@ impl ContextMenuState {
         can_use_on: bool,
         can_attack: bool,
         can_take_partial: bool,
+        can_talk: bool,
     ) {
         self.position = position;
         self.target = Some(target);
@@ -39,6 +41,7 @@ impl ContextMenuState {
         self.can_use_on = can_use_on;
         self.can_attack = can_attack;
         self.can_take_partial = can_take_partial;
+        self.can_talk = can_talk;
     }
 
     pub fn hide(&mut self) {
@@ -48,10 +51,58 @@ impl ContextMenuState {
         self.can_use_on = false;
         self.can_attack = false;
         self.can_take_partial = false;
+        self.can_talk = false;
     }
 
     pub fn is_visible(&self) -> bool {
         self.target.is_some()
+    }
+}
+
+/// Client-side UI state mirroring the currently open dialog panel. Updated by
+/// `apply_game_ui_events` in response to server-emitted
+/// `DialogLine`/`DialogOptions`/`DialogClose` events.
+#[derive(Resource, Default)]
+pub struct ActiveDialogState {
+    pub session_id: Option<u64>,
+    pub speaker: Option<String>,
+    pub text: String,
+    pub options: Vec<String>,
+    /// If `true`, show a "Continue" button (line presented, no options).
+    pub awaiting_continue: bool,
+    /// Bumped each time state changes — used by `sync_dialog_panel` to
+    /// rebuild option buttons without re-diffing vectors.
+    pub revision: u64,
+}
+
+impl ActiveDialogState {
+    pub fn is_active(&self) -> bool {
+        self.session_id.is_some()
+    }
+
+    pub fn show_line(&mut self, session_id: u64, speaker: Option<String>, text: String) {
+        self.session_id = Some(session_id);
+        self.speaker = speaker;
+        self.text = text;
+        self.options.clear();
+        self.awaiting_continue = true;
+        self.revision = self.revision.wrapping_add(1);
+    }
+
+    pub fn show_options(&mut self, session_id: u64, options: Vec<String>) {
+        self.session_id = Some(session_id);
+        self.options = options;
+        self.awaiting_continue = false;
+        self.revision = self.revision.wrapping_add(1);
+    }
+
+    pub fn close(&mut self) {
+        self.session_id = None;
+        self.speaker = None;
+        self.text.clear();
+        self.options.clear();
+        self.awaiting_continue = false;
+        self.revision = self.revision.wrapping_add(1);
     }
 }
 

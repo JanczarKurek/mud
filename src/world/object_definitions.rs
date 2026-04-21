@@ -63,6 +63,10 @@ pub struct OverworldObjectDefinition {
     /// by `delta` (±1 for stairs_up / stairs_down, etc.).
     #[serde(default)]
     pub floor_transition: Option<FloorTransitionDef>,
+    /// Yarn node name a player reaches when talking to this object. Empty =
+    /// not talkable.
+    #[serde(default)]
+    pub dialog_node: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]

@@ -1,5 +1,6 @@
 extends: npc
 name: Villager
 description: Just a wandering villager.
+dialog_node: FriendlyVillager
 render:
   sprite_path: overworld_objects/player/sprite.png

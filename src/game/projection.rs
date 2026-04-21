@@ -21,6 +21,7 @@ use bevy::log::{debug, info};
 use bevy::prelude::*;
 
 use crate::combat::components::CombatTarget;
+use crate::dialog::components::DialogNode;
 use crate::game::resources::{
     ChatLogState, ClientGameState, ClientRemotePlayerState, ClientSpaceState, ClientVitalStats,
     ClientWorldObjectState, GameEvent, InventoryState, PendingGameEvents,
@@ -64,6 +65,7 @@ pub type ProjectionWorldObjectQuery<'w, 's> = Query<
         Has<Npc>,
         Has<Movable>,
         Option<&'static Quantity>,
+        Has<DialogNode>,
     ),
     Without<Player>,
 >;
@@ -239,8 +241,17 @@ pub fn compute_events_for_peer(
     }
 
     let mut current_world_object_ids = Vec::new();
-    for (space_resident, tile_position, object, vitals, has_container, has_npc, has_movable, qty) in
-        world_object_query.iter()
+    for (
+        space_resident,
+        tile_position,
+        object,
+        vitals,
+        has_container,
+        has_npc,
+        has_movable,
+        qty,
+        has_dialog,
+    ) in world_object_query.iter()
     {
         if space_resident.space_id != local_space_id {
             continue;
@@ -261,6 +272,7 @@ pub fn compute_events_for_peer(
             is_npc: has_npc,
             is_movable: has_movable,
             quantity: qty.map(|q| q.0).unwrap_or(1),
+            has_dialog,
         };
 
         if previous.world_objects.get(&object.object_id) != Some(&projected_object) {

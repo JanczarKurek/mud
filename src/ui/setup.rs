@@ -5,10 +5,12 @@ use bevy::ui::widget::NodeImageMode;
 use crate::ui::components::{
     BackpackPanelContent, BackpackSlotRow, ChatLogText, ContainerPanelContent, ContainerSlotButton,
     ContainerSlotImage, ContextMenuAttackButton, ContextMenuInspectButton, ContextMenuOpenButton,
-    ContextMenuRoot, ContextMenuTakePartialButton, ContextMenuUseButton, ContextMenuUseOnButton,
-    CurrentCombatTargetLabel, CurrentTargetPanelContent, DockedPanelBody, DockedPanelCanvas,
-    DockedPanelCloseButton, DockedPanelDragHandle, DockedPanelResizeHandle, DockedPanelRoot,
-    DockedPanelTitle, DragPreviewLabel, DragPreviewRoot, EquipmentPanelContent,
+    ContextMenuRoot, ContextMenuTakePartialButton, ContextMenuTalkButton, ContextMenuUseButton,
+    ContextMenuUseOnButton, CurrentCombatTargetLabel, CurrentTargetPanelContent,
+    DialogPanelBodyText, DialogPanelCloseButton, DialogPanelContinueButton,
+    DialogPanelOptionsContainer, DialogPanelRoot, DialogPanelSpeakerLabel, DockedPanelBody,
+    DockedPanelCanvas, DockedPanelCloseButton, DockedPanelDragHandle, DockedPanelResizeHandle,
+    DockedPanelRoot, DockedPanelTitle, DragPreviewLabel, DragPreviewRoot, EquipmentPanelContent,
     EquipmentSlotButton, EquipmentSlotImage, FullMapBodyRoot, FullMapCloseButton,
     FullMapWindowRoot, FullMapZoomInButton, FullMapZoomLabel, FullMapZoomOutButton, HealthFill,
     HealthLabel, HudMinimapZoomInButton, HudMinimapZoomLabel, HudMinimapZoomOutButton,
@@ -345,6 +347,7 @@ pub fn spawn_hud(
             BorderColor::all(palette.border_accent),
         ))
         .with_children(|menu| {
+            spawn_context_button(menu, &theme, &palette, "Talk", ContextMenuTalkButton);
             spawn_context_button(menu, &theme, &palette, "Attack", ContextMenuAttackButton);
             spawn_context_button(menu, &theme, &palette, "Use", ContextMenuUseButton);
             spawn_context_button(menu, &theme, &palette, "Use On", ContextMenuUseOnButton);
@@ -360,6 +363,113 @@ pub fn spawn_hud(
         });
 
     spawn_take_partial_popup(&mut commands, &theme, &palette);
+    spawn_dialog_panel(&mut commands, &theme, &palette);
+}
+
+fn spawn_dialog_panel(commands: &mut Commands, theme: &UiThemeAssets, palette: &Palette) {
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                width: percent(100.0),
+                height: percent(100.0),
+                left: px(0.0),
+                top: px(0.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            DialogPanelRoot,
+            Visibility::Hidden,
+            GlobalZIndex(i32::MAX - 8),
+            BackgroundColor(palette.surface_overlay_dim),
+        ))
+        .with_children(|overlay| {
+            overlay
+                .spawn((
+                    ThemedPanel,
+                    Node {
+                        width: px(480.0),
+                        max_width: percent(90.0),
+                        flex_direction: FlexDirection::Column,
+                        row_gap: px(12.0),
+                        padding: UiRect::all(px(18.0)),
+                        border: UiRect::all(px(1.0)),
+                        ..default()
+                    },
+                    ImageNode::new(theme.panel_frame.clone())
+                        .with_mode(theme.panel_image_mode())
+                        .with_color(palette.surface_panel),
+                    BackgroundColor(Color::NONE),
+                    BorderColor::all(palette.border_accent),
+                ))
+                .with_children(|panel| {
+                    panel
+                        .spawn((Node {
+                            flex_direction: FlexDirection::Row,
+                            justify_content: JustifyContent::SpaceBetween,
+                            align_items: AlignItems::Center,
+                            width: percent(100.0),
+                            ..default()
+                        },))
+                        .with_children(|header| {
+                            header.spawn((
+                                Text::new(""),
+                                DialogPanelSpeakerLabel,
+                                TextFont {
+                                    font_size: 16.0,
+                                    ..default()
+                                },
+                                TextColor(palette.text_accent),
+                            ));
+                            spawn_small_button(
+                                header,
+                                theme,
+                                palette,
+                                ButtonStyle::Secondary,
+                                "X",
+                                DialogPanelCloseButton,
+                            );
+                        });
+
+                    panel.spawn((
+                        Text::new(""),
+                        DialogPanelBodyText,
+                        TextFont {
+                            font_size: 18.0,
+                            ..default()
+                        },
+                        TextColor(palette.text_primary),
+                        TextLayout {
+                            linebreak: LineBreak::WordBoundary,
+                            justify: Justify::Left,
+                        },
+                        Node {
+                            width: percent(100.0),
+                            ..default()
+                        },
+                    ));
+
+                    panel.spawn((
+                        Node {
+                            flex_direction: FlexDirection::Column,
+                            row_gap: px(6.0),
+                            width: percent(100.0),
+                            ..default()
+                        },
+                        DialogPanelOptionsContainer,
+                    ));
+
+                    spawn_small_button(
+                        panel,
+                        theme,
+                        palette,
+                        ButtonStyle::Primary,
+                        "Continue",
+                        DialogPanelContinueButton,
+                    );
+                });
+        });
 }
 
 fn spawn_take_partial_popup(commands: &mut Commands, theme: &UiThemeAssets, palette: &Palette) {

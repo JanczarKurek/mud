@@ -82,4 +82,25 @@ pub enum GameCommand {
         type_id: String,
         tile_position: TilePosition,
     },
+    /// Open a dialog with the given NPC. Server looks up the NPC's
+    /// `DialogNode`, starts a Yarn runner, and replies with `DialogLine` or
+    /// `DialogOptions` UI events.
+    TalkToNpc {
+        npc_object_id: u64,
+    },
+    /// Advance past a line currently displayed in the dialog panel
+    /// (client clicked "Continue").
+    DialogAdvance {
+        session_id: u64,
+    },
+    /// Pick one of the currently displayed dialog options by index into the
+    /// `Vec<String>` most recently sent via `DialogOptions`.
+    DialogChoose {
+        session_id: u64,
+        option_idx: usize,
+    },
+    /// Abort a running dialog (player closed the panel).
+    DialogEnd {
+        session_id: u64,
+    },
 }

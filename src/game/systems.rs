@@ -280,6 +280,17 @@ pub fn process_game_commands(
                     &mut player_queries.p2(),
                 );
             }
+            GameCommand::TalkToNpc { .. }
+            | GameCommand::DialogAdvance { .. }
+            | GameCommand::DialogChoose { .. }
+            | GameCommand::DialogEnd { .. } => {
+                // Dialog commands are drained by `process_dialog_commands`
+                // before this system runs. If one slips through here it
+                // means the scheduler ran us out of order.
+                bevy::log::warn!(
+                    "process_game_commands saw a dialog command — check system ordering"
+                );
+            }
         }
     }
 }

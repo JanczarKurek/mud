@@ -22,12 +22,24 @@ pub struct GameServerPlugin;
 
 pub struct GameClientPlugin;
 
+/// Runs before `process_game_commands`. Plugins (e.g. dialog) that want to
+/// drain specific `GameCommand` variants before the main processor sees them
+/// should register their systems `.in_set(CommandIntercept)`.
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, SystemSet)]
+pub struct CommandIntercept;
+
 impl Plugin for GameServerPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(PendingGameCommands::default())
             .insert_resource(PendingGameEvents::default())
             .insert_resource(PendingGameUiEvents::default())
             .insert_resource(ClientGameState::default())
+            .configure_sets(
+                Update,
+                CommandIntercept
+                    .after(tick_player_movement_cooldowns)
+                    .before(process_game_commands),
+            )
             .add_systems(
                 Update,
                 tick_player_movement_cooldowns

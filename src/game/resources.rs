@@ -20,6 +20,23 @@ pub enum GameUiEvent {
         to_tile: TilePosition,
         sprite_definition_id: String,
     },
+    /// Display a single line of dialog and wait for the player to click
+    /// "Continue" (which sends `GameCommand::DialogAdvance`).
+    DialogLine {
+        session_id: u64,
+        speaker: Option<String>,
+        text: String,
+    },
+    /// Display a set of selectable dialog options. The player picks one by
+    /// sending `GameCommand::DialogChoose { option_idx }`.
+    DialogOptions {
+        session_id: u64,
+        options: Vec<String>,
+    },
+    /// The dialog panel should be closed (dialogue completed or aborted).
+    DialogClose {
+        session_id: u64,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -85,6 +102,7 @@ pub struct ClientWorldObjectState {
     pub is_npc: bool,
     pub is_movable: bool,
     pub quantity: u32,
+    pub has_dialog: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

@@ -571,6 +571,14 @@ fn load_world_from_snapshot(
                 });
             }
         }
+        if let Some(dialog_node) = object_definitions
+            .get(&definition_id_for_lookup)
+            .and_then(|def| def.dialog_node.as_deref())
+        {
+            entity.insert(crate::dialog::components::DialogNode(
+                dialog_node.to_owned(),
+            ));
+        }
         if let Some(npc) = object.npc {
             entity.insert(Npc);
             if let Some(base_stats) = npc.base_stats {

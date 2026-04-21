@@ -425,6 +425,11 @@ macro_rules! apply_overworld_definition_components {
                 $entity.insert($crate::world::components::Quantity(__q));
             }
         }
+        if let Some(__dialog_node) = __definition.dialog_node.as_ref() {
+            $entity.insert($crate::dialog::components::DialogNode(
+                __dialog_node.clone(),
+            ));
+        }
     }};
 }
 

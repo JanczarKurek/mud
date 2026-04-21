@@ -116,6 +116,32 @@ pub struct ContextMenuAttackButton;
 pub struct ContextMenuTakePartialButton;
 
 #[derive(Component)]
+pub struct ContextMenuTalkButton;
+
+#[derive(Component)]
+pub struct DialogPanelRoot;
+
+#[derive(Component)]
+pub struct DialogPanelSpeakerLabel;
+
+#[derive(Component)]
+pub struct DialogPanelBodyText;
+
+#[derive(Component)]
+pub struct DialogPanelOptionsContainer;
+
+#[derive(Component)]
+pub struct DialogPanelContinueButton;
+
+#[derive(Component)]
+pub struct DialogPanelCloseButton;
+
+#[derive(Component)]
+pub struct DialogPanelOptionButton {
+    pub option_idx: usize,
+}
+
+#[derive(Component)]
 pub struct CurrentTargetPanelContent;
 
 #[derive(Component)]

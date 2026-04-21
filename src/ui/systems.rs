@@ -38,6 +38,7 @@ use crate::world::WorldConfig;
 pub fn apply_game_ui_events(
     mut pending_ui_events: ResMut<PendingGameUiEvents>,
     mut docked_panel_state: ResMut<DockedPanelState>,
+    mut dialog_state: ResMut<crate::ui::resources::ActiveDialogState>,
 ) {
     let events = std::mem::take(&mut pending_ui_events.events);
 
@@ -45,6 +46,22 @@ pub fn apply_game_ui_events(
         match event {
             GameUiEvent::OpenContainer { object_id } => {
                 docked_panel_state.open(object_id);
+            }
+            GameUiEvent::DialogLine {
+                session_id,
+                speaker,
+                text,
+            } => {
+                dialog_state.show_line(session_id, speaker, text);
+            }
+            GameUiEvent::DialogOptions {
+                session_id,
+                options,
+            } => {
+                dialog_state.show_options(session_id, options);
+            }
+            GameUiEvent::DialogClose { .. } => {
+                dialog_state.close();
             }
             other @ GameUiEvent::ProjectileFired { .. } => {
                 pending_ui_events.events.push(other);
@@ -329,6 +346,21 @@ pub fn sync_context_menu_attack_button(
     };
 }
 
+pub fn sync_context_menu_talk_button(
+    context_menu_state: Res<ContextMenuState>,
+    mut button_query: Query<&mut Node, With<crate::ui::components::ContextMenuTalkButton>>,
+) {
+    let Ok(mut node) = button_query.single_mut() else {
+        return;
+    };
+
+    node.display = if context_menu_state.can_talk {
+        Display::Flex
+    } else {
+        Display::None
+    };
+}
+
 pub fn sync_context_menu_use_button(
     context_menu_state: Res<ContextMenuState>,
     mut use_button_query: Query<&mut Node, With<ContextMenuUseButton>>,
@@ -384,6 +416,10 @@ pub fn handle_context_menu_actions(
         Query<(&ComputedNode, &UiGlobalTransform), With<ContextMenuUseButton>>,
         Query<(&ComputedNode, &UiGlobalTransform), With<ContextMenuUseOnButton>>,
         Query<(&ComputedNode, &UiGlobalTransform), With<ContextMenuTakePartialButton>>,
+        Query<
+            (&ComputedNode, &UiGlobalTransform),
+            With<crate::ui::components::ContextMenuTalkButton>,
+        >,
     )>,
 ) {
     let (object_registry, definitions, spell_definitions) = static_resources;
@@ -402,6 +438,16 @@ pub fn handle_context_menu_actions(
     };
 
     if !mouse_input.just_pressed(MouseButton::Left) || !context_menu_state.is_visible() {
+        return;
+    }
+
+    if is_cursor_over_button(cursor_position, &menu_queries.p6()) {
+        if let Some(ContextMenuTarget::World(object_id)) = context_menu_state.target {
+            pending_commands.push(GameCommand::TalkToNpc {
+                npc_object_id: object_id,
+            });
+        }
+        context_menu_state.hide();
         return;
     }
 
@@ -824,6 +870,7 @@ pub fn handle_context_menu_opening(
                 ),
                 false,
                 stack_qty > 1,
+                false,
             );
             info!(
                 "context_open_slot_success slot={slot_kind:?} object_id={object_id} can_use={can_use}"
@@ -857,6 +904,7 @@ pub fn handle_context_menu_opening(
             ),
             object.is_npc,
             near && object.quantity > 1,
+            near && object.is_npc && object.has_dialog,
         );
         info!(
             "context_open_world_success object_id={} has_container={} can_use={} can_attack={} near={}",
@@ -885,6 +933,7 @@ pub fn handle_context_menu_opening(
                 &spell_definitions,
             ),
             true,
+            false,
             false,
         );
         info!(

@@ -10,6 +10,7 @@ use bevy::prelude::*;
 pub use crate::accounts::autosave::{
     autosave_all_players, persist_disconnected_players, save_all_players_on_app_exit, AutosaveTimer,
 };
+use crate::network::resources::PendingPlayerSaves;
 pub use crate::accounts::db::{AccountDb, AuthError, LOCAL_ACCOUNT_ID, LOCAL_ACCOUNT_USERNAME};
 pub use crate::accounts::resources::{
     default_db_path, AccountDbHandle, AccountDbPath, AutosaveConfig,
@@ -45,7 +46,10 @@ impl Plugin for AccountsServerPlugin {
             .insert_resource(AutosaveConfig::default())
             .insert_resource(AutosaveTimer::default())
             .add_systems(Update, autosave_all_players)
-            .add_systems(Last, persist_disconnected_players)
+            .add_systems(
+                Last,
+                persist_disconnected_players.run_if(resource_exists::<PendingPlayerSaves>),
+            )
             .add_systems(Last, save_all_players_on_app_exit);
     }
 }

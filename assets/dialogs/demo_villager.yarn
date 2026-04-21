@@ -1,0 +1,13 @@
+title: FriendlyVillager
+---
+Villager: Oh, hello there, traveler!
+Villager: It's not often we see new faces around here.
+-> Who are you?
+    Villager: I'm just a humble villager. Nothing exciting about me, I'm afraid.
+    <<log "player asked who I am">>
+-> What's this place?
+    Villager: This? This is our little corner of the world. Be careful of the goblins to the east.
+-> Never mind.
+    Villager: Well, don't let me keep you then.
+Villager: Safe travels!
+===

@@ -1,4 +1,5 @@
 pub mod components;
+pub mod dialog;
 pub mod menu_bar;
 pub mod minimap;
 pub mod resources;
@@ -9,15 +10,19 @@ pub mod theme;
 use bevy::prelude::*;
 
 use crate::app::state::ClientAppState;
+use crate::ui::dialog::{
+    handle_dialog_panel_clicks, sync_dialog_panel_continue_button, sync_dialog_panel_options,
+    sync_dialog_panel_text, sync_dialog_panel_visibility, DialogPanelRenderState,
+};
 use crate::ui::menu_bar::{apply_menu_actions, handle_menu_bar_clicks, sync_menu_dropdowns};
 use crate::ui::minimap::{
     handle_minimap_keybinds, handle_minimap_scroll_wheel, handle_minimap_zoom_buttons,
     sync_full_map_window_visibility, sync_minimap_zoom_labels, update_minimap_images,
 };
 use crate::ui::resources::{
-    ContextMenuState, CursorState, DockedPanelDragState, DockedPanelResizeState, DockedPanelState,
-    DragState, FullMapWindowState, HudMinimapSettings, OpenMenuState, PendingMenuActions,
-    SpellTargetingState, TakePartialState, UseOnState,
+    ActiveDialogState, ContextMenuState, CursorState, DockedPanelDragState, DockedPanelResizeState,
+    DockedPanelState, DragState, FullMapWindowState, HudMinimapSettings, OpenMenuState,
+    PendingMenuActions, SpellTargetingState, TakePartialState, UseOnState,
 };
 use crate::ui::setup::spawn_hud;
 use crate::ui::systems::{
@@ -28,10 +33,10 @@ use crate::ui::systems::{
     manage_open_containers, print_right_sidebar_layout_debug, setup_native_custom_cursor,
     sync_chat_log, sync_container_slot_images, sync_context_menu_attack_button,
     sync_context_menu_open_button, sync_context_menu_root, sync_context_menu_take_partial_button,
-    sync_context_menu_use_button, sync_context_menu_use_on_button, sync_current_combat_target,
-    sync_docked_panel_layout, sync_docked_panel_titles, sync_drag_preview,
-    sync_equipment_slot_images, sync_item_slot_button_visibility, sync_native_custom_cursor,
-    sync_take_partial_label, sync_vital_bars, toggle_cursor_mode,
+    sync_context_menu_talk_button, sync_context_menu_use_button, sync_context_menu_use_on_button,
+    sync_current_combat_target, sync_docked_panel_layout, sync_docked_panel_titles,
+    sync_drag_preview, sync_equipment_slot_images, sync_item_slot_button_visibility,
+    sync_native_custom_cursor, sync_take_partial_label, sync_vital_bars, toggle_cursor_mode,
     update_take_partial_popup_visibility,
 };
 use crate::ui::theme::UiThemePlugin;
@@ -54,6 +59,8 @@ impl Plugin for UiPlugin {
             .insert_resource(FullMapWindowState::default())
             .insert_resource(OpenMenuState::default())
             .insert_resource(PendingMenuActions::default())
+            .insert_resource(ActiveDialogState::default())
+            .insert_resource(DialogPanelRenderState::default())
             .add_systems(
                 OnEnter(ClientAppState::InGame),
                 (spawn_hud, setup_native_custom_cursor),
@@ -71,6 +78,7 @@ impl Plugin for UiPlugin {
                     sync_context_menu_open_button,
                     sync_context_menu_use_button,
                     sync_context_menu_use_on_button,
+                    sync_context_menu_talk_button,
                     sync_current_combat_target,
                     sync_docked_panel_layout,
                     sync_docked_panel_titles,
@@ -173,6 +181,17 @@ impl Plugin for UiPlugin {
                     handle_menu_bar_clicks,
                     sync_menu_dropdowns.after(handle_menu_bar_clicks),
                     apply_menu_actions.after(handle_menu_bar_clicks),
+                )
+                    .run_if(in_state(ClientAppState::InGame)),
+            )
+            .add_systems(
+                Update,
+                (
+                    sync_dialog_panel_visibility,
+                    sync_dialog_panel_text,
+                    sync_dialog_panel_continue_button,
+                    sync_dialog_panel_options,
+                    handle_dialog_panel_clicks.after(sync_dialog_panel_options),
                 )
                     .run_if(in_state(ClientAppState::InGame)),
             );

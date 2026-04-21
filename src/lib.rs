@@ -4,6 +4,7 @@ pub mod asset_viewer;
 pub mod assets;
 pub mod client_effects;
 pub mod combat;
+pub mod dialog;
 pub mod editor;
 pub mod game;
 pub mod magic;
