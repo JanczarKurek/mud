@@ -27,22 +27,30 @@ portals:
     destination_permanence: persistent
 
 objects:
-  - id: 1200
-    type: barrel
-    placement: { x: 5, y: 4 }
-    contents: [1201]
-  - id: 1201
-    type: potion
-  - id: 1202
-    type: goblin
-    placement: { x: 8, y: 6 }
+  - id: 12343
+    type: rat
+    placement: { x: 2, y: 2 }
     behavior:
       kind: roam_and_chase
-      step_interval_seconds: 0.9
       detect_distance_tiles: 4
       disengage_distance_tiles: 6
-      bounds:
-        min_x: 2
-        min_y: 2
-        max_x: 9
-        max_y: 7
+      step_interval_seconds: 0.5
+      bounds: { min_x: 0, min_y: 0, max_x: 10, max_y: 10 }
+  - id: 12344
+    type: rat
+    placement: { x: 3, y: 3 }
+    behavior:
+      kind: roam_and_chase
+      detect_distance_tiles: 4
+      disengage_distance_tiles: 6
+      step_interval_seconds: 0.55
+      bounds: { min_x: 0, min_y: 0, max_x: 10, max_y: 10 }
+  - id: 12345
+    type: rat
+    placement: { x: 4, y: 4 }
+    behavior:
+      kind: roam_and_chase
+      detect_distance_tiles: 4
+      disengage_distance_tiles: 6
+      step_interval_seconds: 0.45
+      bounds: { min_x: 0, min_y: 0, max_x: 10, max_y: 10 }

@@ -12,6 +12,7 @@ pub mod network;
 pub mod npc;
 pub mod persistence;
 pub mod player;
+pub mod quest;
 pub mod scripting;
 pub mod ui;
 pub mod world;

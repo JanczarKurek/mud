@@ -28,6 +28,7 @@ struct CombatantSnapshot {
     damage_expr: DamageExpr,
     health: f32,
     is_player: bool,
+    player_id: Option<u64>,
     ranged_projectile_sprite: Option<String>,
 }
 
@@ -92,6 +93,7 @@ pub fn resolve_battle_turn(
     spell_definitions: Res<SpellDefinitions>,
     mut chat_log_query: Query<&mut ChatLog, With<Player>>,
     mut ui_events: ResMut<PendingGameUiEvents>,
+    mut quest_events: ResMut<crate::quest::events::PendingQuestEvents>,
     mut commands: Commands,
 ) {
     battle_turn_timer.remaining_seconds -= time.delta_secs();
@@ -124,6 +126,7 @@ pub fn resolve_battle_turn(
                     .map(|wd| wd.0.clone())
                     .unwrap_or_else(DamageExpr::melee_default);
                 let is_player = player_identity.is_some();
+                let player_id = player_identity.map(|identity| identity.id.0);
                 let ammo_object_id = inventory.and_then(|inv| {
                     inv.equipment_item(crate::world::object_definitions::EquipmentSlot::Ammo)
                 });
@@ -151,6 +154,7 @@ pub fn resolve_battle_turn(
                     damage_expr,
                     health: vital_stats.health,
                     is_player,
+                    player_id,
                     ranged_projectile_sprite,
                 }
             },
@@ -253,6 +257,12 @@ pub fn resolve_battle_turn(
                     target.position,
                 );
             }
+            quest_events
+                .events
+                .push(crate::quest::events::QuestEvent::ObjectKilled {
+                    type_id: target.definition_id.clone(),
+                    killer_player_id: attacker.player_id,
+                });
             commands.entity(target_entity).despawn();
             broadcast_chat_line(&mut chat_log_query, format!("[{} dies]", target.name));
             continue;

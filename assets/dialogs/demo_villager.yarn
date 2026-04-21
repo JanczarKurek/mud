@@ -2,9 +2,31 @@ title: FriendlyVillager
 ---
 <<declare $quest_apples_started = false>>
 <<declare $quest_apples_done = false>>
+<<declare $hunter_started = false>>
+<<declare $hunter_ready = false>>
+<<declare $hunter_complete = false>>
 
-<<if $quest_apples_done>>
-    Villager: Those apples really hit the spot. Thanks again, traveler.
+<<if $hunter_complete>>
+    Villager: You've kept the rats at bay and fed me apples. Truly a hero.
+<<elseif $hunter_ready>>
+    Villager: You cleared out the rats! Amazing.
+    -> Claim my reward.
+        <<give_item "potion" 1>>
+        <<complete_quest "hunter">>
+        <<set $hunter_complete to true>>
+        Villager: Here, have this potion. You've earned it.
+    -> Maybe later.
+        Villager: Don't forget to come back!
+<<elseif $hunter_started>>
+    Villager: Still hunting rats? I need three of them dealt with.
+<<elseif $quest_apples_done>>
+    Villager: Those apples were delicious. Say — would you do me one more favor?
+    Villager: There are rats down south causing trouble. Three of them.
+    -> I'll hunt them down.
+        <<start_quest "hunter">>
+        Villager: Wonderful! Come back when it's done.
+    -> Not today, sorry.
+        Villager: Fair enough, traveler.
 <<elseif $quest_apples_started>>
     <<if has_item("apple", 3)>>
         Villager: Oh! You found them already?

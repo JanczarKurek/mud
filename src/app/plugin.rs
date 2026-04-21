@@ -15,6 +15,7 @@ use crate::app::title_screen::TitleScreenPlugin;
 use crate::client_effects::ClientEffectsPlugin;
 use crate::combat::CombatPlugin;
 use crate::dialog::DialogServerPlugin;
+use crate::quest::QuestPlugin;
 use crate::editor::EditorPlugin;
 use crate::game::{GameClientPlugin, GameServerPlugin};
 use crate::magic::MagicPlugin;
@@ -159,6 +160,7 @@ impl Plugin for GameAppPlugin {
                     // Added after DefaultPlugins so YarnSpinnerPlugin can see
                     // AssetServer for `.yarn` compilation.
                     DialogServerPlugin,
+                    QuestPlugin::default(),
                     TitleScreenPlugin {
                         runtime: self.runtime,
                         server_addr: self.server_addr.clone(),
