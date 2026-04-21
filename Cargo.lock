@@ -4226,6 +4226,7 @@ dependencies = [
  "serde_yaml",
  "sha2",
  "webpki-roots 0.26.11",
+ "yarnspinner",
 ]
 
 [[package]]

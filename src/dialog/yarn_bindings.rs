@@ -1,40 +1,37 @@
-//! Rust-implemented Yarn commands and functions. Dialog authors call these
-//! from `.yarn` files; each one is a Bevy system (commands) or a pure
-//! function closure (functions).
+//! Rust-registered Yarn commands and functions.
 //!
-//! Phase 1 surface is intentionally small and stubby. Quest-engine-driven
-//! bindings will arrive in Phase 2.
+//! Flag semantics (`<<set $flag to true>>` / `<<if $flag>>`) are handled by
+//! Yarn's built-in variable syntax backed by the per-character
+//! `MemoryVariableStorage` installed at runner creation — no custom commands
+//! are needed for them. `give_item` / `take_item` are intercepted via an
+//! `On<ExecuteCommand>` observer (see `systems::handle_yarn_item_commands`)
+//! rather than registered here, because system-backed commands receive `In<T>`
+//! but lose the source runner entity, which we need to resolve the acting
+//! player.
 
 use bevy::prelude::*;
 use bevy_yarnspinner::prelude::*;
 
-/// Registers our custom commands / functions on a freshly created
-/// `DialogueRunner`. Takes `&mut Commands` so Bevy-system-backed handlers can
-/// be turned into `SystemId`s via `register_system`.
-pub fn install(runner: &mut DialogueRunner, commands: &mut Commands) {
-    let log_id = commands.register_system(log_command);
-    let set_flag_id = commands.register_system(set_flag_command);
-    let clear_flag_id = commands.register_system(clear_flag_command);
-    runner
-        .commands_mut()
-        .add_command("log", log_id)
-        .add_command("set_flag", set_flag_id)
-        .add_command("clear_flag", clear_flag_id);
+use crate::dialog::resources::PlayerInventorySnapshots;
 
-    runner.library_mut().add_function("has_flag", has_flag_fn);
-}
-
-fn log_command(In(message): In<String>) {
-    bevy::log::info!("yarn: {message}");
-}
-
-fn set_flag_command(In(_name): In<String>) {
-    // Variable-storage backed flags arrive with the quest engine in Phase 2;
-    // this is a no-op stub so dialogs can already reference the command.
-}
-
-fn clear_flag_command(In(_name): In<String>) {}
-
-fn has_flag_fn(_name: String) -> bool {
-    false
+/// Installs runner-local functions. Called once per `DialogueRunner` at
+/// session creation; `player_id` is captured in the closures so every Yarn
+/// query reads the *acting* player's state.
+pub fn install(
+    runner: &mut DialogueRunner,
+    _commands: &mut Commands,
+    snapshots: &PlayerInventorySnapshots,
+    player_id: u64,
+) {
+    let snapshot = snapshots.by_player.clone();
+    runner.library_mut().add_function(
+        "has_item",
+        move |type_id: String, count: f32| -> bool {
+            let guard = snapshot.read().expect("inventory snapshot RwLock poisoned");
+            guard
+                .get(&player_id)
+                .and_then(|per_player| per_player.get(&type_id))
+                .is_some_and(|total| *total >= count.max(0.0) as u32)
+        },
+    );
 }

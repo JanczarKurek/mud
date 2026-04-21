@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use crate::combat::components::{AttackProfile, CombatLeash};
 use crate::persistence::{PlayerStateDump, WorldSnapshotStatus};
 use crate::player::components::{
-    BaseStats, ChatLog, DerivedStats, Inventory, MovementCooldown, Player, PlayerId,
+    BaseStats, ChatLog, DerivedStats, Inventory, InventoryStack, MovementCooldown, Player, PlayerId,
     PlayerIdentity, VitalStats, WeaponDamage,
 };
 use crate::world::components::{
@@ -22,6 +22,19 @@ pub fn seed_starter_inventory(inventory: &mut Inventory, object_registry: &mut O
     inventory.restore_equipment_item(EquipmentSlot::Weapon, bow_id);
     let arrow_id = object_registry.allocate_runtime_id("arrow");
     inventory.set_ammo(arrow_id, 20);
+    // Seed a handful of apples so the `demo_villager` fetch quest (turn-in
+    // condition: 3 apples) is demoable without chasing items across the map.
+    let apple_id = object_registry.allocate_runtime_id("apple");
+    if let Some(slot) = inventory
+        .backpack_slots
+        .iter_mut()
+        .find(|slot| slot.is_none())
+    {
+        *slot = Some(InventoryStack {
+            object_id: apple_id,
+            quantity: 3,
+        });
+    }
 }
 
 pub fn spawn_embedded_player_authoritative(

@@ -2,17 +2,25 @@
 //! `DialogChoose` / `DialogEnd` commands into Yarn `DialogueRunner` calls, and
 //! translate Yarn presentation events into `GameUiEvent`s for clients.
 
+use std::collections::HashMap;
+
 use bevy::prelude::*;
-use bevy_yarnspinner::events::{DialogueCompleted, PresentLine, PresentOptions};
+use bevy_yarnspinner::events::{DialogueCompleted, ExecuteCommand, PresentLine, PresentOptions};
 use bevy_yarnspinner::prelude::*;
 
 use crate::dialog::components::{DialogNode, DialogSession};
-use crate::dialog::resources::{DialogSessionHandle, DialogSessionRegistry, PendingDialogOptions};
+use crate::dialog::resources::{
+    CharacterVarStores, DialogSessionHandle, DialogSessionRegistry, PendingDialogOptions,
+    PlayerInventorySnapshots,
+};
 use crate::dialog::yarn_bindings;
 use crate::game::commands::GameCommand;
-use crate::game::resources::{GameUiEvent, PendingGameCommands, PendingGameUiEvents};
-use crate::player::components::{Player, PlayerIdentity};
+use crate::game::resources::{
+    GameUiEvent, InventoryState, PendingGameCommands, PendingGameUiEvents,
+};
+use crate::player::components::{Player, PlayerIdentity, PlayerId as PlayerIdType};
 use crate::world::components::OverworldObject;
+use crate::world::object_registry::ObjectRegistry;
 
 /// Drains dialog-flavored `GameCommand`s from `PendingGameCommands` and
 /// operates on Yarn runners accordingly. Scheduled ahead of
@@ -28,6 +36,8 @@ pub fn process_dialog_commands(
     mut ui_events: ResMut<PendingGameUiEvents>,
     mut sessions: ResMut<DialogSessionRegistry>,
     mut pending_options: ResMut<PendingDialogOptions>,
+    mut var_stores: ResMut<CharacterVarStores>,
+    inventory_snapshots: Res<PlayerInventorySnapshots>,
     project: Option<Res<YarnProject>>,
     mut commands: Commands,
     player_query: Query<(Entity, &PlayerIdentity), With<Player>>,
@@ -81,8 +91,17 @@ pub fn process_dialog_commands(
                     continue;
                 };
 
-                let mut runner = project.create_dialogue_runner(&mut commands);
-                yarn_bindings::install(&mut runner, &mut commands);
+                let storage = var_stores.get_or_insert(acting_player_id.0);
+                let mut runner = project
+                    .build_dialogue_runner(&mut commands)
+                    .with_variable_storage(Box::new(storage))
+                    .build();
+                yarn_bindings::install(
+                    &mut runner,
+                    &mut commands,
+                    &inventory_snapshots,
+                    acting_player_id.0,
+                );
                 runner.start_node(&node_name);
 
                 let session_id = sessions.allocate();
@@ -216,6 +235,95 @@ pub fn forward_present_options(
             options: texts,
         },
     );
+}
+
+/// Refreshes the shared `PlayerInventorySnapshots` each frame. Yarn `has_item`
+/// closures are pure (no ECS world access), so they read from this snapshot;
+/// keeping it one-frame-stale is fine — dialogs advance slower than the Bevy
+/// loop.
+pub fn refresh_inventory_snapshots(
+    snapshots: Res<PlayerInventorySnapshots>,
+    registry: Res<ObjectRegistry>,
+    players: Query<(&PlayerIdentity, &InventoryState), With<Player>>,
+) {
+    let mut snapshot_write = snapshots.by_player.write().expect("snapshot RwLock poisoned");
+    snapshot_write.clear();
+    for (identity, inventory) in &players {
+        let mut totals: HashMap<String, u32> = HashMap::new();
+        for stack in inventory.backpack_slots.iter().flatten() {
+            let Some(type_id) = registry.type_id(stack.object_id) else {
+                continue;
+            };
+            *totals.entry(type_id.to_owned()).or_default() += stack.quantity;
+        }
+        snapshot_write.insert(identity.id.0, totals);
+    }
+}
+
+/// Observer: translates Yarn `<<give_item>>` / `<<take_item>>` into authoritative
+/// `GameCommand`s. Registering this as an `ExecuteCommand` observer (rather than
+/// per-runner `add_command`) keeps the source runner entity available so we can
+/// resolve the acting player via its `DialogSession` component — system-backed
+/// commands only see `In<T>`, not the source entity.
+pub fn handle_yarn_item_commands(
+    event: On<ExecuteCommand>,
+    sessions: Query<&DialogSession>,
+    mut pending_commands: ResMut<PendingGameCommands>,
+) {
+    let name = event.command.name.as_str();
+    if name != "give_item" && name != "take_item" {
+        return;
+    }
+    let Ok(session) = sessions.get(event.entity) else {
+        return;
+    };
+    // Yarn's command grammar passes argument tokens as-is — `<<give_item "apple" 3>>`
+    // arrives as [String("apple"), String("3")] unless the author wraps numbers
+    // in `{...}` to force expression evaluation. Accept both so dialog writers
+    // don't have to know that detail.
+    let params = &event.command.parameters;
+    let (type_id, count) = match params.as_slice() {
+        [type_val, count_val] => {
+            let type_id = match type_val {
+                YarnValue::String(s) => s.clone(),
+                other => {
+                    bevy::log::warn!("yarn <<{name}>>: first arg must be a string, got {other:?}");
+                    return;
+                }
+            };
+            let count: u32 = match count_val {
+                YarnValue::Number(n) => n.max(0.0) as u32,
+                YarnValue::String(s) => match s.parse::<u32>() {
+                    Ok(c) => c,
+                    Err(err) => {
+                        bevy::log::warn!(
+                            "yarn <<{name}>>: second arg {s:?} not a u32: {err}"
+                        );
+                        return;
+                    }
+                },
+                other => {
+                    bevy::log::warn!("yarn <<{name}>>: second arg must be a count, got {other:?}");
+                    return;
+                }
+            };
+            (type_id, count)
+        }
+        _ => {
+            bevy::log::warn!(
+                "yarn <<{name}>> expects 2 arguments (type_id, count) — got {} ({:?})",
+                params.len(),
+                params
+            );
+            return;
+        }
+    };
+    let command = match name {
+        "give_item" => GameCommand::GiveItem { type_id, count },
+        "take_item" => GameCommand::TakeItem { type_id, count },
+        _ => unreachable!(),
+    };
+    pending_commands.push_for_player(PlayerIdType(session.player_id), command);
 }
 
 pub fn forward_dialogue_completed(

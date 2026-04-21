@@ -103,4 +103,18 @@ pub enum GameCommand {
     DialogEnd {
         session_id: u64,
     },
+    /// Grant `count` instances of `type_id` to the acting player's backpack.
+    /// Stackable definitions merge into existing stacks; otherwise each copy
+    /// consumes an empty slot. Grants that don't fit are silently dropped —
+    /// callers are expected to gate on inventory space when that matters.
+    GiveItem {
+        type_id: String,
+        count: u32,
+    },
+    /// Remove up to `count` instances of `type_id` from the acting player's
+    /// backpack. Used by Yarn `<<take_item>>` for fetch-quest turn-in.
+    TakeItem {
+        type_id: String,
+        count: u32,
+    },
 }

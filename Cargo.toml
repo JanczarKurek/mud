@@ -6,6 +6,9 @@ edition = "2021"
 [dependencies]
 bevy = { version = "0.18", features = ["dynamic_linking", "debug"] }
 bevy_yarnspinner = "0.8"
+# Only needed for `VariableStorageError`, which bevy_yarnspinner re-exports
+# as `pub(crate)`. The actual trait lives in `yarnspinner::runtime`.
+yarnspinner = "0.8"
 rustpython = "0.4"
 rustpython-vm = "0.4"
 serde = { version = "1", features = ["derive"] }

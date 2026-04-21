@@ -280,6 +280,25 @@ pub fn process_game_commands(
                     &mut player_queries.p2(),
                 );
             }
+            GameCommand::GiveItem { type_id, count } => {
+                handle_give_item(
+                    player_entity,
+                    &type_id,
+                    count,
+                    &definitions,
+                    &mut object_registry,
+                    &mut player_queries.p2(),
+                );
+            }
+            GameCommand::TakeItem { type_id, count } => {
+                handle_take_item(
+                    player_entity,
+                    &type_id,
+                    count,
+                    &object_registry,
+                    &mut player_queries.p2(),
+                );
+            }
             GameCommand::TalkToNpc { .. }
             | GameCommand::DialogAdvance { .. }
             | GameCommand::DialogChoose { .. }
@@ -291,6 +310,132 @@ pub fn process_game_commands(
                     "process_game_commands saw a dialog command — check system ordering"
                 );
             }
+        }
+    }
+}
+
+fn handle_give_item(
+    player_entity: Entity,
+    type_id: &str,
+    count: u32,
+    definitions: &OverworldObjectDefinitions,
+    object_registry: &mut ObjectRegistry,
+    player_query: &mut Query<
+        (
+            Entity,
+            &PlayerIdentity,
+            &mut InventoryState,
+            &mut ChatLogState,
+            &mut SpaceResident,
+            &mut TilePosition,
+            &mut MovementCooldown,
+            &mut VitalStats,
+            Option<&CombatTarget>,
+        ),
+        With<Player>,
+    >,
+) {
+    if count == 0 {
+        return;
+    }
+    let Some(definition) = definitions.get(type_id) else {
+        bevy::log::warn!("GiveItem: unknown type_id '{type_id}'");
+        return;
+    };
+    let Ok((_, _, mut inventory, mut chat_log, _, _, _, _, _)) =
+        player_query.get_mut(player_entity)
+    else {
+        return;
+    };
+
+    let max_stack = definition.max_stack_size.max(1);
+    let mut remaining = count;
+
+    if max_stack > 1 {
+        for slot in inventory.backpack_slots.iter_mut() {
+            if remaining == 0 {
+                break;
+            }
+            let Some(stack) = slot else { continue };
+            if object_registry.type_id(stack.object_id) != Some(type_id) {
+                continue;
+            }
+            let available = max_stack.saturating_sub(stack.quantity);
+            if available == 0 {
+                continue;
+            }
+            let grant = remaining.min(available);
+            stack.quantity += grant;
+            remaining -= grant;
+        }
+    }
+
+    while remaining > 0 {
+        let Some(empty_index) = inventory
+            .backpack_slots
+            .iter()
+            .position(|slot| slot.is_none())
+        else {
+            chat_log.push_narrator(format!(
+                "You cannot carry any more {}.",
+                definition.name
+            ));
+            break;
+        };
+        let grant = if max_stack > 1 { remaining.min(max_stack) } else { 1 };
+        let object_id = object_registry.allocate_runtime_id(type_id.to_owned());
+        inventory.backpack_slots[empty_index] = Some(InventoryStack {
+            object_id,
+            quantity: grant,
+        });
+        remaining -= grant;
+    }
+
+    chat_log.push_narrator(format!("You receive {} {}.", count - remaining, definition.name));
+}
+
+fn handle_take_item(
+    player_entity: Entity,
+    type_id: &str,
+    count: u32,
+    object_registry: &ObjectRegistry,
+    player_query: &mut Query<
+        (
+            Entity,
+            &PlayerIdentity,
+            &mut InventoryState,
+            &mut ChatLogState,
+            &mut SpaceResident,
+            &mut TilePosition,
+            &mut MovementCooldown,
+            &mut VitalStats,
+            Option<&CombatTarget>,
+        ),
+        With<Player>,
+    >,
+) {
+    if count == 0 {
+        return;
+    }
+    let Ok((_, _, mut inventory, _, _, _, _, _, _)) = player_query.get_mut(player_entity) else {
+        return;
+    };
+
+    let mut remaining = count;
+    for slot in inventory.backpack_slots.iter_mut() {
+        if remaining == 0 {
+            break;
+        }
+        let Some(stack) = slot else { continue };
+        if object_registry.type_id(stack.object_id) != Some(type_id) {
+            continue;
+        }
+        if stack.quantity <= remaining {
+            remaining -= stack.quantity;
+            *slot = None;
+        } else {
+            stack.quantity -= remaining;
+            remaining = 0;
         }
     }
 }

@@ -1,13 +1,30 @@
 title: FriendlyVillager
 ---
-Villager: Oh, hello there, traveler!
-Villager: It's not often we see new faces around here.
--> Who are you?
-    Villager: I'm just a humble villager. Nothing exciting about me, I'm afraid.
-    <<log "player asked who I am">>
--> What's this place?
-    Villager: This? This is our little corner of the world. Be careful of the goblins to the east.
--> Never mind.
-    Villager: Well, don't let me keep you then.
-Villager: Safe travels!
+<<declare $quest_apples_started = false>>
+<<declare $quest_apples_done = false>>
+
+<<if $quest_apples_done>>
+    Villager: Those apples really hit the spot. Thanks again, traveler.
+<<elseif $quest_apples_started>>
+    <<if has_item("apple", 3)>>
+        Villager: Oh! You found them already?
+        -> Here, take these three apples.
+            <<take_item "apple" 3>>
+            <<give_item "potion" 1>>
+            <<set $quest_apples_done to true>>
+            Villager: Wonderful! Here's a little something for your trouble.
+        -> Actually, I'm not ready yet.
+            Villager: No rush, friend.
+    <<else>>
+        Villager: Still looking for those apples? I need three of them.
+    <<endif>>
+<<else>>
+    Villager: Oh, hello there, traveler!
+    Villager: You wouldn't happen to have any apples, would you? I'm famished.
+    -> I can find you three apples.
+        <<set $quest_apples_started to true>>
+        Villager: Oh, bless you! I'll wait right here.
+    -> Not right now, sorry.
+        Villager: Ah, no matter. Safe travels.
+<<endif>>
 ===

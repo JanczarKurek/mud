@@ -1,7 +1,10 @@
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
 use bevy::prelude::*;
 use bevy_yarnspinner::prelude::OptionId;
+
+use crate::dialog::variable_storage::PersistentVariableStorage;
 
 #[derive(Resource, Default)]
 pub struct DialogSessionRegistry {
@@ -32,4 +35,34 @@ impl DialogSessionRegistry {
 #[derive(Resource, Default)]
 pub struct PendingDialogOptions {
     pub by_session: HashMap<u64, Vec<OptionId>>,
+}
+
+/// Per-character Yarn variable stores. `PersistentVariableStorage` clones
+/// share the same backing `Arc<RwLock<HashMap>>`, so every `DialogueRunner` we
+/// spawn for the same player sees the same `$vars`. Unlike
+/// `MemoryVariableStorage`, it keeps existing values on `extend` so
+/// `<<declare $x = default>>` in a second runner doesn't clobber a flag set
+/// by the first.
+#[derive(Resource, Default)]
+pub struct CharacterVarStores {
+    pub by_player: HashMap<u64, PersistentVariableStorage>,
+}
+
+impl CharacterVarStores {
+    pub fn get_or_insert(&mut self, player_id: u64) -> PersistentVariableStorage {
+        self.by_player
+            .entry(player_id)
+            .or_insert_with(PersistentVariableStorage::new)
+            .clone()
+    }
+}
+
+/// Shared snapshot of each player's inventory aggregated by object type_id.
+/// Written each Update by `refresh_inventory_snapshots`, read from Yarn
+/// functions registered on `DialogueRunner`s. An `Arc<RwLock<...>>` rather
+/// than a Bevy `Res<_>` because Yarn functions are plain closures without
+/// access to the ECS world.
+#[derive(Resource, Default, Clone)]
+pub struct PlayerInventorySnapshots {
+    pub by_player: Arc<RwLock<HashMap<u64, HashMap<String, u32>>>>,
 }
