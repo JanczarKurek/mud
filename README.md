@@ -24,6 +24,7 @@ Very much work in progress. For now things that work:
 - Persistant world
 - Multiple world instances (spaces)
 - Multiplayer
+- Dialogs + python-based questing scripting
 
 ## How to run
 
