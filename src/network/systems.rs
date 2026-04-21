@@ -268,6 +268,7 @@ pub fn poll_tcp_server_messages(
     mut pending_commands: ResMut<PendingGameCommands>,
     mut pending_saves: ResMut<PendingPlayerSaves>,
     db: Option<Res<AccountDbHandle>>,
+    mut var_stores: Option<ResMut<crate::dialog::resources::CharacterVarStores>>,
     world_config: Res<WorldConfig>,
     authored_spaces: Res<SpaceDefinitions>,
     space_manager: Res<SpaceManager>,
@@ -308,6 +309,7 @@ pub fn poll_tcp_server_messages(
                         &password,
                         is_register,
                         db.as_deref(),
+                        var_stores.as_deref_mut(),
                         &mut commands,
                         &world_config,
                         &authored_spaces,
@@ -326,6 +328,7 @@ pub fn poll_tcp_server_messages(
                         &password,
                         is_register,
                         db.as_deref(),
+                        var_stores.as_deref_mut(),
                         &mut commands,
                         &world_config,
                         &authored_spaces,
@@ -412,6 +415,7 @@ fn handle_auth_attempt(
     password: &str,
     is_register: bool,
     db: Option<&AccountDbHandle>,
+    var_stores: Option<&mut crate::dialog::resources::CharacterVarStores>,
     commands: &mut Commands,
     world_config: &WorldConfig,
     authored_spaces: &SpaceDefinitions,
@@ -466,12 +470,17 @@ fn handle_auth_attempt(
     let existing = db.lock().load_character(account_id).ok().flatten();
 
     let entity = if let Some(dump) = existing {
+        let dump_player_id = dump.player_id.0;
+        let yarn_vars = dump.yarn_vars.clone();
         let (entity, _combat_target) = spawn_player_from_dump(
             commands,
             object_registry,
             dump,
             world_config.current_space_id,
         );
+        if let Some(stores) = var_stores {
+            stores.restore(dump_player_id, yarn_vars);
+        }
         entity
     } else {
         let Some((spawn_space_id, spawn_tile)) = find_spawn_location(

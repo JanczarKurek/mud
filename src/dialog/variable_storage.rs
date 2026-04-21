@@ -17,7 +17,39 @@ use std::sync::{Arc, RwLock};
 
 use bevy::platform::collections::HashMap;
 use bevy_yarnspinner::prelude::{VariableStorage, YarnValue};
+use serde::{Deserialize, Serialize};
 use yarnspinner::runtime::VariableStorageError;
+
+/// Serializable mirror of `YarnValue`. Yarn's own `YarnValue` gates its serde
+/// impl on a feature we don't enable, and we'd rather not pull one in just for
+/// a three-variant enum — any future divergence between the two is a compile
+/// error via the `From` impls below.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub enum YarnValueDump {
+    Number(f32),
+    String(String),
+    Boolean(bool),
+}
+
+impl From<&YarnValue> for YarnValueDump {
+    fn from(value: &YarnValue) -> Self {
+        match value {
+            YarnValue::Number(n) => Self::Number(*n),
+            YarnValue::String(s) => Self::String(s.clone()),
+            YarnValue::Boolean(b) => Self::Boolean(*b),
+        }
+    }
+}
+
+impl From<YarnValueDump> for YarnValue {
+    fn from(value: YarnValueDump) -> Self {
+        match value {
+            YarnValueDump::Number(n) => Self::Number(n),
+            YarnValueDump::String(s) => Self::String(s),
+            YarnValueDump::Boolean(b) => Self::Boolean(b),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct PersistentVariableStorage {
@@ -36,6 +68,28 @@ impl PersistentVariableStorage {
             Err(VariableStorageError::InvalidVariableName {
                 name: name.to_owned(),
             })
+        }
+    }
+
+    /// Snapshot the current contents for persistence. Returns a plain `HashMap`
+    /// so callers can serialize it without being coupled to the `VariableStorage`
+    /// trait.
+    pub fn snapshot(&self) -> StdHashMap<String, YarnValueDump> {
+        self.inner
+            .read()
+            .unwrap()
+            .iter()
+            .map(|(k, v)| (k.clone(), YarnValueDump::from(v)))
+            .collect()
+    }
+
+    /// Replace all stored variables with the given snapshot. Used at login to
+    /// restore persisted state before any `DialogueRunner` is constructed.
+    pub fn restore(&self, values: StdHashMap<String, YarnValueDump>) {
+        let mut guard = self.inner.write().unwrap();
+        guard.clear();
+        for (name, value) in values {
+            guard.insert(name, value.into());
         }
     }
 }

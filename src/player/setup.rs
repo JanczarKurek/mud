@@ -44,6 +44,7 @@ pub fn spawn_embedded_player_authoritative(
     snapshot_status: Option<Res<WorldSnapshotStatus>>,
     player_query: Query<Option<&PlayerIdentity>, With<Player>>,
     db: Option<Res<crate::accounts::AccountDbHandle>>,
+    mut var_stores: Option<ResMut<crate::dialog::resources::CharacterVarStores>>,
 ) {
     // If the snapshot loaded player entities, don't create a duplicate.
     // But if the snapshot had NO players (e.g. server saved after all clients left),
@@ -66,7 +67,12 @@ pub fn spawn_embedded_player_authoritative(
     if let Some(db) = db.as_deref() {
         if let Ok(Some(dump)) = db.lock().load_character(crate::accounts::LOCAL_ACCOUNT_ID) {
             let fallback_space_id = world_config.current_space_id;
+            let player_id_u64 = dump.player_id.0;
+            let yarn_vars = dump.yarn_vars.clone();
             spawn_player_from_dump(&mut commands, &mut object_registry, dump, fallback_space_id);
+            if let Some(stores) = var_stores.as_deref_mut() {
+                stores.restore(player_id_u64, yarn_vars);
+            }
             return;
         }
     }

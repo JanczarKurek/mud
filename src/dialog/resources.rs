@@ -55,6 +55,29 @@ impl CharacterVarStores {
             .or_insert_with(PersistentVariableStorage::new)
             .clone()
     }
+
+    /// Returns the player's current variable snapshot, or an empty map if
+    /// they've never opened a dialog this session.
+    pub fn snapshot_for(&self, player_id: u64) -> HashMap<String, crate::dialog::variable_storage::YarnValueDump> {
+        self.by_player
+            .get(&player_id)
+            .map(|store| store.snapshot())
+            .unwrap_or_default()
+    }
+
+    /// Install a persisted variable snapshot for the given player, replacing
+    /// any existing state. Called at login.
+    pub fn restore(
+        &mut self,
+        player_id: u64,
+        values: HashMap<String, crate::dialog::variable_storage::YarnValueDump>,
+    ) {
+        let store = self
+            .by_player
+            .entry(player_id)
+            .or_insert_with(PersistentVariableStorage::new);
+        store.restore(values);
+    }
 }
 
 /// Shared snapshot of each player's inventory aggregated by object type_id.

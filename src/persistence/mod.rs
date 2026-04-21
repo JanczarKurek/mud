@@ -158,6 +158,12 @@ pub struct PlayerStateDump {
     pub attack_profile: AttackProfile,
     pub combat_leash: CombatLeash,
     pub combat_target_object_id: Option<u64>,
+    /// Per-character Yarn variable store, serialized as a flat key→value map.
+    /// Populated by the save path by snapshotting `CharacterVarStores`; restored
+    /// at login before any `DialogueRunner` is built. `#[serde(default)]` so
+    /// saves written before this field existed still deserialize.
+    #[serde(default)]
+    pub yarn_vars: std::collections::HashMap<String, crate::dialog::variable_storage::YarnValueDump>,
 }
 
 /// Build a `PlayerStateDump` from the components of a single player entity.
@@ -193,6 +199,7 @@ pub fn build_player_state_dump(
         attack_profile: *attack_profile,
         combat_leash: *combat_leash,
         combat_target_object_id,
+        yarn_vars: std::collections::HashMap::new(),
     }
 }
 

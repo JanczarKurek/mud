@@ -4,6 +4,7 @@ use bevy::prelude::*;
 
 use crate::accounts::resources::{AccountDbHandle, AutosaveConfig};
 use crate::combat::components::{AttackProfile, CombatLeash, CombatTarget};
+use crate::dialog::resources::CharacterVarStores;
 use crate::network::resources::PendingPlayerSaves;
 use crate::persistence::build_player_state_dump;
 use crate::player::components::{
@@ -42,6 +43,7 @@ fn save_entity(
     account_id: i64,
     row: <PlayerStateQueryData<'_> as bevy::ecs::query::QueryData>::Item<'_, '_>,
     object_lookup: &Query<&OverworldObject>,
+    var_stores: Option<&CharacterVarStores>,
 ) {
     let (
         _entity,
@@ -64,7 +66,7 @@ fn save_entity(
         .and_then(|target| object_lookup.get(target.entity).ok())
         .map(|object| object.object_id);
 
-    let dump = build_player_state_dump(
+    let mut dump = build_player_state_dump(
         identity,
         object,
         space_resident,
@@ -80,6 +82,10 @@ fn save_entity(
         combat_target_object_id,
     );
 
+    if let Some(stores) = var_stores {
+        dump.yarn_vars = stores.snapshot_for(identity.id.0);
+    }
+
     if let Err(err) = db.lock().save_character(account_id, &dump) {
         warn!("failed to save character for account {account_id}: {err}");
     }
@@ -91,6 +97,7 @@ fn save_entity(
 pub fn persist_disconnected_players(
     mut pending_saves: ResMut<PendingPlayerSaves>,
     db: Option<Res<AccountDbHandle>>,
+    var_stores: Option<Res<CharacterVarStores>>,
     player_query: Query<PlayerStateQueryData, PlayerStateQueryFilter>,
     object_lookup: Query<&OverworldObject>,
     mut commands: Commands,
@@ -101,7 +108,13 @@ pub fn persist_disconnected_players(
     let entries = std::mem::take(&mut pending_saves.entries);
     for entry in entries {
         if let (Some(db), Ok(row)) = (db.as_deref(), player_query.get(entry.player_entity)) {
-            save_entity(db, entry.account_id, row, &object_lookup);
+            save_entity(
+                db,
+                entry.account_id,
+                row,
+                &object_lookup,
+                var_stores.as_deref(),
+            );
         }
         commands.entity(entry.player_entity).despawn();
     }
@@ -116,6 +129,7 @@ pub fn autosave_all_players(
     config: Res<AutosaveConfig>,
     mut timer: ResMut<AutosaveTimer>,
     db: Option<Res<AccountDbHandle>>,
+    var_stores: Option<Res<CharacterVarStores>>,
     player_query: Query<PlayerStateQueryData, PlayerStateQueryFilter>,
     object_lookup: Query<&OverworldObject>,
 ) {
@@ -131,7 +145,7 @@ pub fn autosave_all_players(
 
     for row in player_query.iter() {
         let account_id = row.1.id.0 as i64;
-        save_entity(db, account_id, row, &object_lookup);
+        save_entity(db, account_id, row, &object_lookup, var_stores.as_deref());
     }
 }
 
@@ -140,6 +154,7 @@ pub fn autosave_all_players(
 pub fn save_all_players_on_app_exit(
     mut app_exit: MessageReader<AppExit>,
     db: Option<Res<AccountDbHandle>>,
+    var_stores: Option<Res<CharacterVarStores>>,
     player_query: Query<PlayerStateQueryData, PlayerStateQueryFilter>,
     object_lookup: Query<&OverworldObject>,
 ) {
@@ -151,6 +166,6 @@ pub fn save_all_players_on_app_exit(
     };
     for row in player_query.iter() {
         let account_id = row.1.id.0 as i64;
-        save_entity(db, account_id, row, &object_lookup);
+        save_entity(db, account_id, row, &object_lookup, var_stores.as_deref());
     }
 }
