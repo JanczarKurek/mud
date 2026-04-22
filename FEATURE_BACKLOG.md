@@ -71,7 +71,6 @@ Grouped by system, not ranked.
 ### UI / HUD
 - **Damage numbers / floating combat text** — no toast system; currently only chat lines.
 - **Hotbar / quick slots** — no keybind-driven use slots for potions or spells.
-- **Minimap** — absent. Floor-aware once z-levels land.
 - **Settings menu + keybind customization** — all input is hardcoded.
 - **Zoom + camera control** — fixed zoom, player-follow only.
 - **Inspect/examine panel** — could migrate onto the docked-panel system (already designed in `PLAN.md` §6.9.1).
