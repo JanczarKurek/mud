@@ -212,10 +212,7 @@ pub mod mud_quest_api {
         (type_id, count)
     }
 
-    fn pyobject_to_yarn_value(
-        obj: &PyObjectRef,
-        vm: &VirtualMachine,
-    ) -> PyResult<YarnValueDump> {
+    fn pyobject_to_yarn_value(obj: &PyObjectRef, vm: &VirtualMachine) -> PyResult<YarnValueDump> {
         let _ = YarnValue::Boolean(false); // keep import alive
         if let Ok(b) = obj.clone().try_into_value::<bool>(vm) {
             return Ok(YarnValueDump::Boolean(b));
@@ -229,8 +226,7 @@ pub mod mud_quest_api {
         if let Ok(s) = obj.clone().try_into_value::<String>(vm) {
             return Ok(YarnValueDump::String(s));
         }
-        Err(vm.new_type_error(
-            "mud_quest_api: yarn vars must be str, int, float, or bool".to_owned(),
-        ))
+        Err(vm
+            .new_type_error("mud_quest_api: yarn vars must be str, int, float, or bool".to_owned()))
     }
 }

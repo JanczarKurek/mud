@@ -42,6 +42,11 @@ objects:
     y: 4
   - x: 55
     y: 36
+- type: barrel
+  placement:
+  - x: 10
+    y: 10
+  facing: east
 - type: bronze_sword
   placement:
   - x: 13

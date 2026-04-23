@@ -184,7 +184,11 @@ pub fn sync_projected_player_from_client_state(
     client_state: Res<ClientGameState>,
     world_config: Res<WorldConfig>,
     mut player_query: Query<
-        (&mut ViewPosition, &mut DisplayedVitalStats, Option<&mut Facing>),
+        (
+            &mut ViewPosition,
+            &mut DisplayedVitalStats,
+            Option<&mut Facing>,
+        ),
         (With<Player>, Without<PlayerIdentity>),
     >,
 ) {

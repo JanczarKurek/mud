@@ -58,9 +58,14 @@ pub fn drain_quest_commands(
 
     for request in requests {
         let (player_id, quest_id) = match &request {
-            QuestCommandRequest::Start { player_id, quest_id }
+            QuestCommandRequest::Start {
+                player_id,
+                quest_id,
+            }
             | QuestCommandRequest::Dispatch {
-                player_id, quest_id, ..
+                player_id,
+                quest_id,
+                ..
             } => (*player_id, quest_id.clone()),
         };
 
@@ -78,27 +83,18 @@ pub fn drain_quest_commands(
         // + inventory + push to effects. The engine invokes hooks directly
         // without re-wrapping context, so all Python calls in this frame
         // see the same context.
-        with_full_call_context(
-            player_id,
-            Some(var_store),
-            inventory,
-            &mut effects,
-            || match &request {
+        with_full_call_context(player_id, Some(var_store), inventory, &mut effects, || {
+            match &request {
                 QuestCommandRequest::Start { .. } => {
                     engine.start_quest(player_id, &quest_id);
                 }
                 QuestCommandRequest::Dispatch { name, args, .. } => {
                     engine.dispatch_command(player_id, &quest_id, name, args.clone());
                 }
-            },
-        );
+            }
+        });
 
-        apply_effects(
-            &mut engine,
-            player_id,
-            effects,
-            &mut pending_commands,
-        );
+        apply_effects(&mut engine, player_id, effects, &mut pending_commands);
     }
 }
 
@@ -150,15 +146,9 @@ pub fn drain_quest_events(
             .unwrap_or_default();
 
         let mut effects = QuestApiEffects::default();
-        with_full_call_context(
-            player_id,
-            Some(var_store),
-            inventory,
-            &mut effects,
-            || {
-                engine.dispatch_event_for_player(&event, player_id);
-            },
-        );
+        with_full_call_context(player_id, Some(var_store), inventory, &mut effects, || {
+            engine.dispatch_event_for_player(&event, player_id);
+        });
 
         apply_effects(&mut engine, player_id, effects, &mut pending_commands);
     }

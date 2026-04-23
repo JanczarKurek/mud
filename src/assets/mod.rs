@@ -1,29 +1,32 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::OnceLock;
 
 use bevy::prelude::*;
 
-static XDG_OVERRIDES_ENABLED: AtomicBool = AtomicBool::new(false);
+/// Process-wide XDG asset overlay directory, or `None` if disabled.
+///
+/// Set once at app startup by `GameAppPlugin::build` via `init_xdg_asset_root`.
+/// `Some(path)` means the TcpClient runtime will consult the overlay at that
+/// path; `None` means standalone modes (EmbeddedClient, HeadlessServer) load
+/// bundled assets exclusively, so stale cache files never shadow repo changes
+/// during testing.
+static XDG_ASSET_ROOT: OnceLock<Option<PathBuf>> = OnceLock::new();
 
-/// Enable or disable XDG override scanning globally. Should be called once at
-/// app startup before any plugin build reads assets. Only the TcpClient runtime
-/// sets this to `true` — the synced assets cached at `~/.local/share/mud2/assets/`
-/// are meaningful only when connected to a remote server. Standalone modes
-/// (EmbeddedClient, HeadlessServer) load bundled assets exclusively so stale
-/// cache files don't shadow repo changes during testing.
-pub fn set_xdg_overrides_enabled(enabled: bool) {
-    XDG_OVERRIDES_ENABLED.store(enabled, Ordering::SeqCst);
+/// Install the process-wide XDG overlay root. Must be called once, before any
+/// `AssetResolver::new()` call. Subsequent calls are ignored.
+pub fn init_xdg_asset_root(root: Option<PathBuf>) {
+    let _ = XDG_ASSET_ROOT.set(root);
 }
 
-pub fn xdg_overrides_enabled() -> bool {
-    XDG_OVERRIDES_ENABLED.load(Ordering::SeqCst)
+fn xdg_asset_root() -> Option<&'static Path> {
+    XDG_ASSET_ROOT.get().and_then(|opt| opt.as_deref())
 }
 
 /// Resolves game asset paths, checking the XDG data directory before bundled assets.
 ///
-/// XDG path: `~/.local/share/mud2/assets/`
-/// Bundled path: `assets/` (working directory)
+/// The overlay path is set at startup by `init_xdg_asset_root`. Bundled path is
+/// `assets/` (working directory).
 #[derive(Resource, Clone)]
 pub struct AssetResolver {
     xdg_root: Option<PathBuf>,
@@ -31,11 +34,12 @@ pub struct AssetResolver {
 
 impl AssetResolver {
     pub fn new() -> Self {
-        let xdg_root = dirs::data_dir().map(|d| d.join("mud2").join("assets"));
-        Self { xdg_root }
+        Self {
+            xdg_root: xdg_asset_root().map(PathBuf::from),
+        }
     }
 
-    /// Returns the XDG assets directory, if available.
+    /// Returns the XDG assets directory, if configured.
     pub fn xdg_assets_dir(&self) -> Option<&Path> {
         self.xdg_root.as_deref()
     }
@@ -44,15 +48,13 @@ impl AssetResolver {
     ///
     /// Bundled directory comes first; XDG directory second so its entries take precedence
     /// when callers use a HashMap (later inserts overwrite earlier ones). XDG is only
-    /// included when overrides are globally enabled (TcpClient mode).
+    /// included when a root is configured (TcpClient mode).
     pub fn scan_dirs(&self, subdir: &str) -> Vec<PathBuf> {
         let mut dirs = vec![PathBuf::from("assets").join(subdir)];
-        if xdg_overrides_enabled() {
-            if let Some(ref xdg) = self.xdg_root {
-                let xdg_dir = xdg.join(subdir);
-                if xdg_dir.is_dir() {
-                    dirs.push(xdg_dir);
-                }
+        if let Some(ref xdg) = self.xdg_root {
+            let xdg_dir = xdg.join(subdir);
+            if xdg_dir.is_dir() {
+                dirs.push(xdg_dir);
             }
         }
         dirs

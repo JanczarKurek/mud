@@ -248,11 +248,7 @@ impl QuestEngine {
     ///
     /// Caller must install context for each `player_id` we yield; see
     /// `dispatch_event_for_player` for the single-player variant.
-    pub fn dispatch_event_for_player(
-        &mut self,
-        event: &QuestEvent,
-        player_id: u64,
-    ) {
+    pub fn dispatch_event_for_player(&mut self, event: &QuestEvent, player_id: u64) {
         let kind = event.kind();
         let Some(quest_ids) = self.subs_by_kind.get(kind).cloned() else {
             return;
@@ -301,14 +297,18 @@ impl Drop for QuestEngine {
     }
 }
 
-fn read_subscribes_to(globals: &rustpython_vm::builtins::PyDictRef, vm: &VirtualMachine) -> Vec<String> {
+fn read_subscribes_to(
+    globals: &rustpython_vm::builtins::PyDictRef,
+    vm: &VirtualMachine,
+) -> Vec<String> {
     let Ok(value) = globals.get_item("subscribes_to", vm) else {
         return Vec::new();
     };
     let mut out = Vec::new();
     if let Ok(iter) = value.get_iter(vm) {
-        while let rustpython_vm::protocol::PyIterReturn::Return(item) =
-            iter.next(vm).unwrap_or(rustpython_vm::protocol::PyIterReturn::StopIteration(None))
+        while let rustpython_vm::protocol::PyIterReturn::Return(item) = iter
+            .next(vm)
+            .unwrap_or(rustpython_vm::protocol::PyIterReturn::StopIteration(None))
         {
             if let Ok(s) = item.try_to_value::<String>(vm) {
                 out.push(s);
@@ -339,7 +339,10 @@ fn invoke_hook(
         .map_err(|e| format_py_error(vm, &e))
 }
 
-fn format_py_error(vm: &VirtualMachine, err: &rustpython_vm::PyRef<rustpython_vm::builtins::PyBaseException>) -> String {
+fn format_py_error(
+    vm: &VirtualMachine,
+    err: &rustpython_vm::PyRef<rustpython_vm::builtins::PyBaseException>,
+) -> String {
     let mut buf = String::new();
     vm.write_exception(&mut buf, err).ok();
     buf
@@ -354,7 +357,8 @@ fn event_to_pydict(event: &QuestEvent, vm: &VirtualMachine) -> PyObjectRef {
             type_id,
             killer_player_id,
         } => {
-            dict.set_item("type_id", type_id.clone().to_pyobject(vm), vm).ok();
+            dict.set_item("type_id", type_id.clone().to_pyobject(vm), vm)
+                .ok();
             let killer: PyObjectRef = match killer_player_id {
                 Some(id) => id.to_pyobject(vm),
                 None => vm.ctx.none(),

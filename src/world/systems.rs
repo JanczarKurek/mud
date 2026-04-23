@@ -369,15 +369,7 @@ pub fn sync_tile_transforms(
 
 pub fn sync_player_z(
     client_state: Res<ClientGameState>,
-    mut query: Query<
-        (
-            &WorldVisual,
-            &ViewPosition,
-            &mut Transform,
-            Option<&Facing>,
-        ),
-        With<Player>,
-    >,
+    mut query: Query<(&WorldVisual, &ViewPosition, &mut Transform, Option<&Facing>), With<Player>>,
 ) {
     let Ok((world_visual, view, mut transform, facing)) = query.single_mut() else {
         return;

@@ -57,7 +57,15 @@ EmbeddedClient mode = HeadlessServer + TcpClient running in the same `App`. The 
 
 - Every TCP connection must `Login` / `Register` before the server will send the asset manifest or any gameplay events. The peer state machine is `AwaitingAuth → Authed { account_id }` (`src/network/resources.rs`).
 - `PlayerId(account_id as u64)` — the auth path sets a player's identity from their DB row, and embedded mode uses the reserved `LOCAL_ACCOUNT_ID = 0` (`src/accounts/db.rs`).
-- Account DB path defaults to `~/.local/share/mud2/accounts.db` (via `dirs::data_dir()`); override with `--db-path PATH` or `MUD2_DB_PATH`.
+- On-disk layout is per-role (see `src/app/paths.rs` — the single source of truth):
+
+  | Role | Accounts DB | World snapshot | Asset cache |
+  |---|---|---|---|
+  | EmbeddedClient | `~/.local/share/mud2/embedded/accounts.db` | `~/.local/share/mud2/embedded/saves/world-state.json` | — |
+  | HeadlessServer | `~/.local/share/mud2/server/accounts.db` | `~/.local/share/mud2/server/saves/world-state.json` | — |
+  | TcpClient | — | — | `~/.cache/mud2/client/assets/` |
+
+  Overrides: `--db-path` / `MUD2_DB_PATH`, `--save-path` / `MUD2_SAVE_PATH`, `--asset-cache` / `MUD2_ASSET_CACHE`. Run `mud2 paths` to print resolved locations; `mud2 clean-cache` wipes the client cache (`--all --yes` also wipes data).
 - Per-character saves happen on disconnect (`PendingPlayerSaves` queue drained by `persist_disconnected_players` in the `Last` schedule), every 60s via `autosave_all_players`, and on `AppExit`.
 - `WorldStateDump` **does not carry player data** (as of `format_version = 5`). If you need to save anything about a player, route it through the accounts DB.
 

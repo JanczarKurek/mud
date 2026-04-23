@@ -19,6 +19,15 @@ fn unique_test_db_path() -> PathBuf {
     std::env::temp_dir().join(format!("mud2-integration-{}-{}.db", std::process::id(), id))
 }
 
+fn unique_test_save_path() -> PathBuf {
+    let id = NEXT_DB_ID.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!(
+        "mud2-integration-{}-{}-world.json",
+        std::process::id(),
+        id
+    ))
+}
+
 struct TestClient {
     writer: TcpStream,
     reader: BufReader<TcpStream>,
@@ -184,8 +193,9 @@ fn two_clients_receive_snapshots_and_see_each_other_move() {
         runtime: AppRuntime::HeadlessServer,
         server_addr: None,
         bind_addr: Some("127.0.0.1:0".to_owned()),
-        save_path: None,
+        save_path: Some(unique_test_save_path()),
         db_path: Some(unique_test_db_path()),
+        asset_cache_dir: None,
         server_tls: None,
         client_tls: None,
     });
@@ -256,8 +266,9 @@ fn reconnecting_same_account_restores_character_position() {
         runtime: AppRuntime::HeadlessServer,
         server_addr: None,
         bind_addr: Some("127.0.0.1:0".to_owned()),
-        save_path: None,
+        save_path: Some(unique_test_save_path()),
         db_path: Some(db_path.clone()),
+        asset_cache_dir: None,
         server_tls: None,
         client_tls: None,
     });
@@ -331,8 +342,9 @@ fn login_with_wrong_password_is_rejected() {
         runtime: AppRuntime::HeadlessServer,
         server_addr: None,
         bind_addr: Some("127.0.0.1:0".to_owned()),
-        save_path: None,
+        save_path: Some(unique_test_save_path()),
         db_path: Some(db_path.clone()),
+        asset_cache_dir: None,
         server_tls: None,
         client_tls: None,
     });
@@ -382,8 +394,9 @@ fn disconnecting_client_removes_its_player_from_the_server() {
         runtime: AppRuntime::HeadlessServer,
         server_addr: None,
         bind_addr: Some("127.0.0.1:0".to_owned()),
-        save_path: None,
+        save_path: Some(unique_test_save_path()),
         db_path: Some(unique_test_db_path()),
+        asset_cache_dir: None,
         server_tls: None,
         client_tls: None,
     });

@@ -9,13 +9,13 @@ use std::path::PathBuf;
 use crate::accounts::AccountsServerPlugin;
 use crate::app::asset_sync_screen::AssetSyncScreenPlugin;
 use crate::app::auth_screen::AuthScreenPlugin;
+use crate::app::paths::{client_paths, embedded_paths, server_paths};
 use crate::app::setup::setup_camera;
 use crate::app::state::ClientAppState;
 use crate::app::title_screen::TitleScreenPlugin;
 use crate::client_effects::ClientEffectsPlugin;
 use crate::combat::CombatPlugin;
 use crate::dialog::DialogServerPlugin;
-use crate::quest::QuestPlugin;
 use crate::editor::EditorPlugin;
 use crate::game::{GameClientPlugin, GameServerPlugin};
 use crate::magic::MagicPlugin;
@@ -26,6 +26,7 @@ use crate::npc::NpcPlugin;
 use crate::persistence::{PersistenceServerPlugin, PersistenceStartupSet};
 use crate::player::setup::spawn_embedded_player_authoritative;
 use crate::player::{PlayerClientPlugin, PlayerServerPlugin};
+use crate::quest::QuestPlugin;
 use crate::scripting::ScriptingPlugin;
 use crate::ui::UiPlugin;
 use crate::world::setup::WorldStartupSet;
@@ -42,8 +43,14 @@ pub struct GameAppPlugin {
     pub runtime: AppRuntime,
     pub server_addr: Option<String>,
     pub bind_addr: Option<String>,
-    pub save_path: Option<String>,
+    /// Override for the world-snapshot path. `None` = use the per-role default
+    /// from `crate::app::paths`.
+    pub save_path: Option<PathBuf>,
+    /// Override for the accounts DB path. `None` = use the per-role default.
     pub db_path: Option<PathBuf>,
+    /// Override for the TcpClient asset-sync cache directory. `None` = use the
+    /// default from `crate::app::paths::client_paths`.
+    pub asset_cache_dir: Option<PathBuf>,
     pub server_tls: Option<ServerTlsArgs>,
     pub client_tls: Option<ClientTlsArgs>,
 }
@@ -67,7 +74,17 @@ pub struct ClientTlsArgs {
 
 impl Plugin for GameAppPlugin {
     fn build(&self, app: &mut App) {
-        crate::assets::set_xdg_overrides_enabled(matches!(self.runtime, AppRuntime::TcpClient));
+        // Install the process-wide XDG asset overlay root. Only TcpClient
+        // consults it; other roles load bundled assets exclusively.
+        let xdg_asset_root = match self.runtime {
+            AppRuntime::TcpClient => Some(
+                self.asset_cache_dir
+                    .clone()
+                    .unwrap_or_else(|| client_paths().asset_cache_dir),
+            ),
+            AppRuntime::EmbeddedClient | AppRuntime::HeadlessServer => None,
+        };
+        crate::assets::init_xdg_asset_root(xdg_asset_root);
 
         // Resolve TLS configs once, here, so failures are loud at startup
         // rather than asynchronously when a peer connects.
@@ -121,6 +138,9 @@ impl Plugin for GameAppPlugin {
 
         match self.runtime {
             AppRuntime::EmbeddedClient => {
+                let defaults = embedded_paths();
+                let save_path = self.save_path.clone().unwrap_or(defaults.world_snapshot);
+                let db_path = self.db_path.clone().unwrap_or(defaults.accounts_db);
                 app.add_plugins((
                     GameServerPlugin,
                     WorldServerPlugin,
@@ -128,12 +148,8 @@ impl Plugin for GameAppPlugin {
                     PlayerServerPlugin,
                     CombatPlugin,
                     MagicPlugin,
-                    PersistenceServerPlugin {
-                        save_path: self.save_path.clone(),
-                    },
-                    AccountsServerPlugin {
-                        db_path: self.db_path.clone(),
-                    },
+                    PersistenceServerPlugin { save_path },
+                    AccountsServerPlugin { db_path },
                 ));
                 app.add_plugins(DefaultPlugins.set(WindowPlugin {
                     primary_window: Some(Window {
@@ -201,6 +217,9 @@ impl Plugin for GameAppPlugin {
                 ));
             }
             AppRuntime::HeadlessServer => {
+                let defaults = server_paths();
+                let save_path = self.save_path.clone().unwrap_or(defaults.world_snapshot);
+                let db_path = self.db_path.clone().unwrap_or(defaults.accounts_db);
                 app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(
                     Duration::from_secs_f64(1.0 / 60.0),
                 )))
@@ -212,12 +231,8 @@ impl Plugin for GameAppPlugin {
                     CombatPlugin,
                     MagicPlugin,
                     TerminalCtrlCHandlerPlugin,
-                    PersistenceServerPlugin {
-                        save_path: self.save_path.clone(),
-                    },
-                    AccountsServerPlugin {
-                        db_path: self.db_path.clone(),
-                    },
+                    PersistenceServerPlugin { save_path },
+                    AccountsServerPlugin { db_path },
                     TcpServerPlugin {
                         bind_addr: self
                             .bind_addr

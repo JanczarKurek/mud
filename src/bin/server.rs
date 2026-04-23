@@ -1,12 +1,19 @@
 use std::path::PathBuf;
+use std::process::ExitCode;
 
 use bevy::prelude::*;
+use mud2::app::clean_cache::{self, Invoker};
 use mud2::app::plugin::{AppRuntime, GameAppPlugin, ServerTlsArgs};
 
-fn main() {
-    let mut args = std::env::args().skip(1);
+fn main() -> ExitCode {
+    let argv: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(code) = clean_cache::dispatch(&argv, Invoker::Server) {
+        return code;
+    }
+
+    let mut args = argv.into_iter();
     let mut bind_addr = None;
-    let mut save_path = None;
+    let mut save_path: Option<PathBuf> = None;
     let mut db_path: Option<PathBuf> = None;
     let mut tls_enabled = false;
     let mut tls_cert: Option<PathBuf> = None;
@@ -18,7 +25,7 @@ fn main() {
                 bind_addr = args.next();
             }
             "--save-path" => {
-                save_path = args.next();
+                save_path = args.next().map(PathBuf::from);
             }
             "--db-path" => {
                 db_path = args.next().map(PathBuf::from);
@@ -40,7 +47,7 @@ fn main() {
                 if let Some(addr) = arg.strip_prefix("--bind=") {
                     bind_addr = Some(addr.to_owned());
                 } else if let Some(path) = arg.strip_prefix("--save-path=") {
-                    save_path = Some(path.to_owned());
+                    save_path = Some(PathBuf::from(path));
                 } else if let Some(path) = arg.strip_prefix("--db-path=") {
                     db_path = Some(PathBuf::from(path));
                 } else if let Some(path) = arg.strip_prefix("--tls-cert=") {
@@ -67,10 +74,13 @@ fn main() {
             runtime: AppRuntime::HeadlessServer,
             server_addr: None,
             bind_addr: bind_addr.or_else(|| std::env::var("MUD2_SERVER_BIND").ok()),
-            save_path: save_path.or_else(|| std::env::var("MUD2_SAVE_PATH").ok()),
+            save_path: save_path
+                .or_else(|| std::env::var("MUD2_SAVE_PATH").ok().map(PathBuf::from)),
             db_path: db_path.or_else(|| std::env::var("MUD2_DB_PATH").ok().map(PathBuf::from)),
+            asset_cache_dir: None,
             server_tls,
             client_tls: None,
         })
         .run();
+    ExitCode::SUCCESS
 }

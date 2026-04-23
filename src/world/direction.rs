@@ -4,9 +4,7 @@ use bevy::math::IVec2;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[derive(
-    Component, Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize,
-)]
+#[derive(Component, Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Direction {
     North,

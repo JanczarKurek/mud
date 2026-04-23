@@ -11,19 +11,21 @@ pub use crate::accounts::autosave::{
     autosave_all_players, persist_disconnected_players, save_all_players_on_app_exit, AutosaveTimer,
 };
 pub use crate::accounts::db::{AccountDb, AuthError, LOCAL_ACCOUNT_ID, LOCAL_ACCOUNT_USERNAME};
-pub use crate::accounts::resources::{
-    default_db_path, AccountDbHandle, AccountDbPath, AutosaveConfig,
-};
+pub use crate::accounts::resources::{AccountDbHandle, AccountDbPath, AutosaveConfig};
 use crate::network::resources::PendingPlayerSaves;
 
-#[derive(Default)]
+/// Opens the account database at the path supplied by the caller.
+///
+/// `GameAppPlugin` always supplies a concrete path from `crate::app::paths`
+/// (embedded or server subtree), optionally overridden by `--db-path` /
+/// `MUD2_DB_PATH`.
 pub struct AccountsServerPlugin {
-    pub db_path: Option<PathBuf>,
+    pub db_path: PathBuf,
 }
 
 impl Plugin for AccountsServerPlugin {
     fn build(&self, app: &mut App) {
-        let path = self.db_path.clone().unwrap_or_else(default_db_path);
+        let path = self.db_path.clone();
         match AccountDb::open(&path) {
             Ok(db) => {
                 info!("account database open at {}", path.display());
@@ -42,7 +44,7 @@ impl Plugin for AccountsServerPlugin {
                 app.insert_resource(AccountDbHandle::new(db));
             }
         }
-        app.insert_resource(AccountDbPath(self.db_path.clone()))
+        app.insert_resource(AccountDbPath(Some(self.db_path.clone())))
             .insert_resource(AutosaveConfig::default())
             .insert_resource(AutosaveTimer::default())
             .add_systems(Update, autosave_all_players)

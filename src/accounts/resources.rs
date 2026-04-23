@@ -26,15 +26,12 @@ impl AccountDbHandle {
     }
 }
 
-/// Path to the account database file. `None` means use the XDG default.
+/// Path to the account database file. `None` in this resource means the
+/// currently-running binary did not open a DB (only applicable to test/dummy
+/// setups); production code always inserts `Some(path)` via `GameAppPlugin`,
+/// with the path computed by `crate::app::paths` per runtime role.
 #[derive(Resource, Clone, Debug, Default)]
 pub struct AccountDbPath(pub Option<PathBuf>);
-
-pub fn default_db_path() -> PathBuf {
-    dirs::data_dir()
-        .map(|d| d.join("mud2").join("accounts.db"))
-        .unwrap_or_else(|| PathBuf::from("accounts.db"))
-}
 
 #[derive(Resource, Clone, Debug)]
 pub struct AutosaveConfig {

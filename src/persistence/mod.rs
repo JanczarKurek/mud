@@ -29,10 +29,8 @@ use crate::world::resources::{RuntimeSpace, SpaceManager};
 use crate::world::setup::initialize_runtime_spaces;
 use crate::world::WorldConfig;
 
-pub const DEFAULT_WORLD_SAVE_PATH: &str = "saves/world-state.json";
-
 pub struct PersistenceServerPlugin {
-    pub save_path: Option<String>,
+    pub save_path: PathBuf,
 }
 
 #[derive(SystemSet, Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -54,22 +52,10 @@ pub struct WorldSaveConfig {
     pub path: PathBuf,
 }
 
-impl Default for WorldSaveConfig {
-    fn default() -> Self {
-        Self {
-            path: PathBuf::from(DEFAULT_WORLD_SAVE_PATH),
-        }
-    }
-}
-
 impl Plugin for PersistenceServerPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(WorldSaveConfig {
-            path: self
-                .save_path
-                .as_deref()
-                .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from(DEFAULT_WORLD_SAVE_PATH)),
+            path: self.save_path.clone(),
         })
         .insert_resource(WorldSnapshotStatus::default())
         .add_systems(
@@ -718,7 +704,7 @@ mod tests {
             CombatPlugin,
             MagicPlugin,
             PersistenceServerPlugin {
-                save_path: Some(save_path.display().to_string()),
+                save_path: save_path.to_path_buf(),
             },
         ));
         app.update();

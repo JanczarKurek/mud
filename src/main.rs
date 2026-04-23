@@ -1,20 +1,28 @@
 use std::path::PathBuf;
+use std::process::ExitCode;
 
 use bevy::prelude::*;
+use mud2::app::clean_cache::{self, Invoker};
 use mud2::app::plugin::{AppRuntime, ClientTlsArgs, GameAppPlugin, ServerTlsArgs};
 
-fn main() {
+fn main() -> ExitCode {
+    let argv: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(code) = clean_cache::dispatch(&argv, Invoker::Mud2) {
+        return code;
+    }
+
     let mut runtime = AppRuntime::EmbeddedClient;
     let mut server_addr = None;
-    let mut save_path = None;
+    let mut save_path: Option<PathBuf> = None;
     let mut db_path: Option<PathBuf> = None;
+    let mut asset_cache_dir: Option<PathBuf> = None;
     let mut server_tls_enabled = false;
     let mut tls_cert: Option<PathBuf> = None;
     let mut tls_key: Option<PathBuf> = None;
     let mut generate_cert = false;
     let mut client_tls_enabled = false;
     let mut client_tls_insecure = false;
-    let mut args = std::env::args().skip(1);
+    let mut args = argv.into_iter();
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -32,10 +40,13 @@ fn main() {
                 }
             }
             "--save-path" => {
-                save_path = args.next();
+                save_path = args.next().map(PathBuf::from);
             }
             "--db-path" => {
                 db_path = args.next().map(PathBuf::from);
+            }
+            "--asset-cache" => {
+                asset_cache_dir = args.next().map(PathBuf::from);
             }
             "--tls" => {
                 // Context-dependent: server `--tls` only has meaning in
@@ -67,9 +78,11 @@ fn main() {
                     server_addr = Some(stripped_addr);
                     runtime = AppRuntime::TcpClient;
                 } else if let Some(path) = arg.strip_prefix("--save-path=") {
-                    save_path = Some(path.to_owned());
+                    save_path = Some(PathBuf::from(path));
                 } else if let Some(path) = arg.strip_prefix("--db-path=") {
                     db_path = Some(PathBuf::from(path));
+                } else if let Some(path) = arg.strip_prefix("--asset-cache=") {
+                    asset_cache_dir = Some(PathBuf::from(path));
                 } else if let Some(path) = arg.strip_prefix("--tls-cert=") {
                     tls_cert = Some(PathBuf::from(path));
                 } else if let Some(path) = arg.strip_prefix("--tls-key=") {
@@ -78,6 +91,11 @@ fn main() {
             }
         }
     }
+
+    let save_path = save_path.or_else(|| std::env::var("MUD2_SAVE_PATH").ok().map(PathBuf::from));
+    let db_path = db_path.or_else(|| std::env::var("MUD2_DB_PATH").ok().map(PathBuf::from));
+    let asset_cache_dir =
+        asset_cache_dir.or_else(|| std::env::var("MUD2_ASSET_CACHE").ok().map(PathBuf::from));
 
     let server_tls = if server_tls_enabled && matches!(runtime, AppRuntime::HeadlessServer) {
         Some(ServerTlsArgs {
@@ -106,10 +124,12 @@ fn main() {
             bind_addr: None,
             save_path,
             db_path,
+            asset_cache_dir,
             server_tls,
             client_tls,
         })
         .run();
+    ExitCode::SUCCESS
 }
 
 /// `tls://host:port` → (`host:port`, true). Any other prefix is returned as-is

@@ -4,3 +4,4 @@ description: Just a wandering villager.
 dialog_node: FriendlyVillager
 render:
   sprite_path: overworld_objects/player/sprite.png
+  rotation_by_facing: true
