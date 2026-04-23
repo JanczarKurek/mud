@@ -7,8 +7,8 @@ use crate::player::components::{
     PlayerId, PlayerIdentity, VitalStats, WeaponDamage,
 };
 use crate::world::components::{
-    Collider, DisplayedVitalStats, HealthBarDisplayPolicy, OverworldObject, SpaceId, SpaceResident,
-    TilePosition, ViewPosition,
+    Collider, DisplayedVitalStats, Facing, HealthBarDisplayPolicy, OverworldObject, SpaceId,
+    SpaceResident, TilePosition, ViewPosition,
 };
 use crate::world::object_definitions::{EquipmentSlot, OverworldObjectDefinitions};
 use crate::world::object_registry::ObjectRegistry;
@@ -142,10 +142,13 @@ pub fn spawn_player_from_dump(
             },
             SpaceResident { space_id },
             dump.tile_position,
-            ViewPosition {
-                space_id,
-                tile: dump.tile_position,
-            },
+            (
+                ViewPosition {
+                    space_id,
+                    tile: dump.tile_position,
+                },
+                Facing(dump.facing),
+            ),
         ))
         .id();
 
@@ -185,10 +188,13 @@ pub fn spawn_player_authoritative_in_space(
             },
             SpaceResident { space_id },
             tile_position,
-            ViewPosition {
-                space_id,
-                tile: tile_position,
-            },
+            (
+                ViewPosition {
+                    space_id,
+                    tile: tile_position,
+                },
+                Facing::default(),
+            ),
         ))
         .id()
 }
@@ -228,6 +234,7 @@ pub fn spawn_player_visual(
                         space_id: world_config.current_space_id,
                         tile: spawn_tile,
                     },
+                    Facing::default(),
                 ))
                 .id()
         }

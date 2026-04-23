@@ -142,6 +142,13 @@ Fields:
   - `roam`
   - `roam_and_chase`
 
+### `facing`
+- Type: string (one of `north`, `south`, `east`, `west`), or omitted
+- Optional: yes
+- Default: the object's `render.default_facing`, or `south` if none
+- Meaning: initial facing direction for this specific instance, overriding the object definition's `default_facing`
+- Useful for static props whose orientation is authored per placement (e.g. a signpost facing east)
+
 ### Anonymous placement group
 - Use this when you just want to place many objects of the same type and do not need to refer to them elsewhere in the map file.
 - Runtime object IDs are generated automatically during map loading.
@@ -161,6 +168,12 @@ Fields:
 ### `placement`
 - Type: list of tile coordinate mappings
 - Meaning: list of world placements for generated object instances
+
+### `facing`
+- Type: string (one of `north`, `south`, `east`, `west`), or omitted
+- Optional: yes
+- Default: the object's `render.default_facing`, or `south` if none
+- Meaning: facing direction applied to every instance in this placement group
 
 Placement fields:
 
@@ -643,6 +656,22 @@ The `text` value supports three count placeholders in addition to the normal `{p
 - When enabled, sprites are anchored at their bottom-center (foot position) and rendered with depth based on their vertical position: objects lower on screen render in front of objects higher on screen
 - Recommended for obstacles, NPCs, and players to achieve correct occlusion with oversized sprites
 - Ground tiles and flat pickups should leave this as `false`
+
+### `default_facing`
+- Type: string (one of `north`, `south`, `east`, `west`), or omitted
+- Optional: yes
+- Default: `south` (front-facing)
+- Meaning: initial facing direction for this object type when no per-instance `facing` is set in the map YAML
+- Used together with `rotation_by_facing` and/or directional animation clips to render oriented sprites
+- Players and NPCs overwrite this on movement; static objects retain it
+
+### `rotation_by_facing`
+- Type: boolean
+- Optional: yes
+- Default: `false`
+- Meaning: when `true`, the sprite is rotated around its center via `Transform::rotation_z` to match the object's `Facing`
+- Use this for single-sprite props (signposts, arrows, beds) that have no per-direction animation frames
+- Rotated sprites use center anchoring — when this flag is `true`, the bottom-center y-sort shift is skipped so the sprite sits square on the tile after rotation. Design sprites for this flag as square tiles
 
 ### `animation`
 - Type: mapping or `null`

@@ -9,7 +9,9 @@ use crate::player::components::{
     AttributeSet, BaseStats, DerivedStats, Player, PlayerIdentity, VitalStats, WeaponDamage,
 };
 use crate::scripting::resources::PythonConsoleState;
-use crate::world::components::{DisplayedVitalStats, SpaceResident, TilePosition, ViewPosition};
+use crate::world::components::{
+    DisplayedVitalStats, Facing, SpaceResident, TilePosition, ViewPosition,
+};
 use crate::world::object_definitions::{
     AttackProfileKindDef, EquipmentSlot, OverworldObjectDefinitions,
 };
@@ -182,11 +184,11 @@ pub fn sync_projected_player_from_client_state(
     client_state: Res<ClientGameState>,
     world_config: Res<WorldConfig>,
     mut player_query: Query<
-        (&mut ViewPosition, &mut DisplayedVitalStats),
+        (&mut ViewPosition, &mut DisplayedVitalStats, Option<&mut Facing>),
         (With<Player>, Without<PlayerIdentity>),
     >,
 ) {
-    let Ok((mut view, mut displayed_vitals)) = player_query.single_mut() else {
+    let Ok((mut view, mut displayed_vitals, facing)) = player_query.single_mut() else {
         return;
     };
 
@@ -203,6 +205,12 @@ pub fn sync_projected_player_from_client_state(
         displayed_vitals.max_health = client_vitals.max_health;
         displayed_vitals.mana = client_vitals.mana;
         displayed_vitals.max_mana = client_vitals.max_mana;
+    }
+
+    if let (Some(mut facing), Some(direction)) = (facing, client_state.player_facing) {
+        if facing.0 != direction {
+            facing.0 = direction;
+        }
     }
 }
 

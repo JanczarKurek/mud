@@ -29,7 +29,7 @@ use crate::game::resources::{
 use crate::npc::components::Npc;
 use crate::player::components::{DerivedStats, Player, PlayerId, PlayerIdentity, VitalStats};
 use crate::world::components::{
-    Container, Movable, OverworldObject, Quantity, SpaceId, SpacePosition, SpaceResident,
+    Container, Facing, Movable, OverworldObject, Quantity, SpaceId, SpacePosition, SpaceResident,
     TilePosition,
 };
 use crate::world::resources::SpaceManager;
@@ -47,6 +47,7 @@ pub type ProjectionPlayerQuery<'w, 's> = Query<
         &'static DerivedStats,
         Option<&'static CombatTarget>,
         &'static OverworldObject,
+        Option<&'static Facing>,
     ),
     With<Player>,
 >;
@@ -66,6 +67,7 @@ pub type ProjectionWorldObjectQuery<'w, 's> = Query<
         Has<Movable>,
         Option<&'static Quantity>,
         Has<DialogNode>,
+        Option<&'static Facing>,
     ),
     Without<Player>,
 >;
@@ -110,8 +112,10 @@ pub fn compute_events_for_peer(
         derived_stats,
         combat_target,
         player_object,
+        facing,
     ) in player_query.iter()
     {
+        let projected_facing = facing.copied().unwrap_or_default().0;
         let projected_vitals = ClientVitalStats {
             health: vital_stats.health,
             max_health: vital_stats.max_health,
@@ -146,10 +150,13 @@ pub fn compute_events_for_peer(
 
             let current_player_position =
                 SpacePosition::new(space_resident.space_id, *tile_position);
-            if previous.player_position != Some(current_player_position) {
+            if previous.player_position != Some(current_player_position)
+                || previous.player_facing != Some(projected_facing)
+            {
                 events.push(GameEvent::PlayerPositionChanged {
                     position: current_player_position,
                     tile_position: *tile_position,
+                    facing: projected_facing,
                 });
             }
 
@@ -182,6 +189,7 @@ pub fn compute_events_for_peer(
                 position,
                 tile_position: *tile_position,
                 vitals: projected_vitals,
+                facing: projected_facing,
             };
             if previous.remote_players.get(&identity.id) != Some(&projected) {
                 events.push(GameEvent::RemotePlayerUpserted { player: projected });
@@ -251,6 +259,7 @@ pub fn compute_events_for_peer(
         has_movable,
         qty,
         has_dialog,
+        facing,
     ) in world_object_query.iter()
     {
         if space_resident.space_id != local_space_id {
@@ -273,6 +282,7 @@ pub fn compute_events_for_peer(
             is_movable: has_movable,
             quantity: qty.map(|q| q.0).unwrap_or(1),
             has_dialog,
+            facing: facing.copied().unwrap_or_default().0,
         };
 
         if previous.world_objects.get(&object.object_id) != Some(&projected_object) {
@@ -369,9 +379,11 @@ pub fn apply_event_to_state(state: &mut ClientGameState, event: GameEvent) {
         GameEvent::PlayerPositionChanged {
             position,
             tile_position,
+            facing,
         } => {
             state.player_position = Some(position);
             state.player_tile_position = Some(tile_position);
+            state.player_facing = Some(facing);
         }
         GameEvent::CurrentSpaceChanged { space } => {
             state.current_space = Some(space);

@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::game::commands::GameCommand;
 use crate::player::components::{ChatLog, Inventory, InventoryStack, PlayerId};
 use crate::world::components::{SpacePosition, TilePosition};
+use crate::world::direction::Direction;
 
 pub type InventoryState = Inventory;
 pub type ChatLogState = ChatLog;
@@ -103,6 +104,8 @@ pub struct ClientWorldObjectState {
     pub is_movable: bool,
     pub quantity: u32,
     pub has_dialog: bool,
+    #[serde(default)]
+    pub facing: Direction,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -112,6 +115,8 @@ pub struct ClientRemotePlayerState {
     pub position: SpacePosition,
     pub tile_position: TilePosition,
     pub vitals: ClientVitalStats,
+    #[serde(default)]
+    pub facing: Direction,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -142,6 +147,8 @@ pub enum GameEvent {
     PlayerPositionChanged {
         position: SpacePosition,
         tile_position: TilePosition,
+        #[serde(default)]
+        facing: Direction,
     },
     CurrentSpaceChanged {
         space: ClientSpaceState,
@@ -196,4 +203,5 @@ pub struct ClientGameState {
     pub remote_players: HashMap<PlayerId, ClientRemotePlayerState>,
     pub container_slots: HashMap<u64, Vec<Option<InventoryStack>>>,
     pub world_objects: HashMap<u64, ClientWorldObjectState>,
+    pub player_facing: Option<Direction>,
 }

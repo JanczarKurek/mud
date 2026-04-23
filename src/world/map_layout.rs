@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::assets::discover_yaml_assets;
 use crate::world::components::TilePosition;
+use crate::world::direction::Direction;
 
 const DEFAULT_BOOTSTRAP_SPACE_ID: &str = "overworld";
 
@@ -82,6 +83,8 @@ pub struct MapObjectInstance {
     pub contents: Vec<u64>,
     #[serde(default)]
     pub behavior: Option<MapBehavior>,
+    #[serde(default)]
+    pub facing: Option<Direction>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -100,6 +103,8 @@ pub struct AnonymousObjectPlacements {
     #[serde(default)]
     pub properties: ObjectProperties,
     pub placement: Vec<TileCoordinate>,
+    #[serde(default)]
+    pub facing: Option<Direction>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -411,6 +416,7 @@ impl SpaceDefinition {
                     type_id,
                     properties: HashMap::new(),
                     placement: placements,
+                    facing: None,
                 }));
         }
     }
@@ -441,6 +447,7 @@ impl SpaceDefinition {
                             placement: Some(*tile),
                             contents: Vec::new(),
                             behavior: None,
+                            facing: group.facing,
                         });
                         next_generated_id += 1;
                     }

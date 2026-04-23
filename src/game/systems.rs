@@ -15,8 +15,9 @@ use crate::player::components::{
     DerivedStats, InventoryStack, MovementCooldown, Player, PlayerIdentity, VitalStats,
 };
 use crate::world::components::{
-    Collider, Container, Movable, OverworldObject, Quantity, SpaceResident, TilePosition,
+    Collider, Container, Facing, Movable, OverworldObject, Quantity, SpaceResident, TilePosition,
 };
+use crate::world::direction::Direction;
 use crate::world::loot::spawn_corpse_for_npc;
 use crate::world::map_layout::SpaceDefinitions;
 use crate::world::object_definitions::{
@@ -513,6 +514,10 @@ fn handle_move_player(
 
     *tile_position = target_position;
     movement_cooldown.remaining_seconds = movement_cooldown.step_interval_seconds;
+
+    if let Some(direction) = Direction::from_delta(delta.x, delta.y) {
+        commands.entity(player_entity).insert(Facing(direction));
+    }
 
     // Stair transition: if the tile the player just stepped onto carries a
     // `floor_transition`, bump z by its delta (unless the destination is blocked).

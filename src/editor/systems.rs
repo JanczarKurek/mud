@@ -1018,6 +1018,7 @@ pub fn sync_portal_overlays(
                 z_index: 8.0,
                 y_sort: false,
                 sprite_height: 0.0,
+                rotation_by_facing: false,
             },
             Sprite {
                 color: Color::srgba(0.2, 0.6, 1.0, 0.55),

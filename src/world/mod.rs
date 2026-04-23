@@ -1,5 +1,6 @@
 pub mod animation;
 pub mod components;
+pub mod direction;
 pub mod floors;
 pub mod loot;
 pub mod map_layout;

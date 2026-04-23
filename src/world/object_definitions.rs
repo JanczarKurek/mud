@@ -12,6 +12,7 @@ use serde::Serialize;
 use serde_yaml::{Mapping, Value};
 
 use crate::assets::AssetResolver;
+use crate::world::direction::Direction;
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -420,6 +421,17 @@ pub struct RenderMetadata {
     pub y_sort: bool,
     #[serde(default)]
     pub animation: Option<AnimationSheetDef>,
+    /// Initial facing for this object type when no per-instance facing is
+    /// supplied in the map YAML. Missing = `Direction::default()` (south).
+    #[serde(default)]
+    pub default_facing: Option<Direction>,
+    /// When true, the sprite is rotated via `Transform::rotation_z` to match
+    /// the object's `Facing` component. Use this for single-sprite props
+    /// (signposts, arrows) that have no per-direction animation frames.
+    /// Rotated sprites use center anchoring — the bottom-center y-sort shift
+    /// is skipped so they sit square on the tile after rotation.
+    #[serde(default)]
+    pub rotation_by_facing: bool,
     /// Tiles on floor N with this flag hide everything on floor N+1 and
     /// above from view when the player stands directly beneath them.
     /// Walls and floor planks opt in so buildings feel enclosed.

@@ -5,7 +5,7 @@ use crate::player::components::Player;
 use crate::world::animation::{JustMoved, VisualOffset};
 use crate::world::components::{
     ClientProjectedWorldObject, ClientRemotePlayerVisual, CombatHealthBar, DisplayedVitalStats,
-    HealthBarDisplayPolicy, SpaceResident, TilePosition, ViewPosition, WorldVisual,
+    Facing, HealthBarDisplayPolicy, SpaceResident, TilePosition, ViewPosition, WorldVisual,
 };
 use crate::world::floors::{VisibleFloorRange, DIMMED_FLOOR_ALPHA};
 use crate::world::object_definitions::OverworldObjectDefinitions;
@@ -28,6 +28,7 @@ pub fn sync_client_world_projection(
         &mut DisplayedVitalStats,
         &mut ViewPosition,
         &mut WorldVisual,
+        &mut Facing,
     )>,
 ) {
     let Some(current_space) = client_state.current_space.as_ref() else {
@@ -67,8 +68,14 @@ pub fn sync_client_world_projection(
             continue;
         };
 
-        let Ok((query_entity, projected_object, mut displayed_vitals, mut view, mut world_visual)) =
-            projected_query.get_mut(entity)
+        let Ok((
+            query_entity,
+            projected_object,
+            mut displayed_vitals,
+            mut view,
+            mut world_visual,
+            mut facing,
+        )) = projected_query.get_mut(entity)
         else {
             let entity = spawn_client_projected_world_object(
                 &mut commands,
@@ -131,6 +138,9 @@ pub fn sync_client_world_projection(
         if let Some(definition) = definitions.get(&object.definition_id) {
             world_visual.z_index = definition.render.z_index;
         }
+        if facing.0 != object.facing {
+            facing.0 = object.facing;
+        }
     }
 
     let stale_object_ids = projection_state
@@ -160,6 +170,7 @@ pub fn sync_remote_player_projection(
         &mut DisplayedVitalStats,
         &mut ViewPosition,
         &mut WorldVisual,
+        &mut Facing,
     )>,
 ) {
     for remote_player in client_state.remote_players.values() {
@@ -179,8 +190,14 @@ pub fn sync_remote_player_projection(
             continue;
         };
 
-        let Ok((query_entity, projected_player, mut displayed_vitals, mut view, mut world_visual)) =
-            projected_query.get_mut(entity)
+        let Ok((
+            query_entity,
+            projected_player,
+            mut displayed_vitals,
+            mut view,
+            mut world_visual,
+            mut facing,
+        )) = projected_query.get_mut(entity)
         else {
             let entity = spawn_client_remote_player(
                 &mut commands,
@@ -241,6 +258,9 @@ pub fn sync_remote_player_projection(
         if let Some(definition) = definitions.get("player") {
             world_visual.z_index = definition.render.z_index;
         }
+        if facing.0 != remote_player.facing {
+            facing.0 = remote_player.facing;
+        }
     }
 
     let stale_player_ids = projection_state
@@ -289,6 +309,7 @@ pub fn sync_tile_transforms(
             &mut Transform,
             Option<&mut Sprite>,
             Option<&VisualOffset>,
+            Option<&Facing>,
         ),
         Without<Player>,
     >,
@@ -297,7 +318,7 @@ pub fn sync_tile_transforms(
         return;
     };
 
-    for (view, world_visual, mut transform, mut sprite, visual_offset) in &mut query {
+    for (view, world_visual, mut transform, mut sprite, visual_offset, facing) in &mut query {
         let is_active = view.space_id == player_position.space_id;
         let floor_visible = visible_floors.contains(view.tile.z);
 
@@ -309,7 +330,9 @@ pub fn sync_tile_transforms(
             flat_floor_z(world_visual.z_index, view.tile.z)
         };
 
-        let anchor_y_offset = if world_visual.y_sort {
+        // Rotated sprites use center anchoring — skip the bottom-center y-sort
+        // shift so the sprite sits square on the tile after rotation.
+        let anchor_y_offset = if world_visual.y_sort && !world_visual.rotation_by_facing {
             -world_config.tile_size * 0.5
         } else {
             0.0
@@ -328,6 +351,11 @@ pub fn sync_tile_transforms(
             z,
         );
 
+        if world_visual.rotation_by_facing {
+            let direction = facing.copied().unwrap_or_default().0;
+            transform.rotation = Quat::from_rotation_z(direction.rotation_z_radians());
+        }
+
         if let Some(sprite) = sprite.as_mut() {
             let alpha = if is_active && floor_visible && view.tile.z < visible_floors.player_floor {
                 DIMMED_FLOOR_ALPHA
@@ -341,9 +369,17 @@ pub fn sync_tile_transforms(
 
 pub fn sync_player_z(
     client_state: Res<ClientGameState>,
-    mut query: Query<(&WorldVisual, &ViewPosition, &mut Transform), With<Player>>,
+    mut query: Query<
+        (
+            &WorldVisual,
+            &ViewPosition,
+            &mut Transform,
+            Option<&Facing>,
+        ),
+        With<Player>,
+    >,
 ) {
-    let Ok((world_visual, view, mut transform)) = query.single_mut() else {
+    let Ok((world_visual, view, mut transform, facing)) = query.single_mut() else {
         return;
     };
 
@@ -363,6 +399,11 @@ pub fn sync_player_z(
             "player y_sort=false, z_index={}, z={}",
             world_visual.z_index, transform.translation.z
         );
+    }
+
+    if world_visual.rotation_by_facing {
+        let direction = facing.copied().unwrap_or_default().0;
+        transform.rotation = Quat::from_rotation_z(direction.rotation_z_radians());
     }
 }
 

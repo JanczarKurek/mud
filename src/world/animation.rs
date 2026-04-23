@@ -33,13 +33,6 @@ pub struct JustMoved {
     pub dy: i32,
 }
 
-/// Persisted facing direction, updated whenever the entity moves.
-#[derive(Component, Clone, Copy, Debug, Default)]
-pub struct FacingDirection {
-    pub dx: i32,
-    pub dy: i32,
-}
-
 /// Per-entity pixel offset (in world space) that lerps toward zero after a
 /// move. Added to the entity's tile-based translation by `sync_tile_transforms`.
 #[derive(Component, Clone, Copy, Debug, Default)]
@@ -75,9 +68,8 @@ fn apply_clip(
 
 // ── Systems ───────────────────────────────────────────────────────────────────
 
-/// Attaches `AnimatedSprite` + `FacingDirection` to newly spawned entities
-/// whose object definition has an `animation:` block, and swaps their `Sprite`
-/// to use a `TextureAtlas`.
+/// Attaches `AnimatedSprite` to newly spawned entities whose object definition
+/// has an `animation:` block, and swaps their `Sprite` to use a `TextureAtlas`.
 pub fn attach_animated_sprite(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -140,9 +132,7 @@ pub fn attach_animated_sprite(
             ..default()
         };
 
-        commands
-            .entity(entity)
-            .insert((animated, FacingDirection::default(), new_sprite));
+        commands.entity(entity).insert((animated, new_sprite));
     };
 
     for (entity, world_obj) in &world_objects {
@@ -201,28 +191,18 @@ pub fn advance_animation_timers(
 /// Switches animated entities to their walk clip when they have `JustMoved`.
 pub fn trigger_movement_animation(
     definitions: Res<OverworldObjectDefinitions>,
-    mut world_obj_query: Query<(
-        &mut AnimatedSprite,
-        &mut FacingDirection,
-        &ClientProjectedWorldObject,
-        &JustMoved,
-    )>,
+    mut world_obj_query: Query<(&mut AnimatedSprite, &ClientProjectedWorldObject, &JustMoved)>,
     mut player_query: Query<
-        (&mut AnimatedSprite, &mut FacingDirection, &JustMoved),
+        (&mut AnimatedSprite, &JustMoved),
         (With<Player>, Without<ClientProjectedWorldObject>),
     >,
 ) {
     let try_walk = |animated: &mut AnimatedSprite,
-                    facing: &mut FacingDirection,
-                    just_moved: &JustMoved,
                     clips: &std::collections::HashMap<
         String,
         crate::world::object_definitions::AnimationClipDef,
     >,
                     atlas_columns: u32| {
-        facing.dx = just_moved.dx;
-        facing.dy = just_moved.dy;
-
         let clip_name = if clips.contains_key("walk") {
             "walk"
         } else {
@@ -243,36 +223,24 @@ pub fn trigger_movement_animation(
         }
     };
 
-    for (mut animated, mut facing, world_obj, just_moved) in &mut world_obj_query {
+    for (mut animated, world_obj, _just_moved) in &mut world_obj_query {
         let Some(def) = definitions.get(&world_obj.definition_id) else {
             continue;
         };
         let Some(sheet) = &def.render.animation else {
             continue;
         };
-        try_walk(
-            &mut animated,
-            &mut facing,
-            just_moved,
-            &sheet.clips,
-            sheet.sheet_columns,
-        );
+        try_walk(&mut animated, &sheet.clips, sheet.sheet_columns);
     }
 
-    for (mut animated, mut facing, just_moved) in &mut player_query {
+    for (mut animated, _just_moved) in &mut player_query {
         let Some(def) = definitions.get("player") else {
             continue;
         };
         let Some(sheet) = &def.render.animation else {
             continue;
         };
-        try_walk(
-            &mut animated,
-            &mut facing,
-            just_moved,
-            &sheet.clips,
-            sheet.sheet_columns,
-        );
+        try_walk(&mut animated, &sheet.clips, sheet.sheet_columns);
     }
 }
 

@@ -165,6 +165,10 @@ pub struct PlayerStateDump {
     #[serde(default)]
     pub yarn_vars:
         std::collections::HashMap<String, crate::dialog::variable_storage::YarnValueDump>,
+    /// Direction the character was facing when saved. `#[serde(default)]` so
+    /// character rows written before this field existed default to South.
+    #[serde(default)]
+    pub facing: crate::world::direction::Direction,
 }
 
 /// Build a `PlayerStateDump` from the components of a single player entity.
@@ -185,6 +189,7 @@ pub fn build_player_state_dump(
     attack_profile: &AttackProfile,
     combat_leash: &CombatLeash,
     combat_target_object_id: Option<u64>,
+    facing: crate::world::direction::Direction,
 ) -> PlayerStateDump {
     PlayerStateDump {
         player_id: identity.id,
@@ -201,6 +206,7 @@ pub fn build_player_state_dump(
         combat_leash: *combat_leash,
         combat_target_object_id,
         yarn_vars: std::collections::HashMap::new(),
+        facing,
     }
 }
 
@@ -220,6 +226,10 @@ pub struct WorldObjectStateDump {
     pub quantity: Option<u32>,
     #[serde(default)]
     pub remaining_ttl: Option<f32>,
+    /// `#[serde(default)]` so snapshots written before this field existed
+    /// default to South on load.
+    #[serde(default)]
+    pub facing: Option<crate::world::direction::Direction>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -258,6 +268,7 @@ fn save_world_on_app_exit(
             Option<&CombatTarget>,
             Option<&crate::world::components::Quantity>,
             Option<&CorpseTtl>,
+            Option<&crate::world::components::Facing>,
         ),
         Without<Player>,
     >,
@@ -285,7 +296,7 @@ fn save_world_on_app_exit(
     }
 
     let mut entity_to_object_id = std::collections::HashMap::new();
-    for (entity, object, _, _, _, _, _, _, _, _, _, _) in world_object_query.iter() {
+    for (entity, object, _, _, _, _, _, _, _, _, _, _, _) in world_object_query.iter() {
         entity_to_object_id.insert(entity, object.object_id);
     }
 
@@ -325,6 +336,7 @@ fn save_world_on_app_exit(
                 combat_target,
                 quantity,
                 corpse_ttl,
+                facing,
             )| WorldObjectStateDump {
                 object_id: object.object_id,
                 definition_id: object.definition_id.clone(),
@@ -336,6 +348,7 @@ fn save_world_on_app_exit(
                 container_slots: container.map(|container| container.slots.clone()),
                 quantity: quantity.map(|q| q.0).filter(|&q| q > 1),
                 remaining_ttl: corpse_ttl.map(|ttl| ttl.remaining_seconds),
+                facing: facing.map(|f| f.0),
                 npc: is_npc.then(|| {
                     let (
                         base_stats,
@@ -369,7 +382,7 @@ fn save_world_on_app_exit(
     world_objects.sort_by_key(|object| object.object_id);
 
     let dump = WorldStateDump {
-        format_version: 5,
+        format_version: 6,
         spaces,
         saved_at_unix_seconds: SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -538,12 +551,19 @@ fn load_world_from_snapshot(
     for object in world_objects {
         let space_id = object.space_id.unwrap_or(current_space_id);
         let definition_id_for_lookup = object.definition_id.clone();
+        let resolved_facing = object.facing.unwrap_or_else(|| {
+            object_definitions
+                .get(&definition_id_for_lookup)
+                .and_then(|def| def.render.default_facing)
+                .unwrap_or_default()
+        });
         let mut entity = commands.spawn((
             OverworldObject {
                 object_id: object.object_id,
                 definition_id: object.definition_id,
             },
             SpaceResident { space_id },
+            crate::world::components::Facing(resolved_facing),
         ));
 
         if let Some(tile_position) = object.tile_position {
@@ -747,7 +767,7 @@ mod tests {
             serde_json::from_str::<WorldStateDump>(&std::fs::read_to_string(&save_path).unwrap())
                 .unwrap();
 
-        assert_eq!(dump.format_version, 5);
+        assert_eq!(dump.format_version, 6);
         assert!(!dump.spaces.is_empty());
         // Players are no longer persisted in the world snapshot — they live in
         // the accounts DB. The object registry still tracks the player's id so
@@ -822,6 +842,7 @@ mod tests {
                 npc: None,
                 quantity: None,
                 remaining_ttl: None,
+                facing: None,
             }],
         };
         write_world_dump(&save_path, &dump).unwrap();

@@ -2,6 +2,13 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::player::components::{InventoryStack, PlayerId};
+use crate::world::direction::Direction;
+
+/// Authoritative facing direction for players, NPCs, and oriented world objects.
+/// Replicated to clients via upsert events — presentation code reads this rather
+/// than deriving from movement deltas.
+#[derive(Component, Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Facing(pub Direction);
 
 #[derive(Component, Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct SpaceId(pub u64);
@@ -82,6 +89,7 @@ pub struct WorldVisual {
     pub z_index: f32,
     pub y_sort: bool,
     pub sprite_height: f32,
+    pub rotation_by_facing: bool,
 }
 
 #[derive(Component)]

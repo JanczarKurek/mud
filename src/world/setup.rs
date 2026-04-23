@@ -10,9 +10,10 @@ use crate::player::components::InventoryStack;
 use crate::player::components::{AttributeSet, BaseStats, DerivedStats, VitalStats, WeaponDamage};
 use crate::world::components::{
     ClientProjectedWorldObject, ClientRemotePlayerVisual, CombatHealthBar, DisplayedVitalStats,
-    HealthBarDisplayPolicy, OverworldObject, SpaceId, SpacePosition, SpaceResident, TilePosition,
-    ViewPosition, WorldVisual,
+    Facing, HealthBarDisplayPolicy, OverworldObject, SpaceId, SpacePosition, SpaceResident,
+    TilePosition, ViewPosition, WorldVisual,
 };
+use crate::world::direction::Direction;
 use crate::world::map_layout::{
     MapBehavior, MapObjectInstance, PortalDefinition, SpaceDefinition, SpaceDefinitions,
     SpacePermanence,
@@ -229,6 +230,10 @@ pub fn spawn_overworld_object_instance(
         None,
     );
 
+    if let Some(facing) = object.facing {
+        commands.entity(entity).insert(Facing(facing));
+    }
+
     if let Some(behavior) = &object.behavior {
         let definition = definitions.get(&object.type_id);
         let base_stats = npc_base_stats_from_definition(definition);
@@ -384,6 +389,7 @@ fn spawn_ground_tile(
             z_index: definition.render.z_index,
             y_sort: false,
             sprite_height: 0.0,
+            rotation_by_facing: false,
         },
         sprite,
         Transform::from_xyz(0.0, 0.0, definition.render.z_index),
@@ -447,6 +453,12 @@ pub fn spawn_overworld_object(
     tile_position: TilePosition,
     quantity: Option<u32>,
 ) -> Entity {
+    let definition = definitions
+        .get(definition_id)
+        .unwrap_or_else(|| panic!("Missing overworld object definition for id '{definition_id}'"));
+
+    let initial_facing = Facing(definition.render.default_facing.unwrap_or_default());
+
     let mut entity = commands.spawn((
         OverworldObject {
             object_id,
@@ -458,11 +470,8 @@ pub fn spawn_overworld_object(
             space_id,
             tile: tile_position,
         },
+        initial_facing,
     ));
-
-    let definition = definitions
-        .get(definition_id)
-        .unwrap_or_else(|| panic!("Missing overworld object definition for id '{definition_id}'"));
 
     apply_overworld_definition_components!(entity, definition, container_contents, quantity);
 
@@ -497,10 +506,11 @@ pub fn spawn_client_projected_world_object(
         },
         visual,
         DisplayedVitalStats::default(),
+        Facing(definition.render.default_facing.unwrap_or_default()),
         sprite,
         Transform::from_xyz(0.0, 0.0, definition.render.z_index),
     ));
-    if uses_y_sort {
+    if uses_y_sort && !definition.render.rotation_by_facing {
         entity_commands.insert(bevy::sprite::Anchor::BOTTOM_CENTER);
     }
     let entity = entity_commands.id();
@@ -544,10 +554,11 @@ pub fn spawn_client_remote_player(
         },
         visual,
         DisplayedVitalStats::default(),
+        Facing(Direction::default()),
         sprite,
         Transform::from_xyz(0.0, 0.0, definition.render.z_index),
     ));
-    if uses_y_sort {
+    if uses_y_sort && !definition.render.rotation_by_facing {
         entity_commands.insert(bevy::sprite::Anchor::BOTTOM_CENTER);
     }
     let entity = entity_commands.id();
@@ -568,6 +579,7 @@ pub fn world_visual_for_definition(
         z_index: definition.render.z_index,
         y_sort: definition.render.y_sort,
         sprite_height: sprite_size.y,
+        rotation_by_facing: definition.render.rotation_by_facing,
     }
 }
 

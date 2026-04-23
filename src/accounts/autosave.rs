@@ -11,7 +11,7 @@ use crate::player::components::{
     BaseStats, ChatLog, DerivedStats, Inventory, MovementCooldown, Player, PlayerIdentity,
     VitalStats,
 };
-use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
+use crate::world::components::{Facing, OverworldObject, SpaceResident, TilePosition};
 
 /// Tracks time since the last autosave sweep; resets when the sweep fires.
 #[derive(Resource, Default)]
@@ -34,6 +34,7 @@ type PlayerStateQueryData<'a> = (
     &'a AttackProfile,
     &'a CombatLeash,
     Option<&'a CombatTarget>,
+    Option<&'a Facing>,
 );
 
 type PlayerStateQueryFilter = With<Player>;
@@ -60,6 +61,7 @@ fn save_entity(
         attack_profile,
         combat_leash,
         combat_target,
+        facing,
     ) = row;
 
     let combat_target_object_id = combat_target
@@ -80,6 +82,7 @@ fn save_entity(
         attack_profile,
         combat_leash,
         combat_target_object_id,
+        facing.copied().unwrap_or_default().0,
     );
 
     if let Some(stores) = var_stores {

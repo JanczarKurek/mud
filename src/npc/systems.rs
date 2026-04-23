@@ -5,7 +5,8 @@ use crate::npc::components::{
     HostileBehavior, Npc, RoamingBehavior, RoamingRandomState, RoamingStepTimer,
 };
 use crate::player::components::Player;
-use crate::world::components::{Collider, SpaceId, SpaceResident, TilePosition};
+use crate::world::components::{Collider, Facing, SpaceId, SpaceResident, TilePosition};
+use crate::world::direction::Direction;
 
 pub fn update_roaming_npcs(
     time: Res<Time>,
@@ -22,6 +23,7 @@ pub fn update_roaming_npcs(
             Option<&mut CombatTarget>,
             &mut RoamingStepTimer,
             &mut RoamingRandomState,
+            Option<&mut Facing>,
         ),
         (With<Npc>, Without<Player>),
     >,
@@ -47,6 +49,7 @@ pub fn update_roaming_npcs(
         combat_target,
         mut timer,
         mut random_state,
+        mut facing,
     ) in &mut npc_query
     {
         timer.remaining_seconds = (timer.remaining_seconds - time.delta_secs()).max(0.0);
@@ -83,7 +86,16 @@ pub fn update_roaming_npcs(
             player_position,
             &npc_positions,
         ) {
+            let old_position = *tile_position;
             *tile_position = target_position;
+            if let Some(direction) = Direction::from_delta(
+                target_position.x - old_position.x,
+                target_position.y - old_position.y,
+            ) {
+                if let Some(facing) = facing.as_mut() {
+                    facing.0 = direction;
+                }
+            }
         }
 
         timer.remaining_seconds = behavior.step_interval_seconds;

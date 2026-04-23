@@ -353,6 +353,7 @@ mod tests {
             },
             combat_target_object_id: None,
             yarn_vars: Default::default(),
+            facing: Default::default(),
         };
         db.save_character(id, &dump).unwrap();
 
