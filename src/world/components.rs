@@ -128,6 +128,9 @@ pub struct ClientRemotePlayerVisual {
 pub struct Movable;
 
 #[derive(Component)]
+pub struct Rotatable;
+
+#[derive(Component)]
 pub struct Storable;
 
 #[derive(Component)]

@@ -3,7 +3,7 @@ use bevy::prelude::*;
 
 use crate::combat::components::AttackProfile;
 use crate::combat::damage_expr::DamageExpr;
-use crate::game::commands::{GameCommand, MoveDelta};
+use crate::game::commands::{GameCommand, MoveDelta, RotationDirection};
 use crate::game::resources::{ClientGameState, InventoryState, PendingGameCommands};
 use crate::player::components::{
     AttributeSet, BaseStats, DerivedStats, Player, PlayerIdentity, VitalStats, WeaponDamage,
@@ -139,6 +139,67 @@ pub fn move_player_on_grid(
     };
 
     pending_commands.push(GameCommand::MovePlayer { delta });
+}
+
+/// Ctrl+Q rotates a nearby rotatable object counter-clockwise, Ctrl+E clockwise.
+/// Picks the rotatable object within Chebyshev-1 of the local player, tie-broken
+/// by Manhattan distance then object_id so the choice is deterministic across
+/// frames. Silent no-op if no rotatable object is adjacent.
+pub fn rotate_nearby_object_on_shortcut(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    console_state: Option<Res<PythonConsoleState>>,
+    client_state: Res<ClientGameState>,
+    mut pending_commands: ResMut<PendingGameCommands>,
+) {
+    if console_state.as_ref().is_some_and(|state| state.is_open) {
+        return;
+    }
+
+    let ctrl_held = keyboard_input.pressed(KeyCode::ControlLeft)
+        || keyboard_input.pressed(KeyCode::ControlRight);
+    if !ctrl_held {
+        return;
+    }
+
+    let rotation = if keyboard_input.just_pressed(KeyCode::KeyQ) {
+        RotationDirection::CounterClockwise
+    } else if keyboard_input.just_pressed(KeyCode::KeyE) {
+        RotationDirection::Clockwise
+    } else {
+        return;
+    };
+
+    let Some(player_tile) = client_state.player_tile_position else {
+        return;
+    };
+    let Some(player_space) = client_state.player_position.map(|p| p.space_id) else {
+        return;
+    };
+
+    let best = client_state
+        .world_objects
+        .values()
+        .filter(|object| object.is_rotatable && object.position.space_id == player_space)
+        .filter(|object| {
+            let t = object.tile_position;
+            t.z == player_tile.z
+                && (t.x - player_tile.x).abs() <= 1
+                && (t.y - player_tile.y).abs() <= 1
+        })
+        .min_by_key(|object| {
+            let dx = (object.tile_position.x - player_tile.x).abs();
+            let dy = (object.tile_position.y - player_tile.y).abs();
+            (dx + dy, object.object_id)
+        });
+
+    let Some(target) = best else {
+        return;
+    };
+
+    pending_commands.push(GameCommand::RotateObject {
+        object_id: target.object_id,
+        rotation,
+    });
 }
 
 /// View-sync for the locally-simulated (authoritative) player. Copies authoritative

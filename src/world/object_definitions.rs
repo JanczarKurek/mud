@@ -22,6 +22,8 @@ pub struct OverworldObjectDefinition {
     pub description: DescriptionField,
     pub colliding: bool,
     pub movable: bool,
+    #[serde(default)]
+    pub rotatable: bool,
     pub storable: bool,
     #[serde(default)]
     pub equipment_slot: Option<EquipmentSlot>,

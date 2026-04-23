@@ -55,6 +55,27 @@ impl Direction {
             Self::West => -FRAC_PI_2,
         }
     }
+
+    /// Rotate 90° clockwise in screen space. Matches the visual effect of
+    /// `rotation_z_radians` decreasing by π/2 — i.e. South → West → North → East → South.
+    pub fn turn_clockwise(self) -> Self {
+        match self {
+            Self::South => Self::West,
+            Self::West => Self::North,
+            Self::North => Self::East,
+            Self::East => Self::South,
+        }
+    }
+
+    /// Rotate 90° counter-clockwise in screen space. Inverse of `turn_clockwise`.
+    pub fn turn_counter_clockwise(self) -> Self {
+        match self {
+            Self::South => Self::East,
+            Self::East => Self::North,
+            Self::North => Self::West,
+            Self::West => Self::South,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -96,6 +117,29 @@ mod tests {
         ] {
             let d = dir.to_delta();
             assert_eq!(Direction::from_delta(d.x, d.y), Some(dir));
+        }
+    }
+
+    #[test]
+    fn turn_clockwise_cycles_full_loop() {
+        let mut d = Direction::South;
+        for _ in 0..4 {
+            d = d.turn_clockwise();
+        }
+        assert_eq!(d, Direction::South);
+        assert_eq!(Direction::South.turn_clockwise(), Direction::West);
+        assert_eq!(Direction::West.turn_clockwise(), Direction::North);
+    }
+
+    #[test]
+    fn turn_counter_clockwise_is_inverse_of_clockwise() {
+        for dir in [
+            Direction::North,
+            Direction::South,
+            Direction::East,
+            Direction::West,
+        ] {
+            assert_eq!(dir.turn_clockwise().turn_counter_clockwise(), dir);
         }
     }
 

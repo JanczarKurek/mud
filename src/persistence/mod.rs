@@ -19,8 +19,8 @@ use crate::player::components::{
     PlayerId, PlayerIdentity, VitalStats,
 };
 use crate::world::components::{
-    Collider, Container, Movable, OverworldObject, SpaceResident, Storable, TilePosition,
-    ViewPosition,
+    Collider, Container, Movable, OverworldObject, Rotatable, SpaceResident, Storable,
+    TilePosition, ViewPosition,
 };
 use crate::world::loot::CorpseTtl;
 use crate::world::map_layout::{SpaceDefinitions, SpacePermanence};
@@ -205,6 +205,8 @@ pub struct WorldObjectStateDump {
     pub tile_position: Option<TilePosition>,
     pub collider: bool,
     pub movable: bool,
+    #[serde(default)]
+    pub rotatable: bool,
     pub storable: bool,
     pub container_slots: Option<Vec<Option<InventoryStack>>>,
     pub npc: Option<NpcStateDump>,
@@ -248,6 +250,7 @@ fn save_world_on_app_exit(
             Option<&TilePosition>,
             Has<Collider>,
             Has<Movable>,
+            Has<Rotatable>,
             Has<Storable>,
             Option<&Container>,
             Has<Npc>,
@@ -282,7 +285,7 @@ fn save_world_on_app_exit(
     }
 
     let mut entity_to_object_id = std::collections::HashMap::new();
-    for (entity, object, _, _, _, _, _, _, _, _, _, _, _) in world_object_query.iter() {
+    for (entity, object, _, _, _, _, _, _, _, _, _, _, _, _) in world_object_query.iter() {
         entity_to_object_id.insert(entity, object.object_id);
     }
 
@@ -316,6 +319,7 @@ fn save_world_on_app_exit(
                 tile_position,
                 collider,
                 movable,
+                rotatable,
                 storable,
                 container,
                 is_npc,
@@ -330,6 +334,7 @@ fn save_world_on_app_exit(
                 tile_position: tile_position.copied(),
                 collider,
                 movable,
+                rotatable,
                 storable,
                 container_slots: container.map(|container| container.slots.clone()),
                 quantity: quantity.map(|q| q.0).filter(|&q| q > 1),
@@ -564,6 +569,9 @@ fn load_world_from_snapshot(
         }
         if object.movable {
             entity.insert(Movable);
+        }
+        if object.rotatable {
+            entity.insert(Rotatable);
         }
         if object.storable {
             entity.insert(Storable);
@@ -823,6 +831,7 @@ mod tests {
                 tile_position: Some(TilePosition::ground(7, 6)),
                 collider: false,
                 movable: false,
+                rotatable: false,
                 storable: false,
                 container_slots: Some(vec![None, None]),
                 npc: None,

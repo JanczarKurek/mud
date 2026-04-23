@@ -414,6 +414,9 @@ macro_rules! apply_overworld_definition_components {
         if __definition.movable {
             $entity.insert($crate::world::components::Movable);
         }
+        if __definition.rotatable {
+            $entity.insert($crate::world::components::Rotatable);
+        }
         if __definition.storable {
             $entity.insert($crate::world::components::Storable);
         }

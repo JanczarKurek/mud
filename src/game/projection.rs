@@ -29,8 +29,8 @@ use crate::game::resources::{
 use crate::npc::components::Npc;
 use crate::player::components::{DerivedStats, Player, PlayerId, PlayerIdentity, VitalStats};
 use crate::world::components::{
-    Container, Facing, Movable, OverworldObject, Quantity, SpaceId, SpacePosition, SpaceResident,
-    TilePosition,
+    Container, Facing, Movable, OverworldObject, Quantity, Rotatable, SpaceId, SpacePosition,
+    SpaceResident, TilePosition,
 };
 use crate::world::resources::SpaceManager;
 
@@ -65,6 +65,7 @@ pub type ProjectionWorldObjectQuery<'w, 's> = Query<
         Has<Container>,
         Has<Npc>,
         Has<Movable>,
+        Has<Rotatable>,
         Option<&'static Quantity>,
         Has<DialogNode>,
         Option<&'static Facing>,
@@ -257,6 +258,7 @@ pub fn compute_events_for_peer(
         has_container,
         has_npc,
         has_movable,
+        has_rotatable,
         qty,
         has_dialog,
         facing,
@@ -280,6 +282,7 @@ pub fn compute_events_for_peer(
             is_container: has_container,
             is_npc: has_npc,
             is_movable: has_movable,
+            is_rotatable: has_rotatable,
             quantity: qty.map(|q| q.0).unwrap_or(1),
             has_dialog,
             facing: facing.copied().unwrap_or_default().0,

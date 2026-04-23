@@ -2,7 +2,23 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::world::components::TilePosition;
+use crate::world::direction::Direction;
 use crate::world::object_definitions::EquipmentSlot;
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum RotationDirection {
+    Clockwise,
+    CounterClockwise,
+}
+
+impl RotationDirection {
+    pub fn apply(self, direction: Direction) -> Direction {
+        match self {
+            Self::Clockwise => direction.turn_clockwise(),
+            Self::CounterClockwise => direction.turn_counter_clockwise(),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct MoveDelta {
@@ -47,6 +63,14 @@ pub enum InspectTarget {
 pub enum GameCommand {
     MovePlayer {
         delta: MoveDelta,
+    },
+    /// Rotate a nearby world object that has the `Rotatable` component.
+    /// Server validates adjacency + rotatable flag, then advances the object's
+    /// `Facing` one 90° step in the requested direction. The resulting facing
+    /// change replicates through the existing `WorldObjectUpserted` diff.
+    RotateObject {
+        object_id: u64,
+        rotation: RotationDirection,
     },
     SetCombatTarget {
         target_object_id: Option<u64>,

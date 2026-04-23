@@ -102,6 +102,8 @@ pub struct ClientWorldObjectState {
     pub is_container: bool,
     pub is_npc: bool,
     pub is_movable: bool,
+    #[serde(default)]
+    pub is_rotatable: bool,
     pub quantity: u32,
     pub has_dialog: bool,
     #[serde(default)]

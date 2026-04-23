@@ -395,6 +395,16 @@ The `text` value supports three count placeholders in addition to the normal `{p
 - Default: `false`
 - Meaning: whether the object can be dragged or repositioned in the game world
 
+### `rotatable`
+- Type: boolean
+- Optional: yes
+- Default: `false`
+- Meaning: whether the player can rotate this object in-place with the `Ctrl+Q`
+  / `Ctrl+E` shortcuts when standing on an adjacent tile. Independent of
+  `movable` — a static signpost can be rotatable but not movable. Rotation
+  updates the object's `Facing` component; pair with `render.rotation_by_facing`
+  for sprites that should visibly turn.
+
 ### `storable`
 - Type: boolean
 - Optional: yes

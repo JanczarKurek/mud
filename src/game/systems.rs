@@ -15,7 +15,8 @@ use crate::player::components::{
     DerivedStats, InventoryStack, MovementCooldown, Player, PlayerIdentity, VitalStats,
 };
 use crate::world::components::{
-    Collider, Container, Facing, Movable, OverworldObject, Quantity, SpaceResident, TilePosition,
+    Collider, Container, Facing, Movable, OverworldObject, Quantity, Rotatable, SpaceResident,
+    TilePosition,
 };
 use crate::world::direction::Direction;
 use crate::world::loot::spawn_corpse_for_npc;
@@ -36,6 +37,68 @@ pub fn tick_player_movement_cooldowns(
         movement_cooldown.remaining_seconds =
             (movement_cooldown.remaining_seconds - time.delta_secs()).max(0.0);
     }
+}
+
+/// Drains `GameCommand::RotateObject` from `PendingGameCommands` and applies the
+/// rotation to the target object's `Facing`. Scheduled in `CommandIntercept`
+/// (before `process_game_commands`) so the main processor's param list does not
+/// need to grow. Validation: target must have `Rotatable` + sit within
+/// Chebyshev-1 of the acting player (same adjacency rule as move-item).
+pub fn process_rotate_commands(
+    mut pending_commands: ResMut<PendingGameCommands>,
+    mut rotatable_query: Query<
+        (&SpaceResident, &TilePosition, &OverworldObject, &mut Facing),
+        (With<Rotatable>, Without<Player>),
+    >,
+    player_query: Query<(&PlayerIdentity, &SpaceResident, &TilePosition), With<Player>>,
+) {
+    let original_len = pending_commands.commands.len();
+    let mut remaining = Vec::with_capacity(original_len);
+    let drained: Vec<_> = pending_commands.commands.drain(..).collect();
+
+    for queued in drained {
+        let (object_id, rotation) = match queued.command {
+            GameCommand::RotateObject {
+                object_id,
+                rotation,
+            } => (object_id, rotation),
+            other => {
+                remaining.push(crate::game::resources::QueuedGameCommand {
+                    player_id: queued.player_id,
+                    command: other,
+                });
+                continue;
+            }
+        };
+
+        let Some((_, player_space, player_tile)) = (match queued.player_id {
+            Some(id) => player_query
+                .iter()
+                .find(|(identity, _, _)| identity.id == id),
+            None => player_query.iter().next(),
+        }) else {
+            continue;
+        };
+
+        let Some((_, _, _, mut facing)) =
+            rotatable_query
+                .iter_mut()
+                .find(|(resident, tile_position, object, _)| {
+                    resident.space_id == player_space.space_id
+                        && object.object_id == object_id
+                        && is_near_player(player_tile, tile_position)
+                })
+        else {
+            bevy::log::debug!(
+                "RotateObject {object_id} ignored: not rotatable, not nearby, or different space"
+            );
+            continue;
+        };
+
+        facing.0 = rotation.apply(facing.0);
+    }
+
+    pending_commands.commands = remaining;
 }
 
 pub fn process_game_commands(
@@ -309,6 +372,13 @@ pub fn process_game_commands(
                 // means the scheduler ran us out of order.
                 bevy::log::warn!(
                     "process_game_commands saw a dialog command — check system ordering"
+                );
+            }
+            GameCommand::RotateObject { .. } => {
+                // Rotate commands are drained by `process_rotate_commands`
+                // in `CommandIntercept` before this system runs.
+                bevy::log::warn!(
+                    "process_game_commands saw a rotate command — check system ordering"
                 );
             }
         }
