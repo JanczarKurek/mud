@@ -1,0 +1,6 @@
+id: grass
+name: Grass
+priority: 0
+tile_size_px: 16
+atlas_path: floors/grass/tileset.png
+debug_color: [47, 76, 43]

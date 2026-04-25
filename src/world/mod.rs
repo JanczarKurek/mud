@@ -1,6 +1,9 @@
 pub mod animation;
 pub mod components;
 pub mod direction;
+pub mod floor_definitions;
+pub mod floor_map;
+pub mod floor_render;
 pub mod floors;
 pub mod loot;
 pub mod map_layout;
@@ -20,17 +23,20 @@ use crate::world::animation::{
     advance_animation_timers, attach_animated_sprite, cleanup_just_moved, detect_player_movement,
     return_to_idle_animation, tick_view_scroll, tick_visual_offsets, trigger_movement_animation,
 };
+use crate::world::floor_definitions::FloorTilesetDefinitions;
+use crate::world::floor_map::FloorMaps;
+use crate::world::floor_render::{
+    build_floor_render_cells, consume_floor_render_dirty, sync_floor_render_transforms,
+    FloorRenderDirty, FloorRenderState, FloorTilesetAtlases,
+};
 use crate::world::floors::{recompute_visible_floors, VisibleFloorRange};
 use crate::world::map_layout::SpaceDefinitions;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::resources::{
-    ClientRemotePlayerProjectionState, ClientWorldProjectionState, GroundTileConfig, SpaceManager,
-    ViewScrollOffset,
+    ClientRemotePlayerProjectionState, ClientWorldProjectionState, SpaceManager, ViewScrollOffset,
 };
-use crate::world::setup::{
-    initialize_runtime_spaces, spawn_ground_tiles_for_current_space, WorldStartupSet,
-};
+use crate::world::setup::{initialize_runtime_spaces, WorldStartupSet};
 use crate::world::systems::{
     cleanup_empty_ephemeral_spaces, sync_authoritative_world_object_position_view,
     sync_client_world_projection, sync_combat_health_bars, sync_player_z,
@@ -53,12 +59,15 @@ impl Plugin for WorldServerPlugin {
             map_width: bootstrap_space.width,
             map_height: bootstrap_space.height,
             tile_size: 48.0,
-            fill_object_type: bootstrap_space.fill_object_type.clone(),
+            fill_floor_type: bootstrap_space.fill_floor_type.clone(),
         })
         .insert_resource(authored_spaces.clone())
         .insert_resource(SpaceManager::default())
+        .insert_resource(FloorMaps::default())
+        .insert_resource(FloorRenderDirty::default())
         .insert_resource(ObjectRegistry::from_space_definitions(&authored_spaces))
         .insert_resource(OverworldObjectDefinitions::load_from_disk())
+        .insert_resource(FloorTilesetDefinitions::load_from_disk())
         .add_systems(
             Startup,
             initialize_runtime_spaces.in_set(WorldStartupSet::InitializeRuntimeSpaces),
@@ -78,14 +87,14 @@ impl Plugin for WorldClientPlugin {
                 map_width: bs.width,
                 map_height: bs.height,
                 tile_size: 48.0,
-                fill_object_type: bs.fill_object_type.clone(),
+                fill_floor_type: bs.fill_floor_type.clone(),
             })
             .unwrap_or_else(|| WorldConfig {
                 current_space_id: crate::world::components::SpaceId(0),
                 map_width: 1,
                 map_height: 1,
                 tile_size: 48.0,
-                fill_object_type: String::new(),
+                fill_floor_type: String::new(),
             });
         let object_registry = ObjectRegistry::from_space_definitions(&authored_spaces);
 
@@ -94,17 +103,17 @@ impl Plugin for WorldClientPlugin {
             .insert_resource(authored_spaces)
             .insert_resource(object_registry)
             .insert_resource(OverworldObjectDefinitions::load_from_disk())
+            .insert_resource(FloorTilesetDefinitions::load_from_disk())
+            .insert_resource(FloorTilesetAtlases::default())
+            .insert_resource(FloorRenderState::default())
+            .insert_resource(FloorRenderDirty::default())
             .insert_resource(ClientWorldProjectionState::default())
             .insert_resource(ClientRemotePlayerProjectionState::default())
             .insert_resource(ViewScrollOffset::default())
-            .insert_resource(GroundTileConfig::default())
             .insert_resource(VisibleFloorRange::default())
             .add_systems(
                 OnEnter(ClientAppState::InGame),
-                (
-                    reload_client_definitions.before(crate::player::setup::spawn_player_visual),
-                    spawn_ground_tiles_for_current_space.after(reload_client_definitions),
-                ),
+                reload_client_definitions.before(crate::player::setup::spawn_player_visual),
             )
             .add_systems(
                 Update,
@@ -120,7 +129,11 @@ impl Plugin for WorldClientPlugin {
                     sync_tile_transforms.after(detect_player_movement),
                     sync_player_z,
                     sync_combat_health_bars,
-                    spawn_ground_tiles_for_current_space,
+                    build_floor_render_cells.after(apply_game_events_to_client_state),
+                    consume_floor_render_dirty
+                        .after(apply_game_events_to_client_state)
+                        .after(build_floor_render_cells),
+                    sync_floor_render_transforms.after(detect_player_movement),
                     // Animation systems
                     attach_animated_sprite.after(sync_client_world_projection),
                     advance_animation_timers,
@@ -140,17 +153,19 @@ impl Plugin for WorldClientPlugin {
 
 fn reload_client_definitions(
     mut object_defs: ResMut<OverworldObjectDefinitions>,
+    mut floor_defs: ResMut<FloorTilesetDefinitions>,
     mut space_defs: ResMut<SpaceDefinitions>,
     mut spell_defs: ResMut<SpellDefinitions>,
     mut world_config: ResMut<WorldConfig>,
     mut object_registry: ResMut<ObjectRegistry>,
 ) {
     *object_defs = OverworldObjectDefinitions::load_from_disk();
+    *floor_defs = FloorTilesetDefinitions::load_from_disk();
     let new_space_defs = SpaceDefinitions::load_from_disk();
     if let Some(bs) = new_space_defs.bootstrap_space() {
         world_config.map_width = bs.width;
         world_config.map_height = bs.height;
-        world_config.fill_object_type = bs.fill_object_type.clone();
+        world_config.fill_floor_type = bs.fill_floor_type.clone();
     }
     *object_registry = ObjectRegistry::from_space_definitions(&new_space_defs);
     *space_defs = new_space_defs;
@@ -163,5 +178,5 @@ pub struct WorldConfig {
     pub map_width: i32,
     pub map_height: i32,
     pub tile_size: f32,
-    pub fill_object_type: String,
+    pub fill_floor_type: String,
 }

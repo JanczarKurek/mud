@@ -15,7 +15,8 @@ use crate::game::resources::{
     ClientGameState, PendingGameCommands, PendingGameEvents, PendingGameUiEvents,
 };
 use crate::game::systems::{
-    process_game_commands, process_rotate_commands, tick_player_movement_cooldowns,
+    process_floor_commands, process_game_commands, process_rotate_commands,
+    tick_player_movement_cooldowns,
 };
 use crate::npc::systems::update_roaming_npcs;
 use crate::player::systems::move_player_on_grid;
@@ -51,6 +52,12 @@ impl Plugin for GameServerPlugin {
             .add_systems(
                 Update,
                 process_rotate_commands
+                    .in_set(CommandIntercept)
+                    .run_if(simulation_active),
+            )
+            .add_systems(
+                Update,
+                process_floor_commands
                     .in_set(CommandIntercept)
                     .run_if(simulation_active),
             )

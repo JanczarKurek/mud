@@ -137,6 +137,3 @@ pub struct Storable;
 pub struct Container {
     pub slots: Vec<Option<InventoryStack>>,
 }
-
-#[derive(Component)]
-pub struct ClientGroundTile;

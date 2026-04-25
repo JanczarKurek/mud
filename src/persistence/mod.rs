@@ -19,9 +19,11 @@ use crate::player::components::{
     PlayerId, PlayerIdentity, VitalStats,
 };
 use crate::world::components::{
-    Collider, Container, Movable, OverworldObject, Rotatable, SpaceResident, Storable,
+    Collider, Container, Movable, OverworldObject, Rotatable, SpaceId, SpaceResident, Storable,
     TilePosition, ViewPosition,
 };
+use crate::world::floor_definitions::FloorTypeId;
+use crate::world::floor_map::{FloorMap, FloorMaps};
 use crate::world::loot::CorpseTtl;
 use crate::world::map_layout::{SpaceDefinitions, SpacePermanence};
 use crate::world::object_registry::{ObjectRegistry, ObjectRegistrySnapshotEntry};
@@ -80,6 +82,8 @@ pub struct WorldStateDump {
     pub object_registry: ObjectRegistryDump,
     pub network: NetworkStateDump,
     pub world_objects: Vec<WorldObjectStateDump>,
+    #[serde(default)]
+    pub floor_maps: Vec<FloorMapDump>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -90,14 +94,23 @@ pub struct WorldConfigDump {
     pub map_height: i32,
     pub tile_size: f32,
     #[serde(default)]
-    pub fill_object_type: Option<String>,
+    pub fill_floor_type: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MapLayoutDump {
     pub width: i32,
     pub height: i32,
-    pub fill_object_type: String,
+    pub fill_floor_type: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct FloorMapDump {
+    pub space_id: SpaceId,
+    pub z: i32,
+    pub width: i32,
+    pub height: i32,
+    pub tiles: Vec<Option<FloorTypeId>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -117,7 +130,7 @@ pub struct RuntimeSpaceDump {
     pub authored_id: String,
     pub width: i32,
     pub height: i32,
-    pub fill_object_type: String,
+    pub fill_floor_type: String,
     pub permanence: SpacePermanence,
     pub instance_owner: Option<PortalInstanceKeyDump>,
 }
@@ -240,6 +253,7 @@ fn save_world_on_app_exit(
     save_config: Res<WorldSaveConfig>,
     world_config: Res<WorldConfig>,
     space_manager: Res<SpaceManager>,
+    floor_maps: Res<FloorMaps>,
     object_registry: Res<ObjectRegistry>,
     tcp_server_state: Option<Res<TcpServerState>>,
     world_object_query: Query<
@@ -297,7 +311,7 @@ fn save_world_on_app_exit(
             authored_id: space.authored_id.clone(),
             width: space.width,
             height: space.height,
-            fill_object_type: space.fill_object_type.clone(),
+            fill_floor_type: space.fill_floor_type.clone(),
             permanence: space.permanence,
             instance_owner: space.instance_owner.as_ref().map(|instance_owner| {
                 PortalInstanceKeyDump {
@@ -308,6 +322,18 @@ fn save_world_on_app_exit(
         })
         .collect::<Vec<_>>();
     spaces.sort_by_key(|space| space.id.0);
+
+    let mut floor_map_dumps: Vec<FloorMapDump> = floor_maps
+        .iter()
+        .map(|(space_id, z, map)| FloorMapDump {
+            space_id,
+            z,
+            width: map.width,
+            height: map.height,
+            tiles: map.tiles.clone(),
+        })
+        .collect();
+    floor_map_dumps.sort_by_key(|dump| (dump.space_id.0, dump.z));
 
     let mut world_objects = world_object_query
         .iter()
@@ -373,7 +399,7 @@ fn save_world_on_app_exit(
     world_objects.sort_by_key(|object| object.object_id);
 
     let dump = WorldStateDump {
-        format_version: 6,
+        format_version: 7,
         spaces,
         saved_at_unix_seconds: SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -384,12 +410,12 @@ fn save_world_on_app_exit(
             map_width: world_config.map_width,
             map_height: world_config.map_height,
             tile_size: world_config.tile_size,
-            fill_object_type: Some(world_config.fill_object_type.clone()),
+            fill_floor_type: Some(world_config.fill_floor_type.clone()),
         },
         map_layout: Some(MapLayoutDump {
             width: world_config.map_width,
             height: world_config.map_height,
-            fill_object_type: world_config.fill_object_type.clone(),
+            fill_floor_type: world_config.fill_floor_type.clone(),
         }),
         object_registry: ObjectRegistryDump {
             next_runtime_id: object_registry.next_runtime_id(),
@@ -402,6 +428,7 @@ fn save_world_on_app_exit(
                 .unwrap_or_default(),
         },
         world_objects,
+        floor_maps: floor_map_dumps,
     };
 
     if let Err(error) = write_world_dump(&save_config.path, &dump) {
@@ -423,6 +450,7 @@ fn load_world_from_snapshot(
     mut world_config: ResMut<WorldConfig>,
     mut object_registry: ResMut<ObjectRegistry>,
     mut space_manager: ResMut<SpaceManager>,
+    mut floor_maps: ResMut<FloorMaps>,
     mut tcp_server_state: Option<ResMut<TcpServerState>>,
     object_definitions: Res<crate::world::object_definitions::OverworldObjectDefinitions>,
 ) {
@@ -444,6 +472,14 @@ fn load_world_from_snapshot(
         }
     };
 
+    if dump.format_version < 7 {
+        warn!(
+            "world snapshot at {} is format_version {} (<7); rebuilding floor maps from authored space definitions",
+            save_config.path.display(),
+            dump.format_version
+        );
+    }
+
     let WorldStateDump {
         world_config: dump_world_config,
         map_layout: dump_map_layout,
@@ -451,13 +487,14 @@ fn load_world_from_snapshot(
         object_registry: dump_registry,
         network: dump_network,
         world_objects,
+        floor_maps: dump_floor_maps,
         ..
     } = dump;
 
-    let legacy_fill_object_type = dump_map_layout
+    let legacy_fill_floor_type = dump_map_layout
         .as_ref()
-        .map(|layout| layout.fill_object_type.clone())
-        .or(dump_world_config.fill_object_type.clone())
+        .map(|layout| layout.fill_floor_type.clone())
+        .or(dump_world_config.fill_floor_type.clone())
         .unwrap_or_else(|| "grass".to_owned());
 
     if dump_spaces.is_empty() {
@@ -470,7 +507,7 @@ fn load_world_from_snapshot(
             authored_id: bootstrap_definition.authored_id.clone(),
             width: dump_world_config.map_width,
             height: dump_world_config.map_height,
-            fill_object_type: legacy_fill_object_type.clone(),
+            fill_floor_type: legacy_fill_floor_type.clone(),
             permanence: SpacePermanence::Persistent,
             instance_owner: None,
         });
@@ -487,7 +524,7 @@ fn load_world_from_snapshot(
                 authored_id: dump_space.authored_id,
                 width: dump_space.width,
                 height: dump_space.height,
-                fill_object_type: dump_space.fill_object_type,
+                fill_floor_type: dump_space.fill_floor_type,
                 permanence: dump_space.permanence,
                 instance_owner: dump_space.instance_owner.map(|instance_owner| {
                     crate::world::resources::PortalInstanceKey {
@@ -496,6 +533,31 @@ fn load_world_from_snapshot(
                     }
                 }),
             });
+        }
+    }
+
+    // Restore floor maps. Empty / legacy: rebuild from the authored space defs.
+    if dump_floor_maps.is_empty() {
+        for runtime_space in space_manager.spaces.values() {
+            if let Some(definition) = authored_spaces.get(&runtime_space.authored_id) {
+                floor_maps.insert(
+                    runtime_space.id,
+                    TilePosition::GROUND_FLOOR,
+                    definition.build_floor_map(TilePosition::GROUND_FLOOR),
+                );
+            }
+        }
+    } else {
+        for dump_floor in dump_floor_maps {
+            floor_maps.insert(
+                dump_floor.space_id,
+                dump_floor.z,
+                FloorMap {
+                    width: dump_floor.width,
+                    height: dump_floor.height,
+                    tiles: dump_floor.tiles,
+                },
+            );
         }
     }
 
@@ -521,10 +583,10 @@ fn load_world_from_snapshot(
         .map(|space| space.height)
         .unwrap_or(dump_world_config.map_height);
     world_config.tile_size = dump_world_config.tile_size;
-    world_config.fill_object_type = current_space
+    world_config.fill_floor_type = current_space
         .as_ref()
-        .map(|space| space.fill_object_type.clone())
-        .unwrap_or(legacy_fill_object_type);
+        .map(|space| space.fill_floor_type.clone())
+        .unwrap_or(legacy_fill_floor_type);
     *object_registry =
         ObjectRegistry::from_snapshot(dump_registry.entries, dump_registry.next_runtime_id);
     if let Some(server_state) = tcp_server_state.as_mut() {
@@ -739,10 +801,10 @@ mod tests {
             map_width: app.world().resource::<WorldConfig>().map_width,
             map_height: app.world().resource::<WorldConfig>().map_height,
             tile_size: app.world().resource::<WorldConfig>().tile_size,
-            fill_object_type: app
+            fill_floor_type: app
                 .world()
                 .resource::<WorldConfig>()
-                .fill_object_type
+                .fill_floor_type
                 .clone(),
         };
         spawn_player_authoritative(
@@ -761,7 +823,7 @@ mod tests {
             serde_json::from_str::<WorldStateDump>(&std::fs::read_to_string(&save_path).unwrap())
                 .unwrap();
 
-        assert_eq!(dump.format_version, 6);
+        assert_eq!(dump.format_version, 7);
         assert!(!dump.spaces.is_empty());
         // Players are no longer persisted in the world snapshot — they live in
         // the accounts DB. The object registry still tracks the player's id so
@@ -783,26 +845,26 @@ mod tests {
         let _ = std::fs::remove_file(&save_path);
 
         let dump = WorldStateDump {
-            format_version: 3,
+            format_version: 7,
             saved_at_unix_seconds: 0,
             world_config: WorldConfigDump {
                 current_space_id: Some(crate::world::components::SpaceId(7)),
                 map_width: 32,
                 map_height: 24,
                 tile_size: 48.0,
-                fill_object_type: Some("grass".to_owned()),
+                fill_floor_type: Some("grass".to_owned()),
             },
             map_layout: Some(MapLayoutDump {
                 width: 32,
                 height: 24,
-                fill_object_type: "grass".to_owned(),
+                fill_floor_type: "grass".to_owned(),
             }),
             spaces: vec![RuntimeSpaceDump {
                 id: crate::world::components::SpaceId(7),
                 authored_id: "overworld".to_owned(),
                 width: 32,
                 height: 24,
-                fill_object_type: "grass".to_owned(),
+                fill_floor_type: "grass".to_owned(),
                 permanence: SpacePermanence::Persistent,
                 instance_owner: None,
             }],
@@ -839,6 +901,7 @@ mod tests {
                 remaining_ttl: None,
                 facing: None,
             }],
+            floor_maps: vec![],
         };
         write_world_dump(&save_path, &dump).unwrap();
 

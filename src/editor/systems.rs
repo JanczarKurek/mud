@@ -10,11 +10,14 @@ use crate::editor::resources::{
     UndoStack,
 };
 use crate::editor::serializer::serialize_and_save;
+use crate::game::commands::GameCommand;
+use crate::game::resources::PendingGameCommands;
 use crate::player::components::Player;
 use crate::world::animation::VisualOffset;
 use crate::world::components::{
     OverworldObject, SpaceResident, TilePosition, ViewPosition, WorldVisual,
 };
+use crate::world::floor_map::FloorMaps;
 use crate::world::map_layout::{PortalDefinition, SpaceDefinitions, TileCoordinate};
 use crate::world::object_definitions::{OverworldObjectDefinition, OverworldObjectDefinitions};
 use crate::world::object_registry::ObjectRegistry;
@@ -97,7 +100,7 @@ pub fn init_editor_context(
         authored_id,
         map_width: world_config.map_width,
         map_height: world_config.map_height,
-        fill_object_type: world_config.fill_object_type.clone(),
+        fill_floor_type: world_config.fill_floor_type.clone(),
     });
 }
 
@@ -272,6 +275,7 @@ pub fn handle_editor_left_click(
     mut prop_buffer: ResMut<EditorPropertyEditBuffer>,
     mut undo_stack: ResMut<UndoStack>,
     mut modal_state: ResMut<ModalState>,
+    mut pending_commands: ResMut<PendingGameCommands>,
     existing_objects: Query<(&OverworldObject, &SpaceResident, &TilePosition), Without<Player>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -293,6 +297,18 @@ pub fn handle_editor_left_click(
         || tile.x >= editor_context.map_width
         || tile.y >= editor_context.map_height
     {
+        return;
+    }
+
+    if editor_state.current_tool == EditorTool::FloorBrush {
+        pending_commands.push(GameCommand::EditorSetFloorTile {
+            space_id: editor_context.space_id,
+            z: TilePosition::GROUND_FLOOR,
+            x: tile.x,
+            y: tile.y,
+            floor_type: editor_state.selected_floor_type.clone(),
+        });
+        editor_state.dirty = true;
         return;
     }
 
@@ -392,6 +408,7 @@ pub fn handle_editor_right_click(
     mut prop_buffer: ResMut<EditorPropertyEditBuffer>,
     mut undo_stack: ResMut<UndoStack>,
     mut portal_buffer: ResMut<EditorPortalBuffer>,
+    mut pending_commands: ResMut<PendingGameCommands>,
     objects: Query<(Entity, &OverworldObject, &SpaceResident, &TilePosition)>,
     object_registry: Res<ObjectRegistry>,
     mut commands: Commands,
@@ -408,6 +425,25 @@ pub fn handle_editor_right_click(
         return;
     };
     let tile = cursor_to_tile(cursor, window, &world_config, &editor_camera);
+
+    if editor_state.current_tool == EditorTool::FloorBrush {
+        if tile.x < 0
+            || tile.y < 0
+            || tile.x >= editor_context.map_width
+            || tile.y >= editor_context.map_height
+        {
+            return;
+        }
+        pending_commands.push(GameCommand::EditorSetFloorTile {
+            space_id: editor_context.space_id,
+            z: TilePosition::GROUND_FLOOR,
+            x: tile.x,
+            y: tile.y,
+            floor_type: None,
+        });
+        editor_state.dirty = true;
+        return;
+    }
 
     if editor_state.current_tool == EditorTool::Portal {
         if let Some(idx) = portal_buffer
@@ -589,6 +625,55 @@ pub fn handle_editor_escape(
     }
 }
 
+/// `F` toggles into FloorBrush mode or cycles the selected floor type:
+/// off → grass → sand → cobblestone → cave_floor → dirt_path → clear (None) → off.
+/// `B` switches back to the object Brush.
+pub fn handle_editor_floor_brush_hotkey(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    modal_state: Res<ModalState>,
+    mut editor_state: ResMut<EditorState>,
+    floor_defs: Res<crate::world::floor_definitions::FloorTilesetDefinitions>,
+) {
+    if modal_state.active.is_some() || editor_state.palette_filter_focused {
+        return;
+    }
+    let ctrl = keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
+    if ctrl {
+        return;
+    }
+    if keyboard.just_pressed(KeyCode::KeyB) {
+        editor_state.current_tool = EditorTool::Brush;
+        return;
+    }
+    if keyboard.just_pressed(KeyCode::KeyF) {
+        // Collect floor ids in priority order for a stable cycle.
+        let mut ids: Vec<(i32, String)> = floor_defs
+            .iter()
+            .map(|d| (d.priority, d.id.clone()))
+            .collect();
+        ids.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+        let cycle: Vec<String> = ids.into_iter().map(|(_, id)| id).collect();
+
+        if editor_state.current_tool != EditorTool::FloorBrush {
+            editor_state.current_tool = EditorTool::FloorBrush;
+            editor_state.selected_floor_type = cycle.first().cloned();
+            return;
+        }
+
+        let next = match editor_state.selected_floor_type.as_ref() {
+            None => cycle.first().cloned(),
+            Some(current) => {
+                let i = cycle.iter().position(|id| id == current);
+                match i {
+                    Some(idx) if idx + 1 < cycle.len() => Some(cycle[idx + 1].clone()),
+                    _ => None, // wrap to "clear" mode (right-click equivalent)
+                }
+            }
+        };
+        editor_state.selected_floor_type = next;
+    }
+}
+
 pub fn handle_editor_save(
     keyboard: Res<ButtonInput<KeyCode>>,
     modal_state: Res<ModalState>,
@@ -596,6 +681,7 @@ pub fn handle_editor_save(
     editor_context: Res<EditorContext>,
     portal_buffer: Res<EditorPortalBuffer>,
     object_registry: Res<ObjectRegistry>,
+    floor_maps: Res<FloorMaps>,
     objects: Query<(&OverworldObject, &SpaceResident, &TilePosition)>,
 ) {
     if modal_state.active.is_some() {
@@ -604,7 +690,13 @@ pub fn handle_editor_save(
     let ctrl = keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
     let shift = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
     if ctrl && !shift && keyboard.just_pressed(KeyCode::KeyS) {
-        serialize_and_save(&editor_context, &portal_buffer, &object_registry, &objects);
+        serialize_and_save(
+            &editor_context,
+            &portal_buffer,
+            &object_registry,
+            &objects,
+            &floor_maps,
+        );
         editor_state.dirty = false;
         info!("Saved map '{}'", editor_context.authored_id);
     }
@@ -844,6 +936,7 @@ pub fn apply_modal_confirmed(
     mut editor_camera: ResMut<EditorCamera>,
     mut world_config: ResMut<WorldConfig>,
     mut space_manager: ResMut<SpaceManager>,
+    mut floor_maps: ResMut<FloorMaps>,
     mut space_definitions: ResMut<SpaceDefinitions>,
     mut portal_buffer: ResMut<EditorPortalBuffer>,
     mut undo_stack: ResMut<UndoStack>,
@@ -875,6 +968,7 @@ pub fn apply_modal_confirmed(
                 instantiate_space(
                     &mut commands,
                     &mut space_manager,
+                    &mut floor_maps,
                     &def,
                     &object_definitions,
                     None,
@@ -886,11 +980,11 @@ pub fn apply_modal_confirmed(
             editor_context.authored_id = authored_id.clone();
             editor_context.map_width = def.width;
             editor_context.map_height = def.height;
-            editor_context.fill_object_type = def.fill_object_type.clone();
+            editor_context.fill_floor_type = def.fill_floor_type.clone();
             world_config.current_space_id = space_id;
             world_config.map_width = def.width;
             world_config.map_height = def.height;
-            world_config.fill_object_type = def.fill_object_type.clone();
+            world_config.fill_floor_type = def.fill_floor_type.clone();
             editor_camera.center = Vec2::new(def.width as f32 * 0.5, def.height as f32 * 0.5);
             portal_buffer.portals = def.portals.clone();
             editor_state.dirty = false;
@@ -909,6 +1003,7 @@ pub fn apply_modal_confirmed(
                 &portal_buffer,
                 &object_registry,
                 &objects_save,
+                &floor_maps,
             );
             space_definitions.load_single_from_disk(&authored_id);
             editor_state.dirty = false;
@@ -926,27 +1021,31 @@ pub fn apply_modal_confirmed(
                 authored_id: authored_id.clone(),
                 width,
                 height,
-                fill_object_type: fill_type.clone(),
+                fill_floor_type: fill_type.clone(),
                 permanence: crate::world::map_layout::SpacePermanence::Persistent,
                 instance_owner: None,
             });
-            space_definitions.insert_or_replace(
-                crate::world::map_layout::SpaceDefinition::new_empty(
-                    authored_id.clone(),
-                    width,
-                    height,
-                    fill_type.clone(),
-                ),
+            let new_def = crate::world::map_layout::SpaceDefinition::new_empty(
+                authored_id.clone(),
+                width,
+                height,
+                fill_type.clone(),
             );
+            floor_maps.insert(
+                new_space_id,
+                crate::world::components::TilePosition::GROUND_FLOOR,
+                new_def.build_floor_map(crate::world::components::TilePosition::GROUND_FLOOR),
+            );
+            space_definitions.insert_or_replace(new_def);
             editor_context.space_id = new_space_id;
             editor_context.authored_id = authored_id.clone();
             editor_context.map_width = width;
             editor_context.map_height = height;
-            editor_context.fill_object_type = fill_type.clone();
+            editor_context.fill_floor_type = fill_type.clone();
             world_config.current_space_id = new_space_id;
             world_config.map_width = width;
             world_config.map_height = height;
-            world_config.fill_object_type = fill_type.clone();
+            world_config.fill_floor_type = fill_type.clone();
             editor_camera.center = Vec2::new(width as f32 * 0.5, height as f32 * 0.5);
             portal_buffer.portals = vec![];
             editor_state.dirty = true;

@@ -43,3 +43,7 @@ required-features = ["gen-schemas"]
 [[bin]]
 name = "asset_viewer"
 path = "src/bin/asset_viewer.rs"
+
+[[bin]]
+name = "floor_viewer"
+path = "src/bin/floor_viewer.rs"

@@ -14,6 +14,7 @@ use crate::world::components::{
     TilePosition, ViewPosition, WorldVisual,
 };
 use crate::world::direction::Direction;
+use crate::world::floor_map::FloorMaps;
 use crate::world::map_layout::{
     MapBehavior, MapObjectInstance, PortalDefinition, SpaceDefinition, SpaceDefinitions,
     SpacePermanence,
@@ -21,7 +22,7 @@ use crate::world::map_layout::{
 use crate::world::object_definitions::{
     AttackProfileKindDef, OverworldObjectDefinition, OverworldObjectDefinitions, StatModifiers,
 };
-use crate::world::resources::{GroundTileConfig, PortalInstanceKey, RuntimeSpace, SpaceManager};
+use crate::world::resources::{PortalInstanceKey, RuntimeSpace, SpaceManager};
 use crate::world::WorldConfig;
 
 #[derive(SystemSet, Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -34,6 +35,7 @@ pub fn initialize_runtime_spaces(
     definitions: Res<SpaceDefinitions>,
     object_definitions: Res<OverworldObjectDefinitions>,
     mut space_manager: ResMut<SpaceManager>,
+    mut floor_maps: ResMut<FloorMaps>,
     snapshot_status: Option<Res<WorldSnapshotStatus>>,
 ) {
     if snapshot_status.as_ref().is_some_and(|status| status.loaded) {
@@ -48,6 +50,7 @@ pub fn initialize_runtime_spaces(
         let space_id = instantiate_space(
             &mut commands,
             &mut space_manager,
+            &mut floor_maps,
             definition,
             &object_definitions,
             None,
@@ -60,7 +63,7 @@ pub fn initialize_runtime_spaces(
                 map_width: definition.width,
                 map_height: definition.height,
                 tile_size: 48.0,
-                fill_object_type: definition.fill_object_type.clone(),
+                fill_floor_type: definition.fill_floor_type.clone(),
             });
         }
     }
@@ -69,6 +72,7 @@ pub fn initialize_runtime_spaces(
 pub fn instantiate_space(
     commands: &mut Commands,
     space_manager: &mut SpaceManager,
+    floor_maps: &mut FloorMaps,
     definition: &SpaceDefinition,
     definitions: &OverworldObjectDefinitions,
     instance_owner: Option<PortalInstanceKey>,
@@ -80,11 +84,16 @@ pub fn instantiate_space(
         authored_id: definition.authored_id.clone(),
         width: definition.width,
         height: definition.height,
-        fill_object_type: definition.fill_object_type.clone(),
+        fill_floor_type: definition.fill_floor_type.clone(),
         permanence,
         instance_owner,
     };
     space_manager.insert_space(runtime_space);
+    floor_maps.insert(
+        space_id,
+        TilePosition::GROUND_FLOOR,
+        definition.build_floor_map(TilePosition::GROUND_FLOOR),
+    );
 
     for object in &definition.resolved_objects {
         if definition.is_contained(object.id) {
@@ -112,6 +121,7 @@ pub fn resolve_portal_destination_space(
     authored_spaces: &SpaceDefinitions,
     definitions: &OverworldObjectDefinitions,
     space_manager: &mut SpaceManager,
+    floor_maps: &mut FloorMaps,
     source_space_id: SpaceId,
     portal: &PortalDefinition,
 ) -> Option<SpaceId> {
@@ -135,64 +145,12 @@ pub fn resolve_portal_destination_space(
     Some(instantiate_space(
         commands,
         space_manager,
+        floor_maps,
         destination_definition,
         definitions,
         Some(instance_key),
         permanence,
     ))
-}
-
-pub fn spawn_ground_tiles_for_current_space(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    definitions: Res<OverworldObjectDefinitions>,
-    world_config: Res<WorldConfig>,
-    mut last_config: ResMut<GroundTileConfig>,
-    current_ground_tiles: Query<Entity, With<crate::world::components::ClientGroundTile>>,
-) {
-    if world_config.fill_object_type.is_empty() {
-        return;
-    }
-
-    let current = GroundTileConfig {
-        space_id: Some(world_config.current_space_id),
-        width: world_config.map_width,
-        height: world_config.map_height,
-        fill_type: world_config.fill_object_type.clone(),
-    };
-
-    if *last_config == current {
-        return;
-    }
-
-    *last_config = current;
-
-    let existing_count = current_ground_tiles.iter().count();
-    bevy::log::info!(
-        "spawning ground tiles: space={} fill='{}' size={}x{} replacing={}",
-        world_config.current_space_id.0,
-        world_config.fill_object_type,
-        world_config.map_width,
-        world_config.map_height,
-        existing_count,
-    );
-
-    for entity in &current_ground_tiles {
-        commands.entity(entity).despawn();
-    }
-
-    for y in 0..world_config.map_height {
-        for x in 0..world_config.map_width {
-            spawn_ground_tile(
-                &mut commands,
-                &asset_server,
-                &definitions,
-                &world_config,
-                &world_config.fill_object_type,
-                TilePosition::ground(x, y),
-            );
-        }
-    }
 }
 
 pub fn spawn_overworld_object_instance(
@@ -360,40 +318,6 @@ pub fn attach_combat_health_bar(
         fill_entity,
         fill_width,
     });
-}
-
-fn spawn_ground_tile(
-    commands: &mut Commands,
-    asset_server: &AssetServer,
-    definitions: &OverworldObjectDefinitions,
-    world_config: &WorldConfig,
-    definition_id: &str,
-    tile_position: TilePosition,
-) {
-    let definition = definitions
-        .get(definition_id)
-        .unwrap_or_else(|| panic!("Missing overworld object definition for id '{definition_id}'"));
-    let sprite = sprite_for_definition(asset_server, definition, world_config);
-
-    commands.spawn((
-        crate::world::components::ClientGroundTile,
-        SpaceResident {
-            space_id: world_config.current_space_id,
-        },
-        tile_position,
-        ViewPosition {
-            space_id: world_config.current_space_id,
-            tile: tile_position,
-        },
-        WorldVisual {
-            z_index: definition.render.z_index,
-            y_sort: false,
-            sprite_height: 0.0,
-            rotation_by_facing: false,
-        },
-        sprite,
-        Transform::from_xyz(0.0, 0.0, definition.render.z_index),
-    ));
 }
 
 /// Applies the definition-driven optional components (Collider, Movable, Storable,

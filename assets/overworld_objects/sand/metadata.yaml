@@ -1,7 +1,0 @@
-extends: ground_tile
-name: Sand
-description: Fine sandy ground, soft underfoot near the water's edge.
-render:
-  debug_color: [210, 185, 120]
-  debug_size: 0.96
-  sprite_path: overworld_objects/sand/sprite.png

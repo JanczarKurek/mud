@@ -42,12 +42,12 @@ pub fn sync_client_world_projection(
     if world_config.current_space_id != current_space.space_id
         || world_config.map_width != current_space.width
         || world_config.map_height != current_space.height
-        || world_config.fill_object_type != current_space.fill_object_type
+        || world_config.fill_floor_type != current_space.fill_floor_type
     {
         world_config.current_space_id = current_space.space_id;
         world_config.map_width = current_space.width;
         world_config.map_height = current_space.height;
-        world_config.fill_object_type = current_space.fill_object_type.clone();
+        world_config.fill_floor_type = current_space.fill_floor_type.clone();
     }
 
     projection_state.active_space_id = Some(current_space.space_id);

@@ -1,0 +1,5 @@
+id: cobblestone
+name: Cobblestone
+priority: 30
+tile_size_px: 16
+debug_color: [148, 142, 134]

@@ -4,7 +4,13 @@ use sha2::{Digest, Sha256};
 
 use crate::network::protocol::AssetEntry;
 
-const SYNC_DIRS: &[&str] = &["overworld_objects", "object_bases", "maps", "spells"];
+const SYNC_DIRS: &[&str] = &[
+    "overworld_objects",
+    "object_bases",
+    "maps",
+    "spells",
+    "floors",
+];
 
 pub fn build_server_manifest() -> Vec<AssetEntry> {
     let mut entries = Vec::new();

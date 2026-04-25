@@ -2,7 +2,7 @@ authored_id: underworld
 permanence: persistent
 width: 28
 height: 18
-fill_object_type: cave_floor
+fill_floor_type: cave_floor
 
 legend:
   "#": cave_wall

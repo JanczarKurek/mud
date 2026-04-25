@@ -12,7 +12,7 @@ pub struct EditorContext {
     pub authored_id: String,
     pub map_width: i32,
     pub map_height: i32,
-    pub fill_object_type: String,
+    pub fill_floor_type: String,
 }
 
 /// Which broad tool is active in the editor.
@@ -21,6 +21,7 @@ pub enum EditorTool {
     #[default]
     Brush,
     Portal,
+    FloorBrush,
 }
 
 /// Editor interaction state.
@@ -38,6 +39,8 @@ pub struct EditorState {
     /// Set by undo/redo toolbar buttons; consumed by handle_undo_redo.
     pub undo_requested: bool,
     pub redo_requested: bool,
+    /// Floor-type id painted by the FloorBrush tool. `None` = clear the tile.
+    pub selected_floor_type: Option<String>,
 }
 
 /// Virtual camera for free panning in the editor.

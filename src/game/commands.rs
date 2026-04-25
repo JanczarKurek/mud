@@ -1,8 +1,9 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::world::components::TilePosition;
+use crate::world::components::{SpaceId, TilePosition};
 use crate::world::direction::Direction;
+use crate::world::floor_definitions::FloorTypeId;
 use crate::world::object_definitions::EquipmentSlot;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -140,5 +141,14 @@ pub enum GameCommand {
     TakeItem {
         type_id: String,
         count: u32,
+    },
+    /// Set (or clear) the floor type at a single tile of a space's floor map.
+    /// Authoritative path for runtime edits (editor brush, future spell effects).
+    EditorSetFloorTile {
+        space_id: SpaceId,
+        z: i32,
+        x: i32,
+        y: i32,
+        floor_type: Option<FloorTypeId>,
     },
 }

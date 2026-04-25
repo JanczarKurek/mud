@@ -560,6 +560,7 @@ pub fn flush_server_messages(
     world_object_query: crate::game::projection::ProjectionWorldObjectQuery,
     container_query: crate::game::projection::ProjectionContainerQuery,
     space_manager: Res<SpaceManager>,
+    floor_maps: Res<crate::world::floor_map::FloorMaps>,
     mut commands: Commands,
 ) {
     let peer_ui_events = std::mem::take(&mut pending_ui_events.peer_events);
@@ -597,6 +598,7 @@ pub fn flush_server_messages(
                 &world_object_query,
                 &container_query,
                 &space_manager,
+                &floor_maps,
             );
             if !events.is_empty() {
                 if !write_message(
@@ -998,7 +1000,7 @@ mod tests {
                 map_width: config.map_width,
                 map_height: config.map_height,
                 tile_size: config.tile_size,
-                fill_object_type: config.fill_object_type.clone(),
+                fill_floor_type: config.fill_floor_type.clone(),
             }
         };
         let center = crate::world::components::TilePosition::ground(
@@ -1063,10 +1065,17 @@ mod tests {
             crate::game::projection::ProjectionWorldObjectQuery<'w, 's>,
             crate::game::projection::ProjectionContainerQuery<'w, 's>,
             Res<'w, crate::world::resources::SpaceManager>,
+            Res<'w, crate::world::floor_map::FloorMaps>,
         )>;
         let mut state: PeerProjectionState = SystemState::new(app.world_mut());
-        let (player_query, object_query, world_object_query, container_query, space_manager) =
-            state.get(app.world_mut());
+        let (
+            player_query,
+            object_query,
+            world_object_query,
+            container_query,
+            space_manager,
+            floor_maps,
+        ) = state.get(app.world_mut());
 
         // Fold the bootstrap events (diff from default) into a baseline; this is
         // exactly what a freshly connected peer would do on the client side.
@@ -1078,6 +1087,7 @@ mod tests {
             &world_object_query,
             &container_query,
             &space_manager,
+            &floor_maps,
         );
         let mut projection = ClientGameState::default();
         for event in events {
@@ -1120,11 +1130,18 @@ mod tests {
             crate::game::projection::ProjectionWorldObjectQuery<'w, 's>,
             crate::game::projection::ProjectionContainerQuery<'w, 's>,
             Res<'w, crate::world::resources::SpaceManager>,
+            Res<'w, crate::world::floor_map::FloorMaps>,
         )>;
 
         let mut state: PeerProjectionState = SystemState::new(app.world_mut());
-        let (player_query, object_query, world_object_query, container_query, space_manager) =
-            state.get(app.world_mut());
+        let (
+            player_query,
+            object_query,
+            world_object_query,
+            container_query,
+            space_manager,
+            floor_maps,
+        ) = state.get(app.world_mut());
 
         let bootstrap = crate::game::projection::compute_events_for_peer(
             PlayerId(1),
@@ -1134,6 +1151,7 @@ mod tests {
             &world_object_query,
             &container_query,
             &space_manager,
+            &floor_maps,
         );
         let mut baseline = ClientGameState::default();
         for event in bootstrap {
@@ -1149,6 +1167,7 @@ mod tests {
             &world_object_query,
             &container_query,
             &space_manager,
+            &floor_maps,
         );
         assert!(
             idle_events.is_empty(),
@@ -1160,6 +1179,7 @@ mod tests {
             world_object_query,
             container_query,
             space_manager,
+            floor_maps,
         ));
 
         // Move the player; the next diff should contain exactly one PlayerPositionChanged.
@@ -1168,8 +1188,14 @@ mod tests {
             .insert(crate::world::components::TilePosition::ground(11, 10));
 
         let mut state: PeerProjectionState = SystemState::new(app.world_mut());
-        let (player_query, object_query, world_object_query, container_query, space_manager) =
-            state.get(app.world_mut());
+        let (
+            player_query,
+            object_query,
+            world_object_query,
+            container_query,
+            space_manager,
+            floor_maps,
+        ) = state.get(app.world_mut());
 
         let move_events = crate::game::projection::compute_events_for_peer(
             PlayerId(1),
@@ -1179,6 +1205,7 @@ mod tests {
             &world_object_query,
             &container_query,
             &space_manager,
+            &floor_maps,
         );
         let position_change_count = move_events
             .iter()

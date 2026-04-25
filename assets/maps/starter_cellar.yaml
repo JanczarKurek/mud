@@ -2,7 +2,7 @@ authored_id: starter_cellar
 permanence: ephemeral
 width: 12
 height: 10
-fill_object_type: grass
+fill_floor_type: grass
 
 legend:
   "#": wall

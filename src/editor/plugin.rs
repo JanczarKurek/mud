@@ -6,10 +6,10 @@ use crate::editor::resources::{
 };
 use crate::editor::systems::{
     apply_modal_confirmed, attach_editor_visuals, handle_editor_camera_pan, handle_editor_escape,
-    handle_editor_keyboard_input, handle_editor_left_click, handle_editor_right_click,
-    handle_editor_save, handle_editor_zoom, init_editor_context, init_portal_buffer,
-    open_file_dialog_shortcut, open_save_as_shortcut, process_modal_confirm, sync_portal_overlays,
-    sync_tile_transforms_editor,
+    handle_editor_floor_brush_hotkey, handle_editor_keyboard_input, handle_editor_left_click,
+    handle_editor_right_click, handle_editor_save, handle_editor_zoom, init_editor_context,
+    init_portal_buffer, open_file_dialog_shortcut, open_save_as_shortcut, process_modal_confirm,
+    sync_portal_overlays, sync_tile_transforms_editor,
 };
 use crate::editor::ui::modal::{
     handle_modal_buttons, handle_modal_keyboard_input, handle_modal_list_click,
@@ -75,6 +75,7 @@ impl Plugin for EditorPlugin {
                     handle_editor_right_click,
                     handle_editor_escape,
                     handle_editor_keyboard_input,
+                    handle_editor_floor_brush_hotkey,
                     handle_undo_redo,
                 )
                     .run_if(in_state(ClientAppState::MapEditor))

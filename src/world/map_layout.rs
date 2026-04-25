@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use crate::assets::discover_yaml_assets;
 use crate::world::components::TilePosition;
 use crate::world::direction::Direction;
+use crate::world::floor_definitions::FloorTypeId;
+use crate::world::floor_map::FloorMap;
 
 const DEFAULT_BOOTSTRAP_SPACE_ID: &str = "overworld";
 
@@ -37,25 +39,47 @@ pub struct SpaceDefinition {
     pub authored_id: String,
     pub width: i32,
     pub height: i32,
-    #[serde(alias = "fill_object")]
-    pub fill_object_type: String,
+    pub fill_floor_type: FloorTypeId,
     #[serde(default = "default_persistent_permanence")]
     pub permanence: SpacePermanence,
     #[serde(default)]
     pub portals: Vec<PortalDefinition>,
     #[serde(default)]
     pub objects: Vec<MapObjectEntry>,
+    /// Floor placements grouped by floor type id. Overlay on top of `fill_floor_type`.
+    #[serde(default)]
+    pub floors: HashMap<FloorTypeId, FloorPlacements>,
     /// Single-character keys mapping to object type IDs for use in `tiles`.
     #[serde(default)]
     pub legend: HashMap<String, String>,
     /// ASCII grid of tiles, row-major with y=0 at top. Each character maps
-    /// via `legend`; unmapped characters are skipped (fill_object_type applies).
+    /// via `legend`; unmapped characters are skipped (fill_floor_type applies).
     #[serde(default)]
     pub tiles: Option<String>,
     #[serde(skip)]
     pub resolved_objects: Vec<MapObjectInstance>,
     #[serde(skip)]
     object_indices: HashMap<u64, usize>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct FloorPlacements {
+    #[serde(default)]
+    pub placement: Vec<TileCoordinate>,
+    #[serde(default)]
+    pub rects: Vec<TileRectangleArea>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct TileRectangleArea {
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
+    #[serde(default)]
+    pub z: i32,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -265,21 +289,52 @@ impl SpaceDefinition {
         authored_id: String,
         width: i32,
         height: i32,
-        fill_object_type: String,
+        fill_floor_type: FloorTypeId,
     ) -> Self {
         Self {
             authored_id,
             width,
             height,
-            fill_object_type,
+            fill_floor_type,
             permanence: SpacePermanence::Persistent,
             portals: Vec::new(),
             objects: Vec::new(),
+            floors: HashMap::new(),
             legend: HashMap::new(),
             tiles: None,
             resolved_objects: Vec::new(),
             object_indices: HashMap::new(),
         }
+    }
+
+    /// Build a fully-baked `FloorMap` for the given z-floor. The map is
+    /// initialised to `Some(fill_floor_type)` and overlaid with explicit floor
+    /// placements at the matching z. OOB placements are silently dropped.
+    pub fn build_floor_map(&self, z: i32) -> FloorMap {
+        let fill = if z == TilePosition::GROUND_FLOOR && !self.fill_floor_type.is_empty() {
+            Some(self.fill_floor_type.clone())
+        } else {
+            None
+        };
+        let mut map = FloorMap::new_filled(self.width, self.height, fill);
+        for (floor_id, placements) in &self.floors {
+            for tile in &placements.placement {
+                if tile.z == z {
+                    map.set(tile.x, tile.y, Some(floor_id.clone()));
+                }
+            }
+            for rect in &placements.rects {
+                if rect.z != z {
+                    continue;
+                }
+                for dy in 0..rect.h {
+                    for dx in 0..rect.w {
+                        map.set(rect.x + dx, rect.y + dy, Some(floor_id.clone()));
+                    }
+                }
+            }
+        }
+        map
     }
 
     fn validate(&mut self) {

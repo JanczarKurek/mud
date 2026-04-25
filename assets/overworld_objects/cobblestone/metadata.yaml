@@ -1,7 +1,0 @@
-extends: ground_tile
-name: Cobblestone
-description: Smooth grey stone blocks set into the ground, worn by years of foot traffic.
-render:
-  debug_color: [148, 142, 134]
-  debug_size: 0.96
-  sprite_path: overworld_objects/cobblestone/sprite.png

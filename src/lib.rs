@@ -6,6 +6,7 @@ pub mod client_effects;
 pub mod combat;
 pub mod dialog;
 pub mod editor;
+pub mod floor_viewer;
 pub mod game;
 pub mod magic;
 pub mod network;

@@ -310,7 +310,7 @@ mod tests {
             map_width: 32,
             map_height: 24,
             tile_size: 48.0,
-            fill_object_type: "grass".to_owned(),
+            fill_floor_type: "grass".to_owned(),
         }
     }
 

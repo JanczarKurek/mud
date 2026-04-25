@@ -19,6 +19,7 @@ use crate::world::components::{
     TilePosition,
 };
 use crate::world::direction::Direction;
+use crate::world::floor_map::FloorMaps;
 use crate::world::loot::spawn_corpse_for_npc;
 use crate::world::map_layout::SpaceDefinitions;
 use crate::world::object_definitions::{
@@ -28,6 +29,16 @@ use crate::world::object_registry::ObjectRegistry;
 use crate::world::resources::SpaceManager;
 use crate::world::setup::{resolve_portal_destination_space, spawn_overworld_object};
 use crate::world::WorldConfig;
+use bevy::ecs::system::SystemParam;
+
+/// Bundle of resources needed together when a command may cause space
+/// instantiation (portals). Kept as one `SystemParam` so `process_game_commands`
+/// stays under Bevy's system parameter-count limit.
+#[derive(SystemParam)]
+pub struct SpaceAuthority<'w> {
+    pub space_manager: ResMut<'w, SpaceManager>,
+    pub floor_maps: ResMut<'w, FloorMaps>,
+}
 
 pub fn tick_player_movement_cooldowns(
     time: Res<Time>,
@@ -101,6 +112,54 @@ pub fn process_rotate_commands(
     pending_commands.commands = remaining;
 }
 
+/// Drains `GameCommand::EditorSetFloorTile` from `PendingGameCommands` and
+/// mutates `FloorMaps` directly. Scheduled in `CommandIntercept` so the main
+/// `process_game_commands` system parameter list does not have to grow.
+pub fn process_floor_commands(
+    mut pending_commands: ResMut<PendingGameCommands>,
+    mut floor_maps: ResMut<FloorMaps>,
+) {
+    let original_len = pending_commands.commands.len();
+    let mut remaining = Vec::with_capacity(original_len);
+    let drained: Vec<_> = pending_commands.commands.drain(..).collect();
+
+    for queued in drained {
+        match queued.command {
+            GameCommand::EditorSetFloorTile {
+                space_id,
+                z,
+                x,
+                y,
+                floor_type,
+            } => {
+                if let Some(map) = floor_maps.get_mut(space_id, z) {
+                    if !map.set(x, y, floor_type) {
+                        bevy::log::warn!(
+                            "EditorSetFloorTile: ({},{}) out of bounds for space {} z={}",
+                            x,
+                            y,
+                            space_id.0,
+                            z
+                        );
+                    }
+                } else {
+                    bevy::log::warn!(
+                        "EditorSetFloorTile: no floor map for space {} z={}",
+                        space_id.0,
+                        z
+                    );
+                }
+            }
+            other => remaining.push(crate::game::resources::QueuedGameCommand {
+                player_id: queued.player_id,
+                command: other,
+            }),
+        }
+    }
+
+    pending_commands.commands = remaining;
+}
+
 pub fn process_game_commands(
     mut pending_commands: ResMut<PendingGameCommands>,
     mut ui_events: ResMut<PendingGameUiEvents>,
@@ -108,7 +167,7 @@ pub fn process_game_commands(
     spell_definitions: Res<SpellDefinitions>,
     authored_spaces: Res<SpaceDefinitions>,
     mut object_registry: ResMut<ObjectRegistry>,
-    mut space_manager: ResMut<SpaceManager>,
+    mut space_authority: SpaceAuthority,
     world_config: Res<WorldConfig>,
     object_query: Query<(Entity, &SpaceResident, &TilePosition, &OverworldObject), Without<Player>>,
     movable_query: Query<
@@ -172,7 +231,8 @@ pub fn process_game_commands(
                     &mut player_queries.p2(),
                     &authored_spaces,
                     &definitions,
-                    &mut space_manager,
+                    &mut space_authority.space_manager,
+                    &mut space_authority.floor_maps,
                     &mut commands,
                 );
             }
@@ -363,6 +423,12 @@ pub fn process_game_commands(
                     &mut player_queries.p2(),
                 );
             }
+            GameCommand::EditorSetFloorTile { .. } => {
+                // Drained by `process_floor_commands` in `CommandIntercept` before this system runs.
+                bevy::log::warn!(
+                    "process_game_commands saw EditorSetFloorTile — check system ordering"
+                );
+            }
             GameCommand::TalkToNpc { .. }
             | GameCommand::DialogAdvance { .. }
             | GameCommand::DialogChoose { .. }
@@ -541,6 +607,7 @@ fn handle_move_player(
     authored_spaces: &SpaceDefinitions,
     definitions: &OverworldObjectDefinitions,
     space_manager: &mut SpaceManager,
+    floor_maps: &mut FloorMaps,
     commands: &mut Commands,
 ) {
     let Ok((
@@ -632,6 +699,7 @@ fn handle_move_player(
         authored_spaces,
         definitions,
         space_manager,
+        floor_maps,
         space_resident.space_id,
         portal,
     ) else {

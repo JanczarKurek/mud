@@ -13,6 +13,7 @@ use crate::ui::components::{
 };
 use crate::ui::resources::{FullMapWindowState, HudMinimapSettings, MinimapZoom};
 use crate::world::components::SpaceId;
+use crate::world::floor_definitions::FloorTilesetDefinitions;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 
 /// Pixel size of the HUD minimap UI node (square).
@@ -47,6 +48,7 @@ pub fn update_minimap_images(
     mut commands: Commands,
     client_state: Res<ClientGameState>,
     object_definitions: Res<OverworldObjectDefinitions>,
+    floor_definitions: Res<FloorTilesetDefinitions>,
     hud_settings: Res<HudMinimapSettings>,
     full_map_state: Res<FullMapWindowState>,
     mut images: ResMut<Assets<Image>>,
@@ -65,7 +67,7 @@ pub fn update_minimap_images(
         .as_ref()
         .map(|space| space.space_id);
     let player_tile = client_state.player_tile_position;
-    let fill_color = fill_color_rgba(&client_state, &object_definitions);
+    let fill_color = fill_color_rgba(&client_state, &floor_definitions);
 
     for (entity, view, mut canvas, mut image_node, computed, children) in views.iter_mut() {
         let zoom = match view.mode {
@@ -211,15 +213,15 @@ pub fn update_minimap_images(
 
 fn fill_color_rgba(
     client_state: &ClientGameState,
-    definitions: &OverworldObjectDefinitions,
+    definitions: &FloorTilesetDefinitions,
 ) -> [u8; 4] {
     let Some(space) = client_state.current_space.as_ref() else {
         return DEFAULT_FILL_COLOR;
     };
-    let Some(definition) = definitions.get(&space.fill_object_type) else {
+    let Some(definition) = definitions.get(&space.fill_floor_type) else {
         return DEFAULT_FILL_COLOR;
     };
-    let [r, g, b] = definition.render.debug_color;
+    let [r, g, b] = definition.debug_color;
     [r, g, b, 255]
 }
 

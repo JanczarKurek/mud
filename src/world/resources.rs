@@ -16,16 +16,6 @@ use crate::player::components::PlayerId;
 use crate::world::components::SpaceId;
 use crate::world::map_layout::SpacePermanence;
 
-/// Tracks the WorldConfig that was last used to spawn ground tiles.
-/// Used instead of Bevy change detection to avoid first-run tick ambiguity.
-#[derive(Resource, Default, Clone, Debug, PartialEq)]
-pub struct GroundTileConfig {
-    pub space_id: Option<SpaceId>,
-    pub width: i32,
-    pub height: i32,
-    pub fill_type: String,
-}
-
 #[derive(Resource, Default)]
 pub struct ClientWorldProjectionState {
     pub entities: HashMap<u64, Entity>,
@@ -43,7 +33,7 @@ pub struct RuntimeSpace {
     pub authored_id: String,
     pub width: i32,
     pub height: i32,
-    pub fill_object_type: String,
+    pub fill_floor_type: String,
     pub permanence: SpacePermanence,
     pub instance_owner: Option<PortalInstanceKey>,
 }

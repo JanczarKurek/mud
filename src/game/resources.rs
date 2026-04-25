@@ -5,8 +5,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::game::commands::GameCommand;
 use crate::player::components::{ChatLog, Inventory, InventoryStack, PlayerId};
-use crate::world::components::{SpacePosition, TilePosition};
+use crate::world::components::{SpaceId, SpacePosition, TilePosition};
 use crate::world::direction::Direction;
+use crate::world::floor_definitions::FloorTypeId;
+use crate::world::floor_map::FloorMap;
 
 pub type InventoryState = Inventory;
 pub type ChatLogState = ChatLog;
@@ -123,11 +125,11 @@ pub struct ClientRemotePlayerState {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ClientSpaceState {
-    pub space_id: crate::world::components::SpaceId,
+    pub space_id: SpaceId,
     pub authored_id: String,
     pub width: i32,
     pub height: i32,
-    pub fill_object_type: String,
+    pub fill_floor_type: FloorTypeId,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -183,6 +185,23 @@ pub enum GameEvent {
     RemotePlayerRemoved {
         player_id: PlayerId,
     },
+    /// Full-grid replacement for the floor map at (space, z). Sent on space
+    /// switch / initial sync.
+    FloorMapReplaced {
+        space_id: SpaceId,
+        z: i32,
+        width: i32,
+        height: i32,
+        tiles: Vec<Option<FloorTypeId>>,
+    },
+    /// Single-tile floor change. Sent for editor edits and runtime spell effects.
+    FloorTileSet {
+        space_id: SpaceId,
+        z: i32,
+        x: i32,
+        y: i32,
+        floor_type: Option<FloorTypeId>,
+    },
 }
 
 #[derive(Resource, Default)]
@@ -206,4 +225,6 @@ pub struct ClientGameState {
     pub container_slots: HashMap<u64, Vec<Option<InventoryStack>>>,
     pub world_objects: HashMap<u64, ClientWorldObjectState>,
     pub player_facing: Option<Direction>,
+    /// Mirror of authoritative FloorMaps; populated by FloorMapReplaced events.
+    pub floor_maps: HashMap<(SpaceId, i32), FloorMap>,
 }

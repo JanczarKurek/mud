@@ -263,6 +263,7 @@ pub fn handle_save_button_click(
     editor_context: Res<EditorContext>,
     portal_buffer: Res<crate::editor::resources::EditorPortalBuffer>,
     object_registry: Res<crate::world::object_registry::ObjectRegistry>,
+    floor_maps: Res<crate::world::floor_map::FloorMaps>,
     objects: Query<(
         &crate::world::components::OverworldObject,
         &crate::world::components::SpaceResident,
@@ -276,6 +277,7 @@ pub fn handle_save_button_click(
                 &portal_buffer,
                 &object_registry,
                 &objects,
+                &floor_maps,
             );
             editor_state.dirty = false;
         }

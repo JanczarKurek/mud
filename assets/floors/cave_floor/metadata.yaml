@@ -1,0 +1,5 @@
+id: cave_floor
+name: Cave Floor
+priority: 0
+tile_size_px: 16
+debug_color: [71, 58, 48]

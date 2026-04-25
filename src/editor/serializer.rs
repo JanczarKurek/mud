@@ -13,12 +13,20 @@ struct SpaceOutput {
     authored_id: String,
     width: i32,
     height: i32,
-    fill_object_type: String,
+    fill_floor_type: String,
     permanence: SpacePermanence,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     portals: Vec<PortalOutput>,
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    floors: HashMap<String, FloorPlacementsOutput>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     objects: Vec<ObjectEntryOutput>,
+}
+
+#[derive(Serialize, Default)]
+struct FloorPlacementsOutput {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    placement: Vec<TileCoordinate>,
 }
 
 #[derive(Serialize)]
@@ -65,6 +73,7 @@ pub fn serialize_and_save(
     portal_buffer: &EditorPortalBuffer,
     object_registry: &ObjectRegistry,
     objects: &bevy::prelude::Query<(&OverworldObject, &SpaceResident, &TilePosition)>,
+    floor_maps: &crate::world::floor_map::FloorMaps,
 ) {
     let mut items: Vec<(
         u64,
@@ -143,13 +152,44 @@ pub fn serialize_and_save(
         })
         .collect::<Vec<_>>();
 
+    // Collect floor placements for the active space at z=0, grouped by floor
+    // type. Omit cells whose floor type equals the fill_floor_type since they
+    // round-trip through the fill at load time.
+    let mut floor_groups: HashMap<String, Vec<TileCoordinate>> = HashMap::new();
+    if let Some(map) = floor_maps.get(
+        ctx.space_id,
+        crate::world::components::TilePosition::GROUND_FLOOR,
+    ) {
+        for y in 0..map.height {
+            for x in 0..map.width {
+                let idx = (y * map.width + x) as usize;
+                let Some(floor) = map.tiles.get(idx).and_then(|t| t.as_ref()) else {
+                    continue;
+                };
+                if *floor == ctx.fill_floor_type {
+                    continue;
+                }
+                floor_groups
+                    .entry(floor.clone())
+                    .or_default()
+                    .push(TileCoordinate { x, y, z: 0 });
+            }
+        }
+    }
+    let mut floors_out: HashMap<String, FloorPlacementsOutput> = HashMap::new();
+    for (k, mut tiles) in floor_groups {
+        tiles.sort_by(|a, b| a.y.cmp(&b.y).then(a.x.cmp(&b.x)));
+        floors_out.insert(k, FloorPlacementsOutput { placement: tiles });
+    }
+
     let output = SpaceOutput {
         authored_id: ctx.authored_id.clone(),
         width: ctx.map_width,
         height: ctx.map_height,
-        fill_object_type: ctx.fill_object_type.clone(),
+        fill_floor_type: ctx.fill_floor_type.clone(),
         permanence: SpacePermanence::Persistent,
         portals,
+        floors: floors_out,
         objects: object_entries,
     };
 

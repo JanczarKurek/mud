@@ -32,6 +32,7 @@ use crate::world::components::{
     Container, Facing, Movable, OverworldObject, Quantity, Rotatable, SpaceId, SpacePosition,
     SpaceResident, TilePosition,
 };
+use crate::world::floor_map::FloorMaps;
 use crate::world::resources::SpaceManager;
 
 pub type ProjectionPlayerQuery<'w, 's> = Query<
@@ -96,6 +97,7 @@ pub fn compute_events_for_peer(
     world_object_query: &ProjectionWorldObjectQuery,
     container_query: &ProjectionContainerQuery,
     space_manager: &SpaceManager,
+    floor_maps: &FloorMaps,
 ) -> Vec<GameEvent> {
     let mut events = Vec::new();
 
@@ -211,13 +213,61 @@ pub fn compute_events_for_peer(
     };
     let _ = local_player_object_id;
 
+    // Push the floor map *before* CurrentSpaceChanged so the renderer sees the
+    // grid populated by the time the space switch triggers a rebuild on the
+    // next frame.
+    if let Some(server_floor_map) = floor_maps.get(local_space_id, TilePosition::GROUND_FLOOR) {
+        match previous
+            .floor_maps
+            .get(&(local_space_id, TilePosition::GROUND_FLOOR))
+        {
+            None => {
+                events.push(GameEvent::FloorMapReplaced {
+                    space_id: local_space_id,
+                    z: TilePosition::GROUND_FLOOR,
+                    width: server_floor_map.width,
+                    height: server_floor_map.height,
+                    tiles: server_floor_map.tiles.clone(),
+                });
+            }
+            Some(prev)
+                if prev.width != server_floor_map.width
+                    || prev.height != server_floor_map.height =>
+            {
+                events.push(GameEvent::FloorMapReplaced {
+                    space_id: local_space_id,
+                    z: TilePosition::GROUND_FLOOR,
+                    width: server_floor_map.width,
+                    height: server_floor_map.height,
+                    tiles: server_floor_map.tiles.clone(),
+                });
+            }
+            Some(prev) => {
+                for y in 0..server_floor_map.height {
+                    for x in 0..server_floor_map.width {
+                        let idx = (y * server_floor_map.width + x) as usize;
+                        if prev.tiles[idx] != server_floor_map.tiles[idx] {
+                            events.push(GameEvent::FloorTileSet {
+                                space_id: local_space_id,
+                                z: TilePosition::GROUND_FLOOR,
+                                x,
+                                y,
+                                floor_type: server_floor_map.tiles[idx].clone(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     if let Some(runtime_space) = space_manager.get(local_space_id) {
         let current_space = ClientSpaceState {
             space_id: runtime_space.id,
             authored_id: runtime_space.authored_id.clone(),
             width: runtime_space.width,
             height: runtime_space.height,
-            fill_object_type: runtime_space.fill_object_type.clone(),
+            fill_floor_type: runtime_space.fill_floor_type.clone(),
         };
         if previous.current_space.as_ref() != Some(&current_space) {
             events.push(GameEvent::CurrentSpaceChanged {
@@ -313,6 +363,7 @@ pub fn compute_events_for_peer(
 pub fn collect_game_events_from_authority(
     client_state: Res<ClientGameState>,
     space_manager: Res<SpaceManager>,
+    floor_maps: Res<FloorMaps>,
     player_query: ProjectionPlayerQuery,
     object_query: ProjectionObjectQuery,
     world_object_query: ProjectionWorldObjectQuery,
@@ -345,6 +396,7 @@ pub fn collect_game_events_from_authority(
         &world_object_query,
         &container_query,
         &space_manager,
+        &floor_maps,
     );
 
     pending_game_events.events.extend(events);
@@ -417,6 +469,31 @@ pub fn apply_event_to_state(state: &mut ClientGameState, event: GameEvent) {
         }
         GameEvent::RemotePlayerRemoved { player_id } => {
             state.remote_players.remove(&player_id);
+        }
+        GameEvent::FloorMapReplaced {
+            space_id,
+            z,
+            width,
+            height,
+            tiles,
+        } => {
+            let map = crate::world::floor_map::FloorMap {
+                width,
+                height,
+                tiles,
+            };
+            state.floor_maps.insert((space_id, z), map);
+        }
+        GameEvent::FloorTileSet {
+            space_id,
+            z,
+            x,
+            y,
+            floor_type,
+        } => {
+            if let Some(map) = state.floor_maps.get_mut(&(space_id, z)) {
+                let _ = map.set(x, y, floor_type);
+            }
         }
     }
 }
@@ -513,5 +590,25 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
         GameEvent::RemotePlayerRemoved { player_id } => {
             debug!("client remote player removed: {}", player_id.0)
         }
+        GameEvent::FloorMapReplaced {
+            space_id,
+            z,
+            width,
+            height,
+            ..
+        } => info!(
+            "client floor map replaced: space {} z={} dims {}x{}",
+            space_id.0, z, width, height
+        ),
+        GameEvent::FloorTileSet {
+            space_id,
+            z,
+            x,
+            y,
+            floor_type,
+        } => debug!(
+            "client floor tile set: space {} z={} ({},{}) -> {:?}",
+            space_id.0, z, x, y, floor_type
+        ),
     }
 }

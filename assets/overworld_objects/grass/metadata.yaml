@@ -1,7 +1,0 @@
-extends: ground_tile
-name: Grass
-description: Open grassland that forms the default walkable ground.
-render:
-  debug_color: [47, 76, 43]
-  debug_size: 1
-  sprite_path: overworld_objects/grass/sprite.png
