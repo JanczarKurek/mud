@@ -20,6 +20,9 @@ in
       llvmPackages.bintools
       pkg-config
       rustup
+      python313Packages.ipython
+      python313Packages.pillow
+      python313Packages.numpy
       ripgrep
       pkgs.alsa-lib.dev
       pkgs.systemd.dev
