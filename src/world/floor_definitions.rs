@@ -26,6 +26,13 @@ pub struct FloorTilesetDefinition {
     /// Reserved; ground floor is always walkable.
     #[serde(default = "default_true")]
     pub walkable_surface: bool,
+    /// Per-bitmask variant weights. Key = corner-bitmask in `1..=15`
+    /// (NW=1, NE=2, SW=4, SE=8). Value = list of positive weights, one per
+    /// available variant of that bitmask in the atlas. Variant 0 occupies
+    /// rows 0..=3 of the atlas (the base block); variant `i` occupies rows
+    /// `4*i..=4*i+3`. Bitmasks omitted from the map have a single variant.
+    #[serde(default)]
+    pub variants: HashMap<u8, Vec<u32>>,
 }
 
 const fn default_tile_size_px() -> u32 {
@@ -43,6 +50,23 @@ impl FloorTilesetDefinition {
             self.debug_color[1],
             self.debug_color[2],
         )
+    }
+
+    pub fn variant_weights(&self, mask: u8) -> &[u32] {
+        const SINGLE: &[u32] = &[1];
+        self.variants
+            .get(&mask)
+            .map(|v| v.as_slice())
+            .unwrap_or(SINGLE)
+    }
+
+    pub fn max_variants(&self) -> usize {
+        self.variants
+            .values()
+            .map(|v| v.len())
+            .max()
+            .unwrap_or(1)
+            .max(1)
     }
 }
 
@@ -105,9 +129,33 @@ impl FloorTilesetDefinitions {
                     "Floor tileset '{}' has tile_size_px = 0",
                     def.id
                 );
+                for (mask, weights) in &def.variants {
+                    assert!(
+                        (1..=15).contains(mask),
+                        "Floor tileset '{}': variant key {} out of range 1..=15",
+                        def.id,
+                        mask
+                    );
+                    assert!(
+                        !weights.is_empty(),
+                        "Floor tileset '{}': variant {} has empty weights list",
+                        def.id,
+                        mask
+                    );
+                    assert!(
+                        weights.iter().all(|w| *w > 0),
+                        "Floor tileset '{}': variant {} has a zero weight",
+                        def.id,
+                        mask
+                    );
+                }
                 info!(
-                    "floor tileset '{}': priority={}, atlas={:?}, tile_size_px={}",
-                    def.id, def.priority, def.atlas_path, def.tile_size_px,
+                    "floor tileset '{}': priority={}, atlas={:?}, tile_size_px={}, max_variants={}",
+                    def.id,
+                    def.priority,
+                    def.atlas_path,
+                    def.tile_size_px,
+                    def.max_variants(),
                 );
                 by_id.insert(def.id.clone(), def);
             }

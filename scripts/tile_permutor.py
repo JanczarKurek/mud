@@ -2,25 +2,35 @@ from PIL import Image
 import numpy as np
 
 def permute_pixels(img: Image, block_size: int, perm) -> Image:
+    """Apply `perm` to one or more stacked 4x4 blocks of `block_size`-px tiles.
+
+    Input must be `4*block_size` wide. Height must be a positive multiple of
+    `4*block_size`; each `4*block_size`-tall slice is permuted independently
+    and stitched back together. This lets a multi-variant atlas (variants
+    stacked vertically) round-trip through the same authoring permutation.
+    """
     pixels = np.asarray(img)
     shape = pixels.shape
-    if shape[0] != shape[1]:
-        raise ValueError("I expected square image :(")
-    N = shape[0]
-    if N % block_size != 0:
-        raise ValueError("Size of image must be divisible by block_size")
+    side = 4 * block_size
+    if shape[1] != side:
+        raise ValueError(f"Image width must be {side}, got {shape[1]}")
+    if shape[0] == 0 or shape[0] % side != 0:
+        raise ValueError(f"Image height must be a positive multiple of {side}, got {shape[0]}")
     new_image = np.zeros(shape, dtype=pixels.dtype)
 
-    for s, t in perm.items():
-        s0, s1 = s[0]*block_size, s[1]*block_size
-        t0, t1 = t[0]*block_size, t[1]*block_size
-        new_image[
-                t0:t0+block_size,
-                t1:t1+block_size
-        ] = pixels[
-                s0:s0+block_size,
-                s1:s1+block_size,
-        ]
+    num_blocks = shape[0] // side
+    for b in range(num_blocks):
+        base = b * side
+        for s, t in perm.items():
+            s0, s1 = base + s[0]*block_size, s[1]*block_size
+            t0, t1 = base + t[0]*block_size, t[1]*block_size
+            new_image[
+                    t0:t0+block_size,
+                    t1:t1+block_size
+            ] = pixels[
+                    s0:s0+block_size,
+                    s1:s1+block_size,
+            ]
     return Image.fromarray(new_image)
 
 

@@ -73,6 +73,29 @@ fn sample(grid: &FloorMap, x: i32, y: i32) -> Option<&FloorTypeId> {
     grid.get(x, y)
 }
 
+/// Deterministically picks a variant index for the cell at corner (rx, ry) in
+/// `space_id`, distributed by `weights`. Same inputs always produce the same
+/// output, so a tile keeps its variant across rebuilds and across runtime modes.
+fn pick_variant(space_id: SpaceId, rx: i32, ry: i32, weights: &[u32]) -> usize {
+    if weights.len() <= 1 {
+        return 0;
+    }
+    let mut h = DefaultHasher::new();
+    h.write_u64(space_id.0);
+    h.write_i32(rx);
+    h.write_i32(ry);
+    let total: u64 = weights.iter().map(|w| *w as u64).sum();
+    let mut t = h.finish() % total.max(1);
+    for (i, w) in weights.iter().enumerate() {
+        let w = *w as u64;
+        if t < w {
+            return i;
+        }
+        t -= w;
+    }
+    weights.len() - 1
+}
+
 pub fn build_floor_render_cells(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -169,6 +192,7 @@ fn spawn_render_cells_at_corner(
                 .entry((*floor_id).clone())
                 .or_insert_with(|| asset_server.load(atlas_path))
                 .clone();
+            let max_variants = def.max_variants() as u32;
             let layout_handle = atlases
                 .layouts
                 .entry((*floor_id).clone())
@@ -176,19 +200,21 @@ fn spawn_render_cells_at_corner(
                     let layout = TextureAtlasLayout::from_grid(
                         UVec2::splat(def.tile_size_px),
                         4,
-                        4,
+                        4 * max_variants,
                         None,
                         None,
                     );
                     layouts_assets.add(layout)
                 })
                 .clone();
+            let weights = def.variant_weights(*mask);
+            let variant = pick_variant(space_id, rx, ry, weights);
             Sprite {
                 image: image_handle,
                 custom_size: Some(Vec2::splat(world_config.tile_size)),
                 texture_atlas: Some(TextureAtlas {
                     layout: layout_handle,
-                    index: (*mask as usize) & 0xF,
+                    index: (*mask as usize & 0xF) + variant * 16,
                 }),
                 ..default()
             }
@@ -243,5 +269,55 @@ pub fn sync_floor_render_transforms(
             * world_config.tile_size
             + view_scroll.current.y;
         transform.translation = Vec3::new(dx, dy, z);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pick_variant_single_weight_is_zero() {
+        assert_eq!(pick_variant(SpaceId(7), 3, 4, &[1]), 0);
+        assert_eq!(pick_variant(SpaceId(7), 3, 4, &[42]), 0);
+    }
+
+    #[test]
+    fn pick_variant_is_deterministic() {
+        let weights = [1, 1, 1, 1];
+        let a = pick_variant(SpaceId(1), 17, -23, &weights);
+        let b = pick_variant(SpaceId(1), 17, -23, &weights);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn pick_variant_stays_in_bounds() {
+        let weights = [3, 1, 1];
+        for x in -50..50 {
+            for y in -50..50 {
+                let v = pick_variant(SpaceId(0), x, y, &weights);
+                assert!(v < weights.len(), "variant {} out of bounds", v);
+            }
+        }
+    }
+
+    #[test]
+    fn pick_variant_distribution_skews_with_weights() {
+        let weights = [9, 1];
+        let mut zero = 0usize;
+        let mut total = 0usize;
+        for x in 0..200 {
+            for y in 0..200 {
+                if pick_variant(SpaceId(0), x, y, &weights) == 0 {
+                    zero += 1;
+                }
+                total += 1;
+            }
+        }
+        let ratio = zero as f64 / total as f64;
+        assert!(
+            (0.85..=0.95).contains(&ratio),
+            "expected ~0.9 for weights [9,1], got {ratio}"
+        );
     }
 }
