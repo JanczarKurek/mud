@@ -15,11 +15,9 @@ use crate::world::components::{
 use crate::world::object_definitions::{
     AttackProfileKindDef, EquipmentSlot, OverworldObjectDefinitions,
 };
-use crate::world::object_registry::ObjectRegistry;
 use crate::world::WorldConfig;
 
 pub fn refresh_derived_player_stats(
-    object_registry: Res<ObjectRegistry>,
     definitions: Res<OverworldObjectDefinitions>,
     mut player_query: Query<
         (
@@ -49,13 +47,10 @@ pub fn refresh_derived_player_stats(
         let mut equipped_weapon_def_id: Option<String> = None;
 
         for (slot, equipped_item) in &inventory_state.equipment_slots {
-            let Some(object_id) = equipped_item else {
+            let Some(item) = equipped_item else {
                 continue;
             };
-            let Some(type_id) = object_registry.type_id(*object_id) else {
-                continue;
-            };
-            let Some(definition) = definitions.get(type_id) else {
+            let Some(definition) = definitions.get(&item.type_id) else {
                 continue;
             };
 
@@ -72,7 +67,7 @@ pub fn refresh_derived_player_stats(
             storage_slots += definition.stats.storage_slots;
 
             if *slot == EquipmentSlot::Weapon {
-                equipped_weapon_def_id = Some(type_id.to_owned());
+                equipped_weapon_def_id = Some(item.type_id.clone());
             }
         }
 

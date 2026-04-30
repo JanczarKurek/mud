@@ -127,14 +127,14 @@ pub fn resolve_battle_turn(
                     .unwrap_or_else(DamageExpr::melee_default);
                 let is_player = player_identity.is_some();
                 let player_id = player_identity.map(|identity| identity.id.0);
-                let ammo_object_id = inventory.and_then(|inv| {
+                let ammo_type_id = inventory.and_then(|inv| {
                     inv.equipment_item(crate::world::object_definitions::EquipmentSlot::Ammo)
+                        .map(|item| item.type_id.clone())
                 });
                 let ranged_projectile_sprite = ranged_sprite_id(
                     is_player,
-                    ammo_object_id,
+                    ammo_type_id.as_deref(),
                     &overworld_object.definition_id,
-                    &object_registry,
                     &definitions,
                 );
                 CombatantSnapshot {
@@ -279,15 +279,12 @@ pub fn resolve_battle_turn(
 
 fn ranged_sprite_id(
     is_player: bool,
-    ammo_object_id: Option<u64>,
+    ammo_type_id: Option<&str>,
     attacker_def_id: &str,
-    object_registry: &ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
 ) -> Option<String> {
     if is_player {
-        let ammo_id = ammo_object_id?;
-        let type_id = object_registry.type_id(ammo_id)?;
-        return Some(type_id.to_owned());
+        return ammo_type_id.map(|s| s.to_owned());
     }
     if let Some(def) = definitions.get(attacker_def_id) {
         if let Some(ammo) = &def.ammo_type {

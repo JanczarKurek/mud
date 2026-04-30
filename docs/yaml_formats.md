@@ -31,9 +31,11 @@ Purpose:
 - Describes one authored space definition.
 - Defines the tile dimensions of that space.
 - Defines the default fill object type for every tile.
-- Defines explicit object instances with stable numeric IDs.
-- Allows objects to exist on the map, inside containers, or nowhere.
+- Defines object instances optionally tagged with a stable symbolic id (string) so other objects can reference them.
+- Allows objects to exist on the map, inside containers (either inline-nested or by reference), or nowhere.
 - Defines portal links between spaces.
+
+Numeric runtime ids are assigned automatically by the loader; you never write them in YAML.
 
 Top-level fields:
 
@@ -99,15 +101,16 @@ Portal fields:
 Two object entry forms are currently valid:
 
 ### Explicit object instance
-- Use this when the object needs a stable ID.
-- Required for objects referenced from `contents`.
-- Appropriate for containers and stateful objects.
+- Use this when the object needs custom `properties`, a `behavior`, container `contents`, or a symbolic id that another object refers to.
+- The `id` field is *optional* — only declare it when something elsewhere in the file refers to this instance from a `contents` list.
 
 Fields:
 
 ### `id`
-- Type: integer
-- Meaning: stable numeric object instance ID within the map
+- Type: string
+- Optional: yes
+- Default: omitted (runtime id auto-allocated, instance is anonymous)
+- Meaning: symbolic name for this instance, used by `contents` lists in other objects to refer back to it. Must be unique within the file. Pure strings (`barrel_in_cellar`); never numeric.
 
 ### `type`
 - Type: string
@@ -124,14 +127,16 @@ Fields:
 ### `placement`
 - Type: mapping
 - Optional: yes
-- Meaning: where the object exists in the world, if it is currently placed on the map
+- Meaning: where the object exists in the world, if it is currently placed on the map.
+- Inline children of another object's `contents` list **must not** declare `placement` — their location is "inside the parent" and is inferred automatically.
 
 ### `contents`
-- Type: list of integers
+- Type: list of children — each entry is either a string (reference) or an inline object instance mapping
 - Optional: yes
 - Default: empty list
-- Meaning: IDs of other objects stored inside this object
-- Intended for container objects such as barrels
+- Meaning: items stored inside this object. Intended for container objects such as barrels.
+- A bare string entry (e.g. `- special_potion`) refers to another instance's symbolic `id`.
+- An inline mapping (e.g. `- type: potion`) defines a child object on the spot. Inline children may themselves carry `properties`, nested `contents`, etc., but never `placement`.
 
 ### `behavior`
 - Type: mapping or `null`
@@ -187,23 +192,18 @@ Placement fields:
 
 Example:
 
-Explicit instance example:
+Explicit instance example. Most explicit objects don't need an `id` — the cleanest way to fill a container is to nest the children inline:
 
 ```yaml
-- id: 300
-  type: barrel
+- type: barrel
   placement: { x: 20, y: 13 }
-  contents: [600, 601]
-- id: 600
-  type: apple
-- id: 601
-  type: potion
-- id: 602
-  type: scroll
-  properties:
-    spell_id: lesser_heal
-- id: 900
-  type: villager
+  contents:
+    - type: apple
+    - type: potion
+    - type: scroll
+      properties:
+        spell_id: lesser_heal
+- type: villager
   placement: { x: 8, y: 23 }
   behavior:
     kind: roam
@@ -213,8 +213,7 @@ Explicit instance example:
       min_y: 21
       max_x: 11
       max_y: 25
-- id: 902
-  type: goblin
+- type: goblin
   placement: { x: 18, y: 21 }
   behavior:
     kind: roam_and_chase
@@ -226,6 +225,18 @@ Explicit instance example:
       min_y: 18
       max_x: 21
       max_y: 24
+```
+
+Use a symbolic `id` only when something else (e.g. a different object's `contents`, a future scripting hook) needs to refer back to this instance:
+
+```yaml
+- type: barrel
+  placement: { x: 20, y: 13 }
+  contents: [special_potion]
+- id: special_potion
+  type: potion
+  properties:
+    spell_id: lesser_heal
 ```
 
 Anonymous placement group example:
@@ -298,12 +309,10 @@ portals:
     destination_tile: { x: 6, y: 18 }
 
 objects:
-  - id: 1200
-    type: barrel
+  - type: barrel
     placement: { x: 5, y: 4 }
-    contents: [1201]
-  - id: 1201
-    type: potion
+    contents:
+      - type: potion
 ```
 
 Notes:
@@ -316,11 +325,11 @@ Notes:
   - inside exactly one container via another object's `contents`
   - or nowhere
 - Objects with no `placement` and no parent container are valid and simply start unspawned.
-- Anonymous placement groups cannot be referenced by `contents` because they do not declare stable map IDs.
+- Anonymous placement groups cannot be referenced by `contents` because they have no symbolic `id`.
 - Anonymous placement groups are expanded into generated object instances during map loading.
 - Container contents are ordered by the list order in `contents`.
 - Behaviors are authored per explicit object instance, not in object metadata.
-- The map loader validates duplicate IDs, missing content references, self-containment, and multi-location conflicts.
+- The map loader validates duplicate symbolic ids, missing content references, self-containment, and multi-location conflicts. Numeric runtime ids are auto-allocated and never appear in YAML.
 - Rendering order is controlled by object metadata `render.z_index`, not by object order in the map file.
 
 ## 2. Overworld Object Metadata YAML
@@ -902,8 +911,8 @@ The `corpse` base type (in `assets/object_bases/corpse.yaml`) extends `static_wo
 Map instance using the generic scroll:
 
 ```yaml
-- id: 604
-  type: scroll
+- type: scroll
+  placement: { x: 30, y: 12 }
   properties:
     spell_id: spark_bolt
 ```

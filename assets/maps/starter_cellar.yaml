@@ -27,8 +27,7 @@ portals:
     destination_permanence: persistent
 
 objects:
-  - id: 12343
-    type: rat
+  - type: rat
     placement: { x: 2, y: 2 }
     behavior:
       kind: roam_and_chase
@@ -36,8 +35,7 @@ objects:
       disengage_distance_tiles: 6
       step_interval_seconds: 0.5
       bounds: { min_x: 0, min_y: 0, max_x: 10, max_y: 10 }
-  - id: 12344
-    type: rat
+  - type: rat
     placement: { x: 3, y: 3 }
     behavior:
       kind: roam_and_chase
@@ -45,8 +43,7 @@ objects:
       disengage_distance_tiles: 6
       step_interval_seconds: 0.55
       bounds: { min_x: 0, min_y: 0, max_x: 10, max_y: 10 }
-  - id: 12345
-    type: rat
+  - type: rat
     placement: { x: 4, y: 4 }
     behavior:
       kind: roam_and_chase

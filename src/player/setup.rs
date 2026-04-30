@@ -3,13 +3,14 @@ use bevy::prelude::*;
 use crate::combat::components::{AttackProfile, CombatLeash};
 use crate::persistence::{PlayerStateDump, WorldSnapshotStatus};
 use crate::player::components::{
-    BaseStats, ChatLog, DerivedStats, Inventory, InventoryStack, MovementCooldown, Player,
-    PlayerId, PlayerIdentity, VitalStats, WeaponDamage,
+    BaseStats, ChatLog, DerivedStats, EquippedItem, Inventory, InventoryStack, MovementCooldown,
+    Player, PlayerId, PlayerIdentity, VitalStats, WeaponDamage,
 };
 use crate::world::components::{
     Collider, DisplayedVitalStats, Facing, HealthBarDisplayPolicy, OverworldObject, SpaceId,
     SpaceResident, TilePosition, ViewPosition,
 };
+use crate::world::map_layout::ObjectProperties;
 use crate::world::object_definitions::{EquipmentSlot, OverworldObjectDefinitions};
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::setup::attach_combat_health_bar;
@@ -17,21 +18,19 @@ use crate::world::WorldConfig;
 
 /// Populate a fresh player's inventory with a starter shortbow + arrows so the
 /// ranged-combat showcase is immediately playable.
-pub fn seed_starter_inventory(inventory: &mut Inventory, object_registry: &mut ObjectRegistry) {
-    let bow_id = object_registry.allocate_runtime_id("bow");
-    inventory.restore_equipment_item(EquipmentSlot::Weapon, bow_id);
-    let arrow_id = object_registry.allocate_runtime_id("arrow");
-    inventory.set_ammo(arrow_id, 20);
+pub fn seed_starter_inventory(inventory: &mut Inventory) {
+    inventory.restore_equipment_item(EquipmentSlot::Weapon, EquippedItem::new("bow"));
+    inventory.set_ammo(EquippedItem::new("arrow"), 20);
     // Seed a handful of apples so the `demo_villager` fetch quest (turn-in
     // condition: 3 apples) is demoable without chasing items across the map.
-    let apple_id = object_registry.allocate_runtime_id("apple");
     if let Some(slot) = inventory
         .backpack_slots
         .iter_mut()
         .find(|slot| slot.is_none())
     {
         *slot = Some(InventoryStack {
-            object_id: apple_id,
+            type_id: "apple".to_owned(),
+            properties: ObjectProperties::new(),
             quantity: 3,
         });
     }
@@ -87,7 +86,7 @@ pub fn spawn_embedded_player_authoritative(
         spawn_tile,
     );
     let mut starter = Inventory::default();
-    seed_starter_inventory(&mut starter, &mut object_registry);
+    seed_starter_inventory(&mut starter);
     commands.entity(entity).insert(starter);
 }
 
@@ -108,22 +107,20 @@ pub fn spawn_player_authoritative(
 }
 
 /// Spawn a player entity from a previously-persisted `PlayerStateDump` (restored
-/// from an account DB row or a world snapshot). Reserves `dump.object_id` in
-/// the `ObjectRegistry` so future allocations don't collide. Returns the entity
-/// and the combat-target object id (if any) so the caller can resolve it once
-/// all other entities have been spawned.
+/// from an account DB row or a world snapshot). Allocates a fresh runtime
+/// `object_id` — runtime ids are opaque and not preserved across loads.
 pub fn spawn_player_from_dump(
     commands: &mut Commands,
     object_registry: &mut ObjectRegistry,
     dump: PlayerStateDump,
     fallback_space_id: SpaceId,
-) -> (Entity, Option<u64>) {
+) -> Entity {
     let space_id = dump.space_id.unwrap_or(fallback_space_id);
     let mut inventory = dump.inventory;
     inventory.ensure_slots();
-    object_registry.register_existing(dump.object_id, "player");
+    let object_id = object_registry.allocate_runtime_id("player");
 
-    let entity = commands
+    commands
         .spawn((
             Player,
             PlayerIdentity { id: dump.player_id },
@@ -137,7 +134,7 @@ pub fn spawn_player_from_dump(
             dump.combat_leash,
             Collider,
             OverworldObject {
-                object_id: dump.object_id,
+                object_id,
                 definition_id: "player".to_owned(),
             },
             SpaceResident { space_id },
@@ -150,9 +147,7 @@ pub fn spawn_player_from_dump(
                 Facing(dump.facing),
             ),
         ))
-        .id();
-
-    (entity, dump.combat_target_object_id)
+        .id()
 }
 
 pub fn spawn_player_authoritative_in_space(

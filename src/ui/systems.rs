@@ -464,19 +464,15 @@ pub fn handle_context_menu_actions(
     if is_cursor_over_button(cursor_position, &menu_queries.p1()) {
         if let Some(target) = context_menu_state.target {
             let inspect_target = match target {
-                ContextMenuTarget::Slot(kind, _) => {
-                    item_slot_kind_to_ref(kind, &docked_panel_state).map_or(
-                        InspectTarget::Object(context_target_object_id(target)),
-                        InspectTarget::SlotItem,
-                    )
-                }
-                ContextMenuTarget::World(_) => {
-                    InspectTarget::Object(context_target_object_id(target))
-                }
+                ContextMenuTarget::Slot(kind) => item_slot_kind_to_ref(kind, &docked_panel_state)
+                    .map(InspectTarget::SlotItem),
+                ContextMenuTarget::World(object_id) => Some(InspectTarget::Object(object_id)),
             };
-            pending_commands.push(GameCommand::Inspect {
-                target: inspect_target,
-            });
+            if let Some(inspect_target) = inspect_target {
+                pending_commands.push(GameCommand::Inspect {
+                    target: inspect_target,
+                });
+            }
         }
         context_menu_state.hide();
         return;
@@ -484,10 +480,24 @@ pub fn handle_context_menu_actions(
 
     if is_cursor_over_button(cursor_position, &menu_queries.p3()) {
         if let Some(target) = context_menu_state.target {
-            let object_id = context_target_object_id(target);
-            if let Some(spell_id) =
-                object_registry.resolved_spell_id(object_id, &definitions, &spell_definitions)
-            {
+            let spell_lookup = match target {
+                ContextMenuTarget::World(object_id) => {
+                    object_registry.resolved_spell_id(object_id, &definitions, &spell_definitions)
+                }
+                ContextMenuTarget::Slot(slot_kind) => {
+                    stack_in_slot_kind(&client_state, &docked_panel_state, slot_kind).and_then(
+                        |stack| {
+                            ObjectRegistry::resolved_spell_id_for_type(
+                                &stack.type_id,
+                                Some(&stack.properties),
+                                &definitions,
+                                &spell_definitions,
+                            )
+                        },
+                    )
+                }
+            };
+            if let Some(spell_id) = spell_lookup {
                 if let Some(spell) = spell_definitions.get(&spell_id) {
                     if spell.targeting == SpellTargeting::Targeted {
                         spell_targeting_state.source = Some(target);
@@ -509,8 +519,21 @@ pub fn handle_context_menu_actions(
 
     if is_cursor_over_button(cursor_position, &menu_queries.p4()) {
         if let Some(target) = context_menu_state.target {
-            let object_id = context_target_object_id(target);
-            if object_is_usable(object_id, &object_registry, &definitions) {
+            let usable = match target {
+                ContextMenuTarget::World(object_id) => {
+                    object_is_usable(object_id, &object_registry, &definitions)
+                }
+                ContextMenuTarget::Slot(slot_kind) => {
+                    stack_in_slot_kind(&client_state, &docked_panel_state, slot_kind)
+                        .map(|stack| {
+                            definitions
+                                .get(&stack.type_id)
+                                .is_some_and(|d| d.is_usable())
+                        })
+                        .unwrap_or(false)
+                }
+            };
+            if usable {
                 use_on_state.source = Some(target);
                 cursor_state.mode = CursorMode::UseOn;
             }
@@ -529,7 +552,7 @@ pub fn handle_context_menu_actions(
 
     if is_cursor_over_button(cursor_position, &menu_queries.p5()) {
         match context_menu_state.target {
-            Some(ContextMenuTarget::Slot(slot_kind, _)) => {
+            Some(ContextMenuTarget::Slot(slot_kind)) => {
                 if let Some(slot_ref) = item_slot_kind_to_ref(slot_kind, &docked_panel_state) {
                     if let Some(stack) =
                         stack_in_slot_kind(&client_state, &docked_panel_state, slot_kind)
@@ -843,37 +866,31 @@ pub fn handle_context_menu_opening(
             .count()
     );
     if let Some(slot_kind) = hovered_slot {
-        let slot_object_id = object_id_in_slot_kind(&client_state, &docked_panel_state, slot_kind);
-        info!(
-            "context_open_slot slot={slot_kind:?} resolved_object_id={slot_object_id:?} open_containers={}",
-            docked_panel_state
-                .panels
-                .iter()
-                .filter(|panel| matches!(panel.kind, DockedPanelKind::Container { .. }))
-                .count()
-        );
-        if let Some(object_id) = slot_object_id {
-            let can_use = object_is_usable(object_id, &object_registry, &definitions);
-            let stack_qty = stack_in_slot_kind(&client_state, &docked_panel_state, slot_kind)
-                .map(|s| s.quantity)
-                .unwrap_or(1);
+        if let Some(stack) = stack_in_slot_kind(&client_state, &docked_panel_state, slot_kind) {
+            let definition = definitions.get(&stack.type_id);
+            let can_use = definition.is_some_and(|d| d.is_usable());
+            let has_use_on = ObjectRegistry::resolved_spell_id_for_type(
+                &stack.type_id,
+                Some(&stack.properties),
+                &definitions,
+                &spell_definitions,
+            )
+            .is_some()
+                || can_use;
+            let stack_qty = stack.quantity;
             context_menu_state.show(
                 cursor_position,
-                ContextMenuTarget::Slot(slot_kind, object_id),
+                ContextMenuTarget::Slot(slot_kind),
                 false,
                 can_use,
-                can_use_on(
-                    object_id,
-                    &object_registry,
-                    &definitions,
-                    &spell_definitions,
-                ),
+                has_use_on,
                 false,
                 stack_qty > 1,
                 false,
             );
             info!(
-                "context_open_slot_success slot={slot_kind:?} object_id={object_id} can_use={can_use}"
+                "context_open_slot_success slot={slot_kind:?} type_id={} can_use={can_use}",
+                stack.type_id
             );
             return;
         }
@@ -1080,7 +1097,6 @@ pub fn sync_item_slot_button_visibility(
 pub fn sync_container_slot_images(
     client_state: Res<ClientGameState>,
     docked_panel_state: Res<DockedPanelState>,
-    object_registry: Res<ObjectRegistry>,
     asset_server: Res<AssetServer>,
     definitions: Res<OverworldObjectDefinitions>,
     mut image_query: Query<
@@ -1098,7 +1114,7 @@ pub fn sync_container_slot_images(
                 .inventory
                 .backpack_slots
                 .get(index)
-                .copied()
+                .cloned()
                 .flatten(),
             ItemSlotKind::OpenContainer {
                 panel_id,
@@ -1106,7 +1122,7 @@ pub fn sync_container_slot_images(
             } => docked_panel_state
                 .container_object_id_for_panel(panel_id)
                 .and_then(|object_id| client_state.container_slots.get(&object_id))
-                .and_then(|slots| slots.get(slot_index).copied().flatten()),
+                .and_then(|slots| slots.get(slot_index).cloned().flatten()),
             ItemSlotKind::Equipment(_) => None,
         };
         let Some(stack) = stack else {
@@ -1114,12 +1130,7 @@ pub fn sync_container_slot_images(
             continue;
         };
 
-        let Some(type_id) = object_registry.type_id(stack.object_id) else {
-            *visibility = Visibility::Hidden;
-            continue;
-        };
-
-        let Some(definition) = definitions.get(type_id) else {
+        let Some(definition) = definitions.get(&stack.type_id) else {
             *visibility = Visibility::Hidden;
             continue;
         };
@@ -1142,7 +1153,7 @@ pub fn sync_container_slot_images(
                 .inventory
                 .backpack_slots
                 .get(index)
-                .copied()
+                .cloned()
                 .flatten(),
             ItemSlotKind::OpenContainer {
                 panel_id,
@@ -1150,7 +1161,7 @@ pub fn sync_container_slot_images(
             } => docked_panel_state
                 .container_object_id_for_panel(panel_id)
                 .and_then(|object_id| client_state.container_slots.get(&object_id))
-                .and_then(|slots| slots.get(slot_index).copied().flatten()),
+                .and_then(|slots| slots.get(slot_index).cloned().flatten()),
             ItemSlotKind::Equipment(slot) => {
                 if slot == crate::world::object_definitions::EquipmentSlot::Ammo {
                     client_state.inventory.ammo_stack()
@@ -1174,7 +1185,6 @@ pub fn sync_container_slot_images(
 
 pub fn sync_equipment_slot_images(
     client_state: Res<ClientGameState>,
-    object_registry: Res<ObjectRegistry>,
     asset_server: Res<AssetServer>,
     definitions: Res<OverworldObjectDefinitions>,
     mut image_query: Query<
@@ -1183,21 +1193,16 @@ pub fn sync_equipment_slot_images(
     >,
 ) {
     for (slot, mut image_node, mut visibility) in &mut image_query {
-        let object_id = match slot.kind {
-            ItemSlotKind::Equipment(slot) => client_state.inventory.equipment_item(slot),
+        let item = match slot.kind {
+            ItemSlotKind::Equipment(slot) => client_state.inventory.equipment_item(slot).cloned(),
             ItemSlotKind::Backpack(_) | ItemSlotKind::OpenContainer { .. } => None,
         };
-        let Some(object_id) = object_id else {
+        let Some(item) = item else {
             *visibility = Visibility::Hidden;
             continue;
         };
 
-        let Some(type_id) = object_registry.type_id(object_id) else {
-            *visibility = Visibility::Hidden;
-            continue;
-        };
-
-        let Some(definition) = definitions.get(type_id) else {
+        let Some(definition) = definitions.get(&item.type_id) else {
             *visibility = Visibility::Hidden;
             continue;
         };
@@ -1328,7 +1333,7 @@ fn find_best_take_destination(
             .inventory
             .backpack_slots
             .get(i)
-            .and_then(|s| *s)
+            .and_then(|s| s.as_ref())
             .is_none()
         {
             return Some(ItemDestination::Slot(ItemSlotRef::Backpack(i)));
@@ -1392,11 +1397,9 @@ pub fn handle_movable_dragging(
 
     if mouse_input.just_pressed(MouseButton::Left) && drag_state.source.is_none() {
         if let Some(slot_kind) = hovered_slot {
-            if let Some(object_id) =
-                object_id_in_slot_kind(&client_state, &docked_panel_state, slot_kind)
-            {
+            if stack_in_slot_kind(&client_state, &docked_panel_state, slot_kind).is_some() {
                 info!(
-                    "drag_start ui_slot={slot_kind:?} object_id={object_id} open_containers={}",
+                    "drag_start ui_slot={slot_kind:?} open_containers={}",
                     docked_panel_state
                         .panels
                         .iter()
@@ -1408,7 +1411,7 @@ pub fn handle_movable_dragging(
                     equipment_state_summary(&client_state.inventory)
                 );
                 drag_state.source = Some(DragSource::UiSlot(slot_kind));
-                drag_state.object_id = Some(object_id);
+                drag_state.object_id = None;
                 drag_state.world_origin = None;
                 return;
             }
@@ -1442,16 +1445,13 @@ pub fn handle_movable_dragging(
 
     let target_tile = cursor_to_tile(window, cursor_position, &player_position, &world_config);
     let drag_source = drag_state.source.take();
-    let Some(object_id) = drag_state.object_id.take() else {
-        drag_state.world_origin = None;
-        return;
-    };
+    let dragged_object_id = drag_state.object_id.take();
     let world_origin = drag_state.world_origin.take();
 
     info!(
-        "drag_release source={:?} object_id={} hovered_slot={hovered_slot:?} target_tile=({}, {})",
+        "drag_release source={:?} object_id={:?} hovered_slot={hovered_slot:?} target_tile=({}, {})",
         drag_source.as_ref().map(drag_source_name),
-        object_id,
+        dragged_object_id,
         target_tile.x,
         target_tile.y
     );
@@ -1461,6 +1461,9 @@ pub fn handle_movable_dragging(
 
     match drag_source {
         Some(DragSource::World) => {
+            let Some(object_id) = dragged_object_id else {
+                return;
+            };
             if let Some(slot_kind) = hovered_slot {
                 if let Some(destination) = item_slot_kind_to_ref(slot_kind, &docked_panel_state) {
                     pending_commands.push(GameCommand::MoveItem {
@@ -1507,6 +1510,8 @@ pub fn handle_movable_dragging(
 
 pub fn sync_drag_preview(
     drag_state: Res<DragState>,
+    client_state: Res<ClientGameState>,
+    docked_panel_state: Res<DockedPanelState>,
     object_registry: Res<ObjectRegistry>,
     definitions: Res<OverworldObjectDefinitions>,
     spell_definitions: Res<SpellDefinitions>,
@@ -1521,7 +1526,27 @@ pub fn sync_drag_preview(
         return;
     };
 
-    let Some(object_id) = drag_state.object_id else {
+    let preview_label: Option<String> = match &drag_state.source {
+        Some(DragSource::World) => drag_state.object_id.map(|object_id| {
+            object_registry
+                .display_name(object_id, &definitions, &spell_definitions)
+                .unwrap_or_else(|| object_id.to_string())
+        }),
+        Some(DragSource::UiSlot(slot_kind)) => {
+            stack_in_slot_kind(&client_state, &docked_panel_state, *slot_kind).map(|stack| {
+                ObjectRegistry::display_name_for_type(
+                    &stack.type_id,
+                    Some(&stack.properties),
+                    &definitions,
+                    &spell_definitions,
+                )
+                .unwrap_or_else(|| stack.type_id.clone())
+            })
+        }
+        None => None,
+    };
+
+    let Some(label_text) = preview_label else {
         *visibility = Visibility::Hidden;
         label.0.clear();
         return;
@@ -1539,13 +1564,7 @@ pub fn sync_drag_preview(
     *visibility = Visibility::Visible;
     preview_node.left = px(cursor_position.x + 14.0);
     preview_node.top = px(cursor_position.y + 14.0);
-
-    if let Some(name) = object_registry.display_name(object_id, &definitions, &spell_definitions) {
-        label.0 = name;
-        return;
-    }
-
-    label.0 = object_id.to_string();
+    label.0 = label_text;
 }
 
 pub fn handle_docked_panel_scrolling(
@@ -1964,7 +1983,7 @@ fn stack_in_slot_kind(
             .inventory
             .backpack_slots
             .get(slot_index)
-            .copied()
+            .cloned()
             .flatten(),
         ItemSlotKind::OpenContainer {
             panel_id,
@@ -1972,25 +1991,20 @@ fn stack_in_slot_kind(
         } => docked_panel_state
             .container_object_id_for_panel(panel_id)
             .and_then(|object_id| client_state.container_slots.get(&object_id))
-            .and_then(|slots| slots.get(slot_index).copied().flatten()),
-        ItemSlotKind::Equipment(slot) => {
-            client_state
-                .inventory
-                .equipment_item(slot)
-                .map(|id| InventoryStack {
-                    object_id: id,
-                    quantity: 1,
-                })
-        }
+            .and_then(|slots| slots.get(slot_index).cloned().flatten()),
+        ItemSlotKind::Equipment(slot) => client_state.inventory.equipment_item(slot).map(|item| {
+            let quantity = if slot == crate::world::object_definitions::EquipmentSlot::Ammo {
+                client_state.inventory.ammo_quantity.max(1)
+            } else {
+                1
+            };
+            InventoryStack {
+                type_id: item.type_id.clone(),
+                properties: item.properties.clone(),
+                quantity,
+            }
+        }),
     }
-}
-
-fn object_id_in_slot_kind(
-    client_state: &ClientGameState,
-    docked_panel_state: &DockedPanelState,
-    slot_kind: ItemSlotKind,
-) -> Option<u64> {
-    stack_in_slot_kind(client_state, docked_panel_state, slot_kind).map(|s| s.object_id)
 }
 
 fn drag_source_name(source: &DragSource) -> &'static str {
@@ -2004,7 +2018,13 @@ fn equipment_state_summary(inventory_state: &InventoryState) -> String {
     inventory_state
         .equipment_slots
         .iter()
-        .map(|(slot, object_id)| format!("{slot:?}={object_id:?}"))
+        .map(|(slot, item)| {
+            let item_label = item
+                .as_ref()
+                .map(|i| i.type_id.as_str())
+                .unwrap_or("none");
+            format!("{slot:?}={item_label}")
+        })
         .collect::<Vec<_>>()
         .join(",")
 }
@@ -2073,19 +2093,13 @@ fn can_use_on(
             .is_none()
 }
 
-fn context_target_object_id(target: ContextMenuTarget) -> u64 {
-    match target {
-        ContextMenuTarget::World(object_id) | ContextMenuTarget::Slot(_, object_id) => object_id,
-    }
-}
-
 fn context_target_to_item_reference(
     target: ContextMenuTarget,
     docked_panel_state: &DockedPanelState,
 ) -> Option<ItemReference> {
     match target {
         ContextMenuTarget::World(object_id) => Some(ItemReference::WorldObject(object_id)),
-        ContextMenuTarget::Slot(slot_kind, _) => {
+        ContextMenuTarget::Slot(slot_kind) => {
             item_slot_kind_to_ref(slot_kind, docked_panel_state).map(ItemReference::Slot)
         }
     }

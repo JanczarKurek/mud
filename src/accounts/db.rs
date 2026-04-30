@@ -338,7 +338,6 @@ mod tests {
 
         let dump = PlayerStateDump {
             player_id: PlayerId(id as u64),
-            object_id: 1234,
             space_id: Some(SpaceId(1)),
             tile_position: TilePosition::ground(5, 7),
             inventory: Inventory::default(),
@@ -351,7 +350,6 @@ mod tests {
             combat_leash: CombatLeash {
                 max_distance_tiles: 6,
             },
-            combat_target_object_id: None,
             yarn_vars: Default::default(),
             facing: Default::default(),
         };
@@ -359,7 +357,6 @@ mod tests {
 
         let loaded = db.load_character(id).unwrap().unwrap();
         assert_eq!(loaded.player_id, PlayerId(id as u64));
-        assert_eq!(loaded.object_id, 1234);
         assert_eq!(loaded.tile_position, TilePosition::ground(5, 7));
     }
 

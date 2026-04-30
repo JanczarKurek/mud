@@ -472,7 +472,7 @@ fn handle_auth_attempt(
     let entity = if let Some(dump) = existing {
         let dump_player_id = dump.player_id.0;
         let yarn_vars = dump.yarn_vars.clone();
-        let (entity, _combat_target) = spawn_player_from_dump(
+        let entity = spawn_player_from_dump(
             commands,
             object_registry,
             dump,
@@ -506,7 +506,7 @@ fn handle_auth_attempt(
             spawn_tile,
         );
         let mut starter = Inventory::default();
-        seed_starter_inventory(&mut starter, object_registry);
+        seed_starter_inventory(&mut starter);
         commands.entity(entity).insert(starter);
         entity
     };

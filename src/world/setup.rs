@@ -16,7 +16,7 @@ use crate::world::components::{
 use crate::world::direction::Direction;
 use crate::world::floor_map::FloorMaps;
 use crate::world::map_layout::{
-    MapBehavior, MapObjectInstance, PortalDefinition, SpaceDefinition, SpaceDefinitions,
+    MapBehavior, PortalDefinition, ResolvedObject, SpaceDefinition, SpaceDefinitions,
     SpacePermanence,
 };
 use crate::world::object_definitions::{
@@ -107,6 +107,7 @@ pub fn instantiate_space(
         spawn_overworld_object_instance(
             commands,
             definitions,
+            definition,
             object,
             space_id,
             placement.to_tile_position(),
@@ -156,7 +157,8 @@ pub fn resolve_portal_destination_space(
 pub fn spawn_overworld_object_instance(
     commands: &mut Commands,
     definitions: &OverworldObjectDefinitions,
-    object: &MapObjectInstance,
+    space: &SpaceDefinition,
+    object: &ResolvedObject,
     space_id: SpaceId,
     tile_position: TilePosition,
 ) {
@@ -168,8 +170,9 @@ pub fn spawn_overworld_object_instance(
                 .contents
                 .iter()
                 .map(|&id| {
-                    Some(InventoryStack {
-                        object_id: id,
+                    space.find_resolved(id).map(|child| InventoryStack {
+                        type_id: child.type_id.clone(),
+                        properties: child.properties.clone(),
                         quantity: 1,
                     })
                 })

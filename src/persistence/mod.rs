@@ -26,7 +26,8 @@ use crate::world::floor_definitions::FloorTypeId;
 use crate::world::floor_map::{FloorMap, FloorMaps};
 use crate::world::loot::CorpseTtl;
 use crate::world::map_layout::{SpaceDefinitions, SpacePermanence};
-use crate::world::object_registry::{ObjectRegistry, ObjectRegistrySnapshotEntry};
+use crate::world::map_layout::ObjectProperties;
+use crate::world::object_registry::ObjectRegistry;
 use crate::world::resources::{RuntimeSpace, SpaceManager};
 use crate::world::setup::initialize_runtime_spaces;
 use crate::world::WorldConfig;
@@ -70,6 +71,11 @@ impl Plugin for PersistenceServerPlugin {
     }
 }
 
+/// On-disk world snapshot. The persisted `object_id`s on each
+/// `WorldObjectStateDump` are *save-local* — they're used only to resolve
+/// cross-references within the file (e.g. `combat_target_object_id`). On load,
+/// every world object is given a fresh runtime id; persisted ids never leak
+/// into the runtime registry.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorldStateDump {
     pub format_version: u32,
@@ -79,7 +85,6 @@ pub struct WorldStateDump {
     pub map_layout: Option<MapLayoutDump>,
     #[serde(default)]
     pub spaces: Vec<RuntimeSpaceDump>,
-    pub object_registry: ObjectRegistryDump,
     pub network: NetworkStateDump,
     pub world_objects: Vec<WorldObjectStateDump>,
     #[serde(default)]
@@ -114,12 +119,6 @@ pub struct FloorMapDump {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct ObjectRegistryDump {
-    pub next_runtime_id: u64,
-    pub entries: Vec<ObjectRegistrySnapshotEntry>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct NetworkStateDump {
     pub next_connection_id: u64,
 }
@@ -141,10 +140,13 @@ pub struct PortalInstanceKeyDump {
     pub portal_id: String,
 }
 
+/// Persisted player state. Runtime `object_id`s are deliberately *not* stored:
+/// they're allocated fresh on every load. Cross-references that used to live
+/// in this dump (e.g. a remembered combat target) would be invalid after the
+/// id remap, so they aren't persisted either.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PlayerStateDump {
     pub player_id: PlayerId,
-    pub object_id: u64,
     #[serde(default)]
     pub space_id: Option<crate::world::components::SpaceId>,
     pub tile_position: TilePosition,
@@ -156,7 +158,6 @@ pub struct PlayerStateDump {
     pub movement_cooldown: MovementCooldown,
     pub attack_profile: AttackProfile,
     pub combat_leash: CombatLeash,
-    pub combat_target_object_id: Option<u64>,
     /// Per-character Yarn variable store, serialized as a flat key→value map.
     /// Populated by the save path by snapshotting `CharacterVarStores`; restored
     /// at login before any `DialogueRunner` is built. `#[serde(default)]` so
@@ -176,7 +177,6 @@ pub struct PlayerStateDump {
 #[allow(clippy::too_many_arguments)]
 pub fn build_player_state_dump(
     identity: &PlayerIdentity,
-    object: &OverworldObject,
     space_resident: &SpaceResident,
     tile_position: &TilePosition,
     inventory: &Inventory,
@@ -187,12 +187,10 @@ pub fn build_player_state_dump(
     movement_cooldown: &MovementCooldown,
     attack_profile: &AttackProfile,
     combat_leash: &CombatLeash,
-    combat_target_object_id: Option<u64>,
     facing: crate::world::direction::Direction,
 ) -> PlayerStateDump {
     PlayerStateDump {
         player_id: identity.id,
-        object_id: object.object_id,
         space_id: Some(space_resident.space_id),
         tile_position: *tile_position,
         inventory: inventory.clone(),
@@ -203,7 +201,6 @@ pub fn build_player_state_dump(
         movement_cooldown: movement_cooldown.clone(),
         attack_profile: *attack_profile,
         combat_leash: *combat_leash,
-        combat_target_object_id,
         yarn_vars: std::collections::HashMap::new(),
         facing,
     }
@@ -211,8 +208,13 @@ pub fn build_player_state_dump(
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorldObjectStateDump {
+    /// Save-local identifier. Used only to resolve cross-references *within*
+    /// this snapshot (e.g. `combat_target_object_id`). Discarded on load —
+    /// each entity is allocated a fresh runtime id.
     pub object_id: u64,
     pub definition_id: String,
+    #[serde(default)]
+    pub properties: ObjectProperties,
     #[serde(default)]
     pub space_id: Option<crate::world::components::SpaceId>,
     pub tile_position: Option<TilePosition>,
@@ -356,6 +358,10 @@ fn save_world_on_app_exit(
             )| WorldObjectStateDump {
                 object_id: object.object_id,
                 definition_id: object.definition_id.clone(),
+                properties: object_registry
+                    .properties(object.object_id)
+                    .cloned()
+                    .unwrap_or_default(),
                 space_id: Some(space_resident.space_id),
                 tile_position: tile_position.copied(),
                 collider,
@@ -399,7 +405,7 @@ fn save_world_on_app_exit(
     world_objects.sort_by_key(|object| object.object_id);
 
     let dump = WorldStateDump {
-        format_version: 7,
+        format_version: 9,
         spaces,
         saved_at_unix_seconds: SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -417,10 +423,6 @@ fn save_world_on_app_exit(
             height: world_config.map_height,
             fill_floor_type: world_config.fill_floor_type.clone(),
         }),
-        object_registry: ObjectRegistryDump {
-            next_runtime_id: object_registry.next_runtime_id(),
-            entries: object_registry.snapshot_entries(),
-        },
         network: NetworkStateDump {
             next_connection_id: tcp_server_state
                 .as_ref()
@@ -472,19 +474,19 @@ fn load_world_from_snapshot(
         }
     };
 
-    if dump.format_version < 7 {
+    if dump.format_version < 9 {
         warn!(
-            "world snapshot at {} is format_version {} (<7); rebuilding floor maps from authored space definitions",
+            "world snapshot at {} is format_version {} (<9); runtime ids are no longer persisted as of v9 — discarding stale snapshot and starting fresh world",
             save_config.path.display(),
             dump.format_version
         );
+        return;
     }
 
     let WorldStateDump {
         world_config: dump_world_config,
         map_layout: dump_map_layout,
         spaces: dump_spaces,
-        object_registry: dump_registry,
         network: dump_network,
         world_objects,
         floor_maps: dump_floor_maps,
@@ -587,12 +589,18 @@ fn load_world_from_snapshot(
         .as_ref()
         .map(|space| space.fill_floor_type.clone())
         .unwrap_or(legacy_fill_floor_type);
-    *object_registry =
-        ObjectRegistry::from_snapshot(dump_registry.entries, dump_registry.next_runtime_id);
+    // Reset the registry: from_space_definitions filled it with authored ids
+    // that are about to be overwritten by snapshot entities anyway. We also
+    // intentionally drop any persisted registry contents — runtime ids are
+    // opaque and reallocated on every load.
+    *object_registry = ObjectRegistry::default();
     if let Some(server_state) = tcp_server_state.as_mut() {
         server_state.next_connection_id = dump_network.next_connection_id;
     }
 
+    // Maps save-local id (as written in the snapshot) → spawned entity. Used
+    // to resolve persisted cross-references (e.g. NPC combat targets) onto the
+    // freshly allocated runtime entities.
     let mut object_entities = std::collections::HashMap::new();
     let mut pending_combat_targets = Vec::new();
 
@@ -610,9 +618,14 @@ fn load_world_from_snapshot(
                 .and_then(|def| def.render.default_facing)
                 .unwrap_or_default()
         });
+        let runtime_id = object_registry.allocate_runtime_id_with_properties(
+            object.definition_id.clone(),
+            object.properties.clone(),
+        );
+        let save_local_id = object.object_id;
         let mut entity = commands.spawn((
             OverworldObject {
-                object_id: object.object_id,
+                object_id: runtime_id,
                 definition_id: object.definition_id,
             },
             SpaceResident { space_id },
@@ -696,19 +709,19 @@ fn load_world_from_snapshot(
                 entity.insert(roaming_random_state);
             }
             if let Some(target_object_id) = npc.combat_target_object_id {
-                pending_combat_targets.push((object.object_id, target_object_id));
+                pending_combat_targets.push((save_local_id, target_object_id));
             }
         }
 
         let entity_id = entity.id();
-        object_entities.insert(object.object_id, entity_id);
+        object_entities.insert(save_local_id, entity_id);
     }
 
-    for (source_object_id, target_object_id) in pending_combat_targets {
-        let Some(&source_entity) = object_entities.get(&source_object_id) else {
+    for (source_save_local_id, target_save_local_id) in pending_combat_targets {
+        let Some(&source_entity) = object_entities.get(&source_save_local_id) else {
             continue;
         };
-        let Some(&target_entity) = object_entities.get(&target_object_id) else {
+        let Some(&target_entity) = object_entities.get(&target_save_local_id) else {
             continue;
         };
         commands.entity(source_entity).insert(CombatTarget {
@@ -823,16 +836,12 @@ mod tests {
             serde_json::from_str::<WorldStateDump>(&std::fs::read_to_string(&save_path).unwrap())
                 .unwrap();
 
-        assert_eq!(dump.format_version, 7);
+        assert_eq!(dump.format_version, 9);
         assert!(!dump.spaces.is_empty());
-        // Players are no longer persisted in the world snapshot — they live in
-        // the accounts DB. The object registry still tracks the player's id so
-        // subsequent object allocations don't collide.
-        assert!(dump
-            .object_registry
-            .entries
-            .iter()
-            .any(|entry| entry.object_id == object_id && entry.type_id == "player"));
+        // Players don't appear in the world snapshot at all (they live in the
+        // accounts DB) and the object registry is no longer persisted, so the
+        // only thing this test can check on the players' behalf is that the
+        // snapshot wrote successfully and didn't dump player rows.
         let _ = world_config.current_space_id;
 
         let _ = std::fs::remove_file(save_path);
@@ -845,7 +854,7 @@ mod tests {
         let _ = std::fs::remove_file(&save_path);
 
         let dump = WorldStateDump {
-            format_version: 7,
+            format_version: 9,
             saved_at_unix_seconds: 0,
             world_config: WorldConfigDump {
                 current_space_id: Some(crate::world::components::SpaceId(7)),
@@ -868,27 +877,13 @@ mod tests {
                 permanence: SpacePermanence::Persistent,
                 instance_owner: None,
             }],
-            object_registry: ObjectRegistryDump {
-                next_runtime_id: 1000,
-                entries: vec![
-                    ObjectRegistrySnapshotEntry {
-                        object_id: 42,
-                        type_id: "player".to_owned(),
-                        properties: Default::default(),
-                    },
-                    ObjectRegistrySnapshotEntry {
-                        object_id: 43,
-                        type_id: "barrel".to_owned(),
-                        properties: Default::default(),
-                    },
-                ],
-            },
             network: NetworkStateDump {
                 next_connection_id: 77,
             },
             world_objects: vec![WorldObjectStateDump {
                 object_id: 43,
                 definition_id: "barrel".to_owned(),
+                properties: Default::default(),
                 space_id: Some(crate::world::components::SpaceId(7)),
                 tile_position: Some(TilePosition::ground(7, 6)),
                 collider: false,
@@ -913,10 +908,6 @@ mod tests {
             app.world().resource::<TcpServerState>().next_connection_id,
             77
         );
-        assert_eq!(
-            app.world().resource::<ObjectRegistry>().next_runtime_id(),
-            1000
-        );
         assert!(app
             .world()
             .resource::<SpaceManager>()
@@ -937,15 +928,17 @@ mod tests {
             "snapshot should no longer restore PlayerId(7)"
         );
 
-        let has_restored_object = {
+        // The barrel was loaded — but its runtime object_id is freshly allocated,
+        // not the save-local 43 from the dump.
+        let has_restored_barrel = {
             let world = app.world_mut();
             let mut object_query =
                 world.query_filtered::<(&OverworldObject, &TilePosition), Without<Player>>();
-            object_query
-                .iter(world)
-                .any(|(object, tile)| object.object_id == 43 && *tile == TilePosition::ground(7, 6))
+            object_query.iter(world).any(|(object, tile)| {
+                object.definition_id == "barrel" && *tile == TilePosition::ground(7, 6)
+            })
         };
-        assert!(has_restored_object);
+        assert!(has_restored_barrel);
 
         let _ = std::fs::remove_file(save_path);
     }

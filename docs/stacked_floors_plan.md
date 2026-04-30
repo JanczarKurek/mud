@@ -1,10 +1,17 @@
 # Stacked Floors (Z-Levels) — Remaining Work
 
-Phases 0 and 1 are shipped. The PoC demo (walk up into a second-floor building,
-roof hides upper floor from below, stairs teleport you between floors) is
-working. This doc now tracks only what's left.
+**Status: paused.** Phases 0 and 1 shipped. The PoC demo (walk up into a
+second-floor building, roof hides upper floor from below, stairs teleport
+between floors) works. After Phase 1 the codebase pivoted to **floor-type
+tiling** (corner-aware grass/dirt/stone transitions, tile variants — see
+`src/world/floor_render.rs`, `src/world/floor_definitions.rs`,
+`assets/floors/`). That tiling work uses the word "floor" too but is
+*orthogonal* to z-levels; don't confuse them.
 
-See `git log` for the implementation history. The data-model decision, the
+This doc tracks the remaining z-level work for whenever we resume it. None of
+Phase 2 or Phase 3 has started.
+
+See `git log` for implementation history. The data-model decision, the
 roof-hiding algorithm, stair semantics, and the save-format migration are
 committed and no longer up for debate. If you need that context, read the
 commits that landed Phase 0 / Phase 1 alongside `src/world/floors.rs` and
@@ -41,7 +48,7 @@ commits that landed Phase 0 / Phase 1 alongside `src/world/floors.rs` and
 
 ---
 
-## Phase 2 — Editor + HUD + NPC polish
+## Phase 2 — Editor + HUD + NPC polish *(not started)*
 
 - `EditorContext.current_editing_floor` + `PgUp`/`PgDn` shortcuts.
 - Editor dims other floors to ~40% opacity for authoring visibility.
@@ -50,13 +57,15 @@ commits that landed Phase 0 / Phase 1 alongside `src/world/floors.rs` and
 - NPC floor-locking (the existing z-equality guard already prevents chasing
   across floors; this phase is about QA and `RoamBounds` hardening, and
   making sure spawners don't drop NPCs on untraversable upper-floor tiles).
-- `SpaceDefinition.floors: i32` (default 1) declares max floor for the editor
-  tab count.
+- `SpaceDefinition` already has a `floors` field but it stores
+  `HashMap<FloorTypeId, FloorPlacements>` for the *type-tiling* system.
+  Decide whether to add a separate `max_z: i32` (or rename one of the two
+  collisions) before adding editor tab counts.
 
 **Deliverable:** Authoring a multi-floor building in the editor without
 hand-editing YAML.
 
-## Phase 3 — Full generality
+## Phase 3 — Full generality *(not started)*
 
 - `ladder`, `rope_spot`, `hole` object kinds.
 - Item-gated transitions (`requires_item`, `consumes_item` on

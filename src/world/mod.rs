@@ -157,7 +157,6 @@ fn reload_client_definitions(
     mut space_defs: ResMut<SpaceDefinitions>,
     mut spell_defs: ResMut<SpellDefinitions>,
     mut world_config: ResMut<WorldConfig>,
-    mut object_registry: ResMut<ObjectRegistry>,
 ) {
     *object_defs = OverworldObjectDefinitions::load_from_disk();
     *floor_defs = FloorTilesetDefinitions::load_from_disk();
@@ -167,7 +166,6 @@ fn reload_client_definitions(
         world_config.map_height = bs.height;
         world_config.fill_floor_type = bs.fill_floor_type.clone();
     }
-    *object_registry = ObjectRegistry::from_space_definitions(&new_space_defs);
     *space_defs = new_space_defs;
     *spell_defs = SpellDefinitions::load_from_disk();
 }

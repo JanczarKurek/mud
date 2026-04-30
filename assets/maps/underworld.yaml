@@ -37,27 +37,20 @@ portals:
     destination_permanence: persistent
 
 objects:
-  - id: 2000
-    type: portal_arch
+  - type: portal_arch
     placement: { x: 3, y: 14 }
-  - id: 2001
-    type: barrel
+  - type: barrel
     placement: { x: 10, y: 15 }
-    contents: [2002, 2003]
-  - id: 2002
-    type: potion
-  - id: 2003
-    type: scroll
-    properties:
-      spell_id: spark_bolt
-  - id: 2004
-    type: silver_ring
+    contents:
+      - type: potion
+      - type: scroll
+        properties:
+          spell_id: spark_bolt
+  - type: silver_ring
     placement: { x: 16, y: 13 }
-  - id: 2005
-    type: copper_amulet
+  - type: copper_amulet
     placement: { x: 23, y: 11 }
-  - id: 2006
-    type: goblin
+  - type: goblin
     placement: { x: 10, y: 8 }
     behavior:
       kind: roam_and_chase
@@ -69,8 +62,7 @@ objects:
         min_y: 5
         max_x: 13
         max_y: 11
-  - id: 2007
-    type: goblin
+  - type: goblin
     placement: { x: 22, y: 14 }
     behavior:
       kind: roam_and_chase

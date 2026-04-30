@@ -7,7 +7,7 @@ use crate::world::components::TilePosition;
 #[derive(Clone, Copy)]
 pub enum ContextMenuTarget {
     World(u64),
-    Slot(ItemSlotKind, u64),
+    Slot(ItemSlotKind),
 }
 
 #[derive(Resource, Default)]

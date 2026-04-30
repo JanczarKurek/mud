@@ -243,8 +243,7 @@ objects:
   placement:
   - x: 64
     y: 10
-- id: 20005
-  type: cyclops
+- type: cyclops
   placement: { x: 58, y: 46 }
   behavior:
     kind: roam_and_chase
@@ -390,8 +389,7 @@ objects:
     y: 40
   - x: 43
     y: 41
-- id: 20001
-  type: goblin
+- type: goblin
   placement: { x: 48, y: 9 }
   behavior:
     kind: roam_and_chase
@@ -399,8 +397,7 @@ objects:
     detect_distance_tiles: 5
     disengage_distance_tiles: 8
     bounds: { min_x: 44, min_y: 5, max_x: 52, max_y: 13 }
-- id: 20002
-  type: goblin
+- type: goblin
   placement: { x: 51, y: 30 }
   behavior:
     kind: roam_and_chase
@@ -408,8 +405,7 @@ objects:
     detect_distance_tiles: 5
     disengage_distance_tiles: 8
     bounds: { min_x: 47, min_y: 26, max_x: 55, max_y: 34 }
-- id: 20003
-  type: goblin
+- type: goblin
   placement: { x: 56, y: 30 }
   behavior:
     kind: roam_and_chase
@@ -417,8 +413,7 @@ objects:
     detect_distance_tiles: 5
     disengage_distance_tiles: 8
     bounds: { min_x: 52, min_y: 26, max_x: 60, max_y: 34 }
-- id: 20004
-  type: goblin
+- type: goblin
   placement: { x: 52, y: 45 }
   behavior:
     kind: roam_and_chase
@@ -426,8 +421,7 @@ objects:
     detect_distance_tiles: 5
     disengage_distance_tiles: 8
     bounds: { min_x: 48, min_y: 41, max_x: 56, max_y: 49 }
-- id: 20013
-  type: archer_goblin
+- type: archer_goblin
   placement: { x: 58, y: 12 }
   behavior:
     kind: roam_and_chase
@@ -457,22 +451,19 @@ objects:
   placement:
   - x: 36
     y: 14
-- id: 20006
-  type: rat
+- type: rat
   placement: { x: 18, y: 34 }
   behavior:
     kind: roam
     step_interval_seconds: 0.5
     bounds: { min_x: 15, min_y: 31, max_x: 21, max_y: 37 }
-- id: 20007
-  type: rat
+- type: rat
   placement: { x: 10, y: 40 }
   behavior:
     kind: roam
     step_interval_seconds: 0.55
     bounds: { min_x: 7, min_y: 37, max_x: 13, max_y: 43 }
-- id: 20008
-  type: rat
+- type: rat
   placement: { x: 22, y: 44 }
   behavior:
     kind: roam
@@ -486,8 +477,7 @@ objects:
   placement:
   - x: 35
     y: 46
-- id: 20009
-  type: skeleton
+- type: skeleton
   placement: { x: 27, y: 34 }
   behavior:
     kind: roam_and_chase
@@ -495,8 +485,7 @@ objects:
     detect_distance_tiles: 5
     disengage_distance_tiles: 7
     bounds: { min_x: 24, min_y: 31, max_x: 30, max_y: 37 }
-- id: 20010
-  type: skeleton
+- type: skeleton
   placement: { x: 43, y: 45 }
   behavior:
     kind: roam_and_chase
@@ -1326,15 +1315,13 @@ objects:
     y: 24
   - x: 67
     y: 24
-- id: 20011
-  type: villager
+- type: villager
   placement: { x: 13, y: 7 }
   behavior:
     kind: roam
     step_interval_seconds: 2.0
     bounds: { min_x: 10, min_y: 4, max_x: 16, max_y: 10 }
-- id: 20012
-  type: villager
+- type: villager
   placement: { x: 18, y: 13 }
   behavior:
     kind: roam
@@ -2256,29 +2243,25 @@ objects:
   placement:
   - x: 58
     y: 42
-- id: 10132
-  type: sign_post
+- type: sign_post
   properties:
     text: South road leads to the old dungeon. Adventurers beware!
   placement:
     x: 5
     y: 21
-- id: 10150
-  type: sign_post
+- type: sign_post
   properties:
     text: Step here to enter the cellar.
   placement:
     x: 34
     y: 19
-- id: 10153
-  type: scroll
+- type: scroll
   properties:
     spell_id: lesser_heal
   placement:
     x: 40
     y: 16
-- id: 10172
-  type: sign_post
+- type: sign_post
   properties:
     text: The sinkhole ahead leads deep underground. Return is not guaranteed.
   placement:

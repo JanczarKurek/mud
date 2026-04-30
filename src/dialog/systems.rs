@@ -254,13 +254,11 @@ pub fn refresh_inventory_snapshots(
     for (identity, inventory) in &players {
         let mut totals: HashMap<String, u32> = HashMap::new();
         for stack in inventory.backpack_slots.iter().flatten() {
-            let Some(type_id) = registry.type_id(stack.object_id) else {
-                continue;
-            };
-            *totals.entry(type_id.to_owned()).or_default() += stack.quantity;
+            *totals.entry(stack.type_id.clone()).or_default() += stack.quantity;
         }
         snapshot_write.insert(identity.id.0, totals);
     }
+    let _ = registry;
 }
 
 /// Observer: translates Yarn `<<give_item>>` / `<<take_item>>` into authoritative

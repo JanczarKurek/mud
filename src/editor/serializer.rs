@@ -57,7 +57,6 @@ struct AnonymousOutput {
 
 #[derive(Serialize)]
 struct ExplicitOutput {
-    id: u64,
     #[serde(rename = "type")]
     type_id: String,
     #[serde(skip_serializing_if = "HashMap::is_empty")]
@@ -110,12 +109,11 @@ pub fn serialize_and_save(
 
     let mut anonymous: HashMap<String, Vec<TileCoordinate>> = HashMap::new();
     let mut explicit: Vec<ExplicitOutput> = Vec::new();
-    for (object_id, type_id, properties, behavior, tile) in items {
+    for (_object_id, type_id, properties, behavior, tile) in items {
         if properties.is_empty() && behavior.is_none() {
             anonymous.entry(type_id).or_default().push(tile);
         } else {
             explicit.push(ExplicitOutput {
-                id: object_id,
                 type_id,
                 properties,
                 placement: tile,
@@ -135,7 +133,13 @@ pub fn serialize_and_save(
             placement: placements,
         }));
     }
-    explicit.sort_by_key(|e| e.id);
+    explicit.sort_by(|a, b| {
+        a.placement
+            .y
+            .cmp(&b.placement.y)
+            .then(a.placement.x.cmp(&b.placement.x))
+            .then(a.type_id.cmp(&b.type_id))
+    });
     for entry in explicit {
         object_entries.push(ObjectEntryOutput::Explicit(entry));
     }

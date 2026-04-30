@@ -3,7 +3,7 @@ use bevy::ecs::message::MessageReader;
 use bevy::prelude::*;
 
 use crate::accounts::resources::{AccountDbHandle, AutosaveConfig};
-use crate::combat::components::{AttackProfile, CombatLeash, CombatTarget};
+use crate::combat::components::{AttackProfile, CombatLeash};
 use crate::dialog::resources::CharacterVarStores;
 use crate::network::resources::PendingPlayerSaves;
 use crate::persistence::build_player_state_dump;
@@ -11,7 +11,7 @@ use crate::player::components::{
     BaseStats, ChatLog, DerivedStats, Inventory, MovementCooldown, Player, PlayerIdentity,
     VitalStats,
 };
-use crate::world::components::{Facing, OverworldObject, SpaceResident, TilePosition};
+use crate::world::components::{Facing, SpaceResident, TilePosition};
 
 /// Tracks time since the last autosave sweep; resets when the sweep fires.
 #[derive(Resource, Default)]
@@ -22,7 +22,6 @@ pub struct AutosaveTimer {
 type PlayerStateQueryData<'a> = (
     Entity,
     &'a PlayerIdentity,
-    &'a OverworldObject,
     &'a SpaceResident,
     &'a TilePosition,
     &'a Inventory,
@@ -33,7 +32,6 @@ type PlayerStateQueryData<'a> = (
     &'a MovementCooldown,
     &'a AttackProfile,
     &'a CombatLeash,
-    Option<&'a CombatTarget>,
     Option<&'a Facing>,
 );
 
@@ -43,13 +41,11 @@ fn save_entity(
     db: &AccountDbHandle,
     account_id: i64,
     row: <PlayerStateQueryData<'_> as bevy::ecs::query::QueryData>::Item<'_, '_>,
-    object_lookup: &Query<&OverworldObject>,
     var_stores: Option<&CharacterVarStores>,
 ) {
     let (
         _entity,
         identity,
-        object,
         space_resident,
         tile_position,
         inventory,
@@ -60,17 +56,11 @@ fn save_entity(
         movement_cooldown,
         attack_profile,
         combat_leash,
-        combat_target,
         facing,
     ) = row;
 
-    let combat_target_object_id = combat_target
-        .and_then(|target| object_lookup.get(target.entity).ok())
-        .map(|object| object.object_id);
-
     let mut dump = build_player_state_dump(
         identity,
-        object,
         space_resident,
         tile_position,
         inventory,
@@ -81,7 +71,6 @@ fn save_entity(
         movement_cooldown,
         attack_profile,
         combat_leash,
-        combat_target_object_id,
         facing.copied().unwrap_or_default().0,
     );
 
@@ -102,7 +91,6 @@ pub fn persist_disconnected_players(
     db: Option<Res<AccountDbHandle>>,
     var_stores: Option<Res<CharacterVarStores>>,
     player_query: Query<PlayerStateQueryData, PlayerStateQueryFilter>,
-    object_lookup: Query<&OverworldObject>,
     mut commands: Commands,
 ) {
     if pending_saves.entries.is_empty() {
@@ -111,13 +99,7 @@ pub fn persist_disconnected_players(
     let entries = std::mem::take(&mut pending_saves.entries);
     for entry in entries {
         if let (Some(db), Ok(row)) = (db.as_deref(), player_query.get(entry.player_entity)) {
-            save_entity(
-                db,
-                entry.account_id,
-                row,
-                &object_lookup,
-                var_stores.as_deref(),
-            );
+            save_entity(db, entry.account_id, row, var_stores.as_deref());
         }
         commands.entity(entry.player_entity).despawn();
     }
@@ -134,7 +116,6 @@ pub fn autosave_all_players(
     db: Option<Res<AccountDbHandle>>,
     var_stores: Option<Res<CharacterVarStores>>,
     player_query: Query<PlayerStateQueryData, PlayerStateQueryFilter>,
-    object_lookup: Query<&OverworldObject>,
 ) {
     timer.elapsed_since_save += time.delta_secs_f64();
     if timer.elapsed_since_save < config.interval_seconds {
@@ -148,7 +129,7 @@ pub fn autosave_all_players(
 
     for row in player_query.iter() {
         let account_id = row.1.id.0 as i64;
-        save_entity(db, account_id, row, &object_lookup, var_stores.as_deref());
+        save_entity(db, account_id, row, var_stores.as_deref());
     }
 }
 
@@ -159,7 +140,6 @@ pub fn save_all_players_on_app_exit(
     db: Option<Res<AccountDbHandle>>,
     var_stores: Option<Res<CharacterVarStores>>,
     player_query: Query<PlayerStateQueryData, PlayerStateQueryFilter>,
-    object_lookup: Query<&OverworldObject>,
 ) {
     if app_exit.read().next().is_none() {
         return;
@@ -169,6 +149,6 @@ pub fn save_all_players_on_app_exit(
     };
     for row in player_query.iter() {
         let account_id = row.1.id.0 as i64;
-        save_entity(db, account_id, row, &object_lookup, var_stores.as_deref());
+        save_entity(db, account_id, row, var_stores.as_deref());
     }
 }

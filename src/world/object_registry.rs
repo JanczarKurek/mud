@@ -143,8 +143,27 @@ impl ObjectRegistry {
         spell_definitions: &SpellDefinitions,
     ) -> Option<String> {
         let type_id = self.type_id(object_id)?;
+        let properties = self.properties(object_id);
+        Self::display_name_for_type(type_id, properties, definitions, spell_definitions)
+    }
+
+    /// Resolve a display name from a raw `(type_id, properties)` pair, without
+    /// requiring the object to be registered with a runtime id. Use this for
+    /// inventory stacks, equipment slots, and other "in-the-bag" descriptors
+    /// where the item has no live `OverworldObject`.
+    pub fn display_name_for_type(
+        type_id: &str,
+        properties: Option<&ObjectProperties>,
+        definitions: &OverworldObjectDefinitions,
+        spell_definitions: &SpellDefinitions,
+    ) -> Option<String> {
         let definition = definitions.get(type_id)?;
-        Some(self.render_template(object_id, &definition.name, spell_definitions, 1))
+        Some(render_template(
+            properties,
+            &definition.name,
+            spell_definitions,
+            1,
+        ))
     }
 
     pub fn description_with_count(
@@ -155,9 +174,26 @@ impl ObjectRegistry {
         spell_definitions: &SpellDefinitions,
     ) -> Option<String> {
         let type_id = self.type_id(object_id)?;
+        let properties = self.properties(object_id);
+        Self::description_with_count_for_type(
+            type_id,
+            properties,
+            count,
+            definitions,
+            spell_definitions,
+        )
+    }
+
+    pub fn description_with_count_for_type(
+        type_id: &str,
+        properties: Option<&ObjectProperties>,
+        count: u32,
+        definitions: &OverworldObjectDefinitions,
+        spell_definitions: &SpellDefinitions,
+    ) -> Option<String> {
         let definition = definitions.get(type_id)?;
         let template = definition.description_for_count(count);
-        Some(self.render_template(object_id, template, spell_definitions, count))
+        Some(render_template(properties, template, spell_definitions, count))
     }
 
     pub fn resolved_spell_id(
@@ -167,45 +203,51 @@ impl ObjectRegistry {
         spell_definitions: &SpellDefinitions,
     ) -> Option<String> {
         let type_id = self.type_id(object_id)?;
+        let properties = self.properties(object_id);
+        Self::resolved_spell_id_for_type(type_id, properties, definitions, spell_definitions)
+    }
+
+    pub fn resolved_spell_id_for_type(
+        type_id: &str,
+        properties: Option<&ObjectProperties>,
+        definitions: &OverworldObjectDefinitions,
+        spell_definitions: &SpellDefinitions,
+    ) -> Option<String> {
         let definition = definitions.get(type_id)?;
         definition
             .spell_id
             .as_ref()
-            .map(|template| self.render_template(object_id, template, spell_definitions, 1))
+            .map(|template| render_template(properties, template, spell_definitions, 1))
+    }
+}
+
+fn render_template(
+    properties: Option<&ObjectProperties>,
+    template: &str,
+    spell_definitions: &SpellDefinitions,
+    count: u32,
+) -> String {
+    let mut rendered = String::new();
+    let mut rest = template;
+
+    while let Some(start) = rest.find('{') {
+        rendered.push_str(&rest[..start]);
+        let after_start = &rest[start + 1..];
+        let Some(end) = after_start.find('}') else {
+            rendered.push_str(&rest[start..]);
+            return rendered;
+        };
+
+        let expression = &after_start[..end];
+        let resolved = resolve_count_expression(expression, count).or_else(|| {
+            properties.and_then(|p| resolve_template_expression(expression, p, spell_definitions))
+        });
+        rendered.push_str(&resolved.unwrap_or_else(|| format!("{{{expression}}}")));
+        rest = &after_start[end + 1..];
     }
 
-    fn render_template(
-        &self,
-        object_id: u64,
-        template: &str,
-        spell_definitions: &SpellDefinitions,
-        count: u32,
-    ) -> String {
-        let properties = self.properties(object_id);
-
-        let mut rendered = String::new();
-        let mut rest = template;
-
-        while let Some(start) = rest.find('{') {
-            rendered.push_str(&rest[..start]);
-            let after_start = &rest[start + 1..];
-            let Some(end) = after_start.find('}') else {
-                rendered.push_str(&rest[start..]);
-                return rendered;
-            };
-
-            let expression = &after_start[..end];
-            let resolved = resolve_count_expression(expression, count).or_else(|| {
-                properties
-                    .and_then(|p| resolve_template_expression(expression, p, spell_definitions))
-            });
-            rendered.push_str(&resolved.unwrap_or_else(|| format!("{{{expression}}}")));
-            rest = &after_start[end + 1..];
-        }
-
-        rendered.push_str(rest);
-        rendered
-    }
+    rendered.push_str(rest);
+    rendered
 }
 
 fn resolve_count_expression(expression: &str, count: u32) -> Option<String> {

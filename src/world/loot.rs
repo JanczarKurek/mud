@@ -3,6 +3,7 @@ use bevy::prelude::*;
 use crate::app::state::simulation_active;
 use crate::player::components::InventoryStack;
 use crate::world::components::{SpaceId, TilePosition};
+use crate::world::map_layout::ObjectProperties;
 use crate::world::object_definitions::{LootTableDef, OverworldObjectDefinitions};
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::setup::spawn_overworld_object;
@@ -71,9 +72,9 @@ pub fn spawn_corpse_for_npc(
 
     let mut slots: Vec<Option<InventoryStack>> = vec![None; capacity];
     for (i, (type_id, qty)) in rolled_items.into_iter().enumerate().take(capacity) {
-        let item_id = registry.allocate_runtime_id(type_id);
         slots[i] = Some(InventoryStack {
-            object_id: item_id,
+            type_id,
+            properties: ObjectProperties::new(),
             quantity: qty,
         });
     }

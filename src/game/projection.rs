@@ -516,7 +516,7 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
             inventory
                 .equipment_slots
                 .iter()
-                .filter_map(|(_, object_id)| *object_id)
+                .filter(|(_, item)| item.is_some())
                 .count(),
         ),
         GameEvent::ChatLogChanged { lines } => {

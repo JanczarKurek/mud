@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::combat::damage_expr::DamageExpr;
+use crate::world::map_layout::ObjectProperties;
 use crate::world::object_definitions::EquipmentSlot;
 
 #[derive(Component, Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -24,19 +25,44 @@ pub struct PlayerIdentity {
     pub id: PlayerId,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+/// A self-describing stack of identical items. Carries the canonical type
+/// (matching a directory under `assets/overworld_objects/`) plus any
+/// per-instance `properties` (e.g. a scroll's `spell_id`). Notably *no* runtime
+/// `object_id` — runtime ids are allocated only when the stack leaves the
+/// inventory and becomes a world entity, so saves stay portable across map
+/// edits.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct InventoryStack {
-    pub object_id: u64,
+    pub type_id: String,
+    #[serde(default)]
+    pub properties: ObjectProperties,
     pub quantity: u32,
+}
+
+/// A single item occupying an equipment slot. Same shape as the descriptive
+/// half of `InventoryStack` (without `quantity`, since most equipment slots
+/// are 1-of-a-kind — ammo's quantity rides on `Inventory::ammo_quantity`).
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct EquippedItem {
+    pub type_id: String,
+    #[serde(default)]
+    pub properties: ObjectProperties,
+}
+
+impl EquippedItem {
+    pub fn new(type_id: impl Into<String>) -> Self {
+        Self {
+            type_id: type_id.into(),
+            properties: ObjectProperties::new(),
+        }
+    }
 }
 
 #[derive(Component, Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Inventory {
     pub backpack_slots: Vec<Option<InventoryStack>>,
-    pub equipment_slots: Vec<(EquipmentSlot, Option<u64>)>,
+    pub equipment_slots: Vec<(EquipmentSlot, Option<EquippedItem>)>,
     /// Quantity of the stack currently occupying `EquipmentSlot::Ammo`.
-    /// Kept as a sidecar field so existing `equipment_slots` saves (which
-    /// only store `Option<u64>`) stay backwards-compatible.
     #[serde(default)]
     pub ammo_quantity: u32,
 }
@@ -55,19 +81,19 @@ impl Default for Inventory {
 }
 
 impl Inventory {
-    pub fn equipment_item(&self, slot: EquipmentSlot) -> Option<u64> {
-        self.equipment_slots.iter().find_map(
-            |(equipment_slot, item)| {
+    pub fn equipment_item(&self, slot: EquipmentSlot) -> Option<&EquippedItem> {
+        self.equipment_slots
+            .iter()
+            .find_map(|(equipment_slot, item)| {
                 if *equipment_slot == slot {
-                    *item
+                    item.as_ref()
                 } else {
                     None
                 }
-            },
-        )
+            })
     }
 
-    pub fn take_equipment_item(&mut self, slot: EquipmentSlot) -> Option<u64> {
+    pub fn take_equipment_item(&mut self, slot: EquipmentSlot) -> Option<EquippedItem> {
         self.equipment_slots
             .iter_mut()
             .find_map(|(equipment_slot, item)| {
@@ -79,27 +105,27 @@ impl Inventory {
             })
     }
 
-    pub fn place_equipment_item(&mut self, slot: EquipmentSlot, object_id: u64) -> bool {
-        for (equipment_slot, item) in &mut self.equipment_slots {
+    pub fn place_equipment_item(&mut self, slot: EquipmentSlot, item: EquippedItem) -> bool {
+        for (equipment_slot, slot_item) in &mut self.equipment_slots {
             if *equipment_slot != slot {
                 continue;
             }
 
-            if item.is_some() {
+            if slot_item.is_some() {
                 return false;
             }
 
-            *item = Some(object_id);
+            *slot_item = Some(item);
             return true;
         }
 
         false
     }
 
-    pub fn restore_equipment_item(&mut self, slot: EquipmentSlot, object_id: u64) {
-        for (equipment_slot, item) in &mut self.equipment_slots {
+    pub fn restore_equipment_item(&mut self, slot: EquipmentSlot, item: EquippedItem) {
+        for (equipment_slot, slot_item) in &mut self.equipment_slots {
             if *equipment_slot == slot {
-                *item = Some(object_id);
+                *slot_item = Some(item);
                 return;
             }
         }
@@ -124,29 +150,30 @@ impl Inventory {
     }
 
     pub fn ammo_stack(&self) -> Option<InventoryStack> {
-        let object_id = self.equipment_item(EquipmentSlot::Ammo)?;
+        let item = self.equipment_item(EquipmentSlot::Ammo)?;
         Some(InventoryStack {
-            object_id,
+            type_id: item.type_id.clone(),
+            properties: item.properties.clone(),
             quantity: self.ammo_quantity,
         })
     }
 
-    pub fn set_ammo(&mut self, object_id: u64, quantity: u32) {
-        self.restore_equipment_item(EquipmentSlot::Ammo, object_id);
+    pub fn set_ammo(&mut self, item: EquippedItem, quantity: u32) {
+        self.restore_equipment_item(EquipmentSlot::Ammo, item);
         self.ammo_quantity = quantity;
     }
 
-    /// Decrement the ammo stack by one. Returns the `object_id` of the now-empty
-    /// ammo entry if the decrement emptied the slot (so the caller can release
-    /// the registry entry), or `None` if ammo remains / is absent.
+    /// Decrement the ammo stack by one. Reports whether the slot is now empty
+    /// (so the caller can update UI / chat). No `object_id` to free — runtime
+    /// ids only exist for items actually in the world.
     pub fn consume_one_ammo(&mut self) -> AmmoConsumption {
         if self.equipment_item(EquipmentSlot::Ammo).is_none() || self.ammo_quantity == 0 {
             return AmmoConsumption::None;
         }
         self.ammo_quantity -= 1;
         if self.ammo_quantity == 0 {
-            let removed = self.take_equipment_item(EquipmentSlot::Ammo);
-            return AmmoConsumption::Emptied { object_id: removed };
+            self.take_equipment_item(EquipmentSlot::Ammo);
+            return AmmoConsumption::Emptied;
         }
         AmmoConsumption::Decremented
     }
@@ -156,7 +183,7 @@ impl Inventory {
 pub enum AmmoConsumption {
     None,
     Decremented,
-    Emptied { object_id: Option<u64> },
+    Emptied,
 }
 
 #[derive(Component, Clone, Debug, Deserialize, PartialEq, Serialize)]
