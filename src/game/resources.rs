@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -110,6 +110,10 @@ pub struct ClientWorldObjectState {
     pub has_dialog: bool,
     #[serde(default)]
     pub facing: Direction,
+    /// Current discrete-state name for objects whose definition declares
+    /// `states:` (e.g. "open" / "closed"). `None` for stateless objects.
+    #[serde(default)]
+    pub state: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -207,6 +211,61 @@ pub enum GameEvent {
 #[derive(Resource, Default)]
 pub struct PendingGameEvents {
     pub events: Vec<GameEvent>,
+}
+
+/// Tracks which players currently have a container's panel open. Drives the
+/// derived "open" / "closed" visual state for chests and other containers
+/// that pair `container_capacity` with a stateful `iron_chest`-style
+/// definition. Transient — never persisted.
+#[derive(Resource, Default)]
+pub struct ContainerViewers {
+    viewers: HashMap<u64, HashSet<PlayerId>>,
+}
+
+impl ContainerViewers {
+    /// Insert `(object_id, player)`. Returns `true` if this is the first
+    /// viewer (caller flips the visual to "open").
+    pub fn insert(&mut self, object_id: u64, player: PlayerId) -> bool {
+        let entry = self.viewers.entry(object_id).or_default();
+        let first = entry.is_empty();
+        entry.insert(player);
+        first
+    }
+
+    /// Remove `(object_id, player)`. Returns `true` if this was the last
+    /// viewer (caller flips the visual back to "closed").
+    pub fn remove(&mut self, object_id: u64, player: PlayerId) -> bool {
+        let Some(entry) = self.viewers.get_mut(&object_id) else {
+            return false;
+        };
+        let removed = entry.remove(&player);
+        let now_empty = entry.is_empty();
+        if now_empty {
+            self.viewers.remove(&object_id);
+        }
+        removed && now_empty
+    }
+
+    /// Drop all entries for a given player (used on disconnect). Returns the
+    /// list of object ids that just lost their last viewer.
+    pub fn drop_player(&mut self, player: PlayerId) -> Vec<u64> {
+        let mut emptied = Vec::new();
+        self.viewers.retain(|object_id, viewers| {
+            if viewers.remove(&player) && viewers.is_empty() {
+                emptied.push(*object_id);
+                return false;
+            }
+            !viewers.is_empty()
+        });
+        emptied
+    }
+
+    /// Whether any player is currently viewing the given container.
+    pub fn has_viewers(&self, object_id: u64) -> bool {
+        self.viewers
+            .get(&object_id)
+            .is_some_and(|set| !set.is_empty())
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Resource, Serialize)]

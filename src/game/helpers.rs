@@ -33,3 +33,12 @@ pub fn colliders_in_space(space_id: SpaceId, query: &ColliderQuery) -> Vec<TileP
         })
         .collect()
 }
+
+/// Adjacency check used by every "do something to a nearby object" command
+/// (move-item, open container, rotate, interact). Chebyshev-1 on the same
+/// floor.
+pub fn is_near_player(player_position: &TilePosition, target_position: &TilePosition) -> bool {
+    player_position.z == target_position.z
+        && (player_position.x - target_position.x).abs() <= 1
+        && (player_position.y - target_position.y).abs() <= 1
+}

@@ -869,6 +869,76 @@ render:
   sprite_path: overworld_objects/scroll/sprite.png
 ```
 
+### Stateful objects (`states` / `initial_state` / `interactions` / `wires_to`)
+
+Optional. Lets a definition declare a small state machine the player can drive through the context menu (doors open/closed, torches lit/unlit, levers off/on). Any field omitted from a per-state override falls back to the base definition.
+
+```yaml
+states:
+  closed:
+    sprite_path: overworld_objects/wooden_door/closed.png
+    colliding: true
+  open:
+    sprite_path: overworld_objects/wooden_door/open.png
+    colliding: false
+initial_state: closed
+interactions:
+  - verb: open
+    label: Open
+    from: [closed]
+    to: open
+  - verb: close
+    label: Close
+    from: [open]
+    to: closed
+```
+
+#### `states`
+- Type: mapping of state-name → `{sprite_path?, animation?, colliding?}`
+- Optional: yes
+- Meaning: per-state visual + collider overrides. Each state may override `sprite_path` (static), `animation` (atlas — same shape as `render.animation`), and/or `colliding`. Unset fields inherit from the base definition.
+
+#### `initial_state`
+- Type: string
+- Optional: yes (required when `states` is non-empty for new spawns to land in a known state)
+- Meaning: state name a freshly spawned instance starts in. Persistence load overrides this from `properties["state"]` when present.
+
+#### `interactions`
+- Type: list of `{verb, label?, from?, to, side_effects?}`
+- Optional: yes
+- Meaning: verbs the player can invoke on this object via the context menu.
+  - `verb` — short identifier (e.g. `open`, `light`, `pull`).
+  - `label` — display string for the context menu; defaults to capitalised `verb`.
+  - `from` — list of states this verb is available in. Empty/absent = always.
+  - `to` — state to transition into.
+  - `side_effects` — optional list of post-transition actions (see below).
+
+#### `side_effects`
+Each entry is tagged by `kind`:
+
+- `kind: set_target_state` — `target` is a property template (e.g. `"{properties.target}"`); the resolved value must be a runtime u64. The targeted object is moved into `to` directly (validation against its own `from` is bypassed for cascades). Used by levers driving doors. Requires the source's definition to list the property key under `wires_to`.
+- `kind: open_container_panel` — emits the same `OpenContainer` UI event as the player right-clicking a container; useful when an interaction should both transition state and pop a container view.
+
+#### `wires_to`
+- Type: list of property keys
+- Optional: yes
+- Meaning: at map load time, every property whose key appears in this list is rewritten from its authored map-id (e.g. `cellar_door`) to the runtime u64 of the matching object (as a decimal string). Missing targets panic at load. Cascades resolve `{properties.<key>}` against this rewritten value.
+
+Lever wired to a door (map YAML):
+
+```yaml
+- id: cellar_door
+  type: wooden_door
+  placement: { x: 12, y: 8 }
+
+- type: lever
+  placement: { x: 4, y: 4 }
+  properties:
+    target: cellar_door
+```
+
+Chests get their `open` / `closed` visual purely from the *container-panel viewer count* — no `interactions:` block needed; just declare both `closed` and `open` states alongside `container_capacity`.
+
 ### NPC Loot Tables
 
 NPCs (objects that `extends: npc`) may include an optional `loot` section. When the NPC dies it spawns a corpse container at its tile. The corpse holds any rolled loot and disappears after `corpse_despawn_seconds`.

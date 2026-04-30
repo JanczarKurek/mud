@@ -72,6 +72,79 @@ pub struct OverworldObjectDefinition {
     /// not talkable.
     #[serde(default)]
     pub dialog_node: Option<String>,
+    /// Per-state visual + collider overrides. When non-empty `initial_state`
+    /// must name one of the keys; otherwise the object behaves identically to
+    /// one with no states declared.
+    #[serde(default)]
+    pub states: HashMap<String, ObjectStateDef>,
+    /// Default state for fresh instances. Persistence overrides per-instance
+    /// via `properties["state"]`.
+    #[serde(default)]
+    pub initial_state: Option<String>,
+    /// Verbs the player can invoke on this object via the context menu.
+    /// Each verb declares an optional `from`-state filter, the resulting
+    /// `to`-state, and any `side_effects` to run after the transition lands.
+    #[serde(default)]
+    pub interactions: Vec<ObjectInteractionDef>,
+    /// Property keys whose values are authored object ids. Resolved to runtime
+    /// u64s (as decimal strings) during map load — see
+    /// `SpaceDefinition::resolve_objects`. Used for cross-object wiring such
+    /// as a lever's `target` pointing at a door.
+    #[serde(default)]
+    pub wires_to: Vec<String>,
+}
+
+/// Per-state override of the rendering / collider knobs on
+/// `OverworldObjectDefinition`. `None` fields fall back to the base
+/// definition.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct ObjectStateDef {
+    #[serde(default)]
+    pub sprite_path: Option<String>,
+    #[serde(default)]
+    pub animation: Option<AnimationSheetDef>,
+    /// Override the authoritative `colliding` flag for this state (e.g. a
+    /// closed door collides, an open one does not). `None` = inherit base.
+    #[serde(default)]
+    pub colliding: Option<bool>,
+}
+
+/// One verb the player may invoke on a stateful object.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct ObjectInteractionDef {
+    pub verb: String,
+    /// Display label for the context menu. Defaults to `verb` capitalised
+    /// when missing.
+    #[serde(default)]
+    pub label: Option<String>,
+    /// Filter: only show this verb when the object is in one of these states.
+    /// Empty = always available.
+    #[serde(default)]
+    pub from: Vec<String>,
+    /// Resulting state after the transition lands.
+    pub to: String,
+    /// Side-effects to execute after the transition (e.g. flipping a wired
+    /// door, opening a container panel).
+    #[serde(default)]
+    pub side_effects: Vec<InteractionSideEffect>,
+}
+
+/// Side-effect to run after an interaction transitions an object's state.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub enum InteractionSideEffect {
+    /// Resolve `target` (a property template like `"{properties.target}"`)
+    /// against the source object's properties, then transition the resolved
+    /// object into `to`. The resolved string must parse as a runtime u64
+    /// (the map-load pass rewrites authored ids in `wires_to` properties).
+    SetTargetState { target: String, to: String },
+    /// Emit `GameUiEvent::OpenContainer` for the acting player. Pairs with
+    /// `container_capacity` to make a stateful chest both "openable" and
+    /// "viewable".
+    OpenContainerPanel,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -512,6 +585,46 @@ impl OverworldObjectDefinition {
             || self.use_effects.restore_mana > 0.0
             || self.spell_id.is_some()
     }
+
+    /// Sprite path for `state`, falling back to the base `render.sprite_path`
+    /// when the state has no override or no entry exists. `None` ⇒ render as
+    /// a debug-color rectangle.
+    pub fn sprite_path_for_state(&self, state: Option<&str>) -> Option<&str> {
+        state
+            .and_then(|s| self.states.get(s))
+            .and_then(|state_def| state_def.sprite_path.as_deref())
+            .or(self.render.sprite_path.as_deref())
+    }
+
+    /// Animation sheet for `state`, falling back to the base
+    /// `render.animation` when the state has no override.
+    pub fn animation_for_state(&self, state: Option<&str>) -> Option<&AnimationSheetDef> {
+        if let Some(state_def) = state.and_then(|s| self.states.get(s)) {
+            if state_def.animation.is_some() {
+                return state_def.animation.as_ref();
+            }
+        }
+        self.render.animation.as_ref()
+    }
+
+    /// Authoritative `colliding` for `state`, falling back to base.
+    pub fn colliding_for_state(&self, state: Option<&str>) -> bool {
+        state
+            .and_then(|s| self.states.get(s))
+            .and_then(|state_def| state_def.colliding)
+            .unwrap_or(self.colliding)
+    }
+
+    /// Pick the matching interaction for `(verb, current_state)`. Returns the
+    /// first declaration whose `verb` matches and whose `from` either is empty
+    /// or contains the current state.
+    pub fn interaction_for(&self, verb: &str, current_state: Option<&str>) -> Option<&ObjectInteractionDef> {
+        self.interactions.iter().find(|i| {
+            i.verb == verb
+                && (i.from.is_empty()
+                    || current_state.is_some_and(|cs| i.from.iter().any(|s| s == cs)))
+        })
+    }
 }
 
 #[derive(Resource, Default)]
@@ -600,6 +713,11 @@ impl OverworldObjectDefinitions {
 
     pub fn ids(&self) -> impl Iterator<Item = &str> {
         self.definitions.keys().map(String::as_str)
+    }
+
+    #[cfg(test)]
+    pub fn new_for_test(definitions: HashMap<String, OverworldObjectDefinition>) -> Self {
+        Self { definitions }
     }
 }
 
@@ -790,5 +908,151 @@ fn merge_yaml_values(parent: Value, child: Value) -> Value {
             Value::Mapping(parent_map)
         }
         (_, child) => child,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_def(yaml: &str) -> OverworldObjectDefinition {
+        serde_yaml::from_str::<OverworldObjectDefinition>(yaml).expect("yaml parses")
+    }
+
+    #[test]
+    fn states_and_interactions_round_trip() {
+        let yaml = r#"
+name: Wooden Door
+description: A heavy wooden door.
+colliding: true
+movable: false
+storable: false
+render:
+  z_index: 0.30
+  debug_color: [110, 70, 40]
+  debug_size: 0.95
+states:
+  closed:
+    sprite_path: door_closed.png
+    colliding: true
+  open:
+    sprite_path: door_open.png
+    colliding: false
+initial_state: closed
+interactions:
+  - verb: open
+    label: Open
+    from: [closed]
+    to: open
+  - verb: close
+    label: Close
+    from: [open]
+    to: closed
+"#;
+        let def = parse_def(yaml);
+        assert_eq!(def.initial_state.as_deref(), Some("closed"));
+        assert!(def.states.contains_key("closed"));
+        assert!(def.states.contains_key("open"));
+        assert_eq!(def.states["open"].colliding, Some(false));
+        assert_eq!(def.interactions.len(), 2);
+        assert_eq!(def.interactions[0].verb, "open");
+        assert_eq!(def.interactions[0].to, "open");
+        assert!(def.interactions[0].side_effects.is_empty());
+    }
+
+    #[test]
+    fn interaction_for_filters_by_from_state() {
+        let yaml = r#"
+name: Wooden Door
+description: ""
+colliding: true
+movable: false
+storable: false
+render:
+  z_index: 0.0
+  debug_color: [0, 0, 0]
+  debug_size: 1.0
+states:
+  closed: {}
+  open: {}
+initial_state: closed
+interactions:
+  - verb: open
+    from: [closed]
+    to: open
+  - verb: close
+    from: [open]
+    to: closed
+"#;
+        let def = parse_def(yaml);
+        assert!(def.interaction_for("open", Some("closed")).is_some());
+        assert!(def.interaction_for("open", Some("open")).is_none());
+        assert!(def.interaction_for("close", Some("open")).is_some());
+        assert!(def.interaction_for("nope", Some("closed")).is_none());
+    }
+
+    #[test]
+    fn side_effect_set_target_state_round_trips() {
+        let yaml = r#"
+name: Lever
+description: ""
+colliding: false
+movable: false
+storable: false
+render:
+  z_index: 0.0
+  debug_color: [0, 0, 0]
+  debug_size: 1.0
+wires_to: [target]
+states:
+  "off": {}
+  "on": {}
+initial_state: "off"
+interactions:
+  - verb: pull
+    from: ["off"]
+    to: "on"
+    side_effects:
+      - kind: set_target_state
+        target: "{properties.target}"
+        to: open
+"#;
+        let def = parse_def(yaml);
+        assert_eq!(def.wires_to, vec!["target".to_owned()]);
+        let interaction = def.interaction_for("pull", Some("off")).unwrap();
+        match &interaction.side_effects[0] {
+            InteractionSideEffect::SetTargetState { target, to } => {
+                assert_eq!(target, "{properties.target}");
+                assert_eq!(to, "open");
+            }
+            other => panic!("unexpected side effect: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn colliding_for_state_falls_back_to_base() {
+        let yaml = r#"
+name: Door
+description: ""
+colliding: true
+movable: false
+storable: false
+render:
+  z_index: 0.0
+  debug_color: [0, 0, 0]
+  debug_size: 1.0
+states:
+  closed:
+    colliding: true
+  open:
+    colliding: false
+"#;
+        let def = parse_def(yaml);
+        assert!(def.colliding_for_state(Some("closed")));
+        assert!(!def.colliding_for_state(Some("open")));
+        // Unknown state name: fall back to the base flag.
+        assert!(def.colliding_for_state(Some("ajar")));
+        // No state argument: also base flag.
+        assert!(def.colliding_for_state(None));
     }
 }

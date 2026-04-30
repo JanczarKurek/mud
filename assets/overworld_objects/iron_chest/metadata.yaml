@@ -1,0 +1,16 @@
+extends: movable_obstacle
+name: Iron Chest
+description: A heavy iron chest.
+container_capacity: 12
+colliding: true
+render:
+  z_index: 0.25
+  debug_color: [120, 120, 130]
+  debug_size: 0.78
+  sprite_path: overworld_objects/iron_chest/closed.png
+states:
+  closed:
+    sprite_path: overworld_objects/iron_chest/closed.png
+  open:
+    sprite_path: overworld_objects/iron_chest/open.png
+initial_state: closed

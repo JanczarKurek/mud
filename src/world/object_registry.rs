@@ -97,6 +97,13 @@ impl ObjectRegistry {
         self.properties.get(&object_id)
     }
 
+    /// Mutable access to a registered object's properties bag. Used by the
+    /// interaction system to mirror an `ObjectState` change into
+    /// `properties["state"]` so the existing persistence path captures it.
+    pub fn properties_mut(&mut self, object_id: u64) -> Option<&mut ObjectProperties> {
+        self.properties.get_mut(&object_id)
+    }
+
     pub fn behavior(&self, object_id: u64) -> Option<&MapBehavior> {
         self.behaviors.get(&object_id)
     }

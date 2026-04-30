@@ -51,3 +51,25 @@ objects:
       disengage_distance_tiles: 6
       step_interval_seconds: 0.45
       bounds: { min_x: 0, min_y: 0, max_x: 10, max_y: 10 }
+
+  # Stateful-object sandbox: door at the west wall, lever wired to it from
+  # the east, two torches flanking the entry, and a chest near the door.
+  - id: cellar_inner_door
+    type: wooden_door
+    placement: { x: 6, y: 5 }
+
+  - type: torch
+    placement: { x: 1, y: 1 }
+  - type: torch
+    placement: { x: 10, y: 1 }
+
+  - type: iron_chest
+    placement: { x: 8, y: 8 }
+    contents:
+      - type: apple
+      - type: potion
+
+  - type: lever
+    placement: { x: 9, y: 5 }
+    properties:
+      target: cellar_inner_door

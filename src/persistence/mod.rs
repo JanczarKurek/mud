@@ -19,8 +19,8 @@ use crate::player::components::{
     PlayerId, PlayerIdentity, VitalStats,
 };
 use crate::world::components::{
-    Collider, Container, Movable, OverworldObject, Rotatable, SpaceId, SpaceResident, Storable,
-    TilePosition, ViewPosition,
+    Collider, Container, Movable, ObjectState, OverworldObject, Rotatable, SpaceId, SpaceResident,
+    Storable, TilePosition, ViewPosition,
 };
 use crate::world::floor_definitions::FloorTypeId;
 use crate::world::floor_map::{FloorMap, FloorMaps};
@@ -675,6 +675,21 @@ fn load_world_from_snapshot(
             entity.insert(crate::dialog::components::DialogNode(
                 dialog_node.to_owned(),
             ));
+        }
+        // Restore stateful-object state from the persisted properties bag,
+        // falling back to the definition's `initial_state` when the bag has
+        // no `state` key (legacy saves predate the states feature).
+        if let Some(state_value) = object
+            .properties
+            .get("state")
+            .cloned()
+            .or_else(|| {
+                object_definitions
+                    .get(&definition_id_for_lookup)
+                    .and_then(|def| def.initial_state.clone())
+            })
+        {
+            entity.insert(ObjectState(state_value));
         }
         if let Some(npc) = object.npc {
             entity.insert(Npc);

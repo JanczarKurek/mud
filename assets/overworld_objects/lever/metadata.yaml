@@ -1,0 +1,36 @@
+extends: static_world
+name: Iron Lever
+description: A wall-mounted iron lever.
+colliding: false
+fillable_properties:
+  - target
+render:
+  z_index: 0.30
+  debug_color: [80, 80, 100]
+  debug_size: 0.4
+  sprite_path: overworld_objects/lever/off.png
+states:
+  "off":
+    sprite_path: overworld_objects/lever/off.png
+  "on":
+    sprite_path: overworld_objects/lever/on.png
+initial_state: "off"
+wires_to:
+  - target
+interactions:
+  - verb: pull
+    label: Pull
+    from: ["off"]
+    to: "on"
+    side_effects:
+      - kind: set_target_state
+        target: "{properties.target}"
+        to: open
+  - verb: pull
+    label: Pull
+    from: ["on"]
+    to: "off"
+    side_effects:
+      - kind: set_target_state
+        target: "{properties.target}"
+        to: closed

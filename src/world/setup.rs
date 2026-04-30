@@ -324,9 +324,15 @@ pub fn attach_combat_health_bar(
 }
 
 /// Applies the definition-driven optional components (Collider, Movable, Storable,
-/// Container, Quantity) to a freshly spawned overworld-object entity. Works with any
-/// receiver that exposes Bevy's `.insert(Bundle)` method — i.e. `EntityCommands` or
-/// `EntityWorldMut` — which is why this is a macro: there is no shared trait in Bevy.
+/// Container, Quantity, ObjectState) to a freshly spawned overworld-object entity.
+/// Works with any receiver that exposes Bevy's `.insert(Bundle)` method — i.e.
+/// `EntityCommands` or `EntityWorldMut` — which is why this is a macro: there is
+/// no shared trait in Bevy.
+///
+/// Stateful objects (those with `initial_state`) get their `Collider` decided
+/// by `colliding_for_state(initial_state)`, so a door declared with
+/// `initial_state: closed` spawns colliding even when the base `colliding`
+/// flag is false.
 #[macro_export]
 macro_rules! apply_overworld_definition_components {
     ($entity:expr, $definition:expr, $container_contents:expr, $quantity:expr) => {{
@@ -335,8 +341,12 @@ macro_rules! apply_overworld_definition_components {
         let __provided: Option<Vec<Option<$crate::player::components::InventoryStack>>> =
             $container_contents;
         let __quantity: Option<u32> = $quantity;
-        if __definition.colliding {
+        let __initial_state = __definition.initial_state.as_deref();
+        if __definition.colliding_for_state(__initial_state) {
             $entity.insert($crate::world::components::Collider);
+        }
+        if let Some(__state) = __initial_state {
+            $entity.insert($crate::world::components::ObjectState(__state.to_owned()));
         }
         if __definition.movable {
             $entity.insert($crate::world::components::Movable);
@@ -417,11 +427,12 @@ pub fn spawn_client_projected_world_object(
     definition_id: &str,
     position: SpacePosition,
     is_npc: bool,
+    state: Option<&str>,
 ) -> Entity {
     let definition = definitions
         .get(definition_id)
         .unwrap_or_else(|| panic!("Missing overworld object definition for id '{definition_id}'"));
-    let sprite = sprite_for_definition(asset_server, definition, world_config);
+    let sprite = sprite_for_definition_state(asset_server, definition, world_config, state);
     let visual = world_visual_for_definition(definition, world_config.tile_size);
     let sprite_height = visual.sprite_height;
     let uses_y_sort = visual.y_sort;
@@ -518,9 +529,25 @@ pub fn sprite_for_definition(
     definition: &OverworldObjectDefinition,
     world_config: &WorldConfig,
 ) -> Sprite {
-    let size = definition.render.sprite_pixel_size(world_config.tile_size);
+    sprite_for_definition_state(asset_server, definition, world_config, None)
+}
 
-    let mut sprite = if let Some(sprite_path) = &definition.render.sprite_path {
+/// Like `sprite_for_definition` but consults the per-state sprite override
+/// when `state` is `Some`. Falls back to the base `render.sprite_path` when
+/// the state has no override or no `states:` block exists.
+pub fn sprite_for_definition_state(
+    asset_server: &AssetServer,
+    definition: &OverworldObjectDefinition,
+    world_config: &WorldConfig,
+    state: Option<&str>,
+) -> Sprite {
+    let size = definition.render.sprite_pixel_size(world_config.tile_size);
+    let effective_state = state.or(definition.initial_state.as_deref());
+
+    let mut sprite = if let Some(sprite_path) = definition
+        .sprite_path_for_state(effective_state)
+        .map(str::to_owned)
+    {
         let mut sprite = Sprite::from_image(asset_server.load(sprite_path));
         sprite.custom_size = Some(size);
         sprite

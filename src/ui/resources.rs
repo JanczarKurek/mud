@@ -20,9 +20,14 @@ pub struct ContextMenuState {
     pub can_attack: bool,
     pub can_take_partial: bool,
     pub can_talk: bool,
+    /// `(verb, label)` for the *single* interaction (door open/close,
+    /// torch light/extinguish, lever pull) currently applicable to the
+    /// hovered object. `None` means no interact button is shown.
+    pub interaction: Option<(String, String)>,
 }
 
 impl ContextMenuState {
+    #[allow(clippy::too_many_arguments)]
     pub fn show(
         &mut self,
         position: Vec2,
@@ -33,6 +38,7 @@ impl ContextMenuState {
         can_attack: bool,
         can_take_partial: bool,
         can_talk: bool,
+        interaction: Option<(String, String)>,
     ) {
         self.position = position;
         self.target = Some(target);
@@ -42,6 +48,7 @@ impl ContextMenuState {
         self.can_attack = can_attack;
         self.can_take_partial = can_take_partial;
         self.can_talk = can_talk;
+        self.interaction = interaction;
     }
 
     pub fn hide(&mut self) {
@@ -52,6 +59,7 @@ impl ContextMenuState {
         self.can_attack = false;
         self.can_take_partial = false;
         self.can_talk = false;
+        self.interaction = None;
     }
 
     pub fn is_visible(&self) -> bool {

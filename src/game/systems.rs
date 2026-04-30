@@ -5,9 +5,10 @@ use crate::combat::components::CombatTarget;
 use crate::game::commands::{
     GameCommand, InspectTarget, ItemDestination, ItemReference, ItemSlotRef, MoveDelta, UseTarget,
 };
-use crate::game::helpers::{colliders_in_space, player_space_id};
+use crate::game::helpers::{colliders_in_space, is_near_player, player_space_id};
 use crate::game::resources::{
-    ChatLogState, GameUiEvent, InventoryState, PendingGameCommands, PendingGameUiEvents,
+    ChatLogState, ContainerViewers, GameUiEvent, InventoryState, PendingGameCommands,
+    PendingGameUiEvents,
 };
 use crate::magic::resources::{SpellDefinition, SpellDefinitions};
 use crate::npc::components::Npc;
@@ -31,6 +32,15 @@ use crate::world::resources::SpaceManager;
 use crate::world::setup::{resolve_portal_destination_space, spawn_overworld_object};
 use crate::world::WorldConfig;
 use bevy::ecs::system::SystemParam;
+
+/// Bundle of side-output channels needed by `process_game_commands`. Bevy's
+/// `IntoSystem` impl caps individual function-parameter count, so we pack
+/// these together to leave headroom for the existing query mix.
+#[derive(SystemParam)]
+pub struct CommandOutputs<'w> {
+    pub ui_events: ResMut<'w, PendingGameUiEvents>,
+    pub container_viewers: ResMut<'w, ContainerViewers>,
+}
 
 /// Bundle of resources needed together when a command may cause space
 /// instantiation (portals). Kept as one `SystemParam` so `process_game_commands`
@@ -163,7 +173,7 @@ pub fn process_floor_commands(
 
 pub fn process_game_commands(
     mut pending_commands: ResMut<PendingGameCommands>,
-    mut ui_events: ResMut<PendingGameUiEvents>,
+    mut command_outputs: CommandOutputs,
     definitions: Res<OverworldObjectDefinitions>,
     spell_definitions: Res<SpellDefinitions>,
     authored_spaces: Res<SpaceDefinitions>,
@@ -268,8 +278,16 @@ pub fn process_game_commands(
                     &object_query,
                     &mut container_query,
                     &mut player_queries.p2(),
-                    &mut ui_events,
+                    &mut command_outputs.ui_events,
+                    &mut command_outputs.container_viewers,
                 );
+            }
+            GameCommand::CloseContainer { object_id } => {
+                if let Ok((_, identity, _, _, _, _, _, _, _)) =
+                    player_queries.p2().get(player_entity)
+                {
+                    command_outputs.container_viewers.remove(object_id, identity.id);
+                }
             }
             GameCommand::Inspect { target } => {
                 handle_inspect(
@@ -444,6 +462,12 @@ pub fn process_game_commands(
                 // in `CommandIntercept` before this system runs.
                 bevy::log::warn!(
                     "process_game_commands saw a rotate command — check system ordering"
+                );
+            }
+            GameCommand::InteractWithObject { .. } => {
+                // Drained by `process_interact_commands` in `CommandIntercept`.
+                bevy::log::warn!(
+                    "process_game_commands saw an interact command — check system ordering"
                 );
             }
         }
@@ -779,6 +803,7 @@ fn handle_open_container(
         With<Player>,
     >,
     ui_events: &mut PendingGameUiEvents,
+    container_viewers: &mut ContainerViewers,
 ) {
     let Ok((
         _,
@@ -806,6 +831,7 @@ fn handle_open_container(
         return;
     }
 
+    container_viewers.insert(object_id, player_identity.id);
     ui_events.push(player_identity.id, GameUiEvent::OpenContainer { object_id });
 }
 
@@ -3085,12 +3111,6 @@ mod tests {
             chat_log.lines
         );
     }
-}
-
-fn is_near_player(player_position: &TilePosition, target_position: &TilePosition) -> bool {
-    player_position.z == target_position.z
-        && (player_position.x - target_position.x).abs() <= 1
-        && (player_position.y - target_position.y).abs() <= 1
 }
 
 fn is_valid_world_drop(

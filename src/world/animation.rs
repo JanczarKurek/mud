@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use crate::game::resources::ClientGameState;
 use crate::player::components::Player;
 use crate::world::components::{ClientProjectedWorldObject, TilePosition};
-use crate::world::object_definitions::OverworldObjectDefinitions;
+use crate::world::object_definitions::{AnimationSheetDef, OverworldObjectDefinitions};
 use crate::world::resources::ViewScrollOffset;
 use crate::world::WorldConfig;
 
@@ -68,6 +68,54 @@ fn apply_clip(
 
 // ── Systems ───────────────────────────────────────────────────────────────────
 
+/// Build an `(AnimatedSprite, Sprite)` pair from a sheet definition. Used both
+/// at spawn time (`attach_animated_sprite`) and when an `ObjectState`
+/// transition swaps a still sprite for an animated one (sprite_state.rs).
+pub fn build_animated_sprite_components(
+    sheet: &AnimationSheetDef,
+    asset_server: &AssetServer,
+    texture_atlas_layouts: &mut Assets<TextureAtlasLayout>,
+) -> (AnimatedSprite, Sprite) {
+    let layout = TextureAtlasLayout::from_grid(
+        UVec2::new(sheet.frame_width, sheet.frame_height),
+        sheet.sheet_columns,
+        sheet.sheet_rows,
+        None,
+        None,
+    );
+    let layout_handle = texture_atlas_layouts.add(layout);
+    let image_handle: Handle<Image> = asset_server.load(&sheet.sheet_path);
+
+    let idle_clip = sheet.clips.get("idle");
+    let animated = AnimatedSprite {
+        current_clip: "idle".to_string(),
+        frame_index: 0,
+        frame_timer: 0.0,
+        frame_count: idle_clip.map_or(1, |c| c.frame_count),
+        seconds_per_frame: idle_clip
+            .map_or(1.0, |c| if c.fps > 0.0 { 1.0 / c.fps } else { 1.0 }),
+        atlas_columns: sheet.sheet_columns,
+        clip_row: idle_clip.map_or(0, |c| c.row),
+        clip_start_col: idle_clip.map_or(0, |c| c.start_col),
+        looping: idle_clip.is_none_or(|c| c.looping),
+    };
+
+    let sprite = Sprite {
+        image: image_handle,
+        custom_size: Some(Vec2::new(
+            sheet.frame_width as f32,
+            sheet.frame_height as f32,
+        )),
+        texture_atlas: Some(TextureAtlas {
+            layout: layout_handle,
+            index: 0,
+        }),
+        ..default()
+    };
+
+    (animated, sprite)
+}
+
 /// Attaches `AnimatedSprite` to newly spawned entities whose object definition
 /// has an `animation:` block, and swaps their `Sprite` to use a `TextureAtlas`.
 pub fn attach_animated_sprite(
@@ -80,12 +128,7 @@ pub fn attach_animated_sprite(
     // Local player without AnimatedSprite yet
     player_query: Query<(Entity, &Sprite), (With<Player>, Without<AnimatedSprite>)>,
 ) {
-    let try_attach = |entity: Entity,
-                      definition_id: &str,
-                      commands: &mut Commands,
-                      asset_server: &AssetServer,
-                      texture_atlas_layouts: &mut Assets<TextureAtlasLayout>,
-                      definitions: &OverworldObjectDefinitions| {
+    let mut try_attach = |entity: Entity, definition_id: &str| {
         let Some(def) = definitions.get(definition_id) else {
             return;
         };
@@ -93,68 +136,17 @@ pub fn attach_animated_sprite(
             return;
         };
 
-        let layout = TextureAtlasLayout::from_grid(
-            UVec2::new(sheet.frame_width, sheet.frame_height),
-            sheet.sheet_columns,
-            sheet.sheet_rows,
-            None,
-            None,
-        );
-        let layout_handle = texture_atlas_layouts.add(layout);
-
-        let image_handle: Handle<Image> = asset_server.load(&sheet.sheet_path);
-
-        // Build initial animated sprite state (idle clip).
-        let idle_clip = sheet.clips.get("idle");
-        let animated = AnimatedSprite {
-            current_clip: "idle".to_string(),
-            frame_index: 0,
-            frame_timer: 0.0,
-            frame_count: idle_clip.map_or(1, |c| c.frame_count),
-            seconds_per_frame: idle_clip
-                .map_or(1.0, |c| if c.fps > 0.0 { 1.0 / c.fps } else { 1.0 }),
-            atlas_columns: sheet.sheet_columns,
-            clip_row: idle_clip.map_or(0, |c| c.row),
-            clip_start_col: idle_clip.map_or(0, |c| c.start_col),
-            looping: idle_clip.is_none_or(|c| c.looping),
-        };
-
-        let new_sprite = Sprite {
-            image: image_handle,
-            custom_size: Some(Vec2::new(
-                sheet.frame_width as f32,
-                sheet.frame_height as f32,
-            )),
-            texture_atlas: Some(TextureAtlas {
-                layout: layout_handle,
-                index: 0,
-            }),
-            ..default()
-        };
-
-        commands.entity(entity).insert((animated, new_sprite));
+        let (animated, sprite) =
+            build_animated_sprite_components(sheet, &asset_server, &mut texture_atlas_layouts);
+        commands.entity(entity).insert((animated, sprite));
     };
 
     for (entity, world_obj) in &world_objects {
-        try_attach(
-            entity,
-            &world_obj.definition_id,
-            &mut commands,
-            &asset_server,
-            &mut texture_atlas_layouts,
-            &definitions,
-        );
+        try_attach(entity, &world_obj.definition_id);
     }
 
     for (entity, _sprite) in &player_query {
-        try_attach(
-            entity,
-            "player",
-            &mut commands,
-            &asset_server,
-            &mut texture_atlas_layouts,
-            &definitions,
-        );
+        try_attach(entity, "player");
     }
 }
 

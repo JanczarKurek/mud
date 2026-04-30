@@ -153,8 +153,18 @@ fn cursor_icon_for_mode(cursor_mode: CursorMode, asset_server: &AssetServer) -> 
 pub fn manage_open_containers(
     client_state: Res<ClientGameState>,
     mut docked_panel_state: ResMut<DockedPanelState>,
+    mut pending_commands: ResMut<PendingGameCommands>,
 ) {
     let player_position = client_state.player_tile_position;
+
+    let before_ids: Vec<u64> = docked_panel_state
+        .panels
+        .iter()
+        .filter_map(|panel| match panel.kind {
+            DockedPanelKind::Container { object_id } => Some(object_id),
+            _ => None,
+        })
+        .collect();
 
     docked_panel_state.panels.retain(|panel| match panel.kind {
         DockedPanelKind::Minimap
@@ -173,6 +183,19 @@ pub fn manage_open_containers(
                 object.is_container && is_near_player(&player_position, &object.tile_position)
             }),
     });
+
+    let after_ids: std::collections::HashSet<u64> = docked_panel_state
+        .panels
+        .iter()
+        .filter_map(|panel| match panel.kind {
+            DockedPanelKind::Container { object_id } => Some(object_id),
+            _ => None,
+        })
+        .collect();
+
+    for evicted in before_ids.into_iter().filter(|id| !after_ids.contains(id)) {
+        pending_commands.push(GameCommand::CloseContainer { object_id: evicted });
+    }
 }
 
 pub fn handle_docked_panel_close_buttons(
@@ -216,7 +239,8 @@ pub fn handle_docked_panel_close_buttons(
                     });
                     docked_panel_state.close_current_target();
                 }
-                Some(DockedPanelKind::Container { .. }) => {
+                Some(DockedPanelKind::Container { object_id }) => {
+                    pending_commands.push(GameCommand::CloseContainer { object_id });
                     docked_panel_state.close_panel(button.panel_id);
                 }
                 Some(DockedPanelKind::Minimap)
@@ -331,6 +355,30 @@ pub fn sync_context_menu_open_button(
     };
 }
 
+pub fn sync_context_menu_interact_button(
+    context_menu_state: Res<ContextMenuState>,
+    mut button_query: Query<
+        (&mut Node, &Children),
+        With<crate::ui::components::ContextMenuInteractButton>,
+    >,
+    mut text_query: Query<&mut Text>,
+) {
+    let Ok((mut node, children)) = button_query.single_mut() else {
+        return;
+    };
+
+    if let Some((_, label)) = &context_menu_state.interaction {
+        node.display = Display::Flex;
+        for child in children.iter() {
+            if let Ok(mut text) = text_query.get_mut(child) {
+                **text = label.clone();
+            }
+        }
+    } else {
+        node.display = Display::None;
+    }
+}
+
 pub fn sync_context_menu_attack_button(
     context_menu_state: Res<ContextMenuState>,
     mut attack_button_query: Query<&mut Node, With<ContextMenuAttackButton>>,
@@ -419,6 +467,10 @@ pub fn handle_context_menu_actions(
         Query<
             (&ComputedNode, &UiGlobalTransform),
             With<crate::ui::components::ContextMenuTalkButton>,
+        >,
+        Query<
+            (&ComputedNode, &UiGlobalTransform),
+            With<crate::ui::components::ContextMenuInteractButton>,
         >,
     )>,
 ) {
@@ -545,6 +597,17 @@ pub fn handle_context_menu_actions(
     if is_cursor_over_button(cursor_position, &menu_queries.p2()) {
         if let Some(ContextMenuTarget::World(object_id)) = context_menu_state.target {
             pending_commands.push(GameCommand::OpenContainer { object_id });
+        }
+        context_menu_state.hide();
+        return;
+    }
+
+    if is_cursor_over_button(cursor_position, &menu_queries.p7()) {
+        if let (Some(ContextMenuTarget::World(object_id)), Some((verb, _label))) = (
+            context_menu_state.target,
+            context_menu_state.interaction.clone(),
+        ) {
+            pending_commands.push(GameCommand::InteractWithObject { object_id, verb });
         }
         context_menu_state.hide();
         return;
@@ -887,6 +950,7 @@ pub fn handle_context_menu_opening(
                 false,
                 stack_qty > 1,
                 false,
+                None,
             );
             info!(
                 "context_open_slot_success slot={slot_kind:?} type_id={} can_use={can_use}",
@@ -908,6 +972,11 @@ pub fn handle_context_menu_opening(
 
         let near = is_near_player(&player_position, &object.tile_position);
         let can_use = near && object_is_usable(object.object_id, &object_registry, &definitions);
+        let interaction = if near {
+            applicable_interaction(object, &definitions)
+        } else {
+            None
+        };
         context_menu_state.show(
             cursor_position,
             ContextMenuTarget::World(object.object_id),
@@ -922,6 +991,7 @@ pub fn handle_context_menu_opening(
             object.is_npc,
             near && object.quantity > 1,
             near && object.is_npc && object.has_dialog,
+            interaction,
         );
         info!(
             "context_open_world_success object_id={} has_container={} can_use={} can_attack={} near={}",
@@ -952,6 +1022,7 @@ pub fn handle_context_menu_opening(
             true,
             false,
             false,
+            None,
         );
         info!(
             "context_open_remote_player_success object_id={} can_use={} can_attack=true near={}",
@@ -2057,6 +2128,31 @@ fn log_equipment_slot_bounds(
             contains_cursor
         );
     }
+}
+
+/// Pick the first interaction whose `from`-state filter matches the object's
+/// current replicated state. Returns `(verb, label)`. Used by the context
+/// menu to surface a single dynamic-label "Interact" button.
+fn applicable_interaction(
+    object: &crate::game::resources::ClientWorldObjectState,
+    definitions: &OverworldObjectDefinitions,
+) -> Option<(String, String)> {
+    let definition = definitions.get(&object.definition_id)?;
+    if definition.interactions.is_empty() {
+        return None;
+    }
+    let current_state = object.state.as_deref();
+    let interaction = definition.interactions.iter().find(|i| {
+        i.from.is_empty() || current_state.is_some_and(|cs| i.from.iter().any(|s| s == cs))
+    })?;
+    let label = interaction.label.clone().unwrap_or_else(|| {
+        let mut chars = interaction.verb.chars();
+        match chars.next() {
+            Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+            None => String::new(),
+        }
+    });
+    Some((interaction.verb.clone(), label))
 }
 
 fn object_is_usable(

@@ -79,6 +79,20 @@ pub enum GameCommand {
     OpenContainer {
         object_id: u64,
     },
+    /// Closing a container panel. Counterpart to `OpenContainer`; the server
+    /// removes the player from `ContainerViewers` and, when the viewer set
+    /// becomes empty, flips the object's state back to "closed" (chests).
+    CloseContainer {
+        object_id: u64,
+    },
+    /// Player-invoked verb on a nearby stateful world object (e.g. "open" on
+    /// a closed door, "light" on an unlit torch). Server validates adjacency,
+    /// looks up the matching `ObjectInteractionDef` in the object's
+    /// definition, applies the transition, and runs declared side-effects.
+    InteractWithObject {
+        object_id: u64,
+        verb: String,
+    },
     Inspect {
         target: InspectTarget,
     },

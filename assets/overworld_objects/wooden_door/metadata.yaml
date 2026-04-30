@@ -1,0 +1,27 @@
+extends: static_world
+name: Wooden Door
+description: A heavy wooden door.
+colliding: true
+render:
+  z_index: 0.30
+  debug_color: [110, 70, 40]
+  debug_size: 0.95
+  sprite_path: overworld_objects/wooden_door/closed.png
+  occludes_floor_above: false
+states:
+  closed:
+    sprite_path: overworld_objects/wooden_door/closed.png
+    colliding: true
+  open:
+    sprite_path: overworld_objects/wooden_door/open.png
+    colliding: false
+initial_state: closed
+interactions:
+  - verb: open
+    label: Open
+    from: [closed]
+    to: open
+  - verb: close
+    label: Close
+    from: [open]
+    to: closed

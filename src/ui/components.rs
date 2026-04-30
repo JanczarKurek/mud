@@ -118,6 +118,13 @@ pub struct ContextMenuTakePartialButton;
 #[derive(Component)]
 pub struct ContextMenuTalkButton;
 
+/// Single dynamic-label button for stateful-object interactions ("Open" /
+/// "Close" / "Light" / "Extinguish" / "Pull"). The label is rewritten each
+/// time the menu opens against the verb chosen for the currently hovered
+/// object's state.
+#[derive(Component)]
+pub struct ContextMenuInteractButton;
+
 #[derive(Component)]
 pub struct DialogPanelRoot;
 

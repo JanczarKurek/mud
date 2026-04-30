@@ -5,6 +5,7 @@ pub mod floor_definitions;
 pub mod floor_map;
 pub mod floor_render;
 pub mod floors;
+pub mod interactions;
 pub mod loot;
 pub mod map_layout;
 pub mod object_definitions;
@@ -49,7 +50,12 @@ pub struct WorldClientPlugin;
 
 impl Plugin for WorldServerPlugin {
     fn build(&self, app: &mut App) {
-        let authored_spaces = SpaceDefinitions::load_from_disk();
+        let mut authored_spaces = SpaceDefinitions::load_from_disk();
+        let object_definitions = OverworldObjectDefinitions::load_from_disk();
+        // wires_to resolution rewrites authored target ids in object
+        // properties to runtime u64 strings. Must happen before the
+        // ObjectRegistry snapshots properties.
+        authored_spaces.resolve_wiring(&object_definitions);
         let bootstrap_space = authored_spaces
             .bootstrap_space()
             .expect("Server requires a bootstrap space definition");
@@ -66,7 +72,7 @@ impl Plugin for WorldServerPlugin {
         .insert_resource(FloorMaps::default())
         .insert_resource(FloorRenderDirty::default())
         .insert_resource(ObjectRegistry::from_space_definitions(&authored_spaces))
-        .insert_resource(OverworldObjectDefinitions::load_from_disk())
+        .insert_resource(object_definitions)
         .insert_resource(FloorTilesetDefinitions::load_from_disk())
         .add_systems(
             Startup,
@@ -79,7 +85,9 @@ impl Plugin for WorldServerPlugin {
 
 impl Plugin for WorldClientPlugin {
     fn build(&self, app: &mut App) {
-        let authored_spaces = SpaceDefinitions::load_from_disk();
+        let mut authored_spaces = SpaceDefinitions::load_from_disk();
+        let object_definitions = OverworldObjectDefinitions::load_from_disk();
+        authored_spaces.resolve_wiring(&object_definitions);
         let world_config = authored_spaces
             .bootstrap_space()
             .map(|bs| WorldConfig {
@@ -102,7 +110,7 @@ impl Plugin for WorldClientPlugin {
             .insert_resource(world_config)
             .insert_resource(authored_spaces)
             .insert_resource(object_registry)
-            .insert_resource(OverworldObjectDefinitions::load_from_disk())
+            .insert_resource(object_definitions)
             .insert_resource(FloorTilesetDefinitions::load_from_disk())
             .insert_resource(FloorTilesetAtlases::default())
             .insert_resource(FloorRenderState::default())
@@ -160,7 +168,8 @@ fn reload_client_definitions(
 ) {
     *object_defs = OverworldObjectDefinitions::load_from_disk();
     *floor_defs = FloorTilesetDefinitions::load_from_disk();
-    let new_space_defs = SpaceDefinitions::load_from_disk();
+    let mut new_space_defs = SpaceDefinitions::load_from_disk();
+    new_space_defs.resolve_wiring(&object_defs);
     if let Some(bs) = new_space_defs.bootstrap_space() {
         world_config.map_width = bs.width;
         world_config.map_height = bs.height;

@@ -77,6 +77,13 @@ pub struct OverworldObject {
     pub definition_id: String,
 }
 
+/// Authoritative discrete-state marker for objects whose definition declares
+/// a `states:` block (doors open/closed, torches lit/unlit, etc). Mirrored
+/// into `ObjectRegistry::properties[id]["state"]` so persistence captures it
+/// for free.
+#[derive(Component, Clone, Debug, Eq, PartialEq)]
+pub struct ObjectState(pub String);
+
 #[derive(Component)]
 pub struct Collider;
 

@@ -12,7 +12,7 @@ use crate::game::projection::{
     apply_game_events_to_client_state, collect_game_events_from_authority,
 };
 use crate::game::resources::{
-    ClientGameState, PendingGameCommands, PendingGameEvents, PendingGameUiEvents,
+    ClientGameState, ContainerViewers, PendingGameCommands, PendingGameEvents, PendingGameUiEvents,
 };
 use crate::game::systems::{
     process_floor_commands, process_game_commands, process_rotate_commands,
@@ -20,6 +20,7 @@ use crate::game::systems::{
 };
 use crate::npc::systems::update_roaming_npcs;
 use crate::player::systems::move_player_on_grid;
+use crate::world::interactions::{process_interact_commands, sync_container_visual_state};
 
 pub struct GameServerPlugin;
 
@@ -37,6 +38,7 @@ impl Plugin for GameServerPlugin {
             .insert_resource(PendingGameEvents::default())
             .insert_resource(PendingGameUiEvents::default())
             .insert_resource(ClientGameState::default())
+            .insert_resource(ContainerViewers::default())
             .configure_sets(
                 Update,
                 CommandIntercept
@@ -63,14 +65,27 @@ impl Plugin for GameServerPlugin {
             )
             .add_systems(
                 Update,
+                process_interact_commands
+                    .in_set(CommandIntercept)
+                    .run_if(simulation_active),
+            )
+            .add_systems(
+                Update,
                 process_game_commands
                     .after(tick_player_movement_cooldowns)
                     .run_if(simulation_active),
             )
             .add_systems(
                 Update,
+                sync_container_visual_state
+                    .after(process_game_commands)
+                    .run_if(simulation_active),
+            )
+            .add_systems(
+                Update,
                 collect_game_events_from_authority
                     .after(process_game_commands)
+                    .after(sync_container_visual_state)
                     .after(update_roaming_npcs)
                     .after(resolve_battle_turn)
                     .run_if(simulation_active),

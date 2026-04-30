@@ -8,6 +8,7 @@ use crate::world::components::TilePosition;
 use crate::world::direction::Direction;
 use crate::world::floor_definitions::FloorTypeId;
 use crate::world::floor_map::FloorMap;
+use crate::world::object_definitions::OverworldObjectDefinitions;
 
 const DEFAULT_BOOTSTRAP_SPACE_ID: &str = "overworld";
 
@@ -60,6 +61,12 @@ pub struct SpaceDefinition {
     pub resolved_objects: Vec<ResolvedObject>,
     #[serde(skip)]
     object_indices: HashMap<u64, usize>,
+    /// Authored-id → runtime u64 lookup, populated by `resolve_objects`. Used
+    /// by `resolve_wiring` to rewrite cross-object reference properties
+    /// (e.g. a lever's `target` from "cellar_door" to a runtime id) once
+    /// `OverworldObjectDefinitions` are available.
+    #[serde(skip)]
+    authored_id_lookup: HashMap<String, u64>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -273,6 +280,15 @@ impl SpaceDefinitions {
         self.spaces.insert(def.authored_id.clone(), def);
     }
 
+    /// Run `resolve_wiring` on every space. Call once after `load_from_disk`
+    /// AND `OverworldObjectDefinitions::load_from_disk` have both completed —
+    /// wiring resolution depends on both being available.
+    pub fn resolve_wiring(&mut self, object_definitions: &OverworldObjectDefinitions) {
+        for definition in self.spaces.values_mut() {
+            definition.resolve_wiring(object_definitions);
+        }
+    }
+
     /// Load a single map YAML from `assets/maps/{authored_id}.yaml` and insert it.
     /// Returns `true` if successful. Skips validation assertions for portal destinations.
     pub fn load_single_from_disk(&mut self, authored_id: &str) -> bool {
@@ -447,7 +463,37 @@ impl SpaceDefinition {
 
         self.resolved_objects = resolved;
         self.object_indices = object_indices;
+        self.authored_id_lookup = name_to_id;
         next_id
+    }
+
+    /// Rewrite each resolved object's `properties` so that values for keys
+    /// listed in the definition's `wires_to:` resolve from authored ids
+    /// (the strings authors typed in the map YAML) to runtime u64s (decimal
+    /// strings). Panics on dangling references — wiring must be authored
+    /// correctly at load time, not silently drop at runtime.
+    pub fn resolve_wiring(&mut self, object_definitions: &OverworldObjectDefinitions) {
+        let space_id = self.authored_id.clone();
+        for object in &mut self.resolved_objects {
+            let Some(def) = object_definitions.get(&object.type_id) else {
+                continue;
+            };
+            for key in &def.wires_to {
+                let Some(authored_target) = object.properties.get(key) else {
+                    continue;
+                };
+                let Some(&runtime_id) = self.authored_id_lookup.get(authored_target) else {
+                    panic!(
+                        "Object of type '{}' in space '{}' has property '{}: {}' but no \
+                         authored object with that id exists in this space",
+                        object.type_id, space_id, key, authored_target
+                    );
+                };
+                object
+                    .properties
+                    .insert(key.clone(), runtime_id.to_string());
+            }
+        }
     }
 
     /// Create a blank space definition (no objects, no portals).
@@ -470,6 +516,7 @@ impl SpaceDefinition {
             tiles: None,
             resolved_objects: Vec::new(),
             object_indices: HashMap::new(),
+            authored_id_lookup: HashMap::new(),
         }
     }
 
@@ -759,5 +806,95 @@ objects:
         placement: { x: 1, y: 1 }
 ";
         parse_and_resolve(yaml);
+    }
+
+    fn lever_definitions() -> OverworldObjectDefinitions {
+        let yaml = r#"
+name: Lever
+description: ""
+colliding: false
+movable: false
+storable: false
+render:
+  z_index: 0.0
+  debug_color: [0, 0, 0]
+  debug_size: 1.0
+wires_to: [target]
+"#;
+        let lever_def: crate::world::object_definitions::OverworldObjectDefinition =
+            serde_yaml::from_str(yaml).expect("definition parses");
+
+        let door_yaml = r#"
+name: Door
+description: ""
+colliding: true
+movable: false
+storable: false
+render:
+  z_index: 0.0
+  debug_color: [0, 0, 0]
+  debug_size: 1.0
+"#;
+        let door_def: crate::world::object_definitions::OverworldObjectDefinition =
+            serde_yaml::from_str(door_yaml).expect("definition parses");
+
+        let mut map = HashMap::new();
+        map.insert("lever".to_owned(), lever_def);
+        map.insert("wooden_door".to_owned(), door_def);
+        OverworldObjectDefinitions::new_for_test(map)
+    }
+
+    #[test]
+    fn wires_to_resolves_authored_id_to_runtime_u64() {
+        let yaml = r#"
+authored_id: t
+width: 4
+height: 4
+fill_floor_type: grass
+objects:
+  - id: cellar_door
+    type: wooden_door
+    placement: { x: 1, y: 1 }
+  - type: lever
+    placement: { x: 2, y: 2 }
+    properties:
+      target: cellar_door
+"#;
+        let mut def = parse_and_resolve(yaml);
+        def.resolve_wiring(&lever_definitions());
+        let lever = def
+            .resolved_objects
+            .iter()
+            .find(|o| o.type_id == "lever")
+            .unwrap();
+        let resolved_target = lever.properties.get("target").unwrap();
+        // The lever's `target` should now be the door's runtime u64 (decimal).
+        let target_id: u64 = resolved_target
+            .parse()
+            .expect("resolved target should be a runtime id");
+        let door = def
+            .resolved_objects
+            .iter()
+            .find(|o| o.type_id == "wooden_door")
+            .unwrap();
+        assert_eq!(target_id, door.id);
+    }
+
+    #[test]
+    #[should_panic(expected = "no authored object with that id exists")]
+    fn wires_to_panics_on_missing_target() {
+        let yaml = r#"
+authored_id: t
+width: 4
+height: 4
+fill_floor_type: grass
+objects:
+  - type: lever
+    placement: { x: 2, y: 2 }
+    properties:
+      target: ghost_door
+"#;
+        let mut def = parse_and_resolve(yaml);
+        def.resolve_wiring(&lever_definitions());
     }
 }

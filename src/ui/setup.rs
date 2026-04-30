@@ -4,8 +4,8 @@ use bevy::ui::widget::NodeImageMode;
 
 use crate::ui::components::{
     BackpackPanelContent, BackpackSlotRow, ChatLogText, ContainerPanelContent, ContainerSlotButton,
-    ContainerSlotImage, ContextMenuAttackButton, ContextMenuInspectButton, ContextMenuOpenButton,
-    ContextMenuRoot, ContextMenuTakePartialButton, ContextMenuTalkButton, ContextMenuUseButton,
+    ContainerSlotImage, ContextMenuAttackButton, ContextMenuInspectButton, ContextMenuInteractButton,
+    ContextMenuOpenButton, ContextMenuRoot, ContextMenuTakePartialButton, ContextMenuTalkButton, ContextMenuUseButton,
     ContextMenuUseOnButton, CurrentCombatTargetLabel, CurrentTargetPanelContent,
     DialogPanelBodyText, DialogPanelCloseButton, DialogPanelContinueButton,
     DialogPanelOptionsContainer, DialogPanelRoot, DialogPanelSpeakerLabel, DockedPanelBody,
@@ -360,6 +360,7 @@ pub fn spawn_hud(
             );
             spawn_context_button(menu, &theme, &palette, "Inspect", ContextMenuInspectButton);
             spawn_context_button(menu, &theme, &palette, "Open", ContextMenuOpenButton);
+            spawn_context_button(menu, &theme, &palette, "Interact", ContextMenuInteractButton);
         });
 
     spawn_take_partial_popup(&mut commands, &theme, &palette);
