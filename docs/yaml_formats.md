@@ -64,6 +64,32 @@ Top-level fields:
 - Meaning: object definition ID that fills every tile before explicit object instances are applied
 - This should match a directory name under `assets/overworld_objects/`
 
+### `lighting`
+- Type: mapping
+- Optional: yes (defaults to outdoor-bright with day/night enabled)
+- Meaning: per-space ambient lighting and day/night flag, consumed by the
+  client lighting system (`src/world/lighting.rs`). Light tints sprites
+  multiplicatively; alpha is owned by the floor-dim pass and is orthogonal.
+- Subfields:
+  - `outdoor_ambient`: `[r, g, b]` u8 — base color for tiles **not** under a
+    roof. Multiplied by a day/night palette when `has_day_night: true`.
+    Default: `[220, 220, 230]`.
+  - `indoor_ambient`: `[r, g, b]` u8 — base color for tiles whose `(x, y, z+1)`
+    has an `occludes_floor_above` object (i.e. covered by a roof). Constant.
+    Default: `[55, 50, 60]`.
+  - `has_day_night`: bool — when true, `outdoor_ambient` is modulated by the
+    server-replicated world clock (one in-game day per ~20 real minutes).
+    Default: `true`.
+
+Example (uniformly dim cave):
+
+```yaml
+lighting:
+  outdoor_ambient: [60, 55, 55]
+  indoor_ambient: [50, 45, 45]
+  has_day_night: false
+```
+
 ### `portals`
 - Type: list of portal mappings
 - Optional: yes
@@ -869,6 +895,33 @@ render:
   sprite_path: overworld_objects/scroll/sprite.png
 ```
 
+### Object lighting (`light`)
+
+Optional top-level mapping. When present, the object emits light in the world. The client's lighting system reads this metadata and attaches a `LightSource` ECS component to the projected entity. The base value can be overridden or suppressed per state via `states.<name>.light` / `states.<name>.clear_light: true`.
+
+```yaml
+# Always-on light (e.g. campfire):
+light: { color: [255, 150, 70], radius: 5.5, intensity: 1.0 }
+```
+
+Per-state lighting (e.g. wall torch — only the `lit` state glows):
+
+```yaml
+states:
+  unlit:
+    sprite_path: overworld_objects/torch/unlit.png
+    clear_light: true
+  lit:
+    sprite_path: overworld_objects/torch/lit_sheet.png
+    light: { color: [255, 180, 90], radius: 4.5, intensity: 0.9 }
+```
+
+Subfields:
+
+- `color` — `[r, g, b]` u8 sRGB. The hue radiated by this source.
+- `radius` — float, tiles. Beyond this distance the contribution is zero. Falloff is quadratic (`(1 - d/r)^2`), Chebyshev-distance on the same z-floor.
+- `intensity` — float, default `1.0`. Multiplier on `color`. Values above `1.0` over-drive brighter for cosmetic punch but are clamped at apply time.
+
 ### Stateful objects (`states` / `initial_state` / `interactions` / `wires_to`)
 
 Optional. Lets a definition declare a small state machine the player can drive through the context menu (doors open/closed, torches lit/unlit, levers off/on). Any field omitted from a per-state override falls back to the base definition.
@@ -894,9 +947,9 @@ interactions:
 ```
 
 #### `states`
-- Type: mapping of state-name → `{sprite_path?, animation?, colliding?}`
+- Type: mapping of state-name → `{sprite_path?, animation?, colliding?, light?, clear_light?}`
 - Optional: yes
-- Meaning: per-state visual + collider overrides. Each state may override `sprite_path` (static), `animation` (atlas — same shape as `render.animation`), and/or `colliding`. Unset fields inherit from the base definition.
+- Meaning: per-state visual + collider + lighting overrides. Each state may override `sprite_path` (static), `animation` (atlas — same shape as `render.animation`), `colliding`, and/or `light` (see below). `clear_light: true` suppresses any base `light` for that state (e.g. unlit torch). Unset fields inherit from the base definition.
 
 #### `initial_state`
 - Type: string

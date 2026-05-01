@@ -3,6 +3,10 @@ width: 70
 height: 50
 fill_floor_type: grass
 permanence: persistent
+lighting:
+  outdoor_ambient: [220, 220, 230]
+  indoor_ambient: [55, 50, 60]
+  has_day_night: true
 floors:
   cobblestone:
     rects:

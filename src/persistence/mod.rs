@@ -25,8 +25,8 @@ use crate::world::components::{
 use crate::world::floor_definitions::FloorTypeId;
 use crate::world::floor_map::{FloorMap, FloorMaps};
 use crate::world::loot::CorpseTtl;
-use crate::world::map_layout::{SpaceDefinitions, SpacePermanence};
 use crate::world::map_layout::ObjectProperties;
+use crate::world::map_layout::{SpaceDefinitions, SpacePermanence};
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::resources::{RuntimeSpace, SpaceManager};
 use crate::world::setup::initialize_runtime_spaces;
@@ -512,6 +512,7 @@ fn load_world_from_snapshot(
             fill_floor_type: legacy_fill_floor_type.clone(),
             permanence: SpacePermanence::Persistent,
             instance_owner: None,
+            lighting: bootstrap_definition.lighting,
         });
     } else {
         let max_space_id = dump_spaces
@@ -521,6 +522,13 @@ fn load_world_from_snapshot(
             .unwrap_or(0);
         space_manager.next_space_id = max_space_id + 1;
         for dump_space in dump_spaces {
+            // Lighting is not persisted; pull the latest authored value from
+            // the matching space definition (or fall back to defaults). This
+            // means edits to a space's lighting block take effect on next load.
+            let lighting = authored_spaces
+                .get(&dump_space.authored_id)
+                .map(|def| def.lighting)
+                .unwrap_or_default();
             space_manager.insert_space(RuntimeSpace {
                 id: dump_space.id,
                 authored_id: dump_space.authored_id,
@@ -534,6 +542,7 @@ fn load_world_from_snapshot(
                         portal_id: instance_owner.portal_id,
                     }
                 }),
+                lighting,
             });
         }
     }
@@ -679,16 +688,11 @@ fn load_world_from_snapshot(
         // Restore stateful-object state from the persisted properties bag,
         // falling back to the definition's `initial_state` when the bag has
         // no `state` key (legacy saves predate the states feature).
-        if let Some(state_value) = object
-            .properties
-            .get("state")
-            .cloned()
-            .or_else(|| {
-                object_definitions
-                    .get(&definition_id_for_lookup)
-                    .and_then(|def| def.initial_state.clone())
-            })
-        {
+        if let Some(state_value) = object.properties.get("state").cloned().or_else(|| {
+            object_definitions
+                .get(&definition_id_for_lookup)
+                .and_then(|def| def.initial_state.clone())
+        }) {
             entity.insert(ObjectState(state_value));
         }
         if let Some(npc) = object.npc {

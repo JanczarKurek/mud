@@ -19,9 +19,7 @@ use crate::player::components::{Player, PlayerId, PlayerIdentity};
 use crate::world::components::{
     Collider, ObjectState, OverworldObject, SpaceResident, TilePosition,
 };
-use crate::world::object_definitions::{
-    InteractionSideEffect, OverworldObjectDefinitions,
-};
+use crate::world::object_definitions::{InteractionSideEffect, OverworldObjectDefinitions};
 use crate::world::object_registry::ObjectRegistry;
 
 /// Bound on cascade depth — long enough to cover plausible lever-chains, low
@@ -212,7 +210,8 @@ fn run_side_effects(
     for side_effect in side_effects {
         match side_effect {
             InteractionSideEffect::SetTargetState { target, to } => {
-                let Some(target_id) = resolve_target_id(target, source_object_id, object_registry) else {
+                let Some(target_id) = resolve_target_id(target, source_object_id, object_registry)
+                else {
                     continue;
                 };
                 // Capture the next-step's side-effects before mutating, so the

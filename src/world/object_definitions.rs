@@ -92,6 +92,11 @@ pub struct OverworldObjectDefinition {
     /// as a lever's `target` pointing at a door.
     #[serde(default)]
     pub wires_to: Vec<String>,
+    /// Light this object emits in the base / unstated case. May be overridden
+    /// or suppressed per-state via `ObjectStateDef::light` / `clear_light`.
+    /// Resolved into a `LightSource` ECS component on the projected entity.
+    #[serde(default)]
+    pub light: Option<LightEmissionDef>,
 }
 
 /// Per-state override of the rendering / collider knobs on
@@ -108,6 +113,28 @@ pub struct ObjectStateDef {
     /// closed door collides, an open one does not). `None` = inherit base.
     #[serde(default)]
     pub colliding: Option<bool>,
+    /// Override the base light for this state. `None` = inherit base.
+    #[serde(default)]
+    pub light: Option<LightEmissionDef>,
+    /// When true, this state suppresses any base light (used for an
+    /// `unlit` torch state when the base inherits a light from a parent).
+    #[serde(default)]
+    pub clear_light: bool,
+}
+
+/// Per-object light authoring. `intensity` is a 0..=1+ multiplier on `color`
+/// — values above 1 are clamped during the apply pass. `radius` is in tiles.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct LightEmissionDef {
+    pub color: [u8; 3],
+    pub radius: f32,
+    #[serde(default = "default_light_intensity")]
+    pub intensity: f32,
+}
+
+fn default_light_intensity() -> f32 {
+    1.0
 }
 
 /// One verb the player may invoke on a stateful object.
@@ -607,6 +634,21 @@ impl OverworldObjectDefinition {
         self.render.animation.as_ref()
     }
 
+    /// Light emission for `state`. `clear_light: true` on the state suppresses
+    /// the base light; otherwise the state's `light` overrides the base, and
+    /// missing-on-state inherits the base.
+    pub fn light_for_state(&self, state: Option<&str>) -> Option<&LightEmissionDef> {
+        if let Some(state_def) = state.and_then(|s| self.states.get(s)) {
+            if state_def.clear_light {
+                return None;
+            }
+            if state_def.light.is_some() {
+                return state_def.light.as_ref();
+            }
+        }
+        self.light.as_ref()
+    }
+
     /// Authoritative `colliding` for `state`, falling back to base.
     pub fn colliding_for_state(&self, state: Option<&str>) -> bool {
         state
@@ -618,7 +660,11 @@ impl OverworldObjectDefinition {
     /// Pick the matching interaction for `(verb, current_state)`. Returns the
     /// first declaration whose `verb` matches and whose `from` either is empty
     /// or contains the current state.
-    pub fn interaction_for(&self, verb: &str, current_state: Option<&str>) -> Option<&ObjectInteractionDef> {
+    pub fn interaction_for(
+        &self,
+        verb: &str,
+        current_state: Option<&str>,
+    ) -> Option<&ObjectInteractionDef> {
         self.interactions.iter().find(|i| {
             i.verb == verb
                 && (i.from.is_empty()

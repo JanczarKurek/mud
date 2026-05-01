@@ -9,6 +9,7 @@ use crate::world::components::{SpaceId, SpacePosition, TilePosition};
 use crate::world::direction::Direction;
 use crate::world::floor_definitions::FloorTypeId;
 use crate::world::floor_map::FloorMap;
+use crate::world::map_layout::SpaceLightingDef;
 
 pub type InventoryState = Inventory;
 pub type ChatLogState = ChatLog;
@@ -134,6 +135,8 @@ pub struct ClientSpaceState {
     pub width: i32,
     pub height: i32,
     pub fill_floor_type: FloorTypeId,
+    #[serde(default)]
+    pub lighting: SpaceLightingDef,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -205,6 +208,12 @@ pub enum GameEvent {
         x: i32,
         y: i32,
         floor_type: Option<FloorTypeId>,
+    },
+    /// Server-authoritative world clock advance. `time_of_day ∈ [0, 1)`.
+    /// Emitted when the value moves by more than ~0.001 (≈ 1.2 in-game
+    /// seconds at a 20-minute day) or after a 10s heartbeat.
+    WorldTimeChanged {
+        time_of_day: f32,
     },
 }
 
@@ -286,4 +295,9 @@ pub struct ClientGameState {
     pub player_facing: Option<Direction>,
     /// Mirror of authoritative FloorMaps; populated by FloorMapReplaced events.
     pub floor_maps: HashMap<(SpaceId, i32), FloorMap>,
+    /// Server-replicated world clock in [0, 1). 0.5 = noon. Defaults to 0.0
+    /// (midnight) on bootstrap; the very first projection tick emits a
+    /// `WorldTimeChanged` event that fixes the value before lighting reads it.
+    #[serde(default)]
+    pub world_time: f32,
 }

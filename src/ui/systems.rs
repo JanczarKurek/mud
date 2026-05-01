@@ -516,8 +516,9 @@ pub fn handle_context_menu_actions(
     if is_cursor_over_button(cursor_position, &menu_queries.p1()) {
         if let Some(target) = context_menu_state.target {
             let inspect_target = match target {
-                ContextMenuTarget::Slot(kind) => item_slot_kind_to_ref(kind, &docked_panel_state)
-                    .map(InspectTarget::SlotItem),
+                ContextMenuTarget::Slot(kind) => {
+                    item_slot_kind_to_ref(kind, &docked_panel_state).map(InspectTarget::SlotItem)
+                }
                 ContextMenuTarget::World(object_id) => Some(InspectTarget::Object(object_id)),
             };
             if let Some(inspect_target) = inspect_target {
@@ -2090,10 +2091,7 @@ fn equipment_state_summary(inventory_state: &InventoryState) -> String {
         .equipment_slots
         .iter()
         .map(|(slot, item)| {
-            let item_label = item
-                .as_ref()
-                .map(|i| i.type_id.as_str())
-                .unwrap_or("none");
+            let item_label = item.as_ref().map(|i| i.type_id.as_str()).unwrap_or("none");
             format!("{slot:?}={item_label}")
         })
         .collect::<Vec<_>>()

@@ -10,8 +10,10 @@ render:
 states:
   unlit:
     sprite_path: overworld_objects/torch/unlit.png
+    clear_light: true
   lit:
     sprite_path: overworld_objects/torch/lit_sheet.png
+    light: { color: [255, 180, 90], radius: 4.5, intensity: 0.9 }
     animation:
       sheet_path: overworld_objects/torch/lit_sheet.png
       frame_width: 32

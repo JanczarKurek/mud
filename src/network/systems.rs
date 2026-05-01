@@ -561,6 +561,7 @@ pub fn flush_server_messages(
     container_query: crate::game::projection::ProjectionContainerQuery,
     space_manager: Res<SpaceManager>,
     floor_maps: Res<crate::world::floor_map::FloorMaps>,
+    mut world_clock: ResMut<crate::world::lighting::WorldClock>,
     mut commands: Commands,
 ) {
     let peer_ui_events = std::mem::take(&mut pending_ui_events.peer_events);
@@ -599,7 +600,16 @@ pub fn flush_server_messages(
                 &container_query,
                 &space_manager,
                 &floor_maps,
+                &world_clock,
             );
+            if events.iter().any(|event| {
+                matches!(
+                    event,
+                    crate::game::resources::GameEvent::WorldTimeChanged { .. }
+                )
+            }) {
+                world_clock.seconds_since_emit = 0.0;
+            }
             if !events.is_empty() {
                 if !write_message(
                     &mut peer.stream,
@@ -1079,6 +1089,7 @@ mod tests {
 
         // Fold the bootstrap events (diff from default) into a baseline; this is
         // exactly what a freshly connected peer would do on the client side.
+        let world_clock = crate::world::lighting::WorldClock::default();
         let events = crate::game::projection::compute_events_for_peer(
             PlayerId(1),
             &ClientGameState::default(),
@@ -1088,6 +1099,7 @@ mod tests {
             &container_query,
             &space_manager,
             &floor_maps,
+            &world_clock,
         );
         let mut projection = ClientGameState::default();
         for event in events {
@@ -1143,6 +1155,7 @@ mod tests {
             floor_maps,
         ) = state.get(app.world_mut());
 
+        let world_clock = crate::world::lighting::WorldClock::default();
         let bootstrap = crate::game::projection::compute_events_for_peer(
             PlayerId(1),
             &ClientGameState::default(),
@@ -1152,6 +1165,7 @@ mod tests {
             &container_query,
             &space_manager,
             &floor_maps,
+            &world_clock,
         );
         let mut baseline = ClientGameState::default();
         for event in bootstrap {
@@ -1168,6 +1182,7 @@ mod tests {
             &container_query,
             &space_manager,
             &floor_maps,
+            &world_clock,
         );
         assert!(
             idle_events.is_empty(),
@@ -1206,6 +1221,7 @@ mod tests {
             &container_query,
             &space_manager,
             &floor_maps,
+            &world_clock,
         );
         let position_change_count = move_events
             .iter()

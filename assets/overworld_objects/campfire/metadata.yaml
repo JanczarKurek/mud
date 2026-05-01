@@ -1,6 +1,7 @@
 extends: static_world
 name: Campfire
 description: A crackling fire. Someone was here recently.
+light: { color: [255, 150, 70], radius: 5.5, intensity: 1.0 }
 render:
   z_index: 0.22
   debug_color: [220, 100, 20]

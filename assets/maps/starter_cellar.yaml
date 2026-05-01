@@ -3,6 +3,10 @@ permanence: ephemeral
 width: 12
 height: 10
 fill_floor_type: grass
+lighting:
+  outdoor_ambient: [70, 60, 50]
+  indoor_ambient: [55, 45, 35]
+  has_day_night: false
 
 legend:
   "#": wall

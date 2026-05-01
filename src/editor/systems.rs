@@ -1024,6 +1024,7 @@ pub fn apply_modal_confirmed(
                 fill_floor_type: fill_type.clone(),
                 permanence: crate::world::map_layout::SpacePermanence::Persistent,
                 instance_owner: None,
+                lighting: crate::world::map_layout::SpaceLightingDef::default(),
             });
             let new_def = crate::world::map_layout::SpaceDefinition::new_empty(
                 authored_id.clone(),

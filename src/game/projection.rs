@@ -33,6 +33,7 @@ use crate::world::components::{
     SpacePosition, SpaceResident, TilePosition,
 };
 use crate::world::floor_map::FloorMaps;
+use crate::world::lighting::{WorldClock, WORLD_TIME_EPSILON, WORLD_TIME_HEARTBEAT_SECS};
 use crate::world::resources::SpaceManager;
 
 pub type ProjectionPlayerQuery<'w, 's> = Query<
@@ -99,8 +100,22 @@ pub fn compute_events_for_peer(
     container_query: &ProjectionContainerQuery,
     space_manager: &SpaceManager,
     floor_maps: &FloorMaps,
+    world_clock: &WorldClock,
 ) -> Vec<GameEvent> {
     let mut events = Vec::new();
+
+    // World clock: emit on epsilon move OR heartbeat. Wraparound across the
+    // 1.0 → 0.0 seam is handled by the rem_euclid distance below.
+    let dt = (world_clock.time_of_day - previous.world_time + 1.0).rem_euclid(1.0);
+    let dt_min = dt.min(1.0 - dt);
+    if dt_min > WORLD_TIME_EPSILON
+        || world_clock.seconds_since_emit >= WORLD_TIME_HEARTBEAT_SECS
+        || previous.world_time == 0.0 && world_clock.time_of_day != 0.0
+    {
+        events.push(GameEvent::WorldTimeChanged {
+            time_of_day: world_clock.time_of_day,
+        });
+    }
 
     let mut local_player_object_id: Option<u64> = None;
     let mut local_space_id: Option<SpaceId> = None;
@@ -269,6 +284,7 @@ pub fn compute_events_for_peer(
             width: runtime_space.width,
             height: runtime_space.height,
             fill_floor_type: runtime_space.fill_floor_type.clone(),
+            lighting: runtime_space.lighting,
         };
         if previous.current_space.as_ref() != Some(&current_space) {
             events.push(GameEvent::CurrentSpaceChanged {
@@ -367,6 +383,7 @@ pub fn collect_game_events_from_authority(
     client_state: Res<ClientGameState>,
     space_manager: Res<SpaceManager>,
     floor_maps: Res<FloorMaps>,
+    mut world_clock: ResMut<WorldClock>,
     player_query: ProjectionPlayerQuery,
     object_query: ProjectionObjectQuery,
     world_object_query: ProjectionWorldObjectQuery,
@@ -400,7 +417,15 @@ pub fn collect_game_events_from_authority(
         &container_query,
         &space_manager,
         &floor_maps,
+        &world_clock,
     );
+
+    if events
+        .iter()
+        .any(|event| matches!(event, GameEvent::WorldTimeChanged { .. }))
+    {
+        world_clock.seconds_since_emit = 0.0;
+    }
 
     pending_game_events.events.extend(events);
 }
@@ -497,6 +522,9 @@ pub fn apply_event_to_state(state: &mut ClientGameState, event: GameEvent) {
             if let Some(map) = state.floor_maps.get_mut(&(space_id, z)) {
                 let _ = map.set(x, y, floor_type);
             }
+        }
+        GameEvent::WorldTimeChanged { time_of_day } => {
+            state.world_time = time_of_day;
         }
     }
 }
@@ -612,6 +640,10 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
         } => debug!(
             "client floor tile set: space {} z={} ({},{}) -> {:?}",
             space_id.0, z, x, y, floor_type
+        ),
+        GameEvent::WorldTimeChanged { time_of_day } => debug!(
+            "client world time updated: {:.4} -> {:.4}",
+            client_state.world_time, time_of_day
         ),
     }
 }

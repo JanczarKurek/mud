@@ -286,7 +286,9 @@ pub fn process_game_commands(
                 if let Ok((_, identity, _, _, _, _, _, _, _)) =
                     player_queries.p2().get(player_entity)
                 {
-                    command_outputs.container_viewers.remove(object_id, identity.id);
+                    command_outputs
+                        .container_viewers
+                        .remove(object_id, identity.id);
                 }
             }
             GameCommand::Inspect { target } => {
@@ -433,12 +435,7 @@ pub fn process_game_commands(
                 );
             }
             GameCommand::TakeItem { type_id, count } => {
-                handle_take_item(
-                    player_entity,
-                    &type_id,
-                    count,
-                    &mut player_queries.p2(),
-                );
+                handle_take_item(player_entity, &type_id, count, &mut player_queries.p2());
             }
             GameCommand::EditorSetFloorTile { .. } => {
                 // Drained by `process_floor_commands` in `CommandIntercept` before this system runs.
@@ -880,10 +877,7 @@ fn handle_inspect(
                     .map(|q| q.0)
                     .unwrap_or(1);
                 entry.map(|(_, tile, def_id)| {
-                    let properties = object_registry
-                        .properties(id)
-                        .cloned()
-                        .unwrap_or_default();
+                    let properties = object_registry.properties(id).cloned().unwrap_or_default();
                     (def_id, properties, count, Some(tile))
                 })
             }
@@ -952,13 +946,8 @@ fn handle_inspect(
         return;
     }
 
-    let description = object_description_for_type(
-        &type_id,
-        &properties,
-        count,
-        definitions,
-        spell_definitions,
-    );
+    let description =
+        object_description_for_type(&type_id, &properties, count, definitions, spell_definitions);
 
     if let (Some(desc), Ok((_, _, _, mut chat_log, _, _, _, _, _))) =
         (description, player_query.get_mut(player_entity))
@@ -1371,9 +1360,11 @@ fn handle_move_item(
 
     match (source, destination) {
         (ItemReference::WorldObject(object_id), ItemDestination::Slot(slot_ref)) => {
-            let Some((entity, tile_position, definition_id)) =
-                find_movable_entity_with_definition(object_id, space_resident.space_id, movable_query)
-            else {
+            let Some((entity, tile_position, definition_id)) = find_movable_entity_with_definition(
+                object_id,
+                space_resident.space_id,
+                movable_query,
+            ) else {
                 return;
             };
             if !is_near_player(&player_position, &tile_position) {
@@ -1721,9 +1712,11 @@ fn handle_take_from_stack(
 
         // ── source is a world object (ground stack) ────────────────────────────
         ItemReference::WorldObject(object_id) => {
-            let Some((entity, tile_position, definition_id)) =
-                find_movable_entity_with_definition(object_id, space_resident.space_id, movable_query)
-            else {
+            let Some((entity, tile_position, definition_id)) = find_movable_entity_with_definition(
+                object_id,
+                space_resident.space_id,
+                movable_query,
+            ) else {
                 return;
             };
             if !is_near_player(&player_position, &tile_position) {

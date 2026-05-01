@@ -87,6 +87,7 @@ pub fn instantiate_space(
         fill_floor_type: definition.fill_floor_type.clone(),
         permanence,
         instance_owner,
+        lighting: definition.lighting,
     };
     space_manager.insert_space(runtime_space);
     floor_maps.insert(

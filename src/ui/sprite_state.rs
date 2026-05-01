@@ -53,11 +53,8 @@ pub fn sync_object_state_visuals(
         let state_ref = new_state.as_deref();
 
         if let Some(sheet) = definition.animation_for_state(state_ref) {
-            let (animated, sprite) = build_animated_sprite_components(
-                sheet,
-                &asset_server,
-                &mut texture_atlas_layouts,
-            );
+            let (animated, sprite) =
+                build_animated_sprite_components(sheet, &asset_server, &mut texture_atlas_layouts);
             commands.entity(entity).insert((animated, sprite));
         } else {
             let sprite =
@@ -71,9 +68,7 @@ pub fn sync_object_state_visuals(
 
     // Drop entries for objects no longer projected so the cache doesn't grow
     // unbounded.
-    let known_ids: std::collections::HashSet<u64> = projected_query
-        .iter()
-        .map(|(_, p)| p.object_id)
-        .collect();
+    let known_ids: std::collections::HashSet<u64> =
+        projected_query.iter().map(|(_, p)| p.object_id).collect();
     last_states.retain(|id, _| known_ids.contains(id));
 }

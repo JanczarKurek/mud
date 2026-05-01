@@ -43,6 +43,10 @@ pub struct SpaceDefinition {
     pub fill_floor_type: FloorTypeId,
     #[serde(default = "default_persistent_permanence")]
     pub permanence: SpacePermanence,
+    /// Lighting configuration for this space. Replicated to clients via
+    /// `ClientSpaceState` and consumed by the lighting system.
+    #[serde(default)]
+    pub lighting: SpaceLightingDef,
     #[serde(default)]
     pub portals: Vec<PortalDefinition>,
     #[serde(default)]
@@ -509,6 +513,7 @@ impl SpaceDefinition {
             height,
             fill_floor_type,
             permanence: SpacePermanence::Persistent,
+            lighting: SpaceLightingDef::default(),
             portals: Vec::new(),
             objects: Vec::new(),
             floors: HashMap::new(),
@@ -612,7 +617,6 @@ impl SpaceDefinition {
                 }));
         }
     }
-
 }
 
 /// Recursive depth-first walk of an authored `MapObjectInstance`. Allocates
@@ -687,6 +691,42 @@ fn walk_instance(
 
 const fn default_persistent_permanence() -> SpacePermanence {
     SpacePermanence::Persistent
+}
+
+/// Per-space ambient lighting and day/night flag. Outdoor ambient is
+/// modulated by the world clock when `has_day_night` is true; indoor
+/// ambient is constant. Defaults are tuned for an outdoor map at noon.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct SpaceLightingDef {
+    #[serde(default = "default_outdoor_ambient")]
+    pub outdoor_ambient: [u8; 3],
+    #[serde(default = "default_indoor_ambient")]
+    pub indoor_ambient: [u8; 3],
+    #[serde(default = "default_has_day_night")]
+    pub has_day_night: bool,
+}
+
+impl Default for SpaceLightingDef {
+    fn default() -> Self {
+        Self {
+            outdoor_ambient: default_outdoor_ambient(),
+            indoor_ambient: default_indoor_ambient(),
+            has_day_night: default_has_day_night(),
+        }
+    }
+}
+
+const fn default_outdoor_ambient() -> [u8; 3] {
+    [220, 220, 230]
+}
+
+const fn default_indoor_ambient() -> [u8; 3] {
+    [55, 50, 60]
+}
+
+const fn default_has_day_night() -> bool {
+    true
 }
 
 #[cfg(test)]

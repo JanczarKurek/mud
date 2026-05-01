@@ -200,7 +200,12 @@ impl ObjectRegistry {
     ) -> Option<String> {
         let definition = definitions.get(type_id)?;
         let template = definition.description_for_count(count);
-        Some(render_template(properties, template, spell_definitions, count))
+        Some(render_template(
+            properties,
+            template,
+            spell_definitions,
+            count,
+        ))
     }
 
     pub fn resolved_spell_id(

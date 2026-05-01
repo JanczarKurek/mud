@@ -206,10 +206,8 @@ pub fn classify_corner<'a>(
         }
     }
 
-    let entries: Vec<(&FloorTypeId, u8)> = bits_per_type
-        .into_iter()
-        .filter(|(_, m)| *m != 0)
-        .collect();
+    let entries: Vec<(&FloorTypeId, u8)> =
+        bits_per_type.into_iter().filter(|(_, m)| *m != 0).collect();
     CornerRenderPlan::HardEdges(entries)
 }
 
@@ -523,10 +521,7 @@ mod tests {
         }
     }
 
-    fn defs(
-        floors: &[(&str, i32)],
-        transitions: &[(&str, &str)],
-    ) -> FloorTilesetDefinitions {
+    fn defs(floors: &[(&str, i32)], transitions: &[(&str, &str)]) -> FloorTilesetDefinitions {
         let mut by_id = HashMap::new();
         for (id, p) in floors {
             by_id.insert((*id).to_owned(), ts(id, *p));
@@ -561,7 +556,11 @@ mod tests {
         // NW=brick, NE=grass, SW=grass, SE=brick → grass mask = 6, brick mask = 9
         let plan = classify_corner(&defs, Some(&b), Some(&g), Some(&g), Some(&b));
         match plan {
-            CornerRenderPlan::Transition { low, high, high_mask } => {
+            CornerRenderPlan::Transition {
+                low,
+                high,
+                high_mask,
+            } => {
                 assert_eq!(low, &g);
                 assert_eq!(high, &b);
                 assert_eq!(high_mask, 9, "high mask should be NW+SE = 1|8");

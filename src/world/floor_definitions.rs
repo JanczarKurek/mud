@@ -230,7 +230,9 @@ impl FloorTilesetDefinitions {
         self.by_id.contains_key(id)
     }
 
-    pub fn transitions(&self) -> impl Iterator<Item = (&TransitionPairKey, &FloorTransitionDefinition)> {
+    pub fn transitions(
+        &self,
+    ) -> impl Iterator<Item = (&TransitionPairKey, &FloorTransitionDefinition)> {
         self.transitions.iter()
     }
 
@@ -428,10 +430,7 @@ mod tests {
         }
     }
 
-    fn defs_with(
-        floors: &[(&str, i32)],
-        transitions: &[(&str, &str)],
-    ) -> FloorTilesetDefinitions {
+    fn defs_with(floors: &[(&str, i32)], transitions: &[(&str, &str)]) -> FloorTilesetDefinitions {
         let mut by_id = HashMap::new();
         for (id, priority) in floors {
             by_id.insert((*id).to_owned(), ts(id, *priority));

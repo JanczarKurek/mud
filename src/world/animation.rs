@@ -92,8 +92,7 @@ pub fn build_animated_sprite_components(
         frame_index: 0,
         frame_timer: 0.0,
         frame_count: idle_clip.map_or(1, |c| c.frame_count),
-        seconds_per_frame: idle_clip
-            .map_or(1.0, |c| if c.fps > 0.0 { 1.0 / c.fps } else { 1.0 }),
+        seconds_per_frame: idle_clip.map_or(1.0, |c| if c.fps > 0.0 { 1.0 / c.fps } else { 1.0 }),
         atlas_columns: sheet.sheet_columns,
         clip_row: idle_clip.map_or(0, |c| c.row),
         clip_start_col: idle_clip.map_or(0, |c| c.start_col),

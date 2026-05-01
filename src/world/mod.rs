@@ -1,11 +1,13 @@
 pub mod animation;
 pub mod components;
+pub mod darkness;
 pub mod direction;
 pub mod floor_definitions;
 pub mod floor_map;
 pub mod floor_render;
 pub mod floors;
 pub mod interactions;
+pub mod lighting;
 pub mod loot;
 pub mod map_layout;
 pub mod object_definitions;
@@ -30,7 +32,11 @@ use crate::world::floor_render::{
     build_floor_render_cells, consume_floor_render_dirty, sync_floor_render_transforms,
     FloorRenderDirty, FloorRenderState, FloorTilesetAtlases,
 };
+use crate::world::darkness::{
+    setup_darkness_overlay, update_darkness_overlay, DarknessOverlayMaterial,
+};
 use crate::world::floors::{recompute_visible_floors, VisibleFloorRange};
+use crate::world::lighting::{advance_world_clock, sync_object_light_components, WorldClock};
 use crate::world::map_layout::SpaceDefinitions;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
@@ -71,12 +77,17 @@ impl Plugin for WorldServerPlugin {
         .insert_resource(SpaceManager::default())
         .insert_resource(FloorMaps::default())
         .insert_resource(FloorRenderDirty::default())
+        .insert_resource(WorldClock::default())
         .insert_resource(ObjectRegistry::from_space_definitions(&authored_spaces))
         .insert_resource(object_definitions)
         .insert_resource(FloorTilesetDefinitions::load_from_disk())
         .add_systems(
             Startup,
             initialize_runtime_spaces.in_set(WorldStartupSet::InitializeRuntimeSpaces),
+        )
+        .add_systems(
+            Update,
+            advance_world_clock.run_if(crate::app::state::simulation_active),
         )
         .add_systems(Update, cleanup_empty_ephemeral_spaces)
         .add_plugins(crate::world::loot::LootPlugin);
@@ -119,9 +130,15 @@ impl Plugin for WorldClientPlugin {
             .insert_resource(ClientRemotePlayerProjectionState::default())
             .insert_resource(ViewScrollOffset::default())
             .insert_resource(VisibleFloorRange::default())
+            .add_plugins(
+                bevy::sprite_render::Material2dPlugin::<DarknessOverlayMaterial>::default(),
+            )
             .add_systems(
                 OnEnter(ClientAppState::InGame),
-                reload_client_definitions.before(crate::player::setup::spawn_player_visual),
+                (
+                    reload_client_definitions.before(crate::player::setup::spawn_player_visual),
+                    setup_darkness_overlay,
+                ),
             )
             .add_systems(
                 Update,
@@ -153,6 +170,22 @@ impl Plugin for WorldClientPlugin {
                     cleanup_just_moved.after(return_to_idle_animation),
                     tick_view_scroll,
                     tick_visual_offsets,
+                )
+                    .run_if(in_state(ClientAppState::InGame)),
+            )
+            .add_systems(
+                Update,
+                (
+                    sync_object_light_components.after(sync_client_world_projection),
+                    // Reads each LightSource source's finalized Transform
+                    // (post-`sync_tile_transforms`), the active space's
+                    // ambient config, and the world clock — produces the
+                    // GPU uniforms for the fullscreen darkness quad.
+                    update_darkness_overlay
+                        .after(sync_object_light_components)
+                        .after(sync_tile_transforms)
+                        .after(sync_player_z)
+                        .after(recompute_visible_floors),
                 )
                     .run_if(in_state(ClientAppState::InGame)),
             );

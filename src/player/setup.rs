@@ -10,6 +10,7 @@ use crate::world::components::{
     Collider, DisplayedVitalStats, Facing, HealthBarDisplayPolicy, OverworldObject, SpaceId,
     SpaceResident, TilePosition, ViewPosition,
 };
+use crate::world::lighting::LightSource;
 use crate::world::map_layout::ObjectProperties;
 use crate::world::object_definitions::{EquipmentSlot, OverworldObjectDefinitions};
 use crate::world::object_registry::ObjectRegistry;
@@ -247,6 +248,10 @@ pub fn spawn_player_visual(
             always_visible: true,
         },
         sprite,
+        // Baseline player vision: warm-white, ~2-tile radius. Always on so
+        // dark spaces stay navigable. Equipment can extend later by adding
+        // additional `LightSource` entities or swapping this one.
+        LightSource::new([1.0, 0.92, 0.78], 2.0, 0.45),
         Transform::from_xyz(
             0.0,
             if uses_y_sort {

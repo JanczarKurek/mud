@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 
 use crate::game::resources::ClientGameState;
+use crate::world::components::SpaceId;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 
 /// Highest floor index the camera ever renders relative to the player's floor.
@@ -12,7 +13,36 @@ const MAX_FLOORS_ABOVE: i32 = 3;
 const MAX_FLOORS_BELOW: i32 = 3;
 
 /// Alpha tint applied to sprites on floors below the player's.
+///
+/// **Composition contract** (see also `world::lighting`): floor-dim writes
+/// only `Sprite.color`'s alpha channel; lighting writes only RGB. The two
+/// passes are orthogonal and never collide.
 pub const DIMMED_FLOOR_ALPHA: f32 = 0.55;
+
+/// True iff `(x, y, z)` is "indoor" — i.e. some object on `(x, y, z+1)` in
+/// `space_id` has `render.occludes_floor_above = true`. The same predicate
+/// powers floor-roof culling (`recompute_visible_floors`) and outdoor-light
+/// occlusion in the lighting system.
+pub fn is_indoor_tile(
+    state: &ClientGameState,
+    definitions: &OverworldObjectDefinitions,
+    space_id: SpaceId,
+    x: i32,
+    y: i32,
+    z: i32,
+) -> bool {
+    state.world_objects.values().any(|object| {
+        if object.position.space_id != space_id || object.tile_position.z != z + 1 {
+            return false;
+        }
+        if object.tile_position.x != x || object.tile_position.y != y {
+            return false;
+        }
+        definitions
+            .get(&object.definition_id)
+            .is_some_and(|def| def.render.occludes_floor_above)
+    })
+}
 
 /// Window of floor indices currently rendered on the client. Recomputed each
 /// frame from the local player's position plus the covering tiles above them.
@@ -46,17 +76,17 @@ pub fn recompute_visible_floors(
     let mut highest_visible = player_floor;
     for step in 1..=MAX_FLOORS_ABOVE {
         let floor = player_floor + step;
-        let covered = client_state.world_objects.values().any(|object| {
-            if object.position.space_id != space_id || object.tile_position.z != floor {
-                return false;
-            }
-            if object.tile_position.x != player_x || object.tile_position.y != player_y {
-                return false;
-            }
-            definitions
-                .get(&object.definition_id)
-                .is_some_and(|def| def.render.occludes_floor_above)
-        });
+        // Reuses `is_indoor_tile` as the "is the player covered by something
+        // on the floor above?" predicate — same semantics as outdoor-light
+        // occlusion in the lighting system.
+        let covered = is_indoor_tile(
+            &client_state,
+            &definitions,
+            space_id,
+            player_x,
+            player_y,
+            floor - 1,
+        );
         if covered {
             break;
         }

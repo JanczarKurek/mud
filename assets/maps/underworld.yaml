@@ -3,6 +3,10 @@ permanence: persistent
 width: 28
 height: 18
 fill_floor_type: cave_floor
+lighting:
+  outdoor_ambient: [60, 55, 55]
+  indoor_ambient: [50, 45, 45]
+  has_day_night: false
 
 legend:
   "#": cave_wall

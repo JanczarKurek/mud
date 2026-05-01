@@ -14,7 +14,7 @@ pub struct ViewScrollOffset {
 
 use crate::player::components::PlayerId;
 use crate::world::components::SpaceId;
-use crate::world::map_layout::SpacePermanence;
+use crate::world::map_layout::{SpaceLightingDef, SpacePermanence};
 
 #[derive(Resource, Default)]
 pub struct ClientWorldProjectionState {
@@ -36,6 +36,7 @@ pub struct RuntimeSpace {
     pub fill_floor_type: String,
     pub permanence: SpacePermanence,
     pub instance_owner: Option<PortalInstanceKey>,
+    pub lighting: SpaceLightingDef,
 }
 
 impl RuntimeSpace {
