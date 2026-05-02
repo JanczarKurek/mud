@@ -437,6 +437,30 @@ pub fn process_game_commands(
             GameCommand::TakeItem { type_id, count } => {
                 handle_take_item(player_entity, &type_id, count, &mut player_queries.p2());
             }
+            GameCommand::AdminTeleport {
+                space_id,
+                tile_position,
+            } => {
+                handle_admin_teleport(
+                    player_entity,
+                    space_id,
+                    tile_position,
+                    &space_authority.space_manager,
+                    &mut player_queries.p2(),
+                );
+            }
+            GameCommand::AdminDespawn { object_id } => {
+                handle_admin_despawn(object_id, &object_query, &mut commands);
+            }
+            GameCommand::AdminSetVitals { health, mana } => {
+                handle_admin_set_vitals(player_entity, health, mana, &mut player_queries.p2());
+            }
+            GameCommand::AdminSetObjectState { .. } => {
+                // Drained by `process_interact_commands` in `CommandIntercept`.
+                bevy::log::warn!(
+                    "process_game_commands saw AdminSetObjectState — check system ordering"
+                );
+            }
             GameCommand::EditorSetFloorTile { .. } => {
                 // Drained by `process_floor_commands` in `CommandIntercept` before this system runs.
                 bevy::log::warn!(
@@ -1952,6 +1976,110 @@ fn handle_admin_spawn(
     chat_log_state.push_narrator(format!(
         "Spawned {} as id {} at ({}, {}).",
         type_id, object_id, tile_position.x, tile_position.y
+    ));
+}
+
+fn handle_admin_teleport(
+    player_entity: Entity,
+    target_space_id: Option<crate::world::components::SpaceId>,
+    target_tile: TilePosition,
+    space_manager: &SpaceManager,
+    player_query: &mut Query<
+        (
+            Entity,
+            &PlayerIdentity,
+            &mut InventoryState,
+            &mut ChatLogState,
+            &mut SpaceResident,
+            &mut TilePosition,
+            &mut MovementCooldown,
+            &mut VitalStats,
+            Option<&CombatTarget>,
+        ),
+        With<Player>,
+    >,
+) {
+    let Ok((_, _, _, mut chat_log_state, mut space_resident, mut tile_position, _, _, _)) =
+        player_query.get_mut(player_entity)
+    else {
+        return;
+    };
+
+    let resolved_space_id = target_space_id.unwrap_or(space_resident.space_id);
+    let Some(runtime_space) = space_manager.get(resolved_space_id) else {
+        chat_log_state.push_narrator(format!(
+            "Teleport rejected: unknown space id {}.",
+            resolved_space_id.0
+        ));
+        return;
+    };
+    if !runtime_space.contains(target_tile) {
+        chat_log_state.push_narrator(format!(
+            "Teleport rejected: ({}, {}) outside space {}.",
+            target_tile.x, target_tile.y, resolved_space_id.0
+        ));
+        return;
+    }
+
+    space_resident.space_id = resolved_space_id;
+    *tile_position = target_tile;
+    chat_log_state.push_narrator(format!(
+        "Teleported to ({}, {}, z={}) in space {}.",
+        target_tile.x, target_tile.y, target_tile.z, resolved_space_id.0
+    ));
+}
+
+fn handle_admin_despawn(
+    object_id: u64,
+    object_query: &Query<
+        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
+        Without<Player>,
+    >,
+    commands: &mut Commands,
+) {
+    let Some((entity, _, _, _)) = object_query
+        .iter()
+        .find(|(_, _, _, object)| object.object_id == object_id)
+    else {
+        bevy::log::debug!("AdminDespawn: object {object_id} not found");
+        return;
+    };
+    commands.entity(entity).despawn();
+}
+
+fn handle_admin_set_vitals(
+    player_entity: Entity,
+    health: Option<f32>,
+    mana: Option<f32>,
+    player_query: &mut Query<
+        (
+            Entity,
+            &PlayerIdentity,
+            &mut InventoryState,
+            &mut ChatLogState,
+            &mut SpaceResident,
+            &mut TilePosition,
+            &mut MovementCooldown,
+            &mut VitalStats,
+            Option<&CombatTarget>,
+        ),
+        With<Player>,
+    >,
+) {
+    let Ok((_, _, _, mut chat_log_state, _, _, _, mut vitals, _)) =
+        player_query.get_mut(player_entity)
+    else {
+        return;
+    };
+    if let Some(value) = health {
+        vitals.health = value.clamp(0.0, vitals.max_health);
+    }
+    if let Some(value) = mana {
+        vitals.mana = value.clamp(0.0, vitals.max_mana);
+    }
+    chat_log_state.push_narrator(format!(
+        "Vitals updated: health={}/{}, mana={}/{}",
+        vitals.health, vitals.max_health, vitals.mana, vitals.max_mana
     ));
 }
 

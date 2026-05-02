@@ -3,31 +3,24 @@ use bevy::input::keyboard::{Key, KeyCode, KeyboardInput};
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 
-use crate::game::commands::GameCommand;
 use crate::game::resources::PendingGameCommands;
-use crate::player::components::Player;
-use crate::scripting::python::{PythonConsoleHost, PythonSnapshot, WorldObjectSnapshot};
+use crate::player::components::{Player, PlayerIdentity};
+use crate::scripting::python::PythonConsoleHost;
 use crate::scripting::resources::PythonConsoleState;
+use crate::scripting_api::build::WorldSnapshotParams;
 use crate::ui::components::{
     PythonConsoleInput, PythonConsoleOutput, PythonConsolePanel, PythonConsoleScrollbarThumb,
 };
-use crate::world::components::{OverworldObject, TilePosition};
-use crate::world::object_definitions::OverworldObjectDefinitions;
 
 pub fn handle_python_console_input(
     mut keyboard_input_events: MessageReader<KeyboardInput>,
     mut mouse_wheel_events: MessageReader<MouseWheel>,
-    definitions: Res<OverworldObjectDefinitions>,
     mut console_state: ResMut<PythonConsoleState>,
     mut pending_commands: ResMut<PendingGameCommands>,
     mut host: NonSendMut<PythonConsoleHost>,
-    player_query: Query<&TilePosition, With<Player>>,
-    world_object_query: Query<(&OverworldObject, &TilePosition), Without<Player>>,
+    snapshot_params: WorldSnapshotParams,
+    local_player_query: Query<&PlayerIdentity, With<Player>>,
 ) {
-    let Ok(player_position) = player_query.single() else {
-        return;
-    };
-
     if console_state.is_open {
         for event in mouse_wheel_events.read() {
             if event.y > 0.0 {
@@ -71,22 +64,16 @@ pub fn handle_python_console_input(
                 console_state.history_index = None;
                 console_state.input.clear();
 
-                let snapshot = PythonSnapshot {
-                    object_types: definitions.ids().map(str::to_owned).collect(),
-                    objects: world_object_query
-                        .iter()
-                        .map(|(object, tile_position)| WorldObjectSnapshot {
-                            object_id: object.object_id,
-                            type_id: object.definition_id.clone(),
-                            x: tile_position.x,
-                            y: tile_position.y,
-                        })
-                        .collect(),
-                    player_position: (player_position.x, player_position.y),
-                };
+                let caller = local_player_query.iter().next().map(|identity| identity.id);
+                let snapshot = snapshot_params.build_for_player(caller);
 
-                let spawn_requests = host.execute(&mut console_state, &command, snapshot);
-                apply_spawn_requests(spawn_requests, &mut pending_commands, &mut console_state);
+                let queued = host.execute(&mut console_state, &command, snapshot);
+                for cmd in queued {
+                    match caller {
+                        Some(id) => pending_commands.push_for_player(id, cmd),
+                        None => pending_commands.push(cmd),
+                    }
+                }
             }
             KeyCode::Backspace => {
                 console_state.input.pop();
@@ -171,23 +158,6 @@ pub fn refresh_python_console_ui(
     };
     scrollbar_node.height = percent(thumb_fraction * 100.0);
     scrollbar_node.top = percent((1.0 - thumb_fraction) * progress * 100.0);
-}
-
-fn apply_spawn_requests(
-    spawn_requests: Vec<crate::scripting::python::SpawnRequest>,
-    pending_commands: &mut PendingGameCommands,
-    console_state: &mut PythonConsoleState,
-) {
-    for request in spawn_requests {
-        pending_commands.push(GameCommand::AdminSpawn {
-            type_id: request.type_id.clone(),
-            tile_position: TilePosition::ground(request.x, request.y),
-        });
-        console_state.push_output(format!(
-            "spawn requested: {} at ({}, {})",
-            request.type_id, request.x, request.y
-        ));
-    }
 }
 
 fn history_up(console_state: &mut PythonConsoleState) {

@@ -22,7 +22,7 @@ impl Default for PythonConsoleState {
             input: String::new(),
             output_lines: vec![
                 "[System] Press ` to toggle the Python console.".to_owned(),
-                "[Hint] Use print(world.list_objects()) or world.spawn_object(\"apple\", 18, 14)."
+                "[Hint] world.player(), world.objects(), world.spawn(type, x, y), world.give(type, n)."
                     .to_owned(),
             ],
             history: Vec::new(),

@@ -30,6 +30,7 @@ const CLIENT_SUBDIR: &str = "client";
 const ACCOUNTS_DB_FILE: &str = "accounts.db";
 const WORLD_SNAPSHOT_REL: &str = "saves/world-state.json";
 const CLIENT_ASSETS_SUBDIR: &str = "assets";
+const ADMIN_SOCKET_FILE: &str = "admin.sock";
 
 /// Resolved data paths for a server-side role (embedded or headless server).
 #[derive(Clone, Debug)]
@@ -94,6 +95,17 @@ pub fn role_data_paths(runtime: AppRuntime) -> Option<RolePaths> {
 /// Root directory of the data tree (parent of embedded/ and server/).
 pub fn data_root_dir() -> PathBuf {
     data_root()
+}
+
+/// Default location of the admin REPL UNIX socket for `role`. Returns
+/// `None` for `TcpClient` because that role doesn't host an admin REPL.
+pub fn default_admin_socket_path(runtime: AppRuntime) -> Option<PathBuf> {
+    let role_dir = match runtime {
+        AppRuntime::EmbeddedClient => data_root().join(EMBEDDED_SUBDIR),
+        AppRuntime::HeadlessServer => data_root().join(SERVER_SUBDIR),
+        AppRuntime::TcpClient => return None,
+    };
+    Some(role_dir.join(ADMIN_SOCKET_FILE))
 }
 
 /// Root directory of the cache tree (parent of client/).

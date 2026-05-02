@@ -15,5 +15,6 @@ pub mod persistence;
 pub mod player;
 pub mod quest;
 pub mod scripting;
+pub mod scripting_api;
 pub mod ui;
 pub mod world;

@@ -1,56 +1,86 @@
+//! Admin Python console — embedded RustPython VM, persistent scope, exposes
+//! the shared `world` API surface from `crate::scripting_api`.
+//!
+//! Each `execute()` call builds an `AdminApiContext` from a fresh
+//! `WorldSnapshot`, installs it for the duration of the Python invocation,
+//! and drains the queued `GameCommand`s + log lines back to the caller.
+
 use std::mem::ManuallyDrop;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 use rustpython::InterpreterConfig;
-use rustpython_vm::pymodule;
 use rustpython_vm::scope::Scope;
 use rustpython_vm::Interpreter;
 
+use crate::game::commands::GameCommand;
 use crate::scripting::resources::PythonConsoleState;
+use crate::scripting_api::bindings::world_api;
+use crate::scripting_api::{install_ctx, ApiContext, ApiError, WorldSnapshot};
 
+/// Bootstrap shim — runs once when the VM is first created and after each
+/// explicit `world.reset()`. Aliases the legacy module name and rebinds
+/// `print` to route through `world.log` so output lands in the console.
 const BOOTSTRAP_SCRIPT: &str = r#"
-import mud_api
-world = mud_api
+import world
+import sys
+sys.modules['mud_api'] = world
 
 def _mud_print(*args, sep=" ", end=""):
-    mud_api.log(sep.join(str(arg) for arg in args) + end)
+    world.log(sep.join(str(arg) for arg in args) + end)
 
 print = _mud_print
 "#;
 
-static PYTHON_BRIDGE: OnceLock<Mutex<PythonBridgeState>> = OnceLock::new();
-
-#[derive(Clone, Debug)]
-pub struct WorldObjectSnapshot {
-    pub object_id: u64,
-    pub type_id: String,
-    pub x: i32,
-    pub y: i32,
-}
-
-#[derive(Clone, Debug)]
-pub struct PythonSnapshot {
-    pub object_types: Vec<String>,
-    pub objects: Vec<WorldObjectSnapshot>,
-    pub player_position: (i32, i32),
-}
-
-#[derive(Clone, Debug)]
-pub struct SpawnRequest {
-    pub type_id: String,
-    pub x: i32,
-    pub y: i32,
-}
-
 #[derive(Default)]
-struct PythonBridgeState {
-    snapshot: Option<PythonSnapshot>,
-    output_lines: Vec<String>,
-    spawn_requests: Vec<SpawnRequest>,
+struct AdminContextInner {
+    commands: Vec<GameCommand>,
+    log_lines: Vec<String>,
+    reset_pending: bool,
 }
 
-fn bridge_state() -> &'static Mutex<PythonBridgeState> {
-    PYTHON_BRIDGE.get_or_init(|| Mutex::new(PythonBridgeState::default()))
+pub struct AdminApiContext {
+    snapshot: WorldSnapshot,
+    inner: Mutex<AdminContextInner>,
+}
+
+impl AdminApiContext {
+    pub fn new(snapshot: WorldSnapshot) -> Self {
+        Self {
+            snapshot,
+            inner: Mutex::new(AdminContextInner::default()),
+        }
+    }
+}
+
+impl ApiContext for AdminApiContext {
+    fn is_admin(&self) -> bool {
+        true
+    }
+
+    fn caller_player_id(&self) -> Option<u64> {
+        self.snapshot.local_player_id
+    }
+
+    fn snapshot(&self) -> &WorldSnapshot {
+        &self.snapshot
+    }
+
+    fn log(&self, message: String) {
+        let mut inner = self.inner.lock().expect("admin api context poisoned");
+        inner.log_lines.push(message);
+    }
+
+    fn queue_command(&self, command: GameCommand) -> Result<(), ApiError> {
+        let mut inner = self.inner.lock().expect("admin api context poisoned");
+        inner.commands.push(command);
+        Ok(())
+    }
+
+    fn reset_scope(&self) -> Result<(), ApiError> {
+        let mut inner = self.inner.lock().expect("admin api context poisoned");
+        inner.reset_pending = true;
+        Ok(())
+    }
 }
 
 pub struct PythonConsoleHost {
@@ -62,15 +92,10 @@ impl PythonConsoleHost {
     pub fn new() -> Self {
         let interpreter = InterpreterConfig::new()
             .init_stdlib()
-            .add_native_module("mud_api".to_owned(), mud_api::make_module)
+            .add_native_module("world".to_owned(), world_api::make_module)
             .interpreter();
 
-        let scope = interpreter.enter(|vm| {
-            let scope = vm.new_scope_with_builtins();
-            vm.run_code_string(scope.clone(), BOOTSTRAP_SCRIPT, "<mud-bootstrap>".into())
-                .expect("Failed to initialize embedded Python console");
-            scope
-        });
+        let scope = Self::build_scope(&interpreter);
 
         Self {
             interpreter: ManuallyDrop::new(interpreter),
@@ -78,123 +103,72 @@ impl PythonConsoleHost {
         }
     }
 
+    fn build_scope(interpreter: &Interpreter) -> Scope {
+        interpreter.enter(|vm| {
+            let scope = vm.new_scope_with_builtins();
+            vm.run_code_string(scope.clone(), BOOTSTRAP_SCRIPT, "<mud-bootstrap>".into())
+                .expect("Failed to initialize embedded Python console");
+            scope
+        })
+    }
+
+    /// Run one Python input string in the persistent scope. Returns the
+    /// queued `GameCommand`s the script produced (caller pushes them into
+    /// `PendingGameCommands`).
     pub fn execute(
         &mut self,
         state: &mut PythonConsoleState,
         command: &str,
-        snapshot: PythonSnapshot,
-    ) -> Vec<SpawnRequest> {
-        {
-            let mut bridge = bridge_state().lock().expect("Python bridge mutex poisoned");
-            bridge.snapshot = Some(snapshot);
-            bridge.output_lines.clear();
-            bridge.spawn_requests.clear();
+        snapshot: WorldSnapshot,
+    ) -> Vec<GameCommand> {
+        let context = Arc::new(AdminApiContext::new(snapshot));
+        let trait_ctx: Arc<dyn ApiContext> = context.clone();
+
+        let result = install_ctx(trait_ctx, || {
+            self.interpreter.enter(|vm| {
+                vm.run_code_string((*self.scope).clone(), command, "<mud-console>".into())
+            })
+        });
+
+        if let Err(error) = result {
+            state.push_output(format!("Python error: {error:?}"));
         }
 
-        let result = self
-            .interpreter
-            .enter(|vm| vm.run_code_string((*self.scope).clone(), command, "<mud-console>".into()));
+        let (queued_commands, log_lines, reset_pending) = {
+            let mut inner = context.inner.lock().expect("admin api context poisoned");
+            (
+                std::mem::take(&mut inner.commands),
+                std::mem::take(&mut inner.log_lines),
+                std::mem::replace(&mut inner.reset_pending, false),
+            )
+        };
 
-        match result {
-            Ok(_) => {}
-            Err(error) => {
-                state.push_output(format!("Python error: {error:?}"));
-            }
-        }
-
-        let mut bridge = bridge_state().lock().expect("Python bridge mutex poisoned");
-        for line in bridge.output_lines.drain(..) {
+        for line in log_lines {
             state.push_output(line);
         }
-        bridge.snapshot = None;
-        bridge.spawn_requests.drain(..).collect()
+
+        if reset_pending {
+            let new_scope = Self::build_scope(&self.interpreter);
+            // Replace the persistent scope. `ManuallyDrop` means we're
+            // responsible for not double-dropping; the old `Scope` is
+            // dropped here when `manual` falls out of scope, and the new
+            // one is wrapped in `ManuallyDrop` for the field.
+            unsafe {
+                ManuallyDrop::drop(&mut self.scope);
+                self.scope = ManuallyDrop::new(new_scope);
+            }
+            state.push_output("[System] world.reset(): scope cleared.".to_owned());
+        }
+
+        queued_commands
     }
 }
 
 impl Drop for PythonConsoleHost {
     fn drop(&mut self) {
-        // RustPython teardown currently hangs or crashes on application shutdown.
-        // Intentionally leaking the VM state is acceptable here because the process
-        // is already exiting and the OS will reclaim the memory.
-    }
-}
-
-#[pymodule]
-mod mud_api {
-    use rustpython_vm::convert::ToPyObject;
-    use rustpython_vm::{PyObjectRef, VirtualMachine};
-
-    use super::{bridge_state, SpawnRequest};
-
-    #[pyfunction]
-    fn log(message: String) {
-        let mut bridge = bridge_state().lock().expect("Python bridge mutex poisoned");
-        bridge.output_lines.push(message);
-    }
-
-    #[pyfunction]
-    fn list_objects(vm: &VirtualMachine) -> PyObjectRef {
-        let bridge = bridge_state().lock().expect("Python bridge mutex poisoned");
-        let Some(snapshot) = &bridge.snapshot else {
-            return vm.ctx.new_list(Vec::new()).into();
-        };
-
-        let objects = snapshot
-            .objects
-            .iter()
-            .map(|object| {
-                format!(
-                    "id={} type={} pos=({}, {})",
-                    object.object_id, object.type_id, object.x, object.y
-                )
-            })
-            .map(|line| line.to_pyobject(vm))
-            .collect();
-
-        vm.ctx.new_list(objects).into()
-    }
-
-    #[pyfunction]
-    fn list_object_types(vm: &VirtualMachine) -> PyObjectRef {
-        let bridge = bridge_state().lock().expect("Python bridge mutex poisoned");
-        let object_types = bridge
-            .snapshot
-            .as_ref()
-            .map(|snapshot| snapshot.object_types.clone())
-            .unwrap_or_default()
-            .into_iter()
-            .map(|entry| entry.to_pyobject(vm))
-            .collect();
-
-        vm.ctx.new_list(object_types).into()
-    }
-
-    #[pyfunction]
-    fn player_position(vm: &VirtualMachine) -> PyObjectRef {
-        let bridge = bridge_state().lock().expect("Python bridge mutex poisoned");
-        let (x, y) = bridge
-            .snapshot
-            .as_ref()
-            .map(|snapshot| snapshot.player_position)
-            .unwrap_or((0, 0));
-
-        vm.ctx
-            .new_tuple(vec![x.to_pyobject(vm), y.to_pyobject(vm)])
-            .into()
-    }
-
-    #[pyfunction]
-    fn spawn_object(type_id: String, x: i32, y: i32) -> String {
-        let mut bridge = bridge_state().lock().expect("Python bridge mutex poisoned");
-        let Some(snapshot) = &bridge.snapshot else {
-            return "world bridge unavailable".to_owned();
-        };
-
-        if !snapshot.object_types.iter().any(|entry| entry == &type_id) {
-            return format!("unknown object type: {type_id}");
-        }
-
-        bridge.spawn_requests.push(SpawnRequest { type_id, x, y });
-        "queued".to_owned()
+        // RustPython teardown currently hangs or crashes on application
+        // shutdown. Intentionally leaking the VM state is acceptable here
+        // because the process is already exiting and the OS will reclaim
+        // the memory.
     }
 }

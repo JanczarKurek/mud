@@ -22,6 +22,9 @@ fn main() -> ExitCode {
     let mut generate_cert = false;
     let mut client_tls_enabled = false;
     let mut client_tls_insecure = false;
+    let mut admin_socket_enabled = false;
+    let mut admin_socket_path: Option<PathBuf> = None;
+    let mut admin_socket_mode: Option<u32> = None;
     let mut args = argv.into_iter();
 
     while let Some(arg) = args.next() {
@@ -69,6 +72,28 @@ fn main() -> ExitCode {
                 client_tls_enabled = true;
                 client_tls_insecure = true;
             }
+            "--admin-socket" => {
+                admin_socket_enabled = true;
+                // Optional value: take it only if the next arg looks like a
+                // path (starts with `/` or `.` or doesn't begin with `--`).
+                let next = args.clone().next();
+                if let Some(value) = next {
+                    if !value.starts_with("--") {
+                        admin_socket_path = Some(PathBuf::from(value));
+                        let _ = args.next();
+                    }
+                }
+            }
+            "--admin-socket-mode" => {
+                if let Some(value) = args.next() {
+                    match u32::from_str_radix(&value, 8) {
+                        Ok(mode) => admin_socket_mode = Some(mode),
+                        Err(err) => eprintln!(
+                            "warning: --admin-socket-mode `{value}` is not a valid octal: {err}"
+                        ),
+                    }
+                }
+            }
             _ => {
                 if let Some(addr) = arg.strip_prefix("--connect=") {
                     let (stripped_addr, is_tls) = strip_tls_scheme(addr);
@@ -87,6 +112,16 @@ fn main() -> ExitCode {
                     tls_cert = Some(PathBuf::from(path));
                 } else if let Some(path) = arg.strip_prefix("--tls-key=") {
                     tls_key = Some(PathBuf::from(path));
+                } else if let Some(path) = arg.strip_prefix("--admin-socket=") {
+                    admin_socket_enabled = true;
+                    admin_socket_path = Some(PathBuf::from(path));
+                } else if let Some(value) = arg.strip_prefix("--admin-socket-mode=") {
+                    match u32::from_str_radix(value, 8) {
+                        Ok(mode) => admin_socket_mode = Some(mode),
+                        Err(err) => eprintln!(
+                            "warning: --admin-socket-mode `{value}` is not a valid octal: {err}"
+                        ),
+                    }
                 }
             }
         }
@@ -117,6 +152,21 @@ fn main() -> ExitCode {
         None
     };
 
+    #[cfg(unix)]
+    let admin_socket = if admin_socket_enabled && matches!(runtime, AppRuntime::HeadlessServer) {
+        let socket_path = admin_socket_path
+            .or_else(|| std::env::var("MUD2_ADMIN_SOCKET").ok().map(PathBuf::from))
+            .or_else(|| mud2::app::paths::default_admin_socket_path(runtime))
+            .unwrap_or_else(|| PathBuf::from("admin.sock"));
+        let mode = admin_socket_mode.unwrap_or(0o600);
+        Some(mud2::network::AdminListenArgs { socket_path, mode })
+    } else {
+        if admin_socket_enabled && !matches!(runtime, AppRuntime::HeadlessServer) {
+            eprintln!("warning: --admin-socket is only honoured in headless-server mode; ignoring");
+        }
+        None
+    };
+
     App::new()
         .add_plugins(GameAppPlugin {
             runtime,
@@ -127,6 +177,8 @@ fn main() -> ExitCode {
             asset_cache_dir,
             server_tls,
             client_tls,
+            #[cfg(unix)]
+            admin_socket,
         })
         .run();
     ExitCode::SUCCESS

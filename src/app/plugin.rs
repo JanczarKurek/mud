@@ -53,6 +53,10 @@ pub struct GameAppPlugin {
     pub asset_cache_dir: Option<PathBuf>,
     pub server_tls: Option<ServerTlsArgs>,
     pub client_tls: Option<ClientTlsArgs>,
+    /// Admin Python REPL listener config. `Some` ⇒ attach `AdminReplPlugin`
+    /// in HeadlessServer mode (other modes ignore it). `#[cfg(unix)]` only.
+    #[cfg(unix)]
+    pub admin_socket: Option<crate::network::AdminListenArgs>,
 }
 
 /// CLI-supplied TLS configuration for the server side.
@@ -240,7 +244,21 @@ impl Plugin for GameAppPlugin {
                             .unwrap_or_else(|| "127.0.0.1:7000".to_owned()),
                         tls_config: server_tls_config,
                     },
+                    QuestPlugin::default(),
                 ));
+
+                // Quest systems read/write yarn variable stores even when no
+                // full dialog runtime is attached (HeadlessServer skips
+                // `DialogServerPlugin` because YarnSpinner needs `AssetPlugin`,
+                // which `MinimalPlugins` does not provide). Insert the bare
+                // resource so `drain_quest_events` / `drain_quest_commands`
+                // can run as no-ops.
+                app.insert_resource(crate::dialog::resources::CharacterVarStores::default());
+
+                #[cfg(unix)]
+                if let Some(args) = self.admin_socket.clone() {
+                    app.add_plugins(crate::network::AdminReplPlugin { args });
+                }
             }
         }
     }

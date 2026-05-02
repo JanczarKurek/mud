@@ -121,6 +121,33 @@ pub enum GameCommand {
         type_id: String,
         tile_position: TilePosition,
     },
+    /// Move the acting player (or `player_id` if specified) to a tile.
+    /// `space_id` of `None` means "current space"; non-None requires the
+    /// space to already exist in `SpaceManager`.
+    AdminTeleport {
+        space_id: Option<SpaceId>,
+        tile_position: TilePosition,
+    },
+    /// Despawn a world object by id. The next projection tick replicates the
+    /// removal via `WorldObjectRemoved`.
+    AdminDespawn {
+        object_id: u64,
+    },
+    /// Override the acting player's health and/or mana directly. Each `Some`
+    /// value clamps into [0, max]. The next projection tick emits a
+    /// `PlayerVitalsChanged` event.
+    AdminSetVitals {
+        health: Option<f32>,
+        mana: Option<f32>,
+    },
+    /// Force a discrete-state change on a stateful world object — the same
+    /// path that `InteractWithObject` uses internally, but bypassing the
+    /// definition's `interactions` whitelist. Useful for scripts that need
+    /// to set up scene state without triggering a player verb.
+    AdminSetObjectState {
+        object_id: u64,
+        state: String,
+    },
     /// Open a dialog with the given NPC. Server looks up the NPC's
     /// `DialogNode`, starts a Yarn runner, and replies with `DialogLine` or
     /// `DialogOptions` UI events.

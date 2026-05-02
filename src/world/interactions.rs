@@ -54,6 +54,17 @@ pub fn process_interact_commands(
     for queued in drained {
         let (object_id, verb) = match queued.command {
             GameCommand::InteractWithObject { object_id, verb } => (object_id, verb),
+            GameCommand::AdminSetObjectState { object_id, state } => {
+                apply_state_transition(
+                    object_id,
+                    &state,
+                    &definitions,
+                    &mut object_registry,
+                    &mut commands,
+                    &mut stateful_query,
+                );
+                continue;
+            }
             other => {
                 remaining.push(QueuedGameCommand {
                     player_id: queued.player_id,

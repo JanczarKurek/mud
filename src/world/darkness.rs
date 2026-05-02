@@ -24,11 +24,11 @@ use bevy::shader::ShaderRef;
 use bevy::sprite_render::{AlphaMode2d, Material2d, Material2dKey, MeshMaterial2d};
 
 use crate::game::resources::ClientGameState;
-use crate::world::WorldConfig;
 use crate::world::components::ViewPosition;
 use crate::world::floors::VisibleFloorRange;
 use crate::world::lighting::{day_night_palette, srgb_u8_to_linear, LightSource};
 use crate::world::object_definitions::OverworldObjectDefinitions;
+use crate::world::WorldConfig;
 
 const SHADER_PATH: &str = "shaders/darkness_overlay.wgsl";
 
@@ -326,5 +326,4 @@ mod tests {
         let a = compute_alpha_from_brightness(&[0.95, 0.1, 0.1]);
         assert!(a < 0.1);
     }
-
 }

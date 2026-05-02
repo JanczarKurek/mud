@@ -1,8 +1,13 @@
+#[cfg(unix)]
+pub mod admin;
 pub mod asset_sync;
 pub mod protocol;
 pub mod resources;
 pub mod systems;
 pub mod transport;
+
+#[cfg(unix)]
+pub use crate::network::admin::{AdminListenArgs, AdminReplPlugin};
 
 use std::sync::Arc;
 

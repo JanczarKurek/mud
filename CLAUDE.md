@@ -75,6 +75,13 @@ EmbeddedClient mode = HeadlessServer + TcpClient running in the same `App`. The 
 - Server: `--tls --tls-cert PATH --tls-key PATH`, plus `--generate-cert` (requires `dev-self-signed` Cargo feature) to emit a self-signed pair.
 - Client: `--tls` uses `webpki-roots` trust anchors; `--insecure` skips verification (dev only). `--connect tls://host:port` is shorthand for both.
 
+### Admin Python REPL
+
+- HeadlessServer only. Pass `--admin-socket [PATH]` to bind a UNIX-domain socket; default path is `~/.local/share/mud2/server/admin.sock`. Auth is by filesystem permissions (default mode `0600`, override with `--admin-socket-mode 660`). Connect with `nc -U <path>` or `socat - UNIX-CONNECT:<path>`.
+- One persistent Python scope is shared across all admin connections — admins can collaborate on globals. Live-bind a session to act-as a player with `world.attach_player(player_id)` (`world.attach_player(None)` detaches).
+- `AdminReplHost` (`src/scripting/admin_host.rs`) compiles input as `Mode::Single` and pipes `sys.stdout` / `sys.stderr` / `sys.displayhook` through `world.log`, so bare expressions print their `repr` like CPython's REPL. Multi-line input is buffered until a blank line force-flushes (mirrors CPython).
+- The listener (`src/network/admin.rs`, `#[cfg(unix)]`) reuses the existing sync-nonblocking pattern from `src/network/systems.rs`. All Python execution happens on the Bevy main thread; no background threads. Stale sockets from a prior crash are auto-reclaimed at startup if no live listener answers on them.
+
 ### Data-Driven Design
 - Map layouts: `assets/maps/*.yaml`
 - Object definitions: `assets/overworld_objects/*/metadata.yaml`

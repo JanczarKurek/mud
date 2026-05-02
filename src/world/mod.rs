@@ -26,14 +26,14 @@ use crate::world::animation::{
     advance_animation_timers, attach_animated_sprite, cleanup_just_moved, detect_player_movement,
     return_to_idle_animation, tick_view_scroll, tick_visual_offsets, trigger_movement_animation,
 };
+use crate::world::darkness::{
+    setup_darkness_overlay, update_darkness_overlay, DarknessOverlayMaterial,
+};
 use crate::world::floor_definitions::FloorTilesetDefinitions;
 use crate::world::floor_map::FloorMaps;
 use crate::world::floor_render::{
     build_floor_render_cells, consume_floor_render_dirty, sync_floor_render_transforms,
     FloorRenderDirty, FloorRenderState, FloorTilesetAtlases,
-};
-use crate::world::darkness::{
-    setup_darkness_overlay, update_darkness_overlay, DarknessOverlayMaterial,
 };
 use crate::world::floors::{recompute_visible_floors, VisibleFloorRange};
 use crate::world::lighting::{advance_world_clock, sync_object_light_components, WorldClock};
@@ -130,9 +130,9 @@ impl Plugin for WorldClientPlugin {
             .insert_resource(ClientRemotePlayerProjectionState::default())
             .insert_resource(ViewScrollOffset::default())
             .insert_resource(VisibleFloorRange::default())
-            .add_plugins(
-                bevy::sprite_render::Material2dPlugin::<DarknessOverlayMaterial>::default(),
-            )
+            .add_plugins(bevy::sprite_render::Material2dPlugin::<
+                DarknessOverlayMaterial,
+            >::default())
             .add_systems(
                 OnEnter(ClientAppState::InGame),
                 (

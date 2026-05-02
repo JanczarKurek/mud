@@ -27,7 +27,7 @@ use rustpython_vm::scope::Scope;
 use rustpython_vm::{Interpreter, PyObjectRef, VirtualMachine};
 
 use crate::quest::events::QuestEvent;
-use crate::quest::python;
+use crate::scripting_api::bindings::world_api;
 
 /// Stored per loaded quest module.
 pub struct QuestDef {
@@ -50,12 +50,14 @@ pub struct QuestEngine {
 
 impl QuestEngine {
     pub fn new() -> Self {
+        // Register the shared `world` module under both its canonical name
+        // and the legacy `mud_quest_api` name so existing quest scripts
+        // (`import mud_quest_api as q`) keep working. Both names share the
+        // same backend via the `WORLD_API_CTX` thread-local.
         let interpreter = InterpreterConfig::new()
             .init_stdlib()
-            .add_native_module(
-                "mud_quest_api".to_owned(),
-                python::mud_quest_api::make_module,
-            )
+            .add_native_module("world".to_owned(), world_api::make_module)
+            .add_native_module("mud_quest_api".to_owned(), world_api::make_module)
             .interpreter();
 
         Self {

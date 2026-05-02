@@ -1,3 +1,4 @@
+pub mod admin_host;
 pub mod python;
 pub mod resources;
 pub mod systems;
@@ -8,6 +9,8 @@ use crate::app::state::ClientAppState;
 use crate::scripting::python::PythonConsoleHost;
 use crate::scripting::resources::PythonConsoleState;
 use crate::scripting::systems::{handle_python_console_input, refresh_python_console_ui};
+
+pub use crate::scripting::admin_host::{AdminExecResult, AdminReplHost, CompileOutcome};
 
 pub struct ScriptingPlugin;
 
