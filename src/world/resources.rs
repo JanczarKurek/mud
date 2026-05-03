@@ -12,6 +12,20 @@ pub struct ViewScrollOffset {
     pub duration: f32,
 }
 
+impl ViewScrollOffset {
+    /// Integer-pixel-snapped offset for sprite positioning. Atlas-mapped
+    /// sprites (floors) bleed into neighbouring atlas cells when rendered at
+    /// fractional pixel positions: nearest-filtered UV sampling at the right
+    /// edge can hit exactly 1.0 and round into the next cell. Snapping makes
+    /// the world step in 1-px increments during a scroll, which is also what
+    /// retro pixel-art games do. Every consumer of `current` must use this
+    /// (or all use raw `current`) — mixing breaks visual alignment between
+    /// sprites and the darkness mask.
+    pub fn snapped(&self) -> Vec2 {
+        self.current.round()
+    }
+}
+
 use crate::player::components::PlayerId;
 use crate::world::components::SpaceId;
 use crate::world::map_layout::{SpaceLightingDef, SpacePermanence};

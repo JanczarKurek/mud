@@ -185,22 +185,62 @@ pub fn handle_editor_camera_pan(
     );
 }
 
+/// Atlas texel size assumed for all floor tilesets (matches
+/// `default_tile_size_px` in `floor_definitions.rs`). Editor zoom is snapped
+/// to integer values of `world.tile_size * zoom_level / ATLAS_TEXEL_PX`; at
+/// fractional ratios, nearest-filtered atlas sampling pulls in pixels from
+/// neighbouring cells at tile borders ("texture atlas bleeding").
+const ATLAS_TEXEL_PX: f32 = 16.0;
+const ZOOM_RATIO_MIN: i32 = 1;
+const ZOOM_RATIO_MAX: i32 = 12;
+
+fn zoom_to_ratio(zoom: f32, tile_size: f32) -> i32 {
+    (tile_size * zoom / ATLAS_TEXEL_PX)
+        .round()
+        .clamp(ZOOM_RATIO_MIN as f32, ZOOM_RATIO_MAX as f32) as i32
+}
+
+fn ratio_to_zoom(ratio: i32, tile_size: f32) -> f32 {
+    ratio as f32 * ATLAS_TEXEL_PX / tile_size
+}
+
 pub fn handle_editor_zoom(
     mut mouse_wheel: bevy::ecs::message::MessageReader<MouseWheel>,
     modal_state: Res<ModalState>,
     mut editor_camera: ResMut<EditorCamera>,
+    world_config: Res<WorldConfig>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    palette_root: Query<
+        (&bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform),
+        With<crate::editor::ui::palette::EditorPaletteRoot>,
+    >,
 ) {
     if modal_state.active.is_some() {
         return;
     }
-    for event in mouse_wheel.read() {
-        let factor = if event.y > 0.0 {
-            1.15_f32
-        } else {
-            1.0 / 1.15_f32
-        };
-        editor_camera.zoom_level = (editor_camera.zoom_level * factor).clamp(0.25, 4.0);
+    // Don't zoom when the cursor is over the palette panel — there the wheel
+    // belongs to the palette scroll handler.
+    if let Ok(window) = windows.single() {
+        if let Some(cursor) = window.cursor_position() {
+            if palette_root
+                .iter()
+                .any(|(computed, transform)| computed.contains_point(*transform, cursor))
+            {
+                mouse_wheel.clear();
+                return;
+            }
+        }
     }
+    let mut ratio = zoom_to_ratio(editor_camera.zoom_level, world_config.tile_size);
+    for event in mouse_wheel.read() {
+        if event.y > 0.0 {
+            ratio += 1;
+        } else if event.y < 0.0 {
+            ratio -= 1;
+        }
+    }
+    ratio = ratio.clamp(ZOOM_RATIO_MIN, ZOOM_RATIO_MAX);
+    editor_camera.zoom_level = ratio_to_zoom(ratio, world_config.tile_size);
 }
 
 pub fn sync_tile_transforms_editor(
@@ -275,7 +315,6 @@ pub fn handle_editor_left_click(
     mut prop_buffer: ResMut<EditorPropertyEditBuffer>,
     mut undo_stack: ResMut<UndoStack>,
     mut modal_state: ResMut<ModalState>,
-    mut pending_commands: ResMut<PendingGameCommands>,
     existing_objects: Query<(&OverworldObject, &SpaceResident, &TilePosition), Without<Player>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -301,14 +340,9 @@ pub fn handle_editor_left_click(
     }
 
     if editor_state.current_tool == EditorTool::FloorBrush {
-        pending_commands.push(GameCommand::EditorSetFloorTile {
-            space_id: editor_context.space_id,
-            z: TilePosition::GROUND_FLOOR,
-            x: tile.x,
-            y: tile.y,
-            floor_type: editor_state.selected_floor_type.clone(),
-        });
-        editor_state.dirty = true;
+        // FloorBrush painting is driven by `handle_editor_floor_brush_drag`,
+        // which supports both clicks and drags via `mouse.pressed(...)`. Skip
+        // here so the click doesn't paint twice.
         return;
     }
 
@@ -408,7 +442,6 @@ pub fn handle_editor_right_click(
     mut prop_buffer: ResMut<EditorPropertyEditBuffer>,
     mut undo_stack: ResMut<UndoStack>,
     mut portal_buffer: ResMut<EditorPortalBuffer>,
-    mut pending_commands: ResMut<PendingGameCommands>,
     objects: Query<(Entity, &OverworldObject, &SpaceResident, &TilePosition)>,
     object_registry: Res<ObjectRegistry>,
     mut commands: Commands,
@@ -427,21 +460,7 @@ pub fn handle_editor_right_click(
     let tile = cursor_to_tile(cursor, window, &world_config, &editor_camera);
 
     if editor_state.current_tool == EditorTool::FloorBrush {
-        if tile.x < 0
-            || tile.y < 0
-            || tile.x >= editor_context.map_width
-            || tile.y >= editor_context.map_height
-        {
-            return;
-        }
-        pending_commands.push(GameCommand::EditorSetFloorTile {
-            space_id: editor_context.space_id,
-            z: TilePosition::GROUND_FLOOR,
-            x: tile.x,
-            y: tile.y,
-            floor_type: None,
-        });
-        editor_state.dirty = true;
+        // FloorBrush erase is handled by `handle_editor_floor_brush_drag`.
         return;
     }
 
@@ -486,6 +505,133 @@ pub fn handle_editor_right_click(
         }
         editor_state.dirty = true;
     }
+}
+
+// ── Floor brush dragging ─────────────────────────────────────────────────────
+
+/// Continuous floor painting while LMB (paint with `selected_floor_type`) or
+/// RMB (erase) is held. The cursor often moves multiple tiles per frame on a
+/// fast drag, so we Bresenham-interpolate from the last painted tile to the
+/// current one and emit one paint command per cell along the way. The
+/// `last_painted` local resets on mouse-up or tool change so a fresh drag
+/// doesn't draw a line back to wherever the previous drag ended.
+#[allow(clippy::too_many_arguments)]
+pub fn handle_editor_floor_brush_drag(
+    mouse: Res<ButtonInput<MouseButton>>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    world_config: Res<WorldConfig>,
+    editor_camera: Res<EditorCamera>,
+    editor_context: Res<EditorContext>,
+    mut editor_state: ResMut<EditorState>,
+    mut pending_commands: ResMut<PendingGameCommands>,
+    interactions: Query<&Interaction>,
+    palette_root: Query<
+        (&bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform),
+        With<crate::editor::ui::palette::EditorPaletteRoot>,
+    >,
+    mut last_painted: Local<Option<TilePosition>>,
+) {
+    if editor_state.current_tool != EditorTool::FloorBrush {
+        *last_painted = None;
+        return;
+    }
+    let left = mouse.pressed(MouseButton::Left);
+    let right = mouse.pressed(MouseButton::Right);
+    if !left && !right {
+        *last_painted = None;
+        return;
+    }
+    if interactions.iter().any(|i| *i != Interaction::None) {
+        return;
+    }
+    let Ok(window) = windows.single() else { return };
+    let Some(cursor) = window.cursor_position() else {
+        return;
+    };
+    if palette_root
+        .iter()
+        .any(|(computed, transform)| computed.contains_point(*transform, cursor))
+    {
+        return;
+    }
+    let tile = cursor_to_tile(cursor, window, &world_config, &editor_camera);
+
+    // Build the ordered list of tiles to paint this frame: a Bresenham line
+    // from the previous cursor tile to the current one, skipping the
+    // already-painted previous tile.
+    let mut to_paint: Vec<TilePosition> = match *last_painted {
+        Some(prev) if prev == tile => return,
+        Some(prev) => {
+            let mut tiles = bresenham_line_tiles(prev, tile);
+            if !tiles.is_empty() {
+                tiles.remove(0);
+            }
+            tiles
+        }
+        None => vec![tile],
+    };
+    to_paint.retain(|t| {
+        t.x >= 0
+            && t.y >= 0
+            && t.x < editor_context.map_width
+            && t.y < editor_context.map_height
+    });
+    if to_paint.is_empty() {
+        // Cursor jumped off-map but we still need to remember where it was so
+        // the next on-map sample doesn't draw a line from across the void.
+        *last_painted = Some(tile);
+        return;
+    }
+
+    // LMB takes precedence if both buttons are held — matches typical
+    // tile-editor expectations (paint over erase).
+    let floor_type = if left {
+        editor_state.selected_floor_type.clone()
+    } else {
+        None
+    };
+    for t in &to_paint {
+        pending_commands.push(GameCommand::EditorSetFloorTile {
+            space_id: editor_context.space_id,
+            z: TilePosition::GROUND_FLOOR,
+            x: t.x,
+            y: t.y,
+            floor_type: floor_type.clone(),
+        });
+    }
+    editor_state.dirty = true;
+    *last_painted = Some(tile);
+}
+
+/// Inclusive integer-grid line from `from` to `to` via Bresenham. Used by the
+/// floor brush to fill the gaps between two consecutive cursor samples on a
+/// fast drag.
+fn bresenham_line_tiles(from: TilePosition, to: TilePosition) -> Vec<TilePosition> {
+    let mut tiles = Vec::new();
+    let mut x = from.x;
+    let mut y = from.y;
+    let z = from.z;
+    let dx = (to.x - x).abs();
+    let dy = -(to.y - y).abs();
+    let sx = if from.x < to.x { 1 } else { -1 };
+    let sy = if from.y < to.y { 1 } else { -1 };
+    let mut err = dx + dy;
+    loop {
+        tiles.push(TilePosition { x, y, z });
+        if x == to.x && y == to.y {
+            break;
+        }
+        let e2 = 2 * err;
+        if e2 >= dy {
+            err += dy;
+            x += sx;
+        }
+        if e2 <= dx {
+            err += dx;
+            y += sy;
+        }
+    }
+    tiles
 }
 
 // ── Keyboard ──────────────────────────────────────────────────────────────────
@@ -1129,3 +1275,45 @@ pub fn sync_portal_overlays(
         ));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn t(x: i32, y: i32) -> TilePosition {
+        TilePosition::ground(x, y)
+    }
+
+    #[test]
+    fn bresenham_single_tile() {
+        assert_eq!(bresenham_line_tiles(t(3, 4), t(3, 4)), vec![t(3, 4)]);
+    }
+
+    #[test]
+    fn bresenham_horizontal_line() {
+        assert_eq!(
+            bresenham_line_tiles(t(0, 5), t(3, 5)),
+            vec![t(0, 5), t(1, 5), t(2, 5), t(3, 5)]
+        );
+    }
+
+    #[test]
+    fn bresenham_45_degree_diagonal() {
+        assert_eq!(
+            bresenham_line_tiles(t(0, 0), t(3, 3)),
+            vec![t(0, 0), t(1, 1), t(2, 2), t(3, 3)]
+        );
+    }
+
+    #[test]
+    fn bresenham_endpoints_inclusive_in_either_direction() {
+        let forward = bresenham_line_tiles(t(0, 0), t(2, 4));
+        let backward = bresenham_line_tiles(t(2, 4), t(0, 0));
+        assert_eq!(forward.first(), Some(&t(0, 0)));
+        assert_eq!(forward.last(), Some(&t(2, 4)));
+        assert_eq!(backward.first(), Some(&t(2, 4)));
+        assert_eq!(backward.last(), Some(&t(0, 0)));
+        assert_eq!(forward.len(), backward.len());
+    }
+}
+

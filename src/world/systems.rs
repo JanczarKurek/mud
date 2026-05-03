@@ -320,6 +320,7 @@ pub fn sync_tile_transforms(
     let Some(player_position) = client_state.player_position else {
         return;
     };
+    let scroll = view_scroll.snapped();
 
     for (view, world_visual, mut transform, mut sprite, visual_offset, facing) in &mut query {
         let is_active = view.space_id == player_position.space_id;
@@ -345,11 +346,11 @@ pub fn sync_tile_transforms(
 
         transform.translation = Vec3::new(
             (view.tile.x - player_position.tile_position.x) as f32 * world_config.tile_size
-                + view_scroll.current.x
+                + scroll.x
                 + entity_offset.x,
             (view.tile.y - player_position.tile_position.y) as f32 * world_config.tile_size
                 + anchor_y_offset
-                + view_scroll.current.y
+                + scroll.y
                 + entity_offset.y,
             z,
         );

@@ -23,6 +23,12 @@ use crate::world::WorldConfig;
 /// the same value is reapplied each frame by `sync_floor_render_transforms`.
 /// Transition cells store the low floor's priority + a half-step so they sort
 /// above the low base but below any neighbouring high cell.
+///
+/// `local_offset` (in tile-size units, relative to the cell center) is non-zero
+/// only for the partial-coverage debug fallback: when a floor type has no
+/// atlas, we spawn one quarter-tile sprite per set mask bit and offset each by
+/// (±0.25, ±0.25) so the placeholder colour fills only its actual quadrants
+/// instead of overdrawing the neighbouring atlas-rendered floors.
 #[derive(Component, Clone, Debug)]
 pub struct FloorRenderCell {
     pub space_id: SpaceId,
@@ -31,6 +37,7 @@ pub struct FloorRenderCell {
     pub ry: i32,
     pub floor_type: FloorTypeId,
     pub priority_z: f32,
+    pub local_offset: Vec2,
 }
 
 #[derive(Resource, Default)]
@@ -59,6 +66,15 @@ pub struct FloorRenderDirty {
 /// floors. This step is well below `1.0` so the entire floor band stays
 /// beneath all object z_indices (which start at ~0.05 and y-sort up to +1.0).
 const FLOOR_PRIORITY_STEP: f32 = 0.0001;
+
+/// Sub-step for breaking ties between equal-priority floors at the same corner
+/// (HardEdges path). Two grass+cave_floor cells (both priority 0) used to land
+/// at exactly the same z and Bevy's 2D sort tie-break is undefined, so the
+/// placeholder colour would randomly draw on top of the grass atlas. Bumping
+/// the second entry by a fraction of a priority step keeps them within the
+/// same priority band but reliably ordered. `0.1` leaves headroom for up to a
+/// few stacked floors at one corner without colliding with the next priority.
+const HARDEDGE_TIEBREAK_STEP: f32 = FLOOR_PRIORITY_STEP * 0.1;
 
 fn floor_priority_z(priority: i32) -> f32 {
     priority as f32 * FLOOR_PRIORITY_STEP
@@ -133,25 +149,61 @@ pub fn build_floor_render_cells(
         commands.entity(entity).despawn();
     }
 
+    rebuild_floor_render_cells_for_grid(
+        &mut commands,
+        &asset_server,
+        &mut texture_atlas_layouts,
+        &mut atlases,
+        &floor_defs,
+        &world_config,
+        space.space_id,
+        0,
+        grid,
+    );
+
+    render_state.built_for = Some((space.space_id, 0, hash));
+}
+
+/// Spawns one set of `FloorRenderCell`s covering every corner of `grid`. The
+/// caller is responsible for despawning any previous cells; this helper just
+/// inserts new ones. Shared between the in-game build path
+/// (`build_floor_render_cells`) and the editor build path
+/// (`crate::editor::floor_render::editor_build_floor_render_cells`).
+#[allow(clippy::too_many_arguments)]
+pub fn rebuild_floor_render_cells_for_grid(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    texture_atlas_layouts: &mut Assets<TextureAtlasLayout>,
+    atlases: &mut FloorTilesetAtlases,
+    floor_defs: &FloorTilesetDefinitions,
+    world_config: &WorldConfig,
+    space_id: SpaceId,
+    z: i32,
+    grid: &FloorMap,
+) {
     for ry in 0..=grid.height {
         for rx in 0..=grid.width {
             spawn_render_cells_at_corner(
-                &mut commands,
-                &asset_server,
-                &mut texture_atlas_layouts,
-                &mut atlases,
-                &floor_defs,
-                &world_config,
-                space.space_id,
-                0,
+                commands,
+                asset_server,
+                texture_atlas_layouts,
+                atlases,
+                floor_defs,
+                world_config,
+                space_id,
+                z,
                 rx,
                 ry,
                 grid,
             );
         }
     }
+}
 
-    render_state.built_for = Some((space.space_id, 0, hash));
+/// Hashes a floor grid so callers can short-circuit rebuilds when nothing
+/// changed. Used by both the in-game and editor build systems.
+pub fn floor_grid_hash(tiles: &[Option<FloorTypeId>]) -> u64 {
+    quick_hash(tiles)
 }
 
 /// What to spawn at a single corner. `HardEdges` is the per-type partial
@@ -206,13 +258,27 @@ pub fn classify_corner<'a>(
         }
     }
 
-    let entries: Vec<(&FloorTypeId, u8)> =
+    // `HashMap` iteration order is randomized per process, so without an
+    // explicit sort the two HardEdges cells get spawned in arbitrary order
+    // each rebuild — they then receive different entity IDs and Bevy's
+    // equal-z 2D sort flips, causing the same corner to look different on
+    // each repaint. Sort by (priority asc, id asc) — same canonical ordering
+    // used by `canonicalise_pair` for transitions, so the spawn code can
+    // assign a small order-based z bump to break ties between equal-priority
+    // floors (HARDEDGE_TIEBREAK_STEP) and the alphabetically later one
+    // (e.g. grass over cave_floor when both are priority 0) reliably wins.
+    let mut entries: Vec<(&FloorTypeId, u8)> =
         bits_per_type.into_iter().filter(|(_, m)| *m != 0).collect();
+    entries.sort_by(|a, b| {
+        let pa = floor_defs.get(a.0).map(|d| d.priority).unwrap_or(0);
+        let pb = floor_defs.get(b.0).map(|d| d.priority).unwrap_or(0);
+        pa.cmp(&pb).then(a.0.cmp(b.0))
+    });
     CornerRenderPlan::HardEdges(entries)
 }
 
 #[allow(clippy::too_many_arguments)]
-fn spawn_render_cells_at_corner(
+pub(crate) fn spawn_render_cells_at_corner(
     commands: &mut Commands,
     asset_server: &AssetServer,
     layouts_assets: &mut Assets<TextureAtlasLayout>,
@@ -277,10 +343,15 @@ fn spawn_render_cells_at_corner(
             );
         }
         CornerRenderPlan::HardEdges(entries) => {
-            for (floor_id, mask) in entries {
+            // Entries are sorted (priority asc, id asc); apply a fractional
+            // tiebreak so equal-priority cells never render at exactly the
+            // same z (see HARDEDGE_TIEBREAK_STEP).
+            for (i, (floor_id, mask)) in entries.iter().enumerate() {
                 let Some(def) = floor_defs.get(floor_id) else {
                     continue;
                 };
+                let priority_z =
+                    floor_priority_z(def.priority) + i as f32 * HARDEDGE_TIEBREAK_STEP;
                 spawn_floor_cell(
                     commands,
                     asset_server,
@@ -293,8 +364,8 @@ fn spawn_render_cells_at_corner(
                     ry,
                     floor_id,
                     def,
-                    mask,
-                    floor_priority_z(def.priority),
+                    *mask,
+                    priority_z,
                 );
             }
         }
@@ -317,7 +388,7 @@ fn spawn_floor_cell(
     mask: u8,
     priority_z: f32,
 ) {
-    let sprite = if let Some(atlas_path) = &def.atlas_path {
+    if let Some(atlas_path) = &def.atlas_path {
         let image_handle = atlases
             .images
             .entry(floor_id.clone())
@@ -340,7 +411,7 @@ fn spawn_floor_cell(
             .clone();
         let weights = def.variant_weights(mask);
         let variant = pick_variant(space_id, rx, ry, weights);
-        Sprite {
+        let sprite = Sprite {
             image: image_handle,
             custom_size: Some(Vec2::splat(world_config.tile_size)),
             texture_atlas: Some(TextureAtlas {
@@ -348,27 +419,77 @@ fn spawn_floor_cell(
                 index: (mask as usize & 0xF) + variant * 16,
             }),
             ..default()
-        }
-    } else {
-        // Debug fallback: full coloured square. Boundary cells of debug
-        // floors will overdraw lower-priority neighbours; that's the
-        // intentional placeholder look until real art lands.
-        Sprite::from_color(def.debug_color(), Vec2::splat(world_config.tile_size))
-    };
+        };
+        commands.spawn((
+            FloorRenderCell {
+                space_id,
+                z,
+                rx,
+                ry,
+                floor_type: floor_id.clone(),
+                priority_z,
+                local_offset: Vec2::ZERO,
+            },
+            sprite,
+            Transform::from_xyz(0.0, 0.0, flat_floor_z(priority_z, z)),
+            Visibility::default(),
+        ));
+        return;
+    }
 
-    commands.spawn((
-        FloorRenderCell {
-            space_id,
-            z,
-            rx,
-            ry,
-            floor_type: floor_id.clone(),
-            priority_z,
-        },
-        sprite,
-        Transform::from_xyz(0.0, 0.0, flat_floor_z(priority_z, z)),
-        Visibility::default(),
-    ));
+    // Debug fallback: no authored atlas, only `debug_color`. Spawn one
+    // quarter-tile sprite per set mask bit so the placeholder colour fills
+    // only its contributing quadrants — otherwise a 1-tile cave_floor on
+    // grass would render four full-tile brown squares overdrawing the
+    // surrounding grass at every boundary corner.
+    if mask == 0xF {
+        // Interior corner (every neighbour is the same type) — one sprite
+        // covering the whole cell. Saves three entities vs. the per-bit path.
+        commands.spawn((
+            FloorRenderCell {
+                space_id,
+                z,
+                rx,
+                ry,
+                floor_type: floor_id.clone(),
+                priority_z,
+                local_offset: Vec2::ZERO,
+            },
+            Sprite::from_color(def.debug_color(), Vec2::splat(world_config.tile_size)),
+            Transform::from_xyz(0.0, 0.0, flat_floor_z(priority_z, z)),
+            Visibility::default(),
+        ));
+        return;
+    }
+    let half = world_config.tile_size * 0.5;
+    // Quadrant offsets in tile-size units, relative to the cell center.
+    // NW samples (rx-1, ry-1), which is lower x and lower y in world coords;
+    // applies to all four bits via the same convention.
+    const QUADRANTS: [(u8, Vec2); 4] = [
+        (1, Vec2::new(-0.25, -0.25)), // NW
+        (2, Vec2::new(0.25, -0.25)),  // NE
+        (4, Vec2::new(-0.25, 0.25)),  // SW
+        (8, Vec2::new(0.25, 0.25)),   // SE
+    ];
+    for (bit, offset) in QUADRANTS {
+        if mask & bit == 0 {
+            continue;
+        }
+        commands.spawn((
+            FloorRenderCell {
+                space_id,
+                z,
+                rx,
+                ry,
+                floor_type: floor_id.clone(),
+                priority_z,
+                local_offset: offset,
+            },
+            Sprite::from_color(def.debug_color(), Vec2::splat(half)),
+            Transform::from_xyz(0.0, 0.0, flat_floor_z(priority_z, z)),
+            Visibility::default(),
+        ));
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -430,6 +551,7 @@ fn spawn_transition_cell(
             ry,
             floor_type: def.high.clone(),
             priority_z,
+            local_offset: Vec2::ZERO,
         },
         sprite,
         Transform::from_xyz(0.0, 0.0, flat_floor_z(priority_z, z)),
@@ -451,6 +573,7 @@ pub fn sync_floor_render_transforms(
     let Some(player_position) = client_state.player_position else {
         return;
     };
+    let scroll = view_scroll.snapped();
     for (cell, mut transform) in &mut query {
         let visible = cell.space_id == player_position.space_id;
         let z = if !visible {
@@ -458,12 +581,14 @@ pub fn sync_floor_render_transforms(
         } else {
             flat_floor_z(cell.priority_z, cell.z)
         };
-        let dx = (cell.rx as f32 - 0.5 - player_position.tile_position.x as f32)
+        let dx = (cell.rx as f32 - 0.5 + cell.local_offset.x
+            - player_position.tile_position.x as f32)
             * world_config.tile_size
-            + view_scroll.current.x;
-        let dy = (cell.ry as f32 - 0.5 - player_position.tile_position.y as f32)
+            + scroll.x;
+        let dy = (cell.ry as f32 - 0.5 + cell.local_offset.y
+            - player_position.tile_position.y as f32)
             * world_config.tile_size
-            + view_scroll.current.y;
+            + scroll.y;
         transform.translation = Vec3::new(dx, dy, z);
     }
 }
@@ -578,6 +703,38 @@ mod tests {
         match plan {
             CornerRenderPlan::HardEdges(e) => assert_eq!(e.len(), 2),
             other => panic!("expected HardEdges fallback, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn hardedges_sorts_by_priority_then_id() {
+        // Equal priority: alphabetical id order — cave_floor before grass, so
+        // grass spawns later and gets the tiebreak z bump (renders on top).
+        // This is the regression for the grass+cave_floor flicker bug.
+        let d1 = defs(&[("grass", 0), ("cave_floor", 0)], &[]);
+        let g = "grass".to_owned();
+        let c = "cave_floor".to_owned();
+        let plan = classify_corner(&d1, Some(&g), Some(&g), Some(&g), Some(&c));
+        match plan {
+            CornerRenderPlan::HardEdges(e) => {
+                assert_eq!(e.len(), 2);
+                assert_eq!(e[0].0, &c, "cave_floor (alphabetically first) at index 0");
+                assert_eq!(e[1].0, &g, "grass at index 1 — gets the z bump");
+            }
+            other => panic!("expected HardEdges, got {other:?}"),
+        }
+
+        // Different priorities: lower priority comes first regardless of id.
+        let d2 = defs(&[("zebra", 0), ("alpha", 5)], &[]);
+        let z = "zebra".to_owned();
+        let a = "alpha".to_owned();
+        let plan = classify_corner(&d2, Some(&z), Some(&a), Some(&z), Some(&a));
+        match plan {
+            CornerRenderPlan::HardEdges(e) => {
+                assert_eq!(e[0].0, &z, "zebra (priority 0) before alpha (priority 5)");
+                assert_eq!(e[1].0, &a);
+            }
+            other => panic!("expected HardEdges, got {other:?}"),
         }
     }
 

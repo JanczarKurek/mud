@@ -14,6 +14,13 @@ pub const GRID_H: i32 = 24;
 
 const FLOOR_PRIORITY_STEP: f32 = 0.0001;
 
+/// Sub-step for breaking ties between equal-priority floors at the same
+/// corner. Mirrors `world::floor_render::HARDEDGE_TIEBREAK_STEP` — without
+/// it, two cells at the same corner with the same priority land at exactly
+/// the same z and Bevy's 2D sort tie-break flips between repaints, so the
+/// corner flickers when neighbouring tiles change.
+const HARDEDGE_TIEBREAK_STEP: f32 = FLOOR_PRIORITY_STEP * 0.1;
+
 #[derive(Component)]
 pub struct FloorRenderCell;
 
@@ -127,10 +134,18 @@ fn spawn_corner(
     let world_x = (rx as f32 - GRID_W as f32 / 2.0) * TILE_SIZE;
     let world_y = (ry as f32 - GRID_H as f32 / 2.0) * TILE_SIZE;
 
-    for (floor_id, mask) in &bits_per_type {
-        if *mask == 0 {
-            continue;
-        }
+    // Sort by (priority asc, id asc) for deterministic spawn order — same
+    // canonical ordering used by `world::floor_render::classify_corner`. The
+    // index-based z bump below relies on this order being stable.
+    let mut entries: Vec<(&FloorTypeId, u8)> =
+        bits_per_type.into_iter().filter(|(_, m)| *m != 0).collect();
+    entries.sort_by(|a, b| {
+        let pa = floor_defs.get(a.0).map(|d| d.priority).unwrap_or(0);
+        let pb = floor_defs.get(b.0).map(|d| d.priority).unwrap_or(0);
+        pa.cmp(&pb).then(a.0.cmp(b.0))
+    });
+
+    for (i, (floor_id, mask)) in entries.iter().enumerate() {
         let Some(def) = floor_defs.get(floor_id) else {
             continue;
         };
@@ -168,7 +183,7 @@ fn spawn_corner(
             Sprite::from_color(def.debug_color(), Vec2::splat(TILE_SIZE))
         };
 
-        let z = def.priority as f32 * FLOOR_PRIORITY_STEP;
+        let z = def.priority as f32 * FLOOR_PRIORITY_STEP + i as f32 * HARDEDGE_TIEBREAK_STEP;
         commands.spawn((
             FloorRenderCell,
             sprite,

@@ -28,6 +28,7 @@ use crate::world::components::ViewPosition;
 use crate::world::floors::VisibleFloorRange;
 use crate::world::lighting::{day_night_palette, srgb_u8_to_linear, LightSource};
 use crate::world::object_definitions::OverworldObjectDefinitions;
+use crate::world::resources::ViewScrollOffset;
 use crate::world::WorldConfig;
 
 const SHADER_PATH: &str = "shaders/darkness_overlay.wgsl";
@@ -154,6 +155,7 @@ pub fn update_darkness_overlay(
     visible_floors: Res<VisibleFloorRange>,
     world_config: Res<WorldConfig>,
     definitions: Res<OverworldObjectDefinitions>,
+    view_scroll: Res<ViewScrollOffset>,
     light_query: Query<(&LightSource, &ViewPosition, &Transform)>,
     overlay_query: Query<&MeshMaterial2d<DarknessOverlayMaterial>, With<DarknessOverlay>>,
     mut materials: ResMut<Assets<DarknessOverlayMaterial>>,
@@ -259,15 +261,19 @@ pub fn update_darkness_overlay(
     }
 
     // Tile-to-world transform.
-    // sync_tile_transforms: world = (tile - player_tile) * tile_size + view_scroll.
-    // Treating view_scroll as zero here is OK: the darkness quad is at world
-    // (0,0) and the camera shows the same slice the world is drawn into. The
-    // shader uses world coords directly to derive tile coords for the mask;
-    // off-by-fractional-tile during a scroll is invisible because the mask
-    // bit only flips at tile boundaries anyway.
+    // sync_tile_transforms places tile T's sprite *center* at world position
+    // (T - player_tile) * tile_size + scroll, so visually tile T occupies
+    // [(T - player_tile - 0.5) * tile_size, (T - player_tile + 0.5) * tile_size).
+    // The shader maps a fragment's world_xy to a tile via
+    // floor((world_xy - origin) / tile_size); without the -0.5 offset its tile
+    // boundaries land on sprite *centers*, shifting the indoor mask by half a
+    // tile (rooms drag a half-tile shadow). Adding `scroll` keeps the mask
+    // glued to sprites during the 0.18 s movement decay — using the same
+    // snapped scroll sprites use, otherwise the mask jitters by a pixel.
     let tile_size = world_config.tile_size;
-    let origin_x = -player_pos.tile_position.x as f32 * tile_size;
-    let origin_y = -player_pos.tile_position.y as f32 * tile_size;
+    let scroll = view_scroll.snapped();
+    let origin_x = -(player_pos.tile_position.x as f32 + 0.5) * tile_size + scroll.x;
+    let origin_y = -(player_pos.tile_position.y as f32 + 0.5) * tile_size + scroll.y;
 
     let Some(material) = materials.get_mut(&material_handle.0) else {
         return;

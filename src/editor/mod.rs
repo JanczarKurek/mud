@@ -1,3 +1,4 @@
+pub mod floor_render;
 pub mod plugin;
 pub mod resources;
 pub mod serializer;

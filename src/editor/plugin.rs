@@ -1,22 +1,27 @@
 use bevy::prelude::*;
 
 use crate::app::state::ClientAppState;
+use crate::editor::floor_render::{
+    cleanup_editor_floor_cells, editor_build_floor_render_cells,
+    editor_sync_floor_render_transforms, EditorFloorRenderState,
+};
 use crate::editor::resources::{
     EditorCamera, EditorPortalBuffer, EditorPropertyEditBuffer, EditorState, ModalState, UndoStack,
 };
 use crate::editor::systems::{
     apply_modal_confirmed, attach_editor_visuals, handle_editor_camera_pan, handle_editor_escape,
-    handle_editor_floor_brush_hotkey, handle_editor_keyboard_input, handle_editor_left_click,
-    handle_editor_right_click, handle_editor_save, handle_editor_zoom, init_editor_context,
-    init_portal_buffer, open_file_dialog_shortcut, open_save_as_shortcut, process_modal_confirm,
-    sync_portal_overlays, sync_tile_transforms_editor,
+    handle_editor_floor_brush_drag, handle_editor_floor_brush_hotkey, handle_editor_keyboard_input,
+    handle_editor_left_click, handle_editor_right_click, handle_editor_save, handle_editor_zoom,
+    init_editor_context, init_portal_buffer, open_file_dialog_shortcut, open_save_as_shortcut,
+    process_modal_confirm, sync_portal_overlays, sync_tile_transforms_editor,
 };
 use crate::editor::ui::modal::{
     handle_modal_buttons, handle_modal_keyboard_input, handle_modal_list_click,
     spawn_or_rebuild_modal, sync_modal_error_text,
 };
 use crate::editor::ui::palette::{
-    handle_palette_clicks, handle_palette_filter_click, sync_palette_filter_text,
+    handle_floor_palette_clicks, handle_palette_clicks, handle_palette_filter_click,
+    handle_palette_scrolling, sync_floor_palette_selection, sync_palette_filter_text,
     sync_palette_selection,
 };
 use crate::editor::ui::properties::{
@@ -46,6 +51,7 @@ impl Plugin for EditorPlugin {
             .init_resource::<ModalState>()
             .init_resource::<UndoStack>()
             .init_resource::<EditorPortalBuffer>()
+            .init_resource::<EditorFloorRenderState>()
             .add_systems(
                 OnEnter(ClientAppState::MapEditor),
                 (
@@ -55,16 +61,30 @@ impl Plugin for EditorPlugin {
                     spawn_editor_hud.after(init_editor_context),
                 ),
             )
-            .add_systems(OnExit(ClientAppState::MapEditor), cleanup_editor_hud)
-            // Camera / render
+            .add_systems(
+                OnExit(ClientAppState::MapEditor),
+                (cleanup_editor_hud, cleanup_editor_floor_cells),
+            )
+            // Camera / render. `.chain()` keeps both transform syncs strictly
+            // after the camera-pan write so they observe identical post-pan
+            // values within a frame; otherwise object and floor transforms can
+            // drift relative to each other during continuous panning.
+            // The whole chain also runs `.after(CommandIntercept)` so the
+            // floor-cell builder sees the same-frame mutations from
+            // `process_floor_commands` (and the tiles-it-touched dirty queue
+            // it populates), avoiding a one-frame paint lag during drags.
             .add_systems(
                 Update,
                 (
                     handle_editor_camera_pan,
                     handle_editor_zoom,
-                    sync_tile_transforms_editor,
                     attach_editor_visuals,
+                    editor_build_floor_render_cells,
+                    editor_sync_floor_render_transforms,
+                    sync_tile_transforms_editor,
                 )
+                    .chain()
+                    .after(crate::game::CommandIntercept)
                     .run_if(in_state(ClientAppState::MapEditor)),
             )
             // World interaction (no modal)
@@ -73,6 +93,7 @@ impl Plugin for EditorPlugin {
                 (
                     handle_editor_left_click,
                     handle_editor_right_click,
+                    handle_editor_floor_brush_drag,
                     handle_editor_escape,
                     handle_editor_keyboard_input,
                     handle_editor_floor_brush_hotkey,
@@ -117,6 +138,9 @@ impl Plugin for EditorPlugin {
                     sync_palette_filter_text,
                     handle_palette_clicks,
                     handle_palette_filter_click,
+                    sync_floor_palette_selection,
+                    handle_floor_palette_clicks,
+                    handle_palette_scrolling,
                     sync_properties_panel,
                     handle_property_row_click,
                     handle_add_property_button,

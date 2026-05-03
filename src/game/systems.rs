@@ -129,6 +129,7 @@ pub fn process_rotate_commands(
 pub fn process_floor_commands(
     mut pending_commands: ResMut<PendingGameCommands>,
     mut floor_maps: ResMut<FloorMaps>,
+    mut floor_dirty: ResMut<crate::world::floor_render::FloorRenderDirty>,
 ) {
     let original_len = pending_commands.commands.len();
     let mut remaining = Vec::with_capacity(original_len);
@@ -144,7 +145,12 @@ pub fn process_floor_commands(
                 floor_type,
             } => {
                 if let Some(map) = floor_maps.get_mut(space_id, z) {
-                    if !map.set(x, y, floor_type) {
+                    if map.set(x, y, floor_type) {
+                        // Notify the editor's render system which tile changed
+                        // so it can do a per-corner incremental rebuild instead
+                        // of redrawing the whole grid every paint.
+                        floor_dirty.cells.push((space_id, z, x, y));
+                    } else {
                         bevy::log::warn!(
                             "EditorSetFloorTile: ({},{}) out of bounds for space {} z={}",
                             x,

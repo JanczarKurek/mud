@@ -155,13 +155,21 @@ impl Plugin for GameAppPlugin {
                     PersistenceServerPlugin { save_path },
                     AccountsServerPlugin { db_path },
                 ));
-                app.add_plugins(DefaultPlugins.set(WindowPlugin {
-                    primary_window: Some(Window {
-                        title: "Mud 2.0".into(),
-                        ..default()
-                    }),
-                    ..default()
-                }))
+                app.add_plugins(
+                    DefaultPlugins
+                        // Pixel-art floors/sprites read from packed atlases —
+                        // bilinear sampling reads neighbouring atlas cells at
+                        // mask boundaries, causing visible bleed. Same fix
+                        // commit `2ecfbe5` applied to `floor_viewer`.
+                        .set(ImagePlugin::default_nearest())
+                        .set(WindowPlugin {
+                            primary_window: Some(Window {
+                                title: "Mud 2.0".into(),
+                                ..default()
+                            }),
+                            ..default()
+                        }),
+                )
                 .init_state::<ClientAppState>()
                 .add_systems(Startup, setup_camera)
                 .add_systems(
@@ -188,13 +196,17 @@ impl Plugin for GameAppPlugin {
                 ));
             }
             AppRuntime::TcpClient => {
-                app.add_plugins(DefaultPlugins.set(WindowPlugin {
-                    primary_window: Some(Window {
-                        title: "Mud 2.0".into(),
-                        ..default()
-                    }),
-                    ..default()
-                }))
+                app.add_plugins(
+                    DefaultPlugins
+                        .set(ImagePlugin::default_nearest())
+                        .set(WindowPlugin {
+                            primary_window: Some(Window {
+                                title: "Mud 2.0".into(),
+                                ..default()
+                            }),
+                            ..default()
+                        }),
+                )
                 .init_state::<ClientAppState>()
                 .add_systems(Startup, setup_camera)
                 .add_plugins((

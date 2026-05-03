@@ -57,12 +57,10 @@ impl Plugin for GameServerPlugin {
                     .in_set(CommandIntercept)
                     .run_if(simulation_active),
             )
-            .add_systems(
-                Update,
-                process_floor_commands
-                    .in_set(CommandIntercept)
-                    .run_if(simulation_active),
-            )
+            // Not gated on `simulation_active`: the only command this drains is
+            // `EditorSetFloorTile`, which originates from `MapEditor` (where
+            // simulation is paused).
+            .add_systems(Update, process_floor_commands.in_set(CommandIntercept))
             .add_systems(
                 Update,
                 process_interact_commands

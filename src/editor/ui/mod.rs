@@ -9,6 +9,7 @@ use crate::editor::resources::{EditorContext, EditorState, EditorTool, ModalStat
 use crate::editor::systems::{open_file_dialog_impl, open_new_map_dialog_impl, open_save_as_impl};
 use crate::editor::ui::palette::spawn_palette_panel;
 use crate::editor::ui::properties::spawn_properties_panel;
+use crate::world::floor_definitions::FloorTilesetDefinitions;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 
 // ── Component markers ─────────────────────────────────────────────────────────
@@ -37,6 +38,7 @@ pub struct EditorRedoButton;
 pub fn spawn_editor_hud(
     mut commands: Commands,
     definitions: Res<OverworldObjectDefinitions>,
+    floor_defs: Res<FloorTilesetDefinitions>,
     editor_context: Res<EditorContext>,
 ) {
     commands
@@ -136,7 +138,7 @@ pub fn spawn_editor_hud(
                 ..default()
             },))
                 .with_children(|row| {
-                    spawn_palette_panel(row, &definitions);
+                    spawn_palette_panel(row, &definitions, &floor_defs);
                     row.spawn((Node {
                         flex_grow: 1.0,
                         ..default()
