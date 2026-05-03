@@ -151,6 +151,12 @@ pub struct EditorPortalMarker {
     pub portal_index: usize,
 }
 
+/// Marker for ephemeral cursor-ghost sprites. Despawned and respawned each
+/// frame by `update_editor_cursor_ghost` so tool/selection changes never leak
+/// stale visuals.
+#[derive(Component)]
+pub struct EditorCursorMarker;
+
 // ── Undo / Redo ───────────────────────────────────────────────────────────────
 
 /// A single reversible editor operation stored in the undo/redo stacks.

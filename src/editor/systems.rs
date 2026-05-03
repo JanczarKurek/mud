@@ -300,6 +300,269 @@ fn cursor_to_tile(
     )
 }
 
+/// True when the cursor falls inside any of the editor's docked UI panels or
+/// an active modal. Used by drag-pan and the cursor-ghost so world input is
+/// suppressed when the user is interacting with chrome.
+fn cursor_over_editor_panels(
+    cursor: Vec2,
+    palette_root: &Query<
+        (&bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform),
+        With<crate::editor::ui::palette::EditorPaletteRoot>,
+    >,
+    properties_root: &Query<
+        (&bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform),
+        With<crate::editor::ui::properties::EditorPropertiesRoot>,
+    >,
+    top_bar_root: &Query<
+        (&bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform),
+        With<crate::editor::ui::EditorTopBarRoot>,
+    >,
+    modal_root: &Query<
+        (&bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform),
+        With<crate::editor::ui::modal::ModalOverlayRoot>,
+    >,
+) -> bool {
+    palette_root
+        .iter()
+        .chain(properties_root.iter())
+        .chain(top_bar_root.iter())
+        .chain(modal_root.iter())
+        .any(|(computed, transform)| computed.contains_point(*transform, cursor))
+}
+
+// ── Mouse drag-pan ───────────────────────────────────────────────────────────
+
+#[derive(Default)]
+pub struct DragPanState {
+    active: bool,
+    last_cursor: Option<Vec2>,
+}
+
+/// Middle-mouse-button drag pans the editor camera so the world tracks the
+/// cursor 1:1 in tile units. Composes with `handle_editor_camera_pan`
+/// (keyboard) — both can run in the same frame. A press that begins over UI
+/// is ignored for the full duration of the hold.
+#[allow(clippy::too_many_arguments)]
+pub fn handle_editor_middle_drag_pan(
+    mouse: Res<ButtonInput<MouseButton>>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    world_config: Res<WorldConfig>,
+    editor_context: Res<EditorContext>,
+    mut editor_camera: ResMut<EditorCamera>,
+    palette_root: Query<
+        (&bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform),
+        With<crate::editor::ui::palette::EditorPaletteRoot>,
+    >,
+    properties_root: Query<
+        (&bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform),
+        With<crate::editor::ui::properties::EditorPropertiesRoot>,
+    >,
+    top_bar_root: Query<
+        (&bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform),
+        With<crate::editor::ui::EditorTopBarRoot>,
+    >,
+    modal_root: Query<
+        (&bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform),
+        With<crate::editor::ui::modal::ModalOverlayRoot>,
+    >,
+    mut state: Local<DragPanState>,
+) {
+    if !mouse.pressed(MouseButton::Middle) {
+        state.active = false;
+        state.last_cursor = None;
+        return;
+    }
+    let Ok(window) = windows.single() else { return };
+    let Some(cursor) = window.cursor_position() else {
+        // Cursor left the window mid-hold: pause panning but keep `active` so
+        // the drag resumes on re-entry. Clear `last_cursor` so the first
+        // re-entry frame produces no spike delta.
+        state.last_cursor = None;
+        return;
+    };
+
+    if mouse.just_pressed(MouseButton::Middle) {
+        if cursor_over_editor_panels(
+            cursor,
+            &palette_root,
+            &properties_root,
+            &top_bar_root,
+            &modal_root,
+        ) {
+            state.active = false;
+            state.last_cursor = None;
+            return;
+        }
+        state.active = true;
+        state.last_cursor = Some(cursor);
+        return;
+    }
+
+    if !state.active {
+        return;
+    }
+
+    let effective = world_config.tile_size * editor_camera.zoom_level;
+    if effective <= f32::EPSILON {
+        return;
+    }
+    if let Some(prev) = state.last_cursor {
+        let dpx = cursor - prev;
+        // `cursor_to_tile` flips screen-y to tile-y (`tile.y = center.y -
+        // offset.y / eff`), so to keep the same tile under the cursor on a
+        // drag: Δcenter.x = -dpx.x / eff, Δcenter.y = +dpx.y / eff.
+        editor_camera.center += Vec2::new(-dpx.x / effective, dpx.y / effective);
+        editor_camera.center = editor_camera.center.clamp(
+            Vec2::ZERO,
+            Vec2::new(
+                (editor_context.map_width - 1) as f32,
+                (editor_context.map_height - 1) as f32,
+            ),
+        );
+    }
+    state.last_cursor = Some(cursor);
+}
+
+// ── Tile cursor + ghost preview ──────────────────────────────────────────────
+
+/// Draws a yellow tile-outline at the cursor's tile each frame, plus a
+/// translucent ghost of the currently-selected brush (object sprite, or floor
+/// debug-color rect) so the user can see what would be placed before
+/// committing. Despawn-and-respawn each frame keeps it stateless — tool /
+/// selection / camera changes show up immediately on the next frame.
+#[allow(clippy::too_many_arguments)]
+pub fn update_editor_cursor_ghost(
+    mut commands: Commands,
+    mut gizmos: Gizmos,
+    asset_server: Res<AssetServer>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    world_config: Res<WorldConfig>,
+    editor_camera: Res<EditorCamera>,
+    editor_context: Res<EditorContext>,
+    editor_state: Res<EditorState>,
+    definitions: Res<OverworldObjectDefinitions>,
+    floor_defs: Res<crate::world::floor_definitions::FloorTilesetDefinitions>,
+    palette_root: Query<
+        (&bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform),
+        With<crate::editor::ui::palette::EditorPaletteRoot>,
+    >,
+    properties_root: Query<
+        (&bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform),
+        With<crate::editor::ui::properties::EditorPropertiesRoot>,
+    >,
+    top_bar_root: Query<
+        (&bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform),
+        With<crate::editor::ui::EditorTopBarRoot>,
+    >,
+    modal_root: Query<
+        (&bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform),
+        With<crate::editor::ui::modal::ModalOverlayRoot>,
+    >,
+    existing_ghost: Query<Entity, With<crate::editor::resources::EditorCursorMarker>>,
+) {
+    // Always despawn previous-frame ghosts before any early return so a tool
+    // or selection change can't leave a stale sprite behind.
+    for entity in &existing_ghost {
+        commands.entity(entity).despawn();
+    }
+
+    let Ok(window) = windows.single() else { return };
+    let Some(cursor) = window.cursor_position() else {
+        return;
+    };
+    if cursor_over_editor_panels(
+        cursor,
+        &palette_root,
+        &properties_root,
+        &top_bar_root,
+        &modal_root,
+    ) {
+        return;
+    }
+
+    let effective = world_config.tile_size * editor_camera.zoom_level;
+    if effective <= f32::EPSILON {
+        return;
+    }
+    let tile = cursor_to_tile(cursor, window, &world_config, &editor_camera);
+    if tile.x < 0
+        || tile.y < 0
+        || tile.x >= editor_context.map_width
+        || tile.y >= editor_context.map_height
+    {
+        return;
+    }
+
+    let tile_center = Vec2::new(
+        (tile.x as f32 - editor_camera.center.x) * effective,
+        (tile.y as f32 - editor_camera.center.y) * effective,
+    );
+
+    let outline_color = if editor_state.current_tool == EditorTool::FloorBrush
+        && editor_state.selected_floor_type.is_none()
+    {
+        Color::srgba(1.0, 0.35, 0.35, 0.9)
+    } else {
+        Color::srgba(1.0, 1.0, 0.4, 0.9)
+    };
+    gizmos.rect_2d(
+        Isometry2d::from_translation(tile_center),
+        Vec2::splat(effective),
+        outline_color,
+    );
+
+    match editor_state.current_tool {
+        EditorTool::Brush => {
+            let Some(type_id) = editor_state.selected_type_id.as_ref() else {
+                return;
+            };
+            let Some(def) = definitions.get(type_id) else {
+                return;
+            };
+            let mut sprite = sprite_for_definition(&asset_server, def, &world_config);
+            sprite.color = sprite.color.with_alpha(0.5);
+            let anchor_y_offset = if def.render.y_sort {
+                -effective * 0.5
+            } else {
+                0.0
+            };
+            // Sit just above any object on the same tile so the ghost is
+            // always visible. Y-sort objects use a dynamic z-band, so add to
+            // the same band; flat objects use their static z_index.
+            let z_base = if def.render.y_sort {
+                crate::world::systems::y_sort_z(tile.y, tile.z)
+            } else {
+                crate::world::systems::flat_floor_z(def.render.z_index, tile.z)
+            };
+            let z = z_base + 50.0;
+            let mut entity = commands.spawn((
+                crate::editor::resources::EditorCursorMarker,
+                sprite,
+                Transform::from_xyz(tile_center.x, tile_center.y + anchor_y_offset, z)
+                    .with_scale(Vec3::splat(editor_camera.zoom_level)),
+            ));
+            if def.render.y_sort {
+                entity.insert(bevy::sprite::Anchor::BOTTOM_CENTER);
+            }
+        }
+        EditorTool::FloorBrush => {
+            let Some(id) = editor_state.selected_floor_type.as_ref() else {
+                return;
+            };
+            let Some(def) = floor_defs.get(id) else {
+                return;
+            };
+            let fill = def.debug_color().with_alpha(0.35);
+            commands.spawn((
+                crate::editor::resources::EditorCursorMarker,
+                Sprite::from_color(fill, Vec2::splat(effective * 0.92)),
+                Transform::from_xyz(tile_center.x, tile_center.y, 100.0),
+            ));
+        }
+        EditorTool::Portal => {}
+    }
+}
+
 // ── Left / right click ────────────────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]

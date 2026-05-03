@@ -16,6 +16,10 @@ use crate::world::object_definitions::OverworldObjectDefinitions;
 
 #[derive(Component)]
 pub struct EditorHudRoot;
+/// Top-bar Node root. Drag-pan hit-tests this so MMB-press in the empty space
+/// between buttons doesn't start a pan.
+#[derive(Component)]
+pub struct EditorTopBarRoot;
 #[derive(Component)]
 pub struct EditorSaveButton;
 #[derive(Component)]
@@ -55,6 +59,7 @@ pub fn spawn_editor_hud(
         .with_children(|root| {
             // ── Top bar ───────────────────────────────────────────────────────
             root.spawn((
+                EditorTopBarRoot,
                 Node {
                     width: Val::Percent(100.0),
                     height: Val::Px(40.0),
