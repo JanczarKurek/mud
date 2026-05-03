@@ -4,5 +4,5 @@ description: Deep water that blocks movement.
 render:
   z_index: 0.1
   debug_color: [41, 97, 189]
-  debug_size: 0.92
+  debug_size: 1.0
   sprite_path: overworld_objects/water/sprite.png
