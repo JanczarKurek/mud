@@ -4,6 +4,6 @@ description: A solid wall segment that blocks movement.
 render:
   z_index: 0.3
   debug_color: [120, 114, 103]
-  debug_size: 0.94
+  debug_size: 1.0
   sprite_path: overworld_objects/wall/sprite.png
   occludes_floor_above: true
