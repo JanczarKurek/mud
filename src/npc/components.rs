@@ -1,8 +1,16 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::world::components::SpaceId;
+
 #[derive(Component, Clone, Copy, Debug, Deserialize, Serialize)]
 pub struct Npc;
+
+#[derive(Component, Clone, Debug, Deserialize, Serialize)]
+pub struct SpawnGroupMember {
+    pub space_id: SpaceId,
+    pub group_id: String,
+}
 
 #[derive(Component, Clone, Copy, Debug, Deserialize, Serialize)]
 pub struct RoamingBehavior {

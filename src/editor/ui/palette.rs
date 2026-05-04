@@ -92,7 +92,7 @@ pub fn spawn_palette_panel(
                 ))
                 .with_children(|row| {
                     row.spawn((
-                        Text::new("🔍 filter…"),
+                        Text::new("filter..."),
                         TextFont {
                             font_size: 11.0,
                             ..default()
@@ -383,9 +383,9 @@ pub fn sync_palette_filter_text(
             text.0 = if editor_state.palette_filter_focused {
                 format!("{}_", editor_state.palette_filter)
             } else if editor_state.palette_filter.is_empty() {
-                "🔍 filter…".into()
+                "filter...".into()
             } else {
-                format!("🔍 {}", editor_state.palette_filter)
+                editor_state.palette_filter.clone()
             };
         }
     }

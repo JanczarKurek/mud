@@ -82,7 +82,7 @@ pub fn spawn_templates_panel(parent: &mut ChildSpawnerCommands) {
                     ))
                     .with_children(|btn| {
                         btn.spawn((
-                            Text::new("⟳"),
+                            Text::new("Refresh"),
                             TextFont {
                                 font_size: 12.0,
                                 ..default()

@@ -30,32 +30,21 @@ portals:
     destination_tile: { x: 6, y: 18 }
     destination_permanence: persistent
 
-objects:
-  - type: rat
-    placement: { x: 2, y: 2 }
+spawn_groups:
+  - id: cellar_rats
+    template: rat
+    max_count: 3
+    respawn_mean_seconds: 30.0
+    area:
+      bounds: { min_x: 1, min_y: 1, max_x: 10, max_y: 8 }
     behavior:
       kind: roam_and_chase
       detect_distance_tiles: 4
       disengage_distance_tiles: 6
       step_interval_seconds: 0.5
-      bounds: { min_x: 0, min_y: 0, max_x: 10, max_y: 10 }
-  - type: rat
-    placement: { x: 3, y: 3 }
-    behavior:
-      kind: roam_and_chase
-      detect_distance_tiles: 4
-      disengage_distance_tiles: 6
-      step_interval_seconds: 0.55
-      bounds: { min_x: 0, min_y: 0, max_x: 10, max_y: 10 }
-  - type: rat
-    placement: { x: 4, y: 4 }
-    behavior:
-      kind: roam_and_chase
-      detect_distance_tiles: 4
-      disengage_distance_tiles: 6
-      step_interval_seconds: 0.45
-      bounds: { min_x: 0, min_y: 0, max_x: 10, max_y: 10 }
+      bounds: { min_x: 1, min_y: 1, max_x: 10, max_y: 8 }
 
+objects:
   # Stateful-object sandbox: door at the west wall, lever wired to it from
   # the east, two torches flanking the entry, and a chest near the door.
   - id: cellar_inner_door

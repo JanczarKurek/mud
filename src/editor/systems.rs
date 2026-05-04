@@ -1195,7 +1195,7 @@ pub fn process_modal_confirm(
             };
             if editor_state.dirty && modal_state.error_message.is_none() {
                 modal_state.error_message =
-                    Some("Unsaved changes — click Open again to discard.".into());
+                    Some("Unsaved changes - click Open again to discard.".into());
                 return;
             }
             modal_state.active = None;

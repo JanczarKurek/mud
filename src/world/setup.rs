@@ -162,7 +162,7 @@ pub fn spawn_overworld_object_instance(
     object: &ResolvedObject,
     space_id: SpaceId,
     tile_position: TilePosition,
-) {
+) -> Entity {
     let container_contents = if object.contents.is_empty() {
         None
     } else {
@@ -277,6 +277,8 @@ pub fn spawn_overworld_object_instance(
             }
         }
     }
+
+    entity
 }
 
 pub fn attach_combat_health_bar(

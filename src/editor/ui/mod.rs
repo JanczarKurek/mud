@@ -92,7 +92,7 @@ pub fn spawn_editor_hud(
             .with_children(|bar| {
                 // Map name
                 bar.spawn((
-                    Text::new(format!("Map Editor — {}", editor_context.authored_id)),
+                    Text::new(format!("Map Editor - {}", editor_context.authored_id)),
                     TextFont {
                         font_size: 15.0,
                         ..default()
@@ -111,7 +111,7 @@ pub fn spawn_editor_hud(
 
                 // File buttons
                 spawn_top_btn(bar, "Open  Ctrl+O", EditorOpenButton);
-                spawn_top_btn(bar, "Save As…  Ctrl+⇧+S", EditorSaveAsButton);
+                spawn_top_btn(bar, "Save As...  Ctrl+Shift+S", EditorSaveAsButton);
                 spawn_top_btn(bar, "New Map", EditorNewMapButton);
 
                 // Undo / Redo

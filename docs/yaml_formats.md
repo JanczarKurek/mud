@@ -358,6 +358,58 @@ Notes:
 - The map loader validates duplicate symbolic ids, missing content references, self-containment, and multi-location conflicts. Numeric runtime ids are auto-allocated and never appear in YAML.
 - Rendering order is controlled by object metadata `render.z_index`, not by object order in the map file.
 
+### `spawn_groups`
+- Type: list of spawn group mappings
+- Optional: yes
+- Default: empty list
+- Meaning: dynamic NPC spawners. Each group caps the simultaneously alive members of one template at `max_count` and refills empty slots after a Poisson-distributed delay (mean `respawn_mean_seconds`). Members carry the group's `behavior` and persist across saves; on a server restart, surviving members are re-attached to their group and respawn cooldowns resume mid-flight.
+
+Spawn group fields:
+
+#### `id`
+- Type: string
+- Meaning: stable identifier unique within this space (e.g. `cellar_rats`). Persisted on each spawned member so the group can re-attach them after a save/load.
+
+#### `template`
+- Type: string
+- Meaning: object definition id (e.g. `rat`). Must resolve via the overworld object metadata.
+
+#### `max_count`
+- Type: positive integer
+- Meaning: maximum number of simultaneously alive members of this group.
+
+#### `respawn_mean_seconds`
+- Type: positive number
+- Meaning: mean of the exponential distribution used to schedule each missing slot's respawn timer. Each empty slot ticks down independently; intervals are sampled as `-mean * ln(uniform(0, 1))`.
+
+#### `area`
+- Type: mapping
+- Meaning: where members are allowed to spawn. Exactly one of `bounds` or `tiles` must be set.
+- `area.bounds`: `{ min_x, min_y, max_x, max_y }` — inclusive rectangle. The spawn system samples uniformly within and rejects tiles already occupied by colliders, players, or other NPCs (up to 8 retries before deferring to the next frame).
+- `area.tiles`: list of `{ x, y, z? }` mappings — explicit candidate tiles, sampled uniformly with the same occupancy rejection.
+
+#### `behavior`
+- Type: same `behavior` mapping accepted by explicit object instances (`roam` or `roam_and_chase`).
+- Meaning: applied to every member spawned by this group. Bounds are independent of `area` — typically you'll want them to match (or be a superset) so members aren't constantly trying to walk back into the spawn region.
+
+Example:
+
+```yaml
+spawn_groups:
+  - id: cellar_rats
+    template: rat
+    max_count: 3
+    respawn_mean_seconds: 30.0
+    area:
+      bounds: { min_x: 1, min_y: 1, max_x: 10, max_y: 8 }
+    behavior:
+      kind: roam_and_chase
+      step_interval_seconds: 0.5
+      detect_distance_tiles: 4
+      disengage_distance_tiles: 6
+      bounds: { min_x: 1, min_y: 1, max_x: 10, max_y: 8 }
+```
+
 ## 2. Overworld Object Metadata YAML
 
 Path:

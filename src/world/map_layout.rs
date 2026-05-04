@@ -51,6 +51,11 @@ pub struct SpaceDefinition {
     pub portals: Vec<PortalDefinition>,
     #[serde(default)]
     pub objects: Vec<MapObjectEntry>,
+    /// Spawner zones for dynamically-respawning NPCs. Each group caps the
+    /// simultaneously-alive members of one template and refills slots on a
+    /// Poisson-style timer when members die or are removed.
+    #[serde(default)]
+    pub spawn_groups: Vec<SpawnGroupDef>,
     /// Floor placements grouped by floor type id. Overlay on top of `fill_floor_type`.
     #[serde(default)]
     pub floors: HashMap<FloorTypeId, FloorPlacements>,
@@ -186,6 +191,33 @@ pub enum MapBehavior {
         detect_distance_tiles: i32,
         disengage_distance_tiles: i32,
     },
+}
+
+/// Authored spawn-group entry. Each group spawns up to `max_count` instances
+/// of a single `template` within `area` and refills empty slots after a
+/// Poisson-distributed delay with mean `respawn_mean_seconds`. All members
+/// inherit the group's `behavior`.
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct SpawnGroupDef {
+    pub id: String,
+    /// Object definition id (e.g. `"rat"`). Resolved via `OverworldObjectDefinitions`.
+    pub template: String,
+    pub max_count: u32,
+    pub respawn_mean_seconds: f32,
+    pub area: SpawnArea,
+    pub behavior: MapBehavior,
+}
+
+/// Spawn area. Exactly one of `bounds` or `tiles` must be set; this is
+/// enforced by `SpaceDefinition::validate_spawn_groups`.
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct SpawnArea {
+    #[serde(default)]
+    pub bounds: Option<TileRectangle>,
+    #[serde(default)]
+    pub tiles: Option<Vec<TileCoordinate>>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -468,7 +500,90 @@ impl SpaceDefinition {
         self.resolved_objects = resolved;
         self.object_indices = object_indices;
         self.authored_id_lookup = name_to_id;
+        self.validate_spawn_groups();
         next_id
+    }
+
+    /// Panics if any authored `spawn_groups` entry violates the schema:
+    /// duplicate ids, non-positive counts/intervals, missing or
+    /// over-specified area, or out-of-bounds tiles/rectangles.
+    pub fn validate_spawn_groups(&self) {
+        let mut seen_ids: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for group in &self.spawn_groups {
+            assert!(
+                seen_ids.insert(group.id.as_str()),
+                "Spawn group id '{}' is declared twice in space '{}'",
+                group.id,
+                self.authored_id,
+            );
+            assert!(
+                group.max_count > 0,
+                "Spawn group '{}' in space '{}' must have max_count > 0",
+                group.id,
+                self.authored_id,
+            );
+            assert!(
+                group.respawn_mean_seconds.is_finite() && group.respawn_mean_seconds > 0.0,
+                "Spawn group '{}' in space '{}' must have respawn_mean_seconds > 0 (got {})",
+                group.id,
+                self.authored_id,
+                group.respawn_mean_seconds,
+            );
+
+            match (&group.area.bounds, &group.area.tiles) {
+                (Some(rect), None) => {
+                    assert!(
+                        rect.min_x <= rect.max_x && rect.min_y <= rect.max_y,
+                        "Spawn group '{}' in space '{}' has empty bounds {:?}",
+                        group.id,
+                        self.authored_id,
+                        rect,
+                    );
+                    assert!(
+                        rect.min_x >= 0
+                            && rect.min_y >= 0
+                            && rect.max_x < self.width
+                            && rect.max_y < self.height,
+                        "Spawn group '{}' bounds {:?} fall outside space '{}' ({}x{})",
+                        group.id,
+                        rect,
+                        self.authored_id,
+                        self.width,
+                        self.height,
+                    );
+                }
+                (None, Some(tiles)) => {
+                    assert!(
+                        !tiles.is_empty(),
+                        "Spawn group '{}' in space '{}' has empty tiles list",
+                        group.id,
+                        self.authored_id,
+                    );
+                    for tile in tiles {
+                        assert!(
+                            tile.x >= 0
+                                && tile.y >= 0
+                                && tile.x < self.width
+                                && tile.y < self.height,
+                            "Spawn group '{}' tile {:?} falls outside space '{}' ({}x{})",
+                            group.id,
+                            tile,
+                            self.authored_id,
+                            self.width,
+                            self.height,
+                        );
+                    }
+                }
+                (Some(_), Some(_)) => panic!(
+                    "Spawn group '{}' in space '{}' must declare exactly one of `area.bounds` or `area.tiles`, not both",
+                    group.id, self.authored_id,
+                ),
+                (None, None) => panic!(
+                    "Spawn group '{}' in space '{}' is missing `area.bounds` or `area.tiles`",
+                    group.id, self.authored_id,
+                ),
+            }
+        }
     }
 
     /// Rewrite each resolved object's `properties` so that values for keys
@@ -516,6 +631,7 @@ impl SpaceDefinition {
             lighting: SpaceLightingDef::default(),
             portals: Vec::new(),
             objects: Vec::new(),
+            spawn_groups: Vec::new(),
             floors: HashMap::new(),
             legend: HashMap::new(),
             tiles: None,

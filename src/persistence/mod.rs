@@ -12,7 +12,10 @@ use serde::{Deserialize, Serialize};
 use crate::combat::components::{AttackProfile, CombatLeash, CombatTarget};
 use crate::network::resources::TcpServerState;
 use crate::npc::components::{
-    HostileBehavior, Npc, RoamingBehavior, RoamingRandomState, RoamingStepTimer,
+    HostileBehavior, Npc, RoamingBehavior, RoamingRandomState, RoamingStepTimer, SpawnGroupMember,
+};
+use crate::npc::spawn_groups::{
+    PendingSpawnGroupDumps, SpawnGroupRegistry, SpawnGroupRuntimeDump,
 };
 use crate::player::components::{
     BaseStats, ChatLog, DerivedStats, Inventory, InventoryStack, MovementCooldown, Player,
@@ -89,6 +92,11 @@ pub struct WorldStateDump {
     pub world_objects: Vec<WorldObjectStateDump>,
     #[serde(default)]
     pub floor_maps: Vec<FloorMapDump>,
+    /// Per-spawn-group runtime state (cooldowns, RNG seed). Members are not
+    /// listed here directly — surviving NPCs carry a `SpawnGroupMember`
+    /// component which `bootstrap_spawn_groups` reads to rebuild membership.
+    #[serde(default)]
+    pub spawn_groups: Vec<SpawnGroupRuntimeDump>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -247,6 +255,10 @@ pub struct NpcStateDump {
     pub hostile_behavior: Option<HostileBehavior>,
     pub roaming_step_timer: Option<RoamingStepTimer>,
     pub roaming_random_state: Option<RoamingRandomState>,
+    /// Set when this NPC was instantiated by a `SpawnGroup`. Restored on load
+    /// so the spawn group can resume tracking it against `max_count`.
+    #[serde(default)]
+    pub spawn_group: Option<SpawnGroupMember>,
 }
 
 fn save_world_on_app_exit(
@@ -288,9 +300,11 @@ fn save_world_on_app_exit(
             Option<&HostileBehavior>,
             Option<&RoamingStepTimer>,
             Option<&RoamingRandomState>,
+            Option<&SpawnGroupMember>,
         ),
         With<Npc>,
     >,
+    spawn_group_registry: Option<Res<SpawnGroupRegistry>>,
 ) {
     if app_exit_reader.read().next().is_none() {
         return;
@@ -383,6 +397,7 @@ fn save_world_on_app_exit(
                         hostile_behavior,
                         roaming_step_timer,
                         roaming_random_state,
+                        spawn_group_member,
                     ) = npc_query.get(entity).unwrap_or_default();
 
                     NpcStateDump {
@@ -397,6 +412,7 @@ fn save_world_on_app_exit(
                         hostile_behavior: hostile_behavior.copied(),
                         roaming_step_timer: roaming_step_timer.copied(),
                         roaming_random_state: roaming_random_state.copied(),
+                        spawn_group: spawn_group_member.cloned(),
                     }
                 }),
             },
@@ -404,8 +420,29 @@ fn save_world_on_app_exit(
         .collect::<Vec<_>>();
     world_objects.sort_by_key(|object| object.object_id);
 
+    let mut spawn_group_dumps: Vec<SpawnGroupRuntimeDump> = spawn_group_registry
+        .map(|registry| {
+            registry
+                .groups
+                .iter()
+                .map(|(key, runtime)| SpawnGroupRuntimeDump {
+                    space_id: key.space_id,
+                    group_id: key.group_id.clone(),
+                    pending_respawns: runtime.pending_respawns.clone(),
+                    rng_seed: runtime.rng_seed,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    spawn_group_dumps.sort_by(|a, b| {
+        a.space_id
+            .0
+            .cmp(&b.space_id.0)
+            .then_with(|| a.group_id.cmp(&b.group_id))
+    });
+
     let dump = WorldStateDump {
-        format_version: 9,
+        format_version: 10,
         spaces,
         saved_at_unix_seconds: SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -431,6 +468,7 @@ fn save_world_on_app_exit(
         },
         world_objects,
         floor_maps: floor_map_dumps,
+        spawn_groups: spawn_group_dumps,
     };
 
     if let Err(error) = write_world_dump(&save_config.path, &dump) {
@@ -455,6 +493,7 @@ fn load_world_from_snapshot(
     mut floor_maps: ResMut<FloorMaps>,
     mut tcp_server_state: Option<ResMut<TcpServerState>>,
     object_definitions: Res<crate::world::object_definitions::OverworldObjectDefinitions>,
+    mut pending_spawn_groups: ResMut<PendingSpawnGroupDumps>,
 ) {
     let dump = match read_world_dump(&save_config.path) {
         Ok(dump) => dump,
@@ -474,9 +513,9 @@ fn load_world_from_snapshot(
         }
     };
 
-    if dump.format_version < 9 {
+    if dump.format_version < 10 {
         warn!(
-            "world snapshot at {} is format_version {} (<9); runtime ids are no longer persisted as of v9 — discarding stale snapshot and starting fresh world",
+            "world snapshot at {} is format_version {} (<10); spawn-group state was not persisted before v10 — discarding stale snapshot and starting fresh world",
             save_config.path.display(),
             dump.format_version
         );
@@ -490,6 +529,7 @@ fn load_world_from_snapshot(
         network: dump_network,
         world_objects,
         floor_maps: dump_floor_maps,
+        spawn_groups: dump_spawn_groups,
         ..
     } = dump;
 
@@ -727,6 +767,9 @@ fn load_world_from_snapshot(
             if let Some(roaming_random_state) = npc.roaming_random_state {
                 entity.insert(roaming_random_state);
             }
+            if let Some(spawn_group_member) = npc.spawn_group {
+                entity.insert(spawn_group_member);
+            }
             if let Some(target_object_id) = npc.combat_target_object_id {
                 pending_combat_targets.push((save_local_id, target_object_id));
             }
@@ -747,6 +790,8 @@ fn load_world_from_snapshot(
             entity: target_entity,
         });
     }
+
+    pending_spawn_groups.entries = dump_spawn_groups;
 
     snapshot_status.loaded = true;
     snapshot_status.players_restored = players_restored;
@@ -855,7 +900,7 @@ mod tests {
             serde_json::from_str::<WorldStateDump>(&std::fs::read_to_string(&save_path).unwrap())
                 .unwrap();
 
-        assert_eq!(dump.format_version, 9);
+        assert_eq!(dump.format_version, 10);
         assert!(!dump.spaces.is_empty());
         // Players don't appear in the world snapshot at all (they live in the
         // accounts DB) and the object registry is no longer persisted, so the
@@ -873,7 +918,7 @@ mod tests {
         let _ = std::fs::remove_file(&save_path);
 
         let dump = WorldStateDump {
-            format_version: 9,
+            format_version: 10,
             saved_at_unix_seconds: 0,
             world_config: WorldConfigDump {
                 current_space_id: Some(crate::world::components::SpaceId(7)),
@@ -916,6 +961,7 @@ mod tests {
                 facing: None,
             }],
             floor_maps: vec![],
+            spawn_groups: vec![],
         };
         write_world_dump(&save_path, &dump).unwrap();
 
