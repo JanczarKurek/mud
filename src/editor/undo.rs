@@ -5,6 +5,8 @@ use crate::editor::resources::{
 };
 use crate::editor::systems::insert_editor_visuals_pub;
 use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
+use crate::world::floor_map::FloorMaps;
+use crate::world::floor_render::FloorRenderDirty;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::setup::spawn_overworld_object;
@@ -17,6 +19,8 @@ pub fn handle_undo_redo(
     mut undo_stack: ResMut<UndoStack>,
     mut editor_state: ResMut<EditorState>,
     mut portal_buffer: ResMut<EditorPortalBuffer>,
+    mut floor_maps: ResMut<FloorMaps>,
+    mut floor_dirty: ResMut<FloorRenderDirty>,
     mut commands: Commands,
     mut object_registry: ResMut<ObjectRegistry>,
     definitions: Res<OverworldObjectDefinitions>,
@@ -46,6 +50,8 @@ pub fn handle_undo_redo(
             let inverse = execute_op(
                 op,
                 &mut portal_buffer,
+                &mut floor_maps,
+                &mut floor_dirty,
                 &mut commands,
                 &mut object_registry,
                 &definitions,
@@ -62,6 +68,8 @@ pub fn handle_undo_redo(
             let inverse = execute_op(
                 op,
                 &mut portal_buffer,
+                &mut floor_maps,
+                &mut floor_dirty,
                 &mut commands,
                 &mut object_registry,
                 &definitions,
@@ -80,6 +88,8 @@ pub fn handle_undo_redo(
 fn execute_op(
     op: UndoOp,
     portal_buffer: &mut EditorPortalBuffer,
+    floor_maps: &mut FloorMaps,
+    floor_dirty: &mut FloorRenderDirty,
     commands: &mut Commands,
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
@@ -158,6 +168,49 @@ fn execute_op(
             let index = portal_buffer.portals.len();
             portal_buffer.portals.push(portal.clone());
             UndoOp::RemovePortal { index }
+        }
+        UndoOp::SetFloor {
+            space_id,
+            z,
+            x,
+            y,
+            value,
+        } => {
+            let prev = floor_maps
+                .get(space_id, z)
+                .and_then(|m| m.get(x, y).cloned());
+            if let Some(map) = floor_maps.get_mut(space_id, z) {
+                if map.set(x, y, value) {
+                    floor_dirty.cells.push((space_id, z, x, y));
+                }
+            }
+            UndoOp::SetFloor {
+                space_id,
+                z,
+                x,
+                y,
+                value: prev,
+            }
+        }
+        UndoOp::Composite { ops } => {
+            let mut inverses = Vec::with_capacity(ops.len());
+            for sub in ops {
+                inverses.push(execute_op(
+                    sub,
+                    portal_buffer,
+                    floor_maps,
+                    floor_dirty,
+                    commands,
+                    object_registry,
+                    definitions,
+                    world_config,
+                    editor_camera,
+                    asset_server,
+                    objects,
+                ));
+            }
+            inverses.reverse();
+            UndoOp::Composite { ops: inverses }
         }
     }
 }

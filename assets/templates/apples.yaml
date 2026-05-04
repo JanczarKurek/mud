@@ -1,0 +1,47 @@
+width: 3
+height: 3
+objects:
+- dx: 1
+  dy: 0
+  z: 0
+  type: apple
+- dx: 2
+  dy: 0
+  z: 0
+  type: apple
+- dx: 1
+  dy: 1
+  z: 0
+  type: apple
+- dx: 2
+  dy: 1
+  z: 0
+  type: apple
+floors:
+- dx: 0
+  dy: 0
+  floor_id: grass
+- dx: 1
+  dy: 0
+  floor_id: grass
+- dx: 2
+  dy: 0
+  floor_id: grass
+- dx: 0
+  dy: 1
+  floor_id: grass
+- dx: 1
+  dy: 1
+  floor_id: grass
+- dx: 2
+  dy: 1
+  floor_id: grass
+- dx: 0
+  dy: 2
+  floor_id: grass
+- dx: 1
+  dy: 2
+  floor_id: grass
+- dx: 2
+  dy: 2
+  floor_id: grass

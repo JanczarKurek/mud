@@ -5,9 +5,17 @@ use crate::editor::floor_render::{
     cleanup_editor_floor_cells, editor_build_floor_render_cells,
     editor_sync_floor_render_transforms, EditorFloorRenderState,
 };
-use crate::editor::resources::{
-    EditorCamera, EditorPortalBuffer, EditorPropertyEditBuffer, EditorState, ModalState, UndoStack,
+use crate::editor::clipboard::{
+    handle_clipboard_shortcuts, handle_editor_paste_click, render_paste_ghost,
 };
+use crate::editor::resources::{
+    EditorCamera, EditorClipboard, EditorCursorMarker, EditorPasteGhostMarker, EditorPortalBuffer,
+    EditorPropertyEditBuffer, EditorState, ModalState, UndoStack,
+};
+use crate::editor::selection::{
+    handle_editor_select_drag, handle_editor_select_hotkey, render_selection,
+};
+use crate::editor::templates::EditorTemplatesIndex;
 use crate::editor::systems::{
     apply_modal_confirmed, attach_editor_visuals, handle_editor_camera_pan, handle_editor_escape,
     handle_editor_floor_brush_drag, handle_editor_floor_brush_hotkey, handle_editor_keyboard_input,
@@ -28,10 +36,15 @@ use crate::editor::ui::palette::{
 use crate::editor::ui::properties::{
     handle_add_property_button, handle_property_row_click, sync_properties_panel,
 };
+use crate::editor::ui::templates_panel::{
+    handle_templates_panel_clicks, sync_templates_panel, sync_templates_panel_visibility,
+};
 use crate::editor::ui::{
     cleanup_editor_hud, handle_new_map_button_click, handle_open_button_click,
-    handle_portal_tool_button_click, handle_redo_button_click, handle_save_as_button_click,
-    handle_save_button_click, handle_undo_button_click, spawn_editor_hud, sync_editor_top_bar,
+    handle_portal_tool_button_click, handle_redo_button_click,
+    handle_save_as_button_click, handle_save_as_template_button_click, handle_save_button_click,
+    handle_select_tool_button_click, handle_templates_toggle_button_click,
+    handle_undo_button_click, spawn_editor_hud, sync_editor_top_bar,
 };
 use crate::editor::undo::handle_undo_redo;
 
@@ -44,6 +57,29 @@ fn has_modal(s: Res<ModalState>) -> bool {
     s.active.is_some()
 }
 
+/// Drop selection / paste-mode / templates-panel visibility when leaving the
+/// editor so a future re-entry on a different map doesn't carry over stale
+/// per-map state. (Clipboard contents and the templates index are kept —
+/// they're cross-session by design.)
+fn reset_editor_session_state(mut editor_state: ResMut<EditorState>) {
+    editor_state.selection = None;
+    editor_state.paste_state.active = false;
+    editor_state.templates_panel_visible = false;
+}
+
+/// Despawn any cursor / paste ghost sprites left over from the last editor
+/// frame. Without this they linger as orphans in the world after exiting,
+/// since the systems that own them stop running on `OnExit`.
+fn cleanup_editor_ghost_markers(
+    mut commands: Commands,
+    cursor_ghosts: Query<Entity, With<EditorCursorMarker>>,
+    paste_ghosts: Query<Entity, With<EditorPasteGhostMarker>>,
+) {
+    for entity in cursor_ghosts.iter().chain(paste_ghosts.iter()) {
+        commands.entity(entity).despawn();
+    }
+}
+
 impl Plugin for EditorPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<EditorState>()
@@ -53,6 +89,8 @@ impl Plugin for EditorPlugin {
             .init_resource::<UndoStack>()
             .init_resource::<EditorPortalBuffer>()
             .init_resource::<EditorFloorRenderState>()
+            .init_resource::<EditorClipboard>()
+            .init_resource::<EditorTemplatesIndex>()
             .add_systems(
                 OnEnter(ClientAppState::MapEditor),
                 (
@@ -64,7 +102,12 @@ impl Plugin for EditorPlugin {
             )
             .add_systems(
                 OnExit(ClientAppState::MapEditor),
-                (cleanup_editor_hud, cleanup_editor_floor_cells),
+                (
+                    cleanup_editor_hud,
+                    cleanup_editor_floor_cells,
+                    cleanup_editor_ghost_markers,
+                    reset_editor_session_state,
+                ),
             )
             // Camera / render. `.chain()` keeps both transform syncs strictly
             // after the camera-pan write so they observe identical post-pan
@@ -104,6 +147,28 @@ impl Plugin for EditorPlugin {
                 )
                     .run_if(in_state(ClientAppState::MapEditor))
                     .run_if(no_modal),
+            )
+            // Selection / clipboard input (split out so the previous tuple
+            // stays under Bevy's `IntoSystemConfigs` arity limit). The paste
+            // commit must run *before* the brush click handler so its early-
+            // out gate (`paste_state.active`) sees the same state.
+            .add_systems(
+                Update,
+                (
+                    handle_editor_select_hotkey,
+                    handle_editor_select_drag,
+                    handle_clipboard_shortcuts,
+                    handle_editor_paste_click.before(handle_editor_left_click),
+                )
+                    .run_if(in_state(ClientAppState::MapEditor))
+                    .run_if(no_modal),
+            )
+            // Selection / paste rendering (always; user wants to see the rect
+            // even while a modal is open or when they switch tools).
+            .add_systems(
+                Update,
+                (render_selection, render_paste_ghost)
+                    .run_if(in_state(ClientAppState::MapEditor)),
             )
             // Save / dialog shortcuts
             .add_systems(
@@ -161,6 +226,19 @@ impl Plugin for EditorPlugin {
                     handle_portal_tool_button_click,
                     handle_undo_button_click,
                     handle_redo_button_click,
+                    handle_select_tool_button_click,
+                    handle_save_as_template_button_click,
+                    handle_templates_toggle_button_click,
+                )
+                    .run_if(in_state(ClientAppState::MapEditor)),
+            )
+            // Templates panel sync + clicks (always run, even with modal).
+            .add_systems(
+                Update,
+                (
+                    sync_templates_panel_visibility,
+                    sync_templates_panel,
+                    handle_templates_panel_clicks,
                 )
                     .run_if(in_state(ClientAppState::MapEditor)),
             );

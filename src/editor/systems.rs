@@ -4,11 +4,13 @@ use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
+use crate::editor::clipboard::cancel_paste;
 use crate::editor::resources::{
     EditingField, EditorCamera, EditorContext, EditorPortalBuffer, EditorPropertyEditBuffer,
     EditorState, EditorTool, ModalConfirmed, ModalKind, ModalState, ModalTextField, UndoOp,
     UndoStack,
 };
+use crate::editor::templates::{save_template, EditorTemplatesIndex};
 use crate::editor::serializer::serialize_and_save;
 use crate::game::commands::GameCommand;
 use crate::game::resources::PendingGameCommands;
@@ -300,36 +302,6 @@ fn cursor_to_tile(
     )
 }
 
-/// True when the cursor falls inside any of the editor's docked UI panels or
-/// an active modal. Used by drag-pan and the cursor-ghost so world input is
-/// suppressed when the user is interacting with chrome.
-fn cursor_over_editor_panels(
-    cursor: Vec2,
-    palette_root: &Query<
-        (&bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform),
-        With<crate::editor::ui::palette::EditorPaletteRoot>,
-    >,
-    properties_root: &Query<
-        (&bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform),
-        With<crate::editor::ui::properties::EditorPropertiesRoot>,
-    >,
-    top_bar_root: &Query<
-        (&bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform),
-        With<crate::editor::ui::EditorTopBarRoot>,
-    >,
-    modal_root: &Query<
-        (&bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform),
-        With<crate::editor::ui::modal::ModalOverlayRoot>,
-    >,
-) -> bool {
-    palette_root
-        .iter()
-        .chain(properties_root.iter())
-        .chain(top_bar_root.iter())
-        .chain(modal_root.iter())
-        .any(|(computed, transform)| computed.contains_point(*transform, cursor))
-}
-
 // ── Mouse drag-pan ───────────────────────────────────────────────────────────
 
 #[derive(Default)]
@@ -349,22 +321,7 @@ pub fn handle_editor_middle_drag_pan(
     world_config: Res<WorldConfig>,
     editor_context: Res<EditorContext>,
     mut editor_camera: ResMut<EditorCamera>,
-    palette_root: Query<
-        (&bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform),
-        With<crate::editor::ui::palette::EditorPaletteRoot>,
-    >,
-    properties_root: Query<
-        (&bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform),
-        With<crate::editor::ui::properties::EditorPropertiesRoot>,
-    >,
-    top_bar_root: Query<
-        (&bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform),
-        With<crate::editor::ui::EditorTopBarRoot>,
-    >,
-    modal_root: Query<
-        (&bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform),
-        With<crate::editor::ui::modal::ModalOverlayRoot>,
-    >,
+    panel_roots: crate::editor::ui::EditorPanelRoots,
     mut state: Local<DragPanState>,
 ) {
     if !mouse.pressed(MouseButton::Middle) {
@@ -382,13 +339,7 @@ pub fn handle_editor_middle_drag_pan(
     };
 
     if mouse.just_pressed(MouseButton::Middle) {
-        if cursor_over_editor_panels(
-            cursor,
-            &palette_root,
-            &properties_root,
-            &top_bar_root,
-            &modal_root,
-        ) {
+        if panel_roots.cursor_over(cursor) {
             state.active = false;
             state.last_cursor = None;
             return;
@@ -442,22 +393,7 @@ pub fn update_editor_cursor_ghost(
     editor_state: Res<EditorState>,
     definitions: Res<OverworldObjectDefinitions>,
     floor_defs: Res<crate::world::floor_definitions::FloorTilesetDefinitions>,
-    palette_root: Query<
-        (&bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform),
-        With<crate::editor::ui::palette::EditorPaletteRoot>,
-    >,
-    properties_root: Query<
-        (&bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform),
-        With<crate::editor::ui::properties::EditorPropertiesRoot>,
-    >,
-    top_bar_root: Query<
-        (&bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform),
-        With<crate::editor::ui::EditorTopBarRoot>,
-    >,
-    modal_root: Query<
-        (&bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform),
-        With<crate::editor::ui::modal::ModalOverlayRoot>,
-    >,
+    panel_roots: crate::editor::ui::EditorPanelRoots,
     existing_ghost: Query<Entity, With<crate::editor::resources::EditorCursorMarker>>,
 ) {
     // Always despawn previous-frame ghosts before any early return so a tool
@@ -470,13 +406,7 @@ pub fn update_editor_cursor_ghost(
     let Some(cursor) = window.cursor_position() else {
         return;
     };
-    if cursor_over_editor_panels(
-        cursor,
-        &palette_root,
-        &properties_root,
-        &top_bar_root,
-        &modal_root,
-    ) {
+    if panel_roots.cursor_over(cursor) {
         return;
     }
 
@@ -497,6 +427,14 @@ pub fn update_editor_cursor_ghost(
         (tile.x as f32 - editor_camera.center.x) * effective,
         (tile.y as f32 - editor_camera.center.y) * effective,
     );
+
+    // When paste mode is active, defer to `render_paste_ghost` (separate
+    // system) — it has its own access to the clipboard and avoids pushing
+    // this system over Bevy's per-system parameter cap. We also suppress
+    // the brush ghost so the two previews don't overlap.
+    if editor_state.paste_state.active {
+        return;
+    }
 
     let outline_color = if editor_state.current_tool == EditorTool::FloorBrush
         && editor_state.selected_floor_type.is_none()
@@ -560,6 +498,9 @@ pub fn update_editor_cursor_ghost(
             ));
         }
         EditorTool::Portal => {}
+        // Select tool has no per-tile ghost; the selection rectangle is
+        // drawn elsewhere (`crate::editor::selection::render_selection`).
+        EditorTool::Select => {}
     }
 }
 
@@ -581,24 +522,38 @@ pub fn handle_editor_left_click(
     existing_objects: Query<(&OverworldObject, &SpaceResident, &TilePosition), Without<Player>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    interactions: Query<&Interaction>,
+    panel_roots: crate::editor::ui::EditorPanelRoots,
 ) {
     if !mouse.just_pressed(MouseButton::Left) {
-        return;
-    }
-    if interactions.iter().any(|i| *i != Interaction::None) {
         return;
     }
     let Ok(window) = windows.single() else { return };
     let Some(cursor) = window.cursor_position() else {
         return;
     };
+    if panel_roots.cursor_over(cursor) {
+        return;
+    }
     let tile = cursor_to_tile(cursor, window, &world_config, &editor_camera);
     if tile.x < 0
         || tile.y < 0
         || tile.x >= editor_context.map_width
         || tile.y >= editor_context.map_height
     {
+        return;
+    }
+
+    // Paste-mode commit lives in `handle_editor_paste_click` (separate
+    // system) so this fn stays under Bevy's system-param arity limit. If
+    // paste is active, it ran first this frame and already handled the
+    // click; bail so we don't double-process.
+    if editor_state.paste_state.active {
+        return;
+    }
+
+    // Select tool reads via `handle_editor_select_drag`; left-click here is
+    // the start-of-drag and is consumed by the drag system.
+    if editor_state.current_tool == EditorTool::Select {
         return;
     }
 
@@ -708,18 +663,26 @@ pub fn handle_editor_right_click(
     objects: Query<(Entity, &OverworldObject, &SpaceResident, &TilePosition)>,
     object_registry: Res<ObjectRegistry>,
     mut commands: Commands,
-    interactions: Query<&Interaction>,
+    panel_roots: crate::editor::ui::EditorPanelRoots,
 ) {
     if !mouse.just_pressed(MouseButton::Right) {
-        return;
-    }
-    if interactions.iter().any(|i| *i != Interaction::None) {
         return;
     }
     let Ok(window) = windows.single() else { return };
     let Some(cursor) = window.cursor_position() else {
         return;
     };
+    if panel_roots.cursor_over(cursor) {
+        return;
+    }
+
+    // Paste-mode cancel always wins so RMB doesn't double as "delete object
+    // under cursor" while pasting.
+    if editor_state.paste_state.active {
+        cancel_paste(&mut editor_state);
+        return;
+    }
+
     let tile = cursor_to_tile(cursor, window, &world_config, &editor_camera);
 
     if editor_state.current_tool == EditorTool::FloorBrush {
@@ -787,11 +750,7 @@ pub fn handle_editor_floor_brush_drag(
     editor_context: Res<EditorContext>,
     mut editor_state: ResMut<EditorState>,
     mut pending_commands: ResMut<PendingGameCommands>,
-    interactions: Query<&Interaction>,
-    palette_root: Query<
-        (&bevy::ui::ComputedNode, &bevy::ui::UiGlobalTransform),
-        With<crate::editor::ui::palette::EditorPaletteRoot>,
-    >,
+    panel_roots: crate::editor::ui::EditorPanelRoots,
     mut last_painted: Local<Option<TilePosition>>,
 ) {
     if editor_state.current_tool != EditorTool::FloorBrush {
@@ -804,17 +763,11 @@ pub fn handle_editor_floor_brush_drag(
         *last_painted = None;
         return;
     }
-    if interactions.iter().any(|i| *i != Interaction::None) {
-        return;
-    }
     let Ok(window) = windows.single() else { return };
     let Some(cursor) = window.cursor_position() else {
         return;
     };
-    if palette_root
-        .iter()
-        .any(|(computed, transform)| computed.contains_point(*transform, cursor))
-    {
+    if panel_roots.cursor_over(cursor) {
         return;
     }
     let tile = cursor_to_tile(cursor, window, &world_config, &editor_camera);
@@ -1023,7 +976,13 @@ pub fn handle_editor_escape(
         return;
     }
 
-    if editor_state.current_tool != EditorTool::Brush {
+    // Esc priority: (1) leave paste mode, (2) clear marquee selection,
+    // (3) drop back to Brush, (4) deselect type, (5) deselect object.
+    if editor_state.paste_state.active {
+        editor_state.paste_state.active = false;
+    } else if editor_state.selection.is_some() {
+        editor_state.selection = None;
+    } else if editor_state.current_tool != EditorTool::Brush {
         editor_state.current_tool = EditorTool::Brush;
     } else if editor_state.selected_type_id.is_some() {
         editor_state.selected_type_id = None;
@@ -1334,6 +1293,28 @@ pub fn process_modal_confirm(
                 dest_tile_y,
             });
         }
+        ModalKind::SaveAsTemplate => {
+            let name = modal_state
+                .text_fields
+                .first()
+                .map(|f| f.value.trim().to_owned())
+                .unwrap_or_default();
+            if name.is_empty() {
+                modal_state.error_message = Some("Template name cannot be empty.".into());
+                return;
+            }
+            if !name
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+            {
+                modal_state.error_message =
+                    Some("Template name: letters, digits, '_' or '-' only.".into());
+                return;
+            }
+            modal_state.active = None;
+            modal_state.error_message = None;
+            modal_state.confirmed = Some(ModalConfirmed::SaveAsTemplate { name });
+        }
     }
 }
 
@@ -1350,6 +1331,7 @@ pub fn apply_modal_confirmed(
     mut portal_buffer: ResMut<EditorPortalBuffer>,
     mut undo_stack: ResMut<UndoStack>,
     mut prop_buffer: ResMut<EditorPropertyEditBuffer>,
+    mut templates_index: ResMut<EditorTemplatesIndex>,
     object_definitions: Res<OverworldObjectDefinitions>,
     object_registry: Res<ObjectRegistry>,
     objects_save: Query<(&OverworldObject, &SpaceResident, &TilePosition)>,
@@ -1493,6 +1475,19 @@ pub fn apply_modal_confirmed(
             portal_buffer.portals.push(portal);
             undo_stack.push_undo(UndoOp::RemovePortal { index });
             editor_state.dirty = true;
+        }
+        ModalConfirmed::SaveAsTemplate { name } => {
+            let Some(fragment) = modal_state.pending_template_fragment.take() else {
+                warn!("SaveAsTemplate confirmed without a pending fragment");
+                return;
+            };
+            match save_template(&name, &fragment) {
+                Ok(()) => {
+                    info!("Saved template '{name}'");
+                    templates_index.loaded = false;
+                }
+                Err(e) => warn!("Failed to save template '{name}': {e}"),
+            }
         }
     }
 }

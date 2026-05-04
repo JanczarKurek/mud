@@ -36,6 +36,7 @@ fn title_for(kind: ModalKind) -> &'static str {
         ModalKind::SaveAs => "Save Map As",
         ModalKind::NewMap => "New Map",
         ModalKind::PortalCreate => "Add Portal",
+        ModalKind::SaveAsTemplate => "Save Selection as Template",
     }
 }
 
@@ -45,6 +46,7 @@ fn confirm_label_for(kind: ModalKind) -> &'static str {
         ModalKind::SaveAs => "Save",
         ModalKind::NewMap => "Create",
         ModalKind::PortalCreate => "Add",
+        ModalKind::SaveAsTemplate => "Save",
     }
 }
 
