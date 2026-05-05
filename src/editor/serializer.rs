@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use bevy::log::info;
 use serde::Serialize;
 
-use crate::editor::resources::{EditorContext, EditorPortalBuffer};
+use crate::editor::resources::{EditorContext, EditorPortalBuffer, EditorSpawnGroupBuffer};
 use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
-use crate::world::map_layout::{MapBehavior, SpacePermanence, TileCoordinate};
+use crate::world::map_layout::{MapBehavior, SpacePermanence, SpawnGroupDef, TileCoordinate};
 use crate::world::object_registry::ObjectRegistry;
 
 #[derive(Serialize)]
@@ -21,6 +21,8 @@ struct SpaceOutput {
     floors: HashMap<String, FloorPlacementsOutput>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     objects: Vec<ObjectEntryOutput>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    spawn_groups: Vec<SpawnGroupDef>,
 }
 
 #[derive(Serialize, Default)]
@@ -70,6 +72,7 @@ struct ExplicitOutput {
 pub fn serialize_and_save(
     ctx: &EditorContext,
     portal_buffer: &EditorPortalBuffer,
+    spawn_group_buffer: &EditorSpawnGroupBuffer,
     object_registry: &ObjectRegistry,
     objects: &bevy::prelude::Query<(&OverworldObject, &SpaceResident, &TilePosition)>,
     floor_maps: &crate::world::floor_map::FloorMaps,
@@ -195,6 +198,7 @@ pub fn serialize_and_save(
         portals,
         floors: floors_out,
         objects: object_entries,
+        spawn_groups: spawn_group_buffer.groups.clone(),
     };
 
     let yaml = serde_yaml::to_string(&output)

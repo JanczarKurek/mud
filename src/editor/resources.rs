@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::world::components::{SpaceId, TilePosition};
 use crate::world::floor_definitions::FloorTypeId;
-use crate::world::map_layout::PortalDefinition;
+use crate::world::map_layout::{MapBehavior, PortalDefinition, SpawnGroupDef, TileRectangle};
 
 /// Metadata about the space being edited.
 #[derive(Resource)]
@@ -27,6 +28,36 @@ pub enum EditorTool {
     /// Marquee-rectangle selection. Drag-LMB selects; selection persists
     /// across tool switches and is consumed by clipboard copy/cut.
     Select,
+    /// Pick-a-rectangle mode. Drags a marquee like Select, but on release
+    /// writes the result to `EditorPickRectResult` and the previous tool is
+    /// restored. Used by the spawn-group modal and the per-NPC behavior editor
+    /// to capture rectangles by dragging on the map.
+    PickRect {
+        target: PickRectTarget,
+    },
+}
+
+/// Where the result of a `PickRect` drag should land.
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+pub enum PickRectTarget {
+    /// Spawn-group area bounds (modal).
+    SpawnArea,
+    /// Spawn-group behavior bounds (modal).
+    SpawnBehavior,
+    /// Per-instance NPC behavior bounds (properties panel).
+    InstanceBehavior,
+}
+
+/// Result of a `PickRect` drag, consumed by whichever UI requested it.
+#[derive(Resource, Default)]
+pub struct EditorPickRectResult {
+    pub pending: Option<PickedRect>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct PickedRect {
+    pub target: PickRectTarget,
+    pub rect: TileRectangle,
 }
 
 /// Editor interaction state.
@@ -54,6 +85,10 @@ pub struct EditorState {
     pub paste_state: PasteState,
     /// User-toggled visibility of the Templates side panel.
     pub templates_panel_visible: bool,
+    /// User-toggled visibility of the Spawn Groups side panel.
+    pub spawn_groups_panel_visible: bool,
+    /// Tool to restore when a `PickRect` mode finishes (or is cancelled).
+    pub tool_before_pick: Option<EditorTool>,
 }
 
 /// Inclusive rectangular region of the editor map. `min`/`max` are the
@@ -136,6 +171,12 @@ pub enum ModalKind {
     PortalCreate,
     /// Save current selection as a named template.
     SaveAsTemplate,
+    /// Create or edit a spawn group. `editing_index = None` is create mode;
+    /// `Some(i)` edits the spawn group at that index in
+    /// `EditorSpawnGroupBuffer`.
+    SpawnGroupEdit {
+        editing_index: Option<usize>,
+    },
 }
 
 /// Filled by the confirm handler; consumed by `apply_modal_confirmed`.
@@ -183,6 +224,221 @@ pub struct ModalState {
     /// Pre-built fragment stashed when opening `SaveAsTemplate` so the confirm
     /// path doesn't need to re-query the world. Cleared by `apply_modal_confirmed`.
     pub pending_template_fragment: Option<MapFragment>,
+    /// Working draft for the SpawnGroupEdit modal. Populated when the modal
+    /// opens (cloning the existing group when editing) and consumed on
+    /// confirm. Field-level UI binds directly to this struct.
+    pub spawn_group_draft: Option<SpawnGroupDraft>,
+    /// Out-of-band confirm channel for spawn-group saves so the heavy
+    /// `apply_modal_confirmed` system doesn't have to add another mutable
+    /// resource and exceed Bevy's per-system parameter cap. Populated by
+    /// `process_modal_confirm` for the SpawnGroupEdit kind; consumed by a
+    /// dedicated `apply_spawn_group_confirmed` system.
+    pub confirmed_spawn_group: Option<ConfirmedSpawnGroup>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ConfirmedSpawnGroup {
+    pub editing_index: Option<usize>,
+    pub group: SpawnGroupDef,
+}
+
+/// Mutable working state for the spawn-group modal. Numeric fields are kept
+/// as strings so partial input (e.g. an empty `max_count` field) round-trips
+/// through the UI without losing the user's edit position.
+#[derive(Clone, Debug)]
+pub struct SpawnGroupDraft {
+    /// Index of the group being edited in `EditorSpawnGroupBuffer.groups`.
+    /// `None` = create mode. Stashed on the draft (rather than the
+    /// `ModalKind`) so the pick-rect flow can close-and-reopen the modal
+    /// without losing this state.
+    pub editing_index: Option<usize>,
+    pub id: String,
+    pub template: String,
+    pub max_count: String,
+    pub respawn_mean_seconds: String,
+    pub area_kind: SpawnAreaKind,
+    pub area_min_x: String,
+    pub area_min_y: String,
+    pub area_max_x: String,
+    pub area_max_y: String,
+    pub area_tiles: Vec<TilePosition>,
+    pub behavior_kind: BehaviorKind,
+    pub step_interval_seconds: String,
+    pub bhv_min_x: String,
+    pub bhv_min_y: String,
+    pub bhv_max_x: String,
+    pub bhv_max_y: String,
+    pub detect_distance_tiles: String,
+    pub disengage_distance_tiles: String,
+    /// Which numeric/text field has keyboard focus.
+    pub focused_field: SpawnGroupField,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SpawnAreaKind {
+    Bounds,
+    Tiles,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BehaviorKind {
+    Roam,
+    RoamAndChase,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SpawnGroupField {
+    Id,
+    Template,
+    MaxCount,
+    RespawnMean,
+    AreaMinX,
+    AreaMinY,
+    AreaMaxX,
+    AreaMaxY,
+    StepInterval,
+    BhvMinX,
+    BhvMinY,
+    BhvMaxX,
+    BhvMaxY,
+    DetectDistance,
+    DisengageDistance,
+}
+
+impl Default for SpawnGroupDraft {
+    fn default() -> Self {
+        Self {
+            editing_index: None,
+            id: String::new(),
+            template: String::new(),
+            max_count: "3".into(),
+            respawn_mean_seconds: "30.0".into(),
+            area_kind: SpawnAreaKind::Bounds,
+            area_min_x: String::new(),
+            area_min_y: String::new(),
+            area_max_x: String::new(),
+            area_max_y: String::new(),
+            area_tiles: Vec::new(),
+            behavior_kind: BehaviorKind::Roam,
+            step_interval_seconds: "0.5".into(),
+            bhv_min_x: String::new(),
+            bhv_min_y: String::new(),
+            bhv_max_x: String::new(),
+            bhv_max_y: String::new(),
+            detect_distance_tiles: "4".into(),
+            disengage_distance_tiles: "6".into(),
+            focused_field: SpawnGroupField::Id,
+        }
+    }
+}
+
+impl SpawnGroupDraft {
+    /// Initialise a draft from an existing spawn group (edit mode).
+    pub fn from_existing(index: usize, group: &SpawnGroupDef) -> Self {
+        let area_kind = if group.area.tiles.is_some() {
+            SpawnAreaKind::Tiles
+        } else {
+            SpawnAreaKind::Bounds
+        };
+        let bounds = group.area.bounds;
+        let (a_min_x, a_min_y, a_max_x, a_max_y) = bounds
+            .map(|r| {
+                (
+                    r.min_x.to_string(),
+                    r.min_y.to_string(),
+                    r.max_x.to_string(),
+                    r.max_y.to_string(),
+                )
+            })
+            .unwrap_or_default();
+        let area_tiles = group
+            .area
+            .tiles
+            .as_ref()
+            .map(|ts| {
+                ts.iter()
+                    .map(|t| TilePosition::ground(t.x, t.y))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let (
+            behavior_kind,
+            step_interval,
+            bhv_rect,
+            detect_d,
+            disengage_d,
+        ) = match &group.behavior {
+            MapBehavior::Roam {
+                step_interval_seconds,
+                bounds,
+            } => (
+                BehaviorKind::Roam,
+                step_interval_seconds.to_string(),
+                *bounds,
+                "4".to_string(),
+                "6".to_string(),
+            ),
+            MapBehavior::RoamAndChase {
+                step_interval_seconds,
+                bounds,
+                detect_distance_tiles,
+                disengage_distance_tiles,
+            } => (
+                BehaviorKind::RoamAndChase,
+                step_interval_seconds.to_string(),
+                *bounds,
+                detect_distance_tiles.to_string(),
+                disengage_distance_tiles.to_string(),
+            ),
+        };
+        Self {
+            editing_index: Some(index),
+            id: group.id.clone(),
+            template: group.template.clone(),
+            max_count: group.max_count.to_string(),
+            respawn_mean_seconds: group.respawn_mean_seconds.to_string(),
+            area_kind,
+            area_min_x: a_min_x,
+            area_min_y: a_min_y,
+            area_max_x: a_max_x,
+            area_max_y: a_max_y,
+            area_tiles,
+            behavior_kind,
+            step_interval_seconds: step_interval,
+            bhv_min_x: bhv_rect.min_x.to_string(),
+            bhv_min_y: bhv_rect.min_y.to_string(),
+            bhv_max_x: bhv_rect.max_x.to_string(),
+            bhv_max_y: bhv_rect.max_y.to_string(),
+            detect_distance_tiles: detect_d,
+            disengage_distance_tiles: disengage_d,
+            focused_field: SpawnGroupField::Id,
+        }
+    }
+
+    /// Look up the mutable string for a given focused field.
+    pub fn field_mut(&mut self, field: SpawnGroupField) -> Option<&mut String> {
+        Some(match field {
+            SpawnGroupField::Id => &mut self.id,
+            SpawnGroupField::Template => &mut self.template,
+            SpawnGroupField::MaxCount => &mut self.max_count,
+            SpawnGroupField::RespawnMean => &mut self.respawn_mean_seconds,
+            SpawnGroupField::AreaMinX => &mut self.area_min_x,
+            SpawnGroupField::AreaMinY => &mut self.area_min_y,
+            SpawnGroupField::AreaMaxX => &mut self.area_max_x,
+            SpawnGroupField::AreaMaxY => &mut self.area_max_y,
+            SpawnGroupField::StepInterval => &mut self.step_interval_seconds,
+            SpawnGroupField::BhvMinX => &mut self.bhv_min_x,
+            SpawnGroupField::BhvMinY => &mut self.bhv_min_y,
+            SpawnGroupField::BhvMaxX => &mut self.bhv_max_x,
+            SpawnGroupField::BhvMaxY => &mut self.bhv_max_y,
+            SpawnGroupField::DetectDistance => &mut self.detect_distance_tiles,
+            SpawnGroupField::DisengageDistance => &mut self.disengage_distance_tiles,
+        })
+    }
+
+    pub fn is_field_numeric(field: SpawnGroupField) -> bool {
+        !matches!(field, SpawnGroupField::Id | SpawnGroupField::Template)
+    }
 }
 
 // ── Clipboard fragment ────────────────────────────────────────────────────────
@@ -238,6 +494,27 @@ pub struct EditorPortalBuffer {
     pub portals: Vec<PortalDefinition>,
 }
 
+/// Holds the spawn-group definitions for the currently-edited space (mutable,
+/// persisted to YAML on save). Populated when a map opens; drained back to
+/// the serializer's `SpaceOutput.spawn_groups`.
+#[derive(Resource, Default)]
+pub struct EditorSpawnGroupBuffer {
+    pub groups: Vec<SpawnGroupDef>,
+    /// Index of the row currently selected in the spawn-groups panel; drives
+    /// the area-overlay highlight on the map.
+    pub selected: Option<usize>,
+}
+
+/// Bundle the per-map-edit buffers into a single `SystemParam` so callers
+/// like `apply_modal_confirmed` can take both with one slot — Bevy caps
+/// system parameter count at 16, and threading this many resources through
+/// the modal flow easily blows past it.
+#[derive(SystemParam)]
+pub struct EditorMapBuffers<'w> {
+    pub portals: ResMut<'w, EditorPortalBuffer>,
+    pub spawn_groups: ResMut<'w, EditorSpawnGroupBuffer>,
+}
+
 /// Marker component for portal overlay sprites.
 #[derive(Component)]
 pub struct EditorPortalMarker {
@@ -288,6 +565,27 @@ pub enum UndoOp {
     /// A bundle executed atomically. Used by clipboard cut and paste so the
     /// whole stamp undoes/redoes in one Ctrl+Z.
     Composite { ops: Vec<UndoOp> },
+    /// Spawn-group buffer ops. The `before` snapshot in `EditSpawnGroup` is
+    /// the *previous* contents of the slot — applying the op swaps in the
+    /// snapshot and emits the *current* contents as the inverse.
+    AddSpawnGroup {
+        index: usize,
+        group: SpawnGroupDef,
+    },
+    RemoveSpawnGroup {
+        index: usize,
+    },
+    EditSpawnGroup {
+        index: usize,
+        before: SpawnGroupDef,
+    },
+    /// Per-instance NPC behavior change. `before` is the prior behavior (None
+    /// = no behavior was attached). Applying it swaps the registry entry and
+    /// returns the inverse.
+    SetBehavior {
+        object_id: u64,
+        before: Option<MapBehavior>,
+    },
 }
 
 #[derive(Resource, Default)]

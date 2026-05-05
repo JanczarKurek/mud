@@ -6,9 +6,10 @@ use bevy::window::PrimaryWindow;
 
 use crate::editor::clipboard::cancel_paste;
 use crate::editor::resources::{
-    EditingField, EditorCamera, EditorContext, EditorPortalBuffer, EditorPropertyEditBuffer,
-    EditorState, EditorTool, ModalConfirmed, ModalKind, ModalState, ModalTextField, UndoOp,
-    UndoStack,
+    BehaviorKind, ConfirmedSpawnGroup, EditingField, EditorCamera, EditorContext,
+    EditorMapBuffers, EditorPortalBuffer, EditorPropertyEditBuffer, EditorSpawnGroupBuffer,
+    EditorState, EditorTool, ModalConfirmed, ModalKind, ModalState, ModalTextField, SpawnAreaKind,
+    SpawnGroupDraft, UndoOp, UndoStack,
 };
 use crate::editor::templates::{save_template, EditorTemplatesIndex};
 use crate::editor::serializer::serialize_and_save;
@@ -20,7 +21,10 @@ use crate::world::components::{
     OverworldObject, SpaceResident, TilePosition, ViewPosition, WorldVisual,
 };
 use crate::world::floor_map::FloorMaps;
-use crate::world::map_layout::{PortalDefinition, SpaceDefinitions, TileCoordinate};
+use crate::world::map_layout::{
+    MapBehavior, PortalDefinition, SpaceDefinitions, SpawnArea, SpawnGroupDef, TileCoordinate,
+    TileRectangle,
+};
 use crate::world::object_definitions::{OverworldObjectDefinition, OverworldObjectDefinitions};
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::resources::{RuntimeSpace, SpaceManager};
@@ -110,11 +114,12 @@ pub fn init_portal_buffer(
     editor_context: Res<EditorContext>,
     space_definitions: Res<SpaceDefinitions>,
     mut portal_buffer: ResMut<EditorPortalBuffer>,
+    mut spawn_group_buffer: ResMut<EditorSpawnGroupBuffer>,
 ) {
-    portal_buffer.portals = space_definitions
-        .get(&editor_context.authored_id)
-        .map(|def| def.portals.clone())
-        .unwrap_or_default();
+    let def = space_definitions.get(&editor_context.authored_id);
+    portal_buffer.portals = def.map(|d| d.portals.clone()).unwrap_or_default();
+    spawn_group_buffer.groups = def.map(|d| d.spawn_groups.clone()).unwrap_or_default();
+    spawn_group_buffer.selected = None;
 }
 
 pub fn attach_editor_visuals(
@@ -501,6 +506,9 @@ pub fn update_editor_cursor_ghost(
         // Select tool has no per-tile ghost; the selection rectangle is
         // drawn elsewhere (`crate::editor::selection::render_selection`).
         EditorTool::Select => {}
+        // PickRect mode reuses `render_selection`'s overlay for the live drag
+        // rectangle, so no extra ghost needed here.
+        EditorTool::PickRect { .. } => {}
     }
 }
 
@@ -554,6 +562,11 @@ pub fn handle_editor_left_click(
     // Select tool reads via `handle_editor_select_drag`; left-click here is
     // the start-of-drag and is consumed by the drag system.
     if editor_state.current_tool == EditorTool::Select {
+        return;
+    }
+    // PickRect mode owns the click; let `handle_editor_pick_rect_drag` write
+    // the result.
+    if matches!(editor_state.current_tool, EditorTool::PickRect { .. }) {
         return;
     }
 
@@ -680,6 +693,14 @@ pub fn handle_editor_right_click(
     // under cursor" while pasting.
     if editor_state.paste_state.active {
         cancel_paste(&mut editor_state);
+        return;
+    }
+
+    // PickRect mode: RMB cancels the pick and restores the previous tool
+    // without writing a result.
+    if matches!(editor_state.current_tool, EditorTool::PickRect { .. }) {
+        editor_state.selection = None;
+        editor_state.current_tool = editor_state.tool_before_pick.take().unwrap_or(EditorTool::Brush);
         return;
     }
 
@@ -976,10 +997,14 @@ pub fn handle_editor_escape(
         return;
     }
 
-    // Esc priority: (1) leave paste mode, (2) clear marquee selection,
-    // (3) drop back to Brush, (4) deselect type, (5) deselect object.
+    // Esc priority: (1) leave paste mode, (1.5) cancel PickRect mode and
+    // restore prior tool, (2) clear marquee selection, (3) drop back to
+    // Brush, (4) deselect type, (5) deselect object.
     if editor_state.paste_state.active {
         editor_state.paste_state.active = false;
+    } else if matches!(editor_state.current_tool, EditorTool::PickRect { .. }) {
+        editor_state.selection = None;
+        editor_state.current_tool = editor_state.tool_before_pick.take().unwrap_or(EditorTool::Brush);
     } else if editor_state.selection.is_some() {
         editor_state.selection = None;
     } else if editor_state.current_tool != EditorTool::Brush {
@@ -1042,12 +1067,14 @@ pub fn handle_editor_floor_brush_hotkey(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn handle_editor_save(
     keyboard: Res<ButtonInput<KeyCode>>,
     modal_state: Res<ModalState>,
     mut editor_state: ResMut<EditorState>,
     editor_context: Res<EditorContext>,
     portal_buffer: Res<EditorPortalBuffer>,
+    spawn_group_buffer: Res<EditorSpawnGroupBuffer>,
     object_registry: Res<ObjectRegistry>,
     floor_maps: Res<FloorMaps>,
     objects: Query<(&OverworldObject, &SpaceResident, &TilePosition)>,
@@ -1061,6 +1088,7 @@ pub fn handle_editor_save(
         serialize_and_save(
             &editor_context,
             &portal_buffer,
+            &spawn_group_buffer,
             &object_registry,
             &objects,
             &floor_maps,
@@ -1315,7 +1343,222 @@ pub fn process_modal_confirm(
             modal_state.error_message = None;
             modal_state.confirmed = Some(ModalConfirmed::SaveAsTemplate { name });
         }
+        ModalKind::SpawnGroupEdit { editing_index } => {
+            let Some(draft) = modal_state.spawn_group_draft.clone() else {
+                modal_state.active = None;
+                return;
+            };
+            match build_spawn_group_from_draft(&draft, &definitions) {
+                Ok(group) => {
+                    modal_state.active = None;
+                    modal_state.error_message = None;
+                    modal_state.spawn_group_draft = None;
+                    modal_state.confirmed_spawn_group = Some(ConfirmedSpawnGroup {
+                        editing_index,
+                        group,
+                    });
+                }
+                Err(msg) => {
+                    modal_state.error_message = Some(msg);
+                }
+            }
+        }
     }
+}
+
+/// Drains `ModalState.confirmed_spawn_group` and applies the edit/create to
+/// `EditorSpawnGroupBuffer`. Lives in its own system so `apply_modal_confirmed`
+/// doesn't have to take another `ResMut` and blow past Bevy's per-system
+/// parameter cap.
+pub fn apply_spawn_group_confirmed(
+    mut modal_state: ResMut<ModalState>,
+    mut spawn_group_buffer: ResMut<EditorSpawnGroupBuffer>,
+    mut undo_stack: ResMut<UndoStack>,
+    mut editor_state: ResMut<EditorState>,
+) {
+    let Some(confirmed) = modal_state.confirmed_spawn_group.take() else {
+        return;
+    };
+    let ConfirmedSpawnGroup {
+        editing_index,
+        group,
+    } = confirmed;
+    match editing_index {
+        Some(idx) if idx < spawn_group_buffer.groups.len() => {
+            let before = spawn_group_buffer.groups[idx].clone();
+            spawn_group_buffer.groups[idx] = group;
+            undo_stack.push_undo(UndoOp::EditSpawnGroup { index: idx, before });
+        }
+        _ => {
+            let idx = spawn_group_buffer.groups.len();
+            spawn_group_buffer.groups.push(group);
+            undo_stack.push_undo(UndoOp::RemoveSpawnGroup { index: idx });
+            spawn_group_buffer.selected = Some(idx);
+        }
+    }
+    editor_state.dirty = true;
+}
+
+/// Validate and convert a `SpawnGroupDraft` into an authoritative
+/// `SpawnGroupDef`. Mirrors `SpaceDefinition::validate_spawn_groups` so the
+/// editor never produces YAML that would panic the loader.
+fn build_spawn_group_from_draft(
+    draft: &SpawnGroupDraft,
+    definitions: &OverworldObjectDefinitions,
+) -> Result<SpawnGroupDef, String> {
+    let id = draft.id.trim().to_owned();
+    if id.is_empty() {
+        return Err("Spawn group id cannot be empty.".into());
+    }
+    if !id.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        return Err("Spawn group id: letters, digits, underscores only.".into());
+    }
+    let template = draft.template.trim().to_owned();
+    if template.is_empty() {
+        return Err("Template cannot be empty.".into());
+    }
+    if definitions.get(&template).is_none() {
+        return Err(format!("Unknown template '{template}'."));
+    }
+    let max_count: u32 = draft
+        .max_count
+        .trim()
+        .parse()
+        .map_err(|_| "max_count must be a positive integer.".to_owned())?;
+    if max_count == 0 {
+        return Err("max_count must be > 0.".into());
+    }
+    let respawn_mean_seconds: f32 = draft
+        .respawn_mean_seconds
+        .trim()
+        .parse()
+        .map_err(|_| "respawn_mean_seconds must be a positive number.".to_owned())?;
+    if !respawn_mean_seconds.is_finite() || respawn_mean_seconds <= 0.0 {
+        return Err("respawn_mean_seconds must be > 0.".into());
+    }
+    let area = match draft.area_kind {
+        SpawnAreaKind::Bounds => {
+            let rect = parse_rect(
+                "area",
+                &draft.area_min_x,
+                &draft.area_min_y,
+                &draft.area_max_x,
+                &draft.area_max_y,
+            )?;
+            SpawnArea {
+                bounds: Some(rect),
+                tiles: None,
+            }
+        }
+        SpawnAreaKind::Tiles => {
+            if draft.area_tiles.is_empty() {
+                return Err(
+                    "Tiles list is empty (v1 cannot create new tile lists; switch to Bounds)."
+                        .into(),
+                );
+            }
+            SpawnArea {
+                bounds: None,
+                tiles: Some(
+                    draft
+                        .area_tiles
+                        .iter()
+                        .map(|t| TileCoordinate {
+                            x: t.x,
+                            y: t.y,
+                            z: t.z,
+                        })
+                        .collect(),
+                ),
+            }
+        }
+    };
+    let step_interval_seconds: f32 = draft
+        .step_interval_seconds
+        .trim()
+        .parse()
+        .map_err(|_| "step_interval_seconds must be a positive number.".to_owned())?;
+    if !step_interval_seconds.is_finite() || step_interval_seconds <= 0.0 {
+        return Err("step_interval_seconds must be > 0.".into());
+    }
+    let bhv_rect = parse_rect(
+        "behavior bounds",
+        &draft.bhv_min_x,
+        &draft.bhv_min_y,
+        &draft.bhv_max_x,
+        &draft.bhv_max_y,
+    )?;
+    let behavior = match draft.behavior_kind {
+        BehaviorKind::Roam => MapBehavior::Roam {
+            step_interval_seconds,
+            bounds: bhv_rect,
+        },
+        BehaviorKind::RoamAndChase => {
+            let detect_distance_tiles: i32 = draft
+                .detect_distance_tiles
+                .trim()
+                .parse()
+                .map_err(|_| "detect_distance_tiles must be a non-negative integer.".to_owned())?;
+            let disengage_distance_tiles: i32 = draft
+                .disengage_distance_tiles
+                .trim()
+                .parse()
+                .map_err(|_| {
+                    "disengage_distance_tiles must be a non-negative integer.".to_owned()
+                })?;
+            if detect_distance_tiles < 0 || disengage_distance_tiles < 0 {
+                return Err("detect/disengage distances must be >= 0.".into());
+            }
+            MapBehavior::RoamAndChase {
+                step_interval_seconds,
+                bounds: bhv_rect,
+                detect_distance_tiles,
+                disengage_distance_tiles,
+            }
+        }
+    };
+    Ok(SpawnGroupDef {
+        id,
+        template,
+        max_count,
+        respawn_mean_seconds,
+        area,
+        behavior,
+    })
+}
+
+fn parse_rect(
+    label: &str,
+    min_x: &str,
+    min_y: &str,
+    max_x: &str,
+    max_y: &str,
+) -> Result<TileRectangle, String> {
+    let mx: i32 = min_x
+        .trim()
+        .parse()
+        .map_err(|_| format!("{label}: min_x must be an integer."))?;
+    let my: i32 = min_y
+        .trim()
+        .parse()
+        .map_err(|_| format!("{label}: min_y must be an integer."))?;
+    let xx: i32 = max_x
+        .trim()
+        .parse()
+        .map_err(|_| format!("{label}: max_x must be an integer."))?;
+    let yy: i32 = max_y
+        .trim()
+        .parse()
+        .map_err(|_| format!("{label}: max_y must be an integer."))?;
+    if mx > xx || my > yy {
+        return Err(format!("{label}: empty bounds (min > max)."));
+    }
+    Ok(TileRectangle {
+        min_x: mx,
+        min_y: my,
+        max_x: xx,
+        max_y: yy,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1328,7 +1571,7 @@ pub fn apply_modal_confirmed(
     mut space_manager: ResMut<SpaceManager>,
     mut floor_maps: ResMut<FloorMaps>,
     mut space_definitions: ResMut<SpaceDefinitions>,
-    mut portal_buffer: ResMut<EditorPortalBuffer>,
+    mut buffers: EditorMapBuffers,
     mut undo_stack: ResMut<UndoStack>,
     mut prop_buffer: ResMut<EditorPropertyEditBuffer>,
     mut templates_index: ResMut<EditorTemplatesIndex>,
@@ -1340,6 +1583,8 @@ pub fn apply_modal_confirmed(
     let Some(confirmed) = modal_state.confirmed.take() else {
         return;
     };
+    let portal_buffer = buffers.portals.as_mut();
+    let spawn_group_buffer = buffers.spawn_groups.as_mut();
 
     match confirmed {
         ModalConfirmed::FileOpen { authored_id } => {
@@ -1378,6 +1623,8 @@ pub fn apply_modal_confirmed(
             world_config.fill_floor_type = def.fill_floor_type.clone();
             editor_camera.center = Vec2::new(def.width as f32 * 0.5, def.height as f32 * 0.5);
             portal_buffer.portals = def.portals.clone();
+            spawn_group_buffer.groups = def.spawn_groups.clone();
+            spawn_group_buffer.selected = None;
             editor_state.dirty = false;
             editor_state.selected_type_id = None;
             editor_state.selected_object_id = None;
@@ -1391,7 +1638,8 @@ pub fn apply_modal_confirmed(
             editor_context.authored_id = authored_id.clone();
             serialize_and_save(
                 &editor_context,
-                &portal_buffer,
+                portal_buffer,
+                spawn_group_buffer,
                 &object_registry,
                 &objects_save,
                 &floor_maps,
@@ -1440,6 +1688,8 @@ pub fn apply_modal_confirmed(
             world_config.fill_floor_type = fill_type.clone();
             editor_camera.center = Vec2::new(width as f32 * 0.5, height as f32 * 0.5);
             portal_buffer.portals = vec![];
+            spawn_group_buffer.groups.clear();
+            spawn_group_buffer.selected = None;
             editor_state.dirty = true;
             editor_state.selected_type_id = None;
             editor_state.selected_object_id = None;

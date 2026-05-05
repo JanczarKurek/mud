@@ -197,7 +197,7 @@ pub enum MapBehavior {
 /// of a single `template` within `area` and refills empty slots after a
 /// Poisson-distributed delay with mean `respawn_mean_seconds`. All members
 /// inherit the group's `behavior`.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct SpawnGroupDef {
     pub id: String,
@@ -211,12 +211,12 @@ pub struct SpawnGroupDef {
 
 /// Spawn area. Exactly one of `bounds` or `tiles` must be set; this is
 /// enforced by `SpaceDefinition::validate_spawn_groups`.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct SpawnArea {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bounds: Option<TileRectangle>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tiles: Option<Vec<TileCoordinate>>,
 }
 
@@ -1034,6 +1034,84 @@ objects:
             .find(|o| o.type_id == "wooden_door")
             .unwrap();
         assert_eq!(target_id, door.id);
+    }
+
+    #[test]
+    fn spawn_group_def_yaml_round_trips() {
+        let group = SpawnGroupDef {
+            id: "cellar_rats".into(),
+            template: "rat".into(),
+            max_count: 3,
+            respawn_mean_seconds: 30.0,
+            area: SpawnArea {
+                bounds: Some(TileRectangle {
+                    min_x: 1,
+                    min_y: 2,
+                    max_x: 8,
+                    max_y: 9,
+                }),
+                tiles: None,
+            },
+            behavior: MapBehavior::RoamAndChase {
+                step_interval_seconds: 0.5,
+                bounds: TileRectangle {
+                    min_x: 1,
+                    min_y: 2,
+                    max_x: 8,
+                    max_y: 9,
+                },
+                detect_distance_tiles: 4,
+                disengage_distance_tiles: 6,
+            },
+        };
+        let yaml = serde_yaml::to_string(&group).expect("serialize");
+        let parsed: SpawnGroupDef = serde_yaml::from_str(&yaml).expect("parse");
+        assert_eq!(parsed.id, "cellar_rats");
+        assert_eq!(parsed.template, "rat");
+        assert_eq!(parsed.max_count, 3);
+        assert!(parsed.area.tiles.is_none());
+        let bounds = parsed.area.bounds.expect("bounds present");
+        assert_eq!(bounds.min_x, 1);
+        assert_eq!(bounds.max_y, 9);
+        match parsed.behavior {
+            MapBehavior::RoamAndChase {
+                detect_distance_tiles,
+                disengage_distance_tiles,
+                ..
+            } => {
+                assert_eq!(detect_distance_tiles, 4);
+                assert_eq!(disengage_distance_tiles, 6);
+            }
+            _ => panic!("expected RoamAndChase"),
+        }
+    }
+
+    #[test]
+    fn spawn_groups_round_trip_through_full_space_yaml() {
+        // Editor will produce YAML containing `spawn_groups:`. Verify that
+        // such YAML round-trips through `SpaceDefinition`.
+        let yaml = r#"
+authored_id: t
+width: 16
+height: 16
+fill_floor_type: grass
+spawn_groups:
+  - id: cellar_rats
+    template: rat
+    max_count: 3
+    respawn_mean_seconds: 30.0
+    area:
+      bounds: { min_x: 1, min_y: 2, max_x: 8, max_y: 9 }
+    behavior:
+      kind: roam_and_chase
+      step_interval_seconds: 0.5
+      bounds: { min_x: 1, min_y: 2, max_x: 8, max_y: 9 }
+      detect_distance_tiles: 4
+      disengage_distance_tiles: 6
+"#;
+        let def: SpaceDefinition = serde_yaml::from_str(yaml).expect("parse space");
+        assert_eq!(def.spawn_groups.len(), 1);
+        assert_eq!(def.spawn_groups[0].id, "cellar_rats");
     }
 
     #[test]

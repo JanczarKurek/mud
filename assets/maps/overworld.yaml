@@ -22,134 +22,114 @@ portals:
     x: 3
     y: 14
 floors:
-  cave_floor:
+  dirt_path:
     placement:
-    - x: 34
-      y: 16
-    - x: 35
-      y: 16
-    - x: 35
-      y: 17
-    - x: 36
-      y: 17
-    - x: 37
-      y: 17
-    - x: 38
-      y: 17
-    - x: 33
-      y: 18
-    - x: 38
-      y: 18
-    - x: 39
-      y: 18
-    - x: 31
+    - x: 5
       y: 19
-    - x: 39
-      y: 19
-    - x: 40
-      y: 19
-    - x: 35
+    - x: 5
       y: 20
-    - x: 36
-      y: 20
-    - x: 37
-      y: 20
-    - x: 38
-      y: 20
-    - x: 32
+    - x: 5
       y: 21
-    - x: 34
-      y: 21
-    - x: 32
+    - x: 5
       y: 22
-    - x: 34
-      y: 22
-    - x: 39
-      y: 22
-    - x: 40
-      y: 22
-    - x: 41
-      y: 22
+    - x: 5
+      y: 23
+    - x: 5
+      y: 24
+    - x: 5
+      y: 25
+    - x: 5
+      y: 26
+    - x: 6
+      y: 26
+    - x: 7
+      y: 26
+    - x: 8
+      y: 26
+    - x: 9
+      y: 26
+    - x: 10
+      y: 26
+    - x: 11
+      y: 26
+    - x: 12
+      y: 26
+    - x: 13
+      y: 26
+    - x: 14
+      y: 26
+    - x: 15
+      y: 26
+    - x: 16
+      y: 26
+    - x: 17
+      y: 26
+    - x: 18
+      y: 26
+    - x: 19
+      y: 26
+    - x: 20
+      y: 26
+    - x: 21
+      y: 26
+    - x: 22
+      y: 26
+    - x: 23
+      y: 26
+    - x: 24
+      y: 26
+    - x: 25
+      y: 26
+    - x: 26
+      y: 26
+    - x: 27
+      y: 26
+    - x: 28
+      y: 26
+    - x: 29
+      y: 26
     - x: 30
-      y: 23
+      y: 26
     - x: 31
-      y: 23
-    - x: 34
-      y: 23
-    - x: 35
-      y: 23
-    - x: 38
-      y: 23
-    - x: 42
-      y: 23
-    - x: 31
-      y: 24
-    - x: 35
-      y: 24
-    - x: 36
-      y: 24
-    - x: 37
-      y: 24
-    - x: 41
-      y: 24
-    - x: 35
-      y: 25
-    - x: 36
-      y: 25
-    - x: 40
-      y: 25
-    - x: 35
       y: 26
-    - x: 37
-      y: 26
-    - x: 38
-      y: 26
-    - x: 39
-      y: 26
-    - x: 40
+    - x: 32
       y: 26
     - x: 33
-      y: 27
+      y: 26
     - x: 34
-      y: 27
-    - x: 37
-      y: 27
-    - x: 38
-      y: 27
-    - x: 39
-      y: 27
-    - x: 33
-      y: 28
-    - x: 34
-      y: 28
+      y: 26
     - x: 35
-      y: 28
-    - x: 36
-      y: 28
-    - x: 37
-      y: 28
-    - x: 39
-      y: 28
-    - x: 40
-      y: 28
-    - x: 41
-      y: 29
-    - x: 42
-      y: 29
-    - x: 37
-      y: 30
-    - x: 41
-      y: 30
-    - x: 34
-      y: 31
+      y: 27
     - x: 35
-      y: 31
-    - x: 36
-      y: 31
-    - x: 39
+      y: 29
+    - x: 35
+      y: 30
+    - x: 35
       y: 32
-    - x: 40
-      y: 32
+    - x: 35
+      y: 33
+    - x: 35
+      y: 34
+    - x: 35
+      y: 35
+    - x: 35
+      y: 36
+    - x: 35
+      y: 37
+    - x: 35
+      y: 38
+    - x: 35
+      y: 39
+    - x: 35
+      y: 40
+    - x: 35
+      y: 41
+    - x: 35
+      y: 42
+    - x: 35
+      y: 43
+    - x: 35
+      y: 44
   sand:
     placement:
     - x: 2
@@ -474,6 +454,134 @@ floors:
       y: 48
     - x: 26
       y: 48
+  cave_floor:
+    placement:
+    - x: 34
+      y: 16
+    - x: 35
+      y: 16
+    - x: 35
+      y: 17
+    - x: 36
+      y: 17
+    - x: 37
+      y: 17
+    - x: 38
+      y: 17
+    - x: 33
+      y: 18
+    - x: 38
+      y: 18
+    - x: 39
+      y: 18
+    - x: 31
+      y: 19
+    - x: 39
+      y: 19
+    - x: 40
+      y: 19
+    - x: 35
+      y: 20
+    - x: 36
+      y: 20
+    - x: 37
+      y: 20
+    - x: 38
+      y: 20
+    - x: 32
+      y: 21
+    - x: 34
+      y: 21
+    - x: 32
+      y: 22
+    - x: 34
+      y: 22
+    - x: 39
+      y: 22
+    - x: 40
+      y: 22
+    - x: 41
+      y: 22
+    - x: 30
+      y: 23
+    - x: 31
+      y: 23
+    - x: 34
+      y: 23
+    - x: 35
+      y: 23
+    - x: 38
+      y: 23
+    - x: 42
+      y: 23
+    - x: 31
+      y: 24
+    - x: 35
+      y: 24
+    - x: 36
+      y: 24
+    - x: 37
+      y: 24
+    - x: 41
+      y: 24
+    - x: 35
+      y: 25
+    - x: 36
+      y: 25
+    - x: 40
+      y: 25
+    - x: 35
+      y: 26
+    - x: 37
+      y: 26
+    - x: 38
+      y: 26
+    - x: 39
+      y: 26
+    - x: 40
+      y: 26
+    - x: 33
+      y: 27
+    - x: 34
+      y: 27
+    - x: 37
+      y: 27
+    - x: 38
+      y: 27
+    - x: 39
+      y: 27
+    - x: 33
+      y: 28
+    - x: 34
+      y: 28
+    - x: 35
+      y: 28
+    - x: 36
+      y: 28
+    - x: 37
+      y: 28
+    - x: 39
+      y: 28
+    - x: 40
+      y: 28
+    - x: 41
+      y: 29
+    - x: 42
+      y: 29
+    - x: 37
+      y: 30
+    - x: 41
+      y: 30
+    - x: 34
+      y: 31
+    - x: 35
+      y: 31
+    - x: 36
+      y: 31
+    - x: 39
+      y: 32
+    - x: 40
+      y: 32
   cobblestone:
     placement:
     - x: 8
@@ -650,114 +758,6 @@ floors:
       y: 17
     - x: 10
       y: 17
-  dirt_path:
-    placement:
-    - x: 5
-      y: 19
-    - x: 5
-      y: 20
-    - x: 5
-      y: 21
-    - x: 5
-      y: 22
-    - x: 5
-      y: 23
-    - x: 5
-      y: 24
-    - x: 5
-      y: 25
-    - x: 5
-      y: 26
-    - x: 6
-      y: 26
-    - x: 7
-      y: 26
-    - x: 8
-      y: 26
-    - x: 9
-      y: 26
-    - x: 10
-      y: 26
-    - x: 11
-      y: 26
-    - x: 12
-      y: 26
-    - x: 13
-      y: 26
-    - x: 14
-      y: 26
-    - x: 15
-      y: 26
-    - x: 16
-      y: 26
-    - x: 17
-      y: 26
-    - x: 18
-      y: 26
-    - x: 19
-      y: 26
-    - x: 20
-      y: 26
-    - x: 21
-      y: 26
-    - x: 22
-      y: 26
-    - x: 23
-      y: 26
-    - x: 24
-      y: 26
-    - x: 25
-      y: 26
-    - x: 26
-      y: 26
-    - x: 27
-      y: 26
-    - x: 28
-      y: 26
-    - x: 29
-      y: 26
-    - x: 30
-      y: 26
-    - x: 31
-      y: 26
-    - x: 32
-      y: 26
-    - x: 33
-      y: 26
-    - x: 34
-      y: 26
-    - x: 35
-      y: 27
-    - x: 35
-      y: 29
-    - x: 35
-      y: 30
-    - x: 35
-      y: 32
-    - x: 35
-      y: 33
-    - x: 35
-      y: 34
-    - x: 35
-      y: 35
-    - x: 35
-      y: 36
-    - x: 35
-      y: 37
-    - x: 35
-      y: 38
-    - x: 35
-      y: 39
-    - x: 35
-      y: 40
-    - x: 35
-      y: 41
-    - x: 35
-      y: 42
-    - x: 35
-      y: 43
-    - x: 35
-      y: 44
 objects:
 - type: apple
   placement:
@@ -1093,6 +1093,8 @@ objects:
   placement:
   - x: 15
     y: 14
+  - x: 51
+    y: 44
 - type: portal_arch
   placement:
   - x: 35
@@ -1121,8 +1123,6 @@ objects:
   placement:
   - x: 30
     y: 33
-  - x: 43
-    y: 48
 - type: stairs_down
   placement:
   - x: 3
@@ -1958,8 +1958,6 @@ objects:
   placement:
   - x: 10
     y: 7
-  - x: 20
-    y: 16
 - type: wall
   placement:
   - x: 2
@@ -2933,6 +2931,12 @@ objects:
   placement:
   - x: 58
     y: 42
+- type: villager
+  properties:
+    dialog_id: demo_villager
+  placement:
+    x: 20
+    y: 16
 - type: scroll
   properties:
     spell_id: lesser_heal
@@ -2957,3 +2961,136 @@ objects:
   placement:
     x: 33
     y: 43
+- type: skeleton
+  placement:
+    x: 43
+    y: 48
+  behavior:
+    kind: roam_and_chase
+    step_interval_seconds: 0.5
+    bounds:
+      min_x: 39
+      min_y: 41
+      max_x: 45
+      max_y: 49
+    detect_distance_tiles: 4
+    disengage_distance_tiles: 6
+spawn_groups:
+- id: south_rats
+  template: rat
+  max_count: 3
+  respawn_mean_seconds: 30.0
+  area:
+    bounds:
+      min_x: 7
+      min_y: 31
+      max_x: 25
+      max_y: 47
+  behavior:
+    kind: roam
+    step_interval_seconds: 0.5
+    bounds:
+      min_x: 7
+      min_y: 31
+      max_x: 25
+      max_y: 47
+- id: north_goblin_post
+  template: goblin
+  max_count: 1
+  respawn_mean_seconds: 60.0
+  area:
+    bounds:
+      min_x: 44
+      min_y: 5
+      max_x: 52
+      max_y: 13
+  behavior:
+    kind: roam_and_chase
+    step_interval_seconds: 0.9
+    bounds:
+      min_x: 44
+      min_y: 5
+      max_x: 52
+      max_y: 13
+    detect_distance_tiles: 5
+    disengage_distance_tiles: 8
+- id: east_goblin_camp
+  template: goblin
+  max_count: 2
+  respawn_mean_seconds: 45.0
+  area:
+    bounds:
+      min_x: 47
+      min_y: 26
+      max_x: 60
+      max_y: 34
+  behavior:
+    kind: roam_and_chase
+    step_interval_seconds: 0.9
+    bounds:
+      min_x: 47
+      min_y: 26
+      max_x: 60
+      max_y: 34
+    detect_distance_tiles: 5
+    disengage_distance_tiles: 8
+- id: south_goblin_outpost
+  template: goblin
+  max_count: 1
+  respawn_mean_seconds: 60.0
+  area:
+    bounds:
+      min_x: 50
+      min_y: 43
+      max_x: 58
+      max_y: 49
+  behavior:
+    kind: roam_and_chase
+    step_interval_seconds: 1.0
+    bounds:
+      min_x: 50
+      min_y: 43
+      max_x: 58
+      max_y: 49
+    detect_distance_tiles: 5
+    disengage_distance_tiles: 8
+- id: archer_goblin_post
+  template: archer_goblin
+  max_count: 1
+  respawn_mean_seconds: 90.0
+  area:
+    bounds:
+      min_x: 54
+      min_y: 8
+      max_x: 62
+      max_y: 16
+  behavior:
+    kind: roam_and_chase
+    step_interval_seconds: 1.0
+    bounds:
+      min_x: 54
+      min_y: 8
+      max_x: 62
+      max_y: 16
+    detect_distance_tiles: 8
+    disengage_distance_tiles: 14
+- id: cyclops_lair
+  template: cyclops
+  max_count: 1
+  respawn_mean_seconds: 180.0
+  area:
+    bounds:
+      min_x: 50
+      min_y: 42
+      max_x: 62
+      max_y: 49
+  behavior:
+    kind: roam_and_chase
+    step_interval_seconds: 1.4
+    bounds:
+      min_x: 50
+      min_y: 42
+      max_x: 62
+      max_y: 49
+    detect_distance_tiles: 5
+    disengage_distance_tiles: 8

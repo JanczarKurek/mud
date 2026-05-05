@@ -10,6 +10,7 @@ use bevy::ui::{ComputedNode, UiGlobalTransform};
 use crate::editor::ui::modal::ModalOverlayRoot;
 use crate::editor::ui::palette::EditorPaletteRoot;
 use crate::editor::ui::properties::EditorPropertiesRoot;
+use crate::editor::ui::spawn_groups_panel::EditorSpawnGroupsRoot;
 use crate::editor::ui::templates_panel::EditorTemplatesRoot;
 use crate::editor::ui::EditorTopBarRoot;
 
@@ -20,6 +21,7 @@ pub struct EditorPanelRoots<'w, 's> {
     top_bar: Query<'w, 's, (&'static ComputedNode, &'static UiGlobalTransform), With<EditorTopBarRoot>>,
     modal: Query<'w, 's, (&'static ComputedNode, &'static UiGlobalTransform), With<ModalOverlayRoot>>,
     templates: Query<'w, 's, (&'static ComputedNode, &'static UiGlobalTransform), With<EditorTemplatesRoot>>,
+    spawn_groups: Query<'w, 's, (&'static ComputedNode, &'static UiGlobalTransform), With<EditorSpawnGroupsRoot>>,
 }
 
 impl EditorPanelRoots<'_, '_> {
@@ -30,6 +32,7 @@ impl EditorPanelRoots<'_, '_> {
             .chain(self.top_bar.iter())
             .chain(self.modal.iter())
             .chain(self.templates.iter())
+            .chain(self.spawn_groups.iter())
             .any(|(computed, transform)| computed.contains_point(*transform, cursor))
     }
 }

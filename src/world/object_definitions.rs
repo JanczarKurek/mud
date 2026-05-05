@@ -676,6 +676,11 @@ impl OverworldObjectDefinition {
 #[derive(Resource, Default)]
 pub struct OverworldObjectDefinitions {
     definitions: HashMap<String, OverworldObjectDefinition>,
+    /// For each definition id, the ancestor chain followed via the YAML
+    /// `extends:` keyword (parent first → grandparent → …). Built at load
+    /// time so editors can ask "does this object extend `npc`?" without
+    /// re-reading YAML.
+    extends_chain: HashMap<String, Vec<String>>,
 }
 
 impl OverworldObjectDefinitions {
@@ -730,6 +735,30 @@ impl OverworldObjectDefinitions {
             );
         }
 
+        // Build the ancestor chain for each top-level object definition by
+        // following its raw `extends:` field through `base_values`. Templates
+        // without an `extends` key produce an empty chain.
+        let mut extends_chain: HashMap<String, Vec<String>> = HashMap::new();
+        for definition_id in raw_definition_values.keys() {
+            let mut chain = Vec::new();
+            let mut current_value = raw_definition_values.get(definition_id);
+            while let Some(value) = current_value {
+                let Value::Mapping(map) = value else {
+                    break;
+                };
+                let Some(Value::String(parent)) = map.get(Value::String("extends".to_owned())) else {
+                    break;
+                };
+                if chain.iter().any(|p: &String| p == parent) {
+                    break;
+                }
+                let parent = parent.clone();
+                current_value = base_values.get(&parent);
+                chain.push(parent);
+            }
+            extends_chain.insert(definition_id.clone(), chain);
+        }
+
         let mut definitions = HashMap::new();
         for (definition_id, value) in resolved_definition_values {
             let definition = serde_yaml::from_value::<OverworldObjectDefinition>(value)
@@ -750,7 +779,20 @@ impl OverworldObjectDefinitions {
             definitions.insert(definition_id, definition);
         }
 
-        Self { definitions }
+        Self {
+            definitions,
+            extends_chain,
+        }
+    }
+
+    /// Returns true if the definition with `id` (or any of its ancestors via
+    /// the YAML `extends:` chain) is the base named `ancestor`. Useful for
+    /// editor affordances that only apply to NPC-like templates.
+    pub fn extends(&self, id: &str, ancestor: &str) -> bool {
+        self.extends_chain
+            .get(id)
+            .map(|chain| chain.iter().any(|a| a == ancestor))
+            .unwrap_or(false)
     }
 
     pub fn get(&self, id: &str) -> Option<&OverworldObjectDefinition> {
@@ -763,7 +805,10 @@ impl OverworldObjectDefinitions {
 
     #[cfg(test)]
     pub fn new_for_test(definitions: HashMap<String, OverworldObjectDefinition>) -> Self {
-        Self { definitions }
+        Self {
+            definitions,
+            extends_chain: HashMap::new(),
+        }
     }
 }
 

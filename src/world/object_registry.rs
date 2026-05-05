@@ -108,6 +108,19 @@ impl ObjectRegistry {
         self.behaviors.get(&object_id)
     }
 
+    /// Replace (or remove) the behavior on a registered object. Used by the
+    /// editor's per-NPC behavior panel; `None` clears any existing behavior.
+    pub fn set_behavior(&mut self, object_id: u64, behavior: Option<MapBehavior>) {
+        match behavior {
+            Some(b) => {
+                self.behaviors.insert(object_id, b);
+            }
+            None => {
+                self.behaviors.remove(&object_id);
+            }
+        }
+    }
+
     pub fn set_properties(&mut self, object_id: u64, properties: ObjectProperties) {
         self.properties.insert(object_id, properties);
     }

@@ -8,12 +8,15 @@ use crate::editor::floor_render::{
 use crate::editor::clipboard::{
     handle_clipboard_shortcuts, handle_editor_paste_click, render_paste_ghost,
 };
+use crate::editor::dialog_index::EditorDialogIndex;
 use crate::editor::resources::{
-    EditorCamera, EditorClipboard, EditorCursorMarker, EditorPasteGhostMarker, EditorPortalBuffer,
-    EditorPropertyEditBuffer, EditorState, ModalState, UndoStack,
+    EditorCamera, EditorClipboard, EditorCursorMarker, EditorPasteGhostMarker,
+    EditorPickRectResult, EditorPortalBuffer, EditorPropertyEditBuffer, EditorSpawnGroupBuffer,
+    EditorState, ModalState, UndoStack,
 };
 use crate::editor::selection::{
-    handle_editor_select_drag, handle_editor_select_hotkey, render_selection,
+    handle_editor_pick_rect_drag, handle_editor_select_drag, handle_editor_select_hotkey,
+    render_selection,
 };
 use crate::editor::templates::EditorTemplatesIndex;
 use crate::editor::systems::{
@@ -25,8 +28,10 @@ use crate::editor::systems::{
     sync_tile_transforms_editor, update_editor_cursor_ghost,
 };
 use crate::editor::ui::modal::{
-    handle_modal_buttons, handle_modal_keyboard_input, handle_modal_list_click,
-    spawn_or_rebuild_modal, sync_modal_error_text,
+    apply_pick_rect_result_to_modal, handle_modal_buttons, handle_modal_keyboard_input,
+    handle_modal_list_click, handle_spawn_group_area_kind_click,
+    handle_spawn_group_behavior_kind_click, handle_spawn_group_field_click,
+    handle_spawn_group_pick_rect_click, spawn_or_rebuild_modal, sync_modal_error_text,
 };
 use crate::editor::ui::palette::{
     handle_floor_palette_clicks, handle_palette_clicks, handle_palette_filter_click,
@@ -34,7 +39,13 @@ use crate::editor::ui::palette::{
     sync_palette_selection,
 };
 use crate::editor::ui::properties::{
-    handle_add_property_button, handle_property_row_click, sync_properties_panel,
+    apply_pick_rect_to_instance_behavior, handle_add_property_button,
+    handle_behavior_nudge_buttons, handle_behavior_pick_bounds, handle_behavior_set_buttons,
+    handle_dialog_select_buttons, handle_property_row_click, sync_properties_panel,
+};
+use crate::editor::ui::spawn_groups_panel::{
+    handle_spawn_groups_panel_clicks, render_spawn_group_overlay, sync_spawn_groups_panel,
+    sync_spawn_groups_panel_visibility,
 };
 use crate::editor::ui::templates_panel::{
     handle_templates_panel_clicks, sync_templates_panel, sync_templates_panel_visibility,
@@ -43,8 +54,9 @@ use crate::editor::ui::{
     cleanup_editor_hud, handle_new_map_button_click, handle_open_button_click,
     handle_portal_tool_button_click, handle_redo_button_click,
     handle_save_as_button_click, handle_save_as_template_button_click, handle_save_button_click,
-    handle_select_tool_button_click, handle_templates_toggle_button_click,
-    handle_undo_button_click, spawn_editor_hud, sync_editor_top_bar,
+    handle_select_tool_button_click, handle_spawn_groups_toggle_button_click,
+    handle_templates_toggle_button_click, handle_undo_button_click, spawn_editor_hud,
+    sync_editor_top_bar,
 };
 use crate::editor::undo::handle_undo_redo;
 
@@ -65,6 +77,14 @@ fn reset_editor_session_state(mut editor_state: ResMut<EditorState>) {
     editor_state.selection = None;
     editor_state.paste_state.active = false;
     editor_state.templates_panel_visible = false;
+    editor_state.spawn_groups_panel_visible = false;
+    editor_state.tool_before_pick = None;
+}
+
+/// Re-scan `assets/dialogs/` when the editor opens so the dropdown list is
+/// fresh after external file changes.
+fn refresh_dialog_index_on_enter(mut index: ResMut<EditorDialogIndex>) {
+    index.refresh();
 }
 
 /// Despawn any cursor / paste ghost sprites left over from the last editor
@@ -88,6 +108,9 @@ impl Plugin for EditorPlugin {
             .init_resource::<ModalState>()
             .init_resource::<UndoStack>()
             .init_resource::<EditorPortalBuffer>()
+            .init_resource::<EditorSpawnGroupBuffer>()
+            .init_resource::<EditorPickRectResult>()
+            .init_resource::<EditorDialogIndex>()
             .init_resource::<EditorFloorRenderState>()
             .init_resource::<EditorClipboard>()
             .init_resource::<EditorTemplatesIndex>()
@@ -97,6 +120,7 @@ impl Plugin for EditorPlugin {
                     init_editor_context,
                     attach_editor_visuals.after(init_editor_context),
                     init_portal_buffer.after(init_editor_context),
+                    refresh_dialog_index_on_enter.after(init_editor_context),
                     spawn_editor_hud.after(init_editor_context),
                 ),
             )
@@ -157,6 +181,7 @@ impl Plugin for EditorPlugin {
                 (
                     handle_editor_select_hotkey,
                     handle_editor_select_drag,
+                    handle_editor_pick_rect_drag,
                     handle_clipboard_shortcuts,
                     handle_editor_paste_click.before(handle_editor_left_click),
                 )
@@ -167,7 +192,11 @@ impl Plugin for EditorPlugin {
             // even while a modal is open or when they switch tools).
             .add_systems(
                 Update,
-                (render_selection, render_paste_ghost)
+                (
+                    render_selection,
+                    render_paste_ghost,
+                    render_spawn_group_overlay,
+                )
                     .run_if(in_state(ClientAppState::MapEditor)),
             )
             // Save / dialog shortcuts
@@ -187,12 +216,17 @@ impl Plugin for EditorPlugin {
                     handle_modal_keyboard_input.run_if(has_modal),
                     handle_modal_buttons,
                     handle_modal_list_click,
+                    handle_spawn_group_field_click,
+                    handle_spawn_group_area_kind_click,
+                    handle_spawn_group_behavior_kind_click,
+                    handle_spawn_group_pick_rect_click,
                     process_modal_confirm
                         .after(handle_modal_buttons)
                         .after(handle_modal_keyboard_input),
                     apply_modal_confirmed.after(process_modal_confirm),
                     spawn_or_rebuild_modal,
                     sync_modal_error_text,
+                    apply_pick_rect_result_to_modal,
                 )
                     .run_if(in_state(ClientAppState::MapEditor)),
             )
@@ -212,6 +246,11 @@ impl Plugin for EditorPlugin {
                     sync_properties_panel,
                     handle_property_row_click,
                     handle_add_property_button,
+                    handle_behavior_set_buttons,
+                    handle_behavior_pick_bounds,
+                    handle_behavior_nudge_buttons,
+                    handle_dialog_select_buttons,
+                    apply_pick_rect_to_instance_behavior,
                 )
                     .run_if(in_state(ClientAppState::MapEditor)),
             )
@@ -229,6 +268,7 @@ impl Plugin for EditorPlugin {
                     handle_select_tool_button_click,
                     handle_save_as_template_button_click,
                     handle_templates_toggle_button_click,
+                    handle_spawn_groups_toggle_button_click,
                 )
                     .run_if(in_state(ClientAppState::MapEditor)),
             )
@@ -239,6 +279,9 @@ impl Plugin for EditorPlugin {
                     sync_templates_panel_visibility,
                     sync_templates_panel,
                     handle_templates_panel_clicks,
+                    sync_spawn_groups_panel_visibility,
+                    sync_spawn_groups_panel,
+                    handle_spawn_groups_panel_clicks,
                 )
                     .run_if(in_state(ClientAppState::MapEditor)),
             );

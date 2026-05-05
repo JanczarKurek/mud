@@ -717,13 +717,21 @@ fn load_world_from_snapshot(
                 });
             }
         }
-        if let Some(dialog_node) = object_definitions
-            .get(&definition_id_for_lookup)
-            .and_then(|def| def.dialog_node.as_deref())
-        {
-            entity.insert(crate::dialog::components::DialogNode(
-                dialog_node.to_owned(),
-            ));
+        // Per-instance `dialog_id` property overrides the template's
+        // `dialog_node` (set by the editor). Falls back to the template
+        // default when no per-instance override is set.
+        let resolved_dialog = object
+            .properties
+            .get("dialog_id")
+            .filter(|s| !s.is_empty())
+            .cloned()
+            .or_else(|| {
+                object_definitions
+                    .get(&definition_id_for_lookup)
+                    .and_then(|def| def.dialog_node.clone())
+            });
+        if let Some(dialog_node) = resolved_dialog {
+            entity.insert(crate::dialog::components::DialogNode(dialog_node));
         }
         // Restore stateful-object state from the persisted properties bag,
         // falling back to the definition's `initial_state` when the bag has

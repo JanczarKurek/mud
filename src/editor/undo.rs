@@ -1,7 +1,8 @@
 use bevy::prelude::*;
 
 use crate::editor::resources::{
-    EditorCamera, EditorPortalBuffer, EditorState, ModalState, UndoOp, UndoStack,
+    EditorCamera, EditorPortalBuffer, EditorSpawnGroupBuffer, EditorState, ModalState, UndoOp,
+    UndoStack,
 };
 use crate::editor::systems::insert_editor_visuals_pub;
 use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
@@ -19,6 +20,7 @@ pub fn handle_undo_redo(
     mut undo_stack: ResMut<UndoStack>,
     mut editor_state: ResMut<EditorState>,
     mut portal_buffer: ResMut<EditorPortalBuffer>,
+    mut spawn_group_buffer: ResMut<EditorSpawnGroupBuffer>,
     mut floor_maps: ResMut<FloorMaps>,
     mut floor_dirty: ResMut<FloorRenderDirty>,
     mut commands: Commands,
@@ -50,6 +52,7 @@ pub fn handle_undo_redo(
             let inverse = execute_op(
                 op,
                 &mut portal_buffer,
+                &mut spawn_group_buffer,
                 &mut floor_maps,
                 &mut floor_dirty,
                 &mut commands,
@@ -68,6 +71,7 @@ pub fn handle_undo_redo(
             let inverse = execute_op(
                 op,
                 &mut portal_buffer,
+                &mut spawn_group_buffer,
                 &mut floor_maps,
                 &mut floor_dirty,
                 &mut commands,
@@ -88,6 +92,7 @@ pub fn handle_undo_redo(
 fn execute_op(
     op: UndoOp,
     portal_buffer: &mut EditorPortalBuffer,
+    spawn_group_buffer: &mut EditorSpawnGroupBuffer,
     floor_maps: &mut FloorMaps,
     floor_dirty: &mut FloorRenderDirty,
     commands: &mut Commands,
@@ -198,6 +203,7 @@ fn execute_op(
                 inverses.push(execute_op(
                     sub,
                     portal_buffer,
+                    spawn_group_buffer,
                     floor_maps,
                     floor_dirty,
                     commands,
@@ -211,6 +217,42 @@ fn execute_op(
             }
             inverses.reverse();
             UndoOp::Composite { ops: inverses }
+        }
+        UndoOp::AddSpawnGroup { index, group } => {
+            let clamped = index.min(spawn_group_buffer.groups.len());
+            spawn_group_buffer.groups.insert(clamped, group);
+            UndoOp::RemoveSpawnGroup { index: clamped }
+        }
+        UndoOp::RemoveSpawnGroup { index } => {
+            if index < spawn_group_buffer.groups.len() {
+                let group = spawn_group_buffer.groups.remove(index);
+                if spawn_group_buffer.selected == Some(index) {
+                    spawn_group_buffer.selected = None;
+                } else if let Some(s) = spawn_group_buffer.selected {
+                    if s > index {
+                        spawn_group_buffer.selected = Some(s - 1);
+                    }
+                }
+                UndoOp::AddSpawnGroup { index, group }
+            } else {
+                UndoOp::RemoveSpawnGroup { index }
+            }
+        }
+        UndoOp::EditSpawnGroup { index, before } => {
+            if index < spawn_group_buffer.groups.len() {
+                let after = std::mem::replace(&mut spawn_group_buffer.groups[index], before);
+                UndoOp::EditSpawnGroup { index, before: after }
+            } else {
+                UndoOp::EditSpawnGroup { index, before }
+            }
+        }
+        UndoOp::SetBehavior { object_id, before } => {
+            let after = object_registry.behavior(object_id).cloned();
+            object_registry.set_behavior(object_id, before);
+            UndoOp::SetBehavior {
+                object_id,
+                before: after,
+            }
         }
     }
 }

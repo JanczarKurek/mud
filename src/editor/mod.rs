@@ -1,4 +1,5 @@
 pub mod clipboard;
+pub mod dialog_index;
 pub mod floor_render;
 pub mod plugin;
 pub mod resources;

@@ -196,6 +196,17 @@ pub fn spawn_overworld_object_instance(
         commands.entity(entity).insert(Facing(facing));
     }
 
+    // Per-instance dialog override: the editor surfaces a `dialog_id` property
+    // on placed NPCs that should win over the template's `dialog_node`. Apply
+    // it here so the override is in place before any TalkToNpc lookup runs.
+    if let Some(dialog_id) = object.properties.get("dialog_id") {
+        if !dialog_id.is_empty() {
+            commands
+                .entity(entity)
+                .insert(crate::dialog::components::DialogNode(dialog_id.clone()));
+        }
+    }
+
     if let Some(behavior) = &object.behavior {
         let definition = definitions.get(&object.type_id);
         let base_stats = npc_base_stats_from_definition(definition);
