@@ -59,10 +59,36 @@ Top-level fields:
 - Type: integer
 - Meaning: map height in tiles
 
-### `fill_object_type`
+### `fill_floor_type`
 - Type: string
-- Meaning: object definition ID that fills every tile before explicit object instances are applied
-- This should match a directory name under `assets/overworld_objects/`
+- Meaning: floor tileset ID that fills every tile of this space's ground floor before any explicit `floors` overlays or `tiles`/`objects` overrides are applied
+- This must match a directory name under `assets/floors/` (see [Floor Tileset Metadata YAML](#4-floor-tileset-metadata-yaml))
+- Set to the empty string (`''`) to leave tiles unfilled — useful for procedurally generated dungeons that paint their own floors
+
+### `floors`
+- Type: mapping from floor tileset id to a placement mapping
+- Optional: yes
+- Default: empty mapping (only `fill_floor_type` is painted)
+- Meaning: per-floor-type overlays applied on top of `fill_floor_type` for the ground floor. Each key must match a directory under `assets/floors/`. The map loader paints the listed tiles/rectangles with that floor type; transition tilesets are looked up automatically wherever two adjacent tiles use different floor types (see [Floor Transition Metadata YAML](#5-floor-transition-metadata-yaml)).
+- Each placement mapping has two optional sub-fields, both default-empty:
+  - `placement`: list of `{ x, y }` coordinates — single tiles painted with this floor.
+  - `rects`: list of `{ x, y, w, h, z? }` rectangles — axis-aligned blocks painted with this floor. `z` defaults to `0`; only `z = 0` (ground floor) is currently rendered.
+
+Example:
+
+```yaml
+fill_floor_type: grass
+floors:
+  cobblestone:
+    placement:
+      - { x: 12, y: 18 }
+      - { x: 12, y: 19 }
+    rects:
+      - { x: 5, y: 5, w: 4, h: 2 }
+  dirt_path:
+    placement:
+      - { x: 8, y: 8 }
+```
 
 ### `lighting`
 - Type: mapping
@@ -1174,3 +1200,171 @@ range_tiles: 5
 effects:
   damage: 18.0
 ```
+
+## 4. Floor Tileset Metadata YAML
+
+Path:
+- `assets/floors/<floor_id>/metadata.yaml`
+
+Current examples:
+- `assets/floors/grass/metadata.yaml`
+- `assets/floors/cobblestone/metadata.yaml`
+- `assets/floors/cave_floor/metadata.yaml`
+- `assets/floors/dirt_path/metadata.yaml`
+- `assets/floors/sand/metadata.yaml`
+
+Purpose:
+- Defines a ground-floor tileset (grass, cobblestone, cave floor, …).
+- The directory name is the floor tileset id used by `fill_floor_type` and the map's `floors` overlay.
+- A floor with no `atlas_path` falls back to the flat `debug_color`; this is the recommended starting point when authoring new floor types before the artwork is ready.
+
+The `transitions/` subdirectory under `assets/floors/` is special: it holds [floor transition tilesets](#5-floor-transition-metadata-yaml), not regular floor types, and is skipped by this loader.
+
+Top-level fields:
+
+### `id`
+- Type: string
+- Optional: yes
+- Default: the directory name
+- Meaning: stable floor tileset identifier. If present, must equal the directory name; the loader panics on a mismatch. Leave empty (`id: ""`) or omit to let the loader fill it from the directory name.
+
+### `name`
+- Type: string
+- Meaning: human-readable display name (e.g. used in the editor's floor palette).
+
+### `priority`
+- Type: integer
+- Optional: yes
+- Default: `0`
+- Meaning: rendering precedence when two floor types meet at a corner. The lower-priority floor is the *base*; the higher-priority floor is painted on top via a transition atlas. Ties break alphabetically on `id`. Authors typically use `0` for the natural background (grass, cave floor) and larger values for crafted overlays (paths, cobblestone).
+
+### `tile_size_px`
+- Type: positive integer
+- Optional: yes
+- Default: `16`
+- Meaning: pixel size of one floor tile in the atlas. Must be greater than zero. Every floor that participates in a transition pair must agree on `tile_size_px` — the transition loader asserts this.
+
+### `atlas_path`
+- Type: string or `null`
+- Optional: yes
+- Default: `null` (no atlas; the floor renders as its `debug_color`)
+- Meaning: Bevy asset path to the floor's tileset PNG, relative to `assets/`. The atlas is laid out as a 4×4 corner-bitmask block (16 sub-tiles, one per corner-mask `0..=15`); additional rows below the first block hold optional variants (see `variants`).
+
+### `debug_color`
+- Type: 3-item integer list `[r, g, b]`
+- Meaning: fallback sRGB color rendered when no `atlas_path` is configured, and shown in editor previews/minimaps.
+
+### `occludes_floor_above`
+- Type: boolean
+- Optional: yes
+- Default: `false`
+- Meaning: reserved for upper-storey floors; unused at `z = 0` in the current slice. Leave at default unless you're working on multi-storey support.
+
+### `walkable_surface`
+- Type: boolean
+- Optional: yes
+- Default: `true`
+- Meaning: reserved; the ground floor is currently always walkable. Leave at default.
+
+### `variants`
+- Type: mapping from corner-mask integer (`1..=15`) to a list of positive integer weights
+- Optional: yes
+- Default: empty (every corner-mask has a single deterministic variant)
+- Meaning: per-bitmask sprite variation. The corner mask encodes which corners of a 2×2 cell sample this floor type:
+  - `NW = 1`, `NE = 2`, `SW = 4`, `SE = 8` (bitwise OR for combinations)
+  - Variant 0 occupies rows `0..=3` of the atlas (the base block); variant `i` occupies rows `4*i..=4*i+3`.
+- For each authored mask, supply one weight per variant (the loader requires `1..=15` keys, non-empty weight lists, and all weights `> 0`). Higher weights make a variant more likely; the renderer samples deterministically based on tile coordinates so the picture is stable across saves.
+- Bitmasks omitted from this map fall back to a single variant (weight `[1]`).
+
+Example (`assets/floors/grass/metadata.yaml`):
+
+```yaml
+id: grass
+name: Grass
+priority: 0
+tile_size_px: 16
+atlas_path: floors/grass/tileset.png
+debug_color: [47, 76, 43]
+```
+
+Example (no atlas, debug-colour-only):
+
+```yaml
+id: cobblestone
+name: Cobblestone
+priority: 30
+tile_size_px: 16
+debug_color: [148, 142, 134]
+```
+
+Example with variant weights (giving the fully-grass tile two equally-weighted shuffle variants and one rare flowery variant):
+
+```yaml
+id: grass
+name: Grass
+priority: 0
+tile_size_px: 16
+atlas_path: floors/grass/tileset.png
+debug_color: [47, 76, 43]
+variants:
+  15: [3, 3, 1]   # NW|NE|SW|SE — the all-grass corner case
+```
+
+Notes:
+- Validation is strict: directory name must match `id`, `tile_size_px > 0`, every `variants` key in `1..=15`, every weight list non-empty with `> 0` weights. Failures panic at load.
+- Floor tilesets are loaded from every scan dir returned by `AssetResolver` (bundled `assets/` plus any synced asset cache for TCP clients).
+- The transition atlas between two floors is authored separately under `assets/floors/transitions/`; defining a new floor type does not by itself produce a transition with any other floor.
+
+## 5. Floor Transition Metadata YAML
+
+Path:
+- `assets/floors/transitions/<low>__<high>/metadata.yaml`
+
+Current example:
+- `assets/floors/transitions/grass__cobblestone/metadata.yaml`
+
+Purpose:
+- Describes how two adjacent floor types blend at a shared corner.
+- The directory name encodes the canonical pair `<low>__<high>` (double underscore separator). `low` is the lower-priority floor (alphabetical id tiebreak on equal priority); `high` is the floor painted on top of `low`'s base. The loader asserts that the directory name and the metadata's `low`/`high` fields agree.
+- The atlas paints `high`-side pixels with a feathered border onto a solid `low` base, indexed by the **high-side** corner bitmask (bits set where the high floor sits in a 2×2 corner cell).
+
+Top-level fields:
+
+### `low`
+- Type: string
+- Meaning: id of the lower-priority floor (the base painted underneath). Must exist as a regular floor under `assets/floors/`.
+
+### `high`
+- Type: string
+- Meaning: id of the higher-priority floor (the overlay painted with feathered borders). Must exist as a regular floor under `assets/floors/`. Must differ from `low`.
+
+### `tile_size_px`
+- Type: positive integer
+- Optional: yes
+- Default: `16`
+- Meaning: pixel size of one transition tile in the atlas. Must equal both endpoints' `tile_size_px` — the loader panics otherwise.
+
+### `atlas_path`
+- Type: string
+- Meaning: Bevy asset path to the transition tileset PNG, relative to `assets/`. Same 4×4 corner-bitmask layout as a regular floor atlas; additional 4-row blocks are read as variants when `variants` lists them.
+
+### `variants`
+- Type: mapping from corner-mask integer (`1..=15`) to a list of positive integer weights
+- Optional: yes
+- Default: empty (single variant per mask)
+- Meaning: identical to a floor tileset's `variants`, except keys index the **high-side** corner bitmask — bits set where the `high` floor sits in the 2×2 corner cell. Same validation rules: keys in `1..=15`, non-empty weight lists, all weights `> 0`.
+
+Example (`assets/floors/transitions/grass__cobblestone/metadata.yaml`):
+
+```yaml
+low: grass
+high: cobblestone
+tile_size_px: 16
+atlas_path: floors/transitions/grass__cobblestone/tileset.png
+```
+
+Notes:
+- The directory name is *significant*: `grass__cobblestone/` means the pair is `(low=grass, high=cobblestone)`. Reversing the pair is a load-time error; the loader picks one canonical direction (priority asc, id alphabetical tiebreak) so each pair is authored exactly once.
+- Transition lookup at runtime is order-insensitive (`transition_for("grass", "cobblestone")` and `transition_for("cobblestone", "grass")` both resolve to the same definition).
+- A pair with no transition file falls back to a hard seam between the two floors.
+- Like floor tilesets, transitions are loaded from every `AssetResolver` scan dir.
