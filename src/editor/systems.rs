@@ -1197,12 +1197,88 @@ pub fn open_new_map_dialog_impl(modal_state: &mut ModalState) {
     };
 }
 
+pub fn open_generate_dungeon_dialog_impl(modal_state: &mut ModalState) {
+    *modal_state = ModalState {
+        active: Some(ModalKind::GenerateDungeon),
+        text_fields: vec![
+            ModalTextField {
+                label: "Map ID".into(),
+                value: String::new(),
+                placeholder: "my_dungeon".into(),
+                numeric_only: false,
+            },
+            ModalTextField {
+                label: "Width".into(),
+                value: String::new(),
+                placeholder: "64".into(),
+                numeric_only: true,
+            },
+            ModalTextField {
+                label: "Height".into(),
+                value: String::new(),
+                placeholder: "48".into(),
+                numeric_only: true,
+            },
+            ModalTextField {
+                label: "Wall Type".into(),
+                value: String::new(),
+                placeholder: "wall".into(),
+                numeric_only: false,
+            },
+            ModalTextField {
+                label: "Chamber Floor".into(),
+                value: String::new(),
+                placeholder: "cobblestone".into(),
+                numeric_only: false,
+            },
+            ModalTextField {
+                label: "Corridor Floor".into(),
+                value: String::new(),
+                placeholder: "dirt_path".into(),
+                numeric_only: false,
+            },
+            ModalTextField {
+                label: "Target Rooms".into(),
+                value: String::new(),
+                placeholder: "8".into(),
+                numeric_only: true,
+            },
+            ModalTextField {
+                label: "Room Padding".into(),
+                value: String::new(),
+                placeholder: "4".into(),
+                numeric_only: true,
+            },
+            ModalTextField {
+                label: "Corridor Wander 0-100".into(),
+                value: String::new(),
+                placeholder: "55".into(),
+                numeric_only: true,
+            },
+            ModalTextField {
+                label: "Branching 0-100".into(),
+                value: String::new(),
+                placeholder: "50".into(),
+                numeric_only: true,
+            },
+            ModalTextField {
+                label: "Seed (blank = random)".into(),
+                value: String::new(),
+                placeholder: "".into(),
+                numeric_only: true,
+            },
+        ],
+        ..default()
+    };
+}
+
 // ── Modal confirm processing ──────────────────────────────────────────────────
 
 pub fn process_modal_confirm(
     mut modal_state: ResMut<ModalState>,
     editor_state: Res<EditorState>,
     definitions: Res<OverworldObjectDefinitions>,
+    floor_defs: Res<crate::world::floor_definitions::FloorTilesetDefinitions>,
 ) {
     if !modal_state.confirm_triggered {
         return;
@@ -1288,6 +1364,135 @@ pub fn process_modal_confirm(
                 width,
                 height,
                 fill_type,
+            });
+        }
+        ModalKind::GenerateDungeon => {
+            let vals: Vec<String> = modal_state
+                .text_fields
+                .iter()
+                .map(|f| f.value.trim().to_owned())
+                .collect();
+            let authored_id = vals.first().cloned().unwrap_or_default();
+            if authored_id.is_empty()
+                || !authored_id.chars().all(|c| c.is_alphanumeric() || c == '_')
+            {
+                modal_state.error_message = Some("Map ID must be non-empty alphanumeric.".into());
+                return;
+            }
+            let width: i32 = match vals.get(1).map(|s| s.as_str()) {
+                Some("") | None => 64,
+                Some(s) => match s.parse::<i32>() {
+                    Ok(v) if v > 0 && v <= 256 => v,
+                    _ => {
+                        modal_state.error_message = Some("Width must be 1–256.".into());
+                        return;
+                    }
+                },
+            };
+            let height: i32 = match vals.get(2).map(|s| s.as_str()) {
+                Some("") | None => 48,
+                Some(s) => match s.parse::<i32>() {
+                    Ok(v) if v > 0 && v <= 256 => v,
+                    _ => {
+                        modal_state.error_message = Some("Height must be 1–256.".into());
+                        return;
+                    }
+                },
+            };
+            let wall_type = vals
+                .get(3)
+                .filter(|s| !s.is_empty())
+                .cloned()
+                .unwrap_or_else(|| "wall".into());
+            if definitions.get(&wall_type).is_none() {
+                modal_state.error_message = Some(format!("Unknown wall type '{wall_type}'."));
+                return;
+            }
+            let chamber_floor = vals
+                .get(4)
+                .filter(|s| !s.is_empty())
+                .cloned()
+                .unwrap_or_else(|| "cobblestone".into());
+            if !floor_defs.contains(&chamber_floor) {
+                modal_state.error_message =
+                    Some(format!("Unknown chamber floor '{chamber_floor}'."));
+                return;
+            }
+            let corridor_floor = vals
+                .get(5)
+                .filter(|s| !s.is_empty())
+                .cloned()
+                .unwrap_or_else(|| "dirt_path".into());
+            if !floor_defs.contains(&corridor_floor) {
+                modal_state.error_message =
+                    Some(format!("Unknown corridor floor '{corridor_floor}'."));
+                return;
+            }
+            let target_rooms: u32 = match vals.get(6).map(|s| s.as_str()) {
+                Some("") | None => 8,
+                Some(s) => match s.parse::<u32>() {
+                    Ok(v) if (1..=200).contains(&v) => v,
+                    _ => {
+                        modal_state.error_message = Some("Target Rooms must be 1–200.".into());
+                        return;
+                    }
+                },
+            };
+            let room_padding: i32 = match vals.get(7).map(|s| s.as_str()) {
+                Some("") | None => 4,
+                Some(s) => match s.parse::<i32>() {
+                    Ok(v) if (0..=32).contains(&v) => v,
+                    _ => {
+                        modal_state.error_message = Some("Room Padding must be 0–32.".into());
+                        return;
+                    }
+                },
+            };
+            let wander_pct: i32 = match vals.get(8).map(|s| s.as_str()) {
+                Some("") | None => 55,
+                Some(s) => match s.parse::<i32>() {
+                    Ok(v) if (0..=100).contains(&v) => v,
+                    _ => {
+                        modal_state.error_message =
+                            Some("Corridor Wander must be 0–100.".into());
+                        return;
+                    }
+                },
+            };
+            let branch_pct: i32 = match vals.get(9).map(|s| s.as_str()) {
+                Some("") | None => 50,
+                Some(s) => match s.parse::<i32>() {
+                    Ok(v) if (0..=100).contains(&v) => v,
+                    _ => {
+                        modal_state.error_message = Some("Branching must be 0–100.".into());
+                        return;
+                    }
+                },
+            };
+            let seed: Option<u64> = match vals.get(10).map(|s| s.as_str()) {
+                Some("") | None => None,
+                Some(s) => match s.parse::<u64>() {
+                    Ok(v) => Some(v),
+                    Err(_) => {
+                        modal_state.error_message = Some("Seed must be a number.".into());
+                        return;
+                    }
+                },
+            };
+            modal_state.active = None;
+            modal_state.error_message = None;
+            modal_state.confirmed = Some(ModalConfirmed::GenerateDungeon {
+                authored_id,
+                width,
+                height,
+                wall_type,
+                chamber_floor,
+                corridor_floor,
+                target_rooms,
+                room_padding,
+                corridor_wander: wander_pct as f32 / 100.0,
+                branch_factor: branch_pct as f32 / 100.0,
+                seed,
             });
         }
         ModalKind::PortalCreate => {
@@ -1576,7 +1781,7 @@ pub fn apply_modal_confirmed(
     mut prop_buffer: ResMut<EditorPropertyEditBuffer>,
     mut templates_index: ResMut<EditorTemplatesIndex>,
     object_definitions: Res<OverworldObjectDefinitions>,
-    object_registry: Res<ObjectRegistry>,
+    mut object_registry: ResMut<ObjectRegistry>,
     objects_save: Query<(&OverworldObject, &SpaceResident, &TilePosition)>,
     mut commands: Commands,
 ) {
@@ -1694,6 +1899,87 @@ pub fn apply_modal_confirmed(
             editor_state.selected_type_id = None;
             editor_state.selected_object_id = None;
             editor_state.current_tool = EditorTool::Brush;
+            prop_buffer.object_id = None;
+            prop_buffer.entries.clear();
+            prop_buffer.editing_index = None;
+            undo_stack.clear();
+        }
+        ModalConfirmed::GenerateDungeon {
+            authored_id,
+            width,
+            height,
+            wall_type,
+            chamber_floor,
+            corridor_floor,
+            target_rooms,
+            room_padding,
+            corridor_wander,
+            branch_factor,
+            seed,
+        } => {
+            // The Branching dial drives both extra room-to-room loops *and*
+            // dead-end spurs off main corridors. Mapping it to both with
+            // slightly different curves keeps a single user-facing knob while
+            // hitting both branching mechanisms.
+            let extra_corridor_ratio = (branch_factor * 0.8).clamp(0.0, 1.0);
+            let params = crate::world::dungeon_gen::DungeonParams {
+                width,
+                height,
+                wall_type_id: wall_type,
+                chamber_floor,
+                corridor_floor,
+                // Empty = non-dungeon tiles render as black void.
+                fill_floor_type: String::new(),
+                target_rooms,
+                min_room_size: 4,
+                max_room_size: 7,
+                room_padding,
+                corridor_wander,
+                extra_corridor_ratio,
+                branch_factor,
+                seed: seed.unwrap_or(0),
+            };
+            let mut def =
+                crate::world::dungeon_gen::generate_dungeon(authored_id.clone(), params);
+
+            // Allocate runtime IDs for the generated walls and register them
+            // with the ObjectRegistry so future editor operations (brush,
+            // properties panel) can find them.
+            let start_id = object_registry.next_runtime_id();
+            def.resolve_objects(start_id);
+            for object in &def.resolved_objects {
+                object_registry.register_existing(object.id, &object.type_id);
+            }
+
+            let space_id = instantiate_space(
+                &mut commands,
+                &mut space_manager,
+                &mut floor_maps,
+                &def,
+                &object_definitions,
+                None,
+                def.permanence,
+            );
+            space_definitions.insert_or_replace(def.clone());
+
+            editor_context.space_id = space_id;
+            editor_context.authored_id = authored_id;
+            editor_context.map_width = def.width;
+            editor_context.map_height = def.height;
+            editor_context.fill_floor_type = def.fill_floor_type.clone();
+            world_config.current_space_id = space_id;
+            world_config.map_width = def.width;
+            world_config.map_height = def.height;
+            world_config.fill_floor_type = def.fill_floor_type.clone();
+            editor_camera.center = Vec2::new(def.width as f32 * 0.5, def.height as f32 * 0.5);
+            portal_buffer.portals.clear();
+            spawn_group_buffer.groups.clear();
+            spawn_group_buffer.selected = None;
+            editor_state.dirty = true;
+            editor_state.selected_type_id = None;
+            editor_state.selected_object_id = None;
+            editor_state.current_tool = EditorTool::Brush;
+            editor_state.needs_visual_reattach = true;
             prop_buffer.object_id = None;
             prop_buffer.entries.clear();
             prop_buffer.editing_index = None;

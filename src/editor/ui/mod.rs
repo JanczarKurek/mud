@@ -14,7 +14,10 @@ use crate::editor::clipboard::fragment_from_state;
 use crate::editor::resources::{
     EditorContext, EditorState, EditorTool, ModalKind, ModalState, ModalTextField,
 };
-use crate::editor::systems::{open_file_dialog_impl, open_new_map_dialog_impl, open_save_as_impl};
+use crate::editor::systems::{
+    open_file_dialog_impl, open_generate_dungeon_dialog_impl, open_new_map_dialog_impl,
+    open_save_as_impl,
+};
 use crate::editor::ui::palette::spawn_palette_panel;
 use crate::editor::ui::properties::spawn_properties_panel;
 use crate::editor::ui::spawn_groups_panel::spawn_spawn_groups_panel;
@@ -44,6 +47,8 @@ pub struct EditorOpenButton;
 pub struct EditorSaveAsButton;
 #[derive(Component)]
 pub struct EditorNewMapButton;
+#[derive(Component)]
+pub struct EditorGenerateDungeonButton;
 #[derive(Component)]
 pub struct EditorPortalToolButton;
 #[derive(Component)]
@@ -117,6 +122,7 @@ pub fn spawn_editor_hud(
                 spawn_top_btn(bar, "Open  Ctrl+O", EditorOpenButton);
                 spawn_top_btn(bar, "Save As...  Ctrl+Shift+S", EditorSaveAsButton);
                 spawn_top_btn(bar, "New Map", EditorNewMapButton);
+                spawn_top_btn(bar, "Generate Dungeon", EditorGenerateDungeonButton);
 
                 // Undo / Redo
                 spawn_top_btn(bar, "Undo  Ctrl+Z", EditorUndoButton);
@@ -405,6 +411,17 @@ pub fn handle_new_map_button_click(
     for interaction in &btn {
         if *interaction == Interaction::Pressed && modal_state.active.is_none() {
             open_new_map_dialog_impl(&mut modal_state);
+        }
+    }
+}
+
+pub fn handle_generate_dungeon_button_click(
+    btn: Query<&Interaction, (Changed<Interaction>, With<EditorGenerateDungeonButton>)>,
+    mut modal_state: ResMut<ModalState>,
+) {
+    for interaction in &btn {
+        if *interaction == Interaction::Pressed && modal_state.active.is_none() {
+            open_generate_dungeon_dialog_impl(&mut modal_state);
         }
     }
 }

@@ -168,6 +168,8 @@ pub enum ModalKind {
     FileOpen,
     SaveAs,
     NewMap,
+    /// Procedurally generate a dungeon (rooms + corridors) into a new space.
+    GenerateDungeon,
     PortalCreate,
     /// Save current selection as a named template.
     SaveAsTemplate,
@@ -193,6 +195,19 @@ pub enum ModalConfirmed {
         width: i32,
         height: i32,
         fill_type: String,
+    },
+    GenerateDungeon {
+        authored_id: String,
+        width: i32,
+        height: i32,
+        wall_type: String,
+        chamber_floor: String,
+        corridor_floor: String,
+        target_rooms: u32,
+        room_padding: i32,
+        corridor_wander: f32,
+        branch_factor: f32,
+        seed: Option<u64>,
     },
     PortalCreate {
         source_tile: TilePosition,

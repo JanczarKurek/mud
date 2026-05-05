@@ -2,6 +2,7 @@ pub mod animation;
 pub mod components;
 pub mod darkness;
 pub mod direction;
+pub mod dungeon_gen;
 pub mod floor_definitions;
 pub mod floor_map;
 pub mod floor_render;

@@ -29,9 +29,10 @@ use crate::editor::systems::{
 };
 use crate::editor::ui::modal::{
     apply_pick_rect_result_to_modal, handle_modal_buttons, handle_modal_keyboard_input,
-    handle_modal_list_click, handle_spawn_group_area_kind_click,
-    handle_spawn_group_behavior_kind_click, handle_spawn_group_field_click,
-    handle_spawn_group_pick_rect_click, spawn_or_rebuild_modal, sync_modal_error_text,
+    handle_modal_list_click, handle_modal_text_field_click,
+    handle_spawn_group_area_kind_click, handle_spawn_group_behavior_kind_click,
+    handle_spawn_group_field_click, handle_spawn_group_pick_rect_click, spawn_or_rebuild_modal,
+    sync_modal_error_text,
 };
 use crate::editor::ui::palette::{
     handle_floor_palette_clicks, handle_palette_clicks, handle_palette_filter_click,
@@ -51,8 +52,8 @@ use crate::editor::ui::templates_panel::{
     handle_templates_panel_clicks, sync_templates_panel, sync_templates_panel_visibility,
 };
 use crate::editor::ui::{
-    cleanup_editor_hud, handle_new_map_button_click, handle_open_button_click,
-    handle_portal_tool_button_click, handle_redo_button_click,
+    cleanup_editor_hud, handle_generate_dungeon_button_click, handle_new_map_button_click,
+    handle_open_button_click, handle_portal_tool_button_click, handle_redo_button_click,
     handle_save_as_button_click, handle_save_as_template_button_click, handle_save_button_click,
     handle_select_tool_button_click, handle_spawn_groups_toggle_button_click,
     handle_templates_toggle_button_click, handle_undo_button_click, spawn_editor_hud,
@@ -216,6 +217,7 @@ impl Plugin for EditorPlugin {
                     handle_modal_keyboard_input.run_if(has_modal),
                     handle_modal_buttons,
                     handle_modal_list_click,
+                    handle_modal_text_field_click,
                     handle_spawn_group_field_click,
                     handle_spawn_group_area_kind_click,
                     handle_spawn_group_behavior_kind_click,
@@ -262,6 +264,7 @@ impl Plugin for EditorPlugin {
                     handle_open_button_click,
                     handle_save_as_button_click,
                     handle_new_map_button_click,
+                    handle_generate_dungeon_button_click,
                     handle_portal_tool_button_click,
                     handle_undo_button_click,
                     handle_redo_button_click,

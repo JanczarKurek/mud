@@ -57,6 +57,7 @@ fn title_for(kind: ModalKind) -> &'static str {
         ModalKind::FileOpen => "Open Map",
         ModalKind::SaveAs => "Save Map As",
         ModalKind::NewMap => "New Map",
+        ModalKind::GenerateDungeon => "Generate Random Dungeon",
         ModalKind::PortalCreate => "Add Portal",
         ModalKind::SaveAsTemplate => "Save Selection as Template",
         ModalKind::SpawnGroupEdit { editing_index } => {
@@ -74,6 +75,7 @@ fn confirm_label_for(kind: ModalKind) -> &'static str {
         ModalKind::FileOpen => "Open",
         ModalKind::SaveAs => "Save",
         ModalKind::NewMap => "Create",
+        ModalKind::GenerateDungeon => "Generate",
         ModalKind::PortalCreate => "Add",
         ModalKind::SaveAsTemplate => "Save",
         ModalKind::SpawnGroupEdit { .. } => "Save",
@@ -202,6 +204,7 @@ pub fn spawn_or_rebuild_modal(
 
                                 field_col
                                     .spawn((
+                                        Button,
                                         ModalTextField { index: i },
                                         Node {
                                             width: Val::Percent(100.0),
@@ -462,6 +465,22 @@ fn next_spawn_group_field(current: SpawnGroupField, behavior: BehaviorKind) -> S
     };
     let i = cycle.iter().position(|&f| f == current).unwrap_or(0);
     cycle[(i + 1) % cycle.len()]
+}
+
+// ── Text field focus clicks ───────────────────────────────────────────────────
+
+pub fn handle_modal_text_field_click(
+    fields: Query<(&Interaction, &ModalTextField), Changed<Interaction>>,
+    mut modal_state: ResMut<ModalState>,
+) {
+    for (interaction, field) in &fields {
+        if *interaction == Interaction::Pressed
+            && modal_state.focused_field != field.index
+            && field.index < modal_state.text_fields.len()
+        {
+            modal_state.focused_field = field.index;
+        }
+    }
 }
 
 // ── Confirm / Cancel button clicks ────────────────────────────────────────────
