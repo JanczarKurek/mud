@@ -192,4 +192,9 @@ pub enum GameCommand {
         y: i32,
         floor_type: Option<FloorTypeId>,
     },
+    /// Save the player's current `(space, tile)` as their respawn point.
+    /// Future deaths return them to this location instead of map center.
+    /// Persisted on the next autosave (or immediately if an account DB is
+    /// attached).
+    SetHome,
 }

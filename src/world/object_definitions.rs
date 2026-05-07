@@ -431,6 +431,20 @@ pub struct UseEffects {
     pub restore_health: f32,
     #[serde(default)]
     pub restore_mana: f32,
+    /// Multiplier applied to the player's HP/MP regen rate while the buff is
+    /// active. `1.0` (default) means no buff. Values below 1.0 are silently
+    /// clamped to 1.0 by the consume handler — debuffs aren't a thing yet.
+    #[serde(default = "default_regen_multiplier")]
+    pub regen_multiplier: f32,
+    /// How long the regen buff lasts after consumption, in seconds. Stacking
+    /// rule: re-eating extends the remaining time; the multiplier snaps to
+    /// `max(current, new)` so a stronger buff isn't diluted by a weaker one.
+    #[serde(default)]
+    pub regen_duration_seconds: f32,
+}
+
+fn default_regen_multiplier() -> f32 {
+    1.0
 }
 
 #[allow(dead_code)]
@@ -610,6 +624,7 @@ impl OverworldObjectDefinition {
     pub fn is_usable(&self) -> bool {
         self.use_effects.restore_health > 0.0
             || self.use_effects.restore_mana > 0.0
+            || self.use_effects.regen_duration_seconds > 0.0
             || self.spell_id.is_some()
     }
 

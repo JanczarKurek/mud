@@ -53,6 +53,49 @@ fn roll_loot(table: &LootTableDef) -> Vec<(String, u32)> {
     results
 }
 
+/// Spawn a corpse container entity holding the player's full inventory at the
+/// death tile. Always uses the `generic_corpse` definition; a longer
+/// despawn TTL gives the player time to retrieve their gear after respawn.
+/// Items past the corpse's container capacity are silently dropped — that
+/// will happen rarely (corpse capacity defaults to 20, inventory backpack is
+/// 16) but documenting it here so callers know.
+pub fn spawn_corpse_for_player(
+    commands: &mut Commands,
+    definitions: &OverworldObjectDefinitions,
+    registry: &mut ObjectRegistry,
+    space_id: SpaceId,
+    tile_position: TilePosition,
+    dropped_items: Vec<InventoryStack>,
+) {
+    const CORPSE_TYPE_ID: &str = "generic_corpse";
+    const CORPSE_DESPAWN_SECONDS: f32 = 300.0; // 5 minutes for retrieval
+
+    let capacity = definitions
+        .get(CORPSE_TYPE_ID)
+        .and_then(|def| def.container_capacity)
+        .unwrap_or(20);
+
+    let mut slots: Vec<Option<InventoryStack>> = vec![None; capacity];
+    for (i, stack) in dropped_items.into_iter().enumerate().take(capacity) {
+        slots[i] = Some(stack);
+    }
+
+    let corpse_id = registry.allocate_runtime_id(CORPSE_TYPE_ID);
+    let entity = spawn_overworld_object(
+        commands,
+        definitions,
+        corpse_id,
+        CORPSE_TYPE_ID,
+        Some(slots),
+        space_id,
+        tile_position,
+        None,
+    );
+    commands.entity(entity).insert(CorpseTtl {
+        remaining_seconds: CORPSE_DESPAWN_SECONDS,
+    });
+}
+
 /// Spawn a corpse container entity at the given position.
 /// Rolls loot from the NPC's loot table and places the items inside.
 pub fn spawn_corpse_for_npc(

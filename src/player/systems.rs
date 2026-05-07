@@ -136,6 +136,32 @@ pub fn move_player_on_grid(
     pending_commands.push(GameCommand::MovePlayer { delta });
 }
 
+/// `H` (no modifier) sets the player's respawn point to their current tile.
+/// Triggered by `just_pressed` so a held key doesn't spam the queue. Suppressed
+/// while the Python console is focused so chord-style input there isn't
+/// hijacked.
+pub fn set_home_on_keypress(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    console_state: Option<Res<PythonConsoleState>>,
+    mut pending_commands: ResMut<PendingGameCommands>,
+) {
+    if console_state.as_ref().is_some_and(|state| state.is_open) {
+        return;
+    }
+    let modifier_held = keyboard_input.pressed(KeyCode::ControlLeft)
+        || keyboard_input.pressed(KeyCode::ControlRight)
+        || keyboard_input.pressed(KeyCode::AltLeft)
+        || keyboard_input.pressed(KeyCode::AltRight)
+        || keyboard_input.pressed(KeyCode::ShiftLeft)
+        || keyboard_input.pressed(KeyCode::ShiftRight);
+    if modifier_held {
+        return;
+    }
+    if keyboard_input.just_pressed(KeyCode::KeyH) {
+        pending_commands.push(GameCommand::SetHome);
+    }
+}
+
 /// Ctrl+Q rotates a nearby rotatable object counter-clockwise, Ctrl+E clockwise.
 /// Picks the rotatable object within Chebyshev-1 of the local player, tie-broken
 /// by Manhattan distance then object_id so the choice is deterministic across
@@ -327,9 +353,7 @@ mod tests {
             .world_mut()
             .spawn((
                 Player,
-                PlayerIdentity {
-                    id: crate::player::components::PlayerId(0),
-                },
+                PlayerIdentity::new(crate::player::components::PlayerId(0)),
                 SpaceResident {
                     space_id: SpaceId(1),
                 },

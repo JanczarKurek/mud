@@ -15,6 +15,11 @@ pub struct HealthLabel;
 #[derive(Component)]
 pub struct ManaLabel;
 
+/// Text node that displays the active food/drink regen buff timer in the
+/// status panel ("Well Fed: 0:42"). Hidden when no buff is active.
+#[derive(Component)]
+pub struct RegenBuffLabel;
+
 #[derive(Component)]
 pub struct ItemSlotButton {
     pub kind: ItemSlotKind,

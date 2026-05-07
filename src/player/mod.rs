@@ -1,14 +1,20 @@
 pub mod components;
+pub mod lifecycle;
+pub mod regen;
 pub mod setup;
 pub mod systems;
 
 use bevy::prelude::*;
 
-use crate::app::state::ClientAppState;
+use crate::app::state::{simulation_active, ClientAppState};
+use crate::player::lifecycle::{
+    handle_player_deaths, handle_set_home_commands, PendingPlayerDeaths,
+};
+use crate::player::regen::{tick_regen_buffs, tick_vital_regen};
 use crate::player::setup::spawn_player_visual;
 use crate::player::systems::{
     move_player_on_grid, refresh_derived_player_stats, rotate_nearby_object_on_shortcut,
-    sync_authoritative_player_display, sync_authoritative_player_position_view,
+    set_home_on_keypress, sync_authoritative_player_display, sync_authoritative_player_position_view,
     sync_projected_player_from_client_state,
 };
 
@@ -18,7 +24,29 @@ pub struct PlayerClientPlugin;
 
 impl Plugin for PlayerServerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, refresh_derived_player_stats);
+        app.init_resource::<PendingPlayerDeaths>()
+            .add_systems(Update, refresh_derived_player_stats)
+            .add_systems(
+                Update,
+                (tick_regen_buffs, tick_vital_regen).run_if(simulation_active),
+            )
+            // Drain SetHome from PendingGameCommands *before* process_game_commands;
+            // CommandIntercept handles the cross-plugin ordering that a bare
+            // `.before(...)` would silently drop (per project memory note).
+            .add_systems(
+                Update,
+                handle_set_home_commands
+                    .in_set(crate::game::CommandIntercept)
+                    .run_if(simulation_active),
+            )
+            // Handle deaths after combat resolution. resolve_battle_turn fills
+            // PendingPlayerDeaths; this drains it.
+            .add_systems(
+                Update,
+                handle_player_deaths
+                    .after(crate::combat::systems::resolve_battle_turn)
+                    .run_if(simulation_active),
+            );
     }
 }
 
@@ -33,6 +61,7 @@ impl Plugin for PlayerClientPlugin {
                     sync_projected_player_from_client_state,
                     move_player_on_grid,
                     rotate_nearby_object_on_shortcut,
+                    set_home_on_keypress,
                 )
                     .run_if(in_state(ClientAppState::InGame)),
             );

@@ -665,6 +665,18 @@ The `text` value supports three count placeholders in addition to the normal `{p
 - Default: `0.0`
 - Meaning: mana restored immediately on use
 
+### `regen_multiplier`
+- Type: float
+- Optional: yes
+- Default: `1.0`
+- Meaning: HP/MP regen rate multiplier applied while the buff is active. Values below 1.0 are clamped to 1.0 (no debuffs). Only takes effect if `regen_duration_seconds` is also positive.
+
+### `regen_duration_seconds`
+- Type: float
+- Optional: yes
+- Default: `0.0`
+- Meaning: how long (in seconds) the regen-rate buff persists after consumption. Re-eating extends the remaining duration; the multiplier snaps to `max(current, new)` so a stronger buff isn't diluted by a follow-up.
+
 ### `use_texts`
 - Type: list of strings
 - Optional: yes

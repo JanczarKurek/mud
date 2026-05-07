@@ -10,6 +10,7 @@ use crate::player::components::{
     AmmoConsumption, AttributeSet, ChatLog, DerivedStats, Inventory, Player, PlayerIdentity,
     VitalStats, WeaponDamage,
 };
+use crate::player::lifecycle::{PendingPlayerDeath, PendingPlayerDeaths};
 use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
 use crate::world::loot::spawn_corpse_for_npc;
 use crate::world::object_definitions::OverworldObjectDefinitions;
@@ -94,6 +95,7 @@ pub fn resolve_battle_turn(
     mut chat_log_query: Query<&mut ChatLog, With<Player>>,
     mut ui_events: ResMut<PendingGameUiEvents>,
     mut quest_events: ResMut<crate::quest::events::PendingQuestEvents>,
+    mut pending_player_deaths: ResMut<PendingPlayerDeaths>,
     mut commands: Commands,
 ) {
     battle_turn_timer.remaining_seconds -= time.delta_secs();
@@ -273,6 +275,12 @@ pub fn resolve_battle_turn(
                 &mut chat_log_query,
                 format!("[{} is defeated]", target.name),
             );
+            pending_player_deaths.deaths.push(PendingPlayerDeath {
+                entity: target_entity,
+                space_id: target.space_id,
+                tile_position: target.position,
+                name: target.name.clone(),
+            });
         }
     }
 }

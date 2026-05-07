@@ -95,6 +95,15 @@ pub struct ClientVitalStats {
     pub max_mana: f32,
 }
 
+/// Snapshot of an active food/drink regen buff replicated to the client. The
+/// HUD renders this as a small "Well Fed: M:SS" badge near the HP/MP bars.
+/// `None` on `ClientGameState::regen_buff` means no active buff.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct RegenBuffState {
+    pub multiplier: f32,
+    pub remaining_seconds: f32,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ClientWorldObjectState {
     pub object_id: u64,
@@ -166,6 +175,11 @@ pub enum GameEvent {
     },
     PlayerVitalsChanged {
         vitals: ClientVitalStats,
+    },
+    /// Active regen buff state for the local player (`None` clears it).
+    /// Replication parity for `RegenBuffs`; the HUD shows remaining time.
+    PlayerRegenBuffChanged {
+        buff: Option<RegenBuffState>,
     },
     PlayerStorageChanged {
         storage_slots: usize,
@@ -300,4 +314,9 @@ pub struct ClientGameState {
     /// `WorldTimeChanged` event that fixes the value before lighting reads it.
     #[serde(default)]
     pub world_time: f32,
+    /// Active food/drink regen buff for the local player, or `None` when no
+    /// buff is active. Driven by `PlayerRegenBuffChanged` events; the HUD
+    /// renders the remaining time near the HP/MP bars.
+    #[serde(default)]
+    pub regen_buff: Option<RegenBuffState>,
 }

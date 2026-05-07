@@ -453,7 +453,7 @@ mod tests {
         app.world_mut()
             .spawn((
                 Player,
-                PlayerIdentity { id: PlayerId(id) },
+                PlayerIdentity::new(PlayerId(id)),
                 Inventory::default(),
                 ChatLog::default(),
                 SpaceResident {
@@ -502,7 +502,7 @@ mod tests {
 
         app.world_mut().spawn((
             Player,
-            PlayerIdentity { id: PlayerId(1) },
+            PlayerIdentity::new(PlayerId(1)),
             Inventory::default(),
             ChatLog::default(),
             SpaceResident {
@@ -515,7 +515,7 @@ mod tests {
             .world_mut()
             .spawn((
                 Player,
-                PlayerIdentity { id: PlayerId(2) },
+                PlayerIdentity::new(PlayerId(2)),
                 Inventory::default(),
                 ChatLog::default(),
                 SpaceResident {

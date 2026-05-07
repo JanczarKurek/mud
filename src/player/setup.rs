@@ -4,7 +4,7 @@ use crate::combat::components::{AttackProfile, CombatLeash};
 use crate::persistence::{PlayerStateDump, WorldSnapshotStatus};
 use crate::player::components::{
     BaseStats, ChatLog, DerivedStats, EquippedItem, Inventory, InventoryStack, MovementCooldown,
-    Player, PlayerId, PlayerIdentity, VitalStats, WeaponDamage,
+    Player, PlayerId, PlayerIdentity, RegenBuffs, RegenTickers, VitalStats, WeaponDamage,
 };
 use crate::world::components::{
     Collider, DisplayedVitalStats, Facing, HealthBarDisplayPolicy, OverworldObject, SpaceId,
@@ -124,7 +124,10 @@ pub fn spawn_player_from_dump(
     commands
         .spawn((
             Player,
-            PlayerIdentity { id: dump.player_id },
+            PlayerIdentity {
+                id: dump.player_id,
+                home_position: dump.home_position,
+            },
             inventory,
             dump.chat_log,
             dump.base_stats,
@@ -132,7 +135,11 @@ pub fn spawn_player_from_dump(
             dump.vital_stats,
             dump.movement_cooldown,
             (dump.attack_profile, WeaponDamage::default()),
-            dump.combat_leash,
+            (
+                dump.combat_leash,
+                RegenTickers::default(),
+                RegenBuffs::default(),
+            ),
             Collider,
             OverworldObject {
                 object_id,
@@ -166,7 +173,10 @@ pub fn spawn_player_authoritative_in_space(
     commands
         .spawn((
             Player,
-            PlayerIdentity { id: player_id },
+            PlayerIdentity {
+                id: player_id,
+                home_position: None,
+            },
             Inventory::default(),
             ChatLog::default(),
             base_stats,
@@ -174,9 +184,13 @@ pub fn spawn_player_authoritative_in_space(
             VitalStats::full(max_health, max_mana),
             MovementCooldown::default(),
             (AttackProfile::melee(), WeaponDamage::default()),
-            CombatLeash {
-                max_distance_tiles: 6,
-            },
+            (
+                CombatLeash {
+                    max_distance_tiles: 6,
+                },
+                RegenTickers::default(),
+                RegenBuffs::default(),
+            ),
             Collider,
             OverworldObject {
                 object_id,

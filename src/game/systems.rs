@@ -35,11 +35,16 @@ use bevy::ecs::system::SystemParam;
 
 /// Bundle of side-output channels needed by `process_game_commands`. Bevy's
 /// `IntoSystem` impl caps individual function-parameter count, so we pack
-/// these together to leave headroom for the existing query mix.
+/// these together to leave headroom for the existing query mix. The
+/// `player_regen_buffs` query is bundled in here for the same headroom
+/// reason — it's mutated by `handle_use_item` when the player consumes a
+/// food/drink with `regen_duration_seconds > 0`.
 #[derive(SystemParam)]
-pub struct CommandOutputs<'w> {
+pub struct CommandOutputs<'w, 's> {
     pub ui_events: ResMut<'w, PendingGameUiEvents>,
     pub container_viewers: ResMut<'w, ContainerViewers>,
+    pub player_regen_buffs:
+        Query<'w, 's, &'static mut crate::player::components::RegenBuffs, With<Player>>,
 }
 
 /// Bundle of resources needed together when a command may cause space
@@ -318,6 +323,7 @@ pub fn process_game_commands(
                     &mut container_query,
                     &object_query,
                     &mut player_queries.p2(),
+                    &mut command_outputs.player_regen_buffs,
                     &object_registry,
                     &definitions,
                     &spell_definitions,
@@ -331,6 +337,7 @@ pub fn process_game_commands(
                     target,
                     &mut container_query,
                     &mut player_queries.p2(),
+                    &mut command_outputs.player_regen_buffs,
                     &object_query,
                     &object_registry,
                     &definitions,
@@ -467,6 +474,10 @@ pub fn process_game_commands(
                     "process_game_commands saw AdminSetObjectState — check system ordering"
                 );
             }
+            // Drained earlier by `handle_set_home_commands` (player plugin,
+            // CommandIntercept set). If we reach this arm, no player matched
+            // the queued command so silently drop it.
+            GameCommand::SetHome => {}
             GameCommand::EditorSetFloorTile { .. } => {
                 // Drained by `process_floor_commands` in `CommandIntercept` before this system runs.
                 bevy::log::warn!(
@@ -1011,6 +1022,7 @@ fn handle_use_item(
         ),
         With<Player>,
     >,
+    regen_buffs_query: &mut Query<&mut crate::player::components::RegenBuffs, With<Player>>,
     object_registry: &ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
@@ -1108,6 +1120,29 @@ fn handle_use_item(
         .clamp(0.0, vital_stats.max_health);
     vital_stats.mana =
         (vital_stats.mana + definition.use_effects.restore_mana).clamp(0.0, vital_stats.max_mana);
+
+    let new_multiplier = definition.use_effects.regen_multiplier.max(1.0);
+    let new_duration = definition.use_effects.regen_duration_seconds.max(0.0);
+    if new_duration > 0.0 && new_multiplier > 1.0 {
+        match regen_buffs_query.get_mut(player_entity) {
+            Ok(mut buffs) => {
+                buffs.remaining_seconds += new_duration;
+                buffs.multiplier = buffs.multiplier.max(new_multiplier);
+                bevy::log::info!(
+                    "regen buff applied: x{:.1} for {:.0}s (now {:.1}s remaining)",
+                    buffs.multiplier,
+                    new_duration,
+                    buffs.remaining_seconds,
+                );
+            }
+            Err(err) => {
+                bevy::log::warn!(
+                    "regen buff dropped: player entity has no RegenBuffs component ({err:?})"
+                );
+            }
+        }
+    }
+
     consume_item_reference(
         source,
         &mut inventory_state,
@@ -1137,6 +1172,7 @@ fn handle_use_item_on(
         ),
         With<Player>,
     >,
+    regen_buffs_query: &mut Query<&mut crate::player::components::RegenBuffs, With<Player>>,
     object_query: &Query<
         (Entity, &SpaceResident, &TilePosition, &OverworldObject),
         Without<Player>,
@@ -1153,6 +1189,7 @@ fn handle_use_item_on(
             container_query,
             object_query,
             player_query,
+            regen_buffs_query,
             object_registry,
             definitions,
             spell_definitions,
@@ -2802,9 +2839,7 @@ mod tests {
         app.world_mut()
             .spawn((
                 Player,
-                PlayerIdentity {
-                    id: PlayerId(player_id),
-                },
+                PlayerIdentity::new(PlayerId(player_id)),
                 Inventory::default(),
                 ChatLog::default(),
                 base_stats,

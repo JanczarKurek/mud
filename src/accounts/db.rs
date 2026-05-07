@@ -352,6 +352,7 @@ mod tests {
             },
             yarn_vars: Default::default(),
             facing: Default::default(),
+            home_position: None,
         };
         db.save_character(id, &dump).unwrap();
 

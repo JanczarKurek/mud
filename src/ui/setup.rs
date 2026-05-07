@@ -14,7 +14,7 @@ use crate::ui::components::{
     DockedPanelRoot, DockedPanelTitle, DragPreviewLabel, DragPreviewRoot, EquipmentPanelContent,
     EquipmentSlotButton, EquipmentSlotImage, FullMapBodyRoot, FullMapCloseButton,
     FullMapWindowRoot, FullMapZoomInButton, FullMapZoomLabel, FullMapZoomOutButton, HealthFill,
-    HealthLabel, HudMinimapZoomInButton, HudMinimapZoomLabel, HudMinimapZoomOutButton,
+    HealthLabel, HudMinimapZoomInButton, HudMinimapZoomLabel, HudMinimapZoomOutButton, RegenBuffLabel,
     ItemSlotButton, ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ManaFill, ManaLabel,
     MinimapCanvas, MinimapMode, MinimapView, PythonConsoleInput, PythonConsoleOutput,
     PythonConsoleOutputViewport, PythonConsolePanel, PythonConsoleScrollbarThumb, RightSidebarRoot,
@@ -669,6 +669,20 @@ fn spawn_status_panel(
                 ManaFill,
                 ManaLabel,
             );
+            // Regen buff timer label. Always rendered; `sync_regen_buff_label`
+            // writes the timer string while the buff is active and clears it
+            // back to "" otherwise (empty Text renders as nothing, no need to
+            // toggle Visibility — fewer moving parts than a hidden/visible
+            // flip during required-component setup).
+            panel.spawn((
+                Text::new(""),
+                TextFont {
+                    font_size: 14.0,
+                    ..default()
+                },
+                TextColor(palette.text_accent),
+                RegenBuffLabel,
+            ));
         });
     });
 }

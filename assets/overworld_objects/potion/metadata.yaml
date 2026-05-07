@@ -2,7 +2,8 @@ extends: consumable
 name: Potion
 description: A small blue potion flask.
 use_effects:
-  restore_mana: 20
+  regen_multiplier: 2.0
+  regen_duration_seconds: 60
 use_texts:
   - You drink the potion.
   - The potion tingles as your mana returns.

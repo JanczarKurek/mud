@@ -938,9 +938,7 @@ mod tests {
         app.world_mut()
             .spawn((
                 Player,
-                PlayerIdentity {
-                    id: PlayerId(player_id),
-                },
+                PlayerIdentity::new(PlayerId(player_id)),
                 Inventory::default(),
                 ChatLog::default(),
                 base_stats,

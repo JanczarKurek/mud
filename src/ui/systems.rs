@@ -301,6 +301,27 @@ pub fn sync_vital_bars(
     }
 }
 
+pub fn sync_regen_buff_label(
+    client_state: Res<ClientGameState>,
+    mut label_query: Query<&mut Text, With<crate::ui::components::RegenBuffLabel>>,
+) {
+    let Ok(mut text) = label_query.single_mut() else {
+        return;
+    };
+    let new_text = match &client_state.regen_buff {
+        Some(buff) if buff.remaining_seconds > 0.0 => {
+            let total_seconds = buff.remaining_seconds.ceil() as i32;
+            let mins = total_seconds / 60;
+            let secs = total_seconds % 60;
+            format!("Well Fed: {mins}:{secs:02} (x{:.1})", buff.multiplier)
+        }
+        _ => String::new(),
+    };
+    if text.0 != new_text {
+        text.0 = new_text;
+    }
+}
+
 pub fn sync_chat_log(
     client_state: Res<ClientGameState>,
     mut chat_query: Query<&mut Text, With<ChatLogText>>,

@@ -23,6 +23,19 @@ pub struct PlayerId(pub u64);
 #[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PlayerIdentity {
     pub id: PlayerId,
+    /// Where this character respawns after death. `None` means "use map
+    /// center" — fresh characters start with no explicit home, then can set
+    /// one with the `SetHome` command. Restored from the account DB on login.
+    pub home_position: Option<(crate::world::components::SpaceId, crate::world::components::TilePosition)>,
+}
+
+impl PlayerIdentity {
+    pub const fn new(id: PlayerId) -> Self {
+        Self {
+            id,
+            home_position: None,
+        }
+    }
 }
 
 /// A self-describing stack of identical items. Carries the canonical type
@@ -363,5 +376,52 @@ impl Default for MovementCooldown {
             remaining_seconds: 0.0,
             step_interval_seconds: 0.18,
         }
+    }
+}
+
+/// Per-player accumulators that drive slow HP/MP regeneration. One unit is
+/// added to `health` / `mana` each time the corresponding `*_remaining`
+/// counter ticks below zero; the counter is then reset based on the player's
+/// stats (constitution drives HP, willpower drives MP) and any active
+/// `RegenBuffs` multiplier. Not persisted — regen state always starts fresh
+/// on login because the timing is sub-second.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct RegenTickers {
+    pub health_remaining: f32,
+    pub mana_remaining: f32,
+}
+
+impl Default for RegenTickers {
+    fn default() -> Self {
+        Self {
+            health_remaining: 0.0,
+            mana_remaining: 0.0,
+        }
+    }
+}
+
+/// Active regen-rate multiplier from food/drink. Inert when
+/// `remaining_seconds <= 0` or `multiplier <= 1.0`. Re-eating extends the
+/// duration: `remaining_seconds += new.duration`, and `multiplier` snaps to
+/// the strongest of the two so a stronger buff isn't diluted by a weaker
+/// follow-up. Not persisted across sessions — buffs reset on disconnect.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct RegenBuffs {
+    pub multiplier: f32,
+    pub remaining_seconds: f32,
+}
+
+impl Default for RegenBuffs {
+    fn default() -> Self {
+        Self {
+            multiplier: 1.0,
+            remaining_seconds: 0.0,
+        }
+    }
+}
+
+impl RegenBuffs {
+    pub fn is_active(&self) -> bool {
+        self.remaining_seconds > 0.0 && self.multiplier > 1.0
     }
 }

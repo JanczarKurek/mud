@@ -177,6 +177,12 @@ pub struct PlayerStateDump {
     /// character rows written before this field existed default to South.
     #[serde(default)]
     pub facing: crate::world::direction::Direction,
+    /// Where this character respawns after death. `None` for characters that
+    /// haven't run `SetHome` yet — the death handler falls back to the map
+    /// center in that case. `#[serde(default)]` for back-compat with saves
+    /// written before this field existed.
+    #[serde(default)]
+    pub home_position: Option<(crate::world::components::SpaceId, TilePosition)>,
 }
 
 /// Build a `PlayerStateDump` from the components of a single player entity.
@@ -211,6 +217,7 @@ pub fn build_player_state_dump(
         combat_leash: *combat_leash,
         yarn_vars: std::collections::HashMap::new(),
         facing,
+        home_position: identity.home_position,
     }
 }
 
@@ -1014,5 +1021,54 @@ mod tests {
         assert!(has_restored_barrel);
 
         let _ = std::fs::remove_file(save_path);
+    }
+
+    /// `PlayerStateDump` rows written before `home_position` was added must
+    /// still deserialize. The `#[serde(default)]` attribute on the field is
+    /// what guarantees this; the test fails fast if anyone removes it.
+    #[test]
+    fn player_state_dump_round_trips_without_home_position() {
+        // Hand-rolled JSON with no `home_position` key — represents a row
+        // saved by an older binary.
+        // Build a fresh dump in code, then serialize *without* the new field
+        // by stripping it from the JSON, to mimic an older save.
+        let dump_with_home = PlayerStateDump {
+            player_id: PlayerId(1),
+            space_id: Some(crate::world::components::SpaceId(0)),
+            tile_position: TilePosition::ground(5, 7),
+            inventory: Inventory::default(),
+            chat_log: ChatLog::default(),
+            base_stats: BaseStats::default(),
+            derived_stats: DerivedStats::default(),
+            vital_stats: VitalStats::full(100.0, 50.0),
+            movement_cooldown: MovementCooldown::default(),
+            attack_profile: AttackProfile::melee(),
+            combat_leash: CombatLeash {
+                max_distance_tiles: 6,
+            },
+            yarn_vars: Default::default(),
+            facing: Default::default(),
+            home_position: None,
+        };
+        let json = serde_json::to_string(&dump_with_home).unwrap();
+        // Confirm we didn't accidentally serialize Some(...).
+        assert!(json.contains("\"home_position\":null"));
+        // Strip the field entirely to simulate an older binary's output.
+        let legacy_json = json
+            .replace(",\"home_position\":null", "")
+            .replace("\"home_position\":null,", "");
+        assert!(!legacy_json.contains("home_position"));
+
+        let dump: PlayerStateDump =
+            serde_json::from_str(&legacy_json).expect("legacy save must deserialize");
+        assert!(
+            dump.home_position.is_none(),
+            "legacy save should default to no home"
+        );
+
+        // Round-trip: serialize then deserialize and assert home stays None.
+        let re_json = serde_json::to_string(&dump).unwrap();
+        let re_dump: PlayerStateDump = serde_json::from_str(&re_json).unwrap();
+        assert!(re_dump.home_position.is_none());
     }
 }

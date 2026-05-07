@@ -24,10 +24,12 @@ use crate::combat::components::CombatTarget;
 use crate::dialog::components::DialogNode;
 use crate::game::resources::{
     ChatLogState, ClientGameState, ClientRemotePlayerState, ClientSpaceState, ClientVitalStats,
-    ClientWorldObjectState, GameEvent, InventoryState, PendingGameEvents,
+    ClientWorldObjectState, GameEvent, InventoryState, PendingGameEvents, RegenBuffState,
 };
 use crate::npc::components::Npc;
-use crate::player::components::{DerivedStats, Player, PlayerId, PlayerIdentity, VitalStats};
+use crate::player::components::{
+    DerivedStats, Player, PlayerId, PlayerIdentity, RegenBuffs, VitalStats,
+};
 use crate::world::components::{
     Container, Facing, Movable, ObjectState, OverworldObject, Quantity, Rotatable, SpaceId,
     SpacePosition, SpaceResident, TilePosition,
@@ -50,6 +52,7 @@ pub type ProjectionPlayerQuery<'w, 's> = Query<
         Option<&'static CombatTarget>,
         &'static OverworldObject,
         Option<&'static Facing>,
+        Option<&'static RegenBuffs>,
     ),
     With<Player>,
 >;
@@ -132,6 +135,7 @@ pub fn compute_events_for_peer(
         combat_target,
         player_object,
         facing,
+        regen_buffs,
     ) in player_query.iter()
     {
         let projected_facing = facing.copied().unwrap_or_default().0;
@@ -188,6 +192,33 @@ pub fn compute_events_for_peer(
             if previous.player_storage_slots != derived_stats.storage_slots {
                 events.push(GameEvent::PlayerStorageChanged {
                     storage_slots: derived_stats.storage_slots,
+                });
+            }
+
+            // Replicate active food/drink regen buff. We diff at integer-second
+            // resolution on `remaining_seconds` so the HUD ticker animates
+            // without spamming a wire event every frame.
+            let projected_buff = regen_buffs.and_then(|buffs| {
+                if buffs.is_active() {
+                    Some(RegenBuffState {
+                        multiplier: buffs.multiplier,
+                        remaining_seconds: buffs.remaining_seconds,
+                    })
+                } else {
+                    None
+                }
+            });
+            let buff_changed = match (&previous.regen_buff, &projected_buff) {
+                (None, None) => false,
+                (Some(_), None) | (None, Some(_)) => true,
+                (Some(a), Some(b)) => {
+                    (a.multiplier - b.multiplier).abs() > f32::EPSILON
+                        || a.remaining_seconds.floor() != b.remaining_seconds.floor()
+                }
+            };
+            if buff_changed {
+                events.push(GameEvent::PlayerRegenBuffChanged {
+                    buff: projected_buff,
                 });
             }
 
@@ -474,6 +505,9 @@ pub fn apply_event_to_state(state: &mut ClientGameState, event: GameEvent) {
         GameEvent::PlayerVitalsChanged { vitals } => {
             state.player_vitals = Some(vitals);
         }
+        GameEvent::PlayerRegenBuffChanged { buff } => {
+            state.regen_buff = buff;
+        }
         GameEvent::PlayerStorageChanged { storage_slots } => {
             state.player_storage_slots = storage_slots;
         }
@@ -590,6 +624,10 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
             client_state.player_vitals.map(|current| current.max_mana).unwrap_or_default(),
             vitals.mana,
             vitals.max_mana
+        ),
+        GameEvent::PlayerRegenBuffChanged { buff } => debug!(
+            "client regen buff updated: {:?} -> {:?}",
+            client_state.regen_buff, buff
         ),
         GameEvent::PlayerStorageChanged { storage_slots } => info!(
             "client player storage updated: {} -> {}",
