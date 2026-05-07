@@ -102,7 +102,7 @@ fn sample(grid: &FloorMap, x: i32, y: i32) -> Option<&FloorTypeId> {
 /// Deterministically picks a variant index for the cell at corner (rx, ry) in
 /// `space_id`, distributed by `weights`. Same inputs always produce the same
 /// output, so a tile keeps its variant across rebuilds and across runtime modes.
-fn pick_variant(space_id: SpaceId, rx: i32, ry: i32, weights: &[u32]) -> usize {
+pub fn pick_variant(space_id: SpaceId, rx: i32, ry: i32, weights: &[u32]) -> usize {
     if weights.len() <= 1 {
         return 0;
     }

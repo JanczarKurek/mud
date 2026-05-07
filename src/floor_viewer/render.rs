@@ -5,8 +5,10 @@ use bevy::prelude::*;
 use crate::floor_viewer::plugin::{
     FloorTilesetAtlases, ViewMode, ViewModeKind, ViewerDirty, ViewerFloorMap,
 };
+use crate::world::components::SpaceId;
 use crate::world::floor_definitions::{FloorTilesetDefinitions, FloorTypeId};
 use crate::world::floor_map::FloorMap;
+use crate::world::floor_render::pick_variant;
 
 pub const TILE_SIZE: f32 = 32.0;
 pub const GRID_W: i32 = 24;
@@ -156,6 +158,7 @@ fn spawn_corner(
                 .entry((*floor_id).clone())
                 .or_insert_with(|| asset_server.load(atlas_path))
                 .clone();
+            let max_variants = def.max_variants() as u32;
             let layout_handle = atlases
                 .layouts
                 .entry((*floor_id).clone())
@@ -163,19 +166,21 @@ fn spawn_corner(
                     let layout = TextureAtlasLayout::from_grid(
                         UVec2::splat(def.tile_size_px),
                         4,
-                        4,
+                        4 * max_variants,
                         None,
                         None,
                     );
                     layouts_assets.add(layout)
                 })
                 .clone();
+            let weights = def.variant_weights(*mask);
+            let variant = pick_variant(SpaceId(0), rx, ry, weights);
             Sprite {
                 image: image_handle,
                 custom_size: Some(Vec2::splat(TILE_SIZE)),
                 texture_atlas: Some(TextureAtlas {
                     layout: layout_handle,
-                    index: (*mask as usize) & 0xF,
+                    index: (*mask as usize & 0xF) + variant * 16,
                 }),
                 ..default()
             }
