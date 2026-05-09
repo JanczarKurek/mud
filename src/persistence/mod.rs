@@ -183,6 +183,26 @@ pub struct PlayerStateDump {
     /// written before this field existed.
     #[serde(default)]
     pub home_position: Option<(crate::world::components::SpaceId, TilePosition)>,
+    /// XP / level state. `#[serde(default)]` so rows written before progression
+    /// existed default to a fresh level-1 character.
+    #[serde(default)]
+    pub experience: crate::player::progression::Experience,
+    /// Selected class. `#[serde(default)]` (Fighter) so legacy rows that
+    /// pre-date the class system silently migrate to Fighter on load — this
+    /// is the documented behavior in `docs/progression.md` Phase B.
+    #[serde(default)]
+    pub class: crate::player::classes::Class,
+    /// Has the player explicitly picked a class via `ChooseClass`? Defaults
+    /// to `true` so legacy rows (which pre-date the class system) silently
+    /// migrate to Fighter without re-prompting. Fresh characters created
+    /// post-Phase-B explicitly write `false` and see the picker UI on first
+    /// entry.
+    #[serde(default = "default_class_chosen_true")]
+    pub class_chosen: bool,
+}
+
+fn default_class_chosen_true() -> bool {
+    true
 }
 
 /// Build a `PlayerStateDump` from the components of a single player entity.
@@ -202,6 +222,9 @@ pub fn build_player_state_dump(
     attack_profile: &AttackProfile,
     combat_leash: &CombatLeash,
     facing: crate::world::direction::Direction,
+    experience: crate::player::progression::Experience,
+    class: crate::player::classes::Class,
+    class_chosen: bool,
 ) -> PlayerStateDump {
     PlayerStateDump {
         player_id: identity.id,
@@ -218,6 +241,9 @@ pub fn build_player_state_dump(
         yarn_vars: std::collections::HashMap::new(),
         facing,
         home_position: identity.home_position,
+        experience,
+        class,
+        class_chosen,
     }
 }
 
@@ -1049,6 +1075,9 @@ mod tests {
             yarn_vars: Default::default(),
             facing: Default::default(),
             home_position: None,
+            experience: Default::default(),
+            class: Default::default(),
+            class_chosen: true,
         };
         let json = serde_json::to_string(&dump_with_home).unwrap();
         // Confirm we didn't accidentally serialize Some(...).

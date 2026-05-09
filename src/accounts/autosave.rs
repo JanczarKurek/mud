@@ -11,6 +11,8 @@ use crate::player::components::{
     BaseStats, ChatLog, DerivedStats, Inventory, MovementCooldown, Player, PlayerIdentity,
     VitalStats,
 };
+use crate::player::classes::{Class, ClassChosen};
+use crate::player::progression::Experience;
 use crate::world::components::{Facing, SpaceResident, TilePosition};
 
 /// Tracks time since the last autosave sweep; resets when the sweep fires.
@@ -33,6 +35,8 @@ type PlayerStateQueryData<'a> = (
     &'a AttackProfile,
     &'a CombatLeash,
     Option<&'a Facing>,
+    Option<&'a Experience>,
+    (Option<&'a Class>, bevy::ecs::query::Has<ClassChosen>),
 );
 
 type PlayerStateQueryFilter = With<Player>;
@@ -57,6 +61,8 @@ fn save_entity(
         attack_profile,
         combat_leash,
         facing,
+        experience,
+        (class, class_chosen),
     ) = row;
 
     let mut dump = build_player_state_dump(
@@ -72,6 +78,9 @@ fn save_entity(
         attack_profile,
         combat_leash,
         facing.copied().unwrap_or_default().0,
+        experience.copied().unwrap_or_default(),
+        class.copied().unwrap_or_default(),
+        class_chosen,
     );
 
     if let Some(stores) = var_stores {

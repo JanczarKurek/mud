@@ -1,6 +1,7 @@
 extends: npc
 name: Skeleton
 description: A reanimated skeleton, its empty eye sockets flickering with a sickly green glow.
+level: 3
 stats:
   strength: 7
   agility: 8

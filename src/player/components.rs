@@ -442,11 +442,50 @@ impl Default for DerivedStats {
 
 impl DerivedStats {
     pub fn from_base(base: &BaseStats) -> Self {
+        Self::from_base_with_class(base, crate::player::classes::Class::Fighter, 1)
+    }
+
+    /// Class- and level-aware derivation. At `level = 1` this returns the same
+    /// numbers as the legacy `from_base` for any class — level scaling only
+    /// kicks in from level 2 onward, matching `progression.md` §4.3.
+    pub fn from_base_with_class(
+        base: &BaseStats,
+        class: crate::player::classes::Class,
+        level: u32,
+    ) -> Self {
+        use crate::player::classes::{ability_mod, class_data, CastingAttribute};
+
         let attributes = base.attributes.clamped_min(1);
-        let max_health =
-            (35 + attributes.constitution * 6 + attributes.strength * 2 + base.max_health).max(1);
-        let max_mana =
-            (10 + attributes.willpower * 6 + attributes.focus * 3 + base.max_mana).max(0);
+        let con_mod = ability_mod(attributes.constitution);
+
+        let level_above_1 = level.saturating_sub(1) as i32;
+        let class = class_data(class);
+
+        // Average HP per level: floor(HD / 2) + 1 + CON_mod, min 1.
+        let hp_per_level = ((class.hit_die as i32) / 2 + 1 + con_mod).max(1);
+        let level_hp = level_above_1 * hp_per_level;
+
+        // Mana per level: class table + casting attribute modifier, min 0.
+        let cast_mod = match class.casting_attribute {
+            Some(CastingAttribute::Focus) => ability_mod(attributes.focus),
+            Some(CastingAttribute::Willpower) => ability_mod(attributes.willpower),
+            None => 0,
+        };
+        let mana_per_level = ((class.mana_per_level as i32) + cast_mod).max(0);
+        let level_mana = level_above_1 * mana_per_level;
+
+        let max_health = (35
+            + attributes.constitution * 6
+            + attributes.strength * 2
+            + base.max_health
+            + level_hp)
+            .max(1);
+        let max_mana = (10
+            + attributes.willpower * 6
+            + attributes.focus * 3
+            + base.max_mana
+            + level_mana)
+            .max(0);
         let storage_slots = (base.storage_slots - 2 + attributes.strength / 4).max(0) as usize;
 
         Self {

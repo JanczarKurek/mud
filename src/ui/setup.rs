@@ -13,6 +13,7 @@ use crate::ui::components::{
     DockedPanelCanvas, DockedPanelCloseButton, DockedPanelDragHandle, DockedPanelResizeHandle,
     DockedPanelRoot, DockedPanelTitle, DragPreviewLabel, DragPreviewRoot, EquipmentPanelContent,
     EquipmentSlotButton, EquipmentSlotImage, FullMapBodyRoot, FullMapCloseButton,
+    ExperienceFill, ExperienceLabel,
     FullMapWindowRoot, FullMapZoomInButton, FullMapZoomLabel, FullMapZoomOutButton, HealthFill,
     CarryWeightLabel, HealthLabel, HudMinimapZoomInButton, HudMinimapZoomLabel,
     HudMinimapZoomOutButton, RegenBuffLabel,
@@ -32,6 +33,7 @@ use crate::world::object_definitions::EquipmentSlot;
 pub fn spawn_hud(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
+    asset_server: Res<AssetServer>,
     hud_minimap_settings: Res<HudMinimapSettings>,
     full_map_state: Res<FullMapWindowState>,
     theme: Res<UiThemeAssets>,
@@ -128,6 +130,7 @@ pub fn spawn_hud(
         &palette,
     );
     spawn_menu_bar(&mut commands, &theme, &palette);
+    spawn_character_sheet_button(&mut commands, &asset_server);
 
     commands
         .spawn((
@@ -636,6 +639,40 @@ fn spawn_small_button<T: Component>(
         });
 }
 
+fn spawn_character_sheet_button(commands: &mut Commands, asset_server: &AssetServer) {
+    let portrait: Handle<Image> = asset_server.load("overworld_objects/player/sprite.png");
+    commands
+        .spawn((
+            Button,
+            crate::ui::components::CharacterSheetButton,
+            Node {
+                position_type: PositionType::Absolute,
+                top: px(MENU_BAR_HEIGHT + 12.0),
+                right: px(294.0),
+                width: px(48.0),
+                height: px(48.0),
+                padding: UiRect::all(px(4.0)),
+                border: UiRect::all(px(2.0)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.10, 0.08, 0.04, 0.92)),
+            BorderColor::all(Color::srgb(0.60, 0.45, 0.24)),
+            GlobalZIndex(50),
+        ))
+        .with_children(|button| {
+            button.spawn((
+                Node {
+                    width: px(36.0),
+                    height: px(36.0),
+                    ..default()
+                },
+                ImageNode::new(portrait),
+            ));
+        });
+}
+
 fn spawn_status_panel(
     parent: &mut ChildSpawnerCommands,
     panel_id: usize,
@@ -669,6 +706,14 @@ fn spawn_status_panel(
                 palette.vital_mana_fill,
                 ManaFill,
                 ManaLabel,
+            );
+            spawn_vital_bar(
+                panel,
+                palette,
+                "XP",
+                Color::srgb(0.86, 0.72, 0.32),
+                ExperienceFill,
+                ExperienceLabel,
             );
             // Regen buff timer label. Always rendered; `sync_regen_buff_label`
             // writes the timer string while the buff is active and clears it

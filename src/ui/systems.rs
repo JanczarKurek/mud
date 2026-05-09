@@ -66,6 +66,12 @@ pub fn apply_game_ui_events(
             other @ GameUiEvent::ProjectileFired { .. } => {
                 pending_ui_events.events.push(other);
             }
+            other @ GameUiEvent::LevelUpToast { .. } => {
+                pending_ui_events.events.push(other);
+            }
+            other @ GameUiEvent::DeathSummary { .. } => {
+                pending_ui_events.events.push(other);
+            }
         }
     }
 }
@@ -355,6 +361,725 @@ pub fn sync_carry_weight_label(
     }
     if color.0 != new_color {
         color.0 = new_color;
+    }
+}
+
+/// Mirrors `sync_vital_bars` for the XP bar + level/XP label. Width is the
+/// fraction of the *current level interval* completed (not lifetime XP). At
+/// the cap the bar shows full and the label reads "Lv 20 (max)".
+pub fn sync_xp_bar(
+    client_state: Res<ClientGameState>,
+    mut fill_query: Query<&mut Node, With<crate::ui::components::ExperienceFill>>,
+    mut label_query: Query<
+        &mut Text,
+        (
+            With<crate::ui::components::ExperienceLabel>,
+            Without<crate::ui::components::ExperienceFill>,
+        ),
+    >,
+) {
+    let Some(view) = client_state.experience.as_ref() else {
+        return;
+    };
+
+    let ratio = match view.xp_for_next {
+        Some(span) if span > 0 => (view.xp_into_level as f32 / span as f32).clamp(0.0, 1.0),
+        _ => 1.0,
+    };
+    for mut node in &mut fill_query {
+        node.width = percent(ratio * 100.0);
+    }
+
+    let label = match view.xp_for_next {
+        Some(span) => format!("Lv {} ({}/{})", view.level, view.xp_into_level, span),
+        None => format!("Lv {} (max)", view.level),
+    };
+    for mut text in &mut label_query {
+        if text.0 != label {
+            text.0 = label.clone();
+        }
+    }
+}
+
+/// Spawns the class-picker fullscreen modal when `client_state.class_chosen`
+/// is `false` and the local player is identified, despawns it when the
+/// server confirms a choice.
+pub fn manage_class_picker(
+    client_state: Res<ClientGameState>,
+    mut commands: Commands,
+    overlays: Query<Entity, With<crate::ui::components::ClassPickerOverlay>>,
+) {
+    let needs_picker =
+        client_state.local_player_id.is_some() && !client_state.class_chosen;
+    let already_open = overlays.iter().next().is_some();
+
+    if needs_picker && !already_open {
+        spawn_class_picker_overlay(&mut commands);
+    } else if !needs_picker && already_open {
+        for entity in overlays.iter() {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
+fn spawn_class_picker_overlay(commands: &mut Commands) {
+    use crate::player::classes::Class;
+    use crate::ui::components::{ClassPickerButton, ClassPickerOverlay};
+
+    let class_blurbs: [(Class, &str, &str); 4] = [
+        (
+            Class::Fighter,
+            "Fighter",
+            "d10 HP. Front-line martial. Hits hard, soaks hits, doesn't cast.",
+        ),
+        (
+            Class::Wizard,
+            "Wizard",
+            "d4 HP. Arcane caster — fragile, mana-rich, scales hard.",
+        ),
+        (
+            Class::Cleric,
+            "Cleric",
+            "d8 HP. Divine caster — mid martial, full healer / support.",
+        ),
+        (
+            Class::Vagabond,
+            "Vagabond",
+            "d6 HP. Skill specialist, opportunistic damage. 8 skill points / level.",
+        ),
+    ];
+
+    commands
+        .spawn((
+            ClassPickerOverlay,
+            Node {
+                position_type: PositionType::Absolute,
+                top: px(0.0),
+                left: px(0.0),
+                width: percent(100.0),
+                height: percent(100.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.78)),
+            GlobalZIndex(2000),
+        ))
+        .with_children(|root| {
+            root.spawn((
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    width: px(420.0),
+                    padding: UiRect::all(px(20.0)),
+                    row_gap: px(12.0),
+                    align_items: AlignItems::Stretch,
+                    border: UiRect::all(px(2.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgb(0.10, 0.08, 0.04)),
+                BorderColor::all(Color::srgb(0.86, 0.72, 0.32)),
+            ))
+            .with_children(|panel| {
+                panel.spawn((
+                    Text::new("Choose your class"),
+                    TextFont {
+                        font_size: 22.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.96, 0.86, 0.50)),
+                ));
+                panel.spawn((
+                    Text::new(
+                        "Your class shapes hit dice, mana scaling, and skill points.\n\
+                         You can change later via admin REPL only.",
+                    ),
+                    TextFont {
+                        font_size: 13.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.80, 0.76, 0.66)),
+                ));
+                for (class, name, blurb) in class_blurbs {
+                    panel
+                        .spawn((
+                            Button,
+                            ClassPickerButton { class },
+                            Node {
+                                flex_direction: FlexDirection::Column,
+                                padding: UiRect::all(px(10.0)),
+                                row_gap: px(2.0),
+                                border: UiRect::all(px(1.0)),
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgb(0.16, 0.13, 0.08)),
+                            BorderColor::all(Color::srgb(0.48, 0.36, 0.22)),
+                        ))
+                        .with_children(|button| {
+                            button.spawn((
+                                Text::new(name),
+                                TextFont {
+                                    font_size: 18.0,
+                                    ..default()
+                                },
+                                TextColor(Color::srgb(0.96, 0.92, 0.80)),
+                            ));
+                            button.spawn((
+                                Text::new(blurb),
+                                TextFont {
+                                    font_size: 12.0,
+                                    ..default()
+                                },
+                                TextColor(Color::srgb(0.78, 0.72, 0.62)),
+                            ));
+                        });
+                }
+            });
+        });
+}
+
+/// Click on the floating player-sprite button: toggles the Character sheet
+/// modal open/closed.
+pub fn handle_character_sheet_button_click(
+    interactions: Query<
+        &Interaction,
+        (
+            Changed<Interaction>,
+            With<crate::ui::components::CharacterSheetButton>,
+        ),
+    >,
+    mut state: ResMut<crate::ui::resources::CharacterSheetState>,
+) {
+    if interactions
+        .iter()
+        .any(|i| matches!(i, Interaction::Pressed))
+    {
+        state.open = !state.open;
+    }
+}
+
+/// Click on the close button inside the Character sheet modal.
+pub fn handle_character_sheet_close_click(
+    interactions: Query<
+        &Interaction,
+        (
+            Changed<Interaction>,
+            With<crate::ui::components::CharacterSheetCloseButton>,
+        ),
+    >,
+    mut state: ResMut<crate::ui::resources::CharacterSheetState>,
+) {
+    if interactions
+        .iter()
+        .any(|i| matches!(i, Interaction::Pressed))
+    {
+        state.open = false;
+    }
+}
+
+/// Spawns / despawns the Character sheet fullscreen modal based on
+/// `CharacterSheetState.open`. Re-renders on every tick the modal is open
+/// — cheap because the panel is small and rebuilds let it stay in sync
+/// with `ClientGameState` without per-field change-detection plumbing.
+pub fn manage_character_sheet_overlay(
+    state: Res<crate::ui::resources::CharacterSheetState>,
+    client_state: Res<ClientGameState>,
+    overlays: Query<Entity, With<crate::ui::components::CharacterSheetOverlay>>,
+    mut commands: Commands,
+) {
+    let already_open = overlays.iter().next().is_some();
+
+    if !state.open {
+        if already_open {
+            for entity in overlays.iter() {
+                commands.entity(entity).despawn();
+            }
+        }
+        return;
+    }
+
+    // If state.open is true and we have content drift (e.g. attributes just
+    // changed), respawn so the layout stays current.
+    if already_open && !state.is_changed() && !client_state.is_changed() {
+        return;
+    }
+
+    for entity in overlays.iter() {
+        commands.entity(entity).despawn();
+    }
+    spawn_character_sheet_overlay(&mut commands, &client_state);
+}
+
+fn spawn_character_sheet_overlay(commands: &mut Commands, state: &ClientGameState) {
+    use crate::player::classes::ability_mod;
+    use crate::ui::components::{CharacterSheetCloseButton, CharacterSheetOverlay};
+
+    let class_label = state
+        .class
+        .map(|c| c.label())
+        .unwrap_or("Adventurer");
+    let level_line = match &state.experience {
+        Some(view) => match view.xp_for_next {
+            Some(span) => format!(
+                "Level {} {} — {}/{} XP",
+                view.level, class_label, view.xp_into_level, span
+            ),
+            None => format!("Level {} {} — max level", view.level, class_label),
+        },
+        None => class_label.to_owned(),
+    };
+
+    commands
+        .spawn((
+            CharacterSheetOverlay,
+            Node {
+                position_type: PositionType::Absolute,
+                top: px(0.0),
+                left: px(0.0),
+                width: percent(100.0),
+                height: percent(100.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.72)),
+            GlobalZIndex(1200),
+        ))
+        .with_children(|root| {
+            root.spawn((
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    width: px(460.0),
+                    padding: UiRect::all(px(20.0)),
+                    row_gap: px(10.0),
+                    align_items: AlignItems::Stretch,
+                    border: UiRect::all(px(2.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgb(0.10, 0.08, 0.06)),
+                BorderColor::all(Color::srgb(0.86, 0.72, 0.32)),
+            ))
+            .with_children(|panel| {
+                // Title.
+                panel.spawn((
+                    Text::new("Character"),
+                    TextFont {
+                        font_size: 22.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.96, 0.86, 0.50)),
+                ));
+
+                // Class + level + XP line.
+                panel.spawn((
+                    Text::new(level_line),
+                    TextFont {
+                        font_size: 15.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.96, 0.92, 0.80)),
+                ));
+
+                // Vitals summary line.
+                if let Some(v) = state.player_vitals {
+                    panel.spawn((
+                        Text::new(format!(
+                            "HP {:.0} / {:.0}    MP {:.0} / {:.0}",
+                            v.health, v.max_health, v.mana, v.max_mana
+                        )),
+                        TextFont {
+                            font_size: 14.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.86, 0.82, 0.70)),
+                    ));
+                }
+
+                // Attributes section header.
+                panel.spawn((
+                    Node {
+                        margin: UiRect::top(px(6.0)),
+                        ..default()
+                    },
+                    Text::new("Attributes"),
+                    TextFont {
+                        font_size: 16.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.92, 0.78, 0.46)),
+                ));
+
+                if let Some(attrs) = state.attributes {
+                    let rows: [(&str, i32); 6] = [
+                        ("STR (Strength)", attrs.strength),
+                        ("AGI (Agility)", attrs.agility),
+                        ("CON (Constitution)", attrs.constitution),
+                        ("WIL (Willpower)", attrs.willpower),
+                        ("CHA (Charisma)", attrs.charisma),
+                        ("FOC (Focus)", attrs.focus),
+                    ];
+                    for (label, value) in rows {
+                        let modifier = ability_mod(value);
+                        let mod_str = if modifier >= 0 {
+                            format!("+{modifier}")
+                        } else {
+                            modifier.to_string()
+                        };
+                        panel
+                            .spawn((
+                                Node {
+                                    flex_direction: FlexDirection::Row,
+                                    justify_content: JustifyContent::SpaceBetween,
+                                    column_gap: px(8.0),
+                                    ..default()
+                                },
+                                BackgroundColor(Color::NONE),
+                            ))
+                            .with_children(|row| {
+                                row.spawn((
+                                    Text::new(label),
+                                    TextFont {
+                                        font_size: 14.0,
+                                        ..default()
+                                    },
+                                    TextColor(Color::srgb(0.80, 0.76, 0.66)),
+                                ));
+                                row.spawn((
+                                    Text::new(format!("{value}  [{mod_str}]")),
+                                    TextFont {
+                                        font_size: 14.0,
+                                        ..default()
+                                    },
+                                    TextColor(Color::srgb(0.96, 0.92, 0.80)),
+                                ));
+                            });
+                    }
+                } else {
+                    panel.spawn((
+                        Text::new("(loading…)"),
+                        TextFont {
+                            font_size: 13.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.66, 0.62, 0.54)),
+                    ));
+                }
+
+                // Status effects section.
+                panel.spawn((
+                    Node {
+                        margin: UiRect::top(px(6.0)),
+                        ..default()
+                    },
+                    Text::new("Status Effects"),
+                    TextFont {
+                        font_size: 16.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.92, 0.78, 0.46)),
+                ));
+
+                let effect_text = match state.regen_buff {
+                    Some(buff) if buff.remaining_seconds > 0.0 => {
+                        let total = buff.remaining_seconds.ceil() as i32;
+                        let mins = total / 60;
+                        let secs = total % 60;
+                        format!(
+                            "Well Fed — regen ×{:.1} ({mins}:{secs:02} remaining)",
+                            buff.multiplier
+                        )
+                    }
+                    _ => "No active effects.".to_owned(),
+                };
+                panel.spawn((
+                    Text::new(effect_text),
+                    TextFont {
+                        font_size: 14.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.86, 0.82, 0.70)),
+                ));
+
+                // Close button.
+                panel
+                    .spawn((
+                        Button,
+                        CharacterSheetCloseButton,
+                        Node {
+                            margin: UiRect::top(px(14.0)),
+                            padding: UiRect::axes(px(14.0), px(6.0)),
+                            justify_content: JustifyContent::Center,
+                            border: UiRect::all(px(1.0)),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgb(0.18, 0.14, 0.10)),
+                        BorderColor::all(Color::srgb(0.60, 0.45, 0.28)),
+                    ))
+                    .with_children(|button| {
+                        button.spawn((
+                            Text::new("Close"),
+                            TextFont {
+                                font_size: 16.0,
+                                ..default()
+                            },
+                            TextColor(Color::srgb(0.96, 0.92, 0.80)),
+                        ));
+                    });
+            });
+        });
+}
+
+/// Drains `GameUiEvent::DeathSummary` events from `PendingGameUiEvents` and
+/// spawns the post-death recap overlay listing dropped items + XP lost.
+pub fn consume_death_summary_events(
+    mut pending_ui_events: ResMut<PendingGameUiEvents>,
+    mut commands: Commands,
+    existing: Query<Entity, With<crate::ui::components::DeathSummaryOverlay>>,
+) {
+    let events = std::mem::take(&mut pending_ui_events.events);
+    for event in events {
+        match event {
+            GameUiEvent::DeathSummary {
+                items_dropped,
+                xp_lost,
+            } => {
+                // Replace any existing overlay so a quick second death doesn't
+                // stack two panels.
+                for entity in existing.iter() {
+                    commands.entity(entity).despawn();
+                }
+                spawn_death_summary_overlay(&mut commands, items_dropped, xp_lost);
+            }
+            other => pending_ui_events.events.push(other),
+        }
+    }
+}
+
+fn spawn_death_summary_overlay(
+    commands: &mut Commands,
+    items: Vec<crate::game::resources::InventoryStackSummary>,
+    xp_lost: u64,
+) {
+    use crate::ui::components::{DeathSummaryDismissButton, DeathSummaryOverlay};
+
+    commands
+        .spawn((
+            DeathSummaryOverlay,
+            Node {
+                position_type: PositionType::Absolute,
+                top: px(0.0),
+                left: px(0.0),
+                width: percent(100.0),
+                height: percent(100.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.65)),
+            GlobalZIndex(1500),
+        ))
+        .with_children(|root| {
+            root.spawn((
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    width: px(420.0),
+                    padding: UiRect::all(px(20.0)),
+                    row_gap: px(8.0),
+                    align_items: AlignItems::Stretch,
+                    border: UiRect::all(px(2.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgb(0.10, 0.05, 0.05)),
+                BorderColor::all(Color::srgb(0.78, 0.32, 0.30)),
+            ))
+            .with_children(|panel| {
+                panel.spawn((
+                    Text::new("You fell."),
+                    TextFont {
+                        font_size: 22.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.96, 0.62, 0.50)),
+                ));
+                if xp_lost > 0 {
+                    panel.spawn((
+                        Text::new(format!("XP lost: {xp_lost}")),
+                        TextFont {
+                            font_size: 14.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.92, 0.86, 0.62)),
+                    ));
+                } else {
+                    panel.spawn((
+                        Text::new("No XP lost."),
+                        TextFont {
+                            font_size: 14.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.78, 0.74, 0.62)),
+                    ));
+                }
+
+                if items.is_empty() {
+                    panel.spawn((
+                        Text::new("Your gear stayed with you."),
+                        TextFont {
+                            font_size: 13.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.78, 0.74, 0.62)),
+                    ));
+                } else {
+                    panel.spawn((
+                        Text::new("Items left on your corpse:"),
+                        TextFont {
+                            font_size: 13.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.86, 0.78, 0.66)),
+                    ));
+                    for item in items {
+                        let line = if item.quantity > 1 {
+                            format!("  - {} x{}", item.display_name, item.quantity)
+                        } else {
+                            format!("  - {}", item.display_name)
+                        };
+                        panel.spawn((
+                            Text::new(line),
+                            TextFont {
+                                font_size: 12.0,
+                                ..default()
+                            },
+                            TextColor(Color::srgb(0.92, 0.88, 0.74)),
+                        ));
+                    }
+                }
+
+                panel
+                    .spawn((
+                        Button,
+                        DeathSummaryDismissButton,
+                        Node {
+                            margin: UiRect::top(px(12.0)),
+                            padding: UiRect::axes(px(14.0), px(6.0)),
+                            justify_content: JustifyContent::Center,
+                            border: UiRect::all(px(1.0)),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgb(0.18, 0.12, 0.10)),
+                        BorderColor::all(Color::srgb(0.60, 0.40, 0.32)),
+                    ))
+                    .with_children(|button| {
+                        button.spawn((
+                            Text::new("Continue"),
+                            TextFont {
+                                font_size: 16.0,
+                                ..default()
+                            },
+                            TextColor(Color::srgb(0.96, 0.92, 0.80)),
+                        ));
+                    });
+            });
+        });
+}
+
+/// Click handler for the death-summary dismiss button: despawns the overlay.
+pub fn handle_death_summary_dismiss(
+    mut commands: Commands,
+    interactions: Query<
+        &Interaction,
+        (
+            Changed<Interaction>,
+            With<crate::ui::components::DeathSummaryDismissButton>,
+        ),
+    >,
+    overlays: Query<Entity, With<crate::ui::components::DeathSummaryOverlay>>,
+) {
+    let pressed = interactions
+        .iter()
+        .any(|i| matches!(i, Interaction::Pressed));
+    if !pressed {
+        return;
+    }
+    for entity in overlays.iter() {
+        commands.entity(entity).despawn();
+    }
+}
+
+/// Click handler for class-picker buttons. Pushes `ChooseClass` and lets the
+/// server flip `class_chosen` so `manage_class_picker` despawns the overlay.
+pub fn handle_class_picker_clicks(
+    mut interactions: Query<
+        (&Interaction, &crate::ui::components::ClassPickerButton),
+        Changed<Interaction>,
+    >,
+    mut pending_commands: ResMut<PendingGameCommands>,
+) {
+    for (interaction, button) in &mut interactions {
+        if matches!(interaction, Interaction::Pressed) {
+            pending_commands.push(GameCommand::ChooseClass { class: button.class });
+        }
+    }
+}
+
+/// Drains `GameUiEvent::LevelUpToast` events from `PendingGameUiEvents`,
+/// spawning one transient overlay node per event. Other UI-event variants are
+/// preserved in the queue for downstream consumers (mirrors
+/// `consume_projectile_events`).
+pub fn consume_level_up_toasts(
+    mut pending_ui_events: ResMut<PendingGameUiEvents>,
+    mut commands: Commands,
+) {
+    let events = std::mem::take(&mut pending_ui_events.events);
+    for event in events {
+        match event {
+            GameUiEvent::LevelUpToast { new_level } => {
+                commands.spawn((
+                    crate::ui::components::LevelUpToast {
+                        remaining_seconds: 3.0,
+                    },
+                    Node {
+                        position_type: PositionType::Absolute,
+                        top: percent(15.0),
+                        left: percent(50.0),
+                        margin: UiRect::left(px(-120.0)),
+                        width: px(240.0),
+                        padding: UiRect::all(px(12.0)),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.10, 0.08, 0.04, 0.85)),
+                    BorderColor::all(Color::srgb(0.86, 0.72, 0.32)),
+                    GlobalZIndex(1000),
+                    children![(
+                        Text::new(format!("Level Up! Lv {}", new_level)),
+                        TextFont {
+                            font_size: 22.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.96, 0.86, 0.50)),
+                    )],
+                ));
+            }
+            other => pending_ui_events.events.push(other),
+        }
+    }
+}
+
+/// Ticks the fade timer on each spawned `LevelUpToast` overlay. Despawns the
+/// node when the timer reaches zero.
+pub fn tick_level_up_toasts(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut toasts: Query<(Entity, &mut crate::ui::components::LevelUpToast)>,
+) {
+    let dt = time.delta_secs();
+    for (entity, mut toast) in &mut toasts {
+        toast.remaining_seconds -= dt;
+        if toast.remaining_seconds <= 0.0 {
+            commands.entity(entity).despawn();
+        }
     }
 }
 

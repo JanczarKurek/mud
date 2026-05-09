@@ -353,6 +353,9 @@ mod tests {
             yarn_vars: Default::default(),
             facing: Default::default(),
             home_position: None,
+            experience: Default::default(),
+            class: Default::default(),
+            class_chosen: true,
         };
         db.save_character(id, &dump).unwrap();
 

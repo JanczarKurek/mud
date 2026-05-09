@@ -1,5 +1,7 @@
+pub mod classes;
 pub mod components;
 pub mod lifecycle;
+pub mod progression;
 pub mod regen;
 pub mod setup;
 pub mod systems;
@@ -10,6 +12,7 @@ use crate::app::state::{simulation_active, ClientAppState};
 use crate::player::lifecycle::{
     handle_player_deaths, handle_set_home_commands, PendingPlayerDeaths,
 };
+use crate::player::progression::{apply_xp_grants, PendingXpGrants};
 use crate::player::regen::{tick_regen_buffs, tick_vital_regen};
 use crate::player::setup::spawn_player_visual;
 use crate::player::systems::{
@@ -25,7 +28,14 @@ pub struct PlayerClientPlugin;
 impl Plugin for PlayerServerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PendingPlayerDeaths>()
+            .init_resource::<PendingXpGrants>()
             .add_systems(Update, refresh_derived_player_stats)
+            .add_systems(
+                Update,
+                apply_xp_grants
+                    .after(crate::combat::systems::resolve_battle_turn)
+                    .run_if(simulation_active),
+            )
             .add_systems(
                 Update,
                 (tick_regen_buffs, tick_vital_regen).run_if(simulation_active),

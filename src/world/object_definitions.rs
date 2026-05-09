@@ -76,6 +76,11 @@ pub struct OverworldObjectDefinition {
     pub damage: Option<String>,
     #[serde(default)]
     pub hp: Option<String>,
+    /// Creature level (HD per `docs/content_bible.md` §6). Drives XP awarded
+    /// on kill via `xp_grant_for_kill`. Optional so non-creature definitions
+    /// (items, scenery, doors) can omit it; spawn paths default to 1.
+    #[serde(default)]
+    pub level: Option<u32>,
     /// When present, walking onto this object's tile shifts the player's floor
     /// by `delta` (±1 for stairs_up / stairs_down, etc.).
     #[serde(default)]

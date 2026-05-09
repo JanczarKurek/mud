@@ -5,10 +5,12 @@ use crate::combat::components::AttackProfile;
 use crate::combat::damage_expr::DamageExpr;
 use crate::game::commands::{GameCommand, MoveDelta, RotationDirection};
 use crate::game::resources::{ClientGameState, InventoryState, PendingGameCommands};
+use crate::player::classes::Class;
 use crate::player::components::{
     AttributeSet, BaseStats, CurrentCarryWeight, DerivedStats, Encumbered, MaxCarryWeight, Player,
     PlayerIdentity, VitalStats, WeaponDamage,
 };
+use crate::player::progression::Experience;
 use crate::scripting::resources::PythonConsoleState;
 use crate::world::components::{
     DisplayedVitalStats, Facing, SpaceResident, TilePosition, ViewPosition,
@@ -33,6 +35,8 @@ pub fn refresh_derived_player_stats(
             Option<&mut MaxCarryWeight>,
             Option<&mut CurrentCarryWeight>,
             Has<Encumbered>,
+            Option<&Class>,
+            Option<&Experience>,
         ),
         With<Player>,
     >,
@@ -48,6 +52,8 @@ pub fn refresh_derived_player_stats(
         max_carry,
         current_carry,
         was_encumbered,
+        class,
+        experience,
     ) in &mut player_query
     {
         let mut attributes = base_stats.attributes;
@@ -87,12 +93,26 @@ pub fn refresh_derived_player_stats(
             max_mana,
             storage_slots,
         };
-        *derived_stats = DerivedStats::from_base(&effective_base);
+        let resolved_class = class.copied().unwrap_or_default();
+        let resolved_level = experience.map(|e| e.level).unwrap_or(1);
+        let new_derived =
+            DerivedStats::from_base_with_class(&effective_base, resolved_class, resolved_level);
+
+        // On level-up, max_* grew. Top up current vitals by the delta so the
+        // player feels the progression bump rather than just seeing the bar
+        // ratio shrink (mirrors `progression.md` §4.3 step 1 — a level-up
+        // heals).
+        let prev_max_health = derived_stats.max_health;
+        let prev_max_mana = derived_stats.max_mana;
+        let health_delta = (new_derived.max_health - prev_max_health).max(0) as f32;
+        let mana_delta = (new_derived.max_mana - prev_max_mana).max(0) as f32;
+
+        *derived_stats = new_derived;
 
         vital_stats.max_health = derived_stats.max_health as f32;
         vital_stats.max_mana = derived_stats.max_mana as f32;
-        vital_stats.health = vital_stats.health.clamp(0.0, vital_stats.max_health);
-        vital_stats.mana = vital_stats.mana.clamp(0.0, vital_stats.max_mana);
+        vital_stats.health = (vital_stats.health + health_delta).clamp(0.0, vital_stats.max_health);
+        vital_stats.mana = (vital_stats.mana + mana_delta).clamp(0.0, vital_stats.max_mana);
 
         let mut next_profile = AttackProfile::melee();
         let mut next_damage = DamageExpr::melee_default();

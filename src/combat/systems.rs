@@ -7,10 +7,11 @@ use crate::game::resources::{GameUiEvent, PendingGameUiEvents};
 use crate::magic::resources::SpellDefinitions;
 use crate::npc::components::Npc;
 use crate::player::components::{
-    AmmoConsumption, AttributeSet, ChatLog, DerivedStats, Inventory, Player, PlayerIdentity,
-    VitalStats, WeaponDamage,
+    AmmoConsumption, AttributeSet, ChatLog, DerivedStats, Inventory, Player, PlayerId,
+    PlayerIdentity, VitalStats, WeaponDamage,
 };
 use crate::player::lifecycle::{PendingPlayerDeath, PendingPlayerDeaths};
+use crate::player::progression::{xp_grant_for_kill, Experience, PendingXpGrant, PendingXpGrants};
 use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
 use crate::world::loot::spawn_corpse_for_npc;
 use crate::world::object_definitions::OverworldObjectDefinitions;
@@ -31,6 +32,7 @@ struct CombatantSnapshot {
     is_player: bool,
     player_id: Option<u64>,
     ranged_projectile_sprite: Option<String>,
+    level: Option<u32>,
 }
 
 pub fn clear_invalid_combat_targets(
@@ -85,6 +87,7 @@ pub fn resolve_battle_turn(
             Option<&WeaponDamage>,
             Option<&PlayerIdentity>,
             Option<&Inventory>,
+            Option<&Experience>,
         )>,
         Query<(&mut VitalStats, Option<&Player>, Option<&Npc>)>,
         Query<&mut Inventory, With<Player>>,
@@ -96,6 +99,7 @@ pub fn resolve_battle_turn(
     mut ui_events: ResMut<PendingGameUiEvents>,
     mut quest_events: ResMut<crate::quest::events::PendingQuestEvents>,
     mut pending_player_deaths: ResMut<PendingPlayerDeaths>,
+    mut pending_xp_grants: ResMut<PendingXpGrants>,
     mut commands: Commands,
 ) {
     battle_turn_timer.remaining_seconds -= time.delta_secs();
@@ -123,6 +127,7 @@ pub fn resolve_battle_turn(
                 weapon_damage,
                 player_identity,
                 inventory,
+                experience,
             )| {
                 let damage_expr = weapon_damage
                     .map(|wd| wd.0.clone())
@@ -158,6 +163,7 @@ pub fn resolve_battle_turn(
                     is_player,
                     player_id,
                     ranged_projectile_sprite,
+                    level: experience.map(|e| e.level),
                 }
             },
         )
@@ -265,6 +271,21 @@ pub fn resolve_battle_turn(
                     type_id: target.definition_id.clone(),
                     killer_player_id: attacker.player_id,
                 });
+
+            if attacker.is_player {
+                if let Some(killer_player_id) = attacker.player_id {
+                    let amount = xp_grant_for_kill(target.level.unwrap_or(1));
+                    pending_xp_grants.grants.push(PendingXpGrant {
+                        player_id: PlayerId(killer_player_id),
+                        amount,
+                    });
+                    broadcast_chat_line(
+                        &mut chat_log_query,
+                        format!("[{} gained {} XP]", attacker.name, amount),
+                    );
+                }
+            }
+
             commands.entity(target_entity).despawn();
             broadcast_chat_line(&mut chat_log_query, format!("[{} dies]", target.name));
             continue;

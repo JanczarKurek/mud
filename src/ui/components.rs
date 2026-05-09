@@ -26,6 +26,61 @@ pub struct RegenBuffLabel;
 #[derive(Component)]
 pub struct CarryWeightLabel;
 
+/// Marker for the XP fill bar in the status panel (mirrors `HealthFill`).
+#[derive(Component)]
+pub struct ExperienceFill;
+
+/// Text node showing the player's level + XP progress
+/// ("Lv 3 — 1,250 / 3,000 XP").
+#[derive(Component)]
+pub struct ExperienceLabel;
+
+/// Root of the transient "Level Up!" toast overlay. The toast carries its
+/// own remaining-time so the system that owns it can fade and despawn the
+/// node without consulting any other state.
+#[derive(Component)]
+pub struct LevelUpToast {
+    pub remaining_seconds: f32,
+}
+
+/// Root of the class-picker fullscreen modal that's shown to fresh
+/// characters before they enter the world. Single instance — spawned by
+/// `manage_class_picker` when the local player is a fresh character
+/// (`!class_chosen`), despawned when the server confirms class_chosen=true.
+#[derive(Component)]
+pub struct ClassPickerOverlay;
+
+/// Marker on each class option button inside the picker overlay. Click
+/// dispatches `GameCommand::ChooseClass { class }`.
+#[derive(Component, Clone, Copy)]
+pub struct ClassPickerButton {
+    pub class: crate::player::classes::Class,
+}
+
+/// Root of the post-death recap overlay. Owned by a single instance —
+/// despawned when its dismiss button is clicked.
+#[derive(Component)]
+pub struct DeathSummaryOverlay;
+
+/// Marker on the dismiss / continue button inside the death summary
+/// overlay.
+#[derive(Component)]
+pub struct DeathSummaryDismissButton;
+
+/// Floating HUD button (player-sprite icon) that toggles the Character
+/// sheet modal. Sits in the top-right corner under the menu bar.
+#[derive(Component)]
+pub struct CharacterSheetButton;
+
+/// Root of the Character sheet fullscreen modal. Single instance —
+/// spawned/despawned in response to `CharacterSheetState.open`.
+#[derive(Component)]
+pub struct CharacterSheetOverlay;
+
+/// Close-button marker inside the Character sheet modal.
+#[derive(Component)]
+pub struct CharacterSheetCloseButton;
+
 #[derive(Component)]
 pub struct ItemSlotButton {
     pub kind: ItemSlotKind,

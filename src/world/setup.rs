@@ -216,6 +216,7 @@ pub fn spawn_overworld_object_instance(
             .unwrap_or(derived_stats.max_health) as f32;
         let max_mana = derived_stats.max_mana as f32;
         let (attack_profile, weapon_damage) = attack_profile_for_definition(definition);
+        let level = definition.and_then(|d| d.level).unwrap_or(1);
         {
             let mut entity_commands = commands.entity(entity);
             entity_commands.insert((
@@ -225,6 +226,7 @@ pub fn spawn_overworld_object_instance(
                 base_stats,
                 derived_stats,
                 VitalStats::full(max_health, max_mana),
+                crate::player::progression::Experience::at_level(level),
             ));
 
             // Deterministic per-NPC jitter so that NPCs don't all decrement

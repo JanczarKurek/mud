@@ -1,6 +1,7 @@
 extends: npc
 name: Goblin
 description: A wiry green nuisance with a mean stare and quick hands.
+level: 2
 loot:
   corpse_despawn_seconds: 60
   drops:

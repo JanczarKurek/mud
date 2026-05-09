@@ -4,7 +4,9 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::game::commands::GameCommand;
-use crate::player::components::{ChatLog, Inventory, InventoryStack, PlayerId};
+use crate::player::classes::Class;
+use crate::player::components::{AttributeSet, ChatLog, Inventory, InventoryStack, PlayerId};
+use crate::player::progression::ExperienceView;
 use crate::world::components::{SpaceId, SpacePosition, TilePosition};
 use crate::world::direction::Direction;
 use crate::world::floor_definitions::FloorTypeId;
@@ -41,6 +43,26 @@ pub enum GameUiEvent {
     DialogClose {
         session_id: u64,
     },
+    /// The local player just leveled up — show a transient overlay toast.
+    LevelUpToast {
+        new_level: u32,
+    },
+    /// Post-death recap dialog: lists what dropped on the corpse and how
+    /// much XP was zeroed by the death penalty.
+    DeathSummary {
+        items_dropped: Vec<InventoryStackSummary>,
+        xp_lost: u64,
+    },
+}
+
+/// Tiny self-contained snapshot of a dropped stack for the DeathSummary
+/// recap. Distinct from `InventoryStack` so the summary can survive
+/// definition lookups going stale and serialize cheaply.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct InventoryStackSummary {
+    pub type_id: String,
+    pub display_name: String,
+    pub quantity: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -244,6 +266,44 @@ pub enum GameEvent {
     WorldTimeChanged {
         time_of_day: f32,
     },
+    /// Baseline / corrective replication of the local player's
+    /// `Experience`. Emitted on first projection and whenever the projected
+    /// view diverges from the peer's last-seen baseline (e.g. after death's
+    /// XP-zero rule fires). `ExperienceGained` / `LevelUp` /
+    /// `ExperienceLost` carry the deltas; this variant carries truth.
+    PlayerExperienceChanged {
+        experience: ExperienceView,
+    },
+    /// Delta event: amount of XP added by the most recent grant. Useful for
+    /// chat-log and floating-text feedback.
+    ExperienceGained {
+        amount: u64,
+    },
+    /// Delta event: the local player crossed into `new_level`.
+    LevelUp {
+        new_level: u32,
+    },
+    /// Delta event: amount of XP removed by the death penalty.
+    ExperienceLost {
+        amount: u64,
+    },
+    /// Replicated when the local player's selected class changes (or is first
+    /// projected). Driven by the `ChooseClass` command + bootstrap diff.
+    PlayerClassChanged {
+        class: Class,
+    },
+    /// Replicated when the player's `class_chosen` flag flips (typically once,
+    /// the first time they pick from the class picker). Drives the UI to hide
+    /// the picker overlay.
+    PlayerClassChosenChanged {
+        chosen: bool,
+    },
+    /// Replicates the *effective* attribute set (base + equipment bonuses)
+    /// for the local player. Drives the Character sheet's attributes grid;
+    /// fired when `DerivedStats.attributes` changes between projection ticks.
+    PlayerAttributesChanged {
+        attributes: AttributeSet,
+    },
 }
 
 #[derive(Resource, Default)]
@@ -339,4 +399,23 @@ pub struct ClientGameState {
     /// first frame the player exists.
     #[serde(default)]
     pub carry_weight: Option<ClientCarryWeight>,
+    /// Replicated XP / level snapshot for the local player. `None` until the
+    /// first `PlayerExperienceChanged` event lands.
+    #[serde(default)]
+    pub experience: Option<ExperienceView>,
+    /// Replicated class for the local player. `None` until the first
+    /// `PlayerClassChanged` event lands.
+    #[serde(default)]
+    pub class: Option<Class>,
+    /// Replicated `class_chosen` flag for the local player. UI picker shows
+    /// when `class_chosen == false` (and `local_player_id` is `Some`). On
+    /// bootstrap defaults to `false` so the very first frame doesn't flash
+    /// the picker for already-chosen characters — the projection
+    /// immediately corrects it.
+    #[serde(default)]
+    pub class_chosen: bool,
+    /// Replicated effective attribute set (base + equipment) for the local
+    /// player. `None` until the first `PlayerAttributesChanged` event lands.
+    #[serde(default)]
+    pub attributes: Option<AttributeSet>,
 }

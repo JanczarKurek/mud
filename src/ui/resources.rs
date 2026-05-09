@@ -532,3 +532,11 @@ pub struct OpenMenuState {
 pub struct PendingMenuActions {
     pub actions: Vec<MenuAction>,
 }
+
+/// Whether the Character sheet modal is currently open. Toggled by the HUD
+/// player-sprite button; consumed by `manage_character_sheet_overlay` to
+/// spawn/despawn the modal.
+#[derive(Resource, Default)]
+pub struct CharacterSheetState {
+    pub open: bool,
+}

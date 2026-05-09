@@ -6,6 +6,8 @@ use crate::player::components::{
     BaseStats, ChatLog, DerivedStats, EquippedItem, Inventory, InventoryStack, MovementCooldown,
     Player, PlayerId, PlayerIdentity, RegenBuffs, RegenTickers, VitalStats, WeaponDamage,
 };
+use crate::player::classes::{Class, ClassChosen};
+use crate::player::progression::Experience;
 use crate::world::components::{
     Collider, DisplayedVitalStats, Facing, HealthBarDisplayPolicy, OverworldObject, SpaceId,
     SpaceResident, TilePosition, ViewPosition,
@@ -120,8 +122,9 @@ pub fn spawn_player_from_dump(
     let mut inventory = dump.inventory;
     inventory.ensure_slots();
     let object_id = object_registry.allocate_runtime_id("player");
+    let class_chosen = dump.class_chosen;
 
-    commands
+    let entity = commands
         .spawn((
             Player,
             PlayerIdentity {
@@ -153,9 +156,15 @@ pub fn spawn_player_from_dump(
                     tile: dump.tile_position,
                 },
                 Facing(dump.facing),
+                dump.experience,
+                dump.class,
             ),
         ))
-        .id()
+        .id();
+    if class_chosen {
+        commands.entity(entity).insert(ClassChosen);
+    }
+    entity
 }
 
 pub fn spawn_player_authoritative_in_space(
@@ -204,6 +213,8 @@ pub fn spawn_player_authoritative_in_space(
                     tile: tile_position,
                 },
                 Facing::default(),
+                Experience::default(),
+                Class::default(),
             ),
         ))
         .id()

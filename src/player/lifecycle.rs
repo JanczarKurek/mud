@@ -9,11 +9,15 @@ use bevy::prelude::*;
 
 use crate::accounts::AccountDbHandle;
 use crate::game::commands::GameCommand;
-use crate::game::resources::PendingGameCommands;
+use crate::game::resources::{
+    GameEvent, GameUiEvent, InventoryStackSummary, PendingGameCommands, PendingGameEvents,
+    PendingGameUiEvents,
+};
 use crate::player::components::{
     ChatLog, DerivedStats, Inventory, InventoryStack, MovementCooldown, Player, PlayerIdentity,
     RegenBuffs, RegenTickers, VitalStats,
 };
+use crate::player::progression::{xp_for_level, Experience};
 use crate::world::components::{Facing, SpaceId, SpaceResident, TilePosition, ViewPosition};
 use crate::world::loot::spawn_corpse_for_player;
 use crate::world::object_definitions::{EquipmentSlot, OverworldObjectDefinitions};
@@ -52,9 +56,14 @@ type DeathHandlerPlayerQuery<'w, 's> = Query<
         &'static mut ChatLog,
         Option<&'static mut ViewPosition>,
         Option<&'static mut Facing>,
+        Option<&'static mut Experience>,
     ),
     With<Player>,
 >;
+
+/// Default per-equipment-slot drop chance applied on death (`progression.md`
+/// §8 rule 3). `[tunable]`.
+pub const SLOT_DROP_CHANCE_PERCENT: u32 = 10;
 
 /// Drain `PendingPlayerDeaths` and resolve each one: spawn a corpse with the
 /// player's gear, reset HP/MP, clear active buffs, and teleport the player to
@@ -67,6 +76,8 @@ pub fn handle_player_deaths(
     space_manager: Res<SpaceManager>,
     world_config: Res<WorldConfig>,
     mut player_query: DeathHandlerPlayerQuery,
+    mut pending_events: ResMut<PendingGameEvents>,
+    mut pending_ui_events: ResMut<PendingGameUiEvents>,
 ) {
     let deaths = std::mem::take(&mut pending.deaths);
 
@@ -84,12 +95,15 @@ pub fn handle_player_deaths(
             mut chat_log,
             view_position,
             facing,
+            experience,
         )) = player_query.get_mut(death.entity)
         else {
             continue;
         };
 
-        let dropped = drain_inventory(&mut inventory);
+        let dropped =
+            drain_inventory_with_drop_chance(&mut inventory, SLOT_DROP_CHANCE_PERCENT);
+        let items_summary = summarize_dropped(&dropped, &definitions);
         spawn_corpse_for_player(
             &mut commands,
             &definitions,
@@ -97,6 +111,30 @@ pub fn handle_player_deaths(
             death.space_id,
             death.tile_position,
             dropped,
+        );
+
+        // XP-zero rule: lose all progress *into* the current level, but never
+        // de-level. progression.md §8 rule 1.
+        let xp_lost = if let Some(mut experience) = experience {
+            let baseline = xp_for_level(experience.level);
+            let lost = experience.current_xp.saturating_sub(baseline);
+            experience.current_xp = baseline;
+            if lost > 0 {
+                pending_events
+                    .events
+                    .push(GameEvent::ExperienceLost { amount: lost });
+            }
+            lost
+        } else {
+            0
+        };
+
+        pending_ui_events.push(
+            identity.id,
+            GameUiEvent::DeathSummary {
+                items_dropped: items_summary,
+                xp_lost,
+            },
         );
 
         vitals.health = vitals.max_health.max(1.0);
@@ -153,31 +191,89 @@ pub fn handle_player_deaths(
     }
 }
 
-/// Pull every stack out of the inventory (backpack + equipped) and return
-/// them as a flat `Vec<InventoryStack>`. Mutates `inventory` to empty.
-fn drain_inventory(inventory: &mut Inventory) -> Vec<InventoryStack> {
+/// Death drain (`progression.md` §8): backpack always empties; each
+/// equipped slot rolls 1..=100 independently and drops on `<=
+/// slot_drop_chance_percent`. Returns the dropped stacks for corpse
+/// placement.
+fn drain_inventory_with_drop_chance(
+    inventory: &mut Inventory,
+    slot_drop_chance_percent: u32,
+) -> Vec<InventoryStack> {
     let mut dropped = Vec::new();
 
+    // Rule 2 — backpack always drops.
     for slot in inventory.backpack_slots.iter_mut() {
         if let Some(stack) = slot.take() {
             dropped.push(stack);
         }
     }
 
+    // Rule 3 — equipment slots roll independently.
     let ammo_qty = inventory.ammo_quantity;
-    for (slot_kind, slot_item) in inventory.equipment_slots.iter_mut() {
-        if let Some(item) = slot_item.take() {
-            let quantity = if matches!(slot_kind, EquipmentSlot::Ammo) {
-                ammo_qty.max(1)
-            } else {
-                1
-            };
-            dropped.push(InventoryStack::item(item.type_id, item.properties, quantity));
+    let mut ammo_dropped = false;
+    for (slot_index, (slot_kind, slot_item)) in inventory.equipment_slots.iter_mut().enumerate() {
+        let Some(item) = slot_item.as_ref() else {
+            continue;
+        };
+        let roll = roll_drop_d100(slot_index as u64, &item.type_id);
+        if roll > slot_drop_chance_percent {
+            continue;
         }
+        let item = slot_item.take().expect("checked above");
+        let quantity = if matches!(slot_kind, EquipmentSlot::Ammo) {
+            let q = ammo_qty.max(1);
+            ammo_dropped = true;
+            q
+        } else {
+            1
+        };
+        dropped.push(InventoryStack::item(item.type_id, item.properties, quantity));
     }
-    inventory.ammo_quantity = 0;
+    if ammo_dropped {
+        inventory.ammo_quantity = 0;
+    }
 
     dropped
+}
+
+/// Slot drop roll: 1..=100, mixed with slot index + item id so each slot
+/// rolls independently within the same nanosecond. Mirrors the time-based
+/// pattern used elsewhere in the codebase (`damage_expr::roll_die`).
+fn roll_drop_d100(salt: u64, item_id: &str) -> u32 {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos() as u64)
+        .unwrap_or(0);
+    let id_hash = item_id
+        .bytes()
+        .fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));
+    let mixed = nanos
+        .wrapping_add(salt.wrapping_mul(0x9E37_79B9_7F4A_7C15))
+        .wrapping_add(id_hash);
+    ((mixed % 100) + 1) as u32
+}
+
+/// Build a HUD-friendly summary of the dropped stacks. Looks up the display
+/// name from object definitions; falls back to `type_id` if the definition
+/// is missing.
+fn summarize_dropped(
+    dropped: &[InventoryStack],
+    definitions: &OverworldObjectDefinitions,
+) -> Vec<InventoryStackSummary> {
+    dropped
+        .iter()
+        .map(|stack| {
+            let display_name = definitions
+                .get(&stack.type_id)
+                .map(|def| def.name.clone())
+                .unwrap_or_else(|| stack.type_id.clone());
+            InventoryStackSummary {
+                type_id: stack.type_id.clone(),
+                display_name,
+                quantity: stack.quantity.max(1),
+            }
+        })
+        .collect()
 }
 
 /// Drain `GameCommand::SetHome` from the pending command queue, writing the

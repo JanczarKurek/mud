@@ -1,6 +1,7 @@
 extends: npc
 name: Archer Goblin
 description: A wiry goblin wielding a crude shortbow. Keep your distance — that's exactly what it wants.
+level: 2
 loot:
   corpse_despawn_seconds: 60
   drops:

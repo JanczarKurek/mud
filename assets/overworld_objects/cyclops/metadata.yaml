@@ -1,6 +1,7 @@
 extends: npc
 name: Cyclops
 description: A hulking one-eyed giant with a massive club and a short temper.
+level: 8
 stats:
   strength: 18
   agility: 5

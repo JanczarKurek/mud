@@ -1,6 +1,7 @@
 extends: npc
 name: Giant Rat
 description: A mangy, oversized rodent with beady red eyes and a vicious bite.
+level: 1
 stats:
   strength: 5
   agility: 13

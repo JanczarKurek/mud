@@ -32,6 +32,8 @@ use crate::player::components::{
     CurrentCarryWeight, DerivedStats, Encumbered, MaxCarryWeight, Player, PlayerId, PlayerIdentity,
     RegenBuffs, VitalStats,
 };
+use crate::player::classes::{Class, ClassChosen};
+use crate::player::progression::{Experience, ExperienceView};
 use crate::world::components::{
     Container, Facing, Movable, ObjectState, OverworldObject, Quantity, Rotatable, SpaceId,
     SpacePosition, SpaceResident, TilePosition,
@@ -55,9 +57,13 @@ pub type ProjectionPlayerQuery<'w, 's> = Query<
         &'static OverworldObject,
         Option<&'static Facing>,
         Option<&'static RegenBuffs>,
-        Option<&'static MaxCarryWeight>,
-        Option<&'static CurrentCarryWeight>,
-        Has<Encumbered>,
+        (
+            Option<&'static MaxCarryWeight>,
+            Option<&'static CurrentCarryWeight>,
+            Has<Encumbered>,
+        ),
+        Option<&'static Experience>,
+        (Option<&'static Class>, Has<ClassChosen>),
     ),
     With<Player>,
 >;
@@ -141,9 +147,9 @@ pub fn compute_events_for_peer(
         player_object,
         facing,
         regen_buffs,
-        max_carry,
-        current_carry,
-        is_encumbered,
+        (max_carry, current_carry, is_encumbered),
+        experience,
+        (class, class_chosen),
     ) in player_query.iter()
     {
         let projected_facing = facing.copied().unwrap_or_default().0;
@@ -260,6 +266,33 @@ pub fn compute_events_for_peer(
             if previous.current_target_object_id != current_target_object_id {
                 events.push(GameEvent::CombatTargetChanged {
                     target_object_id: current_target_object_id,
+                });
+            }
+
+            let projected_experience: Option<ExperienceView> = experience.map(ExperienceView::from);
+            if previous.experience != projected_experience {
+                if let Some(view) = projected_experience {
+                    events.push(GameEvent::PlayerExperienceChanged { experience: view });
+                }
+            }
+
+            let projected_class = class.copied();
+            if previous.class != projected_class {
+                if let Some(c) = projected_class {
+                    events.push(GameEvent::PlayerClassChanged { class: c });
+                }
+            }
+
+            if previous.class_chosen != class_chosen {
+                events.push(GameEvent::PlayerClassChosenChanged {
+                    chosen: class_chosen,
+                });
+            }
+
+            let projected_attributes = derived_stats.attributes;
+            if previous.attributes != Some(projected_attributes) {
+                events.push(GameEvent::PlayerAttributesChanged {
+                    attributes: projected_attributes,
                 });
             }
         } else {
@@ -596,6 +629,50 @@ pub fn apply_event_to_state(state: &mut ClientGameState, event: GameEvent) {
         GameEvent::WorldTimeChanged { time_of_day } => {
             state.world_time = time_of_day;
         }
+        GameEvent::PlayerExperienceChanged { experience } => {
+            state.experience = Some(experience);
+        }
+        GameEvent::ExperienceGained { amount } => {
+            if let Some(view) = state.experience.as_mut() {
+                view.current_xp = view.current_xp.saturating_add(amount);
+                view.xp_into_level = view
+                    .current_xp
+                    .saturating_sub(crate::player::progression::xp_for_level(view.level));
+            }
+        }
+        GameEvent::LevelUp { new_level } => {
+            if let Some(view) = state.experience.as_mut() {
+                view.level = new_level;
+                view.xp_into_level = view
+                    .current_xp
+                    .saturating_sub(crate::player::progression::xp_for_level(new_level));
+                view.xp_for_next = if new_level >= crate::player::progression::LEVEL_CAP {
+                    None
+                } else {
+                    Some(
+                        crate::player::progression::xp_for_level(new_level + 1)
+                            - crate::player::progression::xp_for_level(new_level),
+                    )
+                };
+            }
+        }
+        GameEvent::ExperienceLost { amount } => {
+            if let Some(view) = state.experience.as_mut() {
+                view.current_xp = view.current_xp.saturating_sub(amount);
+                view.xp_into_level = view
+                    .current_xp
+                    .saturating_sub(crate::player::progression::xp_for_level(view.level));
+            }
+        }
+        GameEvent::PlayerClassChanged { class } => {
+            state.class = Some(class);
+        }
+        GameEvent::PlayerClassChosenChanged { chosen } => {
+            state.class_chosen = chosen;
+        }
+        GameEvent::PlayerAttributesChanged { attributes } => {
+            state.attributes = Some(attributes);
+        }
     }
 }
 
@@ -723,5 +800,29 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
             "client world time updated: {:.4} -> {:.4}",
             client_state.world_time, time_of_day
         ),
+        GameEvent::PlayerExperienceChanged { experience } => info!(
+            "client player experience updated: lvl {} xp {}",
+            experience.level, experience.current_xp
+        ),
+        GameEvent::ExperienceGained { amount } => info!("client gained {} xp", amount),
+        GameEvent::LevelUp { new_level } => info!("client level up: {}", new_level),
+        GameEvent::ExperienceLost { amount } => info!("client lost {} xp", amount),
+        GameEvent::PlayerClassChanged { class } => {
+            info!("client player class set: {:?}", class)
+        }
+        GameEvent::PlayerClassChosenChanged { chosen } => {
+            info!("client player class_chosen: {}", chosen)
+        }
+        GameEvent::PlayerAttributesChanged { attributes } => {
+            debug!(
+                "client attributes: STR {} AGI {} CON {} WIL {} CHA {} FOC {}",
+                attributes.strength,
+                attributes.agility,
+                attributes.constitution,
+                attributes.willpower,
+                attributes.charisma,
+                attributes.focus
+            )
+        }
     }
 }
