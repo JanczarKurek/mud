@@ -1,0 +1,10 @@
+extends: pouch
+name: Small Pouch
+weight: 0.5
+container_capacity: 4
+description: A small leather pouch with a drawstring. Holds a few small things.
+render:
+  z_index: 0.24
+  debug_color: [128, 90, 56]
+  debug_size: 0.45
+  sprite_path: overworld_objects/small_pouch/sprite.png

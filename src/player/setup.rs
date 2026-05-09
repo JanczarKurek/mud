@@ -29,11 +29,11 @@ pub fn seed_starter_inventory(inventory: &mut Inventory) {
         .iter_mut()
         .find(|slot| slot.is_none())
     {
-        *slot = Some(InventoryStack {
-            type_id: "apple".to_owned(),
-            properties: ObjectProperties::new(),
-            quantity: 3,
-        });
+        *slot = Some(InventoryStack::item(
+            "apple".to_owned(),
+            ObjectProperties::new(),
+            3,
+        ));
     }
 }
 

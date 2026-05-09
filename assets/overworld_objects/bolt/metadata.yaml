@@ -1,5 +1,6 @@
 extends: consumable
 name: Bolt
+weight: 0.05
 description: A short, heavy crossbow bolt. Fits the ammo slot.
 equipment_slot: ammo
 render:

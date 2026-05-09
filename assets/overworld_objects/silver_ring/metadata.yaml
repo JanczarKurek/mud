@@ -1,5 +1,6 @@
 extends: equipment
 name: Silver Ring
+weight: 0.05
 description: A plain silver band that catches the light.
 equipment_slot: ring
 stats:

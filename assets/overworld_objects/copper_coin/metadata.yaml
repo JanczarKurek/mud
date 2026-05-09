@@ -1,0 +1,33 @@
+extends: consumable
+name: Copper Coin
+weight: 0.005
+max_stack_size: 100
+description:
+  - text: A small copper coin, stamped with the village seal.
+    stack_size: [1, 1]
+  - text: "{count_written} copper coins, jingling together."
+    stack_size: [2, 9]
+  - text: "A small handful of copper coins ({count})."
+    stack_size: [10, 19]
+  - text: "A pile of copper coins ({count})."
+    stack_size: [20, 49]
+  - text: "A heavy mound of copper coins ({count})."
+    stack_size: [50, ~]
+render:
+  z_index: 0.24
+  debug_color: [184, 115, 51]
+  debug_size: 0.40
+  sprite_path: overworld_objects/copper_coin/1.png
+stack_sprites:
+  - { min_count: 1,  sprite_path: overworld_objects/copper_coin/1.png }
+  - { min_count: 2,  sprite_path: overworld_objects/copper_coin/2.png }
+  - { min_count: 3,  sprite_path: overworld_objects/copper_coin/3.png }
+  - { min_count: 4,  sprite_path: overworld_objects/copper_coin/4.png }
+  - { min_count: 5,  sprite_path: overworld_objects/copper_coin/5.png }
+  - { min_count: 6,  sprite_path: overworld_objects/copper_coin/6.png }
+  - { min_count: 7,  sprite_path: overworld_objects/copper_coin/7.png }
+  - { min_count: 8,  sprite_path: overworld_objects/copper_coin/8.png }
+  - { min_count: 9,  sprite_path: overworld_objects/copper_coin/9.png }
+  - { min_count: 10, sprite_path: overworld_objects/copper_coin/10.png }
+  - { min_count: 20, sprite_path: overworld_objects/copper_coin/20.png }
+  - { min_count: 50, sprite_path: overworld_objects/copper_coin/50.png }

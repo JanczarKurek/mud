@@ -23,12 +23,14 @@ use bevy::prelude::*;
 use crate::combat::components::CombatTarget;
 use crate::dialog::components::DialogNode;
 use crate::game::resources::{
-    ChatLogState, ClientGameState, ClientRemotePlayerState, ClientSpaceState, ClientVitalStats,
-    ClientWorldObjectState, GameEvent, InventoryState, PendingGameEvents, RegenBuffState,
+    ChatLogState, ClientCarryWeight, ClientGameState, ClientRemotePlayerState, ClientSpaceState,
+    ClientVitalStats, ClientWorldObjectState, GameEvent, InventoryState, PendingGameEvents,
+    RegenBuffState,
 };
 use crate::npc::components::Npc;
 use crate::player::components::{
-    DerivedStats, Player, PlayerId, PlayerIdentity, RegenBuffs, VitalStats,
+    CurrentCarryWeight, DerivedStats, Encumbered, MaxCarryWeight, Player, PlayerId, PlayerIdentity,
+    RegenBuffs, VitalStats,
 };
 use crate::world::components::{
     Container, Facing, Movable, ObjectState, OverworldObject, Quantity, Rotatable, SpaceId,
@@ -53,6 +55,9 @@ pub type ProjectionPlayerQuery<'w, 's> = Query<
         &'static OverworldObject,
         Option<&'static Facing>,
         Option<&'static RegenBuffs>,
+        Option<&'static MaxCarryWeight>,
+        Option<&'static CurrentCarryWeight>,
+        Has<Encumbered>,
     ),
     With<Player>,
 >;
@@ -136,6 +141,9 @@ pub fn compute_events_for_peer(
         player_object,
         facing,
         regen_buffs,
+        max_carry,
+        current_carry,
+        is_encumbered,
     ) in player_query.iter()
     {
         let projected_facing = facing.copied().unwrap_or_default().0;
@@ -192,6 +200,30 @@ pub fn compute_events_for_peer(
             if previous.player_storage_slots != derived_stats.storage_slots {
                 events.push(GameEvent::PlayerStorageChanged {
                     storage_slots: derived_stats.storage_slots,
+                });
+            }
+
+            // Carry weight: build a snapshot from the optional components.
+            // Falls back to a default if either is missing (first frame
+            // before refresh_derived_player_stats has run).
+            let projected_carry = ClientCarryWeight {
+                current_kg: current_carry.copied().unwrap_or_default().0,
+                soft_cap_kg: max_carry.copied().unwrap_or_default().soft_cap,
+                hard_cap_kg: max_carry.copied().unwrap_or_default().hard_cap,
+                encumbered: is_encumbered,
+            };
+            let carry_changed = match previous.carry_weight {
+                None => true,
+                Some(prev) => {
+                    (prev.current_kg - projected_carry.current_kg).abs() > 0.05
+                        || (prev.soft_cap_kg - projected_carry.soft_cap_kg).abs() > 0.05
+                        || (prev.hard_cap_kg - projected_carry.hard_cap_kg).abs() > 0.05
+                        || prev.encumbered != projected_carry.encumbered
+                }
+            };
+            if carry_changed {
+                events.push(GameEvent::PlayerCarryWeightChanged {
+                    carry: projected_carry,
                 });
             }
 
@@ -512,6 +544,9 @@ pub fn apply_event_to_state(state: &mut ClientGameState, event: GameEvent) {
         GameEvent::PlayerStorageChanged { storage_slots } => {
             state.player_storage_slots = storage_slots;
         }
+        GameEvent::PlayerCarryWeightChanged { carry } => {
+            state.carry_weight = Some(carry);
+        }
         GameEvent::CombatTargetChanged { target_object_id } => {
             state.current_target_object_id = target_object_id;
         }
@@ -633,6 +668,10 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
         GameEvent::PlayerStorageChanged { storage_slots } => info!(
             "client player storage updated: {} -> {}",
             client_state.player_storage_slots, storage_slots
+        ),
+        GameEvent::PlayerCarryWeightChanged { carry } => debug!(
+            "client carry weight: {:.1}/{:.1} kg, encumbered={}",
+            carry.current_kg, carry.soft_cap_kg, carry.encumbered
         ),
         GameEvent::CombatTargetChanged { target_object_id } => info!(
             "client combat target updated: {:?} -> {:?}",

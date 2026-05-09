@@ -1,5 +1,6 @@
 extends: equipment
 name: Wooden Shield
+weight: 3.0
 description: A rough round shield reinforced with a metal boss.
 equipment_slot: shield
 render:

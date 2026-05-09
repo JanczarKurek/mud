@@ -172,11 +172,7 @@ fn drain_inventory(inventory: &mut Inventory) -> Vec<InventoryStack> {
             } else {
                 1
             };
-            dropped.push(InventoryStack {
-                type_id: item.type_id,
-                properties: item.properties,
-                quantity,
-            });
+            dropped.push(InventoryStack::item(item.type_id, item.properties, quantity));
         }
     }
     inventory.ammo_quantity = 0;

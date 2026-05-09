@@ -1,5 +1,6 @@
 extends: equipment
 name: Leather Helmet
+weight: 1.0
 description: A stitched leather cap with a reinforced brow.
 equipment_slot: helmet
 render:

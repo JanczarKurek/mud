@@ -41,6 +41,18 @@ pub struct OverworldObjectDefinition {
     pub spell_id: Option<String>,
     #[serde(default)]
     pub container_capacity: Option<usize>,
+    /// When this object is itself a container, can it hold other items that are
+    /// themselves storable containers? Pouches set this to `false` to keep
+    /// nesting depth at 2 (pouch can sit in a backpack/chest, but a pouch
+    /// cannot contain another pouch). Default `true` so backpacks/chests
+    /// accept everything as before.
+    #[serde(default = "default_accepts_storable_containers")]
+    pub accepts_storable_containers: bool,
+    /// Carry weight in kilograms (per single instance, multiplied by stack
+    /// `quantity` for stacked items). `0.0` = weightless; this is the default
+    /// for objects that pre-date the weight system.
+    #[serde(default)]
+    pub weight: f32,
     pub render: RenderMetadata,
     #[serde(default)]
     pub sound_paths: Vec<String>,
@@ -304,6 +316,10 @@ pub struct StackSpriteTier {
 
 fn default_max_stack_size() -> u32 {
     1
+}
+
+fn default_accepts_storable_containers() -> bool {
+    true
 }
 
 /// A description field that accepts either a plain string or a list of conditional entries.

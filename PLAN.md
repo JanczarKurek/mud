@@ -78,11 +78,30 @@ are done. Still open:
 
 ### 4.2 Phase 6 — RPG Systems Expansion
 
-The combat/magic/equipment systems exist but are flat. See
-`FEATURE_BACKLOG.md` §1 (Progression, Combat depth, Magic expansion) for the
-candidate list. The big-ticket items — XP/levels, skill levels, vocations,
-death penalty, status effects, armor, ranged-vs-melee balance — depend on
-`src/combat/systems.rs` and a stable progression model.
+The combat/magic/equipment systems exist but are flat. The progression
+model is now designed (D&D 3.5e-flavored: classes Fighter/Wizard/Cleric/
+Vagabond, XP+levels, skill points, mana scaling, partial drop on death):
+see **`docs/progression.md`** for stats, classes, leveling math, skills,
+combat math, and the death penalty.
+
+Implementation lands in phases A–E (detail in `docs/progression.md` §9):
+
+1. **Phase A — XP + Level**: `Experience` component, level-up detection,
+   XP grant on kill, persistence schema bump. Smallest standalone
+   increment.
+2. **Phase B — Classes**: per-class HD/BAB/saves/mana tables; class
+   selection at character creation.
+3. **Phase C — Skills**: 10-skill `SkillSheet`, point spending, skill
+   check helper.
+4. **Phase D — Death penalty**: backpack always drops, equipment rolls
+   per-slot, XP zeroes back to current level.
+5. **Phase E — Magic gating**: `class_access` + `min_caster_level` on
+   spell YAML; mana scales with level.
+
+The combat-depth items (armor reduction, status effects, elemental
+damage, crit/dodge) are tracked separately in `FEATURE_BACKLOG.md` §1
+"Combat depth"; they share the §7 combat-math rewrite from
+`docs/progression.md` and naturally batch together once Phase A–E land.
 
 ### 4.3 Phase 7 — Content Pipeline & Tooling
 
@@ -144,3 +163,5 @@ Companion docs:
 - `common_issues.md` — past bug root causes, useful before debugging similar symptoms.
 - `docs/yaml_formats.md` — YAML schema reference for assets.
 - `docs/stacked_floors_plan.md` — paused multi-z-level work.
+- `docs/progression.md` — D&D 3.5e-flavored progression design (Phase 6 source of truth).
+- `docs/content_bible.md` — generic content tables (weapons, armor, enemies, spells, consumables, loot, quest hooks) sized against `progression.md`. Design fuel for Phase 6 and the Living-world batch.

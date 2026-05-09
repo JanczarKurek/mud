@@ -32,6 +32,13 @@ pub enum ItemSlotRef {
     Backpack(usize),
     Equipment(EquipmentSlot),
     Container { object_id: u64, slot_index: usize },
+    /// A sub-slot inside a pouch that lives in the player's backpack at
+    /// `backpack_slot`. Pouches carry their contents as
+    /// `InventoryStack::contained_slots` so this ref does not need a runtime
+    /// `object_id`. The recursion guard ensures the parent pouch's
+    /// definition has `accepts_storable_containers: false`, so we never
+    /// have to address a pouch-inside-a-pouch.
+    PouchInBackpack { backpack_slot: usize, sub_slot: usize },
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]

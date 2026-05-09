@@ -39,7 +39,8 @@ use crate::ui::systems::{
     sync_context_menu_use_button, sync_context_menu_use_on_button, sync_current_combat_target,
     sync_docked_panel_layout, sync_docked_panel_titles, sync_drag_preview,
     sync_equipment_slot_images, sync_item_slot_button_visibility, sync_native_custom_cursor,
-    sync_regen_buff_label, sync_take_partial_label, sync_vital_bars, toggle_cursor_mode,
+    sync_carry_weight_label, sync_regen_buff_label, sync_take_partial_label, sync_vital_bars,
+    toggle_cursor_mode,
     update_take_partial_popup_visibility,
 };
 use crate::ui::theme::UiThemePlugin;
@@ -76,6 +77,7 @@ impl Plugin for UiPlugin {
                     manage_open_containers,
                     sync_vital_bars,
                     sync_regen_buff_label,
+                    sync_carry_weight_label,
                     sync_chat_log,
                     sync_context_menu_root,
                     sync_context_menu_attack_button,

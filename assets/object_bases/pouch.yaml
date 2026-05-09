@@ -1,0 +1,3 @@
+extends: pickup
+container_capacity: 4
+accepts_storable_containers: false

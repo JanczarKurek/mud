@@ -1,5 +1,6 @@
 extends: equipment
 name: Bronze Sword
+weight: 2.0
 description: A simple bronze sword with a broad beginner blade.
 equipment_slot: weapon
 render:

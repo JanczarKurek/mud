@@ -1,5 +1,6 @@
 extends: equipment
 name: Traveler Boots
+weight: 1.0
 description: Worn boots made for roads, mud, and shallow marshes.
 equipment_slot: boots
 render:

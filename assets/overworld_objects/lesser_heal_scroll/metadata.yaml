@@ -1,5 +1,6 @@
 extends: pickup
 name: Lesser Heal Scroll
+weight: 0.1
 description: A scroll inscribed with a simple healing charm.
 spell_id: lesser_heal
 render:

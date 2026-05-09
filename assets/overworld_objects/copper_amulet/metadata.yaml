@@ -1,5 +1,6 @@
 extends: equipment
 name: Copper Amulet
+weight: 0.1
 description: A cheap amulet hanging from a braided cord.
 equipment_slot: amulet
 stats:

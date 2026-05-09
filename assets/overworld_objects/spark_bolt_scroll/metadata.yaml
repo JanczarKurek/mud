@@ -1,5 +1,6 @@
 extends: pickup
 name: Spark Bolt Scroll
+weight: 0.1
 description: A charged scroll that crackles with bottled force.
 spell_id: spark_bolt
 render:

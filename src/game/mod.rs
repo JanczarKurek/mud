@@ -1,4 +1,5 @@
 pub mod commands;
+pub mod currency;
 pub mod helpers;
 pub mod projection;
 pub mod resources;

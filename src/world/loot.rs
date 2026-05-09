@@ -115,11 +115,7 @@ pub fn spawn_corpse_for_npc(
 
     let mut slots: Vec<Option<InventoryStack>> = vec![None; capacity];
     for (i, (type_id, qty)) in rolled_items.into_iter().enumerate().take(capacity) {
-        slots[i] = Some(InventoryStack {
-            type_id,
-            properties: ObjectProperties::new(),
-            quantity: qty,
-        });
+        slots[i] = Some(InventoryStack::item(type_id, ObjectProperties::new(), qty));
     }
 
     let corpse_id = registry.allocate_runtime_id(&loot_table.corpse_type_id);

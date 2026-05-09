@@ -708,6 +708,28 @@ The `text` value supports three count placeholders in addition to the normal `{p
 - Meaning: if present, the object becomes a container with that many slots
 - Example: `8` for a 2x4 container grid
 
+### `accepts_storable_containers`
+- Type: bool
+- Optional: yes
+- Default: `true`
+- Meaning: only meaningful on objects that have `container_capacity`. When
+  `false`, the engine refuses to place a *storable container item* (a pouch)
+  inside this container. Used by the `pouch` base to forbid pouch-in-pouch
+  nesting while keeping chests/backpacks fully permissive.
+
+### `weight`
+- Type: float (kilograms)
+- Optional: yes
+- Default: `0.0`
+- Meaning: per-instance carry weight. Stacked items count as
+  `weight × quantity`. Container items (pouches) count themselves *plus* the
+  recursive weight of their contents — picking up a pouch that holds 5
+  arrows costs `pouch.weight + 5 × arrow.weight`. Players have a soft
+  carry-cap (`MaxCarryWeight::soft_cap`, default `20 + STR × 2 kg`) and a
+  hard cap (`soft × 1.5`). Pickups above the hard cap are rejected with a
+  "Too heavy" chat message; above the soft cap the player is `Encumbered`
+  and walks at half speed.
+
 ### `render`
 - Type: mapping
 - Meaning: visual configuration for the object
@@ -1139,6 +1161,35 @@ storable: true
 render:
   z_index: 0.24
 ```
+
+### Pouch base
+
+`assets/object_bases/pouch.yaml` is a small, carryable container. It extends
+`pickup` (so it inherits `storable: true`, `movable: true`,
+`colliding: false`) and adds:
+
+```yaml
+extends: pickup
+container_capacity: 4
+accepts_storable_containers: false
+```
+
+A pouch is **the only kind of container that can itself sit in another
+container's slot**. Backpack and chest extend `static_world` (which sets
+`storable: false`) so they can never live inside a chest. The
+`accepts_storable_containers: false` flag on the pouch base then forbids
+pouches-in-pouches at placement time, capping nesting at depth 1.
+
+Pouches preserve their contents through pickup/drop. Internally, the
+container slots ride on the inventory stack as `contained_slots` while the
+pouch is in inventory and round-trip back onto a fresh world entity when
+the pouch is dropped.
+
+Specific pouches in `assets/overworld_objects/`:
+
+- `small_pouch` — 4 slots, `weight: 0.5`
+- `herb_pouch` — 6 slots, `weight: 0.6` (`container_capacity: 6` overrides
+  the base)
 
 ## 3. Spell Definition YAML
 

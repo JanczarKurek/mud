@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::combat::damage_expr::DamageExpr;
 use crate::world::map_layout::ObjectProperties;
-use crate::world::object_definitions::EquipmentSlot;
+use crate::world::object_definitions::{EquipmentSlot, OverworldObjectDefinitions};
 
 #[derive(Component, Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct WeaponDamage(pub DamageExpr);
@@ -44,12 +44,34 @@ impl PlayerIdentity {
 /// `object_id` — runtime ids are allocated only when the stack leaves the
 /// inventory and becomes a world entity, so saves stay portable across map
 /// edits.
+///
+/// `contained_slots` holds the contents of a *container item* (a pouch) while
+/// it lives in inventory. `None` for non-container items. The vector length
+/// matches the definition's `container_capacity`. Nested storable containers
+/// are forbidden at placement time (`accepts_storable_containers: false` on
+/// the pouch base), so contents are themselves never pouches — depth bounded.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct InventoryStack {
     pub type_id: String,
     #[serde(default)]
     pub properties: ObjectProperties,
     pub quantity: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contained_slots: Option<Vec<Option<InventoryStack>>>,
+}
+
+impl InventoryStack {
+    /// Construct a non-container stack with empty `contained_slots`. Use this
+    /// at every site that doesn't specifically intend to populate pouch
+    /// contents.
+    pub fn item(type_id: impl Into<String>, properties: ObjectProperties, quantity: u32) -> Self {
+        Self {
+            type_id: type_id.into(),
+            properties,
+            quantity,
+            contained_slots: None,
+        }
+    }
 }
 
 /// A single item occupying an equipment slot. Same shape as the descriptive
@@ -164,16 +186,41 @@ impl Inventory {
 
     pub fn ammo_stack(&self) -> Option<InventoryStack> {
         let item = self.equipment_item(EquipmentSlot::Ammo)?;
-        Some(InventoryStack {
-            type_id: item.type_id.clone(),
-            properties: item.properties.clone(),
-            quantity: self.ammo_quantity,
-        })
+        Some(InventoryStack::item(
+            item.type_id.clone(),
+            item.properties.clone(),
+            self.ammo_quantity,
+        ))
     }
 
     pub fn set_ammo(&mut self, item: EquippedItem, quantity: u32) {
         self.restore_equipment_item(EquipmentSlot::Ammo, item);
         self.ammo_quantity = quantity;
+    }
+
+    /// Total carried weight across backpack slots, equipment slots, ammo
+    /// counter, and any nested pouch contents. Items missing from
+    /// `definitions` are treated as weightless (e.g. legacy saves with
+    /// renamed types). The recursion bottoms out via the
+    /// `accepts_storable_containers: false` rule on pouches.
+    pub fn total_weight(&self, definitions: &OverworldObjectDefinitions) -> f32 {
+        let mut total = 0.0;
+        for stack in self.backpack_slots.iter().flatten() {
+            total += stack_weight(stack, definitions);
+        }
+        for (slot, equipped) in &self.equipment_slots {
+            let Some(item) = equipped else {
+                continue;
+            };
+            let per_item = definitions.get(&item.type_id).map_or(0.0, |d| d.weight);
+            let count = if *slot == EquipmentSlot::Ammo {
+                self.ammo_quantity.max(1) as f32
+            } else {
+                1.0
+            };
+            total += per_item * count;
+        }
+        total
     }
 
     /// Decrement the ammo stack by one. Reports whether the slot is now empty
@@ -190,6 +237,20 @@ impl Inventory {
         }
         AmmoConsumption::Decremented
     }
+}
+
+/// Weight (in kg) of a single inventory stack including nested pouch
+/// contents. The pouch itself counts at its own weight (per definition); the
+/// nested item weights are added on top.
+pub fn stack_weight(stack: &InventoryStack, definitions: &OverworldObjectDefinitions) -> f32 {
+    let per = definitions.get(&stack.type_id).map_or(0.0, |d| d.weight);
+    let mut total = per * stack.quantity as f32;
+    if let Some(inner) = &stack.contained_slots {
+        for inner_stack in inner.iter().flatten() {
+            total += stack_weight(inner_stack, definitions);
+        }
+    }
+    total
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -338,6 +399,39 @@ pub struct DerivedStats {
     pub max_mana: i32,
     pub storage_slots: usize,
 }
+
+/// Soft and hard carry-weight caps in kg, derived from `BaseStats`. The soft
+/// cap triggers the `Encumbered` slow-walk state; the hard cap is the
+/// authoritative reject threshold (pickup fails above this). Recomputed by
+/// `refresh_derived_player_stats` whenever stats change.
+#[derive(Component, Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct MaxCarryWeight {
+    pub soft_cap: f32,
+    pub hard_cap: f32,
+}
+
+impl MaxCarryWeight {
+    pub fn from_strength(strength: i32) -> Self {
+        // [tunable] mirrors progression.md §10. STR 10 → 40 kg soft / 60 kg hard.
+        let soft = (20.0 + strength.max(0) as f32 * 2.0).max(5.0);
+        let hard = soft * 1.5;
+        Self {
+            soft_cap: soft,
+            hard_cap: hard,
+        }
+    }
+}
+
+/// Cached total weight (kg) of the player's carried inventory + equipment.
+/// Server-authoritative; replicated to the client via
+/// `GameEvent::PlayerCarryWeightChanged`.
+#[derive(Component, Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct CurrentCarryWeight(pub f32);
+
+/// Marker: total carry weight currently exceeds `MaxCarryWeight::soft_cap`.
+/// Drives the slow-walk movement penalty and the HUD encumbrance icon.
+#[derive(Component, Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Encumbered;
 
 impl Default for DerivedStats {
     fn default() -> Self {

@@ -1,5 +1,6 @@
 extends: movable_obstacle
 name: Stone
+weight: 5.0
 description: A rough stone lying on the ground.
 render:
   z_index: 0.2

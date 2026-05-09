@@ -13,8 +13,8 @@ use crate::game::resources::{
 use crate::magic::resources::{SpellDefinition, SpellDefinitions};
 use crate::npc::components::Npc;
 use crate::player::components::{
-    DerivedStats, EquippedItem, InventoryStack, MovementCooldown, Player, PlayerIdentity,
-    VitalStats,
+    stack_weight, DerivedStats, Encumbered, EquippedItem, InventoryStack, MaxCarryWeight,
+    MovementCooldown, Player, PlayerIdentity, VitalStats,
 };
 use crate::world::components::{
     Collider, Container, Facing, Movable, OverworldObject, Quantity, Rotatable, SpaceResident,
@@ -45,6 +45,10 @@ pub struct CommandOutputs<'w, 's> {
     pub container_viewers: ResMut<'w, ContainerViewers>,
     pub player_regen_buffs:
         Query<'w, 's, &'static mut crate::player::components::RegenBuffs, With<Player>>,
+    pub player_carry: Query<'w, 's, &'static MaxCarryWeight, With<Player>>,
+    /// True iff the player entity carries the `Encumbered` marker. Doubles
+    /// the movement cooldown when set.
+    pub player_encumbered: Query<'w, 's, (), (With<Player>, With<Encumbered>)>,
 }
 
 /// Bundle of resources needed together when a command may cause space
@@ -245,6 +249,7 @@ pub fn process_game_commands(
                     continue;
                 };
                 let collider_positions = colliders_in_space(source_space_id, &player_queries.p0());
+                let encumbered = command_outputs.player_encumbered.get(player_entity).is_ok();
                 handle_move_player(
                     player_entity,
                     delta,
@@ -255,6 +260,7 @@ pub fn process_game_commands(
                     &definitions,
                     &mut space_authority.space_manager,
                     &mut space_authority.floor_maps,
+                    encumbered,
                     &mut commands,
                 );
             }
@@ -387,6 +393,7 @@ pub fn process_game_commands(
                     &mut object_registry,
                     &definitions,
                     &world_config,
+                    &command_outputs.player_carry,
                     &mut commands,
                 );
             }
@@ -414,6 +421,7 @@ pub fn process_game_commands(
                     &mut object_registry,
                     &definitions,
                     &world_config,
+                    &command_outputs.player_carry,
                     &mut commands,
                 );
             }
@@ -445,6 +453,7 @@ pub fn process_game_commands(
                     count,
                     &definitions,
                     &mut player_queries.p2(),
+                    &command_outputs.player_carry,
                 );
             }
             GameCommand::TakeItem { type_id, count } => {
@@ -531,6 +540,7 @@ fn handle_give_item(
         ),
         With<Player>,
     >,
+    max_carry_query: &Query<&MaxCarryWeight, With<Player>>,
 ) {
     if count == 0 {
         return;
@@ -539,6 +549,7 @@ fn handle_give_item(
         bevy::log::warn!("GiveItem: unknown type_id '{type_id}'");
         return;
     };
+    let max_carry = max_carry_query.get(player_entity).copied().unwrap_or_default();
     let Ok((_, _, mut inventory, mut chat_log, _, _, _, _, _)) =
         player_query.get_mut(player_entity)
     else {
@@ -546,7 +557,11 @@ fn handle_give_item(
     };
 
     let max_stack = definition.max_stack_size.max(1);
+    let per_unit_weight = definition.weight;
     let mut remaining = count;
+
+    let mut current_weight = inventory.total_weight(definitions);
+    let mut weight_capped = false;
 
     if max_stack > 1 {
         for slot in inventory.backpack_slots.iter_mut() {
@@ -561,8 +576,20 @@ fn handle_give_item(
             if available == 0 {
                 continue;
             }
-            let grant = remaining.min(available);
+            let mut grant = remaining.min(available);
+            if per_unit_weight > 0.0 {
+                let headroom = (max_carry.hard_cap - current_weight).max(0.0);
+                let max_by_weight = (headroom / per_unit_weight).floor() as u32;
+                if grant > max_by_weight {
+                    grant = max_by_weight;
+                    weight_capped = true;
+                }
+            }
+            if grant == 0 {
+                continue;
+            }
             stack.quantity += grant;
+            current_weight += per_unit_weight * grant as f32;
             remaining -= grant;
         }
     }
@@ -576,24 +603,41 @@ fn handle_give_item(
             chat_log.push_narrator(format!("You cannot carry any more {}.", definition.name));
             break;
         };
-        let grant = if max_stack > 1 {
+        let mut grant = if max_stack > 1 {
             remaining.min(max_stack)
         } else {
             1
         };
-        inventory.backpack_slots[empty_index] = Some(InventoryStack {
-            type_id: type_id.to_owned(),
-            properties: ObjectProperties::new(),
-            quantity: grant,
-        });
+        if per_unit_weight > 0.0 {
+            let headroom = (max_carry.hard_cap - current_weight).max(0.0);
+            let max_by_weight = (headroom / per_unit_weight).floor() as u32;
+            if grant > max_by_weight {
+                grant = max_by_weight;
+                weight_capped = true;
+            }
+        }
+        if grant == 0 {
+            break;
+        }
+        inventory.backpack_slots[empty_index] = Some(InventoryStack::item(
+            type_id.to_owned(),
+            ObjectProperties::new(),
+            grant,
+        ));
+        current_weight += per_unit_weight * grant as f32;
         remaining -= grant;
     }
 
-    chat_log.push_narrator(format!(
-        "You receive {} {}.",
-        count - remaining,
-        definition.name
-    ));
+    if weight_capped && remaining > 0 {
+        chat_log.push_narrator(format!(
+            "Too heavy — you cannot carry any more {}.",
+            definition.name
+        ));
+    }
+    let granted = count - remaining;
+    if granted > 0 {
+        chat_log.push_narrator(format!("You receive {} {}.", granted, definition.name));
+    }
 }
 
 fn handle_take_item(
@@ -667,6 +711,7 @@ fn handle_move_player(
     definitions: &OverworldObjectDefinitions,
     space_manager: &mut SpaceManager,
     floor_maps: &mut FloorMaps,
+    encumbered: bool,
     commands: &mut Commands,
 ) {
     let Ok((
@@ -709,7 +754,8 @@ fn handle_move_player(
     }
 
     *tile_position = target_position;
-    movement_cooldown.remaining_seconds = movement_cooldown.step_interval_seconds;
+    let cooldown_scale = if encumbered { 2.0 } else { 1.0 };
+    movement_cooldown.remaining_seconds = movement_cooldown.step_interval_seconds * cooldown_scale;
 
     if let Some(direction) = Direction::from_delta(delta.x, delta.y) {
         commands.entity(player_entity).insert(Facing(direction));
@@ -933,6 +979,18 @@ fn handle_inspect(
                     .equipment_item(slot)
                     .map(|item| (item.type_id.clone(), item.properties.clone(), 1u32, None)),
                 ItemSlotRef::Container { .. } => None, // resolved below with container_query
+                ItemSlotRef::PouchInBackpack {
+                    backpack_slot,
+                    sub_slot,
+                } => inventory_state
+                    .backpack_slots
+                    .get(backpack_slot)
+                    .and_then(|slot| slot.as_ref())
+                    .and_then(|parent| parent.contained_slots.as_ref())
+                    .and_then(|inner| inner.get(sub_slot))
+                    .cloned()
+                    .flatten()
+                    .map(|s| (s.type_id, s.properties, s.quantity, None)),
             },
         }
     };
@@ -1408,8 +1466,10 @@ fn handle_move_item(
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     world_config: &WorldConfig,
+    max_carry_query: &Query<&MaxCarryWeight, With<Player>>,
     commands: &mut Commands,
 ) {
+    let max_carry = max_carry_query.get(player_entity).copied().unwrap_or_default();
     let Ok((
         _,
         _,
@@ -1443,11 +1503,20 @@ fn handle_move_item(
                 .properties(object_id)
                 .cloned()
                 .unwrap_or_default();
-            let stack = InventoryStack {
-                type_id: definition_id,
-                properties,
-                quantity,
-            };
+            // Pouches: capture container contents so they round-trip through
+            // pickup → drop. The Container component lives on the world entity
+            // and would otherwise vanish at despawn. Skip storage for non-
+            // container types to keep `contained_slots: None` for normal items.
+            let mut stack = InventoryStack::item(definition_id, properties, quantity);
+            if let Ok(container) = container_query.get(entity) {
+                stack.contained_slots = Some(container.slots.clone());
+            }
+            if is_player_destination(slot_ref)
+                && would_overload_carry(&inventory_state, &stack, &max_carry, definitions)
+            {
+                chat_log_state.push_narrator("Too heavy — you can't lift that.");
+                return;
+            }
             if !place_stack_in_slot_ref(
                 &mut inventory_state,
                 container_query,
@@ -1506,7 +1575,26 @@ fn handle_move_item(
             ) else {
                 return;
             };
+            // Check carry weight only on cross-boundary (non-player → player)
+            // moves. Within-player rearranges are always allowed; the source
+            // weight has already been removed by the take above so the helper
+            // would mis-report otherwise.
+            let crosses_into_player =
+                !is_player_source_slot(slot_ref) && is_player_destination(destination_ref);
             let stack_for_restore = stack.clone();
+            if crosses_into_player
+                && would_overload_carry(&inventory_state, &stack, &max_carry, definitions)
+            {
+                chat_log_state.push_narrator("Too heavy — you can't lift that.");
+                restore_stack_to_slot_ref(
+                    &mut inventory_state,
+                    container_query,
+                    object_query,
+                    slot_ref,
+                    stack_for_restore,
+                );
+                return;
+            }
             if !place_stack_in_slot_ref(
                 &mut inventory_state,
                 container_query,
@@ -1594,7 +1682,7 @@ fn handle_move_item(
                     definitions,
                     new_id,
                     &type_id,
-                    None,
+                    stack.contained_slots.clone(),
                     space_resident.space_id,
                     world_drop_tile,
                     Some(stack_qty),
@@ -1638,8 +1726,10 @@ fn handle_take_from_stack(
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     world_config: &WorldConfig,
+    max_carry_query: &Query<&MaxCarryWeight, With<Player>>,
     commands: &mut Commands,
 ) {
+    let max_carry = max_carry_query.get(player_entity).copied().unwrap_or_default();
     let Ok((
         _,
         _,
@@ -1682,6 +1772,19 @@ fn handle_take_from_stack(
 
             match destination {
                 ItemDestination::Slot(dst_slot_ref) => {
+                    let crosses_into_player =
+                        !is_player_source_slot(src_slot_ref) && is_player_destination(dst_slot_ref);
+                    if crosses_into_player {
+                        let probe_stack = InventoryStack::item(
+                            src_type_id.clone(),
+                            src_properties.clone(),
+                            amount,
+                        );
+                        if would_overload_carry(&inventory_state, &probe_stack, &max_carry, definitions) {
+                            chat_log_state.push_narrator("Too heavy — you can't lift that.");
+                            return;
+                        }
+                    }
                     let dst_stack = stack_in_slot_ref(
                         &inventory_state,
                         container_query,
@@ -1690,11 +1793,11 @@ fn handle_take_from_stack(
                     );
                     match dst_stack {
                         None => {
-                            let new_stack = InventoryStack {
-                                type_id: src_type_id.clone(),
-                                properties: src_properties.clone(),
-                                quantity: amount,
-                            };
+                            let new_stack = InventoryStack::item(
+                                src_type_id.clone(),
+                                src_properties.clone(),
+                                amount,
+                            );
                             if place_stack_in_slot_ref(
                                 &mut inventory_state,
                                 container_query,
@@ -1796,15 +1899,17 @@ fn handle_take_from_stack(
                 .cloned()
                 .unwrap_or_default();
 
-            let new_stack = InventoryStack {
-                type_id: definition_id,
-                properties,
-                quantity: actual_amount,
-            };
+            let new_stack = InventoryStack::item(definition_id, properties, actual_amount);
             let destination_slot = match destination {
                 ItemDestination::Slot(s) => s,
                 ItemDestination::WorldTile(_) => return,
             };
+            if is_player_destination(destination_slot)
+                && would_overload_carry(&inventory_state, &new_stack, &max_carry, definitions)
+            {
+                chat_log_state.push_narrator("Too heavy — you can't lift that.");
+                return;
+            }
             if !place_stack_in_slot_ref(
                 &mut inventory_state,
                 container_query,
@@ -2305,11 +2410,7 @@ fn stack_in_slot_ref(
             } else {
                 1
             };
-            InventoryStack {
-                type_id: item.type_id.clone(),
-                properties: item.properties.clone(),
-                quantity,
-            }
+            InventoryStack::item(item.type_id.clone(), item.properties.clone(), quantity)
         }),
         ItemSlotRef::Container {
             object_id,
@@ -2319,6 +2420,18 @@ fn stack_in_slot_ref(
             let container = container_query.get_mut(entity).ok()?;
             container.slots.get(slot_index).cloned().flatten()
         }
+        ItemSlotRef::PouchInBackpack {
+            backpack_slot,
+            sub_slot,
+        } => inventory_state
+            .backpack_slots
+            .get(backpack_slot)?
+            .as_ref()?
+            .contained_slots
+            .as_ref()?
+            .get(sub_slot)
+            .cloned()
+            .flatten(),
     }
 }
 
@@ -2345,11 +2458,7 @@ fn take_item_from_slot_ref(
             };
             inventory_state
                 .take_equipment_item(slot)
-                .map(|item| InventoryStack {
-                    type_id: item.type_id,
-                    properties: item.properties,
-                    quantity,
-                })
+                .map(|item| InventoryStack::item(item.type_id, item.properties, quantity))
         }
         ItemSlotRef::Container {
             object_id,
@@ -2359,6 +2468,17 @@ fn take_item_from_slot_ref(
             let mut container = container_query.get_mut(entity).ok()?;
             container.slots.get_mut(slot_index)?.take()
         }
+        ItemSlotRef::PouchInBackpack {
+            backpack_slot,
+            sub_slot,
+        } => inventory_state
+            .backpack_slots
+            .get_mut(backpack_slot)?
+            .as_mut()?
+            .contained_slots
+            .as_mut()?
+            .get_mut(sub_slot)?
+            .take(),
     }
 }
 
@@ -2424,6 +2544,19 @@ fn place_stack_in_slot_ref(
             object_id: container_object_id,
             slot_index,
         } => {
+            // Recursion guard: storable container into a container that
+            // refuses storable containers (e.g. pouch) is rejected. The flag
+            // lives on the *destination* container's definition so the rule
+            // is fully YAML-driven.
+            let dest_def = object_query
+                .iter()
+                .find(|(_, _, _, obj)| obj.object_id == container_object_id)
+                .and_then(|(_, _, _, obj)| definitions.get(&obj.definition_id));
+            if let Some(dest) = dest_def {
+                if !dest.accepts_storable_containers && is_storable_container(&stack.type_id, definitions) {
+                    return false;
+                }
+            }
             let Some(entity) = find_container_entity(container_object_id, object_query) else {
                 return false;
             };
@@ -2435,7 +2568,75 @@ fn place_stack_in_slot_ref(
             };
             place_stack_in_option_slot(slot, stack, definitions)
         }
+        ItemSlotRef::PouchInBackpack {
+            backpack_slot,
+            sub_slot,
+        } => {
+            // Recursion guard: the parent must be a pouch (storable
+            // container) and pouches set `accepts_storable_containers: false`,
+            // so reject any incoming storable container item.
+            let Some(Some(parent)) = inventory_state.backpack_slots.get(backpack_slot) else {
+                return false;
+            };
+            let parent_def = match definitions.get(&parent.type_id) {
+                Some(d) => d,
+                None => return false,
+            };
+            if !parent_def.accepts_storable_containers
+                && is_storable_container(&stack.type_id, definitions)
+            {
+                return false;
+            }
+            let Some(parent_mut) = inventory_state
+                .backpack_slots
+                .get_mut(backpack_slot)
+                .and_then(|slot| slot.as_mut())
+            else {
+                return false;
+            };
+            let Some(inner) = parent_mut.contained_slots.as_mut() else {
+                return false;
+            };
+            let Some(slot) = inner.get_mut(sub_slot) else {
+                return false;
+            };
+            place_stack_in_option_slot(slot, stack, definitions)
+        }
     }
+}
+
+/// True if this type is itself a storable container item (a pouch). Used to
+/// gate placement into containers that disallow nesting.
+fn is_storable_container(type_id: &str, definitions: &OverworldObjectDefinitions) -> bool {
+    definitions.get(type_id).is_some_and(|d| d.storable && d.container_capacity.is_some())
+}
+
+fn is_player_destination(slot_ref: ItemSlotRef) -> bool {
+    matches!(
+        slot_ref,
+        ItemSlotRef::Backpack(_) | ItemSlotRef::Equipment(_) | ItemSlotRef::PouchInBackpack { .. }
+    )
+}
+
+fn is_player_source_slot(slot_ref: ItemSlotRef) -> bool {
+    matches!(
+        slot_ref,
+        ItemSlotRef::Backpack(_) | ItemSlotRef::Equipment(_) | ItemSlotRef::PouchInBackpack { .. }
+    )
+}
+
+/// Whether *adding* `stack` to the player's inventory would exceed the hard
+/// carry cap. Caller must guarantee the stack is not currently counted by
+/// `inventory_state.total_weight()` (e.g. just removed via `take_*`).
+fn would_overload_carry(
+    inventory_state: &InventoryState,
+    stack: &InventoryStack,
+    max_carry: &MaxCarryWeight,
+    definitions: &OverworldObjectDefinitions,
+) -> bool {
+    let current = inventory_state.total_weight(definitions);
+    let added = stack_weight(stack, definitions);
+    current + added > max_carry.hard_cap
 }
 
 fn restore_stack_to_slot_ref(
@@ -2473,6 +2674,22 @@ fn restore_stack_to_slot_ref(
             if let Some(entity) = find_container_entity(container_object_id, object_query) {
                 if let Ok(mut container) = container_query.get_mut(entity) {
                     if let Some(slot) = container.slots.get_mut(slot_index) {
+                        *slot = Some(stack);
+                    }
+                }
+            }
+        }
+        ItemSlotRef::PouchInBackpack {
+            backpack_slot,
+            sub_slot,
+        } => {
+            if let Some(parent) = inventory_state
+                .backpack_slots
+                .get_mut(backpack_slot)
+                .and_then(|slot| slot.as_mut())
+            {
+                if let Some(inner) = parent.contained_slots.as_mut() {
+                    if let Some(slot) = inner.get_mut(sub_slot) {
                         *slot = Some(stack);
                     }
                 }
@@ -2530,6 +2747,28 @@ fn consume_one_from_slot_ref(
                 }
             }
         }
+        ItemSlotRef::PouchInBackpack {
+            backpack_slot,
+            sub_slot,
+        } => {
+            if let Some(parent) = inventory_state
+                .backpack_slots
+                .get_mut(backpack_slot)
+                .and_then(|slot| slot.as_mut())
+            {
+                if let Some(inner) = parent.contained_slots.as_mut() {
+                    if let Some(slot) = inner.get_mut(sub_slot) {
+                        if let Some(stack) = slot {
+                            if stack.quantity > 1 {
+                                stack.quantity -= 1;
+                            } else {
+                                *slot = None;
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -2574,6 +2813,28 @@ fn reduce_slot_quantity(
                 }
             }
         }
+        ItemSlotRef::PouchInBackpack {
+            backpack_slot,
+            sub_slot,
+        } => {
+            if let Some(parent) = inventory_state
+                .backpack_slots
+                .get_mut(backpack_slot)
+                .and_then(|slot| slot.as_mut())
+            {
+                if let Some(inner) = parent.contained_slots.as_mut() {
+                    if let Some(slot) = inner.get_mut(sub_slot) {
+                        if let Some(stack) = slot {
+                            if stack.quantity <= amount {
+                                *slot = None;
+                            } else {
+                                stack.quantity -= amount;
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -2601,6 +2862,22 @@ fn add_to_slot_quantity(
             if let Some(entity) = find_container_entity(object_id, object_query) {
                 if let Ok(mut container) = container_query.get_mut(entity) {
                     if let Some(Some(stack)) = container.slots.get_mut(slot_index) {
+                        stack.quantity += amount;
+                    }
+                }
+            }
+        }
+        ItemSlotRef::PouchInBackpack {
+            backpack_slot,
+            sub_slot,
+        } => {
+            if let Some(parent) = inventory_state
+                .backpack_slots
+                .get_mut(backpack_slot)
+                .and_then(|slot| slot.as_mut())
+            {
+                if let Some(inner) = parent.contained_slots.as_mut() {
+                    if let Some(Some(stack)) = inner.get_mut(sub_slot) {
                         stack.quantity += amount;
                     }
                 }
@@ -3100,11 +3377,11 @@ mod tests {
 
         assert_eq!(
             inventories[&1][0],
-            Some(InventoryStack {
-                type_id: "apple".to_owned(),
-                properties: ObjectProperties::new(),
-                quantity: 1,
-            })
+            Some(InventoryStack::item(
+                "apple".to_owned(),
+                ObjectProperties::new(),
+                1,
+            ))
         );
         assert_eq!(inventories[&2][0], None);
         let _ = apple_id;

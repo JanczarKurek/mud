@@ -6,7 +6,8 @@ use crate::combat::damage_expr::DamageExpr;
 use crate::game::commands::{GameCommand, MoveDelta, RotationDirection};
 use crate::game::resources::{ClientGameState, InventoryState, PendingGameCommands};
 use crate::player::components::{
-    AttributeSet, BaseStats, DerivedStats, Player, PlayerIdentity, VitalStats, WeaponDamage,
+    AttributeSet, BaseStats, CurrentCarryWeight, DerivedStats, Encumbered, MaxCarryWeight, Player,
+    PlayerIdentity, VitalStats, WeaponDamage,
 };
 use crate::scripting::resources::PythonConsoleState;
 use crate::world::components::{
@@ -19,25 +20,34 @@ use crate::world::WorldConfig;
 
 pub fn refresh_derived_player_stats(
     definitions: Res<OverworldObjectDefinitions>,
+    mut commands: Commands,
     mut player_query: Query<
         (
+            Entity,
             &BaseStats,
             &InventoryState,
             &mut DerivedStats,
             &mut VitalStats,
             &mut AttackProfile,
             &mut WeaponDamage,
+            Option<&mut MaxCarryWeight>,
+            Option<&mut CurrentCarryWeight>,
+            Has<Encumbered>,
         ),
         With<Player>,
     >,
 ) {
     for (
+        entity,
         base_stats,
         inventory_state,
         mut derived_stats,
         mut vital_stats,
         mut attack_profile,
         mut weapon_damage,
+        max_carry,
+        current_carry,
+        was_encumbered,
     ) in &mut player_query
     {
         let mut attributes = base_stats.attributes;
@@ -116,6 +126,32 @@ pub fn refresh_derived_player_stats(
         }
         if weapon_damage.0 != next_damage {
             weapon_damage.0 = next_damage;
+        }
+
+        // Carry weight: cap derives from final (post-equipment) STR; current
+        // weight is the sum of all carried items including nested pouch
+        // contents.
+        let next_max = MaxCarryWeight::from_strength(derived_stats.attributes.strength);
+        let next_current = CurrentCarryWeight(inventory_state.total_weight(&definitions));
+        match max_carry {
+            Some(mut existing) if *existing != next_max => *existing = next_max,
+            None => {
+                commands.entity(entity).insert(next_max);
+            }
+            _ => {}
+        }
+        match current_carry {
+            Some(mut existing) if *existing != next_current => *existing = next_current,
+            None => {
+                commands.entity(entity).insert(next_current);
+            }
+            _ => {}
+        }
+        let now_encumbered = next_current.0 > next_max.soft_cap;
+        if now_encumbered && !was_encumbered {
+            commands.entity(entity).insert(Encumbered);
+        } else if !now_encumbered && was_encumbered {
+            commands.entity(entity).remove::<Encumbered>();
         }
     }
 }

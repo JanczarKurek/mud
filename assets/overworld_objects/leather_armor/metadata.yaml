@@ -1,5 +1,6 @@
 extends: equipment
 name: Leather Armor
+weight: 8.0
 description: A sturdy leather cuirass with shoulder guards.
 equipment_slot: armor
 render:

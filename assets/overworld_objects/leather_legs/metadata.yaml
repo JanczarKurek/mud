@@ -1,5 +1,6 @@
 extends: equipment
 name: Leather Legs
+weight: 3.0
 description: A pair of practical leather leggings.
 equipment_slot: legs
 render:

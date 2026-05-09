@@ -171,10 +171,8 @@ pub fn spawn_overworld_object_instance(
                 .contents
                 .iter()
                 .map(|&id| {
-                    space.find_resolved(id).map(|child| InventoryStack {
-                        type_id: child.type_id.clone(),
-                        properties: child.properties.clone(),
-                        quantity: 1,
+                    space.find_resolved(id).map(|child| {
+                        InventoryStack::item(child.type_id.clone(), child.properties.clone(), 1)
                     })
                 })
                 .collect(),

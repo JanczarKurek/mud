@@ -1,5 +1,6 @@
 extends: consumable
 name: Potion
+weight: 0.3
 description: A small blue potion flask.
 use_effects:
   regen_multiplier: 2.0

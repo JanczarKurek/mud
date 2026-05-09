@@ -20,6 +20,12 @@ pub struct ManaLabel;
 #[derive(Component)]
 pub struct RegenBuffLabel;
 
+/// Text node that displays the player's carry weight in the status panel.
+/// Format: `Weight: 8.4 / 40 kg` with a trailing "(Encumbered)" tag in red
+/// when the soft cap is exceeded.
+#[derive(Component)]
+pub struct CarryWeightLabel;
+
 #[derive(Component)]
 pub struct ItemSlotButton {
     pub kind: ItemSlotKind,
@@ -184,6 +190,14 @@ pub enum ItemSlotKind {
     Backpack(usize),
     OpenContainer { panel_id: usize, slot_index: usize },
     Equipment(EquipmentSlot),
+    /// A sub-slot inside a pouch panel. The owning panel is identified by
+    /// `panel_id`; the panel's `DockedPanelKind::PouchInBackpack { backpack_slot }`
+    /// resolves which inventory slot's `contained_slots[sub_slot_index]` to
+    /// read.
+    PouchInBackpack {
+        panel_id: usize,
+        sub_slot_index: usize,
+    },
 }
 
 #[derive(Component)]

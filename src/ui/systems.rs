@@ -182,6 +182,15 @@ pub fn manage_open_containers(
             .is_some_and(|(player_position, object)| {
                 object.is_container && is_near_player(&player_position, &object.tile_position)
             }),
+        // Pouch panels stay open as long as the underlying inventory slot is
+        // still a container item. Slot empties / replaced with a non-pouch ⇒
+        // close.
+        DockedPanelKind::PouchInBackpack { backpack_slot } => client_state
+            .inventory
+            .backpack_slots
+            .get(backpack_slot)
+            .and_then(|slot| slot.as_ref())
+            .is_some_and(|stack| stack.contained_slots.is_some()),
     });
 
     let after_ids: std::collections::HashSet<u64> = docked_panel_state
@@ -243,6 +252,9 @@ pub fn handle_docked_panel_close_buttons(
                     pending_commands.push(GameCommand::CloseContainer { object_id });
                     docked_panel_state.close_panel(button.panel_id);
                 }
+                Some(DockedPanelKind::PouchInBackpack { .. }) => {
+                    docked_panel_state.close_panel(button.panel_id);
+                }
                 Some(DockedPanelKind::Minimap)
                 | Some(DockedPanelKind::Status)
                 | Some(DockedPanelKind::Equipment)
@@ -298,6 +310,51 @@ pub fn sync_vital_bars(
 
     for mut node in &mut mana_query {
         node.width = percent(mana_ratio * 100.0);
+    }
+}
+
+/// Updates the status-panel weight readout from the replicated
+/// `ClientCarryWeight`. Renders `Weight: 8.4 / 40 kg` plus an
+/// "(Encumbered)" tag — color set per-frame to mark the encumbered state in
+/// danger red.
+pub fn sync_carry_weight_label(
+    client_state: Res<ClientGameState>,
+    palette: Res<crate::ui::theme::palette::Palette>,
+    mut label_query: Query<
+        (&mut Text, &mut TextColor),
+        With<crate::ui::components::CarryWeightLabel>,
+    >,
+) {
+    let Ok((mut text, mut color)) = label_query.single_mut() else {
+        return;
+    };
+    let (new_text, new_color) = match client_state.carry_weight {
+        Some(carry) if carry.soft_cap_kg > 0.0 => {
+            let label = if carry.encumbered {
+                format!(
+                    "Weight: {:.1} / {:.0} kg (Encumbered)",
+                    carry.current_kg, carry.soft_cap_kg
+                )
+            } else {
+                format!(
+                    "Weight: {:.1} / {:.0} kg",
+                    carry.current_kg, carry.soft_cap_kg
+                )
+            };
+            let c = if carry.encumbered {
+                palette.text_danger
+            } else {
+                palette.text_value
+            };
+            (label, c)
+        }
+        _ => (String::new(), palette.text_value),
+    };
+    if text.0 != new_text {
+        text.0 = new_text;
+    }
+    if color.0 != new_color {
+        color.0 = new_color;
     }
 }
 
@@ -473,7 +530,7 @@ pub fn handle_context_menu_actions(
     mut take_partial_state: ResMut<TakePartialState>,
     ui_state: (
         ResMut<ContextMenuState>,
-        Res<DockedPanelState>,
+        ResMut<DockedPanelState>,
         ResMut<CursorState>,
         ResMut<UseOnState>,
         ResMut<SpellTargetingState>,
@@ -498,7 +555,7 @@ pub fn handle_context_menu_actions(
     let (object_registry, definitions, spell_definitions) = static_resources;
     let (
         mut context_menu_state,
-        docked_panel_state,
+        mut docked_panel_state,
         mut cursor_state,
         mut use_on_state,
         mut spell_targeting_state,
@@ -617,8 +674,17 @@ pub fn handle_context_menu_actions(
     }
 
     if is_cursor_over_button(cursor_position, &menu_queries.p2()) {
-        if let Some(ContextMenuTarget::World(object_id)) = context_menu_state.target {
-            pending_commands.push(GameCommand::OpenContainer { object_id });
+        match context_menu_state.target {
+            Some(ContextMenuTarget::World(object_id)) => {
+                pending_commands.push(GameCommand::OpenContainer { object_id });
+            }
+            Some(ContextMenuTarget::Slot(ItemSlotKind::Backpack(backpack_slot))) => {
+                // Inventory pouch: no server roundtrip needed — slots come
+                // straight off `client_state.inventory` and the panel reads
+                // through `pouch_backpack_slot_for_panel`.
+                docked_panel_state.open_pouch(backpack_slot);
+            }
+            _ => {}
         }
         context_menu_state.hide();
         return;
@@ -962,11 +1028,17 @@ pub fn handle_context_menu_opening(
             )
             .is_some()
                 || can_use;
+            // "Open" enabled for *inventory* pouches (a Backpack slot whose
+            // item carries `contained_slots`). Pouches inside world
+            // containers and equipment-slot pouches are intentionally
+            // skipped — open them by moving them to your backpack first.
+            let can_open = matches!(slot_kind, ItemSlotKind::Backpack(_))
+                && stack.contained_slots.is_some();
             let stack_qty = stack.quantity;
             context_menu_state.show(
                 cursor_position,
                 ContextMenuTarget::Slot(slot_kind),
-                false,
+                can_open,
                 can_use,
                 has_use_on,
                 false,
@@ -1134,6 +1206,14 @@ pub fn sync_docked_panel_titles(
                     object_registry.display_name(object_id, &definitions, &spell_definitions)
                 })
                 .unwrap_or_else(|| "Container".to_owned()),
+            Some(DockedPanelKind::PouchInBackpack { backpack_slot }) => client_state
+                .inventory
+                .backpack_slots
+                .get(backpack_slot)
+                .and_then(|slot| slot.as_ref())
+                .and_then(|stack| definitions.get(&stack.type_id))
+                .map(|def| def.name.clone())
+                .unwrap_or_else(|| "Pouch".to_owned()),
             None => String::new(),
         };
 
@@ -1163,10 +1243,24 @@ pub fn sync_item_slot_button_visibility(
             ItemSlotKind::OpenContainer {
                 panel_id,
                 slot_index,
-            } => docked_panel_state
-                .container_object_id_for_panel(panel_id)
-                .and_then(|object_id| client_state.container_slots.get(&object_id))
-                .is_some_and(|slots| slot_index < slots.len()),
+            } => {
+                if let Some(object_id) =
+                    docked_panel_state.container_object_id_for_panel(panel_id)
+                {
+                    client_state
+                        .container_slots
+                        .get(&object_id)
+                        .is_some_and(|slots| slot_index < slots.len())
+                } else if let Some(backpack_slot) =
+                    docked_panel_state.pouch_backpack_slot_for_panel(panel_id)
+                {
+                    inventory_pouch_capacity(client_state.as_ref(), backpack_slot)
+                        .is_some_and(|cap| slot_index < cap)
+                } else {
+                    false
+                }
+            }
+            ItemSlotKind::PouchInBackpack { .. } => false,
             ItemSlotKind::Equipment(_) => true,
         };
 
@@ -1212,10 +1306,23 @@ pub fn sync_container_slot_images(
             ItemSlotKind::OpenContainer {
                 panel_id,
                 slot_index,
-            } => docked_panel_state
-                .container_object_id_for_panel(panel_id)
-                .and_then(|object_id| client_state.container_slots.get(&object_id))
-                .and_then(|slots| slots.get(slot_index).cloned().flatten()),
+            } => {
+                if let Some(object_id) =
+                    docked_panel_state.container_object_id_for_panel(panel_id)
+                {
+                    client_state
+                        .container_slots
+                        .get(&object_id)
+                        .and_then(|slots| slots.get(slot_index).cloned().flatten())
+                } else if let Some(backpack_slot) =
+                    docked_panel_state.pouch_backpack_slot_for_panel(panel_id)
+                {
+                    inventory_pouch_sub_slot(client_state.as_ref(), backpack_slot, slot_index)
+                } else {
+                    None
+                }
+            }
+            ItemSlotKind::PouchInBackpack { .. } => None,
             ItemSlotKind::Equipment(_) => None,
         };
         let Some(stack) = stack else {
@@ -1251,10 +1358,23 @@ pub fn sync_container_slot_images(
             ItemSlotKind::OpenContainer {
                 panel_id,
                 slot_index,
-            } => docked_panel_state
-                .container_object_id_for_panel(panel_id)
-                .and_then(|object_id| client_state.container_slots.get(&object_id))
-                .and_then(|slots| slots.get(slot_index).cloned().flatten()),
+            } => {
+                if let Some(object_id) =
+                    docked_panel_state.container_object_id_for_panel(panel_id)
+                {
+                    client_state
+                        .container_slots
+                        .get(&object_id)
+                        .and_then(|slots| slots.get(slot_index).cloned().flatten())
+                } else if let Some(backpack_slot) =
+                    docked_panel_state.pouch_backpack_slot_for_panel(panel_id)
+                {
+                    inventory_pouch_sub_slot(client_state.as_ref(), backpack_slot, slot_index)
+                } else {
+                    None
+                }
+            }
+            ItemSlotKind::PouchInBackpack { .. } => None,
             ItemSlotKind::Equipment(slot) => {
                 if slot == crate::world::object_definitions::EquipmentSlot::Ammo {
                     client_state.inventory.ammo_stack()
@@ -1288,7 +1408,9 @@ pub fn sync_equipment_slot_images(
     for (slot, mut image_node, mut visibility) in &mut image_query {
         let item = match slot.kind {
             ItemSlotKind::Equipment(slot) => client_state.inventory.equipment_item(slot).cloned(),
-            ItemSlotKind::Backpack(_) | ItemSlotKind::OpenContainer { .. } => None,
+            ItemSlotKind::Backpack(_)
+            | ItemSlotKind::OpenContainer { .. }
+            | ItemSlotKind::PouchInBackpack { .. } => None,
         };
         let Some(item) = item else {
             *visibility = Visibility::Hidden;
@@ -2081,21 +2203,35 @@ fn stack_in_slot_kind(
         ItemSlotKind::OpenContainer {
             panel_id,
             slot_index,
+        } => {
+            if let Some(object_id) = docked_panel_state.container_object_id_for_panel(panel_id) {
+                client_state
+                    .container_slots
+                    .get(&object_id)
+                    .and_then(|slots| slots.get(slot_index).cloned().flatten())
+            } else if let Some(backpack_slot) =
+                docked_panel_state.pouch_backpack_slot_for_panel(panel_id)
+            {
+                inventory_pouch_sub_slot(client_state, backpack_slot, slot_index)
+            } else {
+                None
+            }
+        }
+        ItemSlotKind::PouchInBackpack {
+            panel_id,
+            sub_slot_index,
         } => docked_panel_state
-            .container_object_id_for_panel(panel_id)
-            .and_then(|object_id| client_state.container_slots.get(&object_id))
-            .and_then(|slots| slots.get(slot_index).cloned().flatten()),
+            .pouch_backpack_slot_for_panel(panel_id)
+            .and_then(|backpack_slot| {
+                inventory_pouch_sub_slot(client_state, backpack_slot, sub_slot_index)
+            }),
         ItemSlotKind::Equipment(slot) => client_state.inventory.equipment_item(slot).map(|item| {
             let quantity = if slot == crate::world::object_definitions::EquipmentSlot::Ammo {
                 client_state.inventory.ammo_quantity.max(1)
             } else {
                 1
             };
-            InventoryStack {
-                type_id: item.type_id.clone(),
-                properties: item.properties.clone(),
-                quantity,
-            }
+            InventoryStack::item(item.type_id.clone(), item.properties.clone(), quantity)
         }),
     }
 }
@@ -2230,11 +2366,66 @@ fn item_slot_kind_to_ref(
         ItemSlotKind::OpenContainer {
             panel_id,
             slot_index,
-        } => Some(ItemSlotRef::Container {
-            object_id: docked_panel_state.container_object_id_for_panel(panel_id)?,
-            slot_index,
+        } => {
+            if let Some(object_id) =
+                docked_panel_state.container_object_id_for_panel(panel_id)
+            {
+                Some(ItemSlotRef::Container {
+                    object_id,
+                    slot_index,
+                })
+            } else {
+                let backpack_slot =
+                    docked_panel_state.pouch_backpack_slot_for_panel(panel_id)?;
+                Some(ItemSlotRef::PouchInBackpack {
+                    backpack_slot,
+                    sub_slot: slot_index,
+                })
+            }
+        }
+        ItemSlotKind::PouchInBackpack {
+            panel_id,
+            sub_slot_index,
+        } => Some(ItemSlotRef::PouchInBackpack {
+            backpack_slot: docked_panel_state.pouch_backpack_slot_for_panel(panel_id)?,
+            sub_slot: sub_slot_index,
         }),
     }
+}
+
+/// Capacity of an inventory pouch at `backpack_slot`, or `None` if the slot
+/// is empty / its item is not a container. Treats a `Some(stack)` whose
+/// `contained_slots` is `None` (legacy data) as a zero-slot pouch.
+fn inventory_pouch_capacity(
+    client_state: &ClientGameState,
+    backpack_slot: usize,
+) -> Option<usize> {
+    let stack = client_state
+        .inventory
+        .backpack_slots
+        .get(backpack_slot)?
+        .as_ref()?;
+    stack.contained_slots.as_ref().map(|slots| slots.len())
+}
+
+/// Read the contents of an inventory pouch sub-slot. Returns `None` for
+/// slots that are out of range, slots whose parent stack disappeared, or
+/// slots in items that no longer carry `contained_slots`.
+fn inventory_pouch_sub_slot(
+    client_state: &ClientGameState,
+    backpack_slot: usize,
+    sub_slot: usize,
+) -> Option<InventoryStack> {
+    client_state
+        .inventory
+        .backpack_slots
+        .get(backpack_slot)?
+        .as_ref()?
+        .contained_slots
+        .as_ref()?
+        .get(sub_slot)
+        .cloned()
+        .flatten()
 }
 
 fn cursor_to_tile(

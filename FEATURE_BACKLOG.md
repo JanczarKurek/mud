@@ -22,11 +22,15 @@ phasing.
 Grouped by system, not ranked.
 
 ### Progression
-- **XP + levels** — combat death events exist; need per-player XP, level curve, derived-stat scaling.
-- **Skill levels** — per-skill advancement (sword, club, axe, distance, magic level, shielding, fishing). Tibia's identity. Without it combat has no long-tail.
-- **Vocations / classes** — knight / mage / ranger / paladin gating spells and skill curves.
-- **Death penalty** — currently "defeated" is just a chat line. Need respawn on a bed/temple tile and configurable XP/skill loss.
-- **Soul / stamina** — regen caps that shape session length.
+
+Designed in **`docs/progression.md`** (D&D 3.5e-flavored: classes
+Fighter/Wizard/Cleric/Vagabond, XP+levels, 10-skill sheet with skill
+points, level-scaled mana, partial-drop death penalty). Implementation
+phasing A–E lives in that doc §9 and is tracked from `PLAN.md` §4.2.
+
+Additional progression-adjacent items not in scope of that doc:
+- **Soul / stamina** — regen caps that shape session length. Independent
+  of the level/skill loop; lands when we want to gate grind sessions.
 
 ### NPC depth
 - **Vendors / trading** — buy/sell UI, per-NPC stock, currency item (gold). Dialogue is in place; the missing piece is a vendor panel and currency wiring.
@@ -90,6 +94,11 @@ Grouped by system, not ranked.
 - **Food / hunger** — apples heal instantly; no hunger meter.
 - **Item-on-item crafting / combining** — no recipe system.
 - **Ground-item decay timers** — corpses persist forever after save.
+- **Pouch panel auto-retarget** — moving a pouch from backpack slot 2 → 7
+  while the pouch panel is open silently closes the panel rather than
+  retargeting it to slot 7. Low priority — re-opening is one right-click.
+- **Vendors / shops** — currency exists as items now (copper/silver/gold);
+  buying-and-selling UI is the next step.
 
 ### Ops / infra
 - **Atomic save writes** — single JSON file; partial writes can corrupt.
@@ -124,7 +133,7 @@ in case you want to scope a "batch":
 
 - **Living-world batch** *(builds on shipped dialog + quest engine)*: Vendor UI + currency item + Quest log panel + NPC spawners — these are the four things that turn the existing dialog/quest tech into actual content. Lowest activation energy of any batch.
 - **Stacked floors finish batch**: Editor floor selector + `FloorIndicatorLabel` HUD + ladder/rope/hole transitions + `yaml_formats.md` z documentation. Wraps up the paused Phase 2/3 of `docs/stacked_floors_plan.md`.
-- **Progression batch**: XP + levels + skill levels + death penalty (needs respawn point + skill drop). All share the combat death hook.
+- **Progression batch**: XP + levels + classes + skills + death penalty. Designed in `docs/progression.md`; phasing A–E in that doc §9. All share the combat death hook (`src/player/lifecycle.rs:62`) and the to-hit/damage rewrite in `src/combat/systems.rs:72`.
 - **Combat depth batch**: Armor/shield + status effects + elemental damage + critical/dodge — one pass through `src/combat/systems.rs` covers all of them.
 - **Production-readiness batch**: Atomic save writes + save migration + structured logging + admin commands + debug overlay (≈ `PLAN.md` Phase 8).
 - **Multiplayer scaling batch**: AoI + reconnection + multi-character per account + rate limiting + TOFU pinning. Has to happen before non-trivial player count.

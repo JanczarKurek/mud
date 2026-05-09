@@ -14,7 +14,8 @@ use crate::ui::components::{
     DockedPanelRoot, DockedPanelTitle, DragPreviewLabel, DragPreviewRoot, EquipmentPanelContent,
     EquipmentSlotButton, EquipmentSlotImage, FullMapBodyRoot, FullMapCloseButton,
     FullMapWindowRoot, FullMapZoomInButton, FullMapZoomLabel, FullMapZoomOutButton, HealthFill,
-    HealthLabel, HudMinimapZoomInButton, HudMinimapZoomLabel, HudMinimapZoomOutButton, RegenBuffLabel,
+    CarryWeightLabel, HealthLabel, HudMinimapZoomInButton, HudMinimapZoomLabel,
+    HudMinimapZoomOutButton, RegenBuffLabel,
     ItemSlotButton, ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ManaFill, ManaLabel,
     MinimapCanvas, MinimapMode, MinimapView, PythonConsoleInput, PythonConsoleOutput,
     PythonConsoleOutputViewport, PythonConsolePanel, PythonConsoleScrollbarThumb, RightSidebarRoot,
@@ -682,6 +683,17 @@ fn spawn_status_panel(
                 },
                 TextColor(palette.text_accent),
                 RegenBuffLabel,
+            ));
+            // Carry weight readout. Always rendered; `sync_carry_weight_label`
+            // updates the text every frame the cached client value changes.
+            panel.spawn((
+                Text::new(""),
+                TextFont {
+                    font_size: 14.0,
+                    ..default()
+                },
+                TextColor(palette.text_value),
+                CarryWeightLabel,
             ));
         });
     });

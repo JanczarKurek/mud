@@ -1,0 +1,10 @@
+extends: pouch
+name: Herb Pouch
+weight: 0.6
+container_capacity: 6
+description: A linen pouch divided into compartments. Smells of dried herbs.
+render:
+  z_index: 0.24
+  debug_color: [148, 152, 90]
+  debug_size: 0.48
+  sprite_path: overworld_objects/herb_pouch/sprite.png

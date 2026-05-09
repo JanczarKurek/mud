@@ -813,6 +813,50 @@ objects:
   placement:
   - x: 64
     y: 10
+# --- Money & pouch demo (near the eastern spawn) ---
+# A loose handful of coins sits on the path between the spawn at (15, 14)
+# and the villager at (20, 16). Pick them up to see stack-tier sprites in
+# the inventory; the small_pouch and iron_chest below pre-stage container
+# nesting (a pouch full of coppers riding inside the chest).
+- type: copper_coin
+  placement:
+  - x: 17
+    y: 14
+  - x: 18
+    y: 14
+  - x: 19
+    y: 14
+  - x: 17
+    y: 15
+  - x: 19
+    y: 15
+- type: silver_coin
+  placement:
+  - x: 18
+    y: 15
+  - x: 18
+    y: 16
+- type: gold_coin
+  placement:
+  - x: 19
+    y: 16
+- id: demo_small_pouch
+  type: small_pouch
+  placement: { x: 17, y: 16 }
+  contents:
+    - type: copper_coin
+    - type: copper_coin
+    - type: silver_coin
+- id: demo_treasure_chest
+  type: iron_chest
+  placement: { x: 21, y: 14 }
+  contents:
+    - type: copper_coin
+    - type: copper_coin
+    - type: silver_coin
+    - type: silver_coin
+    - type: gold_coin
+    - type: herb_pouch
 - type: cyclops
   placement:
   - x: 54

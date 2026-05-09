@@ -2,6 +2,7 @@ extends: pickup
 fillable_properties:
   - spell_id
 name: Scroll of {properties.spell_id.name}
+weight: 0.1
 description: A rolled parchment scroll inscribed with {properties.spell_id.name}.
 spell_id: "{properties.spell_id}"
 render:

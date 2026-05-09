@@ -134,6 +134,12 @@ pub enum DockedPanelKind {
     Backpack,
     CurrentTarget,
     Container { object_id: u64 },
+    /// A pouch sitting in the local player's backpack at `backpack_slot`.
+    /// Slot contents come from
+    /// `client_state.inventory.backpack_slots[backpack_slot].contained_slots`.
+    /// Closes automatically when the underlying slot empties or stops being
+    /// a container.
+    PouchInBackpack { backpack_slot: usize },
 }
 
 #[derive(Clone, Debug)]
@@ -211,6 +217,29 @@ impl DockedPanelState {
         self.upsert_panel(panel);
     }
 
+    /// Open (or refocus) a panel viewing the contents of a pouch sitting in
+    /// the local inventory at `backpack_slot`. Reuses the same physical panel
+    /// pool as world-container panels (`MAX_OPEN_CONTAINERS = 4`).
+    pub fn open_pouch(&mut self, backpack_slot: usize) {
+        let kind = DockedPanelKind::PouchInBackpack { backpack_slot };
+        if let Some(existing_index) = self.panels.iter().position(|panel| panel.kind == kind) {
+            let existing_panel = self.panels.remove(existing_index);
+            self.panels.push(existing_panel);
+            return;
+        }
+        self.close_oldest_container_if_needed();
+        let panel = DockedPanel {
+            id: self.next_container_panel_id(),
+            kind,
+            title: "Pouch".to_owned(),
+            height: Self::DEFAULT_CONTAINER_PANEL_HEIGHT,
+            closable: true,
+            resizable: true,
+            movable: true,
+        };
+        self.upsert_panel(panel);
+    }
+
     pub fn close_panel(&mut self, panel_id: usize) {
         if let Some(index) = self.panels.iter().position(|panel| panel.id == panel_id) {
             self.panels.remove(index);
@@ -228,12 +257,18 @@ impl DockedPanelState {
     pub fn container_object_id_for_panel(&self, panel_id: usize) -> Option<u64> {
         match self.panel(panel_id).map(|panel| panel.kind) {
             Some(DockedPanelKind::Container { object_id }) => Some(object_id),
-            Some(DockedPanelKind::Minimap)
-            | Some(DockedPanelKind::Status)
-            | Some(DockedPanelKind::Equipment)
-            | Some(DockedPanelKind::Backpack)
-            | Some(DockedPanelKind::CurrentTarget)
-            | None => None,
+            _ => None,
+        }
+    }
+
+    /// If `panel_id` resolves to a `PouchInBackpack` panel, return the
+    /// underlying inventory slot index. Pairs with
+    /// `container_object_id_for_panel` so callers can branch on whether the
+    /// slot grid points at a world container or an inventory pouch.
+    pub fn pouch_backpack_slot_for_panel(&self, panel_id: usize) -> Option<usize> {
+        match self.panel(panel_id).map(|panel| panel.kind) {
+            Some(DockedPanelKind::PouchInBackpack { backpack_slot }) => Some(backpack_slot),
+            _ => None,
         }
     }
 
@@ -278,12 +313,10 @@ impl DockedPanelState {
 
     fn oldest_container_panel_id(&self) -> Option<usize> {
         self.panels.iter().find_map(|panel| match panel.kind {
-            DockedPanelKind::Container { .. } => Some(panel.id),
-            DockedPanelKind::Minimap
-            | DockedPanelKind::Status
-            | DockedPanelKind::Equipment
-            | DockedPanelKind::Backpack
-            | DockedPanelKind::CurrentTarget => None,
+            DockedPanelKind::Container { .. } | DockedPanelKind::PouchInBackpack { .. } => {
+                Some(panel.id)
+            }
+            _ => None,
         })
     }
 
@@ -291,7 +324,12 @@ impl DockedPanelState {
         let open_container_count = self
             .panels
             .iter()
-            .filter(|panel| matches!(panel.kind, DockedPanelKind::Container { .. }))
+            .filter(|panel| {
+                matches!(
+                    panel.kind,
+                    DockedPanelKind::Container { .. } | DockedPanelKind::PouchInBackpack { .. }
+                )
+            })
             .count();
 
         if open_container_count >= Self::MAX_OPEN_CONTAINERS {

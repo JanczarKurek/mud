@@ -1,5 +1,6 @@
 extends: equipment
 name: Crossbow
+weight: 5.0
 description: A slower, heavier ranged weapon. Bolts load into the ammo slot.
 equipment_slot: weapon
 attack_profile:

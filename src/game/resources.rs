@@ -104,6 +104,18 @@ pub struct RegenBuffState {
     pub remaining_seconds: f32,
 }
 
+/// Replicated snapshot of the local player's carry weight. The HUD renders
+/// it as `current/soft kg` next to the inventory; the encumbered flag drives
+/// a "🐢" icon and the slow-walk visual. The server diffs at 0.05 kg
+/// resolution to avoid wire spam.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct ClientCarryWeight {
+    pub current_kg: f32,
+    pub soft_cap_kg: f32,
+    pub hard_cap_kg: f32,
+    pub encumbered: bool,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ClientWorldObjectState {
     pub object_id: u64,
@@ -183,6 +195,9 @@ pub enum GameEvent {
     },
     PlayerStorageChanged {
         storage_slots: usize,
+    },
+    PlayerCarryWeightChanged {
+        carry: ClientCarryWeight,
     },
     CombatTargetChanged {
         target_object_id: Option<u64>,
@@ -319,4 +334,9 @@ pub struct ClientGameState {
     /// renders the remaining time near the HP/MP bars.
     #[serde(default)]
     pub regen_buff: Option<RegenBuffState>,
+    /// Replicated carry-weight snapshot for the local player. `None` until
+    /// the first `PlayerCarryWeightChanged` event arrives — typically on the
+    /// first frame the player exists.
+    #[serde(default)]
+    pub carry_weight: Option<ClientCarryWeight>,
 }
