@@ -68,10 +68,10 @@ impl Default for Palette {
     fn default() -> Self {
         Self {
             // Surfaces.
-            surface_panel: Color::srgba(0.10, 0.10, 0.12, 0.92),
+            surface_panel: Color::srgba(0.10, 0.10, 0.12, 1.0),
             surface_raised: Color::srgba(0.14, 0.10, 0.10, 0.94),
             surface_title_bar: Color::srgb(0.13, 0.12, 0.10),
-            surface_sidebar: Color::srgba(0.06, 0.06, 0.08, 0.88),
+            surface_sidebar: Color::srgba(0.06, 0.06, 0.08, 1.0),
             surface_chat: Color::srgba(0.07, 0.08, 0.10, 0.90),
             surface_minimap_bg: Color::srgb(0.04, 0.04, 0.05),
             surface_console_output: Color::srgba(0.04, 0.05, 0.07, 0.92),
@@ -93,9 +93,9 @@ impl Default for Palette {
             button_danger_bg: Color::srgb(0.22, 0.11, 0.10),
             button_danger_bg_hover: Color::srgb(0.36, 0.16, 0.13),
             button_danger_bg_pressed: Color::srgb(0.58, 0.22, 0.18),
-            button_slot_bg: Color::srgb(0.16, 0.15, 0.12),
-            button_slot_bg_hover: Color::srgb(0.24, 0.22, 0.16),
-            button_slot_bg_selected: Color::srgb(0.28, 0.16, 0.08),
+            button_slot_bg: Color::srgb(0.22, 0.20, 0.16),
+            button_slot_bg_hover: Color::srgb(0.32, 0.28, 0.20),
+            button_slot_bg_selected: Color::srgb(0.40, 0.22, 0.10),
             button_ghost_bg: Color::NONE,
             button_ghost_bg_hover: Color::srgb(0.20, 0.18, 0.14),
 
@@ -107,7 +107,7 @@ impl Default for Palette {
             border_accent: Color::srgb(0.70, 0.55, 0.28),
             border_focus: Color::srgb(0.90, 0.72, 0.40),
             border_danger: Color::srgb(0.52, 0.30, 0.20),
-            border_slot: Color::srgb(0.38, 0.34, 0.22),
+            border_slot: Color::srgb(0.55, 0.46, 0.28),
             border_divider: Color::srgb(0.20, 0.14, 0.10),
 
             // Text.

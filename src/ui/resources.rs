@@ -133,13 +133,17 @@ pub enum DockedPanelKind {
     Equipment,
     Backpack,
     CurrentTarget,
-    Container { object_id: u64 },
+    Container {
+        object_id: u64,
+    },
     /// A pouch sitting in the local player's backpack at `backpack_slot`.
     /// Slot contents come from
     /// `client_state.inventory.backpack_slots[backpack_slot].contained_slots`.
     /// Closes automatically when the underlying slot empties or stops being
     /// a container.
-    PouchInBackpack { backpack_slot: usize },
+    PouchInBackpack {
+        backpack_slot: usize,
+    },
 }
 
 #[derive(Clone, Debug)]

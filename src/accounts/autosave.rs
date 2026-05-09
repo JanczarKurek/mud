@@ -7,11 +7,11 @@ use crate::combat::components::{AttackProfile, CombatLeash};
 use crate::dialog::resources::CharacterVarStores;
 use crate::network::resources::PendingPlayerSaves;
 use crate::persistence::build_player_state_dump;
+use crate::player::classes::{Class, ClassChosen};
 use crate::player::components::{
     BaseStats, ChatLog, DerivedStats, Inventory, MovementCooldown, Player, PlayerIdentity,
     VitalStats,
 };
-use crate::player::classes::{Class, ClassChosen};
 use crate::player::progression::Experience;
 use crate::world::components::{Facing, SpaceResident, TilePosition};
 

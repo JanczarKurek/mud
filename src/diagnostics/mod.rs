@@ -68,7 +68,10 @@ impl Plugin for DiagnosticsPlugin {
         .add_systems(First, clear_frame_timings)
         .add_systems(PreUpdate, mark_pre_update_start)
         .add_systems(Update, mark_update_start)
-        .add_systems(PostUpdate, mark_post_update_start.before(UiSystems::Prepare))
+        .add_systems(
+            PostUpdate,
+            mark_post_update_start.before(UiSystems::Prepare),
+        )
         .add_systems(
             PostUpdate,
             (
@@ -330,7 +333,11 @@ fn handle_overlay_input(
         pause.simulation = !pause.simulation;
         info!(
             "Diagnostics: simulation {} (F8)",
-            if pause.simulation { "PAUSED" } else { "RUNNING" }
+            if pause.simulation {
+                "PAUSED"
+            } else {
+                "RUNNING"
+            }
         );
     }
     if keys.just_pressed(KeyCode::F10) {
@@ -347,7 +354,11 @@ fn handle_overlay_input(
         }
         info!(
             "Diagnostics: floor cells {} ({} entities)",
-            if state.floor_hidden { "HIDDEN" } else { "VISIBLE" },
+            if state.floor_hidden {
+                "HIDDEN"
+            } else {
+                "VISIBLE"
+            },
             count,
         );
     }
@@ -384,7 +395,11 @@ fn handle_overlay_input(
         }
         info!(
             "Diagnostics: projected world objects {} ({} entities)",
-            if state.objects_hidden { "HIDDEN" } else { "VISIBLE" },
+            if state.objects_hidden {
+                "HIDDEN"
+            } else {
+                "VISIBLE"
+            },
             count,
         );
     }
@@ -541,10 +556,7 @@ fn dump_spike_frame_breakdown(
         Err(_) => return,
     };
     let mut entries = entries;
-    entries.sort_by(|a, b| {
-        b.1.partial_cmp(&a.1)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    entries.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     let total: f32 = entries.iter().map(|(_, v)| *v).sum();
 
     let to_ms = |a: Option<Instant>, b: Option<Instant>| -> Option<f32> {
@@ -650,11 +662,7 @@ fn log_archetype_histogram(world: &World) {
                     // is plenty for an at-a-glance histogram.
                     let full = ci.name();
                     let full_ref: &str = full.as_ref();
-                    full_ref
-                        .rsplit("::")
-                        .next()
-                        .unwrap_or(full_ref)
-                        .to_string()
+                    full_ref.rsplit("::").next().unwrap_or(full_ref).to_string()
                 })
                 .collect();
             names.sort_unstable();
@@ -937,7 +945,11 @@ fn log_snapshot(
         stats_str,
         entity_count,
         present_str,
-        if simulation_paused { "PAUSED (F8)" } else { "running" },
+        if simulation_paused {
+            "PAUSED (F8)"
+        } else {
+            "running"
+        },
         if scroll_active { "ACTIVE" } else { "idle" },
         scroll.elapsed,
         scroll.duration,

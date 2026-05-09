@@ -97,10 +97,7 @@ pub fn editor_build_floor_render_cells(
             }
         }
         for (entity, cell) in &existing {
-            if cell.space_id == space_id
-                && cell.z == z
-                && corners.contains(&(cell.rx, cell.ry))
-            {
+            if cell.space_id == space_id && cell.z == z && corners.contains(&(cell.rx, cell.ry)) {
                 commands.entity(entity).despawn();
             }
         }
@@ -160,10 +157,10 @@ pub fn editor_sync_floor_render_transforms(
         } else {
             flat_floor_z(cell.priority_z, cell.z)
         };
-        let dx = (cell.rx as f32 - 0.5 + cell.local_offset.x - editor_camera.center.x)
-            * effective_size;
-        let dy = (cell.ry as f32 - 0.5 + cell.local_offset.y - editor_camera.center.y)
-            * effective_size;
+        let dx =
+            (cell.rx as f32 - 0.5 + cell.local_offset.x - editor_camera.center.x) * effective_size;
+        let dy =
+            (cell.ry as f32 - 0.5 + cell.local_offset.y - editor_camera.center.y) * effective_size;
         transform.translation = Vec3::new(dx, dy, z);
         transform.scale = Vec3::splat(editor_camera.zoom_level);
     }

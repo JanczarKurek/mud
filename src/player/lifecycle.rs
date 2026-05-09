@@ -101,8 +101,7 @@ pub fn handle_player_deaths(
             continue;
         };
 
-        let dropped =
-            drain_inventory_with_drop_chance(&mut inventory, SLOT_DROP_CHANCE_PERCENT);
+        let dropped = drain_inventory_with_drop_chance(&mut inventory, SLOT_DROP_CHANCE_PERCENT);
         let items_summary = summarize_dropped(&dropped, &definitions);
         spawn_corpse_for_player(
             &mut commands,
@@ -159,10 +158,7 @@ pub fn handle_player_deaths(
             .unwrap_or_else(|| {
                 (
                     world_config.current_space_id,
-                    TilePosition::ground(
-                        world_config.map_width / 2,
-                        world_config.map_height / 2,
-                    ),
+                    TilePosition::ground(world_config.map_width / 2, world_config.map_height / 2),
                 )
             });
 
@@ -227,7 +223,11 @@ fn drain_inventory_with_drop_chance(
         } else {
             1
         };
-        dropped.push(InventoryStack::item(item.type_id, item.properties, quantity));
+        dropped.push(InventoryStack::item(
+            item.type_id,
+            item.properties,
+            quantity,
+        ));
     }
     if ammo_dropped {
         inventory.ammo_quantity = 0;

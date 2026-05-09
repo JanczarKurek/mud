@@ -7,7 +7,7 @@ use crate::npc::components::{Npc, SpawnGroupMember};
 use crate::player::components::Player;
 use crate::world::components::{Collider, SpaceId, SpaceResident, TilePosition};
 use crate::world::map_layout::{
-    ResolvedObject, SpawnArea, SpawnGroupDef, SpaceDefinitions, TileCoordinate,
+    ResolvedObject, SpaceDefinitions, SpawnArea, SpawnGroupDef, TileCoordinate,
 };
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
@@ -248,7 +248,9 @@ pub fn tick_spawn_groups(
     let live_members: HashSet<Entity> = member_query.iter().collect();
     for runtime in registry.groups.values_mut() {
         let before = runtime.members.len();
-        runtime.members.retain(|entity| live_members.contains(entity));
+        runtime
+            .members
+            .retain(|entity| live_members.contains(entity));
         let lost = before - runtime.members.len();
         let mean = runtime.def.respawn_mean_seconds;
         for _ in 0..lost {
@@ -268,14 +270,10 @@ pub fn tick_spawn_groups(
         .iter()
         .map(|(r, t)| (r.space_id, *t))
         .collect();
-    let players: Vec<(SpaceId, TilePosition)> = player_query
-        .iter()
-        .map(|(r, t)| (r.space_id, *t))
-        .collect();
-    let npcs: Vec<(SpaceId, TilePosition)> = npc_query
-        .iter()
-        .map(|(r, t)| (r.space_id, *t))
-        .collect();
+    let players: Vec<(SpaceId, TilePosition)> =
+        player_query.iter().map(|(r, t)| (r.space_id, *t)).collect();
+    let npcs: Vec<(SpaceId, TilePosition)> =
+        npc_query.iter().map(|(r, t)| (r.space_id, *t)).collect();
 
     for (key, runtime) in registry.groups.iter_mut() {
         let Some(runtime_space) = space_manager.get(key.space_id) else {

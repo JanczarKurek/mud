@@ -3,7 +3,7 @@ use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::prelude::*;
 
 use crate::editor::resources::{
-    ModalKind, ModalState, PickRectTarget, SpawnAreaKind, SpawnGroupField, BehaviorKind,
+    BehaviorKind, ModalKind, ModalState, PickRectTarget, SpawnAreaKind, SpawnGroupField,
 };
 use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton, ThemedPanel};
 use crate::ui::theme::{Palette, UiThemeAssets};
@@ -390,7 +390,8 @@ pub fn handle_modal_keyboard_input(
             KeyCode::Tab => {
                 if is_spawn_group {
                     if let Some(draft) = modal_state.spawn_group_draft.as_mut() {
-                        draft.focused_field = next_spawn_group_field(draft.focused_field, draft.behavior_kind);
+                        draft.focused_field =
+                            next_spawn_group_field(draft.focused_field, draft.behavior_kind);
                     }
                 } else {
                     let len = modal_state.text_fields.len();
@@ -427,9 +428,12 @@ pub fn handle_modal_keyboard_input(
                     if is_spawn_group {
                         if let Some(draft) = modal_state.spawn_group_draft.as_mut() {
                             let f = draft.focused_field;
-                            let numeric = crate::editor::resources::SpawnGroupDraft::is_field_numeric(f);
+                            let numeric =
+                                crate::editor::resources::SpawnGroupDraft::is_field_numeric(f);
                             let allow = !numeric
-                                || ch.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '-');
+                                || ch
+                                    .chars()
+                                    .all(|c| c.is_ascii_digit() || c == '.' || c == '-');
                             if allow {
                                 if let Some(s) = draft.field_mut(f) {
                                     s.push_str(&ch);
@@ -454,13 +458,37 @@ fn next_spawn_group_field(current: SpawnGroupField, behavior: BehaviorKind) -> S
     use SpawnGroupField::*;
     let cycle: &[SpawnGroupField] = if behavior == BehaviorKind::RoamAndChase {
         &[
-            Id, Template, MaxCount, RespawnMean, AreaMinX, AreaMinY, AreaMaxX, AreaMaxY,
-            StepInterval, BhvMinX, BhvMinY, BhvMaxX, BhvMaxY, DetectDistance, DisengageDistance,
+            Id,
+            Template,
+            MaxCount,
+            RespawnMean,
+            AreaMinX,
+            AreaMinY,
+            AreaMaxX,
+            AreaMaxY,
+            StepInterval,
+            BhvMinX,
+            BhvMinY,
+            BhvMaxX,
+            BhvMaxY,
+            DetectDistance,
+            DisengageDistance,
         ]
     } else {
         &[
-            Id, Template, MaxCount, RespawnMean, AreaMinX, AreaMinY, AreaMaxX, AreaMaxY,
-            StepInterval, BhvMinX, BhvMinY, BhvMaxX, BhvMaxY,
+            Id,
+            Template,
+            MaxCount,
+            RespawnMean,
+            AreaMinX,
+            AreaMinY,
+            AreaMaxX,
+            AreaMaxY,
+            StepInterval,
+            BhvMinX,
+            BhvMinY,
+            BhvMaxX,
+            BhvMaxY,
         ]
     };
     let i = cycle.iter().position(|&f| f == current).unwrap_or(0);
@@ -594,16 +622,48 @@ fn spawn_spawn_group_modal(
 
                     // ── Identity ──
                     section_header(card, &palette, "Identity");
-                    text_row(card, &palette, "id", &draft.id, draft.focused_field == SpawnGroupField::Id, SpawnGroupField::Id);
-                    text_row(card, &palette, "template", &draft.template, draft.focused_field == SpawnGroupField::Template, SpawnGroupField::Template);
+                    text_row(
+                        card,
+                        &palette,
+                        "id",
+                        &draft.id,
+                        draft.focused_field == SpawnGroupField::Id,
+                        SpawnGroupField::Id,
+                    );
+                    text_row(
+                        card,
+                        &palette,
+                        "template",
+                        &draft.template,
+                        draft.focused_field == SpawnGroupField::Template,
+                        SpawnGroupField::Template,
+                    );
 
                     // ── Limits ──
                     section_header(card, &palette, "Limits");
-                    two_col(card, |left| {
-                        text_row(left, &palette, "max_count", &draft.max_count, draft.focused_field == SpawnGroupField::MaxCount, SpawnGroupField::MaxCount);
-                    }, |right| {
-                        text_row(right, &palette, "respawn_mean_seconds", &draft.respawn_mean_seconds, draft.focused_field == SpawnGroupField::RespawnMean, SpawnGroupField::RespawnMean);
-                    });
+                    two_col(
+                        card,
+                        |left| {
+                            text_row(
+                                left,
+                                &palette,
+                                "max_count",
+                                &draft.max_count,
+                                draft.focused_field == SpawnGroupField::MaxCount,
+                                SpawnGroupField::MaxCount,
+                            );
+                        },
+                        |right| {
+                            text_row(
+                                right,
+                                &palette,
+                                "respawn_mean_seconds",
+                                &draft.respawn_mean_seconds,
+                                draft.focused_field == SpawnGroupField::RespawnMean,
+                                SpawnGroupField::RespawnMean,
+                            );
+                        },
+                    );
 
                     // ── Spawn area ──
                     section_header(card, &palette, "Spawn Area");
@@ -612,8 +672,16 @@ fn spawn_spawn_group_modal(
                         &palette,
                         &theme,
                         &[
-                            ("Bounds", SpawnAreaKind::Bounds, draft.area_kind == SpawnAreaKind::Bounds),
-                            ("Tiles (read-only in v1)", SpawnAreaKind::Tiles, draft.area_kind == SpawnAreaKind::Tiles),
+                            (
+                                "Bounds",
+                                SpawnAreaKind::Bounds,
+                                draft.area_kind == SpawnAreaKind::Bounds,
+                            ),
+                            (
+                                "Tiles (read-only in v1)",
+                                SpawnAreaKind::Tiles,
+                                draft.area_kind == SpawnAreaKind::Tiles,
+                            ),
                         ],
                         |label, kind| (label, SpawnGroupAreaKindButton { kind }),
                     );
@@ -631,11 +699,22 @@ fn spawn_spawn_group_modal(
                         SpawnGroupField::AreaMaxX,
                         SpawnGroupField::AreaMaxY,
                     );
-                    pick_rect_button(card, &palette, "Pick area on map", PickRectTarget::SpawnArea);
+                    pick_rect_button(
+                        card,
+                        &palette,
+                        "Pick area on map",
+                        PickRectTarget::SpawnArea,
+                    );
                     if draft.area_kind == SpawnAreaKind::Tiles {
                         card.spawn((
-                            Text::new(format!("({} tiles in list — edit in YAML for now)", draft.area_tiles.len())),
-                            TextFont { font_size: 11.0, ..default() },
+                            Text::new(format!(
+                                "({} tiles in list — edit in YAML for now)",
+                                draft.area_tiles.len()
+                            )),
+                            TextFont {
+                                font_size: 11.0,
+                                ..default()
+                            },
                             TextColor(palette.text_muted),
                         ));
                     }
@@ -647,12 +726,27 @@ fn spawn_spawn_group_modal(
                         &palette,
                         &theme,
                         &[
-                            ("Roam", BehaviorKind::Roam, draft.behavior_kind == BehaviorKind::Roam),
-                            ("Roam + Chase", BehaviorKind::RoamAndChase, draft.behavior_kind == BehaviorKind::RoamAndChase),
+                            (
+                                "Roam",
+                                BehaviorKind::Roam,
+                                draft.behavior_kind == BehaviorKind::Roam,
+                            ),
+                            (
+                                "Roam + Chase",
+                                BehaviorKind::RoamAndChase,
+                                draft.behavior_kind == BehaviorKind::RoamAndChase,
+                            ),
                         ],
                         |label, kind| (label, SpawnGroupBehaviorKindButton { kind }),
                     );
-                    text_row(card, &palette, "step_interval_seconds", &draft.step_interval_seconds, draft.focused_field == SpawnGroupField::StepInterval, SpawnGroupField::StepInterval);
+                    text_row(
+                        card,
+                        &palette,
+                        "step_interval_seconds",
+                        &draft.step_interval_seconds,
+                        draft.focused_field == SpawnGroupField::StepInterval,
+                        SpawnGroupField::StepInterval,
+                    );
                     rect_row(
                         card,
                         &palette,
@@ -667,13 +761,36 @@ fn spawn_spawn_group_modal(
                         SpawnGroupField::BhvMaxX,
                         SpawnGroupField::BhvMaxY,
                     );
-                    pick_rect_button(card, &palette, "Pick behavior bounds on map", PickRectTarget::SpawnBehavior);
+                    pick_rect_button(
+                        card,
+                        &palette,
+                        "Pick behavior bounds on map",
+                        PickRectTarget::SpawnBehavior,
+                    );
                     if draft.behavior_kind == BehaviorKind::RoamAndChase {
-                        two_col(card, |left| {
-                            text_row(left, &palette, "detect_distance_tiles", &draft.detect_distance_tiles, draft.focused_field == SpawnGroupField::DetectDistance, SpawnGroupField::DetectDistance);
-                        }, |right| {
-                            text_row(right, &palette, "disengage_distance_tiles", &draft.disengage_distance_tiles, draft.focused_field == SpawnGroupField::DisengageDistance, SpawnGroupField::DisengageDistance);
-                        });
+                        two_col(
+                            card,
+                            |left| {
+                                text_row(
+                                    left,
+                                    &palette,
+                                    "detect_distance_tiles",
+                                    &draft.detect_distance_tiles,
+                                    draft.focused_field == SpawnGroupField::DetectDistance,
+                                    SpawnGroupField::DetectDistance,
+                                );
+                            },
+                            |right| {
+                                text_row(
+                                    right,
+                                    &palette,
+                                    "disengage_distance_tiles",
+                                    &draft.disengage_distance_tiles,
+                                    draft.focused_field == SpawnGroupField::DisengageDistance,
+                                    SpawnGroupField::DisengageDistance,
+                                );
+                            },
+                        );
                     }
 
                     // Buttons
@@ -710,7 +827,10 @@ fn spawn_spawn_group_modal(
 fn section_header(parent: &mut ChildSpawnerCommands, palette: &Palette, label: &str) {
     parent.spawn((
         Text::new(label.to_owned()),
-        TextFont { font_size: 13.0, ..default() },
+        TextFont {
+            font_size: 13.0,
+            ..default()
+        },
         TextColor(palette.text_accent),
         Node {
             margin: UiRect::top(Val::Px(4.0)),
@@ -752,7 +872,10 @@ fn text_row(
         .with_children(|col| {
             col.spawn((
                 Text::new(label.to_owned()),
-                TextFont { font_size: 11.0, ..default() },
+                TextFont {
+                    font_size: 11.0,
+                    ..default()
+                },
                 TextColor(palette.text_muted),
             ));
             col.spawn((
@@ -765,12 +888,19 @@ fn text_row(
                     ..default()
                 },
                 BackgroundColor(Color::srgba(0.06, 0.04, 0.04, 0.90)),
-                BorderColor::all(if focused { palette.border_focus } else { palette.border_idle }),
+                BorderColor::all(if focused {
+                    palette.border_focus
+                } else {
+                    palette.border_idle
+                }),
             ))
             .with_children(|input| {
                 input.spawn((
                     Text::new(display),
-                    TextFont { font_size: 12.0, ..default() },
+                    TextFont {
+                        font_size: 12.0,
+                        ..default()
+                    },
                     TextColor(display_color),
                 ));
             });
@@ -794,7 +924,10 @@ fn rect_row(
 ) {
     parent.spawn((
         Text::new(label.to_owned()),
-        TextFont { font_size: 11.0, ..default() },
+        TextFont {
+            font_size: 11.0,
+            ..default()
+        },
         TextColor(palette.text_muted),
     ));
     parent
@@ -820,7 +953,10 @@ fn rect_row(
                     .with_children(|col| {
                         col.spawn((
                             Text::new(lbl.to_owned()),
-                            TextFont { font_size: 9.0, ..default() },
+                            TextFont {
+                                font_size: 9.0,
+                                ..default()
+                            },
                             TextColor(palette.text_muted),
                         ));
                         col.spawn((
@@ -833,7 +969,11 @@ fn rect_row(
                                 ..default()
                             },
                             BackgroundColor(Color::srgba(0.06, 0.04, 0.04, 0.90)),
-                            BorderColor::all(if focused == f { palette.border_focus } else { palette.border_idle }),
+                            BorderColor::all(if focused == f {
+                                palette.border_focus
+                            } else {
+                                palette.border_idle
+                            }),
                         ))
                         .with_children(|inp| {
                             let text = if focused == f {
@@ -845,7 +985,10 @@ fn rect_row(
                             };
                             inp.spawn((
                                 Text::new(text),
-                                TextFont { font_size: 12.0, ..default() },
+                                TextFont {
+                                    font_size: 12.0,
+                                    ..default()
+                                },
                                 TextColor(palette.text_value),
                             ));
                         });
@@ -854,7 +997,12 @@ fn rect_row(
         });
 }
 
-fn pick_rect_button(parent: &mut ChildSpawnerCommands, palette: &Palette, label: &str, target: PickRectTarget) {
+fn pick_rect_button(
+    parent: &mut ChildSpawnerCommands,
+    palette: &Palette,
+    label: &str,
+    target: PickRectTarget,
+) {
     parent
         .spawn((
             Button,
@@ -873,7 +1021,10 @@ fn pick_rect_button(parent: &mut ChildSpawnerCommands, palette: &Palette, label:
         .with_children(|b| {
             b.spawn((
                 Text::new(label.to_owned()),
-                TextFont { font_size: 11.0, ..default() },
+                TextFont {
+                    font_size: 11.0,
+                    ..default()
+                },
                 TextColor(palette.text_value),
             ));
         });
@@ -902,7 +1053,10 @@ fn radio_row<K, M>(
                 let (bg, border) = if selected {
                     (Color::srgb(0.28, 0.16, 0.08), Color::srgb(0.90, 0.76, 0.50))
                 } else {
-                    (Color::srgba(0.12, 0.08, 0.06, 0.90), Color::srgb(0.38, 0.28, 0.18))
+                    (
+                        Color::srgba(0.12, 0.08, 0.06, 0.90),
+                        Color::srgb(0.38, 0.28, 0.18),
+                    )
                 };
                 row.spawn((
                     Button,
@@ -918,7 +1072,10 @@ fn radio_row<K, M>(
                 .with_children(|b| {
                     b.spawn((
                         Text::new(label.to_owned()),
-                        TextFont { font_size: 11.0, ..default() },
+                        TextFont {
+                            font_size: 11.0,
+                            ..default()
+                        },
                         TextColor(palette.text_value),
                     ));
                 });
@@ -985,7 +1142,10 @@ pub fn handle_spawn_group_area_kind_click(
 }
 
 pub fn handle_spawn_group_behavior_kind_click(
-    btns: Query<(&SpawnGroupBehaviorKindButton, &Interaction), (Changed<Interaction>, With<Button>)>,
+    btns: Query<
+        (&SpawnGroupBehaviorKindButton, &Interaction),
+        (Changed<Interaction>, With<Button>),
+    >,
     mut modal_state: ResMut<ModalState>,
 ) {
     for (btn, interaction) in &btns {

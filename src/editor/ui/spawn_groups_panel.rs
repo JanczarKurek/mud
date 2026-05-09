@@ -260,21 +260,13 @@ pub fn sync_spawn_groups_panel(
                     ..default()
                 },))
                     .with_children(|actions| {
-                        spawn_action_button(
-                            actions,
-                            "Edit",
-                            EditorSpawnGroupEditButton { index },
-                        );
+                        spawn_action_button(actions, "Edit", EditorSpawnGroupEditButton { index });
                         spawn_action_button(
                             actions,
                             "Dup",
                             EditorSpawnGroupDuplicateButton { index },
                         );
-                        spawn_action_button(
-                            actions,
-                            "Del",
-                            EditorSpawnGroupDeleteButton { index },
-                        );
+                        spawn_action_button(actions, "Del", EditorSpawnGroupDeleteButton { index });
                     });
             });
         }
@@ -308,11 +300,7 @@ fn behavior_summary(behavior: &MapBehavior) -> String {
     }
 }
 
-fn spawn_action_button<M: Component>(
-    parent: &mut ChildSpawnerCommands,
-    label: &str,
-    marker: M,
-) {
+fn spawn_action_button<M: Component>(parent: &mut ChildSpawnerCommands, label: &str, marker: M) {
     parent
         .spawn((
             Button,

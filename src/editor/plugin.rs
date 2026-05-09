@@ -1,14 +1,14 @@
 use bevy::prelude::*;
 
 use crate::app::state::ClientAppState;
-use crate::editor::floor_render::{
-    cleanup_editor_floor_cells, editor_build_floor_render_cells,
-    editor_sync_floor_render_transforms, EditorFloorRenderState,
-};
 use crate::editor::clipboard::{
     handle_clipboard_shortcuts, handle_editor_paste_click, render_paste_ghost,
 };
 use crate::editor::dialog_index::EditorDialogIndex;
+use crate::editor::floor_render::{
+    cleanup_editor_floor_cells, editor_build_floor_render_cells,
+    editor_sync_floor_render_transforms, EditorFloorRenderState,
+};
 use crate::editor::resources::{
     EditorCamera, EditorClipboard, EditorCursorMarker, EditorPasteGhostMarker,
     EditorPickRectResult, EditorPortalBuffer, EditorPropertyEditBuffer, EditorSpawnGroupBuffer,
@@ -18,7 +18,6 @@ use crate::editor::selection::{
     handle_editor_pick_rect_drag, handle_editor_select_drag, handle_editor_select_hotkey,
     render_selection,
 };
-use crate::editor::templates::EditorTemplatesIndex;
 use crate::editor::systems::{
     apply_modal_confirmed, attach_editor_visuals, handle_editor_camera_pan, handle_editor_escape,
     handle_editor_floor_brush_drag, handle_editor_floor_brush_hotkey, handle_editor_keyboard_input,
@@ -27,12 +26,12 @@ use crate::editor::systems::{
     open_file_dialog_shortcut, open_save_as_shortcut, process_modal_confirm, sync_portal_overlays,
     sync_tile_transforms_editor, update_editor_cursor_ghost,
 };
+use crate::editor::templates::EditorTemplatesIndex;
 use crate::editor::ui::modal::{
     apply_pick_rect_result_to_modal, handle_modal_buttons, handle_modal_keyboard_input,
-    handle_modal_list_click, handle_modal_text_field_click,
-    handle_spawn_group_area_kind_click, handle_spawn_group_behavior_kind_click,
-    handle_spawn_group_field_click, handle_spawn_group_pick_rect_click, spawn_or_rebuild_modal,
-    sync_modal_error_text,
+    handle_modal_list_click, handle_modal_text_field_click, handle_spawn_group_area_kind_click,
+    handle_spawn_group_behavior_kind_click, handle_spawn_group_field_click,
+    handle_spawn_group_pick_rect_click, spawn_or_rebuild_modal, sync_modal_error_text,
 };
 use crate::editor::ui::palette::{
     handle_floor_palette_clicks, handle_palette_clicks, handle_palette_filter_click,

@@ -241,7 +241,10 @@ fn execute_op(
         UndoOp::EditSpawnGroup { index, before } => {
             if index < spawn_group_buffer.groups.len() {
                 let after = std::mem::replace(&mut spawn_group_buffer.groups[index], before);
-                UndoOp::EditSpawnGroup { index, before: after }
+                UndoOp::EditSpawnGroup {
+                    index,
+                    before: after,
+                }
             } else {
                 UndoOp::EditSpawnGroup { index, before }
             }

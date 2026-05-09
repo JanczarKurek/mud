@@ -2,11 +2,11 @@ use bevy::prelude::*;
 
 use crate::combat::components::{AttackProfile, CombatLeash};
 use crate::persistence::{PlayerStateDump, WorldSnapshotStatus};
+use crate::player::classes::{Class, ClassChosen};
 use crate::player::components::{
     BaseStats, ChatLog, DerivedStats, EquippedItem, Inventory, InventoryStack, MovementCooldown,
     Player, PlayerId, PlayerIdentity, RegenBuffs, RegenTickers, VitalStats, WeaponDamage,
 };
-use crate::player::classes::{Class, ClassChosen};
 use crate::player::progression::Experience;
 use crate::world::components::{
     Collider, DisplayedVitalStats, Facing, HealthBarDisplayPolicy, OverworldObject, SpaceId,

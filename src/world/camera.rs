@@ -56,7 +56,11 @@ pub fn camera_follow(
         } else {
             0.0
         };
-        let new = Vec3::new(target_x, target_y + anchor_y, player_transform.translation.z);
+        let new = Vec3::new(
+            target_x,
+            target_y + anchor_y,
+            player_transform.translation.z,
+        );
         if player_transform.translation != new {
             player_transform.translation = new;
         }

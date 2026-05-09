@@ -370,19 +370,10 @@ impl SpawnGroupDraft {
             .area
             .tiles
             .as_ref()
-            .map(|ts| {
-                ts.iter()
-                    .map(|t| TilePosition::ground(t.x, t.y))
-                    .collect()
-            })
+            .map(|ts| ts.iter().map(|t| TilePosition::ground(t.x, t.y)).collect())
             .unwrap_or_default();
-        let (
-            behavior_kind,
-            step_interval,
-            bhv_rect,
-            detect_d,
-            disengage_d,
-        ) = match &group.behavior {
+        let (behavior_kind, step_interval, bhv_rect, detect_d, disengage_d) = match &group.behavior
+        {
             MapBehavior::Roam {
                 step_interval_seconds,
                 bounds,
@@ -555,7 +546,9 @@ pub struct EditorPasteGhostMarker;
 #[derive(Clone, Debug)]
 pub enum UndoOp {
     /// Despawn the entity with this object_id.
-    Despawn { object_id: u64 },
+    Despawn {
+        object_id: u64,
+    },
     /// Spawn a new object at the given position with given properties.
     Spawn {
         type_id: String,
@@ -564,9 +557,13 @@ pub enum UndoOp {
         properties: HashMap<String, String>,
     },
     /// Remove portal at the given index from EditorPortalBuffer.
-    RemovePortal { index: usize },
+    RemovePortal {
+        index: usize,
+    },
     /// Add a portal to EditorPortalBuffer.
-    AddPortal { portal: PortalDefinition },
+    AddPortal {
+        portal: PortalDefinition,
+    },
     /// Set a single floor cell to `value`, returning the previous value as the
     /// inverse op. Used by clipboard cut/paste so floor edits round-trip
     /// cleanly through undo/redo.
@@ -579,7 +576,9 @@ pub enum UndoOp {
     },
     /// A bundle executed atomically. Used by clipboard cut and paste so the
     /// whole stamp undoes/redoes in one Ctrl+Z.
-    Composite { ops: Vec<UndoOp> },
+    Composite {
+        ops: Vec<UndoOp>,
+    },
     /// Spawn-group buffer ops. The `before` snapshot in `EditSpawnGroup` is
     /// the *previous* contents of the slot — applying the op swaps in the
     /// snapshot and emits the *current* contents as the inverse.

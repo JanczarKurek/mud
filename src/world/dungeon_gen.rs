@@ -447,11 +447,7 @@ fn finish_with_l_shape(layout: &mut Layout, rng: &mut Rng, sx: i32, sy: i32, tx:
 
 // ── Layout → SpaceDefinition ──────────────────────────────────────────────────
 
-fn layout_to_space(
-    authored_id: String,
-    layout: Layout,
-    params: &DungeonParams,
-) -> SpaceDefinition {
+fn layout_to_space(authored_id: String, layout: Layout, params: &DungeonParams) -> SpaceDefinition {
     let mut def = SpaceDefinition::new_empty(
         authored_id,
         layout.width,

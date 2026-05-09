@@ -50,9 +50,7 @@ pub fn update_roaming_npcs(
 
     let npc_tiles: NpcTileIndex = npc_query
         .iter()
-        .map(|(entity, resident, tile_position, ..)| {
-            ((resident.space_id, *tile_position), entity)
-        })
+        .map(|(entity, resident, tile_position, ..)| ((resident.space_id, *tile_position), entity))
         .collect();
 
     for (

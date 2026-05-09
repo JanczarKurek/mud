@@ -365,12 +365,12 @@ pub fn sync_tile_transforms(
         }
 
         if let Some(sprite) = sprite.as_mut() {
-            let new_alpha = if is_active && floor_visible && view.tile.z < visible_floors.player_floor
-            {
-                DIMMED_FLOOR_ALPHA
-            } else {
-                1.0
-            };
+            let new_alpha =
+                if is_active && floor_visible && view.tile.z < visible_floors.player_floor {
+                    DIMMED_FLOOR_ALPHA
+                } else {
+                    1.0
+                };
             if sprite.color.alpha() != new_alpha {
                 sprite.color.set_alpha(new_alpha);
             }

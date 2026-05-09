@@ -465,10 +465,18 @@ fn spawn_behavior_section(parent: &mut ChildSpawnerCommands, behavior: Option<&M
                     BehaviorNudgeField::StepIntervalTenths,
                 );
                 if let Some(d) = detect {
-                    nudge_row(sec, &format!("detect {d}t"), BehaviorNudgeField::DetectDistance);
+                    nudge_row(
+                        sec,
+                        &format!("detect {d}t"),
+                        BehaviorNudgeField::DetectDistance,
+                    );
                 }
                 if let Some(d) = disengage {
-                    nudge_row(sec, &format!("dis. {d}t"), BehaviorNudgeField::DisengageDistance);
+                    nudge_row(
+                        sec,
+                        &format!("dis. {d}t"),
+                        BehaviorNudgeField::DisengageDistance,
+                    );
                 }
             }
         });

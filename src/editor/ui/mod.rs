@@ -130,7 +130,11 @@ pub fn spawn_editor_hud(
 
                 // Selection / templates
                 spawn_top_btn(bar, "Select  M", EditorSelectToolButton);
-                spawn_top_btn(bar, "Save Selection as Template", EditorSaveAsTemplateButton);
+                spawn_top_btn(
+                    bar,
+                    "Save Selection as Template",
+                    EditorSaveAsTemplateButton,
+                );
                 spawn_top_btn(bar, "Templates", EditorTemplatesToggleButton);
                 spawn_top_btn(bar, "Spawn Groups", EditorSpawnGroupsToggleButton);
 

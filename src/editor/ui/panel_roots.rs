@@ -16,12 +16,30 @@ use crate::editor::ui::EditorTopBarRoot;
 
 #[derive(SystemParam)]
 pub struct EditorPanelRoots<'w, 's> {
-    palette: Query<'w, 's, (&'static ComputedNode, &'static UiGlobalTransform), With<EditorPaletteRoot>>,
-    properties: Query<'w, 's, (&'static ComputedNode, &'static UiGlobalTransform), With<EditorPropertiesRoot>>,
-    top_bar: Query<'w, 's, (&'static ComputedNode, &'static UiGlobalTransform), With<EditorTopBarRoot>>,
-    modal: Query<'w, 's, (&'static ComputedNode, &'static UiGlobalTransform), With<ModalOverlayRoot>>,
-    templates: Query<'w, 's, (&'static ComputedNode, &'static UiGlobalTransform), With<EditorTemplatesRoot>>,
-    spawn_groups: Query<'w, 's, (&'static ComputedNode, &'static UiGlobalTransform), With<EditorSpawnGroupsRoot>>,
+    palette:
+        Query<'w, 's, (&'static ComputedNode, &'static UiGlobalTransform), With<EditorPaletteRoot>>,
+    properties: Query<
+        'w,
+        's,
+        (&'static ComputedNode, &'static UiGlobalTransform),
+        With<EditorPropertiesRoot>,
+    >,
+    top_bar:
+        Query<'w, 's, (&'static ComputedNode, &'static UiGlobalTransform), With<EditorTopBarRoot>>,
+    modal:
+        Query<'w, 's, (&'static ComputedNode, &'static UiGlobalTransform), With<ModalOverlayRoot>>,
+    templates: Query<
+        'w,
+        's,
+        (&'static ComputedNode, &'static UiGlobalTransform),
+        With<EditorTemplatesRoot>,
+    >,
+    spawn_groups: Query<
+        'w,
+        's,
+        (&'static ComputedNode, &'static UiGlobalTransform),
+        With<EditorSpawnGroupsRoot>,
+    >,
 }
 
 impl EditorPanelRoots<'_, '_> {

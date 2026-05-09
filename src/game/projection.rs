@@ -28,11 +28,11 @@ use crate::game::resources::{
     RegenBuffState,
 };
 use crate::npc::components::Npc;
+use crate::player::classes::{Class, ClassChosen};
 use crate::player::components::{
     CurrentCarryWeight, DerivedStats, Encumbered, MaxCarryWeight, Player, PlayerId, PlayerIdentity,
     RegenBuffs, VitalStats,
 };
-use crate::player::classes::{Class, ClassChosen};
 use crate::player::progression::{Experience, ExperienceView};
 use crate::world::components::{
     Container, Facing, Movable, ObjectState, OverworldObject, Quantity, Rotatable, SpaceId,

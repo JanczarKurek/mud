@@ -198,17 +198,15 @@ impl Plugin for GameAppPlugin {
                 ));
             }
             AppRuntime::TcpClient => {
-                app.add_plugins(
-                    DefaultPlugins
-                        .set(ImagePlugin::default_nearest())
-                        .set(WindowPlugin {
-                            primary_window: Some(Window {
-                                title: "Mud 2.0".into(),
-                                ..default()
-                            }),
+                app.add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()).set(
+                    WindowPlugin {
+                        primary_window: Some(Window {
+                            title: "Mud 2.0".into(),
                             ..default()
                         }),
-                )
+                        ..default()
+                    },
+                ))
                 .init_state::<ClientAppState>()
                 .add_systems(Startup, setup_camera)
                 .add_plugins((

@@ -236,16 +236,9 @@ pub fn fragment_from_state(
         }
         object_entries.push((obj.object_id, *tile));
     }
-    let fragment = fragment_from_selection(
-        selection,
-        true,
-        object_entries,
-        object_registry,
-        floor_maps,
-    );
-    if fragment.objects.is_empty()
-        && fragment.floors.iter().all(|f| f.floor_id.is_none())
-    {
+    let fragment =
+        fragment_from_selection(selection, true, object_entries, object_registry, floor_maps);
+    if fragment.objects.is_empty() && fragment.floors.iter().all(|f| f.floor_id.is_none()) {
         None
     } else {
         Some(fragment)
@@ -288,10 +281,8 @@ pub fn stamp_fragment(
             warn!("Paste: unknown object type '{}'; skipping", fo.type_id);
             continue;
         };
-        let new_id = object_registry.allocate_runtime_id_with_properties(
-            fo.type_id.clone(),
-            fo.properties.clone(),
-        );
+        let new_id = object_registry
+            .allocate_runtime_id_with_properties(fo.type_id.clone(), fo.properties.clone());
         let entity = crate::world::setup::spawn_overworld_object(
             commands,
             object_definitions,
@@ -466,11 +457,8 @@ pub fn render_paste_ghost(
         let Some(def) = object_definitions.get(&fo.type_id) else {
             continue;
         };
-        let mut sprite = crate::world::setup::sprite_for_definition(
-            &asset_server,
-            def,
-            &world_config,
-        );
+        let mut sprite =
+            crate::world::setup::sprite_for_definition(&asset_server, def, &world_config);
         sprite.color = sprite.color.with_alpha(0.6);
         let anchor_y_offset = if def.render.y_sort {
             -effective * 0.5
@@ -674,8 +662,7 @@ mod tests {
         assert_eq!(frag.width, 3);
         assert_eq!(frag.height, 2);
         // Both objects in-selection are captured with relative coords.
-        let dxs: Vec<(i32, i32, i32)> =
-            frag.objects.iter().map(|o| (o.dx, o.dy, o.z)).collect();
+        let dxs: Vec<(i32, i32, i32)> = frag.objects.iter().map(|o| (o.dx, o.dy, o.z)).collect();
         assert!(dxs.contains(&(0, 0, 0)));
         assert!(dxs.contains(&(2, 1, 1)));
         // Floors include the whole bbox (3 * 2 = 6 cells).

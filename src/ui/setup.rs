@@ -3,24 +3,24 @@ use bevy::text::{Justify, LineBreak, TextLayout};
 use bevy::ui::widget::NodeImageMode;
 
 use crate::ui::components::{
-    BackpackPanelContent, BackpackSlotRow, ChatLogText, ContainerPanelContent, ContainerSlotButton,
-    ContainerSlotImage, ContextMenuAttackButton, ContextMenuInspectButton,
+    BackpackPanelContent, BackpackSlotRow, CarryWeightLabel, ChatLogText, ContainerPanelContent,
+    ContainerSlotButton, ContainerSlotImage, ContextMenuAttackButton, ContextMenuInspectButton,
     ContextMenuInteractButton, ContextMenuOpenButton, ContextMenuRoot,
     ContextMenuTakePartialButton, ContextMenuTalkButton, ContextMenuUseButton,
     ContextMenuUseOnButton, CurrentCombatTargetLabel, CurrentTargetPanelContent,
     DialogPanelBodyText, DialogPanelCloseButton, DialogPanelContinueButton,
     DialogPanelOptionsContainer, DialogPanelRoot, DialogPanelSpeakerLabel, DockedPanelBody,
     DockedPanelCanvas, DockedPanelCloseButton, DockedPanelDragHandle, DockedPanelResizeHandle,
-    DockedPanelRoot, DockedPanelTitle, DragPreviewLabel, DragPreviewRoot, EquipmentPanelContent,
-    EquipmentSlotButton, EquipmentSlotImage, FullMapBodyRoot, FullMapCloseButton,
-    ExperienceFill, ExperienceLabel,
-    FullMapWindowRoot, FullMapZoomInButton, FullMapZoomLabel, FullMapZoomOutButton, HealthFill,
-    CarryWeightLabel, HealthLabel, HudMinimapZoomInButton, HudMinimapZoomLabel,
-    HudMinimapZoomOutButton, RegenBuffLabel,
-    ItemSlotButton, ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ManaFill, ManaLabel,
-    MinimapCanvas, MinimapMode, MinimapView, PythonConsoleInput, PythonConsoleOutput,
-    PythonConsoleOutputViewport, PythonConsolePanel, PythonConsoleScrollbarThumb, RightSidebarRoot,
-    StatusPanelContent, TakePartialAmountLabel, TakePartialCancelButton, TakePartialConfirmButton,
+    DockedPanelRoot, DockedPanelTitle, DragPreviewImage, DragPreviewLabel, DragPreviewQuantity,
+    DragPreviewRoot, EquipmentPanelContent, EquipmentSlotButton, EquipmentSlotImage,
+    ExperienceFill, ExperienceLabel, FullMapBodyRoot, FullMapCloseButton, FullMapWindowRoot,
+    FullMapZoomInButton, FullMapZoomLabel, FullMapZoomOutButton, HealthFill, HealthLabel,
+    HudMinimapZoomInButton, HudMinimapZoomLabel, HudMinimapZoomOutButton, ItemSlotButton,
+    ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot,
+    ManaFill, ManaLabel, MinimapCanvas, MinimapMode, MinimapView, PythonConsoleInput,
+    PythonConsoleOutput, PythonConsoleOutputViewport, PythonConsolePanel,
+    PythonConsoleScrollbarThumb, RegenBuffLabel, RightSidebarRoot, StatusPanelContent,
+    TakePartialAmountLabel, TakePartialCancelButton, TakePartialConfirmButton,
     TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot,
 };
 use crate::ui::menu_bar::{spawn_menu_bar, MENU_BAR_HEIGHT};
@@ -299,18 +299,18 @@ pub fn spawn_hud(
         .spawn((
             Node {
                 position_type: PositionType::Absolute,
-                width: px(92.0),
-                height: px(32.0),
-                left: px(-200.0),
-                top: px(-200.0),
+                left: px(-300.0),
+                top: px(-300.0),
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
+                column_gap: px(8.0),
                 padding: UiRect::axes(px(8.0), px(4.0)),
                 border: UiRect::all(px(1.0)),
                 ..default()
             },
             DragPreviewRoot,
             Visibility::Hidden,
+            GlobalZIndex(i32::MAX - 6),
             ImageNode::new(theme.panel_frame.clone())
                 .with_mode(theme.panel_image_mode())
                 .with_color(palette.surface_panel),
@@ -318,6 +318,43 @@ pub fn spawn_hud(
             BorderColor::all(palette.border_accent),
         ))
         .with_children(|preview| {
+            preview
+                .spawn(Node {
+                    width: px(32.0),
+                    height: px(32.0),
+                    align_items: AlignItems::FlexEnd,
+                    justify_content: JustifyContent::FlexEnd,
+                    ..default()
+                })
+                .with_children(|icon_slot| {
+                    icon_slot.spawn((
+                        Node {
+                            width: px(32.0),
+                            height: px(32.0),
+                            position_type: PositionType::Absolute,
+                            ..default()
+                        },
+                        ImageNode::default(),
+                        DragPreviewImage,
+                        Visibility::Hidden,
+                    ));
+                    icon_slot.spawn((
+                        Text::new(""),
+                        DragPreviewQuantity,
+                        TextFont {
+                            font_size: 11.0,
+                            ..default()
+                        },
+                        TextColor(palette.text_quantity),
+                        Node {
+                            position_type: PositionType::Absolute,
+                            bottom: px(0.0),
+                            right: px(2.0),
+                            ..default()
+                        },
+                        Visibility::Hidden,
+                    ));
+                });
             preview.spawn((
                 Text::new(""),
                 DragPreviewLabel,
@@ -326,6 +363,39 @@ pub fn spawn_hud(
                     ..default()
                 },
                 TextColor(palette.text_accent),
+            ));
+        });
+
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: px(-400.0),
+                top: px(-400.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                padding: UiRect::axes(px(8.0), px(4.0)),
+                border: UiRect::all(px(1.0)),
+                ..default()
+            },
+            ItemTooltipRoot,
+            Visibility::Hidden,
+            GlobalZIndex(i32::MAX - 4),
+            ImageNode::new(theme.panel_frame.clone())
+                .with_mode(theme.panel_image_mode())
+                .with_color(palette.surface_panel),
+            BackgroundColor(Color::NONE),
+            BorderColor::all(palette.border_accent),
+        ))
+        .with_children(|tooltip| {
+            tooltip.spawn((
+                Text::new(""),
+                ItemTooltipLabel,
+                TextFont {
+                    font_size: 14.0,
+                    ..default()
+                },
+                TextColor(palette.text_primary),
             ));
         });
 

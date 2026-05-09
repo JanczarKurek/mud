@@ -350,8 +350,7 @@ pub(crate) fn spawn_render_cells_at_corner(
                 let Some(def) = floor_defs.get(floor_id) else {
                     continue;
                 };
-                let priority_z =
-                    floor_priority_z(def.priority) + i as f32 * HARDEDGE_TIEBREAK_STEP;
+                let priority_z = floor_priority_z(def.priority) + i as f32 * HARDEDGE_TIEBREAK_STEP;
                 spawn_floor_cell(
                     commands,
                     asset_server,

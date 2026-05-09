@@ -214,9 +214,11 @@ pub fn spawn_palette_panel(
                 .with_children(|list| {
                     spawn_floor_row(list, None, "Erase", Color::srgba(0.0, 0.0, 0.0, 0.0));
 
-                    let mut floor_defs_sorted: Vec<&crate::world::floor_definitions::FloorTilesetDefinition> =
-                        floor_defs.iter().collect();
-                    floor_defs_sorted.sort_by(|a, b| a.priority.cmp(&b.priority).then(a.id.cmp(&b.id)));
+                    let mut floor_defs_sorted: Vec<
+                        &crate::world::floor_definitions::FloorTilesetDefinition,
+                    > = floor_defs.iter().collect();
+                    floor_defs_sorted
+                        .sort_by(|a, b| a.priority.cmp(&b.priority).then(a.id.cmp(&b.id)));
 
                     for def in floor_defs_sorted {
                         spawn_floor_row(list, Some(def.id.clone()), &def.name, def.debug_color());
@@ -494,8 +496,7 @@ pub fn sync_floor_palette_selection(
 ) {
     let active_floor_tool = editor_state.current_tool == EditorTool::FloorBrush;
     for (item, interaction, mut bg, mut border) in &mut items {
-        let is_selected =
-            active_floor_tool && editor_state.selected_floor_type == item.floor_id;
+        let is_selected = active_floor_tool && editor_state.selected_floor_type == item.floor_id;
         let (bg_color, border_color) = match (*interaction, is_selected) {
             (Interaction::Pressed, _) => {
                 (Color::srgb(0.50, 0.28, 0.12), Color::srgb(0.98, 0.84, 0.58))

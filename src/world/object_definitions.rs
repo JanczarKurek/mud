@@ -782,7 +782,8 @@ impl OverworldObjectDefinitions {
                 let Value::Mapping(map) = value else {
                     break;
                 };
-                let Some(Value::String(parent)) = map.get(Value::String("extends".to_owned())) else {
+                let Some(Value::String(parent)) = map.get(Value::String("extends".to_owned()))
+                else {
                     break;
                 };
                 if chain.iter().any(|p: &String| p == parent) {

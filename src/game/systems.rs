@@ -563,7 +563,10 @@ fn handle_give_item(
         bevy::log::warn!("GiveItem: unknown type_id '{type_id}'");
         return;
     };
-    let max_carry = max_carry_query.get(player_entity).copied().unwrap_or_default();
+    let max_carry = max_carry_query
+        .get(player_entity)
+        .copied()
+        .unwrap_or_default();
     let Ok((_, _, mut inventory, mut chat_log, _, _, _, _, _)) =
         player_query.get_mut(player_entity)
     else {
@@ -1483,7 +1486,10 @@ fn handle_move_item(
     max_carry_query: &Query<&MaxCarryWeight, With<Player>>,
     commands: &mut Commands,
 ) {
-    let max_carry = max_carry_query.get(player_entity).copied().unwrap_or_default();
+    let max_carry = max_carry_query
+        .get(player_entity)
+        .copied()
+        .unwrap_or_default();
     let Ok((
         _,
         _,
@@ -1743,7 +1749,10 @@ fn handle_take_from_stack(
     max_carry_query: &Query<&MaxCarryWeight, With<Player>>,
     commands: &mut Commands,
 ) {
-    let max_carry = max_carry_query.get(player_entity).copied().unwrap_or_default();
+    let max_carry = max_carry_query
+        .get(player_entity)
+        .copied()
+        .unwrap_or_default();
     let Ok((
         _,
         _,
@@ -1794,7 +1803,12 @@ fn handle_take_from_stack(
                             src_properties.clone(),
                             amount,
                         );
-                        if would_overload_carry(&inventory_state, &probe_stack, &max_carry, definitions) {
+                        if would_overload_carry(
+                            &inventory_state,
+                            &probe_stack,
+                            &max_carry,
+                            definitions,
+                        ) {
                             chat_log_state.push_narrator("Too heavy — you can't lift that.");
                             return;
                         }
@@ -2567,7 +2581,9 @@ fn place_stack_in_slot_ref(
                 .find(|(_, _, _, obj)| obj.object_id == container_object_id)
                 .and_then(|(_, _, _, obj)| definitions.get(&obj.definition_id));
             if let Some(dest) = dest_def {
-                if !dest.accepts_storable_containers && is_storable_container(&stack.type_id, definitions) {
+                if !dest.accepts_storable_containers
+                    && is_storable_container(&stack.type_id, definitions)
+                {
                     return false;
                 }
             }
@@ -2622,7 +2638,9 @@ fn place_stack_in_slot_ref(
 /// True if this type is itself a storable container item (a pouch). Used to
 /// gate placement into containers that disallow nesting.
 fn is_storable_container(type_id: &str, definitions: &OverworldObjectDefinitions) -> bool {
-    definitions.get(type_id).is_some_and(|d| d.storable && d.container_capacity.is_some())
+    definitions
+        .get(type_id)
+        .is_some_and(|d| d.storable && d.container_capacity.is_some())
 }
 
 fn is_player_destination(slot_ref: ItemSlotRef) -> bool {

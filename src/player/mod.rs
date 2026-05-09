@@ -17,8 +17,8 @@ use crate::player::regen::{tick_regen_buffs, tick_vital_regen};
 use crate::player::setup::spawn_player_visual;
 use crate::player::systems::{
     move_player_on_grid, refresh_derived_player_stats, rotate_nearby_object_on_shortcut,
-    set_home_on_keypress, sync_authoritative_player_display, sync_authoritative_player_position_view,
-    sync_projected_player_from_client_state,
+    set_home_on_keypress, sync_authoritative_player_display,
+    sync_authoritative_player_position_view, sync_projected_player_from_client_state,
 };
 
 pub struct PlayerServerPlugin;

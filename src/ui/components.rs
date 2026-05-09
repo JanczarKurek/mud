@@ -143,6 +143,18 @@ pub struct DragPreviewRoot;
 pub struct DragPreviewLabel;
 
 #[derive(Component)]
+pub struct DragPreviewImage;
+
+#[derive(Component)]
+pub struct DragPreviewQuantity;
+
+#[derive(Component)]
+pub struct ItemTooltipRoot;
+
+#[derive(Component)]
+pub struct ItemTooltipLabel;
+
+#[derive(Component)]
 pub struct PythonConsolePanel;
 
 #[derive(Component)]
@@ -243,7 +255,10 @@ pub struct BackpackSlotRow {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ItemSlotKind {
     Backpack(usize),
-    OpenContainer { panel_id: usize, slot_index: usize },
+    OpenContainer {
+        panel_id: usize,
+        slot_index: usize,
+    },
     Equipment(EquipmentSlot),
     /// A sub-slot inside a pouch panel. The owning panel is identified by
     /// `panel_id`; the panel's `DockedPanelKind::PouchInBackpack { backpack_slot }`

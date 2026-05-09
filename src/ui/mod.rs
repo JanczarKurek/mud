@@ -30,22 +30,21 @@ use crate::ui::sprite_state::sync_object_state_visuals;
 use crate::ui::systems::{
     apply_game_ui_events, consume_death_summary_events, consume_level_up_toasts,
     handle_attack_targeting, handle_character_sheet_button_click,
-    handle_character_sheet_close_click, handle_class_picker_clicks,
-    handle_context_menu_actions, handle_context_menu_opening, handle_death_summary_dismiss,
-    handle_docked_panel_close_buttons, handle_docked_panel_dragging,
-    handle_docked_panel_resizing, handle_docked_panel_scrolling, handle_movable_dragging,
-    handle_spell_targeting, handle_take_partial_buttons, handle_use_on_targeting,
-    manage_character_sheet_overlay, manage_class_picker, manage_open_containers,
-    print_right_sidebar_layout_debug,
-    setup_native_custom_cursor, sync_chat_log, sync_container_slot_images,
+    handle_character_sheet_close_click, handle_class_picker_clicks, handle_context_menu_actions,
+    handle_context_menu_opening, handle_death_summary_dismiss, handle_docked_panel_close_buttons,
+    handle_docked_panel_dragging, handle_docked_panel_resizing, handle_docked_panel_scrolling,
+    handle_movable_dragging, handle_spell_targeting, handle_take_partial_buttons,
+    handle_use_on_targeting, manage_character_sheet_overlay, manage_class_picker,
+    manage_open_containers, print_right_sidebar_layout_debug, setup_native_custom_cursor,
+    sync_carry_weight_label, sync_chat_log, sync_container_slot_images,
     sync_context_menu_attack_button, sync_context_menu_interact_button,
     sync_context_menu_open_button, sync_context_menu_root, sync_context_menu_take_partial_button,
     sync_context_menu_talk_button, sync_context_menu_use_button, sync_context_menu_use_on_button,
     sync_current_combat_target, sync_docked_panel_layout, sync_docked_panel_titles,
     sync_drag_preview, sync_equipment_slot_images, sync_item_slot_button_visibility,
-    sync_native_custom_cursor, sync_carry_weight_label, sync_regen_buff_label,
-    sync_take_partial_label, sync_vital_bars, sync_xp_bar, tick_level_up_toasts,
-    toggle_cursor_mode, update_take_partial_popup_visibility,
+    sync_item_tooltip, sync_native_custom_cursor, sync_regen_buff_label, sync_take_partial_label,
+    sync_vital_bars, sync_xp_bar, tick_level_up_toasts, toggle_cursor_mode,
+    update_take_partial_popup_visibility,
 };
 use crate::ui::theme::UiThemePlugin;
 
@@ -199,7 +198,7 @@ impl Plugin for UiPlugin {
             )
             .add_systems(
                 Update,
-                sync_drag_preview.run_if(in_state(ClientAppState::InGame)),
+                (sync_drag_preview, sync_item_tooltip).run_if(in_state(ClientAppState::InGame)),
             )
             .add_systems(
                 Update,

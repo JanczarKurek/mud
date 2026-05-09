@@ -14,9 +14,7 @@ use crate::network::resources::TcpServerState;
 use crate::npc::components::{
     HostileBehavior, Npc, RoamingBehavior, RoamingRandomState, RoamingStepTimer, SpawnGroupMember,
 };
-use crate::npc::spawn_groups::{
-    PendingSpawnGroupDumps, SpawnGroupRegistry, SpawnGroupRuntimeDump,
-};
+use crate::npc::spawn_groups::{PendingSpawnGroupDumps, SpawnGroupRegistry, SpawnGroupRuntimeDump};
 use crate::player::components::{
     BaseStats, ChatLog, DerivedStats, Inventory, InventoryStack, MovementCooldown, Player,
     PlayerId, PlayerIdentity, VitalStats,

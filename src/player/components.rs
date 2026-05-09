@@ -26,7 +26,10 @@ pub struct PlayerIdentity {
     /// Where this character respawns after death. `None` means "use map
     /// center" — fresh characters start with no explicit home, then can set
     /// one with the `SetHome` command. Restored from the account DB on login.
-    pub home_position: Option<(crate::world::components::SpaceId, crate::world::components::TilePosition)>,
+    pub home_position: Option<(
+        crate::world::components::SpaceId,
+        crate::world::components::TilePosition,
+    )>,
 }
 
 impl PlayerIdentity {
@@ -480,12 +483,9 @@ impl DerivedStats {
             + base.max_health
             + level_hp)
             .max(1);
-        let max_mana = (10
-            + attributes.willpower * 6
-            + attributes.focus * 3
-            + base.max_mana
-            + level_mana)
-            .max(0);
+        let max_mana =
+            (10 + attributes.willpower * 6 + attributes.focus * 3 + base.max_mana + level_mana)
+                .max(0);
         let storage_slots = (base.storage_slots - 2 + attributes.strength / 4).max(0) as usize;
 
         Self {

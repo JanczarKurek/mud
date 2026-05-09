@@ -6,13 +6,13 @@ use bevy::window::PrimaryWindow;
 
 use crate::editor::clipboard::cancel_paste;
 use crate::editor::resources::{
-    BehaviorKind, ConfirmedSpawnGroup, EditingField, EditorCamera, EditorContext,
-    EditorMapBuffers, EditorPortalBuffer, EditorPropertyEditBuffer, EditorSpawnGroupBuffer,
-    EditorState, EditorTool, ModalConfirmed, ModalKind, ModalState, ModalTextField, SpawnAreaKind,
-    SpawnGroupDraft, UndoOp, UndoStack,
+    BehaviorKind, ConfirmedSpawnGroup, EditingField, EditorCamera, EditorContext, EditorMapBuffers,
+    EditorPortalBuffer, EditorPropertyEditBuffer, EditorSpawnGroupBuffer, EditorState, EditorTool,
+    ModalConfirmed, ModalKind, ModalState, ModalTextField, SpawnAreaKind, SpawnGroupDraft, UndoOp,
+    UndoStack,
 };
-use crate::editor::templates::{save_template, EditorTemplatesIndex};
 use crate::editor::serializer::serialize_and_save;
+use crate::editor::templates::{save_template, EditorTemplatesIndex};
 use crate::game::commands::GameCommand;
 use crate::game::resources::PendingGameCommands;
 use crate::player::components::Player;
@@ -700,7 +700,10 @@ pub fn handle_editor_right_click(
     // without writing a result.
     if matches!(editor_state.current_tool, EditorTool::PickRect { .. }) {
         editor_state.selection = None;
-        editor_state.current_tool = editor_state.tool_before_pick.take().unwrap_or(EditorTool::Brush);
+        editor_state.current_tool = editor_state
+            .tool_before_pick
+            .take()
+            .unwrap_or(EditorTool::Brush);
         return;
     }
 
@@ -808,10 +811,7 @@ pub fn handle_editor_floor_brush_drag(
         None => vec![tile],
     };
     to_paint.retain(|t| {
-        t.x >= 0
-            && t.y >= 0
-            && t.x < editor_context.map_width
-            && t.y < editor_context.map_height
+        t.x >= 0 && t.y >= 0 && t.x < editor_context.map_width && t.y < editor_context.map_height
     });
     if to_paint.is_empty() {
         // Cursor jumped off-map but we still need to remember where it was so
@@ -1004,7 +1004,10 @@ pub fn handle_editor_escape(
         editor_state.paste_state.active = false;
     } else if matches!(editor_state.current_tool, EditorTool::PickRect { .. }) {
         editor_state.selection = None;
-        editor_state.current_tool = editor_state.tool_before_pick.take().unwrap_or(EditorTool::Brush);
+        editor_state.current_tool = editor_state
+            .tool_before_pick
+            .take()
+            .unwrap_or(EditorTool::Brush);
     } else if editor_state.selection.is_some() {
         editor_state.selection = None;
     } else if editor_state.current_tool != EditorTool::Brush {
@@ -1453,8 +1456,7 @@ pub fn process_modal_confirm(
                 Some(s) => match s.parse::<i32>() {
                     Ok(v) if (0..=100).contains(&v) => v,
                     _ => {
-                        modal_state.error_message =
-                            Some("Corridor Wander must be 0–100.".into());
+                        modal_state.error_message = Some("Corridor Wander must be 0–100.".into());
                         return;
                     }
                 },
@@ -1699,16 +1701,12 @@ fn build_spawn_group_from_draft(
             bounds: bhv_rect,
         },
         BehaviorKind::RoamAndChase => {
-            let detect_distance_tiles: i32 = draft
-                .detect_distance_tiles
-                .trim()
-                .parse()
-                .map_err(|_| "detect_distance_tiles must be a non-negative integer.".to_owned())?;
-            let disengage_distance_tiles: i32 = draft
-                .disengage_distance_tiles
-                .trim()
-                .parse()
-                .map_err(|_| {
+            let detect_distance_tiles: i32 =
+                draft.detect_distance_tiles.trim().parse().map_err(|_| {
+                    "detect_distance_tiles must be a non-negative integer.".to_owned()
+                })?;
+            let disengage_distance_tiles: i32 =
+                draft.disengage_distance_tiles.trim().parse().map_err(|_| {
                     "disengage_distance_tiles must be a non-negative integer.".to_owned()
                 })?;
             if detect_distance_tiles < 0 || disengage_distance_tiles < 0 {
@@ -1939,8 +1937,7 @@ pub fn apply_modal_confirmed(
                 branch_factor,
                 seed: seed.unwrap_or(0),
             };
-            let mut def =
-                crate::world::dungeon_gen::generate_dungeon(authored_id.clone(), params);
+            let mut def = crate::world::dungeon_gen::generate_dungeon(authored_id.clone(), params);
 
             // Allocate runtime IDs for the generated walls and register them
             // with the ObjectRegistry so future editor operations (brush,
@@ -2110,4 +2107,3 @@ mod tests {
         assert_eq!(forward.len(), backward.len());
     }
 }
-

@@ -19,11 +19,11 @@ use crate::ui::components::{
     ContextMenuInspectButton, ContextMenuOpenButton, ContextMenuRoot, ContextMenuTakePartialButton,
     ContextMenuUseButton, ContextMenuUseOnButton, CurrentCombatTargetLabel, DockedPanelBody,
     DockedPanelCanvas, DockedPanelCloseButton, DockedPanelDragHandle, DockedPanelResizeHandle,
-    DockedPanelRoot, DockedPanelTitle, DragPreviewLabel, DragPreviewRoot, EquipmentSlotButton,
-    EquipmentSlotImage, HealthFill, ItemSlotButton, ItemSlotImage, ItemSlotKind,
-    ItemSlotQuantityLabel, ManaFill, RightSidebarRoot, TakePartialAmountLabel,
-    TakePartialCancelButton, TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton,
-    TakePartialPopupRoot,
+    DockedPanelRoot, DockedPanelTitle, DragPreviewImage, DragPreviewLabel, DragPreviewQuantity,
+    DragPreviewRoot, EquipmentSlotButton, EquipmentSlotImage, HealthFill, ItemSlotButton,
+    ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot,
+    ManaFill, RightSidebarRoot, TakePartialAmountLabel, TakePartialCancelButton,
+    TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot,
 };
 use crate::ui::resources::{
     ContextMenuState, ContextMenuTarget, CursorMode, CursorState, DockedPanelDragState,
@@ -409,8 +409,7 @@ pub fn manage_class_picker(
     mut commands: Commands,
     overlays: Query<Entity, With<crate::ui::components::ClassPickerOverlay>>,
 ) {
-    let needs_picker =
-        client_state.local_player_id.is_some() && !client_state.class_chosen;
+    let needs_picker = client_state.local_player_id.is_some() && !client_state.class_chosen;
     let already_open = overlays.iter().next().is_some();
 
     if needs_picker && !already_open {
@@ -613,10 +612,7 @@ fn spawn_character_sheet_overlay(commands: &mut Commands, state: &ClientGameStat
     use crate::player::classes::ability_mod;
     use crate::ui::components::{CharacterSheetCloseButton, CharacterSheetOverlay};
 
-    let class_label = state
-        .class
-        .map(|c| c.label())
-        .unwrap_or("Adventurer");
+    let class_label = state.class.map(|c| c.label()).unwrap_or("Adventurer");
     let level_line = match &state.experience {
         Some(view) => match view.xp_for_next {
             Some(span) => format!(
@@ -1017,7 +1013,9 @@ pub fn handle_class_picker_clicks(
 ) {
     for (interaction, button) in &mut interactions {
         if matches!(interaction, Interaction::Pressed) {
-            pending_commands.push(GameCommand::ChooseClass { class: button.class });
+            pending_commands.push(GameCommand::ChooseClass {
+                class: button.class,
+            });
         }
     }
 }
@@ -1757,8 +1755,8 @@ pub fn handle_context_menu_opening(
             // item carries `contained_slots`). Pouches inside world
             // containers and equipment-slot pouches are intentionally
             // skipped — open them by moving them to your backpack first.
-            let can_open = matches!(slot_kind, ItemSlotKind::Backpack(_))
-                && stack.contained_slots.is_some();
+            let can_open =
+                matches!(slot_kind, ItemSlotKind::Backpack(_)) && stack.contained_slots.is_some();
             let stack_qty = stack.quantity;
             context_menu_state.show(
                 cursor_position,
@@ -1969,8 +1967,7 @@ pub fn sync_item_slot_button_visibility(
                 panel_id,
                 slot_index,
             } => {
-                if let Some(object_id) =
-                    docked_panel_state.container_object_id_for_panel(panel_id)
+                if let Some(object_id) = docked_panel_state.container_object_id_for_panel(panel_id)
                 {
                     client_state
                         .container_slots
@@ -2032,8 +2029,7 @@ pub fn sync_container_slot_images(
                 panel_id,
                 slot_index,
             } => {
-                if let Some(object_id) =
-                    docked_panel_state.container_object_id_for_panel(panel_id)
+                if let Some(object_id) = docked_panel_state.container_object_id_for_panel(panel_id)
                 {
                     client_state
                         .container_slots
@@ -2084,8 +2080,7 @@ pub fn sync_container_slot_images(
                 panel_id,
                 slot_index,
             } => {
-                if let Some(object_id) =
-                    docked_panel_state.container_object_id_for_panel(panel_id)
+                if let Some(object_id) = docked_panel_state.container_object_id_for_panel(panel_id)
                 {
                     client_state
                         .container_slots
@@ -2455,40 +2450,92 @@ pub fn sync_drag_preview(
     object_registry: Res<ObjectRegistry>,
     definitions: Res<OverworldObjectDefinitions>,
     spell_definitions: Res<SpellDefinitions>,
+    asset_server: Res<AssetServer>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     mut preview_query: Query<(&mut Node, &mut Visibility), With<DragPreviewRoot>>,
-    mut label_query: Query<&mut Text, (With<DragPreviewLabel>, Without<DragPreviewRoot>)>,
+    mut label_query: Query<
+        &mut Text,
+        (
+            With<DragPreviewLabel>,
+            Without<DragPreviewRoot>,
+            Without<DragPreviewQuantity>,
+        ),
+    >,
+    mut image_query: Query<
+        (&mut ImageNode, &mut Visibility),
+        (
+            With<DragPreviewImage>,
+            Without<DragPreviewRoot>,
+            Without<DragPreviewQuantity>,
+        ),
+    >,
+    mut quantity_query: Query<
+        (&mut Text, &mut Visibility),
+        (
+            With<DragPreviewQuantity>,
+            Without<DragPreviewRoot>,
+            Without<DragPreviewLabel>,
+            Without<DragPreviewImage>,
+        ),
+    >,
 ) {
-    let Ok((mut preview_node, mut visibility)) = preview_query.single_mut() else {
+    let Ok((mut preview_node, mut root_visibility)) = preview_query.single_mut() else {
         return;
     };
     let Ok(mut label) = label_query.single_mut() else {
         return;
     };
+    let Ok((mut image_node, mut image_visibility)) = image_query.single_mut() else {
+        return;
+    };
+    let Ok((mut quantity_text, mut quantity_visibility)) = quantity_query.single_mut() else {
+        return;
+    };
 
-    let preview_label: Option<String> = match &drag_state.source {
-        Some(DragSource::World) => drag_state.object_id.map(|object_id| {
-            object_registry
-                .display_name(object_id, &definitions, &spell_definitions)
-                .unwrap_or_else(|| object_id.to_string())
+    let resolved: Option<(String, Option<String>, u32)> = match &drag_state.source {
+        Some(DragSource::World) => drag_state.object_id.and_then(|object_id| {
+            let type_id = object_registry.type_id(object_id)?.to_owned();
+            let properties = object_registry.properties(object_id);
+            let name = ObjectRegistry::display_name_for_type(
+                &type_id,
+                properties,
+                &definitions,
+                &spell_definitions,
+            )
+            .unwrap_or_else(|| type_id.clone());
+            let state = properties
+                .and_then(|props| props.get("state"))
+                .map(String::as_str);
+            let sprite_path = definitions
+                .get(&type_id)
+                .and_then(|def| def.sprite_path_for_state(state).map(str::to_owned));
+            Some((name, sprite_path, 1))
         }),
         Some(DragSource::UiSlot(slot_kind)) => {
             stack_in_slot_kind(&client_state, &docked_panel_state, *slot_kind).map(|stack| {
-                ObjectRegistry::display_name_for_type(
+                let name = ObjectRegistry::display_name_for_type(
                     &stack.type_id,
                     Some(&stack.properties),
                     &definitions,
                     &spell_definitions,
                 )
-                .unwrap_or_else(|| stack.type_id.clone())
+                .unwrap_or_else(|| stack.type_id.clone());
+                let sprite_path = definitions
+                    .get(&stack.type_id)
+                    .and_then(|def| def.sprite_for_count(stack.quantity))
+                    .map(str::to_owned);
+                (name, sprite_path, stack.quantity)
             })
         }
         None => None,
     };
 
-    let Some(label_text) = preview_label else {
-        *visibility = Visibility::Hidden;
+    let Some((label_text, sprite_path, quantity)) = resolved else {
+        *root_visibility = Visibility::Hidden;
+        *image_visibility = Visibility::Hidden;
+        *quantity_visibility = Visibility::Hidden;
         label.0.clear();
+        quantity_text.0.clear();
         return;
     };
 
@@ -2496,15 +2543,97 @@ pub fn sync_drag_preview(
         return;
     };
     let Some(cursor_position) = window.cursor_position() else {
-        *visibility = Visibility::Hidden;
+        *root_visibility = Visibility::Hidden;
+        *image_visibility = Visibility::Hidden;
+        *quantity_visibility = Visibility::Hidden;
         label.0.clear();
+        quantity_text.0.clear();
         return;
     };
 
-    *visibility = Visibility::Visible;
+    *root_visibility = Visibility::Visible;
     preview_node.left = px(cursor_position.x + 14.0);
     preview_node.top = px(cursor_position.y + 14.0);
     label.0 = label_text;
+
+    if let Some(sprite_path) = sprite_path {
+        image_node.image = asset_server.load(sprite_path);
+        *image_visibility = Visibility::Visible;
+    } else {
+        *image_visibility = Visibility::Hidden;
+    }
+
+    if quantity > 1 {
+        quantity_text.0 = quantity.to_string();
+        *quantity_visibility = Visibility::Visible;
+    } else {
+        quantity_text.0.clear();
+        *quantity_visibility = Visibility::Hidden;
+    }
+}
+
+pub fn sync_item_tooltip(
+    drag_state: Res<DragState>,
+    client_state: Res<ClientGameState>,
+    docked_panel_state: Res<DockedPanelState>,
+    definitions: Res<OverworldObjectDefinitions>,
+    spell_definitions: Res<SpellDefinitions>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    slot_query: Query<(&Interaction, &ItemSlotButton)>,
+    mut tooltip_query: Query<(&mut Node, &mut Visibility), With<ItemTooltipRoot>>,
+    mut label_query: Query<&mut Text, (With<ItemTooltipLabel>, Without<ItemTooltipRoot>)>,
+) {
+    let Ok((mut tooltip_node, mut tooltip_visibility)) = tooltip_query.single_mut() else {
+        return;
+    };
+    let Ok(mut label) = label_query.single_mut() else {
+        return;
+    };
+
+    let hide = |tooltip_visibility: &mut Visibility, label: &mut Text| {
+        *tooltip_visibility = Visibility::Hidden;
+        label.0.clear();
+    };
+
+    if drag_state.source.is_some() {
+        hide(&mut tooltip_visibility, &mut label);
+        return;
+    }
+
+    let Some(hovered_slot) = slot_query
+        .iter()
+        .find(|(interaction, _)| matches!(interaction, Interaction::Hovered | Interaction::Pressed))
+        .map(|(_, button)| button.kind)
+    else {
+        hide(&mut tooltip_visibility, &mut label);
+        return;
+    };
+
+    let Some(stack) = stack_in_slot_kind(&client_state, &docked_panel_state, hovered_slot) else {
+        hide(&mut tooltip_visibility, &mut label);
+        return;
+    };
+
+    let name = ObjectRegistry::display_name_for_type(
+        &stack.type_id,
+        Some(&stack.properties),
+        &definitions,
+        &spell_definitions,
+    )
+    .unwrap_or_else(|| stack.type_id.clone());
+
+    let Ok(window) = window_query.single() else {
+        return;
+    };
+    let Some(cursor_position) = window.cursor_position() else {
+        hide(&mut tooltip_visibility, &mut label);
+        return;
+    };
+
+    *tooltip_visibility = Visibility::Visible;
+    tooltip_node.left = px(cursor_position.x + 18.0);
+    tooltip_node.top = px(cursor_position.y - 24.0);
+    label.0 = name;
 }
 
 pub fn handle_docked_panel_scrolling(
@@ -3092,16 +3221,13 @@ fn item_slot_kind_to_ref(
             panel_id,
             slot_index,
         } => {
-            if let Some(object_id) =
-                docked_panel_state.container_object_id_for_panel(panel_id)
-            {
+            if let Some(object_id) = docked_panel_state.container_object_id_for_panel(panel_id) {
                 Some(ItemSlotRef::Container {
                     object_id,
                     slot_index,
                 })
             } else {
-                let backpack_slot =
-                    docked_panel_state.pouch_backpack_slot_for_panel(panel_id)?;
+                let backpack_slot = docked_panel_state.pouch_backpack_slot_for_panel(panel_id)?;
                 Some(ItemSlotRef::PouchInBackpack {
                     backpack_slot,
                     sub_slot: slot_index,
@@ -3121,10 +3247,7 @@ fn item_slot_kind_to_ref(
 /// Capacity of an inventory pouch at `backpack_slot`, or `None` if the slot
 /// is empty / its item is not a container. Treats a `Some(stack)` whose
 /// `contained_slots` is `None` (legacy data) as a zero-slot pouch.
-fn inventory_pouch_capacity(
-    client_state: &ClientGameState,
-    backpack_slot: usize,
-) -> Option<usize> {
+fn inventory_pouch_capacity(client_state: &ClientGameState, backpack_slot: usize) -> Option<usize> {
     let stack = client_state
         .inventory
         .backpack_slots

@@ -138,7 +138,10 @@ pub fn handle_editor_pick_rect_drag(
     if !mouse.pressed(MouseButton::Left) {
         // Mouse just released after a drag — finalise the pick and restore tool.
         if let Some(anchor) = state.anchor {
-            if let Some(sel) = editor_state.selection.filter(|s| s.space_id == editor_context.space_id) {
+            if let Some(sel) = editor_state
+                .selection
+                .filter(|s| s.space_id == editor_context.space_id)
+            {
                 pick_result.pending = Some(PickedRect {
                     target,
                     rect: TileRectangle {
