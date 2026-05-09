@@ -4,7 +4,7 @@ version = "0.2.0"
 edition = "2021"
 
 [dependencies]
-bevy = { version = "0.18", features = ["dynamic_linking", "debug"] }
+bevy = { version = "0.18", features = ["dynamic_linking"] }
 bevy_yarnspinner = "0.8"
 # Only needed for `VariableStorageError`, which bevy_yarnspinner re-exports
 # as `pub(crate)`. The actual trait lives in `yarnspinner::runtime`.
@@ -34,6 +34,18 @@ rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"]
 [features]
 gen-schemas = ["schemars"]
 dev-self-signed = ["rcgen"]
+# Build with `--features profiling` to capture a per-system Chrome trace at
+# runtime. On exit, Bevy writes `trace-{timestamp}.json` to CWD; open in
+# https://ui.perfetto.dev/ or chrome://tracing. Off by default — the chrome
+# layer adds nontrivial per-span overhead.
+profiling = ["bevy/trace_chrome"]
+# Build with `--features tracy` to expose Bevy's tracing spans to a Tracy
+# client. Run `tracy` (GUI) or `tracy-capture -o file.tracy` before launching
+# the game. Bevy 0.18.1 pulls tracing-tracy 0.11.x; the capture client
+# version must match. Mutually exclusive with `profiling` — different
+# subscribers, only one tracing layer at a time. See
+# docs/movement_perf_investigation.md "Round 2 — Tracy" for usage.
+tracy = ["bevy/trace_tracy"]
 
 [[bin]]
 name = "gen_schemas"

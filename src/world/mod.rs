@@ -1,4 +1,5 @@
 pub mod animation;
+pub mod camera;
 pub mod components;
 pub mod darkness;
 pub mod direction;
@@ -27,6 +28,7 @@ use crate::world::animation::{
     advance_animation_timers, attach_animated_sprite, cleanup_just_moved, detect_player_movement,
     return_to_idle_animation, tick_view_scroll, tick_visual_offsets, trigger_movement_animation,
 };
+use crate::world::camera::camera_follow;
 use crate::world::darkness::{
     setup_darkness_overlay, update_darkness_overlay, DarknessOverlayMaterial,
 };
@@ -171,6 +173,9 @@ impl Plugin for WorldClientPlugin {
                     cleanup_just_moved.after(return_to_idle_animation),
                     tick_view_scroll,
                     tick_visual_offsets,
+                    camera_follow
+                        .after(tick_view_scroll)
+                        .after(detect_player_movement),
                 )
                     .run_if(in_state(ClientAppState::InGame)),
             )
@@ -186,7 +191,8 @@ impl Plugin for WorldClientPlugin {
                         .after(sync_object_light_components)
                         .after(sync_tile_transforms)
                         .after(sync_player_z)
-                        .after(recompute_visible_floors),
+                        .after(recompute_visible_floors)
+                        .after(camera_follow),
                 )
                     .run_if(in_state(ClientAppState::InGame)),
             );

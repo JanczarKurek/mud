@@ -229,11 +229,20 @@ pub fn spawn_overworld_object_instance(
                 VitalStats::full(max_health, max_mana),
             ));
 
+            // Deterministic per-NPC jitter so that NPCs don't all decrement
+            // their step timers in lockstep — without this, every
+            // `step_interval_seconds` boundary the entire NPC population fires
+            // `update_roaming_npcs`'s search on the same frame and produces a
+            // visible spike. Spreads the work across all frames in the cycle.
+            let seed = object.id.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            let jitter_frac = (seed % 1024) as f32 / 1024.0;
+
             match behavior {
                 MapBehavior::Roam {
                     step_interval_seconds,
                     bounds,
                 } => {
+                    let step = (*step_interval_seconds).max(0.05);
                     entity_commands.insert((
                         RoamingBehavior {
                             bounds: RoamBounds {
@@ -242,14 +251,12 @@ pub fn spawn_overworld_object_instance(
                                 max_x: bounds.max_x,
                                 max_y: bounds.max_y,
                             },
-                            step_interval_seconds: (*step_interval_seconds).max(0.05),
+                            step_interval_seconds: step,
                         },
                         RoamingStepTimer {
-                            remaining_seconds: *step_interval_seconds,
+                            remaining_seconds: jitter_frac * step,
                         },
-                        RoamingRandomState {
-                            seed: object.id.wrapping_mul(1_103_515_245).wrapping_add(12_345),
-                        },
+                        RoamingRandomState { seed },
                     ));
                 }
                 MapBehavior::RoamAndChase {
@@ -258,6 +265,7 @@ pub fn spawn_overworld_object_instance(
                     detect_distance_tiles,
                     disengage_distance_tiles,
                 } => {
+                    let step = (*step_interval_seconds).max(0.05);
                     entity_commands.insert((
                         RoamingBehavior {
                             bounds: RoamBounds {
@@ -266,7 +274,7 @@ pub fn spawn_overworld_object_instance(
                                 max_x: bounds.max_x,
                                 max_y: bounds.max_y,
                             },
-                            step_interval_seconds: (*step_interval_seconds).max(0.05),
+                            step_interval_seconds: step,
                         },
                         HostileBehavior {
                             detect_distance_tiles: (*detect_distance_tiles).max(1),
@@ -278,11 +286,9 @@ pub fn spawn_overworld_object_instance(
                                 .max(*detect_distance_tiles),
                         },
                         RoamingStepTimer {
-                            remaining_seconds: *step_interval_seconds,
+                            remaining_seconds: jitter_frac * step,
                         },
-                        RoamingRandomState {
-                            seed: object.id.wrapping_mul(1_103_515_245).wrapping_add(12_345),
-                        },
+                        RoamingRandomState { seed },
                     ));
                 }
             }

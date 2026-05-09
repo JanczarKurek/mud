@@ -155,6 +155,7 @@ pub fn advance_animation_timers(
     time: Res<Time>,
     mut query: Query<(&mut AnimatedSprite, &mut Sprite)>,
 ) {
+    let _t = crate::diagnostics::SystemTimer::new("advance_animation_timers", 1.0);
     for (mut animated, mut sprite) in &mut query {
         if animated.frame_count == 0 {
             continue;

@@ -11,7 +11,6 @@ use crate::world::floor_definitions::{
     TransitionPairKey,
 };
 use crate::world::floor_map::FloorMap;
-use crate::world::resources::ViewScrollOffset;
 use crate::world::systems::flat_floor_z;
 use crate::world::WorldConfig;
 
@@ -133,6 +132,7 @@ pub fn build_floor_render_cells(
     mut render_state: ResMut<FloorRenderState>,
     existing: Query<Entity, With<FloorRenderCell>>,
 ) {
+    let _t = crate::diagnostics::SystemTimer::new("build_floor_render_cells", 1.0);
     let Some(space) = client_state.current_space.as_ref() else {
         return;
     };
@@ -567,13 +567,20 @@ pub fn consume_floor_render_dirty(_dirty: ResMut<FloorRenderDirty>) {}
 pub fn sync_floor_render_transforms(
     client_state: Res<ClientGameState>,
     world_config: Res<WorldConfig>,
-    view_scroll: Res<ViewScrollOffset>,
     mut query: Query<(&FloorRenderCell, &mut Transform)>,
 ) {
+    let _t = crate::diagnostics::SystemTimer::new("sync_floor_render_transforms", 1.0);
     let Some(player_position) = client_state.player_position else {
         return;
     };
-    let scroll = view_scroll.snapped();
+    // Absolute world coords: x and y depend only on the cell's tile-grid
+    // position, never on player_position or scroll. The camera follows the
+    // player (`crate::world::camera::camera_follow`), so screen-relative
+    // positioning falls out of `sprite_world - camera_world`.
+    //
+    // Result: when the player is standing still or scrolling within the same
+    // space, none of these 4k+ Transforms get marked changed, and Bevy's
+    // `propagate_parent_transforms` skips them.
     for (cell, mut transform) in &mut query {
         let visible = cell.space_id == player_position.space_id;
         let z = if !visible {
@@ -581,15 +588,12 @@ pub fn sync_floor_render_transforms(
         } else {
             flat_floor_z(cell.priority_z, cell.z)
         };
-        let dx = (cell.rx as f32 - 0.5 + cell.local_offset.x
-            - player_position.tile_position.x as f32)
-            * world_config.tile_size
-            + scroll.x;
-        let dy = (cell.ry as f32 - 0.5 + cell.local_offset.y
-            - player_position.tile_position.y as f32)
-            * world_config.tile_size
-            + scroll.y;
-        transform.translation = Vec3::new(dx, dy, z);
+        let dx = (cell.rx as f32 - 0.5 + cell.local_offset.x) * world_config.tile_size;
+        let dy = (cell.ry as f32 - 0.5 + cell.local_offset.y) * world_config.tile_size;
+        let new_translation = Vec3::new(dx, dy, z);
+        if transform.translation != new_translation {
+            transform.translation = new_translation;
+        }
     }
 }
 

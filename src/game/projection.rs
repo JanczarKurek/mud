@@ -465,6 +465,7 @@ pub fn apply_game_events_to_client_state(
     mut client_state: ResMut<ClientGameState>,
     mut pending_game_events: ResMut<PendingGameEvents>,
 ) {
+    let _t = crate::diagnostics::SystemTimer::new("apply_game_events_to_client_state", 1.0);
     let events = std::mem::take(&mut pending_game_events.events);
     for event in events {
         log_client_game_event(&client_state, &event);

@@ -28,7 +28,6 @@ use crate::world::components::ViewPosition;
 use crate::world::floors::VisibleFloorRange;
 use crate::world::lighting::{day_night_palette, srgb_u8_to_linear, LightSource};
 use crate::world::object_definitions::OverworldObjectDefinitions;
-use crate::world::resources::ViewScrollOffset;
 use crate::world::WorldConfig;
 
 const SHADER_PATH: &str = "shaders/darkness_overlay.wgsl";
@@ -155,12 +154,19 @@ pub fn update_darkness_overlay(
     visible_floors: Res<VisibleFloorRange>,
     world_config: Res<WorldConfig>,
     definitions: Res<OverworldObjectDefinitions>,
-    view_scroll: Res<ViewScrollOffset>,
-    light_query: Query<(&LightSource, &ViewPosition, &Transform)>,
-    overlay_query: Query<&MeshMaterial2d<DarknessOverlayMaterial>, With<DarknessOverlay>>,
+    camera_query: Query<&Transform, (With<bevy::prelude::Camera2d>, Without<DarknessOverlay>)>,
+    light_query: Query<(&LightSource, &ViewPosition, &Transform), Without<DarknessOverlay>>,
+    mut overlay_query: Query<
+        (&MeshMaterial2d<DarknessOverlayMaterial>, &mut Transform),
+        With<DarknessOverlay>,
+    >,
     mut materials: ResMut<Assets<DarknessOverlayMaterial>>,
 ) {
-    let Ok(material_handle) = overlay_query.single() else {
+    let _t = crate::diagnostics::SystemTimer::new("update_darkness_overlay", 1.0);
+    // The 4000×4000 quad has to follow the camera since sprites are now
+    // rendered at absolute world coords; otherwise the screen window could
+    // fall outside the quad's bounds and the shader would stop covering it.
+    let Ok((material_handle, mut overlay_transform)) = overlay_query.single_mut() else {
         return;
     };
     let Some(player_pos) = client_state.player_position else {
@@ -261,19 +267,31 @@ pub fn update_darkness_overlay(
     }
 
     // Tile-to-world transform.
-    // sync_tile_transforms places tile T's sprite *center* at world position
-    // (T - player_tile) * tile_size + scroll, so visually tile T occupies
-    // [(T - player_tile - 0.5) * tile_size, (T - player_tile + 0.5) * tile_size).
-    // The shader maps a fragment's world_xy to a tile via
-    // floor((world_xy - origin) / tile_size); without the -0.5 offset its tile
-    // boundaries land on sprite *centers*, shifting the indoor mask by half a
-    // tile (rooms drag a half-tile shadow). Adding `scroll` keeps the mask
-    // glued to sprites during the 0.18 s movement decay — using the same
-    // snapped scroll sprites use, otherwise the mask jitters by a pixel.
+    // Sprites now sit at absolute world coords (`tile * tile_size`), so the
+    // shader maps a fragment's world_xy to a tile via
+    // `floor((world_xy - origin) / tile_size)` with origin = `-0.5 * tile_size`.
+    // The −0.5 offset places tile boundaries between sprite centers (sprite
+    // for tile T centered at T*tile_size occupies
+    // [(T-0.5)*tile_size, (T+0.5)*tile_size)). Origin is *constant* now —
+    // player position and scroll dropped out when we switched to a
+    // camera-follow scheme.
     let tile_size = world_config.tile_size;
-    let scroll = view_scroll.snapped();
-    let origin_x = -(player_pos.tile_position.x as f32 + 0.5) * tile_size + scroll.x;
-    let origin_y = -(player_pos.tile_position.y as f32 + 0.5) * tile_size + scroll.y;
+    let origin_x = -0.5 * tile_size;
+    let origin_y = -0.5 * tile_size;
+
+    // Park the overlay quad at the camera's world position so it covers the
+    // visible viewport regardless of where the camera has scrolled to. Cheap:
+    // single Transform write per camera move.
+    if let Ok(camera_transform) = camera_query.single() {
+        let new_overlay_pos = Vec3::new(
+            camera_transform.translation.x,
+            camera_transform.translation.y,
+            OVERLAY_Z,
+        );
+        if overlay_transform.translation != new_overlay_pos {
+            overlay_transform.translation = new_overlay_pos;
+        }
+    }
 
     let Some(material) = materials.get_mut(&material_handle.0) else {
         return;

@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use bevy::prelude::*;
 
 use crate::combat::components::{AttackKind, AttackProfile, CombatTarget};
@@ -7,6 +9,13 @@ use crate::npc::components::{
 use crate::player::components::Player;
 use crate::world::components::{Collider, Facing, SpaceId, SpaceResident, TilePosition};
 use crate::world::direction::Direction;
+
+/// Spatial index of static blocker tiles, rebuilt at the top of
+/// `update_roaming_npcs`. Replaces a per-NPC × per-candidate-tile linear scan
+/// of every collider in the world (~thousands), which produced a 20+ ms spike
+/// every step interval when all NPCs synchronized on the same frame.
+type BlockerIndex = HashSet<(SpaceId, TilePosition)>;
+type NpcTileIndex = HashMap<(SpaceId, TilePosition), Entity>;
 
 pub fn update_roaming_npcs(
     time: Res<Time>,
@@ -34,9 +43,16 @@ pub fn update_roaming_npcs(
         .map(|(entity, resident, tile_position)| (entity, resident.space_id, *tile_position))
         .collect::<Vec<_>>();
 
-    let npc_positions: Vec<(Entity, SpaceId, TilePosition)> = npc_query
+    let blockers: BlockerIndex = blocker_query
         .iter()
-        .map(|(entity, resident, tile_position, ..)| (entity, resident.space_id, *tile_position))
+        .map(|(resident, position)| (resident.space_id, *position))
+        .collect();
+
+    let npc_tiles: NpcTileIndex = npc_query
+        .iter()
+        .map(|(entity, resident, tile_position, ..)| {
+            ((resident.space_id, *tile_position), entity)
+        })
         .collect();
 
     for (
@@ -82,9 +98,9 @@ pub fn update_roaming_npcs(
             attack_profile,
             chase_target,
             &mut random_state,
-            &blocker_query,
+            &blockers,
             player_position,
-            &npc_positions,
+            &npc_tiles,
         ) {
             let old_position = *tile_position;
             *tile_position = target_position;
@@ -111,9 +127,9 @@ fn choose_roaming_step(
     attack_profile: Option<&AttackProfile>,
     chase_target: Option<TilePosition>,
     random_state: &mut RoamingRandomState,
-    blocker_query: &Query<(&SpaceResident, &TilePosition), (With<Collider>, Without<Npc>)>,
+    blockers: &BlockerIndex,
     player_position: Option<TilePosition>,
-    npc_positions: &[(Entity, SpaceId, TilePosition)],
+    npc_tiles: &NpcTileIndex,
 ) -> Option<TilePosition> {
     if let Some(chase_target) = chase_target {
         if let (
@@ -130,9 +146,9 @@ fn choose_roaming_step(
                 chase_target,
                 *range_tiles,
                 hostile.disengage_distance_tiles,
-                blocker_query,
+                blockers,
                 player_position,
-                npc_positions,
+                npc_tiles,
             );
         }
 
@@ -141,9 +157,9 @@ fn choose_roaming_step(
             space_id,
             tile_position,
             chase_target,
-            blocker_query,
+            blockers,
             player_position,
-            npc_positions,
+            npc_tiles,
         );
     }
 
@@ -163,9 +179,9 @@ fn choose_roaming_step(
             space_id,
             tile_position,
             return_target,
-            blocker_query,
+            blockers,
             player_position,
-            npc_positions,
+            npc_tiles,
             true,
         );
     }
@@ -187,9 +203,7 @@ fn choose_roaming_step(
             tile_position.z,
         );
 
-        if blocker_query.iter().any(|(resident, blocker_position)| {
-            resident.space_id == space_id && *blocker_position == target_position
-        }) {
+        if blockers.contains(&(space_id, target_position)) {
             continue;
         }
 
@@ -197,13 +211,9 @@ fn choose_roaming_step(
             continue;
         }
 
-        if npc_positions
-            .iter()
-            .any(|(other_entity, other_space_id, other_position)| {
-                *other_space_id == space_id
-                    && *other_entity != entity
-                    && *other_position == target_position
-            })
+        if npc_tiles
+            .get(&(space_id, target_position))
+            .is_some_and(|other| *other != entity)
         {
             continue;
         }
@@ -270,9 +280,9 @@ fn choose_chase_step(
     space_id: SpaceId,
     tile_position: TilePosition,
     chase_target: TilePosition,
-    blocker_query: &Query<(&SpaceResident, &TilePosition), (With<Collider>, Without<Npc>)>,
+    blockers: &BlockerIndex,
     player_position: Option<TilePosition>,
-    npc_positions: &[(Entity, SpaceId, TilePosition)],
+    npc_tiles: &NpcTileIndex,
 ) -> Option<TilePosition> {
     if chebyshev_distance(tile_position, chase_target) <= 1 {
         return None;
@@ -283,9 +293,9 @@ fn choose_chase_step(
         space_id,
         tile_position,
         chase_target,
-        blocker_query,
+        blockers,
         player_position,
-        npc_positions,
+        npc_tiles,
         true,
     )
 }
@@ -297,9 +307,9 @@ fn choose_kiting_step(
     chase_target: TilePosition,
     range_tiles: i32,
     disengage_distance_tiles: i32,
-    blocker_query: &Query<(&SpaceResident, &TilePosition), (With<Collider>, Without<Npc>)>,
+    blockers: &BlockerIndex,
     player_position: Option<TilePosition>,
-    npc_positions: &[(Entity, SpaceId, TilePosition)],
+    npc_tiles: &NpcTileIndex,
 ) -> Option<TilePosition> {
     let preferred_cap = (disengage_distance_tiles - 1).max(0);
     let preferred = (range_tiles / 2).clamp(0, preferred_cap);
@@ -312,9 +322,9 @@ fn choose_kiting_step(
             space_id,
             tile_position,
             chase_target,
-            blocker_query,
+            blockers,
             player_position,
-            npc_positions,
+            npc_tiles,
         );
     }
 
@@ -329,9 +339,9 @@ fn choose_kiting_step(
             space_id,
             tile_position,
             away_goal,
-            blocker_query,
+            blockers,
             player_position,
-            npc_positions,
+            npc_tiles,
             true,
         );
     }
@@ -344,9 +354,9 @@ fn choose_seek_step(
     space_id: SpaceId,
     tile_position: TilePosition,
     seek_target: TilePosition,
-    blocker_query: &Query<(&SpaceResident, &TilePosition), (With<Collider>, Without<Npc>)>,
+    blockers: &BlockerIndex,
     player_position: Option<TilePosition>,
-    npc_positions: &[(Entity, SpaceId, TilePosition)],
+    npc_tiles: &NpcTileIndex,
     respect_player_tile: bool,
 ) -> Option<TilePosition> {
     let mut candidate_offsets = Vec::new();
@@ -382,9 +392,9 @@ fn choose_seek_step(
             entity,
             space_id,
             target_position,
-            blocker_query,
+            blockers,
             player_position,
-            npc_positions,
+            npc_tiles,
             respect_player_tile,
         ) {
             continue;
@@ -400,14 +410,12 @@ fn is_blocked_position(
     entity: Entity,
     space_id: SpaceId,
     target_position: TilePosition,
-    blocker_query: &Query<(&SpaceResident, &TilePosition), (With<Collider>, Without<Npc>)>,
+    blockers: &BlockerIndex,
     player_position: Option<TilePosition>,
-    npc_positions: &[(Entity, SpaceId, TilePosition)],
+    npc_tiles: &NpcTileIndex,
     respect_player_tile: bool,
 ) -> bool {
-    if blocker_query.iter().any(|(resident, blocker_position)| {
-        resident.space_id == space_id && *blocker_position == target_position
-    }) {
+    if blockers.contains(&(space_id, target_position)) {
         return true;
     }
 
@@ -417,13 +425,9 @@ fn is_blocked_position(
         return true;
     }
 
-    npc_positions
-        .iter()
-        .any(|(other_entity, other_space_id, other_position)| {
-            *other_space_id == space_id
-                && *other_entity != entity
-                && *other_position == target_position
-        })
+    npc_tiles
+        .get(&(space_id, target_position))
+        .is_some_and(|other| *other != entity)
 }
 
 fn chebyshev_distance(a: TilePosition, b: TilePosition) -> i32 {

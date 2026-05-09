@@ -15,6 +15,7 @@ use crate::app::state::ClientAppState;
 use crate::app::title_screen::TitleScreenPlugin;
 use crate::client_effects::ClientEffectsPlugin;
 use crate::combat::CombatPlugin;
+use crate::diagnostics::DiagnosticsPlugin;
 use crate::dialog::DialogServerPlugin;
 use crate::editor::EditorPlugin;
 use crate::game::{GameClientPlugin, GameServerPlugin};
@@ -185,6 +186,7 @@ impl Plugin for GameAppPlugin {
                     ClientEffectsPlugin,
                     ScriptingPlugin,
                     EditorPlugin,
+                    DiagnosticsPlugin,
                     // Added after DefaultPlugins so YarnSpinnerPlugin can see
                     // AssetServer for `.yarn` compilation.
                     DialogServerPlugin,
@@ -217,6 +219,7 @@ impl Plugin for GameAppPlugin {
                     UiPlugin,
                     ClientEffectsPlugin,
                     ScriptingPlugin,
+                    DiagnosticsPlugin,
                     TcpClientPlugin {
                         server_addr: self
                             .server_addr

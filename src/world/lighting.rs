@@ -137,6 +137,7 @@ pub fn sync_object_light_components(
     definitions: Res<OverworldObjectDefinitions>,
     query: Query<(Entity, &ClientProjectedWorldObject, Option<&LightSource>)>,
 ) {
+    let _t = crate::diagnostics::SystemTimer::new("sync_object_light_components", 1.0);
     for (entity, projected, existing) in &query {
         let desired = client_state
             .world_objects

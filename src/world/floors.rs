@@ -65,6 +65,7 @@ pub fn recompute_visible_floors(
     definitions: Res<OverworldObjectDefinitions>,
     mut range: ResMut<VisibleFloorRange>,
 ) {
+    let _t = crate::diagnostics::SystemTimer::new("recompute_visible_floors", 1.0);
     let Some(player_pos) = client_state.player_position else {
         return;
     };

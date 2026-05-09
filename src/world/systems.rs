@@ -10,7 +10,7 @@ use crate::world::components::{
 use crate::world::floors::{VisibleFloorRange, DIMMED_FLOOR_ALPHA};
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::resources::{
-    ClientRemotePlayerProjectionState, ClientWorldProjectionState, SpaceManager, ViewScrollOffset,
+    ClientRemotePlayerProjectionState, ClientWorldProjectionState, SpaceManager,
 };
 use crate::world::setup::{spawn_client_projected_world_object, spawn_client_remote_player};
 use crate::world::WorldConfig;
@@ -31,6 +31,7 @@ pub fn sync_client_world_projection(
         &mut Facing,
     )>,
 ) {
+    let _t = crate::diagnostics::SystemTimer::new("sync_client_world_projection", 1.0);
     let Some(current_space) = client_state.current_space.as_ref() else {
         info!(
             "sync_client_world_projection: current_space is None, skipping (world_objects={})",
@@ -303,7 +304,6 @@ pub fn flat_floor_z(base_z_index: f32, floor: i32) -> f32 {
 pub fn sync_tile_transforms(
     client_state: Res<ClientGameState>,
     world_config: Res<WorldConfig>,
-    view_scroll: Res<ViewScrollOffset>,
     visible_floors: Res<VisibleFloorRange>,
     mut query: Query<
         (
@@ -317,11 +317,14 @@ pub fn sync_tile_transforms(
         Without<Player>,
     >,
 ) {
+    let _t = crate::diagnostics::SystemTimer::new("sync_tile_transforms", 1.0);
     let Some(player_position) = client_state.player_position else {
         return;
     };
-    let scroll = view_scroll.snapped();
 
+    // Absolute world coords: x and y depend only on the entity's own tile and
+    // its per-entity `VisualOffset` lerp. Camera follow handles the
+    // player-centered scroll. Stable entities never get marked changed.
     for (view, world_visual, mut transform, mut sprite, visual_offset, facing) in &mut query {
         let is_active = view.space_id == player_position.space_id;
         let floor_visible = visible_floors.contains(view.tile.z);
@@ -344,29 +347,33 @@ pub fn sync_tile_transforms(
 
         let entity_offset = visual_offset.map_or(Vec2::ZERO, |o| o.current);
 
-        transform.translation = Vec3::new(
-            (view.tile.x - player_position.tile_position.x) as f32 * world_config.tile_size
-                + scroll.x
-                + entity_offset.x,
-            (view.tile.y - player_position.tile_position.y) as f32 * world_config.tile_size
-                + anchor_y_offset
-                + scroll.y
-                + entity_offset.y,
+        let new_translation = Vec3::new(
+            view.tile.x as f32 * world_config.tile_size + entity_offset.x,
+            view.tile.y as f32 * world_config.tile_size + anchor_y_offset + entity_offset.y,
             z,
         );
+        if transform.translation != new_translation {
+            transform.translation = new_translation;
+        }
 
         if world_visual.rotation_by_facing {
             let direction = facing.copied().unwrap_or_default().0;
-            transform.rotation = Quat::from_rotation_z(direction.rotation_z_radians());
+            let new_rotation = Quat::from_rotation_z(direction.rotation_z_radians());
+            if transform.rotation != new_rotation {
+                transform.rotation = new_rotation;
+            }
         }
 
         if let Some(sprite) = sprite.as_mut() {
-            let alpha = if is_active && floor_visible && view.tile.z < visible_floors.player_floor {
+            let new_alpha = if is_active && floor_visible && view.tile.z < visible_floors.player_floor
+            {
                 DIMMED_FLOOR_ALPHA
             } else {
                 1.0
             };
-            sprite.color.set_alpha(alpha);
+            if sprite.color.alpha() != new_alpha {
+                sprite.color.set_alpha(new_alpha);
+            }
         }
     }
 }
@@ -388,18 +395,16 @@ pub fn sync_player_z(
                 "player z update: tile_y={} tile_z={} z_index={} -> z={}",
                 view.tile.y, view.tile.z, world_visual.z_index, new_z
             );
+            transform.translation.z = new_z;
         }
-        transform.translation.z = new_z;
-    } else {
-        info!(
-            "player y_sort=false, z_index={}, z={}",
-            world_visual.z_index, transform.translation.z
-        );
     }
 
     if world_visual.rotation_by_facing {
         let direction = facing.copied().unwrap_or_default().0;
-        transform.rotation = Quat::from_rotation_z(direction.rotation_z_radians());
+        let new_rotation = Quat::from_rotation_z(direction.rotation_z_radians());
+        if transform.rotation != new_rotation {
+            transform.rotation = new_rotation;
+        }
     }
 }
 
@@ -435,6 +440,7 @@ pub fn sync_combat_health_bars(
     mut visibility_query: Query<&mut Visibility>,
     mut fill_query: Query<(&mut Sprite, &mut Transform)>,
 ) {
+    let _t = crate::diagnostics::SystemTimer::new("sync_combat_health_bars", 1.0);
     for (displayed_vitals, display_policy, health_bar) in &health_bar_query {
         sync_displayed_health_bar(
             displayed_vitals,
