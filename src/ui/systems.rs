@@ -1302,6 +1302,7 @@ pub fn handle_context_menu_actions(
         Res<SpellDefinitions>,
     ),
     mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_item_details: ResMut<crate::ui::item_details::PendingItemDetailsOpens>,
     client_state: Res<ClientGameState>,
     mut take_partial_state: ResMut<TakePartialState>,
     ui_state: (
@@ -1370,16 +1371,23 @@ pub fn handle_context_menu_actions(
 
     if is_cursor_over_button(cursor_position, &menu_queries.p1()) {
         if let Some(target) = context_menu_state.target {
-            let inspect_target = match target {
+            match target {
                 ContextMenuTarget::Slot(kind) => {
-                    item_slot_kind_to_ref(kind, &docked_panel_state).map(InspectTarget::SlotItem)
+                    if let Some(slot_ref) = item_slot_kind_to_ref(kind, &docked_panel_state) {
+                        pending_commands.push(GameCommand::Inspect {
+                            target: InspectTarget::SlotItem(slot_ref),
+                        });
+                    }
+                    // Trade-side slots have no `ItemSlotRef`, but the popup
+                    // still works because the renderer reads from
+                    // `current_trade` directly.
+                    pending_item_details.slots.push(kind);
                 }
-                ContextMenuTarget::World(object_id) => Some(InspectTarget::Object(object_id)),
-            };
-            if let Some(inspect_target) = inspect_target {
-                pending_commands.push(GameCommand::Inspect {
-                    target: inspect_target,
-                });
+                ContextMenuTarget::World(object_id) => {
+                    pending_commands.push(GameCommand::Inspect {
+                        target: InspectTarget::Object(object_id),
+                    });
+                }
             }
         }
         context_menu_state.hide();
@@ -3281,7 +3289,7 @@ fn point_in_ui_node(
     computed_node.contains_point(*global_transform, cursor_position)
 }
 
-fn stack_in_slot_kind(
+pub(crate) fn stack_in_slot_kind(
     client_state: &ClientGameState,
     docked_panel_state: &DockedPanelState,
     slot_kind: ItemSlotKind,

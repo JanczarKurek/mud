@@ -326,7 +326,7 @@ pub struct BackpackSlotRow {
     pub row_index: usize,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ItemSlotKind {
     Backpack(usize),
     OpenContainer {

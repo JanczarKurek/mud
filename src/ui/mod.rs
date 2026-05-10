@@ -1,7 +1,9 @@
 pub mod components;
 pub mod dialog;
+pub mod item_details;
 pub mod menu_bar;
 pub mod minimap;
+pub mod movable_window;
 pub mod resources;
 pub mod setup;
 pub mod sprite_state;
@@ -61,7 +63,11 @@ pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(UiThemePlugin)
+        app.add_plugins((
+            UiThemePlugin,
+            crate::ui::movable_window::MovableWindowPlugin,
+            crate::ui::item_details::ItemDetailsPlugin,
+        ))
             .insert_resource(ContextMenuState::default())
             .insert_resource(DockedPanelState::default())
             .insert_resource(DockedPanelResizeState::default())
