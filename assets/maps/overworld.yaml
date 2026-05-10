@@ -2000,8 +2000,16 @@ objects:
     y: 24
 - type: villager
   placement:
-  - x: 10
+    x: 10
     y: 7
+  behavior:
+    kind: roam
+    step_interval_seconds: 2.0
+    bounds:
+      min_x: 9
+      min_y: 7
+      max_x: 11
+      max_y: 9
 - type: wall
   placement:
   - x: 2
@@ -2976,11 +2984,17 @@ objects:
   - x: 58
     y: 42
 - type: villager
-  properties:
-    dialog_id: demo_villager
   placement:
     x: 20
     y: 16
+  behavior:
+    kind: roam
+    step_interval_seconds: 2.0
+    bounds:
+      min_x: 19
+      min_y: 15
+      max_x: 21
+      max_y: 17
 - type: scroll
   properties:
     spell_id: lesser_heal

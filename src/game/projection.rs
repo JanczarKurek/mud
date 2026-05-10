@@ -27,6 +27,9 @@ use crate::game::resources::{
     ClientVitalStats, ClientWorldObjectState, GameEvent, InventoryState, PendingGameEvents,
     RegenBuffState,
 };
+use crate::game::shop::{Shopkeeper, StockMode, Stockpile};
+use crate::game::trade::{ActiveTrades, TradePartnerKind, TradeParticipants, WareView};
+use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::npc::components::Npc;
 use crate::player::classes::{Class, ClassChosen};
 use crate::player::components::{
@@ -86,6 +89,7 @@ pub type ProjectionWorldObjectQuery<'w, 's> = Query<
         Has<DialogNode>,
         Option<&'static Facing>,
         Option<&'static ObjectState>,
+        Has<Shopkeeper>,
     ),
     Without<Player>,
 >;
@@ -101,10 +105,20 @@ pub type ProjectionContainerQuery<'w, 's> = Query<
     Without<Player>,
 >;
 
+/// Query exposing every shopkeeper's stockpile by object id. The projection
+/// uses this to materialize the wares list for `PlayerToShop` trade sessions.
+pub type ProjectionStockpileQuery<'w, 's> = Query<
+    'w,
+    's,
+    (&'static OverworldObject, &'static Stockpile),
+    (With<Shopkeeper>, Without<Player>),
+>;
+
 /// Diffs the authoritative ECS against a per-peer baseline, returning a
 /// `Vec<GameEvent>` that, when folded into `previous`, produces the peer's
 /// next `ClientGameState`. Passing `&ClientGameState::default()` as `previous`
 /// yields a full bootstrap sequence for a newly connected client.
+#[allow(clippy::too_many_arguments)]
 pub fn compute_events_for_peer(
     local_player_id: PlayerId,
     previous: &ClientGameState,
@@ -112,9 +126,12 @@ pub fn compute_events_for_peer(
     object_query: &ProjectionObjectQuery,
     world_object_query: &ProjectionWorldObjectQuery,
     container_query: &ProjectionContainerQuery,
+    stockpile_query: &ProjectionStockpileQuery,
     space_manager: &SpaceManager,
     floor_maps: &FloorMaps,
     world_clock: &WorldClock,
+    active_trades: &ActiveTrades,
+    object_definitions: &OverworldObjectDefinitions,
 ) -> Vec<GameEvent> {
     let mut events = Vec::new();
 
@@ -426,6 +443,7 @@ pub fn compute_events_for_peer(
         has_dialog,
         facing,
         state,
+        has_shopkeeper,
     ) in world_object_query.iter()
     {
         if space_resident.space_id != local_space_id {
@@ -451,6 +469,7 @@ pub fn compute_events_for_peer(
             has_dialog,
             facing: facing.copied().unwrap_or_default().0,
             state: state.map(|s| s.0.clone()),
+            is_shopkeeper: has_shopkeeper,
         };
 
         if previous.world_objects.get(&object.object_id) != Some(&projected_object) {
@@ -468,6 +487,76 @@ pub fn compute_events_for_peer(
         }
     }
 
+    // Trade projection: find the local player's active trade (if any) and
+    // diff its `ClientTradeView` against the previous baseline. Partner name
+    // is built from the partner's PlayerId / NPC display name; for shop
+    // sessions we also project the wares list so the panel can render the
+    // Browse Wares subpanel.
+    let projected_trade = active_trades
+        .find_for_player(local_player_id)
+        .and_then(|(session_id, _side)| {
+            active_trades.sessions.get(&session_id).and_then(|session| {
+                match session.participants {
+                    TradeParticipants::PlayerToPlayer { a, b } => {
+                        let partner_id = if a == local_player_id { b } else { a };
+                        let partner_name = format!("Player {}", partner_id.0);
+                        session.project_for(
+                            local_player_id,
+                            partner_name,
+                            TradePartnerKind::Player,
+                            None,
+                        )
+                    }
+                    TradeParticipants::PlayerToShop { shop_object_id, .. } => {
+                        let stockpile_entry = stockpile_query
+                            .iter()
+                            .find(|(object, _)| object.object_id == shop_object_id);
+                        let (partner_name, wares) = match stockpile_entry {
+                            Some((object, stockpile)) => {
+                                let partner_name = object_definitions
+                                    .get(&object.definition_id)
+                                    .map(|def| def.name.clone())
+                                    .unwrap_or_else(|| object.definition_id.clone());
+                                let wares: Vec<WareView> = stockpile
+                                    .wares
+                                    .iter()
+                                    .map(|entry| {
+                                        let display_name = object_definitions
+                                            .get(&entry.type_id)
+                                            .map(|def| def.name.clone())
+                                            .unwrap_or_else(|| entry.type_id.clone());
+                                        let stock_remaining = match entry.stock {
+                                            StockMode::Infinite => None,
+                                            StockMode::Finite(n) => Some(n),
+                                        };
+                                        WareView {
+                                            type_id: entry.type_id.clone(),
+                                            display_name,
+                                            price_copper: entry.price_copper,
+                                            stock_remaining,
+                                        }
+                                    })
+                                    .collect();
+                                (partner_name, Some(wares))
+                            }
+                            None => ("Shopkeeper".to_owned(), None),
+                        };
+                        session.project_for(
+                            local_player_id,
+                            partner_name,
+                            TradePartnerKind::Shopkeeper,
+                            wares,
+                        )
+                    }
+                }
+            })
+        });
+    if previous.current_trade != projected_trade {
+        events.push(GameEvent::TradeStateChanged {
+            state: projected_trade,
+        });
+    }
+
     events
 }
 
@@ -475,6 +564,7 @@ pub fn compute_events_for_peer(
 /// authoritative player entity and calls [`compute_events_for_peer`] with the
 /// current `ClientGameState` as baseline. Writes the result into
 /// `PendingGameEvents` for `apply_game_events_to_client_state` to fold.
+#[allow(clippy::too_many_arguments)]
 pub fn collect_game_events_from_authority(
     client_state: Res<ClientGameState>,
     space_manager: Res<SpaceManager>,
@@ -484,6 +574,9 @@ pub fn collect_game_events_from_authority(
     object_query: ProjectionObjectQuery,
     world_object_query: ProjectionWorldObjectQuery,
     container_query: ProjectionContainerQuery,
+    stockpile_query: ProjectionStockpileQuery,
+    active_trades: Res<ActiveTrades>,
+    object_definitions: Res<OverworldObjectDefinitions>,
     mut pending_game_events: ResMut<PendingGameEvents>,
 ) {
     pending_game_events.events.clear();
@@ -511,9 +604,12 @@ pub fn collect_game_events_from_authority(
         &object_query,
         &world_object_query,
         &container_query,
+        &stockpile_query,
         &space_manager,
         &floor_maps,
         &world_clock,
+        &active_trades,
+        &object_definitions,
     );
 
     if events
@@ -673,6 +769,9 @@ pub fn apply_event_to_state(state: &mut ClientGameState, event: GameEvent) {
         GameEvent::PlayerAttributesChanged { attributes } => {
             state.attributes = Some(attributes);
         }
+        GameEvent::TradeStateChanged { state: new_state } => {
+            state.current_trade = new_state;
+        }
     }
 }
 
@@ -824,5 +923,20 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
                 attributes.focus
             )
         }
+        GameEvent::TradeStateChanged { state } => match state {
+            None => debug!("client trade state cleared"),
+            Some(view) => debug!(
+                "client trade state: session {} partner {:?} ({}) us={} them={} ready={}/{} confirm={}/{}",
+                view.session_id,
+                view.partner_kind,
+                view.partner_name,
+                view.our_offers.len(),
+                view.their_offers.len(),
+                view.our_ready,
+                view.their_ready,
+                view.our_confirmed,
+                view.their_confirmed
+            ),
+        },
     }
 }

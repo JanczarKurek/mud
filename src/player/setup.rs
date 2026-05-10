@@ -37,6 +37,25 @@ pub fn seed_starter_inventory(inventory: &mut Inventory) {
             3,
         ));
     }
+    // Seed enough coin to demo trading: 5 gold + 5 silver + 20 copper. Enough
+    // to buy from the villager shopkeeper (apples 4c, sword 3g, armor 5g).
+    for (type_id, qty) in [
+        (crate::game::currency::GOLD_TYPE_ID, 5u32),
+        (crate::game::currency::SILVER_TYPE_ID, 5u32),
+        (crate::game::currency::COPPER_TYPE_ID, 20u32),
+    ] {
+        if let Some(slot) = inventory
+            .backpack_slots
+            .iter_mut()
+            .find(|slot| slot.is_none())
+        {
+            *slot = Some(InventoryStack::item(
+                type_id.to_owned(),
+                ObjectProperties::new(),
+                qty,
+            ));
+        }
+    }
 }
 
 pub fn spawn_embedded_player_authoritative(

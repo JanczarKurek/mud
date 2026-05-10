@@ -53,6 +53,17 @@ pub enum GameUiEvent {
         items_dropped: Vec<InventoryStackSummary>,
         xp_lost: u64,
     },
+    /// A trade session has just opened for this peer — spawn the trade panel.
+    /// The actual trade contents arrive via `GameEvent::TradeStateChanged`.
+    OpenTradePanel {
+        session_id: crate::game::trade::TradeSessionId,
+    },
+    /// The trade session has ended. The client closes the panel and surfaces
+    /// the outcome (completed/cancelled/etc.) to the user.
+    CloseTradePanel {
+        session_id: crate::game::trade::TradeSessionId,
+        outcome: crate::game::trade::TradeOutcome,
+    },
 }
 
 /// Tiny self-contained snapshot of a dropped stack for the DeathSummary
@@ -158,6 +169,11 @@ pub struct ClientWorldObjectState {
     /// `states:` (e.g. "open" / "closed"). `None` for stateless objects.
     #[serde(default)]
     pub state: Option<String>,
+    /// True when this object is a merchant NPC. Drives the "Trade" /
+    /// "Browse Wares" entry on the right-click context menu and the
+    /// `InitiateTrade { Shopkeeper(_) }` command path.
+    #[serde(default)]
+    pub is_shopkeeper: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -304,6 +320,13 @@ pub enum GameEvent {
     PlayerAttributesChanged {
         attributes: AttributeSet,
     },
+    /// Replicates the local player's currently active trade session
+    /// (or `None` when the player has no active trade). Sole authority for
+    /// the trade panel's contents — the projection diffs the snapshot and
+    /// emits this whenever any trade-related field changes.
+    TradeStateChanged {
+        state: Option<crate::game::trade::ClientTradeView>,
+    },
 }
 
 #[derive(Resource, Default)]
@@ -418,4 +441,8 @@ pub struct ClientGameState {
     /// player. `None` until the first `PlayerAttributesChanged` event lands.
     #[serde(default)]
     pub attributes: Option<AttributeSet>,
+    /// Snapshot of the local player's active trade, or `None`. Updated by
+    /// `GameEvent::TradeStateChanged`; the trade panel reads from this.
+    #[serde(default)]
+    pub current_trade: Option<crate::game::trade::ClientTradeView>,
 }

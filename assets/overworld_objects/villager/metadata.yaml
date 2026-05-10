@@ -1,7 +1,18 @@
 extends: npc
 name: Villager
-description: Just a wandering villager.
+description: Just a wandering villager — also dabbles in trade.
 dialog_node: FriendlyVillager
+shopkeeper:
+  wares:
+    - type_id: apple
+      price_copper: 4
+      stock: infinite
+    - type_id: bronze_sword
+      price_copper: 720          # 3 gold
+      stock: 2
+    - type_id: leather_armor
+      price_copper: 1200         # 5 gold
+      stock: 1
 render:
   sprite_path: overworld_objects/player/sprite.png
   rotation_by_facing: true

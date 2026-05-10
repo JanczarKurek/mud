@@ -814,6 +814,20 @@ fn load_world_from_snapshot(
             }
         }
 
+        // Re-derive Shopkeeper + Stockpile from the object definition on load.
+        // Stockpile state (decremented finite stock) is not persisted in the
+        // snapshot — wares reset to their YAML values on reload. Mirrors the
+        // fresh-spawn path in `world::setup::spawn_overworld_object`.
+        if let Some(shopkeeper_def) = object_definitions
+            .get(&definition_id_for_lookup)
+            .and_then(|def| def.shopkeeper.as_ref())
+        {
+            entity.insert((
+                crate::game::shop::Shopkeeper,
+                crate::game::shop::Stockpile::from_def(shopkeeper_def),
+            ));
+        }
+
         let entity_id = entity.id();
         object_entities.insert(save_local_id, entity_id);
     }

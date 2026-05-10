@@ -10,13 +10,14 @@ use crate::game::resources::ClientGameState;
 use crate::world::animation::{build_animated_sprite_components, AnimatedSprite};
 use crate::world::components::ClientProjectedWorldObject;
 use crate::world::object_definitions::OverworldObjectDefinitions;
-use crate::world::setup::sprite_for_definition_state;
+use crate::world::setup::sprite_for_definition_state_count;
 use crate::world::WorldConfig;
 
-/// Watches `ClientGameState.world_objects[id].state` for transitions and
-/// rebuilds the projected entity's sprite + (optional) `AnimatedSprite` to
-/// match the new state's overrides. Tracks the last-seen state per object in
-/// a `Local` map so it only acts on real transitions.
+/// Watches `ClientGameState.world_objects[id].state` and `.quantity` for
+/// transitions and rebuilds the projected entity's sprite + (optional)
+/// `AnimatedSprite` to match the new state's overrides or the right
+/// `stack_sprites` tier. Tracks the last-seen `(state, quantity)` per object
+/// in a `Local` map so it only acts on real transitions.
 pub fn sync_object_state_visuals(
     asset_server: Res<AssetServer>,
     mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
@@ -25,24 +26,25 @@ pub fn sync_object_state_visuals(
     world_config: Res<WorldConfig>,
     mut commands: Commands,
     projected_query: Query<(Entity, &ClientProjectedWorldObject)>,
-    mut last_states: Local<HashMap<u64, Option<String>>>,
+    mut last_seen: Local<HashMap<u64, (Option<String>, u32)>>,
 ) {
     for (entity, projected) in &projected_query {
         let object_id = projected.object_id;
-        let new_state = client_state
-            .world_objects
-            .get(&object_id)
-            .and_then(|object| object.state.clone());
+        let Some(object) = client_state.world_objects.get(&object_id) else {
+            continue;
+        };
+        let new_state = object.state.clone();
+        let new_quantity = object.quantity.max(1);
 
-        let previous = last_states.get(&object_id).cloned();
-        if previous.as_ref() == Some(&new_state) {
+        let previous = last_seen.get(&object_id).cloned();
+        let first_observation = previous.is_none();
+        if previous.as_ref() == Some(&(new_state.clone(), new_quantity)) {
             continue;
         }
-        let first_observation = previous.is_none();
-        last_states.insert(object_id, new_state.clone());
+        last_seen.insert(object_id, (new_state.clone(), new_quantity));
 
         // First-time observation: skip the initial swap (the spawn path
-        // already picked the right sprite via `sprite_for_definition_state`).
+        // already picked the right sprite via `sprite_for_definition_state_count`).
         if first_observation {
             continue;
         }
@@ -57,8 +59,13 @@ pub fn sync_object_state_visuals(
                 build_animated_sprite_components(sheet, &asset_server, &mut texture_atlas_layouts);
             commands.entity(entity).insert((animated, sprite));
         } else {
-            let sprite =
-                sprite_for_definition_state(&asset_server, definition, &world_config, state_ref);
+            let sprite = sprite_for_definition_state_count(
+                &asset_server,
+                definition,
+                &world_config,
+                state_ref,
+                new_quantity,
+            );
             commands
                 .entity(entity)
                 .remove::<AnimatedSprite>()
@@ -70,5 +77,5 @@ pub fn sync_object_state_visuals(
     // unbounded.
     let known_ids: std::collections::HashSet<u64> =
         projected_query.iter().map(|(_, p)| p.object_id).collect();
-    last_states.retain(|id, _| known_ids.contains(id));
+    last_seen.retain(|id, _| known_ids.contains(id));
 }

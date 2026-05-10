@@ -65,6 +65,7 @@ pub fn sync_client_world_projection(
                 object.position,
                 object.is_npc,
                 object.state.as_deref(),
+                object.quantity,
             );
             projection_state.entities.insert(object.object_id, entity);
             continue;
@@ -89,6 +90,7 @@ pub fn sync_client_world_projection(
                 object.position,
                 object.is_npc,
                 object.state.as_deref(),
+                object.quantity,
             );
             projection_state.entities.insert(object.object_id, entity);
             continue;
@@ -106,6 +108,7 @@ pub fn sync_client_world_projection(
                 object.position,
                 object.is_npc,
                 object.state.as_deref(),
+                object.quantity,
             );
             projection_state
                 .entities

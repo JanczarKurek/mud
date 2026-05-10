@@ -194,6 +194,22 @@ pub fn spawn_overworld_object_instance(
         commands.entity(entity).insert(Facing(facing));
     }
 
+    // Shopkeeper / Stockpile: if the definition declares a `shopkeeper:` block,
+    // the entity gains a `Shopkeeper` marker plus a `Stockpile` component
+    // built from the YAML ware list. Sibling components live on the same NPC
+    // entity for simplicity; the abstraction is preserved by making them
+    // distinct components so admin scripts and projection code can target
+    // either independently.
+    if let Some(shopkeeper_def) = definitions
+        .get(&object.type_id)
+        .and_then(|def| def.shopkeeper.as_ref())
+    {
+        commands.entity(entity).insert((
+            crate::game::shop::Shopkeeper,
+            crate::game::shop::Stockpile::from_def(shopkeeper_def),
+        ));
+    }
+
     // Per-instance dialog override: the editor surfaces a `dialog_id` property
     // on placed NPCs that should win over the template's `dialog_node`. Apply
     // it here so the override is in place before any TalkToNpc lookup runs.
@@ -448,11 +464,13 @@ pub fn spawn_client_projected_world_object(
     position: SpacePosition,
     is_npc: bool,
     state: Option<&str>,
+    quantity: u32,
 ) -> Entity {
     let definition = definitions
         .get(definition_id)
         .unwrap_or_else(|| panic!("Missing overworld object definition for id '{definition_id}'"));
-    let sprite = sprite_for_definition_state(asset_server, definition, world_config, state);
+    let sprite =
+        sprite_for_definition_state_count(asset_server, definition, world_config, state, quantity);
     let visual = world_visual_for_definition(definition, world_config.tile_size);
     let sprite_height = visual.sprite_height;
     let uses_y_sort = visual.y_sort;
@@ -561,11 +579,25 @@ pub fn sprite_for_definition_state(
     world_config: &WorldConfig,
     state: Option<&str>,
 ) -> Sprite {
+    sprite_for_definition_state_count(asset_server, definition, world_config, state, 1)
+}
+
+/// Like `sprite_for_definition_state` but also consults the `stack_sprites`
+/// quantity tier, so a pile of N pickups on the ground uses the right
+/// numbered variant. State overrides still win (e.g. a torch's `unlit` state
+/// won't be replaced by a stack-tier sprite).
+pub fn sprite_for_definition_state_count(
+    asset_server: &AssetServer,
+    definition: &OverworldObjectDefinition,
+    world_config: &WorldConfig,
+    state: Option<&str>,
+    count: u32,
+) -> Sprite {
     let size = definition.render.sprite_pixel_size(world_config.tile_size);
     let effective_state = state.or(definition.initial_state.as_deref());
 
     let mut sprite = if let Some(sprite_path) = definition
-        .sprite_path_for_state(effective_state)
+        .sprite_path_for_state_count(effective_state, count.max(1))
         .map(str::to_owned)
     {
         let mut sprite = Sprite::from_image(asset_server.load(sprite_path));

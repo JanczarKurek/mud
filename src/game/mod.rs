@@ -3,7 +3,9 @@ pub mod currency;
 pub mod helpers;
 pub mod projection;
 pub mod resources;
+pub mod shop;
 pub mod systems;
+pub mod trade;
 
 use bevy::prelude::*;
 
@@ -19,6 +21,7 @@ use crate::game::systems::{
     process_floor_commands, process_game_commands, process_rotate_commands,
     tick_player_movement_cooldowns,
 };
+use crate::game::trade::{cleanup_invalid_trades, process_trade_commands, ActiveTrades};
 use crate::npc::systems::update_roaming_npcs;
 use crate::player::systems::move_player_on_grid;
 use crate::world::interactions::{process_interact_commands, sync_container_visual_state};
@@ -40,6 +43,7 @@ impl Plugin for GameServerPlugin {
             .insert_resource(PendingGameUiEvents::default())
             .insert_resource(ClientGameState::default())
             .insert_resource(ContainerViewers::default())
+            .insert_resource(ActiveTrades::default())
             .configure_sets(
                 Update,
                 CommandIntercept
@@ -66,6 +70,18 @@ impl Plugin for GameServerPlugin {
                 Update,
                 process_interact_commands
                     .in_set(CommandIntercept)
+                    .run_if(simulation_active),
+            )
+            .add_systems(
+                Update,
+                process_trade_commands
+                    .in_set(CommandIntercept)
+                    .run_if(simulation_active),
+            )
+            .add_systems(
+                Update,
+                cleanup_invalid_trades
+                    .after(process_trade_commands)
                     .run_if(simulation_active),
             )
             .add_systems(

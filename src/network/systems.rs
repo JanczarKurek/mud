@@ -559,9 +559,12 @@ pub fn flush_server_messages(
     object_query: crate::game::projection::ProjectionObjectQuery,
     world_object_query: crate::game::projection::ProjectionWorldObjectQuery,
     container_query: crate::game::projection::ProjectionContainerQuery,
+    stockpile_query: crate::game::projection::ProjectionStockpileQuery,
     space_manager: Res<SpaceManager>,
     floor_maps: Res<crate::world::floor_map::FloorMaps>,
     mut world_clock: ResMut<crate::world::lighting::WorldClock>,
+    active_trades: Res<crate::game::trade::ActiveTrades>,
+    object_definitions: Res<crate::world::object_definitions::OverworldObjectDefinitions>,
     mut commands: Commands,
 ) {
     let peer_ui_events = std::mem::take(&mut pending_ui_events.peer_events);
@@ -598,9 +601,12 @@ pub fn flush_server_messages(
                 &object_query,
                 &world_object_query,
                 &container_query,
+                &stockpile_query,
                 &space_manager,
                 &floor_maps,
                 &world_clock,
+                &active_trades,
+                &object_definitions,
             );
             if events.iter().any(|event| {
                 matches!(
@@ -1072,8 +1078,11 @@ mod tests {
             crate::game::projection::ProjectionObjectQuery<'w, 's>,
             crate::game::projection::ProjectionWorldObjectQuery<'w, 's>,
             crate::game::projection::ProjectionContainerQuery<'w, 's>,
+            crate::game::projection::ProjectionStockpileQuery<'w, 's>,
             Res<'w, crate::world::resources::SpaceManager>,
             Res<'w, crate::world::floor_map::FloorMaps>,
+            Res<'w, crate::game::trade::ActiveTrades>,
+            Res<'w, crate::world::object_definitions::OverworldObjectDefinitions>,
         )>;
         let mut state: PeerProjectionState = SystemState::new(app.world_mut());
         let (
@@ -1081,8 +1090,11 @@ mod tests {
             object_query,
             world_object_query,
             container_query,
+            stockpile_query,
             space_manager,
             floor_maps,
+            active_trades,
+            object_definitions,
         ) = state.get(app.world_mut());
 
         // Fold the bootstrap events (diff from default) into a baseline; this is
@@ -1095,9 +1107,12 @@ mod tests {
             &object_query,
             &world_object_query,
             &container_query,
+            &stockpile_query,
             &space_manager,
             &floor_maps,
             &world_clock,
+            &active_trades,
+            &object_definitions,
         );
         let mut projection = ClientGameState::default();
         for event in events {
@@ -1139,8 +1154,11 @@ mod tests {
             crate::game::projection::ProjectionObjectQuery<'w, 's>,
             crate::game::projection::ProjectionWorldObjectQuery<'w, 's>,
             crate::game::projection::ProjectionContainerQuery<'w, 's>,
+            crate::game::projection::ProjectionStockpileQuery<'w, 's>,
             Res<'w, crate::world::resources::SpaceManager>,
             Res<'w, crate::world::floor_map::FloorMaps>,
+            Res<'w, crate::game::trade::ActiveTrades>,
+            Res<'w, crate::world::object_definitions::OverworldObjectDefinitions>,
         )>;
 
         let mut state: PeerProjectionState = SystemState::new(app.world_mut());
@@ -1149,8 +1167,11 @@ mod tests {
             object_query,
             world_object_query,
             container_query,
+            stockpile_query,
             space_manager,
             floor_maps,
+            active_trades,
+            object_definitions,
         ) = state.get(app.world_mut());
 
         let world_clock = crate::world::lighting::WorldClock::default();
@@ -1161,9 +1182,12 @@ mod tests {
             &object_query,
             &world_object_query,
             &container_query,
+            &stockpile_query,
             &space_manager,
             &floor_maps,
             &world_clock,
+            &active_trades,
+            &object_definitions,
         );
         let mut baseline = ClientGameState::default();
         for event in bootstrap {
@@ -1178,9 +1202,12 @@ mod tests {
             &object_query,
             &world_object_query,
             &container_query,
+            &stockpile_query,
             &space_manager,
             &floor_maps,
             &world_clock,
+            &active_trades,
+            &object_definitions,
         );
         assert!(
             idle_events.is_empty(),
@@ -1191,8 +1218,11 @@ mod tests {
             object_query,
             world_object_query,
             container_query,
+            stockpile_query,
             space_manager,
             floor_maps,
+            active_trades,
+            object_definitions,
         ));
 
         // Move the player; the next diff should contain exactly one PlayerPositionChanged.
@@ -1206,8 +1236,11 @@ mod tests {
             object_query,
             world_object_query,
             container_query,
+            stockpile_query,
             space_manager,
             floor_maps,
+            active_trades,
+            object_definitions,
         ) = state.get(app.world_mut());
 
         let move_events = crate::game::projection::compute_events_for_peer(
@@ -1217,9 +1250,12 @@ mod tests {
             &object_query,
             &world_object_query,
             &container_query,
+            &stockpile_query,
             &space_manager,
             &floor_maps,
             &world_clock,
+            &active_trades,
+            &object_definitions,
         );
         let position_change_count = move_events
             .iter()

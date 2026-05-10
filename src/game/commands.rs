@@ -27,7 +27,7 @@ pub struct MoveDelta {
     pub y: i32,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub enum ItemSlotRef {
     Backpack(usize),
     Equipment(EquipmentSlot),
@@ -215,5 +215,49 @@ pub enum GameCommand {
     /// gate this on "first time only" is a separate batch.
     ChooseClass {
         class: crate::player::classes::Class,
+    },
+    /// Open a trade window with a target (another player or, in later phases,
+    /// a shopkeeper NPC). Server validates adjacency and routes
+    /// `OpenTradePanel` UI events to both sides.
+    InitiateTrade {
+        target: crate::game::trade::TradeTarget,
+    },
+    /// Add (or merge into an existing entry of) an item from one of the
+    /// acting player's personal slots into the trade's "us" column.
+    /// Auto-resets both sides' Ready/Confirm flags.
+    OfferTradeItem {
+        session_id: crate::game::trade::TradeSessionId,
+        source: ItemSlotRef,
+        quantity: u32,
+    },
+    /// Remove the offer at `offer_index` from the acting player's "us" column.
+    /// Auto-resets both sides' Ready/Confirm flags.
+    WithdrawTradeItem {
+        session_id: crate::game::trade::TradeSessionId,
+        offer_index: usize,
+    },
+    /// Toggle the acting side's Ready flag. When both sides Ready, the panel
+    /// is "locked" — items can still be modified but doing so clears Ready.
+    ToggleTradeReady {
+        session_id: crate::game::trade::TradeSessionId,
+    },
+    /// Set the acting side's Confirm flag. Once both sides have Ready+Confirm,
+    /// the trade commits transactionally.
+    ConfirmTrade {
+        session_id: crate::game::trade::TradeSessionId,
+    },
+    /// Abort the trade. Both panels close with outcome `Cancelled`.
+    CancelTrade {
+        session_id: crate::game::trade::TradeSessionId,
+    },
+    /// Shop-trade only: add `quantity` of the ware at `ware_index` to the
+    /// THEY column. The server auto-balances the buyer's coin payment by
+    /// adding the cheapest sufficient mix of copper/silver/gold from the
+    /// buyer's inventory into the US column. Rejects if the buyer has
+    /// insufficient funds or the ware is out of stock.
+    BrowseShopBuy {
+        session_id: crate::game::trade::TradeSessionId,
+        ware_index: usize,
+        quantity: u32,
     },
 }

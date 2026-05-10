@@ -133,13 +133,31 @@ pub fn process_dialog_commands(
             }
             GameCommand::DialogAdvance { session_id } => {
                 let Some(handle) = sessions.by_id.get(&session_id).copied() else {
+                    bevy::log::warn!(
+                        "DialogAdvance: no session {session_id} in registry (have {:?})",
+                        sessions.by_id.keys().copied().collect::<Vec<_>>()
+                    );
                     continue;
                 };
                 if handle.player_id != acting_player_id.0 {
+                    bevy::log::warn!(
+                        "DialogAdvance: session {session_id} player_id={} != acting={}",
+                        handle.player_id, acting_player_id.0
+                    );
                     continue;
                 }
-                if let Ok((mut runner, _)) = runners.get_mut(handle.runner_entity) {
-                    runner.continue_in_next_update();
+                match runners.get_mut(handle.runner_entity) {
+                    Ok((mut runner, _)) => {
+                        runner.continue_in_next_update();
+                        bevy::log::info!(
+                            "DialogAdvance: continued runner for session {session_id}"
+                        );
+                    }
+                    Err(e) => {
+                        bevy::log::warn!(
+                            "DialogAdvance: runner entity for session {session_id} not found: {e:?}"
+                        );
+                    }
                 }
             }
             GameCommand::DialogChoose {
@@ -169,13 +187,29 @@ pub fn process_dialog_commands(
             }
             GameCommand::DialogEnd { session_id } => {
                 let Some(handle) = sessions.by_id.get(&session_id).copied() else {
+                    bevy::log::warn!(
+                        "DialogEnd: no session {session_id} in registry (have {:?})",
+                        sessions.by_id.keys().copied().collect::<Vec<_>>()
+                    );
                     continue;
                 };
                 if handle.player_id != acting_player_id.0 {
+                    bevy::log::warn!(
+                        "DialogEnd: session {session_id} player_id={} != acting={}",
+                        handle.player_id, acting_player_id.0
+                    );
                     continue;
                 }
-                if let Ok((mut runner, _)) = runners.get_mut(handle.runner_entity) {
-                    runner.stop();
+                match runners.get_mut(handle.runner_entity) {
+                    Ok((mut runner, _)) => {
+                        runner.stop();
+                        bevy::log::info!("DialogEnd: stopped runner for session {session_id}");
+                    }
+                    Err(e) => {
+                        bevy::log::warn!(
+                            "DialogEnd: runner entity for session {session_id} not found: {e:?}"
+                        );
+                    }
                 }
                 // Entity teardown + UI close happen in `handle_dialogue_completed`
                 // when Yarn's own DialogueCompleted fires (triggered by stop()).

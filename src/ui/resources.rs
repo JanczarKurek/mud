@@ -20,6 +20,9 @@ pub struct ContextMenuState {
     pub can_attack: bool,
     pub can_take_partial: bool,
     pub can_talk: bool,
+    /// True when the right-clicked target is a tradeable peer (another player
+    /// adjacent to the local player; later: a shopkeeper NPC).
+    pub can_trade: bool,
     /// `(verb, label)` for the *single* interaction (door open/close,
     /// torch light/extinguish, lever pull) currently applicable to the
     /// hovered object. `None` means no interact button is shown.
@@ -38,6 +41,7 @@ impl ContextMenuState {
         can_attack: bool,
         can_take_partial: bool,
         can_talk: bool,
+        can_trade: bool,
         interaction: Option<(String, String)>,
     ) {
         self.position = position;
@@ -48,6 +52,7 @@ impl ContextMenuState {
         self.can_attack = can_attack;
         self.can_take_partial = can_take_partial;
         self.can_talk = can_talk;
+        self.can_trade = can_trade;
         self.interaction = interaction;
     }
 
@@ -59,6 +64,7 @@ impl ContextMenuState {
         self.can_attack = false;
         self.can_take_partial = false;
         self.can_talk = false;
+        self.can_trade = false;
         self.interaction = None;
     }
 
@@ -543,4 +549,39 @@ pub struct PendingMenuActions {
 #[derive(Resource, Default)]
 pub struct CharacterSheetState {
     pub open: bool,
+}
+
+/// Floating-popup state for the trade window. Replaces the previous docked-
+/// panel slot. Holds the active session id, the popup's screen-space
+/// position/size, and drag/resize handles. Items move into the trade via
+/// drag-and-drop directly onto the column slots — no per-ware stepper.
+#[derive(Resource, Default)]
+pub struct TradePopupState {
+    pub session_id: Option<u64>,
+    /// `None` until the popup has been opened or moved; `sync_trade_popup_visibility`
+    /// centers it on the window the first time `session_id` becomes `Some`.
+    pub position: Option<Vec2>,
+    pub size: Vec2,
+    /// While dragging the title bar, the offset from the cursor to the
+    /// popup's top-left corner. `None` means not dragging.
+    pub drag_origin: Option<Vec2>,
+    pub resizing: bool,
+}
+
+impl TradePopupState {
+    pub const DEFAULT_SIZE: Vec2 = Vec2::new(720.0, 480.0);
+    pub const MIN_SIZE: Vec2 = Vec2::new(480.0, 320.0);
+
+    pub fn open(&mut self, session_id: u64) {
+        self.session_id = Some(session_id);
+        if self.size == Vec2::ZERO {
+            self.size = Self::DEFAULT_SIZE;
+        }
+    }
+
+    pub fn close(&mut self) {
+        self.session_id = None;
+        self.drag_origin = None;
+        self.resizing = false;
+    }
 }

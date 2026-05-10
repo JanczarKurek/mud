@@ -114,6 +114,11 @@ pub struct OverworldObjectDefinition {
     /// Resolved into a `LightSource` ECS component on the projected entity.
     #[serde(default)]
     pub light: Option<LightEmissionDef>,
+    /// Marks this object as a shopkeeper (merchant NPC). At spawn time a
+    /// matching `Stockpile` entity is created and linked via the
+    /// `Shopkeeper` component on this NPC. See `crate::game::shop`.
+    #[serde(default)]
+    pub shopkeeper: Option<crate::game::shop::ShopkeeperDef>,
 }
 
 /// Per-state override of the rendering / collider knobs on
@@ -657,6 +662,22 @@ impl OverworldObjectDefinition {
             .and_then(|s| self.states.get(s))
             .and_then(|state_def| state_def.sprite_path.as_deref())
             .or(self.render.sprite_path.as_deref())
+    }
+
+    /// Sprite path that combines a per-state override with the
+    /// `stack_sprites` quantity tier. State overrides win because they
+    /// represent semantic mode swaps (door open/closed, torch lit/unlit);
+    /// otherwise the stack-tier sprite is used so a pile of coins on the
+    /// ground visually grows with quantity.
+    pub fn sprite_path_for_state_count(&self, state: Option<&str>, count: u32) -> Option<&str> {
+        if let Some(s) = state {
+            if let Some(state_def) = self.states.get(s) {
+                if let Some(path) = state_def.sprite_path.as_deref() {
+                    return Some(path);
+                }
+            }
+        }
+        self.sprite_for_count(count)
     }
 
     /// Animation sheet for `state`, falling back to the base

@@ -3,12 +3,19 @@ use std::collections::{HashMap, HashSet};
 use bevy::prelude::*;
 
 use crate::combat::components::{AttackKind, AttackProfile, CombatTarget};
+use crate::game::shop::Shopkeeper;
 use crate::npc::components::{
     HostileBehavior, Npc, RoamingBehavior, RoamingRandomState, RoamingStepTimer,
 };
 use crate::player::components::Player;
 use crate::world::components::{Collider, Facing, SpaceId, SpaceResident, TilePosition};
 use crate::world::direction::Direction;
+
+/// Shopkeepers stop wandering when a player is within this many tiles, so the
+/// trade context menu and any open trade panel don't snap closed every time a
+/// peaceful NPC takes a random step. Two tiles is one beyond the chebyshev-1
+/// adjacency the trade flow already requires for `InitiateTrade`.
+const SHOPKEEPER_PAUSE_RADIUS_TILES: i32 = 2;
 
 /// Spatial index of static blocker tiles, rebuilt at the top of
 /// `update_roaming_npcs`. Replaces a per-NPC × per-candidate-tile linear scan
@@ -33,6 +40,7 @@ pub fn update_roaming_npcs(
             &mut RoamingStepTimer,
             &mut RoamingRandomState,
             Option<&mut Facing>,
+            Has<Shopkeeper>,
         ),
         (With<Npc>, Without<Player>),
     >,
@@ -64,6 +72,7 @@ pub fn update_roaming_npcs(
         mut timer,
         mut random_state,
         mut facing,
+        is_shopkeeper,
     ) in &mut npc_query
     {
         timer.remaining_seconds = (timer.remaining_seconds - time.delta_secs()).max(0.0);
@@ -77,6 +86,25 @@ pub fn update_roaming_npcs(
             .filter(|(_, space_id, _)| *space_id == resident.space_id)
             .min_by_key(|(_, _, position)| chebyshev_distance(*tile_position, *position));
         let player_position = nearest_player.map(|(_, _, position)| position);
+
+        if is_shopkeeper
+            && player_position.is_some_and(|pos| {
+                chebyshev_distance(*tile_position, pos) <= SHOPKEEPER_PAUSE_RADIUS_TILES
+            })
+        {
+            // Face the player while paused so context-menu / dialog feels live.
+            if let (Some(facing), Some(target)) = (facing.as_mut(), player_position) {
+                if let Some(direction) =
+                    Direction::from_delta(target.x - tile_position.x, target.y - tile_position.y)
+                {
+                    if facing.0 != direction {
+                        facing.0 = direction;
+                    }
+                }
+            }
+            timer.remaining_seconds = behavior.step_interval_seconds;
+            continue;
+        }
         let chase_target = select_chase_target(
             entity,
             resident.space_id,

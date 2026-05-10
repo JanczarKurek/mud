@@ -38,6 +38,7 @@ use crate::world::WorldConfig;
 pub fn apply_game_ui_events(
     mut pending_ui_events: ResMut<PendingGameUiEvents>,
     mut docked_panel_state: ResMut<DockedPanelState>,
+    mut trade_popup_state: ResMut<crate::ui::resources::TradePopupState>,
     mut dialog_state: ResMut<crate::ui::resources::ActiveDialogState>,
 ) {
     let events = std::mem::take(&mut pending_ui_events.events);
@@ -46,6 +47,12 @@ pub fn apply_game_ui_events(
         match event {
             GameUiEvent::OpenContainer { object_id } => {
                 docked_panel_state.open(object_id);
+            }
+            GameUiEvent::OpenTradePanel { session_id } => {
+                trade_popup_state.open(session_id);
+            }
+            GameUiEvent::CloseTradePanel { .. } => {
+                trade_popup_state.close();
             }
             GameUiEvent::DialogLine {
                 session_id,
@@ -189,7 +196,7 @@ pub fn manage_open_containers(
                 object.is_container && is_near_player(&player_position, &object.tile_position)
             }),
         // Pouch panels stay open as long as the underlying inventory slot is
-        // still a container item. Slot empties / replaced with a non-pouch ⇒
+        // still a container item. Slot empties / replaced with a non-pouch ->
         // close.
         DockedPanelKind::PouchInBackpack { backpack_slot } => client_state
             .inventory
@@ -434,12 +441,12 @@ fn spawn_class_picker_overlay(commands: &mut Commands) {
         (
             Class::Wizard,
             "Wizard",
-            "d4 HP. Arcane caster — fragile, mana-rich, scales hard.",
+            "d4 HP. Arcane caster - fragile, mana-rich, scales hard.",
         ),
         (
             Class::Cleric,
             "Cleric",
-            "d8 HP. Divine caster — mid martial, full healer / support.",
+            "d8 HP. Divine caster - mid martial, full healer / support.",
         ),
         (
             Class::Vagabond,
@@ -616,10 +623,10 @@ fn spawn_character_sheet_overlay(commands: &mut Commands, state: &ClientGameStat
     let level_line = match &state.experience {
         Some(view) => match view.xp_for_next {
             Some(span) => format!(
-                "Level {} {} — {}/{} XP",
+                "Level {} {} - {}/{} XP",
                 view.level, class_label, view.xp_into_level, span
             ),
-            None => format!("Level {} {} — max level", view.level, class_label),
+            None => format!("Level {} {} - max level", view.level, class_label),
         },
         None => class_label.to_owned(),
     };
@@ -751,7 +758,7 @@ fn spawn_character_sheet_overlay(commands: &mut Commands, state: &ClientGameStat
                     }
                 } else {
                     panel.spawn((
-                        Text::new("(loading…)"),
+                        Text::new("(loading...)"),
                         TextFont {
                             font_size: 13.0,
                             ..default()
@@ -780,7 +787,7 @@ fn spawn_character_sheet_overlay(commands: &mut Commands, state: &ClientGameStat
                         let mins = total / 60;
                         let secs = total % 60;
                         format!(
-                            "Well Fed — regen ×{:.1} ({mins}:{secs:02} remaining)",
+                            "Well Fed - regen x{:.1} ({mins}:{secs:02} remaining)",
                             buff.multiplier
                         )
                     }
@@ -1210,6 +1217,52 @@ pub fn sync_context_menu_talk_button(
     };
 }
 
+pub fn sync_context_menu_trade_button(
+    context_menu_state: Res<ContextMenuState>,
+    mut button_query: Query<&mut Node, With<crate::ui::components::ContextMenuTradeButton>>,
+) {
+    let Ok(mut node) = button_query.single_mut() else {
+        return;
+    };
+
+    node.display = if context_menu_state.can_trade {
+        Display::Flex
+    } else {
+        Display::None
+    };
+}
+
+/// "Offer to Trade" is shown when the right-clicked target is one of the
+/// player's own backpack/equipment/pouch slots AND a trade panel is open.
+pub fn sync_context_menu_offer_to_trade_button(
+    context_menu_state: Res<ContextMenuState>,
+    trade_popup_state: Res<crate::ui::resources::TradePopupState>,
+    mut button_query: Query<
+        &mut Node,
+        With<crate::ui::components::ContextMenuOfferToTradeButton>,
+    >,
+) {
+    let Ok(mut node) = button_query.single_mut() else {
+        return;
+    };
+
+    let target_is_player_slot = matches!(
+        context_menu_state.target,
+        Some(ContextMenuTarget::Slot(
+            ItemSlotKind::Backpack(_)
+                | ItemSlotKind::Equipment(_)
+                | ItemSlotKind::PouchInBackpack { .. }
+        ))
+    );
+    let trade_open = trade_popup_state.session_id.is_some();
+
+    node.display = if target_is_player_slot && trade_open {
+        Display::Flex
+    } else {
+        Display::None
+    };
+}
+
 pub fn sync_context_menu_use_button(
     context_menu_state: Res<ContextMenuState>,
     mut use_button_query: Query<&mut Node, With<ContextMenuUseButton>>,
@@ -1303,6 +1356,7 @@ pub fn handle_context_menu_actions(
         context_menu_state.hide();
         return;
     }
+
 
     if is_cursor_over_button(cursor_position, &menu_queries.p0()) {
         if let Some(ContextMenuTarget::World(object_id)) = context_menu_state.target {
@@ -1451,6 +1505,82 @@ pub fn handle_context_menu_actions(
     }
 
     context_menu_state.hide();
+}
+
+/// Trade-related context-menu buttons (Trade / Offer to Trade) live in a
+/// separate system so the main context-menu handler stays under Bevy's
+/// 8-arm `ParamSet` limit.
+#[allow(clippy::too_many_arguments)]
+pub fn handle_trade_context_menu_actions(
+    mouse_input: Res<ButtonInput<MouseButton>>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    client_state: Res<ClientGameState>,
+    docked_panel_state: Res<DockedPanelState>,
+    trade_popup_state: Res<crate::ui::resources::TradePopupState>,
+    mut context_menu_state: ResMut<ContextMenuState>,
+    mut pending_commands: ResMut<PendingGameCommands>,
+    trade_button_query: Query<
+        (&ComputedNode, &UiGlobalTransform),
+        With<crate::ui::components::ContextMenuTradeButton>,
+    >,
+    offer_button_query: Query<
+        (&ComputedNode, &UiGlobalTransform),
+        With<crate::ui::components::ContextMenuOfferToTradeButton>,
+    >,
+) {
+    if !mouse_input.just_pressed(MouseButton::Left) || !context_menu_state.is_visible() {
+        return;
+    }
+    let Ok(window) = window_query.single() else {
+        return;
+    };
+    let Some(cursor_position) = window.cursor_position() else {
+        return;
+    };
+
+    if is_cursor_over_button(cursor_position, &trade_button_query) {
+        if let Some(ContextMenuTarget::World(object_id)) = context_menu_state.target {
+            // Resolve the right-click target to either a remote player or a
+            // shopkeeper world object. The client knows because the projected
+            // `ClientWorldObjectState.is_shopkeeper` flag is set on
+            // shopkeeper NPCs.
+            let target = if client_state.remote_players.values().any(|p| p.object_id == object_id) {
+                crate::game::trade::TradeTarget::Player { object_id }
+            } else if client_state
+                .world_objects
+                .get(&object_id)
+                .is_some_and(|obj| obj.is_shopkeeper)
+            {
+                crate::game::trade::TradeTarget::Shopkeeper { object_id }
+            } else {
+                context_menu_state.hide();
+                return;
+            };
+            pending_commands.push(GameCommand::InitiateTrade { target });
+        }
+        context_menu_state.hide();
+        return;
+    }
+
+    if is_cursor_over_button(cursor_position, &offer_button_query) {
+        if let (Some(session_id), Some(ContextMenuTarget::Slot(slot_kind))) = (
+            trade_popup_state.session_id,
+            context_menu_state.target,
+        ) {
+            if let Some(slot_ref) = item_slot_kind_to_ref(slot_kind, &docked_panel_state) {
+                if let Some(stack) =
+                    stack_in_slot_kind(&client_state, &docked_panel_state, slot_kind)
+                {
+                    pending_commands.push(GameCommand::OfferTradeItem {
+                        session_id,
+                        source: slot_ref,
+                        quantity: stack.quantity.max(1),
+                    });
+                }
+            }
+        }
+        context_menu_state.hide();
+    }
 }
 
 pub fn handle_use_on_targeting(
@@ -1767,6 +1897,7 @@ pub fn handle_context_menu_opening(
                 false,
                 stack_qty > 1,
                 false,
+                false,
                 None,
             );
             info!(
@@ -1782,41 +1913,10 @@ pub fn handle_context_menu_opening(
         "context_open_world_probe target_tile=({}, {})",
         target_tile.x, target_tile.y
     );
-    for object in client_state.world_objects.values() {
-        if object.tile_position != target_tile {
-            continue;
-        }
 
-        let near = is_near_player(&player_position, &object.tile_position);
-        let can_use = near && object_is_usable(object.object_id, &object_registry, &definitions);
-        let interaction = if near {
-            applicable_interaction(object, &definitions)
-        } else {
-            None
-        };
-        context_menu_state.show(
-            cursor_position,
-            ContextMenuTarget::World(object.object_id),
-            near && object.is_container,
-            can_use,
-            near && can_use_on(
-                object.object_id,
-                &object_registry,
-                &definitions,
-                &spell_definitions,
-            ),
-            object.is_npc,
-            near && object.quantity > 1,
-            near && object.is_npc && object.has_dialog,
-            interaction,
-        );
-        info!(
-            "context_open_world_success object_id={} has_container={} can_use={} can_attack={} near={}",
-            object.object_id, object.is_container, can_use, object.is_npc, near
-        );
-        return;
-    }
-
+    // Priority order at a tile: remote player > NPC (incl. shopkeeper) > other
+    // world object. Without this sort, the HashMap iteration order would let a
+    // pickup item under a villager swallow the right-click.
     for remote_player in client_state.remote_players.values() {
         if remote_player.tile_position != target_tile {
             continue;
@@ -1839,11 +1939,62 @@ pub fn handle_context_menu_opening(
             true,
             false,
             false,
+            // Trade with remote players is enabled when adjacent. Self-target
+            // never reaches this loop (the local player isn't in
+            // `client_state.remote_players`).
+            near,
             None,
         );
         info!(
             "context_open_remote_player_success object_id={} can_use={} can_attack=true near={}",
             remote_player.object_id, can_use, near
+        );
+        return;
+    }
+
+    let mut best_object: Option<&crate::game::resources::ClientWorldObjectState> = None;
+    for object in client_state.world_objects.values() {
+        if object.tile_position != target_tile {
+            continue;
+        }
+        let upgrade = match best_object {
+            None => true,
+            Some(current) => object.is_npc && !current.is_npc,
+        };
+        if upgrade {
+            best_object = Some(object);
+        }
+    }
+
+    if let Some(object) = best_object {
+        let near = is_near_player(&player_position, &object.tile_position);
+        let can_use = near && object_is_usable(object.object_id, &object_registry, &definitions);
+        let interaction = if near {
+            applicable_interaction(object, &definitions)
+        } else {
+            None
+        };
+        context_menu_state.show(
+            cursor_position,
+            ContextMenuTarget::World(object.object_id),
+            near && object.is_container,
+            can_use,
+            near && can_use_on(
+                object.object_id,
+                &object_registry,
+                &definitions,
+                &spell_definitions,
+            ),
+            object.is_npc,
+            near && object.quantity > 1,
+            near && object.is_npc && object.has_dialog,
+            // "Trade" is enabled when adjacent to a shopkeeper NPC.
+            near && object.is_shopkeeper,
+            interaction,
+        );
+        info!(
+            "context_open_world_success object_id={} has_container={} can_use={} can_attack={} near={}",
+            object.object_id, object.is_container, can_use, object.is_npc, near
         );
         return;
     }
@@ -1984,6 +2135,11 @@ pub fn sync_item_slot_button_visibility(
             }
             ItemSlotKind::PouchInBackpack { .. } => false,
             ItemSlotKind::Equipment(_) => true,
+            // Trade slots have their own panel; this query only sees
+            // ContainerSlotButton-tagged entities, so this arm is never hit.
+            ItemSlotKind::TradeUs { .. }
+            | ItemSlotKind::TradeThem { .. }
+            | ItemSlotKind::MerchantWare { .. } => false,
         };
 
         *visibility = if should_show {
@@ -2045,6 +2201,9 @@ pub fn sync_container_slot_images(
             }
             ItemSlotKind::PouchInBackpack { .. } => None,
             ItemSlotKind::Equipment(_) => None,
+            ItemSlotKind::TradeUs { .. }
+            | ItemSlotKind::TradeThem { .. }
+            | ItemSlotKind::MerchantWare { .. } => None,
         };
         let Some(stack) = stack else {
             *visibility = Visibility::Hidden;
@@ -2102,6 +2261,9 @@ pub fn sync_container_slot_images(
                     None
                 }
             }
+            ItemSlotKind::TradeUs { .. }
+            | ItemSlotKind::TradeThem { .. }
+            | ItemSlotKind::MerchantWare { .. } => None,
         };
         match stack {
             Some(s) if s.quantity > 1 => {
@@ -2130,7 +2292,10 @@ pub fn sync_equipment_slot_images(
             ItemSlotKind::Equipment(slot) => client_state.inventory.equipment_item(slot).cloned(),
             ItemSlotKind::Backpack(_)
             | ItemSlotKind::OpenContainer { .. }
-            | ItemSlotKind::PouchInBackpack { .. } => None,
+            | ItemSlotKind::PouchInBackpack { .. }
+            | ItemSlotKind::TradeUs { .. }
+            | ItemSlotKind::TradeThem { .. }
+            | ItemSlotKind::MerchantWare { .. } => None,
         };
         let Some(item) = item else {
             *visibility = Visibility::Hidden;
@@ -2277,6 +2442,7 @@ fn find_best_take_destination(
     None
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn handle_movable_dragging(
     mouse_input: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
@@ -2284,6 +2450,7 @@ pub fn handle_movable_dragging(
     interaction_state: (Res<ContextMenuState>, Res<UseOnState>),
     client_state: Res<ClientGameState>,
     docked_panel_state: Res<DockedPanelState>,
+    trade_popup_state: Res<crate::ui::resources::TradePopupState>,
     mut drag_state: ResMut<DragState>,
     mut pending_commands: ResMut<PendingGameCommands>,
     mut slot_queries: ParamSet<(
@@ -2305,6 +2472,15 @@ pub fn handle_movable_dragging(
             ),
             (With<Button>, With<ContainerSlotButton>),
         >,
+        Query<
+            (
+                &ItemSlotButton,
+                &ComputedNode,
+                &UiGlobalTransform,
+                Option<&Visibility>,
+            ),
+            (With<Button>, With<crate::ui::components::TradeSlotButton>),
+        >,
     )>,
 ) {
     let (context_menu_state, use_on_state) = interaction_state;
@@ -2317,9 +2493,17 @@ pub fn handle_movable_dragging(
     let Some(player_position) = client_state.player_tile_position else {
         return;
     };
-    let hovered_slot = {
-        let equipment_hovered = hovered_slot_in_family(cursor_position, &slot_queries.p0());
-        equipment_hovered.or_else(|| hovered_slot_in_family(cursor_position, &slot_queries.p1()))
+    // When the trade popup is open, trade slots are layered above the docked
+    // inventory sidebar — so a Them drop-zone can sit on top of a backpack
+    // slot. Check the trade family first in that case; otherwise keep the
+    // existing equipment-then-container priority.
+    let hovered_slot = if trade_popup_state.session_id.is_some() {
+        hovered_slot_in_family(cursor_position, &slot_queries.p2())
+            .or_else(|| hovered_slot_in_family(cursor_position, &slot_queries.p0()))
+            .or_else(|| hovered_slot_in_family(cursor_position, &slot_queries.p1()))
+    } else {
+        hovered_slot_in_family(cursor_position, &slot_queries.p0())
+            .or_else(|| hovered_slot_in_family(cursor_position, &slot_queries.p1()))
     };
 
     if context_menu_state.is_visible() {
@@ -2417,6 +2601,61 @@ pub fn handle_movable_dragging(
             }
         }
         Some(DragSource::UiSlot(source_slot)) => {
+            // Trade-specific drops take priority when the trade popup is
+            // open. These three branches all `return` because the source
+            // slot kinds involved (MerchantWare, TradeUs, TradeThem) don't
+            // resolve to a real `ItemSlotRef` and would otherwise fall
+            // through the existing `MoveItem` path as no-ops.
+            if let Some(session_id) = trade_popup_state.session_id {
+                if let ItemSlotKind::MerchantWare { ware_index } = source_slot {
+                    if matches!(hovered_slot, Some(ItemSlotKind::TradeThem { .. })) {
+                        pending_commands.push(GameCommand::BrowseShopBuy {
+                            session_id,
+                            ware_index,
+                            quantity: 1,
+                        });
+                    }
+                    return;
+                }
+                if let ItemSlotKind::TradeUs { index } = source_slot {
+                    let dropped_on_self = matches!(
+                        hovered_slot,
+                        Some(ItemSlotKind::TradeUs { index: i }) if i == index
+                    );
+                    if !dropped_on_self {
+                        pending_commands.push(GameCommand::WithdrawTradeItem {
+                            session_id,
+                            offer_index: index,
+                        });
+                    }
+                    return;
+                }
+                if matches!(source_slot, ItemSlotKind::TradeThem { .. }) {
+                    // Read-only on the partner's column.
+                    return;
+                }
+                if matches!(hovered_slot, Some(ItemSlotKind::TradeUs { .. })) {
+                    if let Some(slot_ref) =
+                        item_slot_kind_to_ref(source_slot, &docked_panel_state)
+                    {
+                        let qty = stack_in_slot_kind(
+                            &client_state,
+                            &docked_panel_state,
+                            source_slot,
+                        )
+                        .map(|stack| stack.quantity)
+                        .unwrap_or(1)
+                        .max(1);
+                        pending_commands.push(GameCommand::OfferTradeItem {
+                            session_id,
+                            source: slot_ref,
+                            quantity: qty,
+                        });
+                    }
+                    return;
+                }
+            }
+
             let Some(source) = item_slot_kind_to_ref(source_slot, &docked_panel_state) else {
                 return;
             };
@@ -3087,6 +3326,44 @@ fn stack_in_slot_kind(
             };
             InventoryStack::item(item.type_id.clone(), item.properties.clone(), quantity)
         }),
+        ItemSlotKind::TradeUs { index } => client_state
+            .current_trade
+            .as_ref()
+            .and_then(|view| view.our_offers.get(index))
+            .map(|entry| {
+                InventoryStack::item(
+                    entry.type_id.clone(),
+                    entry.properties.clone(),
+                    entry.quantity,
+                )
+            }),
+        ItemSlotKind::TradeThem { index } => client_state
+            .current_trade
+            .as_ref()
+            .and_then(|view| view.their_offers.get(index))
+            .map(|entry| {
+                InventoryStack::item(
+                    entry.type_id.clone(),
+                    entry.properties.clone(),
+                    entry.quantity,
+                )
+            }),
+        // Merchant wares aren't player inventory but the drag system probes
+        // `stack_in_slot_kind` to decide whether the source slot is
+        // "occupied" / draggable. Return a synthetic stack (quantity=1) so
+        // the drag handshake passes.
+        ItemSlotKind::MerchantWare { ware_index } => client_state
+            .current_trade
+            .as_ref()
+            .and_then(|view| view.wares.as_ref())
+            .and_then(|wares| wares.get(ware_index))
+            .map(|ware| {
+                InventoryStack::item(
+                    ware.type_id.clone(),
+                    crate::world::map_layout::ObjectProperties::new(),
+                    1,
+                )
+            }),
     }
 }
 
@@ -3241,6 +3518,13 @@ fn item_slot_kind_to_ref(
             backpack_slot: docked_panel_state.pouch_backpack_slot_for_panel(panel_id)?,
             sub_slot: sub_slot_index,
         }),
+        // Trade slots are not addressable as inventory locations — they're
+        // a UI-side projection of `TradeOfferEntry`. Returning `None` here
+        // keeps drag/drop and the context-menu inspect code from trying to
+        // resolve a trade slot to a real inventory ref.
+        ItemSlotKind::TradeUs { .. }
+        | ItemSlotKind::TradeThem { .. }
+        | ItemSlotKind::MerchantWare { .. } => None,
     }
 }
 

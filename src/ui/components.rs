@@ -97,6 +97,13 @@ pub struct EquipmentSlotButton;
 #[derive(Component)]
 pub struct ContainerSlotButton;
 
+/// Marker on every draggable slot rendered inside the trade popup
+/// (merchant wares, Us offers, Them offers, and the empty drop-zone slot
+/// at the bottom of each column). Lets `handle_movable_dragging` include
+/// trade slots in its hit-test family.
+#[derive(Component)]
+pub struct TradeSlotButton;
+
 #[derive(Component)]
 pub struct EquipmentSlotImage;
 
@@ -196,6 +203,14 @@ pub struct ContextMenuTakePartialButton;
 #[derive(Component)]
 pub struct ContextMenuTalkButton;
 
+#[derive(Component)]
+pub struct ContextMenuTradeButton;
+
+/// Right-click on an inventory slot while a trade is open shows this button —
+/// clicking it adds the slot's contents to the trade's "us" column.
+#[derive(Component)]
+pub struct ContextMenuOfferToTradeButton;
+
 /// Single dynamic-label button for stateful-object interactions ("Open" /
 /// "Close" / "Light" / "Extinguish" / "Pull"). The label is rewritten each
 /// time the menu opens against the verb chosen for the currently hovered
@@ -241,6 +256,65 @@ pub struct EquipmentPanelContent;
 #[derive(Component)]
 pub struct BackpackPanelContent;
 
+/// Marker for the trade panel body. Owns the dynamically rebuilt list of
+/// "us" / "them" offer rows plus the Ready / Confirm / Cancel buttons.
+#[derive(Component)]
+pub struct TradePanelContent;
+
+/// Header label inside the trade panel ("Trading with: <partner>").
+#[derive(Component)]
+pub struct TradePartnerLabel;
+
+/// Per-side container marker so `sync_trade_panel` can clear and rebuild
+/// the column without touching siblings. `Merchant` is the new leftmost
+/// column listing the shopkeeper's wares (drag source).
+#[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TradeColumn {
+    Merchant,
+    Us,
+    Them,
+}
+
+/// Marker on the Ready button inside the trade panel.
+#[derive(Component)]
+pub struct TradeReadyButton;
+
+/// Marker on the Confirm button inside the trade panel.
+#[derive(Component)]
+pub struct TradeConfirmButton;
+
+/// Marker on the Cancel button inside the trade panel.
+#[derive(Component)]
+pub struct TradeCancelButton;
+
+/// Label inside one of the trade buttons — used by `sync_trade_panel` to
+/// re-render the button text (e.g. "Ready" → "Unready" once toggled).
+#[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TradeButtonLabel {
+    Ready,
+    Confirm,
+}
+
+/// Outer root of the floating Trade popup window. Visibility is toggled by
+/// `sync_trade_popup_visibility` from `TradePopupState.session_id`; position
+/// and size are written by `sync_trade_popup_layout` from the same resource.
+#[derive(Component)]
+pub struct TradePopupRoot;
+
+/// Title-bar drag handle inside the trade popup (also visually carries the
+/// "Trade" label and the close X). Detected by `handle_trade_popup_drag`.
+#[derive(Component)]
+pub struct TradePopupTitleBar;
+
+/// Bottom-right resize grip on the trade popup. Pressed-and-dragged in
+/// `handle_trade_popup_resize`.
+#[derive(Component)]
+pub struct TradePopupResizeHandle;
+
+/// Close (X) button in the trade popup title bar — emits `CancelTrade`.
+#[derive(Component)]
+pub struct TradePopupCloseButton;
+
 #[derive(Component)]
 pub struct CurrentCombatTargetLabel;
 
@@ -267,6 +341,24 @@ pub enum ItemSlotKind {
     PouchInBackpack {
         panel_id: usize,
         sub_slot_index: usize,
+    },
+    /// A slot in the local player's "us" column of the trade window. The
+    /// `index` is into `ClientTradeView.our_offers`.
+    TradeUs {
+        index: usize,
+    },
+    /// A slot in the partner's "them" column of the trade window. The
+    /// `index` is into `ClientTradeView.their_offers`. Read-only — clicking
+    /// a them-slot inspects but cannot withdraw.
+    TradeThem {
+        index: usize,
+    },
+    /// A row in the shopkeeper's wares column inside the trade popup. The
+    /// `ware_index` is into `ClientTradeView.wares.unwrap()`. Used only as a
+    /// drag SOURCE: drag a merchant ware into the Them column to emit a
+    /// `BrowseShopBuy` command.
+    MerchantWare {
+        ware_index: usize,
     },
 }
 

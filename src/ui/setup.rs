@@ -6,22 +6,25 @@ use crate::ui::components::{
     BackpackPanelContent, BackpackSlotRow, CarryWeightLabel, ChatLogText, ContainerPanelContent,
     ContainerSlotButton, ContainerSlotImage, ContextMenuAttackButton, ContextMenuInspectButton,
     ContextMenuInteractButton, ContextMenuOpenButton, ContextMenuRoot,
-    ContextMenuTakePartialButton, ContextMenuTalkButton, ContextMenuUseButton,
-    ContextMenuUseOnButton, CurrentCombatTargetLabel, CurrentTargetPanelContent,
-    DialogPanelBodyText, DialogPanelCloseButton, DialogPanelContinueButton,
-    DialogPanelOptionsContainer, DialogPanelRoot, DialogPanelSpeakerLabel, DockedPanelBody,
-    DockedPanelCanvas, DockedPanelCloseButton, DockedPanelDragHandle, DockedPanelResizeHandle,
-    DockedPanelRoot, DockedPanelTitle, DragPreviewImage, DragPreviewLabel, DragPreviewQuantity,
-    DragPreviewRoot, EquipmentPanelContent, EquipmentSlotButton, EquipmentSlotImage,
-    ExperienceFill, ExperienceLabel, FullMapBodyRoot, FullMapCloseButton, FullMapWindowRoot,
-    FullMapZoomInButton, FullMapZoomLabel, FullMapZoomOutButton, HealthFill, HealthLabel,
-    HudMinimapZoomInButton, HudMinimapZoomLabel, HudMinimapZoomOutButton, ItemSlotButton,
-    ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot,
-    ManaFill, ManaLabel, MinimapCanvas, MinimapMode, MinimapView, PythonConsoleInput,
-    PythonConsoleOutput, PythonConsoleOutputViewport, PythonConsolePanel,
-    PythonConsoleScrollbarThumb, RegenBuffLabel, RightSidebarRoot, StatusPanelContent,
-    TakePartialAmountLabel, TakePartialCancelButton, TakePartialConfirmButton,
-    TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot,
+    ContextMenuOfferToTradeButton, ContextMenuTakePartialButton, ContextMenuTalkButton,
+    ContextMenuTradeButton, ContextMenuUseButton, ContextMenuUseOnButton, CurrentCombatTargetLabel,
+    CurrentTargetPanelContent, DialogPanelBodyText, DialogPanelCloseButton,
+    DialogPanelContinueButton, DialogPanelOptionsContainer, DialogPanelRoot,
+    DialogPanelSpeakerLabel, DockedPanelBody, DockedPanelCanvas, DockedPanelCloseButton,
+    DockedPanelDragHandle, DockedPanelResizeHandle, DockedPanelRoot, DockedPanelTitle,
+    DragPreviewImage, DragPreviewLabel, DragPreviewQuantity, DragPreviewRoot,
+    EquipmentPanelContent, EquipmentSlotButton, EquipmentSlotImage, ExperienceFill,
+    ExperienceLabel, FullMapBodyRoot, FullMapCloseButton, FullMapWindowRoot, FullMapZoomInButton,
+    FullMapZoomLabel, FullMapZoomOutButton, HealthFill, HealthLabel, HudMinimapZoomInButton,
+    HudMinimapZoomLabel, HudMinimapZoomOutButton, ItemSlotButton, ItemSlotImage, ItemSlotKind,
+    ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot, ManaFill, ManaLabel, MinimapCanvas,
+    MinimapMode, MinimapView, PythonConsoleInput, PythonConsoleOutput,
+    PythonConsoleOutputViewport, PythonConsolePanel, PythonConsoleScrollbarThumb, RegenBuffLabel,
+    RightSidebarRoot, StatusPanelContent, TakePartialAmountLabel, TakePartialCancelButton,
+    TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot,
+    TradeButtonLabel, TradeCancelButton, TradeColumn, TradeConfirmButton, TradePanelContent,
+    TradePartnerLabel, TradePopupCloseButton, TradePopupResizeHandle, TradePopupRoot,
+    TradePopupTitleBar, TradeReadyButton,
 };
 use crate::ui::menu_bar::{spawn_menu_bar, MENU_BAR_HEIGHT};
 use crate::ui::minimap::{make_minimap_image, FULL_MAP_BODY_SIZE, HUD_MINIMAP_SIZE};
@@ -38,7 +41,16 @@ pub fn spawn_hud(
     full_map_state: Res<FullMapWindowState>,
     theme: Res<UiThemeAssets>,
     palette: Res<Palette>,
+    existing_hud: Query<(), With<DialogPanelRoot>>,
 ) {
+    // OnEnter(InGame) re-fires whenever the player toggles into the map
+    // editor and back (and on respawn). The HUD has no matching OnExit
+    // teardown, so without this guard we'd accumulate one extra copy of every
+    // panel each cycle — and `Query::single()` lookups in the click handlers
+    // would silently fail from the second cycle onward.
+    if !existing_hud.is_empty() {
+        return;
+    }
     let theme = theme.clone();
     let palette = *palette;
     commands
@@ -423,6 +435,14 @@ pub fn spawn_hud(
         ))
         .with_children(|menu| {
             spawn_context_button(menu, &theme, &palette, "Talk", ContextMenuTalkButton);
+            spawn_context_button(menu, &theme, &palette, "Trade", ContextMenuTradeButton);
+            spawn_context_button(
+                menu,
+                &theme,
+                &palette,
+                "Offer to Trade",
+                ContextMenuOfferToTradeButton,
+            );
             spawn_context_button(menu, &theme, &palette, "Attack", ContextMenuAttackButton);
             spawn_context_button(menu, &theme, &palette, "Use", ContextMenuUseButton);
             spawn_context_button(menu, &theme, &palette, "Use On", ContextMenuUseOnButton);
@@ -446,6 +466,7 @@ pub fn spawn_hud(
 
     spawn_take_partial_popup(&mut commands, &theme, &palette);
     spawn_dialog_panel(&mut commands, &theme, &palette);
+    spawn_trade_popup(&mut commands, &theme, &palette);
 }
 
 fn spawn_dialog_panel(commands: &mut Commands, theme: &UiThemeAssets, palette: &Palette) {
@@ -896,6 +917,262 @@ fn spawn_docked_panel_canvas(
             palette,
         );
     }
+}
+
+/// Spawn the floating Trade popup window. Single instance — created at HUD
+/// setup and toggled visible via `TradePopupState.session_id`. The window is
+/// positioned absolutely; its `left/top/width/height` are driven by
+/// `sync_trade_popup_layout`.
+fn spawn_trade_popup(commands: &mut Commands, theme: &UiThemeAssets, palette: &Palette) {
+    let default_size = crate::ui::resources::TradePopupState::DEFAULT_SIZE;
+    commands
+        .spawn((
+            TradePopupRoot,
+            Node {
+                position_type: PositionType::Absolute,
+                left: px(0.0),
+                top: px(0.0),
+                width: px(default_size.x),
+                height: px(default_size.y),
+                flex_direction: FlexDirection::Column,
+                border: UiRect::all(px(1.0)),
+                ..default()
+            },
+            ImageNode::new(theme.panel_frame.clone())
+                .with_mode(theme.panel_image_mode())
+                .with_color(palette.surface_panel),
+            BackgroundColor(Color::NONE),
+            BorderColor::all(palette.border_accent),
+            Visibility::Hidden,
+            GlobalZIndex(i32::MAX - 9),
+        ))
+        .with_children(|root| {
+            // Title bar (drag handle + close X)
+            root.spawn((
+                TradePopupTitleBar,
+                Node {
+                    width: percent(100.0),
+                    height: px(26.0),
+                    padding: UiRect::axes(px(8.0), px(2.0)),
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::SpaceBetween,
+                    border: UiRect::bottom(px(1.0)),
+                    flex_shrink: 0.0,
+                    ..default()
+                },
+                BackgroundColor(palette.surface_raised),
+                BorderColor::all(palette.border_slot),
+            ))
+            .with_children(|bar| {
+                bar.spawn((
+                    Text::new("Trade"),
+                    TextFont {
+                        font_size: 14.0,
+                        ..default()
+                    },
+                    TextColor(palette.text_accent),
+                ));
+                spawn_small_button(
+                    bar,
+                    theme,
+                    palette,
+                    ButtonStyle::Secondary,
+                    "X",
+                    TradePopupCloseButton,
+                );
+            });
+
+            // Body: partner label + 3 side-by-side columns (Merchant | Us | Them).
+            root.spawn((
+                TradePanelContent,
+                Node {
+                    width: percent(100.0),
+                    flex_grow: 1.0,
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(6.0),
+                    padding: UiRect::all(px(10.0)),
+                    min_height: px(0.0),
+                    ..default()
+                },
+                BackgroundColor(Color::NONE),
+            ))
+            .with_children(|body| {
+                body.spawn((
+                    Text::new("Trading with: ..."),
+                    TradePartnerLabel,
+                    TextFont {
+                        font_size: 14.0,
+                        ..default()
+                    },
+                    TextColor(palette.text_muted),
+                    Node {
+                        width: percent(100.0),
+                        ..default()
+                    },
+                ));
+
+                body.spawn((
+                    Node {
+                        width: percent(100.0),
+                        flex_grow: 1.0,
+                        column_gap: px(8.0),
+                        min_height: px(0.0),
+                        ..default()
+                    },
+                    BackgroundColor(Color::NONE),
+                ))
+                .with_children(|columns| {
+                    spawn_trade_column(columns, palette, "Merchant", TradeColumn::Merchant);
+                    spawn_trade_column(columns, palette, "Them", TradeColumn::Them);
+                    spawn_trade_column(columns, palette, "Us", TradeColumn::Us);
+                });
+            });
+
+            // Footer: Ready / Confirm
+            root.spawn((
+                Node {
+                    width: percent(100.0),
+                    column_gap: px(6.0),
+                    padding: UiRect::axes(px(10.0), px(8.0)),
+                    border: UiRect::top(px(1.0)),
+                    flex_shrink: 0.0,
+                    ..default()
+                },
+                BackgroundColor(palette.surface_raised),
+                BorderColor::all(palette.border_slot),
+            ))
+            .with_children(|footer| {
+                spawn_trade_button(
+                    footer,
+                    theme,
+                    palette,
+                    "Ready",
+                    TradeButtonLabel::Ready,
+                    TradeReadyButton,
+                    ButtonStyle::Primary,
+                );
+                spawn_trade_button(
+                    footer,
+                    theme,
+                    palette,
+                    "Confirm",
+                    TradeButtonLabel::Confirm,
+                    TradeConfirmButton,
+                    ButtonStyle::Primary,
+                );
+                spawn_trade_button(
+                    footer,
+                    theme,
+                    palette,
+                    "Cancel",
+                    TradeButtonLabel::Confirm, // sync_trade_panel_buttons ignores Cancel
+                    TradeCancelButton,
+                    ButtonStyle::Danger,
+                );
+            });
+
+            // Bottom-right resize grip
+            root.spawn((
+                TradePopupResizeHandle,
+                Node {
+                    position_type: PositionType::Absolute,
+                    right: px(0.0),
+                    bottom: px(0.0),
+                    width: px(14.0),
+                    height: px(14.0),
+                    ..default()
+                },
+                BackgroundColor(palette.border_accent),
+            ));
+        });
+}
+
+fn spawn_trade_column(
+    parent: &mut ChildSpawnerCommands,
+    palette: &Palette,
+    title: &str,
+    column: TradeColumn,
+) {
+    parent
+        .spawn((
+            Node {
+                flex_basis: percent(0.0),
+                flex_grow: 1.0,
+                flex_direction: FlexDirection::Column,
+                row_gap: px(2.0),
+                min_height: px(0.0),
+                ..default()
+            },
+            BackgroundColor(Color::NONE),
+        ))
+        .with_children(|col| {
+            col.spawn((
+                Text::new(title.to_owned()),
+                TextFont {
+                    font_size: 13.0,
+                    ..default()
+                },
+                TextColor(palette.text_value),
+            ));
+            col.spawn((
+                Node {
+                    width: percent(100.0),
+                    flex_grow: 1.0,
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(2.0),
+                    min_height: px(0.0),
+                    padding: UiRect::all(px(4.0)),
+                    border: UiRect::all(px(1.0)),
+                    overflow: Overflow::scroll_y(),
+                    ..default()
+                },
+                column,
+                BackgroundColor(palette.surface_raised),
+                BorderColor::all(palette.border_slot),
+            ));
+        });
+}
+
+fn spawn_trade_button<T: Component>(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+    label: &str,
+    label_kind: TradeButtonLabel,
+    marker: T,
+    style: ButtonStyle,
+) {
+    let (bg, border, text) = idle_colors(palette, style, false);
+    parent
+        .spawn((
+            Button,
+            ThemedButton::new(style),
+            marker,
+            Node {
+                flex_grow: 1.0,
+                min_height: px(28.0),
+                border: UiRect::all(px(1.0)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            ImageNode::new(theme.button_frame.clone())
+                .with_mode(theme.button_image_mode())
+                .with_color(bg),
+            BackgroundColor(Color::NONE),
+            BorderColor::all(border),
+        ))
+        .with_children(|button| {
+            button.spawn((
+                Text::new(label.to_owned()),
+                label_kind,
+                TextFont {
+                    font_size: 13.0,
+                    ..default()
+                },
+                TextColor(text),
+            ));
+        });
 }
 
 fn spawn_current_target_panel(

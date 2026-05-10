@@ -517,6 +517,19 @@ pub fn process_game_commands(
                     "process_game_commands saw an interact command — check system ordering"
                 );
             }
+            GameCommand::InitiateTrade { .. }
+            | GameCommand::OfferTradeItem { .. }
+            | GameCommand::WithdrawTradeItem { .. }
+            | GameCommand::ToggleTradeReady { .. }
+            | GameCommand::ConfirmTrade { .. }
+            | GameCommand::CancelTrade { .. }
+            | GameCommand::BrowseShopBuy { .. } => {
+                // Drained by `process_trade_commands` in `CommandIntercept`
+                // before this system runs.
+                bevy::log::warn!(
+                    "process_game_commands saw a trade command — check system ordering"
+                );
+            }
             GameCommand::ChooseClass { class } => {
                 // Insert/replace the `Class` component and the `ClassChosen`
                 // marker. `refresh_derived_player_stats` picks up the change
