@@ -1,10 +1,12 @@
 //! Trade popup UI: reads `ClientGameState.current_trade` and drives the
-//! floating trade window. The popup body is laid out in three side-by-side
-//! columns — Merchant (left, drag source for wares), Us (middle, the
-//! player's offer), and Them (right, the partner's offer). Interaction is
-//! drag-and-drop only: drag a merchant ware row onto the Them column to
-//! buy; drag a docked backpack/equipment slot onto the Us column to offer;
-//! drag a Us row out of the popup to withdraw. The actual drag mechanics
+//! floating trade window. The window is a `MovableWindow` — spawned by
+//! `sync_trade_window_lifecycle` when a trade session opens and despawned
+//! when it closes. The body is laid out in three side-by-side columns —
+//! Merchant (left, drag source for wares), Us (middle, the player's offer),
+//! and Them (right, the partner's offer). Interaction is drag-and-drop
+//! only: drag a merchant ware row onto the Them column to buy; drag a
+//! docked backpack/equipment slot onto the Us column to offer; drag a Us
+//! row out of the popup to withdraw. The actual drag mechanics for slots
 //! are handled by `handle_movable_dragging` in `ui::systems`.
 
 use bevy::input::mouse::MouseButton;
@@ -18,7 +20,10 @@ use crate::game::trade::{ClientTradeView, TradeOfferEntry, WareView};
 use crate::ui::components::{
     ItemSlotButton, ItemSlotKind, TradeButtonLabel, TradeCancelButton, TradeColumn,
     TradeConfirmButton, TradePartnerLabel, TradePopupCloseButton, TradePopupResizeHandle,
-    TradePopupRoot, TradePopupTitleBar, TradeReadyButton, TradeSlotButton,
+    TradePopupRoot, TradeReadyButton, TradeSlotButton,
+};
+use crate::ui::movable_window::{
+    spawn_movable_window, val_to_px, MovableWindowDrag, MovableWindowId,
 };
 use crate::ui::resources::TradePopupState;
 use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton};
@@ -124,116 +129,187 @@ pub fn sync_trade_panel_buttons(
     }
 }
 
-/// Show / hide the trade popup based on `TradePopupState.session_id`. On the
-/// first frame it becomes visible we center it on the window.
-pub fn sync_trade_popup_visibility(
+/// Spawn / despawn the trade window based on `TradePopupState.session_id`.
+/// On open we use the cached position/size from the last session (default
+/// to centered on screen, `DEFAULT_SIZE`). On close we read the current
+/// position/size off the entity's `Node` so the next session re-opens in
+/// the same place.
+#[allow(clippy::too_many_arguments)]
+pub fn sync_trade_window_lifecycle(
+    mut commands: Commands,
     mut state: ResMut<TradePopupState>,
+    theme: Res<UiThemeAssets>,
+    palette: Res<Palette>,
     window_query: Query<&Window, With<PrimaryWindow>>,
-    mut popup_query: Query<&mut Visibility, With<TradePopupRoot>>,
+    existing: Query<(Entity, &Node), With<TradePopupRoot>>,
+    mut drag: ResMut<MovableWindowDrag>,
 ) {
-    let Ok(mut visibility) = popup_query.single_mut() else {
-        return;
-    };
-    let want_visible = state.session_id.is_some();
-    let target = if want_visible {
-        Visibility::Visible
-    } else {
-        Visibility::Hidden
-    };
-    if *visibility != target {
-        *visibility = target;
-    }
-    if want_visible && state.position.is_none() {
-        if let Ok(window) = window_query.single() {
-            let win = Vec2::new(window.width(), window.height());
-            let size = if state.size == Vec2::ZERO {
-                TradePopupState::DEFAULT_SIZE
-            } else {
-                state.size
-            };
-            state.size = size;
-            state.position = Some(((win - size) * 0.5).max(Vec2::ZERO));
+    let want_open = state.session_id.is_some();
+    let existing_root = existing.iter().next();
+
+    match (want_open, existing_root) {
+        (true, None) => {
+            let win = window_query
+                .single()
+                .map(|window| Vec2::new(window.width(), window.height()))
+                .unwrap_or(Vec2::new(1280.0, 720.0));
+            let size = state.last_size.unwrap_or(TradePopupState::DEFAULT_SIZE);
+            let pos = state
+                .last_position
+                .unwrap_or_else(|| ((win - size) * 0.5).max(Vec2::ZERO));
+            let root = spawn_trade_window(&mut commands, &theme, &palette, pos, size);
+            drag.focused = Some(root);
         }
+        (false, Some((root, _))) => {
+            commands.entity(root).despawn();
+            if drag.focused == Some(root) {
+                drag.focused = None;
+            }
+            if drag.dragging.is_some_and(|(e, _)| e == root) {
+                drag.dragging = None;
+            }
+            state.resizing = false;
+        }
+        (true, Some((_, node))) => {
+            // Cache position/size each frame so an external despawn (e.g.
+            // the partner cancels and the server clears `session_id`) still
+            // remembers where the user had the window.
+            let pos = Vec2::new(val_to_px(node.left), val_to_px(node.top));
+            let size = Vec2::new(val_to_px(node.width), val_to_px(node.height));
+            if state.last_position != Some(pos) {
+                state.last_position = Some(pos);
+            }
+            if state.last_size != Some(size) {
+                state.last_size = Some(size);
+            }
+        }
+        (false, None) => {}
     }
 }
 
-/// Write the popup's `left/top/width/height` from `TradePopupState`. Read-
-/// then-write to avoid spurious change-detection.
-pub fn sync_trade_popup_layout(
-    state: Res<TradePopupState>,
-    mut popup_query: Query<&mut Node, With<TradePopupRoot>>,
-) {
-    let Some(position) = state.position else {
-        return;
-    };
-    let Ok(mut node) = popup_query.single_mut() else {
-        return;
-    };
-    let target_left = Val::Px(position.x);
-    let target_top = Val::Px(position.y);
-    let target_w = Val::Px(state.size.x.max(1.0));
-    let target_h = Val::Px(state.size.y.max(1.0));
-    if node.left != target_left {
-        node.left = target_left;
-    }
-    if node.top != target_top {
-        node.top = target_top;
-    }
-    if node.width != target_w {
-        node.width = target_w;
-    }
-    if node.height != target_h {
-        node.height = target_h;
-    }
-}
+fn spawn_trade_window(
+    commands: &mut Commands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+    position: Vec2,
+    size: Vec2,
+) -> Entity {
+    let spawned = spawn_movable_window(
+        commands,
+        theme,
+        palette,
+        MovableWindowId::Trade,
+        "Trade",
+        size,
+        position,
+    );
 
-pub fn handle_trade_popup_drag(
-    mouse_input: Res<ButtonInput<MouseButton>>,
-    window_query: Query<&Window, With<PrimaryWindow>>,
-    mut state: ResMut<TradePopupState>,
-    title_query: Query<(&ComputedNode, &UiGlobalTransform), With<TradePopupTitleBar>>,
-    close_query: Query<(&ComputedNode, &UiGlobalTransform), With<TradePopupCloseButton>>,
-) {
-    if state.session_id.is_none() {
-        if state.drag_origin.is_some() {
-            state.drag_origin = None;
-        }
-        return;
-    }
-    if state.resizing {
-        return;
-    }
-    let Ok(window) = window_query.single() else {
-        return;
-    };
-    let Some(cursor) = window.cursor_position() else {
-        return;
-    };
+    commands.entity(spawned.root).insert(TradePopupRoot);
 
-    if !mouse_input.pressed(MouseButton::Left) {
-        if state.drag_origin.is_some() {
-            state.drag_origin = None;
-        }
-        return;
-    }
+    // Trade has its own close button that emits `CancelTrade` rather than
+    // despawning the entity directly — the despawn happens via the
+    // lifecycle once the server confirms the trade ended.
+    commands.entity(spawned.title_bar).with_children(|bar| {
+        crate::ui::setup::spawn_small_button(
+            bar,
+            theme,
+            palette,
+            ButtonStyle::Secondary,
+            "X",
+            TradePopupCloseButton,
+        );
+    });
 
-    if mouse_input.just_pressed(MouseButton::Left) {
-        if let Ok((node, transform)) = close_query.single() {
-            if point_in_ui_node(cursor, node, transform) {
-                return;
-            }
-        }
-        if let Ok((node, transform)) = title_query.single() {
-            if point_in_ui_node(cursor, node, transform) {
-                let position = state.position.unwrap_or(Vec2::ZERO);
-                state.drag_origin = Some(cursor - position);
-            }
-        }
-    }
+    commands.entity(spawned.body).with_children(|body| {
+        body.spawn((
+            Text::new("Trading with: ..."),
+            TradePartnerLabel,
+            TextFont {
+                font_size: 14.0,
+                ..default()
+            },
+            TextColor(palette.text_muted),
+            Node {
+                width: percent(100.0),
+                ..default()
+            },
+        ));
 
-    if let Some(origin) = state.drag_origin {
-        state.position = Some(cursor - origin);
-    }
+        body.spawn((
+            Node {
+                width: percent(100.0),
+                flex_grow: 1.0,
+                column_gap: px(8.0),
+                min_height: px(0.0),
+                ..default()
+            },
+            BackgroundColor(Color::NONE),
+        ))
+        .with_children(|columns| {
+            crate::ui::setup::spawn_trade_column(columns, palette, "Merchant", TradeColumn::Merchant);
+            crate::ui::setup::spawn_trade_column(columns, palette, "Them", TradeColumn::Them);
+            crate::ui::setup::spawn_trade_column(columns, palette, "Us", TradeColumn::Us);
+        });
+    });
+
+    commands.entity(spawned.root).with_children(|root| {
+        root.spawn((
+            Node {
+                width: percent(100.0),
+                column_gap: px(6.0),
+                padding: UiRect::axes(px(10.0), px(8.0)),
+                border: UiRect::top(px(1.0)),
+                flex_shrink: 0.0,
+                ..default()
+            },
+            BackgroundColor(palette.surface_raised),
+            BorderColor::all(palette.border_slot),
+        ))
+        .with_children(|footer| {
+            crate::ui::setup::spawn_trade_button(
+                footer,
+                theme,
+                palette,
+                "Ready",
+                TradeButtonLabel::Ready,
+                TradeReadyButton,
+                ButtonStyle::Primary,
+            );
+            crate::ui::setup::spawn_trade_button(
+                footer,
+                theme,
+                palette,
+                "Confirm",
+                TradeButtonLabel::Confirm,
+                TradeConfirmButton,
+                ButtonStyle::Primary,
+            );
+            crate::ui::setup::spawn_trade_button(
+                footer,
+                theme,
+                palette,
+                "Cancel",
+                TradeButtonLabel::Confirm, // sync_trade_panel_buttons ignores Cancel
+                TradeCancelButton,
+                ButtonStyle::Danger,
+            );
+        });
+
+        root.spawn((
+            TradePopupResizeHandle,
+            Node {
+                position_type: PositionType::Absolute,
+                right: px(0.0),
+                bottom: px(0.0),
+                width: px(14.0),
+                height: px(14.0),
+                ..default()
+            },
+            BackgroundColor(palette.border_accent),
+        ));
+    });
+
+    spawned.root
 }
 
 pub fn handle_trade_popup_resize(
@@ -241,6 +317,7 @@ pub fn handle_trade_popup_resize(
     window_query: Query<&Window, With<PrimaryWindow>>,
     mut state: ResMut<TradePopupState>,
     handle_query: Query<(&ComputedNode, &UiGlobalTransform), With<TradePopupResizeHandle>>,
+    mut popup_query: Query<&mut Node, With<TradePopupRoot>>,
 ) {
     if state.session_id.is_none() {
         if state.resizing {
@@ -271,9 +348,18 @@ pub fn handle_trade_popup_resize(
     }
 
     if state.resizing {
-        let position = state.position.unwrap_or(Vec2::ZERO);
-        let new_size = (cursor - position).max(TradePopupState::MIN_SIZE);
-        state.size = new_size;
+        if let Ok(mut node) = popup_query.single_mut() {
+            let pos = Vec2::new(val_to_px(node.left), val_to_px(node.top));
+            let new_size = (cursor - pos).max(TradePopupState::MIN_SIZE);
+            let target_w = px(new_size.x);
+            let target_h = px(new_size.y);
+            if node.width != target_w {
+                node.width = target_w;
+            }
+            if node.height != target_h {
+                node.height = target_h;
+            }
+        }
     }
 }
 

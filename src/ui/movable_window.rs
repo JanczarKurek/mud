@@ -28,6 +28,10 @@ pub enum MovableWindowId {
     /// Item details popup keyed by the source slot. Re-Inspecting the same
     /// slot focuses the existing window instead of spawning another.
     ItemDetails(ItemSlotKind),
+    /// The (singleton) active trade window. Lifecycle: spawned when
+    /// `ClientGameState.current_trade` becomes `Some`, despawned when it
+    /// returns to `None`.
+    Trade,
 }
 
 #[derive(Component)]
@@ -98,16 +102,20 @@ pub fn find_window_by_id(
         .map(|(entity, _)| entity)
 }
 
-/// Spawn a movable window. Returns `(root_entity, body_entity)` so the
-/// consumer can attach a content-marker to the body and populate children:
-///
-/// ```ignore
-/// let (root, body) = spawn_movable_window(&mut commands, &theme, &palette, id, "Title",
-///                                          Vec2::new(360.0, 420.0), pos);
-/// commands.entity(body)
-///     .insert(MyContentMarker { ... })
-///     .with_children(|parent| { ... });
-/// ```
+/// Entity handles returned by [`spawn_movable_window`]. The consumer adds
+/// their content as children of `body` and (optionally) a custom close
+/// button or other widgets as children of `title_bar`.
+pub struct MovableWindowEntities {
+    pub root: Entity,
+    pub body: Entity,
+    pub title_bar: Entity,
+}
+
+/// Spawn a bare movable window: root with the panel-frame background, a
+/// draggable title bar with the title text, and an empty body. Does **not**
+/// spawn a close button — call [`spawn_movable_window_close_button`] from
+/// the consumer if the standard close-X is desired, or build a custom one
+/// (e.g. trade's CancelTrade-emitting button).
 pub fn spawn_movable_window(
     commands: &mut Commands,
     theme: &UiThemeAssets,
@@ -116,7 +124,7 @@ pub fn spawn_movable_window(
     title: &str,
     size: Vec2,
     initial_pos: Vec2,
-) -> (Entity, Entity) {
+) -> MovableWindowEntities {
     let root = commands
         .spawn((
             MovableWindow { id },
@@ -139,6 +147,35 @@ pub fn spawn_movable_window(
         ))
         .id();
 
+    let title_bar = commands
+        .spawn((
+            MovableWindowTitleBar { owner: root },
+            Node {
+                width: percent(100.0),
+                height: px(26.0),
+                padding: UiRect::axes(px(8.0), px(2.0)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::SpaceBetween,
+                border: UiRect::bottom(px(1.0)),
+                flex_shrink: 0.0,
+                ..default()
+            },
+            BackgroundColor(palette.surface_raised),
+            BorderColor::all(palette.border_slot),
+        ))
+        .id();
+
+    commands.entity(title_bar).with_children(|bar| {
+        bar.spawn((
+            Text::new(title.to_owned()),
+            TextFont {
+                font_size: 14.0,
+                ..default()
+            },
+            TextColor(palette.text_accent),
+        ));
+    });
+
     let body = commands
         .spawn((
             MovableWindowContent { owner: root },
@@ -156,41 +193,18 @@ pub fn spawn_movable_window(
         ))
         .id();
 
-    commands.entity(root).with_children(|parent| {
-        parent
-            .spawn((
-                MovableWindowTitleBar { owner: root },
-                Node {
-                    width: percent(100.0),
-                    height: px(26.0),
-                    padding: UiRect::axes(px(8.0), px(2.0)),
-                    align_items: AlignItems::Center,
-                    justify_content: JustifyContent::SpaceBetween,
-                    border: UiRect::bottom(px(1.0)),
-                    flex_shrink: 0.0,
-                    ..default()
-                },
-                BackgroundColor(palette.surface_raised),
-                BorderColor::all(palette.border_slot),
-            ))
-            .with_children(|bar| {
-                bar.spawn((
-                    Text::new(title.to_owned()),
-                    TextFont {
-                        font_size: 14.0,
-                        ..default()
-                    },
-                    TextColor(palette.text_accent),
-                ));
-                spawn_close_button(bar, theme, palette, root);
-            });
-    });
-    commands.entity(root).add_child(body);
+    commands.entity(root).add_children(&[title_bar, body]);
 
-    (root, body)
+    MovableWindowEntities {
+        root,
+        body,
+        title_bar,
+    }
 }
 
-fn spawn_close_button(
+/// Spawn the default close (X) button as a child of `parent` (typically the
+/// title bar). Click despawns `owner` via [`handle_movable_window_close`].
+pub fn spawn_movable_window_close_button(
     parent: &mut ChildSpawnerCommands,
     theme: &UiThemeAssets,
     palette: &Palette,
@@ -233,7 +247,7 @@ fn handle_movable_window_drag(
     window_query: Query<&Window, With<PrimaryWindow>>,
     mut drag: ResMut<MovableWindowDrag>,
     title_query: Query<(&MovableWindowTitleBar, &ComputedNode, &UiGlobalTransform)>,
-    close_query: Query<(&MovableWindowCloseButton, &ComputedNode, &UiGlobalTransform)>,
+    button_query: Query<(&ComputedNode, &UiGlobalTransform, Option<&Visibility>), With<Button>>,
     window_box_query: Query<(Entity, &ComputedNode, &UiGlobalTransform), With<MovableWindow>>,
     mut node_query: Query<&mut Node, With<MovableWindow>>,
 ) {
@@ -255,28 +269,30 @@ fn handle_movable_window_drag(
     }
 
     if mouse_input.just_pressed(MouseButton::Left) {
-        // Close button: focus the owning window but never start a drag.
-        for (close, computed, transform) in &close_query {
-            if point_in_node(cursor, computed, transform) {
-                drag.focused = Some(close.owner);
-                return;
+        // Any visible button under the cursor short-circuits drag-start so
+        // that close buttons, footer actions, etc. always win over the
+        // title-bar grab. The button itself handles the press via its own
+        // Interaction-driven system.
+        let on_button = button_query.iter().any(|(node, transform, visibility)| {
+            visibility.is_none_or(|v| *v != Visibility::Hidden)
+                && point_in_node(cursor, node, transform)
+        });
+        if !on_button {
+            for (bar, computed, transform) in &title_query {
+                if point_in_node(cursor, computed, transform) {
+                    let position = match node_query.get(bar.owner) {
+                        Ok(node) => Vec2::new(val_to_px(node.left), val_to_px(node.top)),
+                        Err(_) => continue,
+                    };
+                    drag.dragging = Some((bar.owner, cursor - position));
+                    drag.focused = Some(bar.owner);
+                    return;
+                }
             }
         }
-        // Title bar: focus + start drag, anchoring at current top-left.
-        for (bar, computed, transform) in &title_query {
-            if point_in_node(cursor, computed, transform) {
-                let position = match node_query.get(bar.owner) {
-                    Ok(node) => Vec2::new(val_to_px(node.left), val_to_px(node.top)),
-                    Err(_) => continue,
-                };
-                drag.dragging = Some((bar.owner, cursor - position));
-                drag.focused = Some(bar.owner);
-                return;
-            }
-        }
-        // Body click: pick the topmost window the cursor is over and focus it.
-        // No fancy z-stack — the last match wins because UI iteration order
-        // is stable per archetype; any tie-breaker is fine for a small set.
+        // Body click (including clicks on buttons inside a window): pick the
+        // topmost window the cursor is over and focus it. Last match wins —
+        // for a small set of windows that's an acceptable tie-breaker.
         let mut best: Option<Entity> = None;
         for (entity, computed, transform) in &window_box_query {
             if point_in_node(cursor, computed, transform) {
@@ -350,7 +366,7 @@ fn point_in_node(point: Vec2, computed: &ComputedNode, transform: &UiGlobalTrans
     computed.contains_point(*transform, point)
 }
 
-fn val_to_px(val: Val) -> f32 {
+pub(crate) fn val_to_px(val: Val) -> f32 {
     match val {
         Val::Px(v) => v,
         _ => 0.0,

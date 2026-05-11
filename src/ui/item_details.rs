@@ -17,8 +17,8 @@ use crate::magic::resources::SpellDefinitions;
 use crate::player::components::InventoryStack;
 use crate::ui::components::ItemSlotKind;
 use crate::ui::movable_window::{
-    find_window_by_id, spawn_movable_window, MovableWindow, MovableWindowContent,
-    MovableWindowDrag, MovableWindowId, MOVABLE_WINDOW_CASCADE_PX,
+    find_window_by_id, spawn_movable_window, spawn_movable_window_close_button, MovableWindow,
+    MovableWindowContent, MovableWindowDrag, MovableWindowId, MOVABLE_WINDOW_CASCADE_PX,
 };
 use crate::ui::resources::DockedPanelState;
 use crate::ui::theme::{Palette, UiThemeAssets};
@@ -78,11 +78,13 @@ fn handle_pending_item_details_opens(
         return;
     }
     let slots = std::mem::take(&mut pending.slots);
-    let cursor = primary_window
+    let window_size = primary_window
         .single()
         .ok()
-        .and_then(|window| window.cursor_position())
-        .unwrap_or(Vec2::new(120.0, 120.0));
+        .map(|window| Vec2::new(window.width(), window.height()))
+        .unwrap_or(Vec2::new(1280.0, 720.0));
+    let center = ((window_size - ITEM_DETAILS_SIZE) * 0.5).max(Vec2::ZERO);
+    let max_pos = (window_size - ITEM_DETAILS_SIZE).max(Vec2::ZERO);
 
     for slot_kind in slots {
         let id = MovableWindowId::ItemDetails(slot_kind);
@@ -107,9 +109,9 @@ fn handle_pending_item_details_opens(
 
         let existing_count = window_query.iter().count();
         let cascade = MOVABLE_WINDOW_CASCADE_PX * existing_count as f32;
-        let initial_pos = Vec2::new(cursor.x + cascade + 16.0, cursor.y + cascade);
+        let initial_pos = (center + Vec2::splat(cascade)).clamp(Vec2::ZERO, max_pos);
 
-        let (root, body) = spawn_movable_window(
+        let spawned = spawn_movable_window(
             &mut commands,
             &theme,
             &palette,
@@ -119,7 +121,11 @@ fn handle_pending_item_details_opens(
             initial_pos,
         );
 
-        commands.entity(body).insert(ItemDetailsContent {
+        let root = spawned.root;
+        commands.entity(spawned.title_bar).with_children(|bar| {
+            spawn_movable_window_close_button(bar, &theme, &palette, root);
+        });
+        commands.entity(spawned.body).insert(ItemDetailsContent {
             slot_kind,
             last_rendered: None,
         });

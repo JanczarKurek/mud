@@ -53,10 +53,9 @@ use crate::ui::systems::{
 };
 use crate::ui::theme::UiThemePlugin;
 use crate::ui::trade::{
-    handle_trade_panel_clicks, handle_trade_popup_close_click, handle_trade_popup_drag,
-    handle_trade_popup_resize, sync_trade_panel_buttons, sync_trade_panel_partner_label,
-    sync_trade_panel_rows, sync_trade_popup_layout, sync_trade_popup_visibility,
-    TradePanelRenderState,
+    handle_trade_panel_clicks, handle_trade_popup_close_click, handle_trade_popup_resize,
+    sync_trade_panel_buttons, sync_trade_panel_partner_label, sync_trade_panel_rows,
+    sync_trade_window_lifecycle, TradePanelRenderState,
 };
 
 pub struct UiPlugin;
@@ -266,11 +265,10 @@ impl Plugin for UiPlugin {
             .add_systems(
                 Update,
                 (
-                    sync_trade_popup_visibility,
-                    sync_trade_popup_layout.after(sync_trade_popup_visibility),
-                    sync_trade_panel_partner_label,
-                    sync_trade_panel_buttons,
-                    sync_trade_panel_rows,
+                    sync_trade_window_lifecycle,
+                    sync_trade_panel_partner_label.after(sync_trade_window_lifecycle),
+                    sync_trade_panel_buttons.after(sync_trade_window_lifecycle),
+                    sync_trade_panel_rows.after(sync_trade_window_lifecycle),
                     handle_trade_panel_clicks.after(sync_trade_panel_rows),
                 )
                     .run_if(in_state(ClientAppState::InGame)),
@@ -278,9 +276,8 @@ impl Plugin for UiPlugin {
             .add_systems(
                 Update,
                 (
-                    handle_trade_popup_drag.after(sync_trade_popup_layout),
-                    handle_trade_popup_resize.after(sync_trade_popup_layout),
-                    handle_trade_popup_close_click.after(sync_trade_popup_layout),
+                    handle_trade_popup_resize.after(sync_trade_window_lifecycle),
+                    handle_trade_popup_close_click.after(sync_trade_window_lifecycle),
                 )
                     .run_if(in_state(ClientAppState::InGame)),
             );

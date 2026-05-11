@@ -551,20 +551,22 @@ pub struct CharacterSheetState {
     pub open: bool,
 }
 
-/// Floating-popup state for the trade window. Replaces the previous docked-
-/// panel slot. Holds the active session id, the popup's screen-space
-/// position/size, and drag/resize handles. Items move into the trade via
-/// drag-and-drop directly onto the column slots — no per-ware stepper.
+/// Floating-popup state for the trade window. The window itself is a
+/// `MovableWindow` — it's spawned dynamically when `session_id` becomes
+/// `Some` and despawned when it returns to `None`. Position/size live on
+/// the entity's `Node`; we cache the last values across sessions so re-opens
+/// remember where the user left the window.
 #[derive(Resource, Default)]
 pub struct TradePopupState {
     pub session_id: Option<u64>,
-    /// `None` until the popup has been opened or moved; `sync_trade_popup_visibility`
-    /// centers it on the window the first time `session_id` becomes `Some`.
-    pub position: Option<Vec2>,
-    pub size: Vec2,
-    /// While dragging the title bar, the offset from the cursor to the
-    /// popup's top-left corner. `None` means not dragging.
-    pub drag_origin: Option<Vec2>,
+    /// Last-seen window position (top-left, px). Populated when the window is
+    /// despawned. `None` ⇒ open at center.
+    pub last_position: Option<Vec2>,
+    /// Last-seen window size (px). Populated when the window is despawned.
+    /// `None` ⇒ use `DEFAULT_SIZE`.
+    pub last_size: Option<Vec2>,
+    /// While resizing via the bottom-right grip, true. Read by
+    /// `handle_trade_popup_resize`.
     pub resizing: bool,
 }
 
@@ -574,14 +576,10 @@ impl TradePopupState {
 
     pub fn open(&mut self, session_id: u64) {
         self.session_id = Some(session_id);
-        if self.size == Vec2::ZERO {
-            self.size = Self::DEFAULT_SIZE;
-        }
     }
 
     pub fn close(&mut self) {
         self.session_id = None;
-        self.drag_origin = None;
         self.resizing = false;
     }
 }

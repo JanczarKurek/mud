@@ -466,7 +466,8 @@ pub fn spawn_hud(
 
     spawn_take_partial_popup(&mut commands, &theme, &palette);
     spawn_dialog_panel(&mut commands, &theme, &palette);
-    spawn_trade_popup(&mut commands, &theme, &palette);
+    // Trade window is no longer pre-spawned — `sync_trade_window_lifecycle`
+    // in `crate::ui::trade` spawns it dynamically when a session opens.
 }
 
 fn spawn_dialog_panel(commands: &mut Commands, theme: &UiThemeAssets, palette: &Palette) {
@@ -689,7 +690,7 @@ fn spawn_take_partial_popup(commands: &mut Commands, theme: &UiThemeAssets, pale
         });
 }
 
-fn spawn_small_button<T: Component>(
+pub(crate) fn spawn_small_button<T: Component>(
     parent: &mut ChildSpawnerCommands,
     theme: &UiThemeAssets,
     palette: &Palette,
@@ -919,10 +920,11 @@ fn spawn_docked_panel_canvas(
     }
 }
 
-/// Spawn the floating Trade popup window. Single instance — created at HUD
-/// setup and toggled visible via `TradePopupState.session_id`. The window is
-/// positioned absolutely; its `left/top/width/height` are driven by
-/// `sync_trade_popup_layout`.
+/// Spawn the floating Trade popup window. **No longer used** — kept only
+/// for reference; the live spawn happens in `crate::ui::trade` via the
+/// MovableWindow primitive. Remove this once the migration is fully bedded
+/// in.
+#[allow(dead_code)]
 fn spawn_trade_popup(commands: &mut Commands, theme: &UiThemeAssets, palette: &Palette) {
     let default_size = crate::ui::resources::TradePopupState::DEFAULT_SIZE;
     commands
@@ -1087,7 +1089,7 @@ fn spawn_trade_popup(commands: &mut Commands, theme: &UiThemeAssets, palette: &P
         });
 }
 
-fn spawn_trade_column(
+pub(crate) fn spawn_trade_column(
     parent: &mut ChildSpawnerCommands,
     palette: &Palette,
     title: &str,
@@ -1133,7 +1135,7 @@ fn spawn_trade_column(
         });
 }
 
-fn spawn_trade_button<T: Component>(
+pub(crate) fn spawn_trade_button<T: Component>(
     parent: &mut ChildSpawnerCommands,
     theme: &UiThemeAssets,
     palette: &Palette,
