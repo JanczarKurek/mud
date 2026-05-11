@@ -877,6 +877,14 @@ objects:
     - type: silver_coin
     - type: gold_coin
     - type: herb_pouch
+- id: spell_chest
+  type: iron_chest
+  placement: { x: 22, y: 10}
+  contents:
+    - type: swiftness_scroll
+    - type: glimmer_scroll
+    - type: bless_scroll
+    - type: light_scroll
 - type: cyclops
   placement:
   - x: 54

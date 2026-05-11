@@ -1,0 +1,14 @@
+animation:
+  sheet_path: vfx/slow_drag/sheet.png
+  frame_width: 48
+  frame_height: 48
+  sheet_columns: 4
+  sheet_rows: 1
+  clips:
+    play:
+      row: 0
+      start_col: 0
+      frame_count: 4
+      fps: 4.0
+      looping: true
+looping: true

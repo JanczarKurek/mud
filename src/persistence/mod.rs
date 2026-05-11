@@ -10,6 +10,7 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::combat::components::{AttackProfile, CombatLeash, CombatTarget};
+use crate::magic::effects::MagicEffects;
 use crate::network::resources::TcpServerState;
 use crate::npc::components::{
     HostileBehavior, Npc, RoamingBehavior, RoamingRandomState, RoamingStepTimer, SpawnGroupMember,
@@ -26,7 +27,7 @@ use crate::world::components::{
 use crate::world::floor_definitions::FloorTypeId;
 use crate::world::floor_map::{FloorMap, FloorMaps};
 use crate::world::lighting::WorldClock;
-use crate::world::loot::CorpseTtl;
+use crate::world::ttl::Ttl;
 use crate::world::map_layout::ObjectProperties;
 use crate::world::map_layout::{SpaceDefinitions, SpacePermanence};
 use crate::world::object_registry::ObjectRegistry;
@@ -207,6 +208,11 @@ pub struct PlayerStateDump {
     /// entry.
     #[serde(default = "default_class_chosen_true")]
     pub class_chosen: bool,
+    /// Active timed magical effects (buffs / debuffs) on the player.
+    /// `#[serde(default)]` so rows written before this field existed default
+    /// to no active effects.
+    #[serde(default)]
+    pub magic_effects: MagicEffects,
 }
 
 fn default_class_chosen_true() -> bool {
@@ -233,6 +239,7 @@ pub fn build_player_state_dump(
     experience: crate::player::progression::Experience,
     class: crate::player::classes::Class,
     class_chosen: bool,
+    magic_effects: &MagicEffects,
 ) -> PlayerStateDump {
     PlayerStateDump {
         player_id: identity.id,
@@ -252,6 +259,7 @@ pub fn build_player_state_dump(
         experience,
         class,
         class_chosen,
+        magic_effects: magic_effects.clone(),
     }
 }
 
@@ -276,6 +284,8 @@ pub struct WorldObjectStateDump {
     pub npc: Option<NpcStateDump>,
     #[serde(default)]
     pub quantity: Option<u32>,
+    /// Remaining seconds on the entity's `Ttl` component (corpses, spell-
+    /// summoned objects, ...). `None` for non-transient objects.
     #[serde(default)]
     pub remaining_ttl: Option<f32>,
     /// `#[serde(default)]` so snapshots written before this field existed
@@ -300,6 +310,11 @@ pub struct NpcStateDump {
     /// so the spawn group can resume tracking it against `max_count`.
     #[serde(default)]
     pub spawn_group: Option<SpawnGroupMember>,
+    /// Active timed magical effects (Slow, Sleep, ...) on this NPC.
+    /// `#[serde(default)]` for back-compat with rows written before this
+    /// field existed.
+    #[serde(default)]
+    pub magic_effects: MagicEffects,
 }
 
 fn save_world_on_app_exit(
@@ -326,7 +341,7 @@ fn save_world_on_app_exit(
             Has<Npc>,
             Option<&CombatTarget>,
             Option<&crate::world::components::Quantity>,
-            Option<&CorpseTtl>,
+            Option<&Ttl>,
             Option<&crate::world::components::Facing>,
         ),
         Without<Player>,
@@ -343,6 +358,7 @@ fn save_world_on_app_exit(
             Option<&RoamingStepTimer>,
             Option<&RoamingRandomState>,
             Option<&SpawnGroupMember>,
+            Option<&MagicEffects>,
         ),
         With<Npc>,
     >,
@@ -409,7 +425,7 @@ fn save_world_on_app_exit(
                 is_npc,
                 combat_target,
                 quantity,
-                corpse_ttl,
+                ttl,
                 facing,
             )| WorldObjectStateDump {
                 object_id: object.object_id,
@@ -426,7 +442,7 @@ fn save_world_on_app_exit(
                 storable,
                 container_slots: container.map(|container| container.slots.clone()),
                 quantity: quantity.map(|q| q.0).filter(|&q| q > 1),
-                remaining_ttl: corpse_ttl.map(|ttl| ttl.remaining_seconds),
+                remaining_ttl: ttl.map(|t| t.remaining_seconds),
                 facing: facing.map(|f| f.0),
                 npc: is_npc.then(|| {
                     let (
@@ -440,6 +456,7 @@ fn save_world_on_app_exit(
                         roaming_step_timer,
                         roaming_random_state,
                         spawn_group_member,
+                        magic_effects,
                     ) = npc_query.get(entity).unwrap_or_default();
 
                     NpcStateDump {
@@ -455,6 +472,7 @@ fn save_world_on_app_exit(
                         roaming_step_timer: roaming_step_timer.copied(),
                         roaming_random_state: roaming_random_state.copied(),
                         spawn_group: spawn_group_member.cloned(),
+                        magic_effects: magic_effects.cloned().unwrap_or_default(),
                     }
                 }),
             },
@@ -760,7 +778,7 @@ fn load_world_from_snapshot(
         }
         if let Some(remaining) = object.remaining_ttl {
             if remaining > 0.0 {
-                entity.insert(CorpseTtl {
+                entity.insert(Ttl {
                     remaining_seconds: remaining,
                 });
             }
@@ -825,6 +843,9 @@ fn load_world_from_snapshot(
             }
             if let Some(spawn_group_member) = npc.spawn_group {
                 entity.insert(spawn_group_member);
+            }
+            if !npc.magic_effects.is_empty() {
+                entity.insert(npc.magic_effects);
             }
             if let Some(target_object_id) = npc.combat_target_object_id {
                 pending_combat_targets.push((save_local_id, target_object_id));
@@ -1114,6 +1135,7 @@ mod tests {
             experience: Default::default(),
             class: Default::default(),
             class_chosen: true,
+            magic_effects: Default::default(),
         };
         let json = serde_json::to_string(&dump_with_home).unwrap();
         // Confirm we didn't accidentally serialize Some(...).
@@ -1135,5 +1157,75 @@ mod tests {
         let re_json = serde_json::to_string(&dump).unwrap();
         let re_dump: PlayerStateDump = serde_json::from_str(&re_json).unwrap();
         assert!(re_dump.home_position.is_none());
+    }
+
+    /// `MagicEffects` and the generic `Ttl` round-trip through serde, and
+    /// legacy rows missing `magic_effects` still deserialize with defaults.
+    #[test]
+    fn magic_state_round_trips_and_defaults_on_legacy_rows() {
+        use crate::magic::effects::{ActiveEffect, MagicEffects};
+        use crate::magic::resources::EffectKind;
+
+        // Player dump: a Glimmer buff with a few seconds remaining.
+        let mut effects = MagicEffects::default();
+        effects.active.push(ActiveEffect {
+            kind: EffectKind::Glimmer,
+            magnitude: 4.0,
+            remaining_seconds: 123.0,
+        });
+        let dump = PlayerStateDump {
+            player_id: PlayerId(1),
+            space_id: Some(crate::world::components::SpaceId(0)),
+            tile_position: TilePosition::ground(0, 0),
+            inventory: Inventory::default(),
+            chat_log: ChatLog::default(),
+            base_stats: BaseStats::default(),
+            derived_stats: DerivedStats::default(),
+            vital_stats: VitalStats::full(10.0, 5.0),
+            movement_cooldown: MovementCooldown::default(),
+            attack_profile: AttackProfile::melee(),
+            combat_leash: CombatLeash {
+                max_distance_tiles: 6,
+            },
+            yarn_vars: Default::default(),
+            facing: Default::default(),
+            home_position: None,
+            experience: Default::default(),
+            class: Default::default(),
+            class_chosen: true,
+            magic_effects: effects.clone(),
+        };
+        let json = serde_json::to_string(&dump).unwrap();
+        let restored: PlayerStateDump = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.magic_effects, effects);
+
+        // Legacy player rows without `magic_effects` deserialize to empty.
+        let legacy_json = json
+            .replace(",\"magic_effects\":{\"active\":[{\"kind\":\"glimmer\",\"magnitude\":4.0,\"remaining_seconds\":123.0}]}", "");
+        assert!(!legacy_json.contains("magic_effects"));
+        let legacy: PlayerStateDump = serde_json::from_str(&legacy_json).unwrap();
+        assert!(legacy.magic_effects.is_empty());
+
+        // World object dump: a spell-summoned lantern with a remaining TTL
+        // — same `remaining_ttl` field that corpses use.
+        let lantern = WorldObjectStateDump {
+            object_id: 1,
+            definition_id: "magic_light".to_owned(),
+            properties: Default::default(),
+            space_id: Some(crate::world::components::SpaceId(0)),
+            tile_position: Some(TilePosition::ground(1, 1)),
+            collider: false,
+            movable: false,
+            rotatable: false,
+            storable: false,
+            container_slots: None,
+            npc: None,
+            quantity: None,
+            remaining_ttl: Some(600.0),
+            facing: None,
+        };
+        let json = serde_json::to_string(&lantern).unwrap();
+        let restored: WorldObjectStateDump = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.remaining_ttl, Some(600.0));
     }
 }

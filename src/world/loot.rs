@@ -1,30 +1,12 @@
 use bevy::prelude::*;
 
-use crate::app::state::simulation_active;
 use crate::player::components::InventoryStack;
 use crate::world::components::{SpaceId, TilePosition};
 use crate::world::map_layout::ObjectProperties;
 use crate::world::object_definitions::{LootTableDef, OverworldObjectDefinitions};
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::setup::spawn_overworld_object;
-
-#[derive(Component, Clone, Copy, Debug)]
-pub struct CorpseTtl {
-    pub remaining_seconds: f32,
-}
-
-pub fn tick_corpse_ttl(
-    mut commands: Commands,
-    time: Res<Time>,
-    mut query: Query<(Entity, &mut CorpseTtl)>,
-) {
-    for (entity, mut ttl) in query.iter_mut() {
-        ttl.remaining_seconds -= time.delta_secs();
-        if ttl.remaining_seconds <= 0.0 {
-            commands.entity(entity).despawn();
-        }
-    }
-}
+use crate::world::ttl::Ttl;
 
 /// Roll items from a loot table. Returns `(type_id, quantity)` pairs.
 fn roll_loot(table: &LootTableDef) -> Vec<(String, u32)> {
@@ -91,7 +73,7 @@ pub fn spawn_corpse_for_player(
         tile_position,
         None,
     );
-    commands.entity(entity).insert(CorpseTtl {
+    commands.entity(entity).insert(Ttl {
         remaining_seconds: CORPSE_DESPAWN_SECONDS,
     });
 }
@@ -129,15 +111,8 @@ pub fn spawn_corpse_for_npc(
         tile_position,
         None,
     );
-    commands.entity(entity).insert(CorpseTtl {
+    commands.entity(entity).insert(Ttl {
         remaining_seconds: loot_table.corpse_despawn_seconds,
     });
 }
 
-pub struct LootPlugin;
-
-impl Plugin for LootPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_systems(Update, tick_corpse_ttl.run_if(simulation_active));
-    }
-}

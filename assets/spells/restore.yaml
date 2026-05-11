@@ -1,0 +1,9 @@
+name: Restore
+incantation: Exura Sio Vita
+mana_cost: 28.0
+targeting: untargeted
+class_access: [Cleric]
+min_caster_level: 8
+effects:
+  restore_health: 9999.0
+  clears_self: [slow, sleep]

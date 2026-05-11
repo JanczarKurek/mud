@@ -1,0 +1,9 @@
+extends: pickup
+name: Bless Scroll
+weight: 0.1
+description: A scroll bearing a brief invocation that fortifies its reader with divine favor.
+spell_id: bless
+render:
+  debug_color: [232, 210, 130]
+  debug_size: 0.45
+  sprite_path: overworld_objects/scroll/sprite.png

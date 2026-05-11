@@ -1,0 +1,9 @@
+extends: pickup
+name: Restore Scroll
+weight: 0.1
+description: A revered scroll whose words mend the body and burn away crippling magics.
+spell_id: restore
+render:
+  debug_color: [240, 220, 222]
+  debug_size: 0.45
+  sprite_path: overworld_objects/scroll/sprite.png

@@ -1255,6 +1255,22 @@ Top-level fields:
 - Default: `0`
 - Meaning: maximum Chebyshev distance for targeted spells
 
+### `class_access`
+- Type: array of class enum values (`Fighter`, `Wizard`, `Cleric`, `Vagabond`)
+- Optional: yes
+- Default: empty list (any class may cast)
+- Meaning: classes permitted to cast this spell directly. Bypassed by
+  scroll-shaped items (any item carrying a `spell_id` field today is treated as
+  a scroll). Use this to gate spells that will be added to a future
+  memorized-spell-cast flow.
+
+### `min_caster_level`
+- Type: integer
+- Optional: yes
+- Default: `0` (anyone)
+- Meaning: minimum caster level required. Always enforced — applies to both
+  scroll casts and direct casts.
+
 ### `effects`
 - Type: mapping
 - Optional: yes
@@ -1281,7 +1297,114 @@ Top-level fields:
 - Default: `0.0`
 - Meaning: mana restored by the spell
 
-Example:
+### `buffs_self`
+- Type: array of `EffectSpec`
+- Optional: yes
+- Default: empty list
+- Meaning: timed magical effects applied to the caster. Each entry is `{ kind,
+  magnitude, seconds }`. Effects are upserted on the caster's `MagicEffects`
+  component — re-applying refreshes duration and keeps the stronger magnitude
+  (smaller magnitude for `haste` since lower = faster).
+
+### `buffs_target`
+- Type: array of `EffectSpec`
+- Optional: yes
+- Default: empty list
+- Meaning: timed magical effects applied to the targeted NPC (ignored for
+  `untargeted` spells). Same merge rules as `buffs_self`. `MagicEffects` is
+  lazily attached to NPCs that don't already carry it.
+
+### `clears_self`
+- Type: array of `EffectKind`
+- Optional: yes
+- Default: empty list
+- Meaning: effect kinds removed from the caster after the other effects
+  apply. Drives Cleric "Restore" clearing `slow` / `sleep`.
+
+### `spawns_object`
+- Type: mapping `{ type_id: string, lifetime_seconds: float }`
+- Optional: yes
+- Meaning: spawn a transient world object at the cast location (caster's tile
+  for untargeted spells, target tile for targeted). The spawned entity carries
+  a `Ttl` (generic time-to-live) and despawns when it elapses. The referenced
+  `type_id` must exist in `assets/overworld_objects/`.
+
+### `vfx_on_cast`
+- Type: string
+- Optional: yes
+- Default: `cast_flash`
+- Meaning: VFX definition id (under `assets/vfx/`) played at the caster's tile
+  when this spell is cast. Override per-spell to give specific spells unique
+  cast looks (e.g. a frost spell can override with a blue variant).
+
+### `vfx_on_target_hit`
+- Type: string
+- Optional: yes
+- Default: `hit_flash` (damaging spells); set explicitly for healing or status spells (e.g. `heal_sparkle`)
+- Meaning: VFX definition id played on the target object when a targeted spell
+  resolves. Untargeted spells do not trigger this.
+
+`EffectKind` values (used in `buffs_self`, `buffs_target`, and `clears_self`):
+
+| Kind | Magnitude semantics | Notes |
+|---|---|---|
+| `glimmer` | tile radius of the caster's halo | Client overrides the player's `LightSource` while active. |
+| `haste` | step-interval multiplier (e.g. `0.7`) | Lower = faster. Self-buff. |
+| `shield` | flat AC bonus | Tracked for Phase B combat math — currently a no-op vs incoming damage (auto-hit combat). |
+| `bless` | flat to-hit bonus | Same Phase B status as `shield`. |
+| `slow` | step-interval multiplier (e.g. `2.0`) | Higher = slower. Target-only. |
+| `sleep` | unused (`0.0` ok) | Presence skips the NPC's AI tick; cleared on incoming damage. |
+
+Example (utility spell with a self-buff):
+
+```yaml
+name: Glimmer
+incantation: Lux Minima
+mana_cost: 2.0
+targeting: untargeted
+class_access: [Wizard, Cleric]
+min_caster_level: 1
+effects:
+  buffs_self:
+    - kind: glimmer
+      magnitude: 4.0
+      seconds: 600.0
+```
+
+Example (damage + debuff):
+
+```yaml
+name: Frost Lance
+incantation: Frigus Hasta
+mana_cost: 16.0
+targeting: targeted
+range_tiles: 6
+class_access: [Wizard]
+min_caster_level: 3
+effects:
+  damage: 7.0
+  buffs_target:
+    - kind: slow
+      magnitude: 2.0
+      seconds: 3.0
+```
+
+Example (object-spawning utility):
+
+```yaml
+name: Light
+incantation: Lux
+mana_cost: 2.0
+targeting: untargeted
+class_access: [Wizard, Cleric]
+min_caster_level: 1
+effects:
+  spawns_object:
+    type_id: magic_light
+    lifetime_seconds: 1800.0
+```
+
+Example (minimal baseline form — back-compat with pre-batch spells):
 
 ```yaml
 name: Spark Bolt
@@ -1289,6 +1412,8 @@ incantation: Exori Vis
 mana_cost: 12.0
 targeting: targeted
 range_tiles: 5
+class_access: [Wizard]
+min_caster_level: 1
 effects:
   damage: 18.0
 ```
@@ -1460,3 +1585,137 @@ Notes:
 - Transition lookup at runtime is order-insensitive (`transition_for("grass", "cobblestone")` and `transition_for("cobblestone", "grass")` both resolve to the same definition).
 - A pair with no transition file falls back to a hard seam between the two floors.
 - Like floor tilesets, transitions are loaded from every `AssetResolver` scan dir.
+
+## 6. VFX Definition YAML
+
+Path:
+- `assets/vfx/<id>/metadata.yaml` (one directory per effect, sprite sheet sits next to the YAML — typically `sheet.png`)
+
+Purpose:
+- Declares a reusable visual effect (one-shot transient or sticky overlay) that
+  any server system can address by id via `GameUiEvent::VfxSpawn` or that the
+  client attaches automatically when a matching `EffectKind` is active on the
+  local player.
+
+Top-level fields:
+
+### `animation`
+- Type: `AnimationSheetDef` (same struct used by overworld objects)
+- Meaning: sprite-sheet animation. The sheet **must contain a clip named
+  `play`**. One-shot effects set `play.looping: false` so the frame cycler
+  holds the final frame until `Ttl` despawns the entity; sticky overlays set
+  `play.looping: true`.
+
+### `duration_seconds`
+- Type: float
+- Optional: yes
+- Default: `frame_count / fps` of the `play` clip (falls back to `0.5` if those are missing)
+- Meaning: how long the one-shot effect lives before despawn. Ignored for
+  sticky overlays (which have no `Ttl` and live as long as their backing
+  `EffectKind` is active on the player).
+
+### `scale`
+- Type: float
+- Optional: yes
+- Default: `1.0`
+- Meaning: multiplier on the rendered sprite size relative to the native
+  `frame_width` × `frame_height`.
+
+### `z_offset_pixels`
+- Type: float
+- Optional: yes
+- Default: `0.0`
+- Meaning: reserved for future use (rendering effects offset upward from the
+  target's bottom-anchor). The current spawner renders centered on the
+  target's tile.
+
+### `looping`
+- Type: bool
+- Optional: yes
+- Default: `false`
+- Meaning: marks the effect as a sticky overlay (no `Ttl`, the `play` clip
+  loops). Sticky overlays are *not* spawned via `VfxSpawn`; they are spawned
+  by the client whenever the local player gains a matching `EffectKind`.
+
+### Sticky-overlay mapping
+
+The client attaches sticky overlays to the local player based on
+`ClientGameState.active_effects`. The current `EffectKind` → VFX id map is:
+
+| `EffectKind` | VFX definition id |
+|---|---|
+| `glimmer` | `glimmer_aura` |
+| `haste` | `haste_streaks` |
+| `shield` | `shield_bubble` |
+| `bless` | `bless_aura` |
+| `slow` | `slow_drag` |
+| `sleep` | `sleep_zs` |
+
+Definitions not in the map are silently ignored — adding a new `EffectKind`
+requires a code change in `src/client_effects/vfx_attachment.rs::definition_id_for_effect`.
+
+### Trigger sites for one-shot effects
+
+| Trigger | Default id | Override field | File |
+|---|---|---|---|
+| Melee/ranged hit on target | `blood_splash` | `AttackProfileDef.hit_vfx` (under the attacker's overworld object metadata) | `src/combat/systems.rs` |
+| Spell cast | `cast_flash` | `SpellEffects.vfx_on_cast` | `src/game/systems.rs` |
+| Spell impact on target | `hit_flash` | `SpellEffects.vfx_on_target_hit` | `src/game/systems.rs` |
+| NPC death | `death_poof` | (none yet) | `src/combat/systems.rs` |
+
+Example (one-shot):
+
+```yaml
+animation:
+  sheet_path: vfx/blood_splash/sheet.png
+  frame_width: 48
+  frame_height: 48
+  sheet_columns: 6
+  sheet_rows: 1
+  clips:
+    play:
+      row: 0
+      start_col: 0
+      frame_count: 6
+      fps: 16.0
+      looping: false
+duration_seconds: 0.4
+```
+
+Example (sticky overlay):
+
+```yaml
+animation:
+  sheet_path: vfx/shield_bubble/sheet.png
+  frame_width: 48
+  frame_height: 48
+  sheet_columns: 4
+  sheet_rows: 1
+  clips:
+    play:
+      row: 0
+      start_col: 0
+      frame_count: 4
+      fps: 4.0
+      looping: true
+looping: true
+```
+
+Notes:
+- VFX entities are presentation-only (`ViewPosition` + `WorldVisual`, no `SpaceResident` / `TilePosition`). They never affect simulation.
+- `VfxSpawn` is a `GameUiEvent`, broadcast like `ProjectileFired`. Missing definition ids are skipped silently rather than crashing — useful when adding new triggers ahead of art.
+- Definitions are reloaded on the same `OnEnter(ClientAppState::InGame)` pass that reloads object/spell/floor definitions, so editing a VFX YAML and re-entering the world picks it up without restarting.
+
+### `AttackProfileDef.hit_vfx`
+
+When an overworld object's metadata declares an `attack_profile:` block, it
+may set an optional `hit_vfx` field to override the default `blood_splash`
+played on hits landed by that attacker. Useful for elementals (e.g. a fire
+imp could set `hit_vfx: ember_burst`) and for non-flesh creatures
+(`stone_chunks`, `electric_arc`, …).
+
+```yaml
+attack_profile:
+  kind: melee
+  hit_vfx: ember_burst
+```

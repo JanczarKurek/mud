@@ -1,0 +1,9 @@
+extends: pickup
+name: Swiftness Scroll
+weight: 0.1
+description: A scroll that quickens its reader's stride with crackling, restless vigor.
+spell_id: swiftness
+render:
+  debug_color: [156, 212, 156]
+  debug_size: 0.45
+  sprite_path: overworld_objects/scroll/sprite.png

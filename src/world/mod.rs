@@ -1,4 +1,5 @@
 pub mod animation;
+pub mod attached;
 pub mod camera;
 pub mod components;
 pub mod darkness;
@@ -17,6 +18,8 @@ pub mod object_registry;
 pub mod resources;
 pub mod setup;
 pub mod systems;
+pub mod ttl;
+pub mod vfx;
 
 use bevy::prelude::*;
 
@@ -28,6 +31,7 @@ use crate::world::animation::{
     advance_animation_timers, attach_animated_sprite, cleanup_just_moved, detect_player_movement,
     return_to_idle_animation, tick_view_scroll, tick_visual_offsets, trigger_movement_animation,
 };
+use crate::world::attached::sync_attached_object_visuals;
 use crate::world::camera::camera_follow;
 use crate::world::darkness::{
     setup_darkness_overlay, update_darkness_overlay, DarknessOverlayMaterial,
@@ -43,6 +47,7 @@ use crate::world::lighting::{advance_world_clock, sync_object_light_components, 
 use crate::world::map_layout::SpaceDefinitions;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
+use crate::world::vfx::VfxDefinitions;
 use crate::world::resources::{
     ClientRemotePlayerProjectionState, ClientWorldProjectionState, SpaceManager, ViewScrollOffset,
 };
@@ -83,6 +88,7 @@ impl Plugin for WorldServerPlugin {
         .insert_resource(WorldClock::default())
         .insert_resource(ObjectRegistry::from_space_definitions(&authored_spaces))
         .insert_resource(object_definitions)
+        .insert_resource(VfxDefinitions::load_from_disk())
         .insert_resource(FloorTilesetDefinitions::load_from_disk())
         .add_systems(
             Startup,
@@ -93,7 +99,7 @@ impl Plugin for WorldServerPlugin {
             advance_world_clock.run_if(crate::app::state::simulation_active),
         )
         .add_systems(Update, cleanup_empty_ephemeral_spaces)
-        .add_plugins(crate::world::loot::LootPlugin);
+        .add_plugins(crate::world::ttl::TtlPlugin);
     }
 }
 
@@ -125,6 +131,7 @@ impl Plugin for WorldClientPlugin {
             .insert_resource(authored_spaces)
             .insert_resource(object_registry)
             .insert_resource(object_definitions)
+            .insert_resource(VfxDefinitions::load_from_disk())
             .insert_resource(FloorTilesetDefinitions::load_from_disk())
             .insert_resource(FloorTilesetAtlases::default())
             .insert_resource(FloorRenderState::default())
@@ -176,6 +183,10 @@ impl Plugin for WorldClientPlugin {
                     camera_follow
                         .after(tick_view_scroll)
                         .after(detect_player_movement),
+                    sync_attached_object_visuals
+                        .after(sync_tile_transforms)
+                        .after(sync_player_z)
+                        .after(camera_follow),
                 )
                     .run_if(in_state(ClientAppState::InGame)),
             )
@@ -204,6 +215,7 @@ fn reload_client_definitions(
     mut floor_defs: ResMut<FloorTilesetDefinitions>,
     mut space_defs: ResMut<SpaceDefinitions>,
     mut spell_defs: ResMut<SpellDefinitions>,
+    mut vfx_defs: ResMut<VfxDefinitions>,
     mut world_config: ResMut<WorldConfig>,
 ) {
     *object_defs = OverworldObjectDefinitions::load_from_disk();
@@ -217,6 +229,7 @@ fn reload_client_definitions(
     }
     *space_defs = new_space_defs;
     *spell_defs = SpellDefinitions::load_from_disk();
+    *vfx_defs = VfxDefinitions::load_from_disk();
 }
 
 #[derive(Resource, Clone, Debug)]

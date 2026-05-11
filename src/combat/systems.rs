@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use crate::combat::components::{AttackKind, AttackProfile, CombatLeash, CombatTarget};
 use crate::combat::damage_expr::DamageExpr;
 use crate::combat::resources::BattleTurnTimer;
-use crate::game::resources::{GameUiEvent, PendingGameUiEvents};
+use crate::game::resources::{GameUiEvent, PendingGameUiEvents, VfxAnchor};
 use crate::magic::resources::SpellDefinitions;
 use crate::npc::components::Npc;
 use crate::player::components::{
@@ -24,6 +24,7 @@ struct CombatantSnapshot {
     attack_profile: AttackProfile,
     space_id: crate::world::components::SpaceId,
     position: TilePosition,
+    object_id: u64,
     name: String,
     definition_id: String,
     attributes: AttributeSet,
@@ -89,7 +90,12 @@ pub fn resolve_battle_turn(
             Option<&Inventory>,
             Option<&Experience>,
         )>,
-        Query<(&mut VitalStats, Option<&Player>, Option<&Npc>)>,
+        Query<(
+            &mut VitalStats,
+            Option<&Player>,
+            Option<&Npc>,
+            Option<&mut crate::magic::effects::MagicEffects>,
+        )>,
         Query<&mut Inventory, With<Player>>,
     )>,
     definitions: Res<OverworldObjectDefinitions>,
@@ -150,6 +156,7 @@ pub fn resolve_battle_turn(
                     attack_profile: *attack_profile,
                     space_id: space_resident.space_id,
                     position: *position,
+                    object_id: overworld_object.object_id,
                     name: combatant_name(
                         overworld_object,
                         &object_registry,
@@ -230,7 +237,9 @@ pub fn resolve_battle_turn(
         }
 
         let mut target_query = combat_queries.p1();
-        let Ok((mut target_vitals, is_player, is_npc)) = target_query.get_mut(target_entity) else {
+        let Ok((mut target_vitals, is_player, is_npc, mut target_magic)) =
+            target_query.get_mut(target_entity)
+        else {
             continue;
         };
 
@@ -239,6 +248,22 @@ pub fn resolve_battle_turn(
         }
 
         target_vitals.health = (target_vitals.health - damage as f32).max(0.0);
+
+        let hit_vfx_id = definitions
+            .get(&attacker.definition_id)
+            .and_then(|def| def.attack_profile.as_ref())
+            .and_then(|profile| profile.hit_vfx.clone())
+            .unwrap_or_else(|| "blood_splash".to_owned());
+        ui_events.push_broadcast(GameUiEvent::VfxSpawn {
+            definition_id: hit_vfx_id,
+            anchor: VfxAnchor::follow(target.object_id),
+        });
+
+        // Damage wakes a sleeping target (and clears any pending Sleep
+        // entry). NPCs keep their CombatTarget so they re-engage immediately.
+        if let Some(effects) = target_magic.as_mut() {
+            effects.clear(crate::magic::resources::EffectKind::Sleep);
+        }
         broadcast_chat_line(
             &mut chat_log_query,
             format!(
@@ -286,6 +311,10 @@ pub fn resolve_battle_turn(
                 }
             }
 
+            ui_events.push_broadcast(GameUiEvent::VfxSpawn {
+                definition_id: "death_poof".to_owned(),
+                anchor: VfxAnchor::tile(target.space_id, target.position),
+            });
             commands.entity(target_entity).despawn();
             broadcast_chat_line(&mut chat_log_query, format!("[{} dies]", target.name));
             continue;

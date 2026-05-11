@@ -1,0 +1,8 @@
+name: Cure Wounds
+incantation: Exura Gran
+mana_cost: 14.0
+targeting: untargeted
+class_access: [Cleric]
+min_caster_level: 3
+effects:
+  restore_health: 30.0

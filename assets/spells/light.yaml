@@ -1,0 +1,10 @@
+name: Light
+incantation: Lux
+mana_cost: 2.0
+targeting: untargeted
+class_access: [Wizard, Cleric]
+min_caster_level: 1
+effects:
+  spawns_object:
+    type_id: magic_light
+    lifetime_seconds: 1800.0

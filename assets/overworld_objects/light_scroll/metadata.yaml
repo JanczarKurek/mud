@@ -1,0 +1,9 @@
+extends: pickup
+name: Light Scroll
+weight: 0.1
+description: A scroll that conjures a hovering lantern of arcane light to drive back the dark.
+spell_id: light
+render:
+  debug_color: [248, 232, 176]
+  debug_size: 0.45
+  sprite_path: overworld_objects/scroll/sprite.png

@@ -1,0 +1,11 @@
+name: Swiftness
+incantation: Utani Hur
+mana_cost: 12.0
+targeting: untargeted
+class_access: [Wizard, Cleric]
+min_caster_level: 3
+effects:
+  buffs_self:
+    - kind: haste
+      magnitude: 0.7
+      seconds: 60.0

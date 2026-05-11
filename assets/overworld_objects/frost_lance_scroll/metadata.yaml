@@ -1,0 +1,9 @@
+extends: pickup
+name: Frost Lance Scroll
+weight: 0.1
+description: A frost-rimed scroll that hurls a lance of biting cold at a distant foe.
+spell_id: frost_lance
+render:
+  debug_color: [168, 212, 232]
+  debug_size: 0.45
+  sprite_path: overworld_objects/scroll/sprite.png

@@ -1,0 +1,12 @@
+name: Sleep
+incantation: Somnus
+mana_cost: 14.0
+targeting: targeted
+range_tiles: 4
+class_access: [Wizard]
+min_caster_level: 3
+effects:
+  buffs_target:
+    - kind: sleep
+      magnitude: 0.0
+      seconds: 10.0

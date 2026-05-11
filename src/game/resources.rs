@@ -8,6 +8,7 @@ use crate::player::classes::Class;
 use crate::player::components::{AttributeSet, ChatLog, Inventory, InventoryStack, PlayerId};
 use crate::player::progression::ExperienceView;
 use crate::world::components::{SpaceId, SpacePosition, TilePosition};
+use bevy::math::Vec2;
 use crate::world::direction::Direction;
 use crate::world::floor_definitions::FloorTypeId;
 use crate::world::floor_map::FloorMap;
@@ -64,6 +65,49 @@ pub enum GameUiEvent {
         session_id: crate::game::trade::TradeSessionId,
         outcome: crate::game::trade::TradeOutcome,
     },
+    /// One-shot visual effect spawn. Looked up by `definition_id` in the
+    /// client's `VfxDefinitions` resource; missing ids are skipped silently.
+    /// The substrate underlying hit/cast/impact/death animations.
+    VfxSpawn {
+        definition_id: String,
+        anchor: VfxAnchor,
+    },
+}
+
+/// Anchor for a `VfxSpawn` event. `Tile` parks the effect at a static world
+/// tile; `FollowObject` makes it track the named object's position each
+/// frame so it stays attached to a moving target.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+pub enum VfxAnchor {
+    Tile {
+        space_id: SpaceId,
+        tile: TilePosition,
+    },
+    FollowObject {
+        object_id: u64,
+        #[serde(default)]
+        offset_pixels: [f32; 2],
+    },
+}
+
+impl VfxAnchor {
+    pub fn follow(object_id: u64) -> Self {
+        Self::FollowObject {
+            object_id,
+            offset_pixels: [0.0, 0.0],
+        }
+    }
+
+    pub fn follow_with_offset(object_id: u64, offset: Vec2) -> Self {
+        Self::FollowObject {
+            object_id,
+            offset_pixels: [offset.x, offset.y],
+        }
+    }
+
+    pub fn tile(space_id: SpaceId, tile: TilePosition) -> Self {
+        Self::Tile { space_id, tile }
+    }
 }
 
 /// Tiny self-contained snapshot of a dropped stack for the DeathSummary
@@ -134,6 +178,17 @@ pub struct ClientVitalStats {
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct RegenBuffState {
     pub multiplier: f32,
+    pub remaining_seconds: f32,
+}
+
+/// Replicated snapshot of one active timed magical effect on the local
+/// player. Mirrors `magic::effects::ActiveEffect` but lives in the wire-shape
+/// module so the client doesn't need to import server-only types. Spelled
+/// `Client...` for consistency with `ClientVitalStats` etc.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+pub struct ClientActiveEffect {
+    pub kind: crate::magic::resources::EffectKind,
+    pub magnitude: f32,
     pub remaining_seconds: f32,
 }
 
@@ -230,6 +285,12 @@ pub enum GameEvent {
     /// Replication parity for `RegenBuffs`; the HUD shows remaining time.
     PlayerRegenBuffChanged {
         buff: Option<RegenBuffState>,
+    },
+    /// Active magical effects (spell-driven buffs/debuffs) on the local
+    /// player. Full vector each tick — debounced at integer-second
+    /// resolution; an empty vec clears the HUD.
+    PlayerEffectsChanged {
+        effects: Vec<ClientActiveEffect>,
     },
     PlayerStorageChanged {
         storage_slots: usize,
@@ -417,6 +478,11 @@ pub struct ClientGameState {
     /// renders the remaining time near the HP/MP bars.
     #[serde(default)]
     pub regen_buff: Option<RegenBuffState>,
+    /// Active magical effects on the local player. Driven by
+    /// `PlayerEffectsChanged`; the HUD renders the list and presentation
+    /// systems (e.g. Glimmer light expansion) read from it.
+    #[serde(default)]
+    pub active_effects: Vec<ClientActiveEffect>,
     /// Replicated carry-weight snapshot for the local player. `None` until
     /// the first `PlayerCarryWeightChanged` event arrives — typically on the
     /// first frame the player exists.

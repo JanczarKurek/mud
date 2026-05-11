@@ -8,7 +8,7 @@ use crate::game::commands::{
 use crate::game::helpers::{colliders_in_space, is_near_player, player_space_id};
 use crate::game::resources::{
     ChatLogState, ContainerViewers, GameUiEvent, InventoryState, PendingGameCommands,
-    PendingGameUiEvents,
+    PendingGameUiEvents, VfxAnchor,
 };
 use crate::magic::resources::{SpellDefinition, SpellDefinitions};
 use crate::npc::components::Npc;
@@ -45,10 +45,32 @@ pub struct CommandOutputs<'w, 's> {
     pub container_viewers: ResMut<'w, ContainerViewers>,
     pub player_regen_buffs:
         Query<'w, 's, &'static mut crate::player::components::RegenBuffs, With<Player>>,
+    pub player_magic_effects:
+        Query<'w, 's, &'static mut crate::magic::effects::MagicEffects, With<Player>>,
+    /// Per-NPC magical effects. Used by spell handlers to insert/apply
+    /// debuffs on the target. Insertion happens lazily via `Commands` when
+    /// an NPC doesn't already carry the component.
+    pub npc_magic_effects: Query<
+        'w,
+        's,
+        &'static mut crate::magic::effects::MagicEffects,
+        (With<Npc>, Without<Player>),
+    >,
     pub player_carry: Query<'w, 's, &'static MaxCarryWeight, With<Player>>,
     /// True iff the player entity carries the `Encumbered` marker. Doubles
     /// the movement cooldown when set.
     pub player_encumbered: Query<'w, 's, (), (With<Player>, With<Encumbered>)>,
+    /// Read-only access to the player's `Class` + `Experience` so the spell
+    /// cast paths can apply `class_access` / `min_caster_level` gating.
+    pub player_class_level: Query<
+        'w,
+        's,
+        (
+            Option<&'static crate::player::classes::Class>,
+            Option<&'static crate::player::progression::Experience>,
+        ),
+        With<Player>,
+    >,
 }
 
 /// Bundle of resources needed together when a command may cause space
@@ -256,6 +278,7 @@ pub fn process_game_commands(
                     &collider_positions,
                     &object_query,
                     &mut player_queries.p2(),
+                    &command_outputs.player_magic_effects,
                     &authored_spaces,
                     &definitions,
                     &mut space_authority.space_manager,
@@ -330,9 +353,12 @@ pub fn process_game_commands(
                     &object_query,
                     &mut player_queries.p2(),
                     &mut command_outputs.player_regen_buffs,
-                    &object_registry,
+                    &mut command_outputs.player_magic_effects,
+                    &command_outputs.player_class_level,
+                    &mut object_registry,
                     &definitions,
                     &spell_definitions,
+                    &mut command_outputs.ui_events,
                     &mut commands,
                 );
             }
@@ -344,10 +370,13 @@ pub fn process_game_commands(
                     &mut container_query,
                     &mut player_queries.p2(),
                     &mut command_outputs.player_regen_buffs,
+                    &mut command_outputs.player_magic_effects,
+                    &command_outputs.player_class_level,
                     &object_query,
-                    &object_registry,
+                    &mut object_registry,
                     &definitions,
                     &spell_definitions,
+                    &mut command_outputs.ui_events,
                     &mut commands,
                 );
             }
@@ -365,9 +394,13 @@ pub fn process_game_commands(
                     &object_query,
                     &mut player_queries.p2(),
                     &mut npc_vitals_query,
+                    &mut command_outputs.player_magic_effects,
+                    &mut command_outputs.npc_magic_effects,
+                    &command_outputs.player_class_level,
                     &mut object_registry,
                     &definitions,
                     &spell_definitions,
+                    &mut command_outputs.ui_events,
                     &mut commands,
                 );
             }
@@ -715,6 +748,7 @@ fn handle_take_item(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_move_player(
     player_entity: Entity,
     delta: MoveDelta,
@@ -737,6 +771,7 @@ fn handle_move_player(
         ),
         With<Player>,
     >,
+    player_magic_effects: &Query<&mut crate::magic::effects::MagicEffects, With<Player>>,
     authored_spaces: &SpaceDefinitions,
     definitions: &OverworldObjectDefinitions,
     space_manager: &mut SpaceManager,
@@ -784,7 +819,10 @@ fn handle_move_player(
     }
 
     *tile_position = target_position;
-    let cooldown_scale = if encumbered { 2.0 } else { 1.0 };
+    let mut cooldown_scale = if encumbered { 2.0 } else { 1.0 };
+    if let Ok(effects) = player_magic_effects.get(player_entity) {
+        cooldown_scale *= effects.haste_multiplier();
+    }
     movement_cooldown.remaining_seconds = movement_cooldown.step_interval_seconds * cooldown_scale;
 
     if let Some(direction) = Direction::from_delta(delta.x, delta.y) {
@@ -1088,6 +1126,7 @@ fn handle_inspect(
 const DEFAULT_INSPECT_RANGE: i32 = 3;
 const FOCUS_TILES_PER_POINT: i32 = 5;
 
+#[allow(clippy::too_many_arguments)]
 fn handle_use_item(
     player_entity: Entity,
     source: ItemReference,
@@ -1111,9 +1150,18 @@ fn handle_use_item(
         With<Player>,
     >,
     regen_buffs_query: &mut Query<&mut crate::player::components::RegenBuffs, With<Player>>,
-    object_registry: &ObjectRegistry,
+    magic_effects_query: &mut Query<&mut crate::magic::effects::MagicEffects, With<Player>>,
+    player_class_level: &Query<
+        (
+            Option<&crate::player::classes::Class>,
+            Option<&crate::player::progression::Experience>,
+        ),
+        With<Player>,
+    >,
+    object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
+    ui_events: &mut PendingGameUiEvents,
     commands: &mut Commands,
 ) {
     let Ok((
@@ -1121,7 +1169,7 @@ fn handle_use_item(
         _,
         mut inventory_state,
         mut chat_log_state,
-        _,
+        player_space_resident,
         player_position,
         _,
         mut vital_stats,
@@ -1130,6 +1178,7 @@ fn handle_use_item(
     else {
         return;
     };
+    let player_space_id = player_space_resident.space_id;
     let player_position = *player_position;
 
     if let ItemReference::WorldObject(world_object_id) = source {
@@ -1174,12 +1223,47 @@ fn handle_use_item(
         if spell.targeting == crate::magic::resources::SpellTargeting::Targeted {
             return;
         }
+        // Today everything routed through this branch is a scroll-shaped item
+        // (its definition declares `spell_id`). When a memorized-spell cast
+        // path lands later, `is_scroll` should reflect *that* distinction; for
+        // now mark as scroll so class_access is bypassed but level is checked.
+        let is_scroll = true;
+        let (class, level) = player_class_level
+            .get(player_entity)
+            .map(|(c, e)| (c.copied(), e.map_or(1, |exp| exp.level)))
+            .unwrap_or((None, 1));
+        if let Err(reason) = check_caster_eligibility(spell, is_scroll, class, level) {
+            chat_log_state.push_narrator(reason);
+            return;
+        }
         if vital_stats.mana < spell.mana_cost {
             chat_log_state.push_narrator(format!("Not enough mana to cast {}.", spell.name));
             return;
         }
         vital_stats.mana = (vital_stats.mana - spell.mana_cost).max(0.0);
+        let cast_vfx_id = spell
+            .effects
+            .vfx_on_cast
+            .clone()
+            .unwrap_or_else(|| "cast_flash".to_owned());
+        ui_events.push_broadcast(GameUiEvent::VfxSpawn {
+            definition_id: cast_vfx_id,
+            anchor: VfxAnchor::tile(player_space_id, player_position),
+        });
         apply_spell_effects(spell, &mut vital_stats);
+        if let Ok(mut effects) = magic_effects_query.get_mut(player_entity) {
+            apply_spell_self_effects(spell, &mut effects);
+        }
+        if let Some(spawn_spec) = spell.effects.spawns_object.as_ref() {
+            spawn_spell_object(
+                commands,
+                definitions,
+                object_registry,
+                spawn_spec,
+                player_space_id,
+                player_position,
+            );
+        }
         consume_item_reference(
             source,
             &mut inventory_state,
@@ -1241,6 +1325,7 @@ fn handle_use_item(
     chat_log_state.push_narrator(use_text(definition, &source_name));
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_use_item_on(
     player_entity: Entity,
     source: ItemReference,
@@ -1261,13 +1346,22 @@ fn handle_use_item_on(
         With<Player>,
     >,
     regen_buffs_query: &mut Query<&mut crate::player::components::RegenBuffs, With<Player>>,
+    magic_effects_query: &mut Query<&mut crate::magic::effects::MagicEffects, With<Player>>,
+    player_class_level: &Query<
+        (
+            Option<&crate::player::classes::Class>,
+            Option<&crate::player::progression::Experience>,
+        ),
+        With<Player>,
+    >,
     object_query: &Query<
         (Entity, &SpaceResident, &TilePosition, &OverworldObject),
         Without<Player>,
     >,
-    object_registry: &ObjectRegistry,
+    object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
+    ui_events: &mut PendingGameUiEvents,
     commands: &mut Commands,
 ) {
     match target {
@@ -1278,9 +1372,12 @@ fn handle_use_item_on(
             object_query,
             player_query,
             regen_buffs_query,
+            magic_effects_query,
+            player_class_level,
             object_registry,
             definitions,
             spell_definitions,
+            ui_events,
             commands,
         ),
         UseTarget::Object(target_object_id) => {
@@ -1353,6 +1450,7 @@ fn handle_use_item_on(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_cast_spell_at(
     player_entity: Entity,
     source: ItemReference,
@@ -1378,9 +1476,22 @@ fn handle_cast_spell_at(
         With<Player>,
     >,
     npc_vitals_query: &mut Query<(&mut VitalStats, &OverworldObject), (With<Npc>, Without<Player>)>,
+    player_magic_effects_query: &mut Query<&mut crate::magic::effects::MagicEffects, With<Player>>,
+    npc_magic_effects_query: &mut Query<
+        &mut crate::magic::effects::MagicEffects,
+        (With<Npc>, Without<Player>),
+    >,
+    player_class_level: &Query<
+        (
+            Option<&crate::player::classes::Class>,
+            Option<&crate::player::progression::Experience>,
+        ),
+        With<Player>,
+    >,
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
+    ui_events: &mut PendingGameUiEvents,
     commands: &mut Commands,
 ) {
     let Some(spell) = spell_definitions.get(spell_id) else {
@@ -1420,20 +1531,81 @@ fn handle_cast_spell_at(
         return;
     }
 
+    // Class + level gating. Same scroll-bypass rule as `handle_use_item`.
+    let is_scroll = true;
+    let (class, level) = player_class_level
+        .get(player_entity)
+        .map(|(c, e)| (c.copied(), e.map_or(1, |exp| exp.level)))
+        .unwrap_or((None, 1));
+    if let Err(reason) = check_caster_eligibility(spell, is_scroll, class, level) {
+        chat_log_state.push_narrator(reason);
+        return;
+    }
+
     if player_vitals.mana < spell.mana_cost {
         chat_log_state.push_narrator(format!("Not enough mana to cast {}.", spell.name));
         return;
     }
     player_vitals.mana = (player_vitals.mana - spell.mana_cost).max(0.0);
 
-    let Ok((mut target_vitals, target_object)) = npc_vitals_query.get_mut(target_entity) else {
-        return;
-    };
-    let target_name = object_registry
-        .display_name(target_object.object_id, definitions, spell_definitions)
-        .unwrap_or_else(|| target_object.definition_id.clone());
+    let caster_space_id = player_space_resident.space_id;
+    let caster_tile = *player_position;
+    let cast_vfx_id = spell
+        .effects
+        .vfx_on_cast
+        .clone()
+        .unwrap_or_else(|| "cast_flash".to_owned());
+    ui_events.push_broadcast(GameUiEvent::VfxSpawn {
+        definition_id: cast_vfx_id,
+        anchor: VfxAnchor::tile(caster_space_id, caster_tile),
+    });
 
-    apply_spell_effects(spell, &mut target_vitals);
+    let (target_died, target_name, target_definition_id) = {
+        let Ok((mut target_vitals, target_object)) = npc_vitals_query.get_mut(target_entity) else {
+            return;
+        };
+        let name = object_registry
+            .display_name(target_object.object_id, definitions, spell_definitions)
+            .unwrap_or_else(|| target_object.definition_id.clone());
+        let definition_id = target_object.definition_id.clone();
+        apply_spell_effects(spell, &mut target_vitals);
+        (target_vitals.health <= 0.0, name, definition_id)
+    };
+
+    let impact_vfx_id = spell
+        .effects
+        .vfx_on_target_hit
+        .clone()
+        .unwrap_or_else(|| "hit_flash".to_owned());
+    ui_events.push_broadcast(GameUiEvent::VfxSpawn {
+        definition_id: impact_vfx_id,
+        anchor: VfxAnchor::follow(target_object_id),
+    });
+
+    if !spell.effects.buffs_target.is_empty() && !target_died {
+        apply_buffs_target(
+            target_entity,
+            &spell.effects.buffs_target,
+            npc_magic_effects_query,
+            commands,
+        );
+    }
+
+    if let Ok(mut effects) = player_magic_effects_query.get_mut(player_entity) {
+        apply_spell_self_effects(spell, &mut effects);
+    }
+
+    if let Some(spawn_spec) = spell.effects.spawns_object.as_ref() {
+        spawn_spell_object(
+            commands,
+            definitions,
+            object_registry,
+            spawn_spec,
+            player_space_resident.space_id,
+            target_position,
+        );
+    }
+
     consume_item_reference(
         source,
         &mut inventory_state,
@@ -1444,9 +1616,9 @@ fn handle_cast_spell_at(
     chat_log_state.push_line(format!("[Player]: \"{}\"", spell.incantation));
     chat_log_state.push_narrator(format!("Cast {} on {}.", spell.name, target_name));
 
-    if target_vitals.health <= 0.0 {
+    if target_died {
         if let Some(loot_table) = definitions
-            .get(&target_object.definition_id)
+            .get(&target_definition_id)
             .and_then(|def| def.loot_table.as_ref())
         {
             spawn_corpse_for_npc(
@@ -1460,6 +1632,96 @@ fn handle_cast_spell_at(
         }
         commands.entity(target_entity).despawn();
         chat_log_state.push_line(format!("[{target_name} dies]"));
+    }
+}
+
+/// Returns `Ok(())` when the caster is permitted to cast `spell` from the
+/// given source.
+///
+/// Rules (matches the project plan):
+/// - `min_caster_level` is always enforced. Missing `Experience` defaults to
+///   level 1.
+/// - `class_access` is enforced **only when the source is not a scroll**
+///   (today every cast goes through an item with `spell_id`, so this is
+///   effectively a no-op until a memorized-spell path lands in Phase E).
+/// - Empty `class_access` means "any class".
+fn check_caster_eligibility(
+    spell: &SpellDefinition,
+    is_scroll: bool,
+    class: Option<crate::player::classes::Class>,
+    level: u32,
+) -> Result<(), String> {
+    if spell.min_caster_level > 0 && level < spell.min_caster_level {
+        return Err(format!(
+            "Not high enough level to cast {} (requires {}).",
+            spell.name, spell.min_caster_level
+        ));
+    }
+    if !is_scroll && !spell.class_access.is_empty() {
+        match class {
+            Some(c) if spell.class_access.contains(&c) => {}
+            _ => {
+                return Err(format!("You can't cast {} — wrong class.", spell.name));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Spawn the transient world object declared by a spell's `spawns_object`
+/// effect (currently only `magic_light`). Attaches a `Ttl` so the object
+/// auto-cleans up after `lifetime_seconds`.
+fn spawn_spell_object(
+    commands: &mut Commands,
+    definitions: &OverworldObjectDefinitions,
+    object_registry: &mut ObjectRegistry,
+    spawn_spec: &crate::magic::resources::SpawnObjectSpec,
+    space_id: crate::world::components::SpaceId,
+    tile_position: TilePosition,
+) {
+    let type_id = spawn_spec.type_id.as_str();
+    if definitions.get(type_id).is_none() {
+        return;
+    }
+    let object_id = object_registry.allocate_runtime_id(type_id);
+    let entity = crate::world::setup::spawn_overworld_object(
+        commands,
+        definitions,
+        object_id,
+        type_id,
+        None,
+        space_id,
+        tile_position,
+        None,
+    );
+    commands
+        .entity(entity)
+        .insert(crate::world::ttl::Ttl {
+            remaining_seconds: spawn_spec.lifetime_seconds.max(1.0),
+        });
+}
+
+/// Inserts (or merges) `MagicEffects` on an NPC target. Lazily attaches the
+/// component if missing.
+fn apply_buffs_target(
+    target_entity: Entity,
+    specs: &[crate::magic::resources::EffectSpec],
+    npc_magic_effects_query: &mut Query<
+        &mut crate::magic::effects::MagicEffects,
+        (With<Npc>, Without<Player>),
+    >,
+    commands: &mut Commands,
+) {
+    if let Ok(mut effects) = npc_magic_effects_query.get_mut(target_entity) {
+        for spec in specs {
+            effects.apply(*spec);
+        }
+    } else {
+        let mut new_effects = crate::magic::effects::MagicEffects::default();
+        for spec in specs {
+            new_effects.apply(*spec);
+        }
+        commands.entity(target_entity).insert(new_effects);
     }
 }
 
@@ -3069,6 +3331,22 @@ fn apply_spell_effects(spell: &SpellDefinition, vital_stats: &mut VitalStats) {
         (vital_stats.mana + spell.effects.restore_mana).clamp(0.0, vital_stats.max_mana);
 }
 
+/// Apply self-buff + clears entries from a spell to the caster's
+/// `MagicEffects`. `buffs_target` is applied separately by the targeted-cast
+/// handler so the target NPC can be looked up and lazily granted the
+/// component.
+fn apply_spell_self_effects(
+    spell: &SpellDefinition,
+    caster_effects: &mut crate::magic::effects::MagicEffects,
+) {
+    for spec in &spell.effects.buffs_self {
+        caster_effects.apply(*spec);
+    }
+    for kind in &spell.effects.clears_self {
+        caster_effects.clear(*kind);
+    }
+}
+
 fn chebyshev_distance_tiles(a: TilePosition, b: TilePosition) -> i32 {
     if a.z != b.z {
         return i32::MAX;
@@ -3172,6 +3450,7 @@ mod tests {
                 CombatLeash {
                     max_distance_tiles: 6,
                 },
+                crate::magic::effects::MagicEffects::default(),
                 Collider,
                 OverworldObject {
                     object_id,

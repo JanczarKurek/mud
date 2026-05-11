@@ -1,0 +1,11 @@
+extends: static_world
+name: Magic Light
+description: A floating mote of conjured light.
+colliding: false
+storable: false
+movable: false
+render:
+  z_index: 0.40
+  debug_color: [255, 240, 160]
+  debug_size: 0.45
+light: { color: [255, 240, 160], radius: 5.0, intensity: 1.0 }

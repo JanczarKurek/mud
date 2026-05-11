@@ -1,0 +1,13 @@
+name: Frost Lance
+incantation: Frigus Hasta
+mana_cost: 16.0
+targeting: targeted
+range_tiles: 6
+class_access: [Wizard]
+min_caster_level: 3
+effects:
+  damage: 7.0
+  buffs_target:
+    - kind: slow
+      magnitude: 2.0
+      seconds: 3.0

@@ -1,0 +1,11 @@
+name: Glimmer
+incantation: Lux Minima
+mana_cost: 2.0
+targeting: untargeted
+class_access: [Wizard, Cleric]
+min_caster_level: 1
+effects:
+  buffs_self:
+    - kind: glimmer
+      magnitude: 4.0
+      seconds: 600.0

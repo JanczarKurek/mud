@@ -1,0 +1,9 @@
+extends: pickup
+name: Glimmer Scroll
+weight: 0.1
+description: A scroll bearing a softly glowing rune that wreathes its reader in faint light.
+spell_id: glimmer
+render:
+  debug_color: [240, 224, 168]
+  debug_size: 0.45
+  sprite_path: overworld_objects/scroll/sprite.png

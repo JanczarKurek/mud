@@ -1,0 +1,9 @@
+extends: pickup
+name: Cure Wounds Scroll
+weight: 0.1
+description: A potent scroll inscribed with a restorative prayer that mends grievous wounds.
+spell_id: cure_wounds
+render:
+  debug_color: [232, 168, 188]
+  debug_size: 0.45
+  sprite_path: overworld_objects/scroll/sprite.png

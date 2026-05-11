@@ -672,7 +672,7 @@ pub fn attack_profile_for_definition(
         .and_then(|raw| DamageExpr::parse(raw).ok())
         .map(WeaponDamage)
         .unwrap_or_default();
-    let profile = match definition.attack_profile {
+    let profile = match definition.attack_profile.as_ref() {
         Some(def) => match def.kind {
             AttackProfileKindDef::Melee => AttackProfile::melee(),
             AttackProfileKindDef::Ranged => {

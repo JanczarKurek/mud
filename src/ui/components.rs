@@ -20,6 +20,12 @@ pub struct ManaLabel;
 #[derive(Component)]
 pub struct RegenBuffLabel;
 
+/// Text node that displays the player's active magical effects in the status
+/// panel, one effect per line ("Glimmer: 9:58", "Haste: 0:42"). Hidden when
+/// no effects are active.
+#[derive(Component)]
+pub struct MagicEffectsLabel;
+
 /// Text node that displays the player's carry weight in the status panel.
 /// Format: `Weight: 8.4 / 40 kg` with a trailing "(Encumbered)" tag in red
 /// when the soft cap is exceeded.

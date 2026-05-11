@@ -1,0 +1,9 @@
+extends: pickup
+name: Slow Scroll
+weight: 0.1
+description: A scroll that mires a chosen target's limbs in heavy, honeyed magic.
+spell_id: slow
+render:
+  debug_color: [156, 168, 124]
+  debug_size: 0.45
+  sprite_path: overworld_objects/scroll/sprite.png

@@ -1,0 +1,9 @@
+extends: pickup
+name: Sleep Scroll
+weight: 0.1
+description: A scroll whose drowsy syllables coax a single foe into helpless slumber.
+spell_id: sleep
+render:
+  debug_color: [180, 152, 204]
+  debug_size: 0.45
+  sprite_path: overworld_objects/scroll/sprite.png

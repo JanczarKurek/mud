@@ -1,0 +1,11 @@
+name: Bless
+incantation: Sanctus
+mana_cost: 6.0
+targeting: untargeted
+class_access: [Cleric]
+min_caster_level: 1
+effects:
+  buffs_self:
+    - kind: bless
+      magnitude: 1.0
+      seconds: 60.0

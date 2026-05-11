@@ -5,6 +5,7 @@ use bevy::prelude::*;
 use crate::accounts::resources::{AccountDbHandle, AutosaveConfig};
 use crate::combat::components::{AttackProfile, CombatLeash};
 use crate::dialog::resources::CharacterVarStores;
+use crate::magic::effects::MagicEffects;
 use crate::network::resources::PendingPlayerSaves;
 use crate::persistence::build_player_state_dump;
 use crate::player::classes::{Class, ClassChosen};
@@ -36,7 +37,11 @@ type PlayerStateQueryData<'a> = (
     &'a CombatLeash,
     Option<&'a Facing>,
     Option<&'a Experience>,
-    (Option<&'a Class>, bevy::ecs::query::Has<ClassChosen>),
+    (
+        Option<&'a Class>,
+        bevy::ecs::query::Has<ClassChosen>,
+        Option<&'a MagicEffects>,
+    ),
 );
 
 type PlayerStateQueryFilter = With<Player>;
@@ -62,8 +67,11 @@ fn save_entity(
         combat_leash,
         facing,
         experience,
-        (class, class_chosen),
+        (class, class_chosen, magic_effects),
     ) = row;
+
+    let empty_effects = MagicEffects::default();
+    let effects_ref = magic_effects.unwrap_or(&empty_effects);
 
     let mut dump = build_player_state_dump(
         identity,
@@ -81,6 +89,7 @@ fn save_entity(
         experience.copied().unwrap_or_default(),
         class.copied().unwrap_or_default(),
         class_chosen,
+        effects_ref,
     );
 
     if let Some(stores) = var_stores {

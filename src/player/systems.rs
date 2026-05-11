@@ -125,7 +125,7 @@ pub fn refresh_derived_player_stats(
                 {
                     next_damage = expr;
                 }
-                if let Some(profile_def) = definition.attack_profile {
+                if let Some(profile_def) = definition.attack_profile.as_ref() {
                     match profile_def.kind {
                         AttackProfileKindDef::Melee => {
                             next_profile = AttackProfile::melee();

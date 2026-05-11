@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 
 use crate::combat::components::{AttackProfile, CombatLeash};
+use crate::magic::effects::MagicEffects;
 use crate::persistence::{PlayerStateDump, WorldSnapshotStatus};
 use crate::player::classes::{Class, ClassChosen};
 use crate::player::components::{
@@ -161,6 +162,7 @@ pub fn spawn_player_from_dump(
                 dump.combat_leash,
                 RegenTickers::default(),
                 RegenBuffs::default(),
+                dump.magic_effects,
             ),
             Collider,
             OverworldObject {
@@ -218,6 +220,7 @@ pub fn spawn_player_authoritative_in_space(
                 },
                 RegenTickers::default(),
                 RegenBuffs::default(),
+                MagicEffects::default(),
             ),
             Collider,
             OverworldObject {

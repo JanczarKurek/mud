@@ -1,0 +1,9 @@
+extends: pickup
+name: Magic Dart Scroll
+weight: 0.1
+description: A novice's scroll that flings a small dart of force at a single foe.
+spell_id: magic_dart
+render:
+  debug_color: [216, 156, 116]
+  debug_size: 0.45
+  sprite_path: overworld_objects/scroll/sprite.png

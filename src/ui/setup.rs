@@ -15,12 +15,12 @@ use crate::ui::components::{
     ExperienceLabel, FullMapBodyRoot, FullMapCloseButton, FullMapWindowRoot, FullMapZoomInButton,
     FullMapZoomLabel, FullMapZoomOutButton, HealthFill, HealthLabel, HudMinimapZoomInButton,
     HudMinimapZoomLabel, HudMinimapZoomOutButton, ItemSlotButton, ItemSlotImage, ItemSlotKind,
-    ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot, ManaFill, ManaLabel, MinimapCanvas,
-    MinimapMode, MinimapView, PythonConsoleInput, PythonConsoleOutput, PythonConsoleOutputViewport,
-    PythonConsolePanel, PythonConsoleScrollbarThumb, RegenBuffLabel, RightSidebarRoot,
-    StatusPanelContent, TakePartialAmountLabel, TakePartialCancelButton, TakePartialConfirmButton,
-    TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot, TradeButtonLabel,
-    TradeColumn,
+    ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot, MagicEffectsLabel, ManaFill,
+    ManaLabel, MinimapCanvas, MinimapMode, MinimapView, PythonConsoleInput, PythonConsoleOutput,
+    PythonConsoleOutputViewport, PythonConsolePanel, PythonConsoleScrollbarThumb, RegenBuffLabel,
+    RightSidebarRoot, StatusPanelContent, TakePartialAmountLabel, TakePartialCancelButton,
+    TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot,
+    TradeButtonLabel, TradeColumn,
 };
 use crate::ui::menu_bar::{spawn_menu_bar, MENU_BAR_HEIGHT};
 use crate::ui::minimap::{make_minimap_image, FULL_MAP_BODY_SIZE, HUD_MINIMAP_SIZE};
@@ -712,6 +712,17 @@ fn spawn_status_panel(
                 },
                 TextColor(palette.text_accent),
                 RegenBuffLabel,
+            ));
+            // Active magical effects (spell-driven buffs). Same shape as the
+            // regen-buff label — always rendered, sync system writes the text.
+            panel.spawn((
+                Text::new(""),
+                TextFont {
+                    font_size: 14.0,
+                    ..default()
+                },
+                TextColor(palette.text_accent),
+                MagicEffectsLabel,
             ));
             // Carry weight readout. Always rendered; `sync_carry_weight_label`
             // updates the text every frame the cached client value changes.

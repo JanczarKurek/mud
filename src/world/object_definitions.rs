@@ -210,10 +210,14 @@ pub enum AttackProfileKindDef {
     Ranged,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct AttackProfileDef {
     pub kind: AttackProfileKindDef,
+    /// Override for the VFX played on the target when a hit lands. Looked up
+    /// in `VfxDefinitions`; falls back to `"blood_splash"` when omitted.
+    #[serde(default)]
+    pub hit_vfx: Option<String>,
 }
 
 /// Quantity roll for a loot drop: either a fixed count or a uniform random range.

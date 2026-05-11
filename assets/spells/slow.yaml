@@ -1,0 +1,12 @@
+name: Slow
+incantation: Mellis Membra
+mana_cost: 18.0
+targeting: targeted
+range_tiles: 5
+class_access: [Wizard]
+min_caster_level: 5
+effects:
+  buffs_target:
+    - kind: slow
+      magnitude: 2.0
+      seconds: 18.0

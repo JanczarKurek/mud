@@ -79,6 +79,9 @@ pub fn apply_game_ui_events(
             other @ GameUiEvent::DeathSummary { .. } => {
                 pending_ui_events.events.push(other);
             }
+            other @ GameUiEvent::VfxSpawn { .. } => {
+                pending_ui_events.events.push(other);
+            }
         }
     }
 }
@@ -1106,6 +1109,45 @@ pub fn sync_regen_buff_label(
     };
     if text.0 != new_text {
         text.0 = new_text;
+    }
+}
+
+pub fn sync_magic_effects_label(
+    client_state: Res<ClientGameState>,
+    mut label_query: Query<&mut Text, With<crate::ui::components::MagicEffectsLabel>>,
+) {
+    let Ok(mut text) = label_query.single_mut() else {
+        return;
+    };
+    let new_text = if client_state.active_effects.is_empty() {
+        String::new()
+    } else {
+        client_state
+            .active_effects
+            .iter()
+            .map(|effect| {
+                let total_seconds = effect.remaining_seconds.ceil().max(0.0) as i32;
+                let mins = total_seconds / 60;
+                let secs = total_seconds % 60;
+                format!("{}: {mins}:{secs:02}", effect_label(effect.kind))
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    if text.0 != new_text {
+        text.0 = new_text;
+    }
+}
+
+fn effect_label(kind: crate::magic::resources::EffectKind) -> &'static str {
+    use crate::magic::resources::EffectKind;
+    match kind {
+        EffectKind::Glimmer => "Glimmer",
+        EffectKind::Haste => "Haste",
+        EffectKind::Shield => "Shield",
+        EffectKind::Bless => "Bless",
+        EffectKind::Slow => "Slow",
+        EffectKind::Sleep => "Sleep",
     }
 }
 

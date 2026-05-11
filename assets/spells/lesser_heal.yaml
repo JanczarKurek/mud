@@ -2,5 +2,7 @@ name: Lesser Heal
 incantation: Exura
 mana_cost: 8.0
 targeting: untargeted
+class_access: [Cleric]
+min_caster_level: 1
 effects:
   restore_health: 20.0

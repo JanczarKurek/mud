@@ -4,6 +4,7 @@ use bevy::prelude::*;
 
 use crate::combat::components::{AttackKind, AttackProfile, CombatTarget};
 use crate::game::shop::Shopkeeper;
+use crate::magic::effects::MagicEffects;
 use crate::npc::components::{
     HostileBehavior, Npc, RoamingBehavior, RoamingRandomState, RoamingStepTimer,
 };
@@ -41,6 +42,7 @@ pub fn update_roaming_npcs(
             &mut RoamingRandomState,
             Option<&mut Facing>,
             Has<Shopkeeper>,
+            Option<&MagicEffects>,
         ),
         (With<Npc>, Without<Player>),
     >,
@@ -73,12 +75,25 @@ pub fn update_roaming_npcs(
         mut random_state,
         mut facing,
         is_shopkeeper,
+        magic_effects,
     ) in &mut npc_query
     {
         timer.remaining_seconds = (timer.remaining_seconds - time.delta_secs()).max(0.0);
         if timer.remaining_seconds > 0.0 {
             continue;
         }
+
+        // Sleeping NPC: skip the AI tick entirely. The step interval still
+        // resets so the NPC re-checks on wake without burning a long
+        // post-wake delay. Combat re-engages immediately on damage via the
+        // wake-on-damage path in `resolve_battle_turn`.
+        if magic_effects.is_some_and(|effects| effects.is_asleep()) {
+            timer.remaining_seconds = behavior.step_interval_seconds
+                * magic_effects.map_or(1.0, |e| e.npc_step_multiplier());
+            continue;
+        }
+
+        let slow_multiplier = magic_effects.map_or(1.0, |e| e.npc_step_multiplier());
 
         let nearest_player = players
             .iter()
@@ -102,7 +117,7 @@ pub fn update_roaming_npcs(
                     }
                 }
             }
-            timer.remaining_seconds = behavior.step_interval_seconds;
+            timer.remaining_seconds = behavior.step_interval_seconds * slow_multiplier;
             continue;
         }
         let chase_target = select_chase_target(
@@ -140,7 +155,7 @@ pub fn update_roaming_npcs(
             }
         }
 
-        timer.remaining_seconds = behavior.step_interval_seconds;
+        timer.remaining_seconds = behavior.step_interval_seconds * slow_multiplier;
     }
 }
 

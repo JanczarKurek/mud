@@ -23,12 +23,13 @@ use bevy::prelude::*;
 use crate::combat::components::CombatTarget;
 use crate::dialog::components::DialogNode;
 use crate::game::resources::{
-    ChatLogState, ClientCarryWeight, ClientGameState, ClientRemotePlayerState, ClientSpaceState,
-    ClientVitalStats, ClientWorldObjectState, GameEvent, InventoryState, PendingGameEvents,
-    RegenBuffState,
+    ChatLogState, ClientActiveEffect, ClientCarryWeight, ClientGameState, ClientRemotePlayerState,
+    ClientSpaceState, ClientVitalStats, ClientWorldObjectState, GameEvent, InventoryState,
+    PendingGameEvents, RegenBuffState,
 };
 use crate::game::shop::{Shopkeeper, StockMode, Stockpile};
 use crate::game::trade::{ActiveTrades, TradeParticipants, TradePartnerKind, WareView};
+use crate::magic::effects::MagicEffects;
 use crate::npc::components::Npc;
 use crate::player::classes::{Class, ClassChosen};
 use crate::player::components::{
@@ -67,6 +68,7 @@ pub type ProjectionPlayerQuery<'w, 's> = Query<
         ),
         Option<&'static Experience>,
         (Option<&'static Class>, Has<ClassChosen>),
+        Option<&'static MagicEffects>,
     ),
     With<Player>,
 >;
@@ -167,6 +169,7 @@ pub fn compute_events_for_peer(
         (max_carry, current_carry, is_encumbered),
         experience,
         (class, class_chosen),
+        magic_effects,
     ) in player_query.iter()
     {
         let projected_facing = facing.copied().unwrap_or_default().0;
@@ -274,6 +277,29 @@ pub fn compute_events_for_peer(
             if buff_changed {
                 events.push(GameEvent::PlayerRegenBuffChanged {
                     buff: projected_buff,
+                });
+            }
+
+            // Replicate active magical effects (spell-driven buffs/debuffs on
+            // the caster). Same integer-second debounce as RegenBuffs above;
+            // the full vector is re-sent on any change.
+            let projected_effects: Vec<ClientActiveEffect> = magic_effects
+                .map(|effects| {
+                    effects
+                        .active
+                        .iter()
+                        .map(|effect| ClientActiveEffect {
+                            kind: effect.kind,
+                            magnitude: effect.magnitude,
+                            remaining_seconds: effect.remaining_seconds,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let effects_changed = effects_diff(&previous.active_effects, &projected_effects);
+            if effects_changed {
+                events.push(GameEvent::PlayerEffectsChanged {
+                    effects: projected_effects,
                 });
             }
 
@@ -671,6 +697,9 @@ pub fn apply_event_to_state(state: &mut ClientGameState, event: GameEvent) {
         GameEvent::PlayerRegenBuffChanged { buff } => {
             state.regen_buff = buff;
         }
+        GameEvent::PlayerEffectsChanged { effects } => {
+            state.active_effects = effects;
+        }
         GameEvent::PlayerStorageChanged { storage_slots } => {
             state.player_storage_slots = storage_slots;
         }
@@ -842,6 +871,10 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
             "client regen buff updated: {:?} -> {:?}",
             client_state.regen_buff, buff
         ),
+        GameEvent::PlayerEffectsChanged { effects } => debug!(
+            "client magic effects updated: {:?} -> {:?}",
+            client_state.active_effects, effects
+        ),
         GameEvent::PlayerStorageChanged { storage_slots } => info!(
             "client player storage updated: {} -> {}",
             client_state.player_storage_slots, storage_slots
@@ -940,4 +973,26 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
             ),
         },
     }
+}
+
+/// Returns `true` when the `current` set of magical effects differs from
+/// `prev` enough to warrant emitting `PlayerEffectsChanged`. Membership,
+/// magnitude (epsilon), and remaining-seconds-at-integer-resolution all count.
+fn effects_diff(prev: &[ClientActiveEffect], current: &[ClientActiveEffect]) -> bool {
+    if prev.len() != current.len() {
+        return true;
+    }
+    for next in current {
+        match prev.iter().find(|p| p.kind == next.kind) {
+            None => return true,
+            Some(p) => {
+                if (p.magnitude - next.magnitude).abs() > f32::EPSILON
+                    || p.remaining_seconds.floor() != next.remaining_seconds.floor()
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }

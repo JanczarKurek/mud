@@ -1,0 +1,11 @@
+name: Shield
+incantation: Aegis
+mana_cost: 8.0
+targeting: untargeted
+class_access: [Wizard]
+min_caster_level: 3
+effects:
+  buffs_self:
+    - kind: shield
+      magnitude: 4.0
+      seconds: 60.0

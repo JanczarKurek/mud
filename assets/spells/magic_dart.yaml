@@ -1,0 +1,9 @@
+name: Magic Dart
+incantation: Exori Min
+mana_cost: 4.0
+targeting: targeted
+range_tiles: 6
+class_access: [Wizard]
+min_caster_level: 1
+effects:
+  damage: 5.0
