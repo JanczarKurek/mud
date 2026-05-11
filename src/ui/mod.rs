@@ -167,7 +167,9 @@ impl Plugin for UiPlugin {
             )
             .add_systems(
                 Update,
-                handle_context_menu_actions.run_if(in_state(ClientAppState::InGame)),
+                handle_context_menu_actions
+                    .before(crate::game::CommandIntercept)
+                    .run_if(in_state(ClientAppState::InGame)),
             )
             .add_systems(
                 Update,

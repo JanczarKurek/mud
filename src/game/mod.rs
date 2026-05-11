@@ -88,6 +88,7 @@ impl Plugin for GameServerPlugin {
                 Update,
                 process_game_commands
                     .after(tick_player_movement_cooldowns)
+                    .after(CommandIntercept)
                     .run_if(simulation_active),
             )
             .add_systems(

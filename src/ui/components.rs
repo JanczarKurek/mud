@@ -293,6 +293,7 @@ pub struct TradeCancelButton;
 pub enum TradeButtonLabel {
     Ready,
     Confirm,
+    Cancel,
 }
 
 /// Outer root of the floating Trade popup window. Visibility is toggled by

@@ -122,6 +122,7 @@ pub fn sync_trade_panel_buttons(
                     "Confirm (locked)"
                 }
             }
+            TradeButtonLabel::Cancel => continue,
         };
         if text.0 != new {
             text.0 = new.to_owned();
@@ -289,7 +290,7 @@ fn spawn_trade_window(
                 theme,
                 palette,
                 "Cancel",
-                TradeButtonLabel::Confirm, // sync_trade_panel_buttons ignores Cancel
+                TradeButtonLabel::Cancel,
                 TradeCancelButton,
                 ButtonStyle::Danger,
             );
