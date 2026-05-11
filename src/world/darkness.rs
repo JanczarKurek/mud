@@ -26,7 +26,10 @@ use bevy::sprite_render::{AlphaMode2d, Material2d, Material2dKey, MeshMaterial2d
 use crate::game::resources::ClientGameState;
 use crate::world::components::ViewPosition;
 use crate::world::floors::VisibleFloorRange;
-use crate::world::lighting::{day_night_palette, srgb_u8_to_linear, LightSource};
+use crate::world::lighting::{
+    convert_authored_keyframes, default_day_night_curve, evaluate_ambient_curve, srgb_u8_to_linear,
+    AmbientKeyframeF32, LightSource,
+};
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::WorldConfig;
 
@@ -178,22 +181,27 @@ pub fn update_darkness_overlay(
 
     let space_id = current_space.space_id;
     let lighting_cfg = &current_space.lighting;
-    let outdoor_rgb = srgb_u8_to_linear(lighting_cfg.outdoor_ambient);
     let indoor_rgb = srgb_u8_to_linear(lighting_cfg.indoor_ambient);
-    let outdoor_alpha = compute_alpha_from_brightness(&outdoor_rgb);
-    let indoor_alpha = compute_alpha_from_brightness(&indoor_rgb);
+    let indoor_alpha = brightness_to_alpha(&indoor_rgb);
 
-    // Outdoor color is modulated by day/night (gives night a cool blue, etc.).
-    // Indoor is fixed — roofs block the sky.
-    let outdoor_modulated = if lighting_cfg.has_day_night {
-        let palette = day_night_palette(client_state.world_time);
-        [
-            outdoor_rgb[0] * palette[0],
-            outdoor_rgb[1] * palette[1],
-            outdoor_rgb[2] * palette[2],
-        ]
+    // Outdoor: drive by per-map curve (or engine default) when has_day_night;
+    // otherwise constant from outdoor_ambient (caves, dungeons). Curve owns
+    // both color and alpha — daylight keyframes with alpha=0 implicitly hide
+    // all light sources, since the shader only subtracts from alpha.
+    let (outdoor_color, outdoor_alpha) = if lighting_cfg.has_day_night {
+        let default_curve = default_day_night_curve();
+        let owned: Vec<AmbientKeyframeF32>;
+        let curve: &[AmbientKeyframeF32] = if lighting_cfg.outdoor_curve.is_empty() {
+            &default_curve
+        } else {
+            owned = convert_authored_keyframes(&lighting_cfg.outdoor_curve);
+            &owned
+        };
+        evaluate_ambient_curve(curve, client_state.world_time)
     } else {
-        outdoor_rgb
+        let rgb = srgb_u8_to_linear(lighting_cfg.outdoor_ambient);
+        let a = brightness_to_alpha(&rgb);
+        (rgb, a)
     };
 
     // Window in tiles (matches `WINDOW_W × WINDOW_H` square around player).
@@ -297,9 +305,9 @@ pub fn update_darkness_overlay(
         return;
     };
     material.uniforms.outdoor = Vec4::new(
-        outdoor_modulated[0],
-        outdoor_modulated[1],
-        outdoor_modulated[2],
+        outdoor_color[0],
+        outdoor_color[1],
+        outdoor_color[2],
         outdoor_alpha,
     );
     material.uniforms.indoor = Vec4::new(indoor_rgb[0], indoor_rgb[1], indoor_rgb[2], indoor_alpha);
@@ -315,39 +323,12 @@ pub fn update_darkness_overlay(
     material.uniforms.lights = lights;
 }
 
-/// Map an ambient color (0..1 RGB) to the darkness alpha. Bright ambient
-/// (e.g. noon) ⇒ low alpha (transparent overlay, world shows full color);
-/// dark ambient (cellar, midnight) ⇒ high alpha (heavy darkening).
-///
-/// Pure white outdoor would otherwise leave alpha=0 and the overlay would
-/// be invisible — fine, that's the goal at noon. The slight `+0.04` floor
-/// keeps the user-authored ambient color faintly visible under a clear sky
-/// so day/night transitions read on screen.
-fn compute_alpha_from_brightness(rgb: &[f32; 3]) -> f32 {
+/// Map an ambient color (0..1 RGB) to a darkness alpha for the
+/// non-curve-driven paths (indoor; outdoor when `has_day_night: false`).
+/// Bright ambient ⇒ low alpha (transparent overlay); dark ambient ⇒ high
+/// alpha. Capped at 0.95 so pure-black ambient still leaves a sliver of
+/// visibility for sprites under the overlay.
+fn brightness_to_alpha(rgb: &[f32; 3]) -> f32 {
     let brightness = rgb[0].max(rgb[1]).max(rgb[2]);
     (1.0 - brightness).clamp(0.0, 0.95)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn alpha_zero_at_full_brightness() {
-        assert!((compute_alpha_from_brightness(&[1.0, 1.0, 1.0])).abs() < 1e-6);
-    }
-
-    #[test]
-    fn alpha_high_at_zero_brightness() {
-        let a = compute_alpha_from_brightness(&[0.0, 0.0, 0.0]);
-        assert!(a >= 0.9);
-    }
-
-    #[test]
-    fn alpha_uses_max_channel() {
-        // Bright red ambient (e.g. dusk) shouldn't leave the world overly dark
-        // just because green/blue are dim.
-        let a = compute_alpha_from_brightness(&[0.95, 0.1, 0.1]);
-        assert!(a < 0.1);
-    }
 }

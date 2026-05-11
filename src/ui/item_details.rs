@@ -19,6 +19,7 @@ use crate::ui::components::ItemSlotKind;
 use crate::ui::movable_window::{
     find_window_by_id, spawn_movable_window, spawn_movable_window_close_button, MovableWindow,
     MovableWindowContent, MovableWindowDrag, MovableWindowId, MOVABLE_WINDOW_CASCADE_PX,
+    MOVABLE_WINDOW_DEFAULT_MIN_SIZE,
 };
 use crate::ui::resources::DockedPanelState;
 use crate::ui::theme::{Palette, UiThemeAssets};
@@ -119,6 +120,7 @@ fn handle_pending_item_details_opens(
             &title,
             ITEM_DETAILS_SIZE,
             initial_pos,
+            MOVABLE_WINDOW_DEFAULT_MIN_SIZE,
         );
 
         let root = spawned.root;

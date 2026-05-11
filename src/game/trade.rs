@@ -157,24 +157,26 @@ impl ActiveTrades {
     /// Find the active session containing `player_id` (each player can be in
     /// at most one trade) plus which side they sit on.
     pub fn find_for_player(&self, player_id: PlayerId) -> Option<(TradeSessionId, Side)> {
-        self.sessions.iter().find_map(|(id, session)| match session.participants {
-            TradeParticipants::PlayerToPlayer { a, b } => {
-                if a == player_id {
-                    Some((*id, Side::A))
-                } else if b == player_id {
-                    Some((*id, Side::B))
-                } else {
-                    None
+        self.sessions
+            .iter()
+            .find_map(|(id, session)| match session.participants {
+                TradeParticipants::PlayerToPlayer { a, b } => {
+                    if a == player_id {
+                        Some((*id, Side::A))
+                    } else if b == player_id {
+                        Some((*id, Side::B))
+                    } else {
+                        None
+                    }
                 }
-            }
-            TradeParticipants::PlayerToShop { player, .. } => {
-                if player == player_id {
-                    Some((*id, Side::A))
-                } else {
-                    None
+                TradeParticipants::PlayerToShop { player, .. } => {
+                    if player == player_id {
+                        Some((*id, Side::A))
+                    } else {
+                        None
+                    }
                 }
-            }
-        })
+            })
     }
 
     pub fn remove(&mut self, session_id: TradeSessionId) -> Option<TradeSession> {
@@ -325,10 +327,7 @@ impl TradeSession {
 pub fn cleanup_invalid_trades(
     mut active_trades: ResMut<ActiveTrades>,
     mut ui_events: ResMut<PendingGameUiEvents>,
-    player_position_query: Query<
-        (&PlayerIdentity, &SpaceResident, &TilePosition),
-        With<Player>,
-    >,
+    player_position_query: Query<(&PlayerIdentity, &SpaceResident, &TilePosition), With<Player>>,
     shopkeeper_query: Query<
         (&OverworldObject, &SpaceResident, &TilePosition),
         (With<Shopkeeper>, Without<Player>),
@@ -452,7 +451,12 @@ pub fn process_trade_commands(
     definitions: Res<OverworldObjectDefinitions>,
     mut player_queries: ParamSet<(
         Query<
-            (&PlayerIdentity, &SpaceResident, &TilePosition, &OverworldObject),
+            (
+                &PlayerIdentity,
+                &SpaceResident,
+                &TilePosition,
+                &OverworldObject,
+            ),
             With<Player>,
         >,
         Query<
@@ -586,7 +590,12 @@ fn handle_initiate_trade(
     active_trades: &mut ActiveTrades,
     ui_events: &mut PendingGameUiEvents,
     player_position_query: &Query<
-        (&PlayerIdentity, &SpaceResident, &TilePosition, &OverworldObject),
+        (
+            &PlayerIdentity,
+            &SpaceResident,
+            &TilePosition,
+            &OverworldObject,
+        ),
         With<Player>,
     >,
     shopkeeper_query: &Query<
@@ -615,9 +624,11 @@ fn handle_initiate_trade(
         TradeTarget::Player {
             object_id: target_object_id,
         } => {
-            let target = player_position_query.iter().find(|(_, resident, _, object)| {
-                resident.space_id == acting_space && object.object_id == target_object_id
-            });
+            let target = player_position_query
+                .iter()
+                .find(|(_, resident, _, object)| {
+                    resident.space_id == acting_space && object.object_id == target_object_id
+                });
             let Some((target_identity, _, target_tile, _)) = target else {
                 bevy::log::debug!(
                     "InitiateTrade: target object {target_object_id} is not a player in this space"
@@ -665,11 +676,9 @@ fn handle_initiate_trade(
         TradeTarget::Shopkeeper {
             object_id: shop_object_id,
         } => {
-            let shopkeeper = shopkeeper_query
-                .iter()
-                .find(|(object, resident, _)| {
-                    resident.space_id == acting_space && object.object_id == shop_object_id
-                });
+            let shopkeeper = shopkeeper_query.iter().find(|(object, resident, _)| {
+                resident.space_id == acting_space && object.object_id == shop_object_id
+            });
             let Some((_, _, shop_tile)) = shopkeeper else {
                 bevy::log::debug!(
                     "InitiateTrade: target object {shop_object_id} is not a shopkeeper"
@@ -748,8 +757,7 @@ fn handle_offer_trade_item(
     let Ok((_, _, inventory, _, _, _, _, _, _)) = player_inventory_query.get(player_entity) else {
         return;
     };
-    let Some((type_id, properties, available)) =
-        read_player_slot(&source, inventory, definitions)
+    let Some((type_id, properties, available)) = read_player_slot(&source, inventory, definitions)
     else {
         return;
     };
@@ -996,9 +1004,7 @@ fn handle_browse_shop_buy(
         .offers_b
         .iter()
         .filter_map(|entry| match entry.source {
-            OfferSource::Stockpile { ware_index: idx } if idx == ware_index => {
-                Some(entry.quantity)
-            }
+            OfferSource::Stockpile { ware_index: idx } if idx == ware_index => Some(entry.quantity),
             _ => None,
         })
         .sum();
@@ -1125,8 +1131,8 @@ fn commit_player_to_shop_trade(
                 return false;
             }
         }
-        total_owed_copper = total_owed_copper
-            .saturating_add(entry.price_copper.saturating_mul(offer.quantity));
+        total_owed_copper =
+            total_owed_copper.saturating_add(entry.price_copper.saturating_mul(offer.quantity));
     }
 
     // Sum the coin value the player is offering. Non-coin items in offers_a
@@ -1145,9 +1151,7 @@ fn commit_player_to_shop_trade(
 
     if total_offered_copper < total_owed_copper {
         let shortfall = total_owed_copper - total_offered_copper;
-        if let Ok((_, _, _, mut chat_log, _, _, _, _, _)) =
-            player_inventory_query.get_mut(entity)
-        {
+        if let Ok((_, _, _, mut chat_log, _, _, _, _, _)) = player_inventory_query.get_mut(entity) {
             chat_log.push_narrator(&format!(
                 "The merchant frowns. \"Short by {} — bring more coin.\"",
                 format_copper(shortfall)
@@ -1258,7 +1262,11 @@ fn read_player_slot(
     match slot {
         ItemSlotRef::Backpack(idx) => {
             let stack = inventory.backpack_slots.get(*idx)?.as_ref()?;
-            Some((stack.type_id.clone(), stack.properties.clone(), stack.quantity))
+            Some((
+                stack.type_id.clone(),
+                stack.properties.clone(),
+                stack.quantity,
+            ))
         }
         ItemSlotRef::Equipment(equipment_slot) => {
             let item = inventory.equipment_item(*equipment_slot)?;
@@ -1400,7 +1408,8 @@ fn validate_offers_against(
             continue;
         };
         *required.entry(*slot).or_insert(0) += offer.quantity;
-        let Some((type_id, _properties, available)) = read_player_slot(slot, inventory, definitions)
+        let Some((type_id, _properties, available)) =
+            read_player_slot(slot, inventory, definitions)
         else {
             return false;
         };
@@ -1414,10 +1423,7 @@ fn validate_offers_against(
     true
 }
 
-fn remove_offered_from(
-    offers: &[TradeOfferEntry],
-    inventory: &mut InventoryState,
-) -> bool {
+fn remove_offered_from(offers: &[TradeOfferEntry], inventory: &mut InventoryState) -> bool {
     for offer in offers {
         let OfferSource::PlayerSlot(slot) = &offer.source else {
             // Stockpile-sourced offers don't come out of any inventory; the
@@ -1431,11 +1437,7 @@ fn remove_offered_from(
     true
 }
 
-fn decrement_player_slot(
-    slot: &ItemSlotRef,
-    amount: u32,
-    inventory: &mut InventoryState,
-) -> bool {
+fn decrement_player_slot(slot: &ItemSlotRef, amount: u32, inventory: &mut InventoryState) -> bool {
     match slot {
         ItemSlotRef::Backpack(idx) => {
             let Some(slot) = inventory.backpack_slots.get_mut(*idx) else {
@@ -1577,11 +1579,8 @@ fn insert_one_offer(
         {
             return false;
         }
-        let mut new_stack = InventoryStack::item(
-            offer.type_id.clone(),
-            offer.properties.clone(),
-            take,
-        );
+        let mut new_stack =
+            InventoryStack::item(offer.type_id.clone(), offer.properties.clone(), take);
         if let Some(capacity) = definition.container_capacity {
             new_stack.contained_slots = Some(vec![None; capacity]);
         }

@@ -810,9 +810,10 @@ const fn default_persistent_permanence() -> SpacePermanence {
 }
 
 /// Per-space ambient lighting and day/night flag. Outdoor ambient is
-/// modulated by the world clock when `has_day_night` is true; indoor
-/// ambient is constant. Defaults are tuned for an outdoor map at noon.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+/// driven by `outdoor_curve` (or the engine default curve when empty) when
+/// `has_day_night` is true; otherwise it's the constant `outdoor_ambient`.
+/// Indoor ambient is always constant — roofs block the sky.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct SpaceLightingDef {
     #[serde(default = "default_outdoor_ambient")]
@@ -821,6 +822,20 @@ pub struct SpaceLightingDef {
     pub indoor_ambient: [u8; 3],
     #[serde(default = "default_has_day_night")]
     pub has_day_night: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub outdoor_curve: Vec<AmbientKeyframe>,
+}
+
+/// Day/night curve keyframe. `time` is normalized world-clock position
+/// (0.0 = midnight, 0.5 = noon, cyclic). `color` is the ambient tint in
+/// sRGB bytes; `alpha` is the darkness overlay opacity at this time
+/// (0.0 = transparent — daylight; 1.0 = pitch black).
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct AmbientKeyframe {
+    pub time: f32,
+    pub color: [u8; 3],
+    pub alpha: f32,
 }
 
 impl Default for SpaceLightingDef {
@@ -829,6 +844,7 @@ impl Default for SpaceLightingDef {
             outdoor_ambient: default_outdoor_ambient(),
             indoor_ambient: default_indoor_ambient(),
             has_day_night: default_has_day_night(),
+            outdoor_curve: Vec::new(),
         }
     }
 }

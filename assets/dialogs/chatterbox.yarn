@@ -1,0 +1,41 @@
+title: ChatterboxLoop
+---
+<<declare $chatter_count = 0>>
+<<set $chatter_count to $chatter_count + 1>>
+Chatterbox: Welcome back, friend. We have now spoken {$chatter_count} times.
+Chatterbox: Plenty more where that came from. Pick a topic.
+-> Tell me a tall tale.
+    Chatterbox: Once upon a time, far past the western fence,
+    Chatterbox: a goblin tried to wear a crown of carrots.
+    Chatterbox: The carrots, alas, attracted a very confused rabbit.
+    Chatterbox: The rabbit became king of the goblins for one full afternoon.
+    Chatterbox: To this day, no goblin will eat a carrot raw.
+    <<jump ChatterboxLoop>>
+-> What is the weather like today?
+    Chatterbox: Today? Clear skies, mild breeze, the works.
+    Chatterbox: Yesterday? Also clear skies. The day before? Same.
+    Chatterbox: We are, statistically speaking, on quite a streak.
+    Chatterbox: The clouds, if any, are off elsewhere being clouds.
+    <<jump ChatterboxLoop>>
+-> Recite me a short poem.
+    Chatterbox: The torch flickers low,
+    Chatterbox: the rats scurry through the dark,
+    Chatterbox: and yet, here we are.
+    Chatterbox: A haiku, technically. I checked the syllables twice.
+    <<jump ChatterboxLoop>>
+-> Tell me about the rats again.
+    Chatterbox: Rats! Always three of them! Down south! Always three!
+    Chatterbox: I am not entirely sure if it is the same three each week.
+    Chatterbox: One suspects rats. Many suspect rats. Few are certain.
+    <<jump ChatterboxLoop>>
+-> Just keep talking. Anything.
+    Chatterbox: Anything? Anything is a tall order.
+    Chatterbox: Did you know that a torch left burning long enough becomes,
+    Chatterbox: in the eyes of a passing moth, a brief and personal sun?
+    Chatterbox: I think about that a lot. Moths and their suns.
+    Chatterbox: Also: bread tastes better toasted. That is just a fact.
+    Chatterbox: I could go on. I am, in fact, going on.
+    <<jump ChatterboxLoop>>
+-> Farewell.
+    Chatterbox: Until next time. Do mind the carrot-crowned goblins.
+===

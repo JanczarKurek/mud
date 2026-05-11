@@ -32,11 +32,20 @@ pub enum MovableWindowId {
     /// `ClientGameState.current_trade` becomes `Some`, despawned when it
     /// returns to `None`.
     Trade,
+    /// The (singleton) active NPC dialog window. Lifecycle: spawned when
+    /// `ActiveDialogState.session_id` becomes `Some`, despawned when it
+    /// returns to `None`.
+    Dialog,
+    /// Time-of-day detail popup. Toggled by the HUD time button; carries a
+    /// clock readout, full-circle orbit visualization, and flavor text.
+    TimeOfDay,
 }
 
 #[derive(Component)]
 pub struct MovableWindow {
     pub id: MovableWindowId,
+    /// Lower bound enforced by the shared bottom-right resize handle.
+    pub min_size: Vec2,
 }
 
 /// Marker on the title-bar node inside a window. `owner` points at the
@@ -60,6 +69,15 @@ pub struct MovableWindowContent {
     pub owner: Entity,
 }
 
+/// Marker on the small bottom-right grab patch that resizes the window.
+/// Auto-spawned by [`spawn_movable_window`] so every popup gets resize for
+/// free; `owner` points at the window root so the resize system can update
+/// its `Node` size without walking the hierarchy.
+#[derive(Component)]
+pub struct MovableWindowResizeHandle {
+    pub owner: Entity,
+}
+
 #[derive(Resource, Default)]
 pub struct MovableWindowDrag {
     /// `(window root entity, cursor → window-top-left offset)`. `None` when
@@ -69,19 +87,29 @@ pub struct MovableWindowDrag {
     pub focused: Option<Entity>,
 }
 
+#[derive(Resource, Default)]
+pub struct MovableWindowResize {
+    /// Window currently being resized via its bottom-right handle.
+    pub active: Option<Entity>,
+}
+
 pub const MOVABLE_WINDOW_Z_BASE: i32 = i32::MAX - 20;
 pub const MOVABLE_WINDOW_Z_FOCUSED: i32 = i32::MAX - 11;
 pub const MOVABLE_WINDOW_CASCADE_PX: f32 = 32.0;
+pub const MOVABLE_WINDOW_RESIZE_HANDLE_PX: f32 = 14.0;
+pub const MOVABLE_WINDOW_DEFAULT_MIN_SIZE: Vec2 = Vec2::new(220.0, 160.0);
 
 pub struct MovableWindowPlugin;
 
 impl Plugin for MovableWindowPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(MovableWindowDrag::default())
+            .insert_resource(MovableWindowResize::default())
             .add_systems(
                 Update,
                 (
-                    handle_movable_window_drag,
+                    handle_movable_window_resize,
+                    handle_movable_window_drag.after(handle_movable_window_resize),
                     handle_movable_window_close,
                     apply_movable_window_focus_z_index.after(handle_movable_window_drag),
                 )
@@ -112,10 +140,15 @@ pub struct MovableWindowEntities {
 }
 
 /// Spawn a bare movable window: root with the panel-frame background, a
-/// draggable title bar with the title text, and an empty body. Does **not**
+/// draggable title bar with the title text, an empty body, and an
+/// auto-spawned resize handle in the bottom-right corner. Does **not**
 /// spawn a close button — call [`spawn_movable_window_close_button`] from
 /// the consumer if the standard close-X is desired, or build a custom one
 /// (e.g. trade's CancelTrade-emitting button).
+///
+/// `min_size` is the floor enforced by the shared resize system; pass
+/// [`MOVABLE_WINDOW_DEFAULT_MIN_SIZE`] if no per-window minimum is needed.
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_movable_window(
     commands: &mut Commands,
     theme: &UiThemeAssets,
@@ -124,16 +157,18 @@ pub fn spawn_movable_window(
     title: &str,
     size: Vec2,
     initial_pos: Vec2,
+    min_size: Vec2,
 ) -> MovableWindowEntities {
+    let clamped_size = size.max(min_size);
     let root = commands
         .spawn((
-            MovableWindow { id },
+            MovableWindow { id, min_size },
             Node {
                 position_type: PositionType::Absolute,
                 left: px(initial_pos.x),
                 top: px(initial_pos.y),
-                width: px(size.x.max(1.0)),
-                height: px(size.y.max(1.0)),
+                width: px(clamped_size.x.max(1.0)),
+                height: px(clamped_size.y.max(1.0)),
                 flex_direction: FlexDirection::Column,
                 border: UiRect::all(px(1.0)),
                 ..default()
@@ -193,7 +228,24 @@ pub fn spawn_movable_window(
         ))
         .id();
 
-    commands.entity(root).add_children(&[title_bar, body]);
+    let resize_handle = commands
+        .spawn((
+            MovableWindowResizeHandle { owner: root },
+            Node {
+                position_type: PositionType::Absolute,
+                right: px(0.0),
+                bottom: px(0.0),
+                width: px(MOVABLE_WINDOW_RESIZE_HANDLE_PX),
+                height: px(MOVABLE_WINDOW_RESIZE_HANDLE_PX),
+                ..default()
+            },
+            BackgroundColor(palette.border_accent),
+        ))
+        .id();
+
+    commands
+        .entity(root)
+        .add_children(&[title_bar, body, resize_handle]);
 
     MovableWindowEntities {
         root,
@@ -242,15 +294,88 @@ pub fn spawn_movable_window_close_button(
         });
 }
 
+fn handle_movable_window_resize(
+    mouse_input: Res<ButtonInput<MouseButton>>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    mut resize: ResMut<MovableWindowResize>,
+    mut drag: ResMut<MovableWindowDrag>,
+    handle_query: Query<(
+        &MovableWindowResizeHandle,
+        &ComputedNode,
+        &UiGlobalTransform,
+    )>,
+    movable_query: Query<&MovableWindow>,
+    mut node_query: Query<&mut Node, With<MovableWindow>>,
+) {
+    let Ok(window) = window_query.single() else {
+        return;
+    };
+    let Some(cursor) = window.cursor_position() else {
+        if resize.active.is_some() {
+            resize.active = None;
+        }
+        return;
+    };
+
+    if !mouse_input.pressed(MouseButton::Left) {
+        if resize.active.is_some() {
+            resize.active = None;
+        }
+        return;
+    }
+
+    if mouse_input.just_pressed(MouseButton::Left) && resize.active.is_none() {
+        for (handle, computed, transform) in &handle_query {
+            if point_in_node(cursor, computed, transform) {
+                resize.active = Some(handle.owner);
+                drag.focused = Some(handle.owner);
+                break;
+            }
+        }
+    }
+
+    if let Some(entity) = resize.active {
+        let Ok(window_marker) = movable_query.get(entity) else {
+            resize.active = None;
+            return;
+        };
+        let min_size = window_marker.min_size;
+        if let Ok(mut node) = node_query.get_mut(entity) {
+            let top_left = Vec2::new(val_to_px(node.left), val_to_px(node.top));
+            let new_size = (cursor - top_left).max(min_size).max(Vec2::splat(1.0));
+            let target_w = px(new_size.x);
+            let target_h = px(new_size.y);
+            if node.width != target_w {
+                node.width = target_w;
+            }
+            if node.height != target_h {
+                node.height = target_h;
+            }
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn handle_movable_window_drag(
     mouse_input: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
+    resize: Res<MovableWindowResize>,
     mut drag: ResMut<MovableWindowDrag>,
     title_query: Query<(&MovableWindowTitleBar, &ComputedNode, &UiGlobalTransform)>,
     button_query: Query<(&ComputedNode, &UiGlobalTransform, Option<&Visibility>), With<Button>>,
+    handle_query: Query<(&ComputedNode, &UiGlobalTransform), With<MovableWindowResizeHandle>>,
     window_box_query: Query<(Entity, &ComputedNode, &UiGlobalTransform), With<MovableWindow>>,
     mut node_query: Query<&mut Node, With<MovableWindow>>,
 ) {
+    if resize.active.is_some() {
+        // A resize is in progress; never start a drag while the user is
+        // pulling a handle.
+        if drag.dragging.is_some() {
+            drag.dragging = None;
+        }
+        return;
+    }
+
     let Ok(window) = window_query.single() else {
         return;
     };
@@ -269,6 +394,14 @@ fn handle_movable_window_drag(
     }
 
     if mouse_input.just_pressed(MouseButton::Left) {
+        // Mouse-down on a resize handle is owned by the resize system —
+        // don't also focus / drag-start from it.
+        let on_resize_handle = handle_query
+            .iter()
+            .any(|(node, transform)| point_in_node(cursor, node, transform));
+        if on_resize_handle {
+            return;
+        }
         // Any visible button under the cursor short-circuits drag-start so
         // that close buttons, footer actions, etc. always win over the
         // title-bar grab. The button itself handles the press via its own

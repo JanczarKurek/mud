@@ -19,8 +19,8 @@ use crate::game::resources::{ClientGameState, PendingGameCommands};
 use crate::game::trade::{ClientTradeView, TradeOfferEntry, WareView};
 use crate::ui::components::{
     ItemSlotButton, ItemSlotKind, TradeButtonLabel, TradeCancelButton, TradeColumn,
-    TradeConfirmButton, TradePartnerLabel, TradePopupCloseButton, TradePopupResizeHandle,
-    TradePopupRoot, TradeReadyButton, TradeSlotButton,
+    TradeConfirmButton, TradePartnerLabel, TradePopupCloseButton, TradePopupRoot, TradeReadyButton,
+    TradeSlotButton,
 };
 use crate::ui::movable_window::{
     spawn_movable_window, val_to_px, MovableWindowDrag, MovableWindowId,
@@ -169,7 +169,6 @@ pub fn sync_trade_window_lifecycle(
             if drag.dragging.is_some_and(|(e, _)| e == root) {
                 drag.dragging = None;
             }
-            state.resizing = false;
         }
         (true, Some((_, node))) => {
             // Cache position/size each frame so an external despawn (e.g.
@@ -203,6 +202,7 @@ fn spawn_trade_window(
         "Trade",
         size,
         position,
+        crate::ui::resources::TradePopupState::MIN_SIZE,
     );
 
     commands.entity(spawned.root).insert(TradePopupRoot);
@@ -247,7 +247,12 @@ fn spawn_trade_window(
             BackgroundColor(Color::NONE),
         ))
         .with_children(|columns| {
-            crate::ui::setup::spawn_trade_column(columns, palette, "Merchant", TradeColumn::Merchant);
+            crate::ui::setup::spawn_trade_column(
+                columns,
+                palette,
+                "Merchant",
+                TradeColumn::Merchant,
+            );
             crate::ui::setup::spawn_trade_column(columns, palette, "Them", TradeColumn::Them);
             crate::ui::setup::spawn_trade_column(columns, palette, "Us", TradeColumn::Us);
         });
@@ -295,73 +300,9 @@ fn spawn_trade_window(
                 ButtonStyle::Danger,
             );
         });
-
-        root.spawn((
-            TradePopupResizeHandle,
-            Node {
-                position_type: PositionType::Absolute,
-                right: px(0.0),
-                bottom: px(0.0),
-                width: px(14.0),
-                height: px(14.0),
-                ..default()
-            },
-            BackgroundColor(palette.border_accent),
-        ));
     });
 
     spawned.root
-}
-
-pub fn handle_trade_popup_resize(
-    mouse_input: Res<ButtonInput<MouseButton>>,
-    window_query: Query<&Window, With<PrimaryWindow>>,
-    mut state: ResMut<TradePopupState>,
-    handle_query: Query<(&ComputedNode, &UiGlobalTransform), With<TradePopupResizeHandle>>,
-    mut popup_query: Query<&mut Node, With<TradePopupRoot>>,
-) {
-    if state.session_id.is_none() {
-        if state.resizing {
-            state.resizing = false;
-        }
-        return;
-    }
-    let Ok(window) = window_query.single() else {
-        return;
-    };
-    let Some(cursor) = window.cursor_position() else {
-        return;
-    };
-
-    if !mouse_input.pressed(MouseButton::Left) {
-        if state.resizing {
-            state.resizing = false;
-        }
-        return;
-    }
-
-    if mouse_input.just_pressed(MouseButton::Left) {
-        if let Ok((node, transform)) = handle_query.single() {
-            if point_in_ui_node(cursor, node, transform) {
-                state.resizing = true;
-            }
-        }
-    }
-
-    if state.resizing {
-        if let Ok(mut node) = popup_query.single_mut() {
-            let pos = Vec2::new(val_to_px(node.left), val_to_px(node.top));
-            let new_size = (cursor - pos).max(TradePopupState::MIN_SIZE);
-            let target_w = px(new_size.x);
-            let target_h = px(new_size.y);
-            if node.width != target_w {
-                node.width = target_w;
-            }
-            if node.height != target_h {
-                node.height = target_h;
-            }
-        }
-    }
 }
 
 pub fn handle_trade_popup_close_click(
@@ -414,11 +355,8 @@ pub fn sync_trade_panel_rows(
     };
 
     for (entity, column) in &column_query {
-        let (cached, current, items): (
-            &mut Option<String>,
-            &str,
-            ColumnContent<'_>,
-        ) = match column {
+        let (cached, current, items): (&mut Option<String>, &str, ColumnContent<'_>) = match column
+        {
             TradeColumn::Merchant => (
                 &mut render_state.merchant,
                 merchant_sig.as_str(),
@@ -565,10 +503,7 @@ fn format_ware_label(ware: &WareView, definitions: &OverworldObjectDefinitions) 
     format!("{}  {}{}", display, price, stock)
 }
 
-fn format_offer_label(
-    entry: &TradeOfferEntry,
-    definitions: &OverworldObjectDefinitions,
-) -> String {
+fn format_offer_label(entry: &TradeOfferEntry, definitions: &OverworldObjectDefinitions) -> String {
     let display = definitions
         .get(&entry.type_id)
         .map(|def| def.name.clone())

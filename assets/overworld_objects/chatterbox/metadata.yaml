@@ -1,0 +1,7 @@
+extends: npc
+name: Chatterbox
+description: A bard who never runs out of things to say. Useful for stress-testing the dialog window.
+dialog_node: ChatterboxLoop
+render:
+  sprite_path: overworld_objects/player/sprite.png
+  rotation_by_facing: true

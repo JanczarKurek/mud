@@ -3,6 +3,26 @@ width: 70
 height: 50
 fill_floor_type: grass
 permanence: persistent
+lighting:
+  outdoor_curve:
+    - time: 0.0
+      color: [0, 0, 0]
+      alpha: 0.99
+    - time: 0.2
+      color: [0, 0, 0]
+      alpha: 0.98
+    - time: 0.3
+      color: [0, 0, 0]
+      alpha: 0.0
+    - time: 0.7
+      color: [0, 0, 0]
+      alpha: 0.0
+    - time: 0.8
+      color: [0, 0, 0]
+      alpha: 0.98
+    - time: 1.0
+      color: [0, 0, 0]
+      alpha: 0.99
 portals:
 - id: starter_cellar_entrance
   source:
@@ -2983,6 +3003,10 @@ objects:
   placement:
   - x: 58
     y: 42
+- type: chatterbox
+  placement:
+    x: 37
+    y: 25
 - type: villager
   placement:
     x: 20

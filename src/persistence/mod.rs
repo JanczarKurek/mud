@@ -25,6 +25,7 @@ use crate::world::components::{
 };
 use crate::world::floor_definitions::FloorTypeId;
 use crate::world::floor_map::{FloorMap, FloorMaps};
+use crate::world::lighting::WorldClock;
 use crate::world::loot::CorpseTtl;
 use crate::world::map_layout::ObjectProperties;
 use crate::world::map_layout::{SpaceDefinitions, SpacePermanence};
@@ -95,6 +96,15 @@ pub struct WorldStateDump {
     /// component which `bootstrap_spawn_groups` reads to rebuild membership.
     #[serde(default)]
     pub spawn_groups: Vec<SpawnGroupRuntimeDump>,
+    /// Persisted in-game world clock in `[0, 1)`. Defaults to noon (0.5)
+    /// for snapshots written before this field existed, matching the
+    /// previous boot-time value.
+    #[serde(default = "default_world_time")]
+    pub world_time: f32,
+}
+
+fn default_world_time() -> f32 {
+    0.5
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -301,6 +311,7 @@ fn save_world_on_app_exit(
     floor_maps: Res<FloorMaps>,
     object_registry: Res<ObjectRegistry>,
     tcp_server_state: Option<Res<TcpServerState>>,
+    world_clock: Res<WorldClock>,
     world_object_query: Query<
         (
             Entity,
@@ -500,6 +511,7 @@ fn save_world_on_app_exit(
         world_objects,
         floor_maps: floor_map_dumps,
         spawn_groups: spawn_group_dumps,
+        world_time: world_clock.time_of_day,
     };
 
     if let Err(error) = write_world_dump(&save_config.path, &dump) {
@@ -525,6 +537,7 @@ fn load_world_from_snapshot(
     mut tcp_server_state: Option<ResMut<TcpServerState>>,
     object_definitions: Res<crate::world::object_definitions::OverworldObjectDefinitions>,
     mut pending_spawn_groups: ResMut<PendingSpawnGroupDumps>,
+    mut world_clock: ResMut<WorldClock>,
 ) {
     let dump = match read_world_dump(&save_config.path) {
         Ok(dump) => dump,
@@ -561,8 +574,12 @@ fn load_world_from_snapshot(
         world_objects,
         floor_maps: dump_floor_maps,
         spawn_groups: dump_spawn_groups,
+        world_time: dump_world_time,
         ..
     } = dump;
+
+    world_clock.time_of_day = dump_world_time.rem_euclid(1.0);
+    world_clock.seconds_since_emit = 0.0;
 
     let legacy_fill_floor_type = dump_map_layout
         .as_ref()
@@ -583,7 +600,7 @@ fn load_world_from_snapshot(
             fill_floor_type: legacy_fill_floor_type.clone(),
             permanence: SpacePermanence::Persistent,
             instance_owner: None,
-            lighting: bootstrap_definition.lighting,
+            lighting: bootstrap_definition.lighting.clone(),
         });
     } else {
         let max_space_id = dump_spaces
@@ -598,7 +615,7 @@ fn load_world_from_snapshot(
             // means edits to a space's lighting block take effect on next load.
             let lighting = authored_spaces
                 .get(&dump_space.authored_id)
-                .map(|def| def.lighting)
+                .map(|def| def.lighting.clone())
                 .unwrap_or_default();
             space_manager.insert_space(RuntimeSpace {
                 id: dump_space.id,
@@ -1021,6 +1038,7 @@ mod tests {
             }],
             floor_maps: vec![],
             spawn_groups: vec![],
+            world_time: 0.25,
         };
         write_world_dump(&save_path, &dump).unwrap();
 

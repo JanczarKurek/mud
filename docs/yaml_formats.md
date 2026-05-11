@@ -93,27 +93,56 @@ floors:
 ### `lighting`
 - Type: mapping
 - Optional: yes (defaults to outdoor-bright with day/night enabled)
-- Meaning: per-space ambient lighting and day/night flag, consumed by the
-  client lighting system (`src/world/lighting.rs`). Light tints sprites
-  multiplicatively; alpha is owned by the floor-dim pass and is orthogonal.
+- Meaning: per-space ambient lighting consumed by the client darkness
+  overlay (`src/world/darkness.rs`). The overlay draws a single fullscreen
+  quad whose color is the ambient tint and whose alpha is "how dark is
+  this pixel". Light sources subtract from the alpha to carve visibility
+  holes; they never add color. When the curve sets alpha to 0 (daylight),
+  light sources are implicitly invisible.
 - Subfields:
-  - `outdoor_ambient`: `[r, g, b]` u8 — base color for tiles **not** under a
-    roof. Multiplied by a day/night palette when `has_day_night: true`.
-    Default: `[220, 220, 230]`.
   - `indoor_ambient`: `[r, g, b]` u8 — base color for tiles whose `(x, y, z+1)`
-    has an `occludes_floor_above` object (i.e. covered by a roof). Constant.
+    has an `occludes_floor_above` object (covered by a roof). Constant;
+    not affected by the world clock. Alpha is derived from brightness.
     Default: `[55, 50, 60]`.
-  - `has_day_night`: bool — when true, `outdoor_ambient` is modulated by the
-    server-replicated world clock (one in-game day per ~20 real minutes).
-    Default: `true`.
+  - `outdoor_ambient`: `[r, g, b]` u8 — constant outdoor color used when
+    `has_day_night: false`. Ignored when `has_day_night: true` (the curve
+    drives both color and alpha in that case). Default: `[220, 220, 230]`.
+  - `has_day_night`: bool — when true, outdoor lighting is driven by
+    `outdoor_curve`. When false, outdoor uses the constant
+    `outdoor_ambient` (caves, dungeons). Default: `true`.
+  - `outdoor_curve`: list of keyframes — per-map day/night cycle.
+    Optional; empty (the default) means "use the engine's built-in curve",
+    which is bright at midday (alpha 0) with deep-blue navigable darkness
+    at midnight. Each keyframe has:
+    - `time`: f32 in `[0.0, 1.0]` — 0.0 is midnight, 0.5 is noon.
+    - `color`: `[r, g, b]` u8 — ambient tint at this time.
+    - `alpha`: f32 in `[0.0, 1.0]` — darkness overlay opacity. 0.0 means
+      "completely transparent" (lights invisible — that's how daytime
+      suppresses torches).
+    Values are linearly interpolated; the curve is cyclic (the last
+    keyframe wraps back to the first). Keyframes don't need to be sorted
+    — they're sorted by `time` at load time.
 
-Example (uniformly dim cave):
+Example (uniformly dim cave; no day/night):
 
 ```yaml
 lighting:
   outdoor_ambient: [60, 55, 55]
   indoor_ambient: [50, 45, 45]
   has_day_night: false
+```
+
+Example (custom outdoor curve — warm bright noon, brief twilight):
+
+```yaml
+lighting:
+  indoor_ambient: [55, 50, 60]
+  has_day_night: true
+  outdoor_curve:
+    - { time: 0.0,  color: [40, 50, 100],  alpha: 0.7 }
+    - { time: 0.25, color: [40, 50, 100],  alpha: 0.7 }
+    - { time: 0.5,  color: [255, 250, 230], alpha: 0.0 }
+    - { time: 0.75, color: [40, 50, 100],  alpha: 0.7 }
 ```
 
 ### `portals`

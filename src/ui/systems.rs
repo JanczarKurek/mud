@@ -1237,10 +1237,7 @@ pub fn sync_context_menu_trade_button(
 pub fn sync_context_menu_offer_to_trade_button(
     context_menu_state: Res<ContextMenuState>,
     trade_popup_state: Res<crate::ui::resources::TradePopupState>,
-    mut button_query: Query<
-        &mut Node,
-        With<crate::ui::components::ContextMenuOfferToTradeButton>,
-    >,
+    mut button_query: Query<&mut Node, With<crate::ui::components::ContextMenuOfferToTradeButton>>,
 ) {
     let Ok(mut node) = button_query.single_mut() else {
         return;
@@ -1357,7 +1354,6 @@ pub fn handle_context_menu_actions(
         context_menu_state.hide();
         return;
     }
-
 
     if is_cursor_over_button(cursor_position, &menu_queries.p0()) {
         if let Some(ContextMenuTarget::World(object_id)) = context_menu_state.target {
@@ -1552,7 +1548,11 @@ pub fn handle_trade_context_menu_actions(
             // shopkeeper world object. The client knows because the projected
             // `ClientWorldObjectState.is_shopkeeper` flag is set on
             // shopkeeper NPCs.
-            let target = if client_state.remote_players.values().any(|p| p.object_id == object_id) {
+            let target = if client_state
+                .remote_players
+                .values()
+                .any(|p| p.object_id == object_id)
+            {
                 crate::game::trade::TradeTarget::Player { object_id }
             } else if client_state
                 .world_objects
@@ -1571,10 +1571,9 @@ pub fn handle_trade_context_menu_actions(
     }
 
     if is_cursor_over_button(cursor_position, &offer_button_query) {
-        if let (Some(session_id), Some(ContextMenuTarget::Slot(slot_kind))) = (
-            trade_popup_state.session_id,
-            context_menu_state.target,
-        ) {
+        if let (Some(session_id), Some(ContextMenuTarget::Slot(slot_kind))) =
+            (trade_popup_state.session_id, context_menu_state.target)
+        {
             if let Some(slot_ref) = item_slot_kind_to_ref(slot_kind, &docked_panel_state) {
                 if let Some(stack) =
                     stack_in_slot_kind(&client_state, &docked_panel_state, slot_kind)
@@ -2643,17 +2642,13 @@ pub fn handle_movable_dragging(
                     return;
                 }
                 if matches!(hovered_slot, Some(ItemSlotKind::TradeUs { .. })) {
-                    if let Some(slot_ref) =
-                        item_slot_kind_to_ref(source_slot, &docked_panel_state)
+                    if let Some(slot_ref) = item_slot_kind_to_ref(source_slot, &docked_panel_state)
                     {
-                        let qty = stack_in_slot_kind(
-                            &client_state,
-                            &docked_panel_state,
-                            source_slot,
-                        )
-                        .map(|stack| stack.quantity)
-                        .unwrap_or(1)
-                        .max(1);
+                        let qty =
+                            stack_in_slot_kind(&client_state, &docked_panel_state, source_slot)
+                                .map(|stack| stack.quantity)
+                                .unwrap_or(1)
+                                .max(1);
                         pending_commands.push(GameCommand::OfferTradeItem {
                             session_id,
                             source: slot_ref,

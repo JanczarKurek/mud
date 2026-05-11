@@ -10,6 +10,7 @@ use bevy::prelude::*;
 
 use crate::game::resources::ClientGameState;
 use crate::world::components::ClientProjectedWorldObject;
+use crate::world::map_layout::AmbientKeyframe;
 use crate::world::object_definitions::{LightEmissionDef, OverworldObjectDefinitions};
 
 /// Length of one in-game day in real seconds.
@@ -85,34 +86,133 @@ impl From<&LightEmissionDef> for LightSource {
     }
 }
 
-/// Day/night palette, keyed by `t ∈ [0, 1)`. Returns a multiplier applied
-/// to the space's outdoor ambient — so noon is identity (1,1,1) and midnight
-/// is a deep blue.
-pub fn day_night_palette(time_of_day: f32) -> [f32; 3] {
-    const STOPS: &[(f32, [f32; 3])] = &[
-        (0.00, [0.18, 0.22, 0.45]),
-        (0.22, [0.18, 0.22, 0.45]),
-        (0.30, [0.85, 0.65, 0.55]),
-        (0.50, [1.00, 1.00, 1.00]),
-        (0.70, [0.95, 0.55, 0.40]),
-        (0.78, [0.18, 0.22, 0.45]),
-        (1.00, [0.18, 0.22, 0.45]),
-    ];
+/// Runtime form of `AmbientKeyframe`: sRGB byte triple expanded to linear
+/// f32 [0, 1]. Built from authored YAML via `convert_authored_keyframes`,
+/// or supplied directly as the engine default by `default_day_night_curve`.
+#[derive(Clone, Copy, Debug)]
+pub struct AmbientKeyframeF32 {
+    pub time: f32,
+    pub color: [f32; 3],
+    pub alpha: f32,
+}
+
+/// Engine default day/night curve. Used when a map has `has_day_night: true`
+/// but supplies no explicit `outdoor_curve`. Mirrors the colors of the
+/// retired 7-stop palette but adds explicit alpha so:
+///   - noon (0.50) ⇒ alpha 0.0 (fully transparent — torches invisible)
+///   - dusk/dawn ⇒ warm tint with mild darkening
+///   - midnight ⇒ deep blue, navigable darkness (alpha 0.55, not pitch-black)
+pub fn default_day_night_curve() -> [AmbientKeyframeF32; 7] {
+    [
+        AmbientKeyframeF32 {
+            time: 0.00,
+            color: [0.18, 0.22, 0.45],
+            alpha: 0.55,
+        },
+        AmbientKeyframeF32 {
+            time: 0.22,
+            color: [0.18, 0.22, 0.45],
+            alpha: 0.55,
+        },
+        AmbientKeyframeF32 {
+            time: 0.30,
+            color: [0.85, 0.65, 0.55],
+            alpha: 0.30,
+        },
+        AmbientKeyframeF32 {
+            time: 0.50,
+            color: [1.00, 1.00, 1.00],
+            alpha: 0.00,
+        },
+        AmbientKeyframeF32 {
+            time: 0.70,
+            color: [0.95, 0.55, 0.40],
+            alpha: 0.30,
+        },
+        AmbientKeyframeF32 {
+            time: 0.78,
+            color: [0.18, 0.22, 0.45],
+            alpha: 0.55,
+        },
+        AmbientKeyframeF32 {
+            time: 1.00,
+            color: [0.18, 0.22, 0.45],
+            alpha: 0.55,
+        },
+    ]
+}
+
+/// Evaluate an outdoor ambient curve at `time_of_day ∈ [0, 1)`.
+/// Returns `(rgb_linear, alpha)`. Cyclic: a curve with two keyframes at
+/// t=0.2 and t=0.8 will interpolate from the 0.8 keyframe back round to
+/// the 0.2 keyframe for t ∈ [0.0, 0.2) ∪ (0.8, 1.0).
+pub fn evaluate_ambient_curve(
+    keyframes: &[AmbientKeyframeF32],
+    time_of_day: f32,
+) -> ([f32; 3], f32) {
     let t = time_of_day.rem_euclid(1.0);
-    for w in STOPS.windows(2) {
-        let (t0, c0) = w[0];
-        let (t1, c1) = w[1];
-        if t >= t0 && t <= t1 {
-            let span = (t1 - t0).max(1e-6);
-            let f = (t - t0) / span;
-            return [
-                c0[0] + (c1[0] - c0[0]) * f,
-                c0[1] + (c1[1] - c0[1]) * f,
-                c0[2] + (c1[2] - c0[2]) * f,
+    match keyframes.len() {
+        0 => ([1.0, 1.0, 1.0], 0.0),
+        1 => (keyframes[0].color, keyframes[0].alpha.clamp(0.0, 1.0)),
+        _ => {
+            let first = keyframes[0];
+            let last = *keyframes.last().unwrap();
+            let (k0, k1) = if t < first.time {
+                let k0 = AmbientKeyframeF32 {
+                    time: last.time - 1.0,
+                    color: last.color,
+                    alpha: last.alpha,
+                };
+                (k0, first)
+            } else if t > last.time {
+                let k1 = AmbientKeyframeF32 {
+                    time: first.time + 1.0,
+                    color: first.color,
+                    alpha: first.alpha,
+                };
+                (last, k1)
+            } else {
+                let mut k0 = keyframes[0];
+                let mut k1 = keyframes[1];
+                for w in keyframes.windows(2) {
+                    if t >= w[0].time && t <= w[1].time {
+                        k0 = w[0];
+                        k1 = w[1];
+                        break;
+                    }
+                }
+                (k0, k1)
+            };
+            let span = (k1.time - k0.time).max(1e-6);
+            let f = ((t - k0.time) / span).clamp(0.0, 1.0);
+            let rgb = [
+                k0.color[0] + (k1.color[0] - k0.color[0]) * f,
+                k0.color[1] + (k1.color[1] - k0.color[1]) * f,
+                k0.color[2] + (k1.color[2] - k0.color[2]) * f,
             ];
+            let a = (k0.alpha + (k1.alpha - k0.alpha) * f).clamp(0.0, 1.0);
+            (rgb, a)
         }
     }
-    [1.0, 1.0, 1.0]
+}
+
+/// Convert authored YAML keyframes to the linear-space runtime form. Sorts
+/// by `time` ascending, wraps `time` into `[0, 1)`, clamps `alpha`.
+pub fn convert_authored_keyframes(authored: &[AmbientKeyframe]) -> Vec<AmbientKeyframeF32> {
+    let mut out: Vec<AmbientKeyframeF32> = authored
+        .iter()
+        .map(|k| AmbientKeyframeF32 {
+            time: k.time.rem_euclid(1.0),
+            color: srgb_u8_to_linear(k.color),
+            alpha: k.alpha.clamp(0.0, 1.0),
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        a.time
+            .partial_cmp(&b.time)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    out
 }
 
 /// `[u8; 3]` sRGB → `[f32; 3]` linear-ish (0..1). The darkness shader
@@ -180,14 +280,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn day_night_palette_at_noon_is_neutral() {
-        let c = day_night_palette(0.5);
-        assert!((c[0] - 1.0).abs() < 1e-6);
-        assert!((c[1] - 1.0).abs() < 1e-6);
-        assert!((c[2] - 1.0).abs() < 1e-6);
-    }
-
-    #[test]
     fn light_emission_def_to_component_normalizes_color() {
         let def = LightEmissionDef {
             color: [255, 128, 0],
@@ -209,5 +301,113 @@ mod tests {
         assert!(light_equals(&a, &b));
         let c = LightSource::new([0.5, 1.0, 1.0], 5.0, 1.0);
         assert!(!light_equals(&a, &c));
+    }
+
+    #[test]
+    fn evaluate_ambient_curve_zero_keyframes_returns_neutral() {
+        let (rgb, a) = evaluate_ambient_curve(&[], 0.5);
+        assert_eq!(rgb, [1.0, 1.0, 1.0]);
+        assert_eq!(a, 0.0);
+    }
+
+    #[test]
+    fn evaluate_ambient_curve_single_keyframe_is_constant() {
+        let kf = [AmbientKeyframeF32 {
+            time: 0.3,
+            color: [0.4, 0.6, 0.8],
+            alpha: 0.7,
+        }];
+        let (rgb, a) = evaluate_ambient_curve(&kf, 0.0);
+        assert_eq!(rgb, [0.4, 0.6, 0.8]);
+        assert!((a - 0.7).abs() < 1e-6);
+        let (_, a2) = evaluate_ambient_curve(&kf, 0.9);
+        assert!((a2 - 0.7).abs() < 1e-6);
+    }
+
+    #[test]
+    fn evaluate_ambient_curve_linear_interpolation() {
+        let kf = [
+            AmbientKeyframeF32 {
+                time: 0.0,
+                color: [1.0, 1.0, 1.0],
+                alpha: 1.0,
+            },
+            AmbientKeyframeF32 {
+                time: 1.0,
+                color: [0.0, 0.0, 0.0],
+                alpha: 0.0,
+            },
+        ];
+        let (rgb, a) = evaluate_ambient_curve(&kf, 0.5);
+        assert!((rgb[0] - 0.5).abs() < 1e-6);
+        assert!((rgb[1] - 0.5).abs() < 1e-6);
+        assert!((rgb[2] - 0.5).abs() < 1e-6);
+        assert!((a - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn evaluate_ambient_curve_wraparound() {
+        // Keyframes at t=0.2 (red, alpha 0) and t=0.8 (blue, alpha 1).
+        // Evaluate at t=0.0 (before first): bracket is (t=0.8 mapped to -0.2)
+        // and (t=0.2). Span = 0.4. At t=0.0, f = (0.0 - (-0.2)) / 0.4 = 0.5.
+        // So midpoint: r/b averaged, alpha averaged.
+        let kf = [
+            AmbientKeyframeF32 {
+                time: 0.2,
+                color: [1.0, 0.0, 0.0],
+                alpha: 0.0,
+            },
+            AmbientKeyframeF32 {
+                time: 0.8,
+                color: [0.0, 0.0, 1.0],
+                alpha: 1.0,
+            },
+        ];
+        let (rgb, a) = evaluate_ambient_curve(&kf, 0.0);
+        assert!((rgb[0] - 0.5).abs() < 1e-6, "got r={}", rgb[0]);
+        assert!((rgb[1] - 0.0).abs() < 1e-6);
+        assert!((rgb[2] - 0.5).abs() < 1e-6, "got b={}", rgb[2]);
+        assert!((a - 0.5).abs() < 1e-6, "got a={a}");
+    }
+
+    #[test]
+    fn default_day_night_curve_at_noon_has_zero_alpha() {
+        let curve = default_day_night_curve();
+        let (_, a) = evaluate_ambient_curve(&curve, 0.5);
+        assert!(a.abs() < 1e-6, "midday alpha must be 0, got {a}");
+    }
+
+    #[test]
+    fn default_day_night_curve_at_noon_is_white() {
+        let curve = default_day_night_curve();
+        let (rgb, _) = evaluate_ambient_curve(&curve, 0.5);
+        assert!((rgb[0] - 1.0).abs() < 1e-6);
+        assert!((rgb[1] - 1.0).abs() < 1e-6);
+        assert!((rgb[2] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn convert_authored_keyframes_sorts_and_clamps() {
+        let authored = vec![
+            AmbientKeyframe {
+                time: 0.8,
+                color: [255, 0, 0],
+                alpha: 1.5, // clamps to 1.0
+            },
+            AmbientKeyframe {
+                time: 0.2,
+                color: [0, 255, 0],
+                alpha: -0.3, // clamps to 0.0
+            },
+        ];
+        let out = convert_authored_keyframes(&authored);
+        assert_eq!(out.len(), 2);
+        assert!((out[0].time - 0.2).abs() < 1e-6);
+        assert!((out[1].time - 0.8).abs() < 1e-6);
+        assert!((out[0].alpha - 0.0).abs() < 1e-6);
+        assert!((out[1].alpha - 1.0).abs() < 1e-6);
+        // sRGB byte → linear-ish f32: 255 → 1.0
+        assert!((out[0].color[1] - 1.0).abs() < 1e-6);
+        assert!((out[1].color[0] - 1.0).abs() < 1e-6);
     }
 }

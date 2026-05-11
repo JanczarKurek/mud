@@ -73,6 +73,19 @@ impl ContextMenuState {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DialogEntryKind {
+    Npc,
+    Player,
+}
+
+#[derive(Clone, Debug)]
+pub struct DialogEntry {
+    pub speaker: Option<String>,
+    pub text: String,
+    pub kind: DialogEntryKind,
+}
+
 /// Client-side UI state mirroring the currently open dialog panel. Updated by
 /// `apply_game_ui_events` in response to server-emitted
 /// `DialogLine`/`DialogOptions`/`DialogClose` events.
@@ -84,9 +97,20 @@ pub struct ActiveDialogState {
     pub options: Vec<String>,
     /// If `true`, show a "Continue" button (line presented, no options).
     pub awaiting_continue: bool,
-    /// Bumped each time state changes — used by `sync_dialog_panel` to
-    /// rebuild option buttons without re-diffing vectors.
+    /// Bumped each time the current line / options change — used by
+    /// `sync_dialog_panel_options` to rebuild option buttons without
+    /// re-diffing vectors.
     pub revision: u64,
+    /// Append-only conversation log for the current session. Cleared
+    /// whenever the session id changes or `close()` is called.
+    pub transcript: Vec<DialogEntry>,
+    /// Bumped each time `transcript` changes, so the renderer can detect
+    /// growth without comparing the vector.
+    pub transcript_revision: u64,
+    /// Last position/size of the dialog window — cached so the lifecycle
+    /// system can re-open it where the user left it.
+    pub last_position: Option<Vec2>,
+    pub last_size: Option<Vec2>,
 }
 
 impl ActiveDialogState {
@@ -95,15 +119,28 @@ impl ActiveDialogState {
     }
 
     pub fn show_line(&mut self, session_id: u64, speaker: Option<String>, text: String) {
+        if self.session_id != Some(session_id) {
+            self.transcript.clear();
+        }
         self.session_id = Some(session_id);
-        self.speaker = speaker;
-        self.text = text;
+        self.speaker = speaker.clone();
+        self.text = text.clone();
         self.options.clear();
         self.awaiting_continue = true;
         self.revision = self.revision.wrapping_add(1);
+        self.transcript.push(DialogEntry {
+            speaker,
+            text,
+            kind: DialogEntryKind::Npc,
+        });
+        self.transcript_revision = self.transcript_revision.wrapping_add(1);
     }
 
     pub fn show_options(&mut self, session_id: u64, options: Vec<String>) {
+        if self.session_id != Some(session_id) {
+            self.transcript.clear();
+            self.transcript_revision = self.transcript_revision.wrapping_add(1);
+        }
         self.session_id = Some(session_id);
         self.options = options;
         self.awaiting_continue = false;
@@ -117,6 +154,22 @@ impl ActiveDialogState {
         self.options.clear();
         self.awaiting_continue = false;
         self.revision = self.revision.wrapping_add(1);
+        if !self.transcript.is_empty() {
+            self.transcript.clear();
+            self.transcript_revision = self.transcript_revision.wrapping_add(1);
+        }
+    }
+
+    /// Append the player's chosen option to the transcript. Called by the
+    /// click handler so the choice appears in the log immediately, without
+    /// waiting for a server round-trip.
+    pub fn push_player_choice(&mut self, text: String) {
+        self.transcript.push(DialogEntry {
+            speaker: None,
+            text,
+            kind: DialogEntryKind::Player,
+        });
+        self.transcript_revision = self.transcript_revision.wrapping_add(1);
     }
 }
 
@@ -565,9 +618,6 @@ pub struct TradePopupState {
     /// Last-seen window size (px). Populated when the window is despawned.
     /// `None` ⇒ use `DEFAULT_SIZE`.
     pub last_size: Option<Vec2>,
-    /// While resizing via the bottom-right grip, true. Read by
-    /// `handle_trade_popup_resize`.
-    pub resizing: bool,
 }
 
 impl TradePopupState {
@@ -580,6 +630,5 @@ impl TradePopupState {
 
     pub fn close(&mut self) {
         self.session_id = None;
-        self.resizing = false;
     }
 }

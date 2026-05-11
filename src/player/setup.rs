@@ -292,10 +292,11 @@ pub fn spawn_player_visual(
             always_visible: true,
         },
         sprite,
-        // Baseline player vision: warm-white, ~2-tile radius. Always on so
-        // dark spaces stay navigable. Equipment can extend later by adding
-        // additional `LightSource` entities or swapping this one.
-        LightSource::new([1.0, 0.92, 0.78], 2.0, 0.45),
+        // Baseline player vision: warm-white, dim ~1.5-tile halo. Always on
+        // so dark spaces stay navigable, but tuned low enough that in
+        // daylight (curve alpha=0) the shader-clamped subtraction makes the
+        // aura visually invisible without any conditional logic.
+        LightSource::new([1.0, 0.92, 0.78], 1.5, 0.18),
         Transform::from_xyz(
             0.0,
             if uses_y_sort {

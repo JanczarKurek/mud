@@ -142,7 +142,8 @@ pub fn process_dialog_commands(
                 if handle.player_id != acting_player_id.0 {
                     bevy::log::warn!(
                         "DialogAdvance: session {session_id} player_id={} != acting={}",
-                        handle.player_id, acting_player_id.0
+                        handle.player_id,
+                        acting_player_id.0
                     );
                     continue;
                 }
@@ -196,7 +197,8 @@ pub fn process_dialog_commands(
                 if handle.player_id != acting_player_id.0 {
                     bevy::log::warn!(
                         "DialogEnd: session {session_id} player_id={} != acting={}",
-                        handle.player_id, acting_player_id.0
+                        handle.player_id,
+                        acting_player_id.0
                     );
                     continue;
                 }

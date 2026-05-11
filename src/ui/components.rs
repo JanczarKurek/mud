@@ -221,11 +221,16 @@ pub struct ContextMenuInteractButton;
 #[derive(Component)]
 pub struct DialogPanelRoot;
 
+/// Scroll viewport for the dialog transcript. Owns the
+/// `Overflow::scroll_y()` and `ScrollPosition` — its single child is the
+/// `DialogPanelTranscriptScrollNode` column.
 #[derive(Component)]
-pub struct DialogPanelSpeakerLabel;
+pub struct DialogPanelTranscriptContainer;
 
+/// Inner column that holds one child per transcript entry. Despawned and
+/// rebuilt by `sync_dialog_panel_transcript` whenever the transcript grows.
 #[derive(Component)]
-pub struct DialogPanelBodyText;
+pub struct DialogPanelTranscriptScrollNode;
 
 #[derive(Component)]
 pub struct DialogPanelOptionsContainer;
@@ -306,11 +311,6 @@ pub struct TradePopupRoot;
 /// "Trade" label and the close X). Detected by `handle_trade_popup_drag`.
 #[derive(Component)]
 pub struct TradePopupTitleBar;
-
-/// Bottom-right resize grip on the trade popup. Pressed-and-dragged in
-/// `handle_trade_popup_resize`.
-#[derive(Component)]
-pub struct TradePopupResizeHandle;
 
 /// Close (X) button in the trade popup title bar — emits `CancelTrade`.
 #[derive(Component)]

@@ -28,8 +28,7 @@ use crate::game::resources::{
     RegenBuffState,
 };
 use crate::game::shop::{Shopkeeper, StockMode, Stockpile};
-use crate::game::trade::{ActiveTrades, TradePartnerKind, TradeParticipants, WareView};
-use crate::world::object_definitions::OverworldObjectDefinitions;
+use crate::game::trade::{ActiveTrades, TradeParticipants, TradePartnerKind, WareView};
 use crate::npc::components::Npc;
 use crate::player::classes::{Class, ClassChosen};
 use crate::player::components::{
@@ -43,6 +42,7 @@ use crate::world::components::{
 };
 use crate::world::floor_map::FloorMaps;
 use crate::world::lighting::{WorldClock, WORLD_TIME_EPSILON, WORLD_TIME_HEARTBEAT_SECS};
+use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::resources::SpaceManager;
 
 pub type ProjectionPlayerQuery<'w, 's> = Query<
@@ -397,7 +397,7 @@ pub fn compute_events_for_peer(
             width: runtime_space.width,
             height: runtime_space.height,
             fill_floor_type: runtime_space.fill_floor_type.clone(),
-            lighting: runtime_space.lighting,
+            lighting: runtime_space.lighting.clone(),
         };
         if previous.current_space.as_ref() != Some(&current_space) {
             events.push(GameEvent::CurrentSpaceChanged {
@@ -492,65 +492,66 @@ pub fn compute_events_for_peer(
     // is built from the partner's PlayerId / NPC display name; for shop
     // sessions we also project the wares list so the panel can render the
     // Browse Wares subpanel.
-    let projected_trade = active_trades
-        .find_for_player(local_player_id)
-        .and_then(|(session_id, _side)| {
-            active_trades.sessions.get(&session_id).and_then(|session| {
-                match session.participants {
-                    TradeParticipants::PlayerToPlayer { a, b } => {
-                        let partner_id = if a == local_player_id { b } else { a };
-                        let partner_name = format!("Player {}", partner_id.0);
-                        session.project_for(
-                            local_player_id,
-                            partner_name,
-                            TradePartnerKind::Player,
-                            None,
-                        )
+    let projected_trade =
+        active_trades
+            .find_for_player(local_player_id)
+            .and_then(|(session_id, _side)| {
+                active_trades.sessions.get(&session_id).and_then(|session| {
+                    match session.participants {
+                        TradeParticipants::PlayerToPlayer { a, b } => {
+                            let partner_id = if a == local_player_id { b } else { a };
+                            let partner_name = format!("Player {}", partner_id.0);
+                            session.project_for(
+                                local_player_id,
+                                partner_name,
+                                TradePartnerKind::Player,
+                                None,
+                            )
+                        }
+                        TradeParticipants::PlayerToShop { shop_object_id, .. } => {
+                            let stockpile_entry = stockpile_query
+                                .iter()
+                                .find(|(object, _)| object.object_id == shop_object_id);
+                            let (partner_name, wares) = match stockpile_entry {
+                                Some((object, stockpile)) => {
+                                    let partner_name = object_definitions
+                                        .get(&object.definition_id)
+                                        .map(|def| def.name.clone())
+                                        .unwrap_or_else(|| object.definition_id.clone());
+                                    let wares: Vec<WareView> = stockpile
+                                        .wares
+                                        .iter()
+                                        .map(|entry| {
+                                            let display_name = object_definitions
+                                                .get(&entry.type_id)
+                                                .map(|def| def.name.clone())
+                                                .unwrap_or_else(|| entry.type_id.clone());
+                                            let stock_remaining = match entry.stock {
+                                                StockMode::Infinite => None,
+                                                StockMode::Finite(n) => Some(n),
+                                            };
+                                            WareView {
+                                                type_id: entry.type_id.clone(),
+                                                display_name,
+                                                price_copper: entry.price_copper,
+                                                stock_remaining,
+                                            }
+                                        })
+                                        .collect();
+                                    (partner_name, Some(wares))
+                                }
+                                None => ("Shopkeeper".to_owned(), None),
+                            };
+                            session.project_for(
+                                local_player_id,
+                                partner_name,
+                                TradePartnerKind::Shopkeeper,
+                                wares,
+                            )
+                        }
                     }
-                    TradeParticipants::PlayerToShop { shop_object_id, .. } => {
-                        let stockpile_entry = stockpile_query
-                            .iter()
-                            .find(|(object, _)| object.object_id == shop_object_id);
-                        let (partner_name, wares) = match stockpile_entry {
-                            Some((object, stockpile)) => {
-                                let partner_name = object_definitions
-                                    .get(&object.definition_id)
-                                    .map(|def| def.name.clone())
-                                    .unwrap_or_else(|| object.definition_id.clone());
-                                let wares: Vec<WareView> = stockpile
-                                    .wares
-                                    .iter()
-                                    .map(|entry| {
-                                        let display_name = object_definitions
-                                            .get(&entry.type_id)
-                                            .map(|def| def.name.clone())
-                                            .unwrap_or_else(|| entry.type_id.clone());
-                                        let stock_remaining = match entry.stock {
-                                            StockMode::Infinite => None,
-                                            StockMode::Finite(n) => Some(n),
-                                        };
-                                        WareView {
-                                            type_id: entry.type_id.clone(),
-                                            display_name,
-                                            price_copper: entry.price_copper,
-                                            stock_remaining,
-                                        }
-                                    })
-                                    .collect();
-                                (partner_name, Some(wares))
-                            }
-                            None => ("Shopkeeper".to_owned(), None),
-                        };
-                        session.project_for(
-                            local_player_id,
-                            partner_name,
-                            TradePartnerKind::Shopkeeper,
-                            wares,
-                        )
-                    }
-                }
-            })
-        });
+                })
+            });
     if previous.current_trade != projected_trade {
         events.push(GameEvent::TradeStateChanged {
             state: projected_trade,

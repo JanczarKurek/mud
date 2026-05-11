@@ -187,7 +187,7 @@ pub struct ClientRemotePlayerState {
     pub facing: Direction,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ClientSpaceState {
     pub space_id: SpaceId,
     pub authored_id: String,
