@@ -890,12 +890,17 @@ mod tests {
     use crate::npc::NpcPlugin;
     use crate::player::setup::spawn_player_authoritative;
     use crate::player::PlayerServerPlugin;
+    use crate::quest::QuestPlugin;
     use crate::world::WorldServerPlugin;
 
     fn setup_server_app(save_path: &Path) -> App {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
         app.insert_resource(TcpServerState::default());
+        // CharacterVarStores normally comes from `DialogServerPlugin`, but that
+        // plugin pulls in YarnSpinner which needs `AssetPlugin`. Quest systems
+        // only require the resource to exist; inject the bare default here.
+        app.init_resource::<crate::dialog::resources::CharacterVarStores>();
         app.add_plugins((
             GameServerPlugin,
             WorldServerPlugin,
@@ -903,6 +908,7 @@ mod tests {
             PlayerServerPlugin,
             CombatPlugin,
             MagicPlugin,
+            QuestPlugin::default(),
             PersistenceServerPlugin {
                 save_path: save_path.to_path_buf(),
             },
