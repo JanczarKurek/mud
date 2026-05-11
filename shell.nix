@@ -16,6 +16,7 @@ in
   pkgs.mkShell rec {
     buildInputs = with pkgs; [
       clang
+      mold
       # Replace llvmPackages with llvmPackages_X, where X is the latest LLVM version (at the time of writing, 16)
       llvmPackages.bintools
       pkg-config
