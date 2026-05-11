@@ -67,12 +67,11 @@ hand-editing YAML.
 
 ## Phase 3 — Full generality *(not started)*
 
-- `ladder`, `rope_spot`, `hole` object kinds.
+- `ladder`, `rope_spot` object kinds (`sinkhole` already exists as the
+  "hole" instance — `assets/overworld_objects/sinkhole/`).
 - Item-gated transitions (`requires_item`, `consumes_item` on
   `FloorTransitionDef`).
 - Python scripting snapshot carries z.
-- `docs/yaml_formats.md` documents `z`, `floors`, `floor_transition`,
-  `occludes_floor_above`, `walkable_surface`.
 - Regenerate JSON schemas (`cargo run --bin gen_schemas --features gen-schemas`).
 - Minimap floor tabs.
 - Projectile rendering gated by floor equality

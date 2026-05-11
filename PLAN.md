@@ -86,22 +86,25 @@ combat math, and the death penalty.
 
 Implementation lands in phases A–E (detail in `docs/progression.md` §9):
 
-1. **Phase A — XP + Level**: `Experience` component, level-up detection,
-   XP grant on kill, persistence schema bump. Smallest standalone
-   increment.
-2. **Phase B — Classes**: per-class HD/BAB/saves/mana tables; class
-   selection at character creation.
-3. **Phase C — Skills**: 10-skill `SkillSheet`, point spending, skill
-   check helper.
-4. **Phase D — Death penalty**: backpack always drops, equipment rolls
-   per-slot, XP zeroes back to current level.
-5. **Phase E — Magic gating**: `class_access` + `min_caster_level` on
-   spell YAML; mana scales with level.
+1. **Phase A — XP + Level**: ✅ shipped. `Experience` component
+   (`src/player/progression.rs`), XP grant on kill, level-up detection,
+   `ExperienceGained`/`LevelUp`/`ExperienceLost` events, XP bar +
+   `LevelUpToast`.
+2. **Phase B — Classes**: ✅ shipped. Per-class HD/BAB/saves/mana tables
+   (`src/player/classes.rs`); class picked at character creation via
+   `ChooseClass` and the class-picker UI.
+3. **Phase C — Skills**: open. 10-skill `SkillSheet`, point spending,
+   skill-check helper.
+4. **Phase D — Death penalty**: ✅ shipped. `drain_inventory_with_drop_chance`
+   (backpack always drops, per-slot equipment roll), XP-zero rule, and
+   `DeathSummary` recap overlay.
+5. **Phase E — Magic gating**: open. `class_access` + `min_caster_level`
+   on spell YAML; level-scaled mana for caster classes.
 
 The combat-depth items (armor reduction, status effects, elemental
 damage, crit/dodge) are tracked separately in `FEATURE_BACKLOG.md` §1
 "Combat depth"; they share the §7 combat-math rewrite from
-`docs/progression.md` and naturally batch together once Phase A–E land.
+`docs/progression.md` and naturally batch together with Phase E.
 
 ### 4.3 Phase 7 — Content Pipeline & Tooling
 

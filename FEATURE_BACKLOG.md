@@ -2,11 +2,13 @@
 
 ## Context
 
-The core loop works locally and over TLS-capable TCP: movement, combat, magic,
-containers, equipment, NPC AI (melee + kiting ranged), multi-space portals,
-account-level persistence, dialog (yarnspinner), and a Python-scripted quest
-engine all function. Floor-type tiling has just landed (corner-aware grass/dirt
-transitions, tile variants).
+The core loop works locally and over TLS-capable TCP: movement, combat,
+magic, containers, equipment, NPC AI (melee + kiting ranged) with spawn
+pools, multi-space portals, account-level persistence, dialog
+(yarnspinner), a Python-scripted quest engine, currency + pouches + carry
+weight, XP/levels with classes (Phase A/B), partial-drop death penalty
+(Phase D), HP/mana regen with food buffs, floor-type tiling, and an F3–F12
+diagnostics overlay all function.
 
 This doc lists *systems-sized* gaps so whatever we pick next is chosen against
 the full menu. It's a reference, not a commitment. Items near the top are
@@ -25,17 +27,20 @@ Grouped by system, not ranked.
 
 Designed in **`docs/progression.md`** (D&D 3.5e-flavored: classes
 Fighter/Wizard/Cleric/Vagabond, XP+levels, 10-skill sheet with skill
-points, level-scaled mana, partial-drop death penalty). Implementation
-phasing A–E lives in that doc §9 and is tracked from `PLAN.md` §4.2.
+points, level-scaled mana, partial-drop death penalty). Phasing A–E
+lives in that doc §9 and is tracked from `PLAN.md` §4.2. Phases A
+(XP+level), B (classes), and D (death penalty) are shipped — only **Phase C**
+(10-skill `SkillSheet` + point spending + skill-check helper) and
+**Phase E** (`class_access` / `min_caster_level` on spells, level-scaled
+mana for casters) remain.
 
 Additional progression-adjacent items not in scope of that doc:
 - **Soul / stamina** — regen caps that shape session length. Independent
   of the level/skill loop; lands when we want to gate grind sessions.
 
 ### NPC depth
-- **Vendors / trading** — buy/sell UI, per-NPC stock, currency item (gold). Dialogue is in place; the missing piece is a vendor panel and currency wiring.
+- **Vendors / trading** — buy/sell UI, per-NPC stock. Dialogue and currency (copper/silver/gold) are in place; the missing piece is a vendor panel + price ladder + buy/sell flow.
 - **Quest log UI** — quest *engine* exists (`src/quest/`); there is no docked panel showing accepted/completed quests. Fits well as `DockedPanelKind::QuestLog`.
-- **Spawner / respawn** — NPCs despawn on death with no respawn; authored spawns don't replenish. Need spawn pools with interval and cap per area.
 - **NPC caster AI** — only melee roam-and-chase and ranged kiter exist. No mob can cast spells.
 
 ### Combat depth
@@ -46,8 +51,7 @@ Additional progression-adjacent items not in scope of that doc:
 - **Cooldowns** — spells are mana-gated only; spam-castable.
 
 ### Magic expansion
-- **Mana regen** — only potions restore mana.
-- **Spellbook UI + spell learning** — only two spells exist as scrolls (`assets/spells/`); no way to "know" a spell.
+- **Spellbook UI + spell learning** — only two spells exist as scrolls (`assets/spells/`); no way to "know" a spell. Requires Phase E spell gating (`class_access` / `min_caster_level`).
 - **AoE + rune system** — Tibia-style runes (targetable consumables) fit on top of the existing scroll model.
 - **Buffs / debuffs from spells** — depends on the status-effect system above.
 
@@ -70,10 +74,10 @@ Additional progression-adjacent items not in scope of that doc:
 ## 2. Medium features (days, not weeks)
 
 ### World interactables
-- **Doors + keys + locks** — no door type exists; big dungeon unlock.
-- **Levers / pressure plates** — simple mechanical puzzle primitives.
+- **Keys + locks** — `wooden_door` already has open/closed states and a lever can drive it via `side_effects: set_target_state`; the missing piece is a key/lock gate before the open transition fires.
+- **Pressure plates** — levers exist (with `wires_to` + `side_effects`); pressure plates would reuse the same wiring schema with an on-enter trigger.
 - **Signs / readable props** — `sign_post` asset exists but no `ReadableText` component / popup modal.
-- **Ladders / ropes / holes** — listed in the stacked-floors Phase 3 backlog.
+- **Ladders / ropes** — listed in the stacked-floors Phase 3 backlog (`sinkhole` is already a working "hole" instance).
 
 ### Chat & social
 - **Chat input** — chat log exists (`ChatLogText`) but there is no `/say`, `/shout`, `/whisper`, `/emote` command path.
@@ -85,29 +89,25 @@ Additional progression-adjacent items not in scope of that doc:
 - **Hotbar / quick slots** — no keybind-driven use slots for potions or spells.
 - **Settings menu + keybind customization** — input is hardcoded.
 - **Zoom + camera control** — fixed zoom, player-follow only.
-- **Inspect / examine panel** — fits `DockedPanelKind` model.
+- **Inspect / examine panel** — fits `DockedPanelKind` model. Inventory item tooltips on hover already exist; ground-object hover tooltips are still missing.
 - **Floor indicator HUD** — small but missing (paused from stacked-floors Phase 2).
 
 ### Items
 - **Durability / wear** — no break mechanic.
 - **Rarity tiers + enchantments** — flat equipment today.
-- **Food / hunger** — apples heal instantly; no hunger meter.
+- **Hunger meter** — food items grant a temporary regen buff (`RegenBuffs` in `src/player/regen.rs`), but there is no hunger gauge that decays over time and gates eating.
 - **Item-on-item crafting / combining** — no recipe system.
 - **Ground-item decay timers** — corpses persist forever after save.
 - **Pouch panel auto-retarget** — moving a pouch from backpack slot 2 → 7
   while the pouch panel is open silently closes the panel rather than
   retargeting it to slot 7. Low priority — re-opening is one right-click.
-- **Vendors / shops** — currency exists as items now (copper/silver/gold);
-  buying-and-selling UI is the next step.
 
 ### Ops / infra
 - **Atomic save writes** — single JSON file; partial writes can corrupt.
-- **Save format migration** — format_version is 7 with implicit fallbacks; no explicit migration framework if the schema breaks.
+- **Save format migration** — format_version has crept past 7 with implicit fallbacks plus the standalone `scripts/migrate_save_v8_to_v9.py`; no explicit migration framework if the schema breaks.
 - **Per-character separate save files** — `accounts.db` already separates players from world dump, but each player's character blob is monolithic.
 - **Structured logging / `game.log`** — `bevy::log` only.
-- **Admin commands** — `/teleport`, `/godmode`, `/noclip`, `/spawn` (only Python `spawn_object` exists today).
-- **Server console** — headless mode has no REPL input.
-- **Debug overlay** — FPS, entity count, tile/space inspector, toggleable HUD.
+- **Admin commands** — `/teleport`, `/godmode`, `/noclip`, `/spawn` from in-game chat (the headless-server admin REPL over UNIX socket already gives full Python world access).
 
 ### Audio
 - **Nothing exists.** No Bevy audio plugin loaded. Object metadata already has unused `sound_paths` fields.
@@ -116,13 +116,13 @@ Additional progression-adjacent items not in scope of that doc:
 
 ## 3. Small polish
 
-- Toast notifications for level-up, loot pickup, quest updates.
-- Cursor-hover tooltips for ground objects.
+- Toast notifications for loot pickup and quest updates (level-up toast is shipped — see `LevelUpToast`).
+- Cursor-hover tooltips for ground objects (inventory item tooltips already exist via `sync_item_tooltip`).
 - More cursors (attack/talk/push variants); `assets/cursors/` is sparse.
 - Gamepad support.
 - Colorblind-friendly damage colors, UI font scaling.
 - CI config (`.github/workflows/`) — none exists.
-- Real test coverage — currently mostly unit tests in modules + one `#[ignore]`d integration test (`tests/multiplayer_transport.rs`).
+- Real test coverage — unit tests in modules plus `tests/multiplayer_transport.rs` and `tests/admin_repl.rs`. Networked-flow coverage is still thin.
 
 ---
 
@@ -131,11 +131,11 @@ Additional progression-adjacent items not in scope of that doc:
 Some features share infrastructure and are cheaper built together. Rough clusters
 in case you want to scope a "batch":
 
-- **Living-world batch** *(builds on shipped dialog + quest engine)*: Vendor UI + currency item + Quest log panel + NPC spawners — these are the four things that turn the existing dialog/quest tech into actual content. Lowest activation energy of any batch.
-- **Stacked floors finish batch**: Editor floor selector + `FloorIndicatorLabel` HUD + ladder/rope/hole transitions + `yaml_formats.md` z documentation. Wraps up the paused Phase 2/3 of `docs/stacked_floors_plan.md`.
-- **Progression batch**: XP + levels + classes + skills + death penalty. Designed in `docs/progression.md`; phasing A–E in that doc §9. All share the combat death hook (`src/player/lifecycle.rs:62`) and the to-hit/damage rewrite in `src/combat/systems.rs:72`.
+- **Living-world batch** *(builds on shipped dialog + quest engine + currency + spawners)*: Vendor UI + Quest log panel — the remaining gaps that turn the existing dialog/quest tech into actual content. Currency (copper/silver/gold) and NPC spawn pools already ship.
+- **Stacked floors finish batch**: Editor floor selector + `FloorIndicatorLabel` HUD + ladder/rope transitions. Wraps up the paused Phase 2/3 of `docs/stacked_floors_plan.md` (yaml schema docs and `sinkhole` already shipped).
+- **Progression finishing batch**: Phase C (skills) + Phase E (spell `class_access` / `min_caster_level` + level-scaled caster mana). Phases A/B/D are already in. Shares the to-hit/damage rewrite in `src/combat/systems.rs` with the combat-depth batch.
 - **Combat depth batch**: Armor/shield + status effects + elemental damage + critical/dodge — one pass through `src/combat/systems.rs` covers all of them.
-- **Production-readiness batch**: Atomic save writes + save migration + structured logging + admin commands + debug overlay (≈ `PLAN.md` Phase 8).
+- **Production-readiness batch**: Atomic save writes + save migration framework + structured logging + in-game admin commands (≈ `PLAN.md` Phase 8). Diagnostics overlay is already shipped.
 - **Multiplayer scaling batch**: AoI + reconnection + multi-character per account + rate limiting + TOFU pinning. Has to happen before non-trivial player count.
 
 ---

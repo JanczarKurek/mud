@@ -9,7 +9,7 @@ the project's broad direction lives in `PLAN.md`.
 - Account admin tool (`mud2-admin` binary) for password reset, account ban, account deletion.
 - Multiple characters per account — schema migration (reintroduce a `characters` table) plus `ListCharacters` / `SelectCharacter` / `CreateCharacter` protocol variants and a character-select screen.
 - Rate limiting on auth attempts (currently unbounded — an open server is susceptible to brute force).
-- Username / password validation policy beyond the v1 minimums (length, allowed chars, leaked-password check).
+- Username / password validation policy beyond the v1 minimums — `validate_username` / `validate_password` (`src/accounts/db.rs`) cover length and allowed chars; still open: leaked-password check, stronger entropy rules.
 - When `--tls` is off and the server binds to a non-loopback address, emit a startup warning so operators don't accidentally run cleartext over the public internet.
 
 ### TLS hardening
@@ -23,16 +23,17 @@ the project's broad direction lives in `PLAN.md`.
 
 ### Multi-floor (z-level) follow-up
 The PoC in `docs/stacked_floors_plan.md` Phase 0/1 is shipped (z in `TilePosition`,
-roof hiding, stairs). Subsequent commits pivoted to *floor-type tiling*
-(grass/dirt/stone transitions, tile variants) — so Phase 2/3 of stacked floors
-is paused. See that doc for the open items if/when we resume:
+roof hiding, stairs, sinkhole as a "hole" transition). Schema docs for the
+floor fields are now in `docs/yaml_formats.md`. Subsequent commits pivoted to
+*floor-type tiling* (grass/dirt/stone transitions, tile variants) — so the
+rest of Phase 2/3 of stacked floors is paused. See that doc for the open
+items if/when we resume:
 - Editor floor selector (PgUp/PgDn) + per-floor dimming.
 - `FloorIndicatorLabel` HUD text.
-- Ladder / rope / hole transition object kinds.
-- `docs/yaml_formats.md` documentation for `z`, `floor_transition`, `occludes_floor_above`, `walkable_surface`.
+- Ladder / rope transition object kinds (sinkhole already exists).
 
 ### Map authoring
-- Decide how authored maps should support ranges/rectangles/brushes so large layouts are not verbose YAML tile lists.
+- Brushes / floods / templates so large layouts are not verbose YAML tile lists (`TileRectangleArea` rects already work, plus the ASCII `tiles:` grid; the gap is interactive paint tooling).
 - Add validation for map YAML so invalid object IDs or out-of-bounds placements fail clearly.
 - Decide how decorative objects (flowers, etc.) should share tiles with blocking objects through explicit layering rules.
 - Decide how stacked map objects render visually once trees, items, and walls can share a tile.
@@ -88,6 +89,19 @@ is paused. See that doc for the open items if/when we resume:
 - **Floor-type tiling**: grass/dirt/stone tilesets with corner-aware transitions and tile variants (`src/world/floor_render.rs`, `assets/floors/`); tileset pack/unpack helper script (`scripts/tile_permutor.py`).
 - **In-process command pipeline / transport abstraction**: `ServerTransport`/`ClientTransport` wrap raw TCP and TLS streams; embedded mode runs `GameServerPlugin` and `GameClientPlugin` in the same `App` so the wire protocol is bypassed but data flow is identical to networked mode.
 - **Decision: stay single-crate.** Networking shipped without splitting `shared/`; module boundaries inside `src/` are sufficient. Revisit only if a real second binary needs a fragment of the code.
+- **Spawn pools / respawn groups**: `SpawnGroupDef` in map YAML (`area` + `max_count` + `respawn_mean_seconds`), `tick_spawn_groups` (`src/npc/mod.rs`), editor spawn-groups panel (`src/editor/ui/spawn_groups_panel.rs`).
+- **Currency, pouches, carry weight**: copper/silver/gold coin assets with stack-tier sprites, `src/game/currency.rs` (`COPPER_PER_SILVER = 12`, `SILVER_PER_GOLD = 20`), `MaxCarryWeight::from_strength`, pouch base + `PouchInBackpack` docked panel; nested-pouch depth capped to 1 via `accepts_storable_containers: false`.
+- **Progression Phase A — XP + Level**: `Experience` component + `xp_for_level` (`src/player/progression.rs`); `ExperienceGained` / `LevelUp` / `ExperienceLost` GameEvents; XP bar (`sync_xp_bar`); `LevelUpToast` GameUiEvent + transient overlay.
+- **Progression Phase B — Classes**: `Class` enum + per-class data (`src/player/classes.rs`); `ChooseClass` command + class-picker UI; class-aware `DerivedStats::from_base_with_class`.
+- **Progression Phase D — Death penalty**: `drain_inventory_with_drop_chance` (backpack always drops, per-slot equipment roll), XP-zero rule, `GameUiEvent::DeathSummary` + dedicated overlay (`src/ui/systems.rs`).
+- **HP / mana regen + food buffs**: `tick_regen_buffs` and `RegenBuffs` (`src/player/regen.rs`); food / drink items grant a temporary regen-rate multiplier.
+- **Diagnostics overlay (F3–F12)**: `src/diagnostics/mod.rs` with FPS readout, frame-time min/avg/p99/max, present-mode cycling, archetype histogram, `DiagnosticPause` simulation toggle, render-bisection toggles, and per-frame spike attribution dumps.
+- **Camera-based scrolling refactor**: sprites at absolute world coords, `Camera2d` follows the player (`src/world/camera.rs`), conditional Transform writes throughout; `Changed<Transform>` dropped from ~5,500/frame to 1–6/frame.
+- **Door states + lever wiring**: `wooden_door` open/closed states, `lever` wires to a target via `side_effects: set_target_state` (`assets/overworld_objects/{wooden_door,lever}/metadata.yaml`). Locks/keys still open.
+- **Item hover tooltips** in inventory and equipment slots (`sync_item_tooltip`).
+- **`docs/yaml_formats.md` floor schema**: `floors`, tile/rect `z`, `occludes_floor_above`, `walkable_surface`, and the dedicated Floor Transition Metadata section (`§5`) are documented.
+- **Object wiring & state machine in YAML**: declarative `states`, `interactions`, `wires_to`, and `side_effects` schema (see `docs/yaml_formats.md`) replace ad-hoc Rust handlers for stateful props.
+- **Username/password v1 validation**: length + allowed-char checks via `validate_username` / `validate_password` (`src/accounts/db.rs`).
 
 ## Later Ideas
 

@@ -354,7 +354,11 @@ Other death effects (full-vitals respawn, teleport home, clear regen tickers, dr
 
 The doc is the design; the phasing is the execution plan. `PLAN.md` §4.2 (Phase 6) points here.
 
-### Phase A — XP + Level
+### Phase A — XP + Level ✅ *shipped*
+
+Implemented in `src/player/progression.rs` (`Experience`, `xp_for_level`,
+level-up system); XP grant on kill in `src/combat/systems.rs`; bar/toast in
+`src/ui/`. Remainder of this subsection kept for context.
 
 Smallest standalone increment that produces a visible loop.
 
@@ -366,7 +370,12 @@ Smallest standalone increment that produces a visible loop.
 - HUD: an XP bar component reading `ClientGameState`. New `ClientGameState.experience` field.
 - Toast: `GameUiEvent::LevelUpToast { new_level }` for the level-up notification.
 
-### Phase B — Classes
+### Phase B — Classes ✅ *shipped*
+
+Implemented in `src/player/classes.rs` (`Class` enum + per-class data tables),
+`ChooseClass` command (`src/game/commands.rs`, handled in
+`src/game/systems.rs`), class-picker buttons in `src/ui/systems.rs`. Remainder
+of this subsection kept for context.
 
 - `Class` enum (Fighter / Wizard / Cleric / Vagabond) — `src/player/classes.rs` (new).
 - Per-class data tables (HD, BAB progression, save profile, skill points/level, class skill list, mana growth) live in `classes.rs` as const lookup arrays.
@@ -385,7 +394,11 @@ Smallest standalone increment that produces a visible loop.
 - New GameEvent: `SkillRanksChanged { skill_id, new_ranks }`.
 - UI: skills tab in the character sheet docked panel.
 
-### Phase D — Death penalty
+### Phase D — Death penalty ✅ *shipped*
+
+Implemented in `src/player/lifecycle.rs` (`drain_inventory_with_drop_chance`,
+`SLOT_DROP_CHANCE_PERCENT`, XP-zero rule), `DeathSummary` GameUiEvent +
+overlay in `src/ui/systems.rs`. Remainder of this subsection kept for context.
 
 - Rewrite `drain_inventory` at `src/player/lifecycle.rs:158` to split backpack-always vs equipment-roll.
 - XP-zero rule applied in `handle_player_deaths` at `src/player/lifecycle.rs:62`, before corpse spawn.
