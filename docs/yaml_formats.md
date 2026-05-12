@@ -1465,7 +1465,7 @@ Top-level fields:
 - Type: string or `null`
 - Optional: yes
 - Default: `null` (no atlas; the floor renders as its `debug_color`)
-- Meaning: Bevy asset path to the floor's tileset PNG, relative to `assets/`. The atlas is laid out as a 4×4 corner-bitmask block (16 sub-tiles, one per corner-mask `0..=15`); additional rows below the first block hold optional variants (see `variants`).
+- Meaning: Bevy asset path to the floor's tileset PNG, relative to `assets/`. The atlas is laid out as a 4×4 authoring-layout block of 16 sub-tiles (one per corner-mask `0..=15`); additional 4-row blocks below hold optional variants (see `variants`). The four columns × four rows do **not** correspond to mask values in row-major order — the renderer maps each mask to its slot via the `MASK_TO_AUTHORING_INDEX` table in `src/world/floor_render.rs`. Mirror the visual convention used by the reference tilesets in `assets/floors/`. (Legacy native-layout PNGs can be converted with `python3 scripts/tile_permutor.py --inverse <src> <dst>`.)
 
 ### `debug_color`
 - Type: 3-item integer list `[r, g, b]`
@@ -1563,7 +1563,7 @@ Top-level fields:
 
 ### `atlas_path`
 - Type: string
-- Meaning: Bevy asset path to the transition tileset PNG, relative to `assets/`. Same 4×4 corner-bitmask layout as a regular floor atlas; additional 4-row blocks are read as variants when `variants` lists them.
+- Meaning: Bevy asset path to the transition tileset PNG, relative to `assets/`. Same authoring 4×4 layout as a regular floor atlas (see the floor `atlas_path` section above); additional 4-row blocks are read as variants when `variants` lists them.
 
 ### `variants`
 - Type: mapping from corner-mask integer (`1..=15`) to a list of positive integer weights

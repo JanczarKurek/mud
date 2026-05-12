@@ -14,6 +14,15 @@ use crate::world::floor_map::FloorMap;
 use crate::world::systems::flat_floor_z;
 use crate::world::WorldConfig;
 
+/// Maps a 4-corner bitmask (0..=15) to the linear atlas index of that
+/// sub-tile inside the authoring 4×4 layout used by the artwork in
+/// `assets/floors/**/tileset.png`. The fancy layout groups tiles by
+/// visual continuity rather than mask-bit ordinal; this lookup applies
+/// the inverse of the permutation that `scripts/tile_permutor.py`
+/// historically baked in at authoring time.
+pub(crate) const MASK_TO_AUTHORING_INDEX: [usize; 16] =
+    [12, 0, 13, 3, 15, 11, 4, 2, 8, 14, 1, 5, 9, 7, 10, 6];
+
 /// Marks a presentation-only entity that represents one render-cell of one
 /// floor type at a world-tile *corner*. Render cells live at half-tile offsets
 /// (rx, ry) - 0.5 in world coordinates and read the 4 surrounding world tiles.
@@ -415,7 +424,7 @@ fn spawn_floor_cell(
             custom_size: Some(Vec2::splat(world_config.tile_size)),
             texture_atlas: Some(TextureAtlas {
                 layout: layout_handle,
-                index: (mask as usize & 0xF) + variant * 16,
+                index: MASK_TO_AUTHORING_INDEX[mask as usize & 0xF] + variant * 16,
             }),
             ..default()
         };
@@ -534,7 +543,7 @@ fn spawn_transition_cell(
         custom_size: Some(Vec2::splat(world_config.tile_size)),
         texture_atlas: Some(TextureAtlas {
             layout: layout_handle,
-            index: (mask as usize & 0xF) + variant * 16,
+            index: MASK_TO_AUTHORING_INDEX[mask as usize & 0xF] + variant * 16,
         }),
         ..default()
     };
@@ -794,5 +803,23 @@ mod tests {
             (0.85..=0.95).contains(&ratio),
             "expected ~0.9 for weights [9,1], got {ratio}"
         );
+    }
+
+    #[test]
+    fn mask_to_authoring_index_is_a_permutation_of_0_to_15() {
+        let mut seen = [false; 16];
+        for &i in &MASK_TO_AUTHORING_INDEX {
+            assert!(i < 16, "index {i} out of range");
+            assert!(!seen[i], "duplicate index {i}");
+            seen[i] = true;
+        }
+        assert!(seen.iter().all(|&b| b));
+    }
+
+    #[test]
+    fn mask_to_authoring_index_known_anchors() {
+        assert_eq!(MASK_TO_AUTHORING_INDEX[0], 12);
+        assert_eq!(MASK_TO_AUTHORING_INDEX[1], 0);
+        assert_eq!(MASK_TO_AUTHORING_INDEX[15], 6);
     }
 }

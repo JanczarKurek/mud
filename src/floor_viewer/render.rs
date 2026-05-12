@@ -8,7 +8,7 @@ use crate::floor_viewer::plugin::{
 use crate::world::components::SpaceId;
 use crate::world::floor_definitions::{FloorTilesetDefinitions, FloorTypeId};
 use crate::world::floor_map::FloorMap;
-use crate::world::floor_render::pick_variant;
+use crate::world::floor_render::{pick_variant, MASK_TO_AUTHORING_INDEX};
 
 pub const TILE_SIZE: f32 = 32.0;
 pub const GRID_W: i32 = 24;
@@ -180,7 +180,7 @@ fn spawn_corner(
                 custom_size: Some(Vec2::splat(TILE_SIZE)),
                 texture_atlas: Some(TextureAtlas {
                     layout: layout_handle,
-                    index: (*mask as usize & 0xF) + variant * 16,
+                    index: MASK_TO_AUTHORING_INDEX[*mask as usize & 0xF] + variant * 16,
                 }),
                 ..default()
             }

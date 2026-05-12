@@ -1,3 +1,12 @@
+"""Convert legacy native-layout floor tilesets to the authoring layout the
+engine reads directly, or vice versa.
+
+The renderer (`src/world/floor_render.rs::MASK_TO_AUTHORING_INDEX`) reads
+tilesets in the authoring ("fancy") layout, so this script is no longer part
+of the regular authoring workflow. It remains useful one-off for migrating
+externally-sourced native-layout artwork; pass `--inverse` for native ->
+fancy (the common case).
+"""
 from PIL import Image
 import numpy as np
 
@@ -65,7 +74,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("source")
     parser.add_argument("destination")
-    parser.add_argument("--inverse", action="store_true", help="Map native layout to fancy", default=False)
+    parser.add_argument(
+        "--inverse",
+        action="store_true",
+        default=False,
+        help="Map native layout to fancy (authoring). The common direction "
+             "post-migration: the engine now reads fancy layout directly, so "
+             "this is what you want for any leftover native-layout PNGs.",
+    )
 
     args = parser.parse_args()
 
