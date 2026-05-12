@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# AppImage entrypoint. Sets CWD to usr/bin (where `assets/` is staged) so both
+# resolution paths used by the game work:
+#   - Bevy's AssetServer (release builds) looks at `current_exe().parent()/assets/`,
+#     i.e. usr/bin/assets/, regardless of CWD.
+#   - Our own YAML loader (`src/assets/mod.rs`) reads `assets/` relative to CWD.
+# Saves still go to $HOME/.local/share/mud2/... via the `dirs` crate.
+set -e
+HERE="$(dirname "$(readlink -f "$0")")"
+export LD_LIBRARY_PATH="$HERE/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+cd "$HERE/usr/bin"
+exec "$HERE/usr/bin/mud2" "$@"

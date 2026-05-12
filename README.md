@@ -35,4 +35,39 @@ or if you wish to run the standalone server then
 `cargo run --bin server` and then
 `cargo run --bin mud2 -- --connect 127.0.0.1:7000`.
 
+## Packaging for distribution (Linux AppImage)
+
+To produce a single-file build that runs on most modern Linux distros without
+a Rust toolchain (run from inside the project's `nix-shell` — that's where
+`linuxdeploy` and `appimagetool` come from):
+
+```
+nix-shell
+bash packaging/build-appimage.sh
+```
+
+Output: `target/packaging/Mud_2.0-x86_64.AppImage`. Make it executable and
+double-click, or run from a terminal. Saves still land in
+`~/.local/share/mud2/embedded/`.
+
+The build:
+- Compiles in release mode with Bevy's `dynamic_linking` feature **off**
+  (single self-contained binary).
+- Runs cargo inside `mud2-fhs` (a `buildFHSEnv` sandbox defined in shell.nix)
+  so the binary's dynamic linker is `/lib64/ld-linux-x86-64.so.2` — the FHS
+  path that exists on Ubuntu/Fedora/Arch/SteamOS but NOT on NixOS.
+- Statically links sqlite3 via `libsqlite3-sys/bundled`.
+- Bundles `assets/` and host-portable shared libs (libxkbcommon, libffi, etc.)
+  via `linuxdeploy`. Vulkan, OpenGL, Wayland/X11, and ALSA come from the host.
+
+Testing on NixOS: the AppImage's interpreter is `/lib64/ld-linux-x86-64.so.2`
+(by design), so it won't execute directly. Use `steam-run
+./target/packaging/Mud_2.0-x86_64.AppImage` or set up `programs.nix-ld`. On
+non-Nix distros, just double-click.
+
+Glibc note: the AppImage refuses to run on glibc older than the build host's.
+The FHS sandbox uses nixpkgs glibc (currently 2.40), so the AppImage needs
+glibc 2.40+ on the target. For broader reach, swap `pkgs.buildFHSEnv` for a
+docker-based build against an older glibc.
+
 

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Mud 2.0
+GenericName=Tibia-style MUD
+Comment=A small graphical multi-user dungeon
+Exec=mud2
+Icon=mud2
+Categories=Game;RolePlaying;
+Terminal=false

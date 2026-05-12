@@ -4249,6 +4249,7 @@ dependencies = [
  "bevy",
  "bevy_yarnspinner",
  "dirs",
+ "libsqlite3-sys",
  "rand_core 0.6.4",
  "rcgen",
  "rusqlite",
