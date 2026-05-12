@@ -10,7 +10,8 @@ use crate::app::state::simulation_active;
 use crate::quest::engine::QuestEngine;
 use crate::quest::events::PendingQuestEvents;
 use crate::quest::systems::{
-    drain_quest_commands, drain_quest_events, handle_yarn_quest_commands, PendingQuestCommands,
+    drain_quest_commands, drain_quest_events, handle_yarn_quest_commands,
+    mirror_quest_state_to_stash, restore_quest_state_on_player_added, PendingQuestCommands,
 };
 
 pub struct QuestPlugin {
@@ -38,8 +39,17 @@ impl Plugin for QuestPlugin {
             .insert_resource(PendingQuestEvents::default())
             .add_systems(
                 Update,
-                (drain_quest_commands, drain_quest_events).run_if(simulation_active),
+                (
+                    restore_quest_state_on_player_added,
+                    drain_quest_commands,
+                    drain_quest_events,
+                )
+                    .run_if(simulation_active),
             )
+            // Run in `Last`, ahead of `persist_disconnected_players` /
+            // `autosave_all_players`, so the stash carries the freshest
+            // snapshot of every quest's Python `state` dict.
+            .add_systems(Last, mirror_quest_state_to_stash)
             .add_observer(handle_yarn_quest_commands);
     }
 }

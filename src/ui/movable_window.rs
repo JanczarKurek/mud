@@ -39,6 +39,11 @@ pub enum MovableWindowId {
     /// Time-of-day detail popup. Toggled by the HUD time button; carries a
     /// clock readout, full-circle orbit visualization, and flavor text.
     TimeOfDay,
+    /// Recipe book (singleton). Toggled by KeyC or opened with a station
+    /// filter via right-click → "Craft" on a station object. Lists every
+    /// learned recipe with input availability indicators and a Craft
+    /// button per row.
+    RecipeBook,
 }
 
 #[derive(Component)]

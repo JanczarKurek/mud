@@ -1,0 +1,9 @@
+extends: pickup
+name: Mushroom Brew Recipe
+weight: 0.1
+description: A weathered slip of parchment scrawled with a brewing recipe.
+learns_recipe: mushroom_brew
+render:
+  debug_color: [200, 180, 120]
+  debug_size: 0.45
+  sprite_path: overworld_objects/scroll/sprite.png

@@ -27,12 +27,12 @@ use crate::world::components::{
 use crate::world::floor_definitions::FloorTypeId;
 use crate::world::floor_map::{FloorMap, FloorMaps};
 use crate::world::lighting::WorldClock;
-use crate::world::ttl::Ttl;
 use crate::world::map_layout::ObjectProperties;
 use crate::world::map_layout::{SpaceDefinitions, SpacePermanence};
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::resources::{RuntimeSpace, SpaceManager};
 use crate::world::setup::initialize_runtime_spaces;
+use crate::world::ttl::Ttl;
 use crate::world::WorldConfig;
 
 pub struct PersistenceServerPlugin {
@@ -213,6 +213,11 @@ pub struct PlayerStateDump {
     /// to no active effects.
     #[serde(default)]
     pub magic_effects: MagicEffects,
+    /// Generic per-character JSON key/value store. Holds learned recipes,
+    /// quest state snapshots, and anything else subsystems want to persist
+    /// without growing this struct. See `crate::crafting::stash`.
+    #[serde(default)]
+    pub stash: std::collections::HashMap<String, serde_json::Value>,
 }
 
 fn default_class_chosen_true() -> bool {
@@ -240,6 +245,7 @@ pub fn build_player_state_dump(
     class: crate::player::classes::Class,
     class_chosen: bool,
     magic_effects: &MagicEffects,
+    stash: &crate::crafting::CharacterStash,
 ) -> PlayerStateDump {
     PlayerStateDump {
         player_id: identity.id,
@@ -260,6 +266,7 @@ pub fn build_player_state_dump(
         class,
         class_chosen,
         magic_effects: magic_effects.clone(),
+        stash: stash.entries.clone(),
     }
 }
 
@@ -1136,6 +1143,7 @@ mod tests {
             class: Default::default(),
             class_chosen: true,
             magic_effects: Default::default(),
+            stash: Default::default(),
         };
         let json = serde_json::to_string(&dump_with_home).unwrap();
         // Confirm we didn't accidentally serialize Some(...).
@@ -1194,6 +1202,7 @@ mod tests {
             class: Default::default(),
             class_chosen: true,
             magic_effects: effects.clone(),
+            stash: Default::default(),
         };
         let json = serde_json::to_string(&dump).unwrap();
         let restored: PlayerStateDump = serde_json::from_str(&json).unwrap();

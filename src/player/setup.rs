@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 
 use crate::combat::components::{AttackProfile, CombatLeash};
+use crate::crafting::CharacterStash;
 use crate::magic::effects::MagicEffects;
 use crate::persistence::{PlayerStateDump, WorldSnapshotStatus};
 use crate::player::classes::{Class, ClassChosen};
@@ -143,6 +144,9 @@ pub fn spawn_player_from_dump(
     inventory.ensure_slots();
     let object_id = object_registry.allocate_runtime_id("player");
     let class_chosen = dump.class_chosen;
+    let stash = CharacterStash {
+        entries: dump.stash,
+    };
 
     let entity = commands
         .spawn((
@@ -163,6 +167,7 @@ pub fn spawn_player_from_dump(
                 RegenTickers::default(),
                 RegenBuffs::default(),
                 dump.magic_effects,
+                stash,
             ),
             Collider,
             OverworldObject {
@@ -221,6 +226,7 @@ pub fn spawn_player_authoritative_in_space(
                 RegenTickers::default(),
                 RegenBuffs::default(),
                 MagicEffects::default(),
+                CharacterStash::default(),
             ),
             Collider,
             OverworldObject {

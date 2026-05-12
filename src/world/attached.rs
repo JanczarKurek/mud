@@ -46,7 +46,10 @@ pub fn sync_attached_object_visuals(
     projected_q: Query<(&ClientProjectedWorldObject, &Transform), Without<AttachedToObject>>,
     remote_q: Query<
         (&ClientRemotePlayerVisual, &Transform),
-        (Without<AttachedToObject>, Without<ClientProjectedWorldObject>),
+        (
+            Without<AttachedToObject>,
+            Without<ClientProjectedWorldObject>,
+        ),
     >,
     local_player_q: Query<
         &Transform,

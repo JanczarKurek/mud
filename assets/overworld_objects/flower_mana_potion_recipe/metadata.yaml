@@ -1,0 +1,9 @@
+extends: pickup
+name: Flower Mana Potion Recipe
+weight: 0.1
+description: A pressed-flower parchment scrawled with a mana brew recipe.
+learns_recipe: flower_mana_potion
+render:
+  debug_color: [180, 120, 200]
+  debug_size: 0.45
+  sprite_path: overworld_objects/scroll/sprite.png

@@ -48,8 +48,7 @@ pub fn consume_vfx_events(
             continue;
         };
 
-        let Some((view_position, attached)) =
-            resolve_anchor(&anchor, &client_state) else {
+        let Some((view_position, attached)) = resolve_anchor(&anchor, &client_state) else {
             // No way to render a follow-anchor whose target is gone and
             // whose space is unknown — drop silently.
             continue;

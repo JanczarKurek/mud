@@ -67,7 +67,11 @@ pub type ProjectionPlayerQuery<'w, 's> = Query<
             Has<Encumbered>,
         ),
         Option<&'static Experience>,
-        (Option<&'static Class>, Has<ClassChosen>),
+        (
+            Option<&'static Class>,
+            Has<ClassChosen>,
+            Option<&'static crate::crafting::CharacterStash>,
+        ),
         Option<&'static MagicEffects>,
     ),
     With<Player>,
@@ -168,7 +172,7 @@ pub fn compute_events_for_peer(
         regen_buffs,
         (max_carry, current_carry, is_encumbered),
         experience,
-        (class, class_chosen),
+        (class, class_chosen, stash),
         magic_effects,
     ) in player_query.iter()
     {
@@ -336,6 +340,16 @@ pub fn compute_events_for_peer(
             if previous.attributes != Some(projected_attributes) {
                 events.push(GameEvent::PlayerAttributesChanged {
                     attributes: projected_attributes,
+                });
+            }
+
+            // Only the `recipes:known` slice of the stash is replicated.
+            // Other stash entries (quest state, future features) stay on
+            // the server.
+            let projected_recipes = stash.map(|s| s.learned_recipes()).unwrap_or_default();
+            if previous.learned_recipes != projected_recipes {
+                events.push(GameEvent::LearnedRecipesChanged {
+                    recipes: projected_recipes,
                 });
             }
         } else {
@@ -802,6 +816,16 @@ pub fn apply_event_to_state(state: &mut ClientGameState, event: GameEvent) {
         GameEvent::TradeStateChanged { state: new_state } => {
             state.current_trade = new_state;
         }
+        GameEvent::LearnedRecipesChanged { recipes } => {
+            state.learned_recipes = recipes;
+        }
+        GameEvent::RecipeLearned { recipe_id } => {
+            state.learned_recipes.insert(recipe_id);
+        }
+        GameEvent::ItemCrafted { .. } => {
+            // Pure narration event — chat-log changes arrive via
+            // `ChatLogChanged`; nothing to fold into client state here.
+        }
     }
 }
 
@@ -972,6 +996,17 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
                 view.their_confirmed
             ),
         },
+        GameEvent::LearnedRecipesChanged { recipes } => info!(
+            "client learned recipes replaced: {} -> {} known",
+            client_state.learned_recipes.len(),
+            recipes.len()
+        ),
+        GameEvent::RecipeLearned { recipe_id } => {
+            info!("client learned recipe {recipe_id}")
+        }
+        GameEvent::ItemCrafted { recipe_id } => {
+            info!("client crafted via recipe {recipe_id}")
+        }
     }
 }
 

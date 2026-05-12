@@ -1,0 +1,7 @@
+name: Crossbow Bolt
+description: Cut two arrow shafts down to a stout bolt.
+inputs:
+  - { type_id: arrow, count: 2 }
+outputs:
+  - { type_id: bolt, count: 1 }
+xp_award: 5

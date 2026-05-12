@@ -8,10 +8,11 @@ use bevy::prelude::*;
 use bevy_yarnspinner::events::{DialogueCompleted, ExecuteCommand, PresentLine, PresentOptions};
 use bevy_yarnspinner::prelude::*;
 
+use crate::crafting::CharacterStash;
 use crate::dialog::components::{DialogNode, DialogSession};
 use crate::dialog::resources::{
     CharacterVarStores, DialogSessionHandle, DialogSessionRegistry, PendingDialogOptions,
-    PlayerInventorySnapshots,
+    PlayerInventorySnapshots, PlayerStashSnapshots,
 };
 use crate::dialog::yarn_bindings;
 use crate::game::commands::GameCommand;
@@ -38,6 +39,7 @@ pub fn process_dialog_commands(
     mut pending_options: ResMut<PendingDialogOptions>,
     mut var_stores: ResMut<CharacterVarStores>,
     inventory_snapshots: Res<PlayerInventorySnapshots>,
+    stash_snapshots: Res<PlayerStashSnapshots>,
     project: Option<Res<YarnProject>>,
     mut commands: Commands,
     player_query: Query<(Entity, &PlayerIdentity), With<Player>>,
@@ -100,6 +102,7 @@ pub fn process_dialog_commands(
                     &mut runner,
                     &mut commands,
                     &inventory_snapshots,
+                    &stash_snapshots,
                     acting_player_id.0,
                 );
                 runner.start_node(&node_name);
@@ -295,6 +298,115 @@ pub fn refresh_inventory_snapshots(
         snapshot_write.insert(identity.id.0, totals);
     }
     let _ = registry;
+}
+
+/// Refreshes `PlayerStashSnapshots` so Yarn `stash_*` library functions can
+/// read each player's current stash without holding ECS handles. Runs in
+/// `PreUpdate` (like the inventory refresh) so a `<<stash_set>>` directive
+/// earlier this frame is visible in the *next* frame's reads — but
+/// `stash_has` queries inside the same dialog branch will see last frame's
+/// state, mirroring how `has_item` behaves after `<<give_item>>`.
+pub fn refresh_stash_snapshots(
+    snapshots: Res<PlayerStashSnapshots>,
+    players: Query<(&PlayerIdentity, &CharacterStash), With<Player>>,
+) {
+    let mut snapshot_write = snapshots
+        .by_player
+        .write()
+        .expect("stash snapshot RwLock poisoned");
+    snapshot_write.clear();
+    for (identity, stash) in &players {
+        snapshot_write.insert(identity.id.0, stash.entries.clone());
+    }
+}
+
+/// Observer: translates Yarn `<<give_recipe "id">>` into a
+/// `GameCommand::LearnRecipe` queued for the acting player. Mirrors
+/// `handle_yarn_item_commands` (single-string-arg form). The recipe
+/// `id` must match a file in `assets/recipes/` (no `.yaml`).
+pub fn handle_yarn_recipe_commands(
+    event: On<ExecuteCommand>,
+    sessions: Query<&DialogSession>,
+    mut pending_commands: ResMut<PendingGameCommands>,
+) {
+    if event.command.name != "give_recipe" {
+        return;
+    }
+    let Ok(session) = sessions.get(event.entity) else {
+        return;
+    };
+    let Some(YarnValue::String(recipe_id)) = event.command.parameters.first().cloned() else {
+        bevy::log::warn!("yarn <<give_recipe>>: first arg must be a string");
+        return;
+    };
+    pending_commands.push_for_player(
+        PlayerIdType(session.player_id),
+        GameCommand::LearnRecipe { recipe_id },
+    );
+}
+
+/// Observer: translates Yarn `<<stash_set "key" value>>` into a
+/// `GameCommand::StashMutate` queued for the acting player. Accepts:
+///   * `<<stash_set "key" "string">>` — string value
+///   * `<<stash_set "key" 7>>` — numeric value (Yarn often passes numbers
+///     as `String` tokens unless wrapped in `{...}` — both are accepted)
+///   * `<<stash_set "key" true>>` / `false` — boolean value
+///   * `<<stash_set "key">>` — delete the key (one-arg form)
+pub fn handle_yarn_stash_commands(
+    event: On<ExecuteCommand>,
+    sessions: Query<&DialogSession>,
+    mut pending_commands: ResMut<PendingGameCommands>,
+) {
+    let name = event.command.name.as_str();
+    if name != "stash_set" {
+        return;
+    }
+    let Ok(session) = sessions.get(event.entity) else {
+        return;
+    };
+    let params = &event.command.parameters;
+    let key = match params.first() {
+        Some(YarnValue::String(s)) => s.clone(),
+        Some(other) => {
+            bevy::log::warn!("yarn <<stash_set>>: first arg must be a string, got {other:?}");
+            return;
+        }
+        None => {
+            bevy::log::warn!("yarn <<stash_set>> requires at least a key argument");
+            return;
+        }
+    };
+    let value: Option<serde_json::Value> = match params.get(1) {
+        None => None,
+        Some(YarnValue::String(s)) => {
+            // Accept Number-as-String — Yarn ships numeric literals as
+            // String tokens unless `{...}`-wrapped. Parse-fall-through so
+            // `<<stash_set "k" "hello">>` still stores `"hello"`.
+            if let Ok(n) = s.parse::<i64>() {
+                Some(serde_json::Value::from(n))
+            } else if let Ok(f) = s.parse::<f64>() {
+                Some(
+                    serde_json::Number::from_f64(f)
+                        .map(serde_json::Value::Number)
+                        .unwrap_or(serde_json::Value::Null),
+                )
+            } else if let Ok(b) = s.parse::<bool>() {
+                Some(serde_json::Value::Bool(b))
+            } else {
+                Some(serde_json::Value::String(s.clone()))
+            }
+        }
+        Some(YarnValue::Number(n)) => Some(
+            serde_json::Number::from_f64(*n as f64)
+                .map(serde_json::Value::Number)
+                .unwrap_or(serde_json::Value::Null),
+        ),
+        Some(YarnValue::Boolean(b)) => Some(serde_json::Value::Bool(*b)),
+    };
+    pending_commands.push_for_player(
+        PlayerIdType(session.player_id),
+        GameCommand::StashMutate { key, value },
+    );
 }
 
 /// Observer: translates Yarn `<<give_item>>` / `<<take_item>>` into authoritative

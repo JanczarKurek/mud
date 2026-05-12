@@ -102,6 +102,29 @@ pub trait ApiContext: Send + Sync {
             .unwrap_or(0)
     }
 
+    /// Read a key from the caller's `CharacterStash` snapshot. Default
+    /// reads `self.snapshot().caller_stash[key]`; subclasses don't need
+    /// to override.
+    fn stash_get(&self, key: &str) -> Option<serde_json::Value> {
+        self.snapshot().caller_stash.get(key).cloned()
+    }
+
+    /// `True` when the caller's stash snapshot contains `key`.
+    fn stash_has(&self, key: &str) -> bool {
+        self.snapshot().caller_stash.contains_key(key)
+    }
+
+    /// Queue a stash write (`None` deletes the key) via the standard
+    /// command queue. The actual mutation happens server-side in
+    /// `process_stash_commands` next frame, so the stash snapshot this
+    /// context was built from will not reflect the write until then.
+    fn stash_set(&self, key: &str, value: Option<serde_json::Value>) -> Result<(), ApiError> {
+        self.queue_command(crate::game::commands::GameCommand::StashMutate {
+            key: key.to_owned(),
+            value,
+        })
+    }
+
     /// Admin-only escape hatch — clears the persistent Python scope so
     /// the next input starts fresh. Default impl rejects.
     fn reset_scope(&self) -> Result<(), ApiError> {

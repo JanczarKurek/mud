@@ -359,6 +359,7 @@ pub fn process_game_commands(
                     &definitions,
                     &spell_definitions,
                     &mut command_outputs.ui_events,
+                    &mut pending_commands,
                     &mut commands,
                 );
             }
@@ -377,6 +378,7 @@ pub fn process_game_commands(
                     &definitions,
                     &spell_definitions,
                     &mut command_outputs.ui_events,
+                    &mut pending_commands,
                     &mut commands,
                 );
             }
@@ -561,6 +563,15 @@ pub fn process_game_commands(
                 // before this system runs.
                 bevy::log::warn!(
                     "process_game_commands saw a trade command — check system ordering"
+                );
+            }
+            GameCommand::StashMutate { .. }
+            | GameCommand::LearnRecipe { .. }
+            | GameCommand::CraftItem { .. } => {
+                // Drained by crafting systems (CraftingServerPlugin) in
+                // `CommandIntercept` before this system runs.
+                bevy::log::warn!(
+                    "process_game_commands saw a crafting command — check system ordering"
                 );
             }
             GameCommand::ChooseClass { class } => {
@@ -1127,6 +1138,7 @@ const DEFAULT_INSPECT_RANGE: i32 = 3;
 const FOCUS_TILES_PER_POINT: i32 = 5;
 
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 fn handle_use_item(
     player_entity: Entity,
     source: ItemReference,
@@ -1162,11 +1174,12 @@ fn handle_use_item(
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
     ui_events: &mut PendingGameUiEvents,
+    pending_commands: &mut PendingGameCommands,
     commands: &mut Commands,
 ) {
     let Ok((
         _,
-        _,
+        identity,
         mut inventory_state,
         mut chat_log_state,
         player_space_resident,
@@ -1178,6 +1191,7 @@ fn handle_use_item(
     else {
         return;
     };
+    let acting_player_id = identity.id;
     let player_space_id = player_space_resident.space_id;
     let player_position = *player_position;
 
@@ -1276,6 +1290,30 @@ fn handle_use_item(
         return;
     }
 
+    // Recipe-scroll path: a one-shot consumable that teaches a recipe.
+    // Mirrors the spell-scroll branch above — queue a `LearnRecipe`
+    // command (drained next frame by `process_learn_recipe_commands`),
+    // consume the scroll, and emit a narrator line. We do NOT short-
+    // circuit the `use_effects` path below; a scroll with both
+    // `learns_recipe` and `restore_health` would heal on use too.
+    // Skip if the recipe is unknown so the scroll isn't wasted on a typo.
+    if let Some(recipe_id) = definition.learns_recipe.as_ref() {
+        pending_commands.push_for_player(
+            acting_player_id,
+            crate::game::commands::GameCommand::LearnRecipe {
+                recipe_id: recipe_id.clone(),
+            },
+        );
+        consume_item_reference(
+            source,
+            &mut inventory_state,
+            container_query,
+            object_query,
+            commands,
+        );
+        return;
+    }
+
     if !definition.is_usable() {
         return;
     }
@@ -1362,6 +1400,7 @@ fn handle_use_item_on(
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
     ui_events: &mut PendingGameUiEvents,
+    pending_commands: &mut PendingGameCommands,
     commands: &mut Commands,
 ) {
     match target {
@@ -1378,6 +1417,7 @@ fn handle_use_item_on(
             definitions,
             spell_definitions,
             ui_events,
+            pending_commands,
             commands,
         ),
         UseTarget::Object(target_object_id) => {
@@ -1694,11 +1734,9 @@ fn spawn_spell_object(
         tile_position,
         None,
     );
-    commands
-        .entity(entity)
-        .insert(crate::world::ttl::Ttl {
-            remaining_seconds: spawn_spec.lifetime_seconds.max(1.0),
-        });
+    commands.entity(entity).insert(crate::world::ttl::Ttl {
+        remaining_seconds: spawn_spec.lifetime_seconds.max(1.0),
+    });
 }
 
 /// Inserts (or merges) `MagicEffects` on an NPC target. Lazily attaches the

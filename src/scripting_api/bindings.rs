@@ -40,6 +40,10 @@ Write:
   world.move_item(from_slot, to_slot)
   world.set_floor(space_id, z, x, y, floor_type=None)
 
+Per-character stash (anyone can read/write):
+  world.stash_get(key)                   world.stash_set(key, value)
+  world.stash_has(key)                   world.stash_delete(key)
+
 Quest hooks (quest scripts only):
   world.set_var(name, value)             world.get_var(name)
   world.complete_quest(qid)              world.fail_quest(qid)
@@ -844,6 +848,53 @@ pub mod world_api {
         }
     }
 
+    // --- per-character stash ----------------------------------------------
+
+    /// `stash_get(key)` — read a JSON value from the caller's
+    /// `CharacterStash` snapshot, or `None` if unset. Returns the value as
+    /// the closest Python equivalent: `dict` / `list` / `str` / `int` /
+    /// `float` / `bool` / `None`.
+    #[pyfunction]
+    fn stash_get(key: String, vm: &VirtualMachine) -> PyObjectRef {
+        with_ctx_or(vm.ctx.none(), |ctx| match ctx.stash_get(&key) {
+            Some(value) => json_to_pyobject(&value, vm),
+            None => vm.ctx.none(),
+        })
+    }
+
+    /// `stash_has(key)` — `True` when the caller's stash snapshot has the
+    /// key. Useful for gating Python branches the same way `<<if
+    /// stash_has("foo")>>` does in Yarn.
+    #[pyfunction]
+    fn stash_has(key: String) -> bool {
+        with_ctx_or(false, |ctx| ctx.stash_has(&key))
+    }
+
+    /// `stash_set(key, value)` — write `value` into the caller's stash
+    /// under `key`. The mutation is queued and applied next tick. `value`
+    /// accepts `str`, `int`, `float`, `bool`, `None`, `list`, and `dict`
+    /// (nested allowed).
+    #[pyfunction]
+    fn stash_set(key: String, value: PyObjectRef, vm: &VirtualMachine) -> PyResult<()> {
+        let json = pyobject_to_json(&value, vm)?;
+        match with_ctx(|ctx| ctx.stash_set(&key, Some(json))) {
+            Some(Ok(())) => Ok(()),
+            Some(Err(err)) => Err(vm.new_runtime_error(err.as_string())),
+            None => Err(vm.new_runtime_error("stash_set: no API context installed".to_owned())),
+        }
+    }
+
+    /// `stash_delete(key)` — remove a key from the caller's stash. No-op
+    /// if the key isn't set.
+    #[pyfunction]
+    fn stash_delete(key: String, vm: &VirtualMachine) -> PyResult<()> {
+        match with_ctx(|ctx| ctx.stash_set(&key, None)) {
+            Some(Ok(())) => Ok(()),
+            Some(Err(err)) => Err(vm.new_runtime_error(err.as_string())),
+            None => Err(vm.new_runtime_error("stash_delete: no API context installed".to_owned())),
+        }
+    }
+
     fn pyobject_to_yarn_value(obj: &PyObjectRef, vm: &VirtualMachine) -> PyResult<YarnValueDump> {
         if let Ok(b) = obj.clone().try_into_value::<bool>(vm) {
             return Ok(YarnValueDump::Boolean(b));
@@ -858,5 +909,91 @@ pub mod world_api {
             return Ok(YarnValueDump::String(s));
         }
         Err(vm.new_type_error("world: yarn vars must be str, int, float, or bool".to_owned()))
+    }
+
+    /// Recursively converts a Python value to `serde_json::Value`. Handles
+    /// the common scalar types plus `list` and `dict`. Falls back to
+    /// `repr(value)` for other types, since the stash is meant to hold
+    /// plain JSON-shaped data.
+    fn pyobject_to_json(obj: &PyObjectRef, vm: &VirtualMachine) -> PyResult<serde_json::Value> {
+        use rustpython_vm::builtins::{PyDict, PyList};
+        use rustpython_vm::AsObject;
+
+        if vm.is_none(obj) {
+            return Ok(serde_json::Value::Null);
+        }
+        if let Ok(b) = obj.clone().try_into_value::<bool>(vm) {
+            // `try_into_value::<bool>` succeeds for ints too — guard by
+            // checking that the object's class is exactly `bool`.
+            if obj.class().is(vm.ctx.types.bool_type) {
+                return Ok(serde_json::Value::Bool(b));
+            }
+        }
+        if let Ok(n) = obj.clone().try_into_value::<i64>(vm) {
+            return Ok(serde_json::Value::from(n));
+        }
+        if let Ok(n) = obj.clone().try_into_value::<f64>(vm) {
+            return Ok(serde_json::Number::from_f64(n)
+                .map(serde_json::Value::Number)
+                .unwrap_or(serde_json::Value::Null));
+        }
+        if let Ok(s) = obj.clone().try_into_value::<String>(vm) {
+            return Ok(serde_json::Value::String(s));
+        }
+        if let Some(list) = obj.downcast_ref::<PyList>() {
+            let borrowed = list.borrow_vec();
+            let mut out = Vec::with_capacity(borrowed.len());
+            for item in borrowed.iter() {
+                out.push(pyobject_to_json(item, vm)?);
+            }
+            return Ok(serde_json::Value::Array(out));
+        }
+        if let Some(dict) = obj.downcast_ref::<PyDict>() {
+            let mut out = serde_json::Map::new();
+            for (key_obj, value_obj) in dict {
+                let key: String = key_obj.clone().try_into_value(vm).map_err(|_| {
+                    vm.new_type_error("stash_set: dict keys must be strings".to_owned())
+                })?;
+                out.insert(key, pyobject_to_json(&value_obj, vm)?);
+            }
+            return Ok(serde_json::Value::Object(out));
+        }
+        Err(vm.new_type_error(
+            "stash_set: value must be JSON-shaped (str/int/float/bool/None/list/dict)".to_owned(),
+        ))
+    }
+
+    /// Inverse of `pyobject_to_json`. Used by `world.stash_get` to hand
+    /// scripts a Python value they can pattern-match on directly.
+    fn json_to_pyobject(value: &serde_json::Value, vm: &VirtualMachine) -> PyObjectRef {
+        use rustpython_vm::builtins::PyDict;
+
+        match value {
+            serde_json::Value::Null => vm.ctx.none(),
+            serde_json::Value::Bool(b) => b.to_pyobject(vm),
+            serde_json::Value::Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    i.to_pyobject(vm)
+                } else if let Some(f) = n.as_f64() {
+                    f.to_pyobject(vm)
+                } else {
+                    vm.ctx.none()
+                }
+            }
+            serde_json::Value::String(s) => s.clone().to_pyobject(vm),
+            serde_json::Value::Array(items) => {
+                let py_items: Vec<PyObjectRef> =
+                    items.iter().map(|v| json_to_pyobject(v, vm)).collect();
+                vm.ctx.new_list(py_items).into()
+            }
+            serde_json::Value::Object(map) => {
+                let dict = PyDict::new_ref(&vm.ctx);
+                for (key, val) in map {
+                    dict.set_item(key.as_str(), json_to_pyobject(val, vm), vm)
+                        .ok();
+                }
+                dict.into()
+            }
+        }
     }
 }

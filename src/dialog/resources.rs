@@ -92,3 +92,11 @@ impl CharacterVarStores {
 pub struct PlayerInventorySnapshots {
     pub by_player: Arc<RwLock<HashMap<u64, HashMap<String, u32>>>>,
 }
+
+/// Shared snapshot of each player's `CharacterStash`. Same pattern as
+/// `PlayerInventorySnapshots`: refreshed once per `PreUpdate` so Yarn
+/// `stash_has` / `stash_get_*` closures can read it without ECS access.
+#[derive(Resource, Default, Clone)]
+pub struct PlayerStashSnapshots {
+    pub by_player: Arc<RwLock<HashMap<u64, HashMap<String, serde_json::Value>>>>,
+}

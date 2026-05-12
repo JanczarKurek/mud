@@ -44,6 +44,11 @@ pub struct QuestEngine {
     pub interpreter: ManuallyDrop<Interpreter>,
     pub quests: HashMap<String, QuestDef>,
     pub active_states: HashMap<(u64, String), PyObjectRef>,
+    /// Serializable shadow of `active_states`. Updated after every hook run
+    /// so the persistence layer can `flush_to_stash` the latest state on
+    /// autosave / logout, and `restore_for_player` can rebuild
+    /// `active_states` from the stash at login.
+    pub snapshot_states: HashMap<(u64, String), serde_json::Value>,
     /// Reverse index: event kind → quest ids that care. Built once at load.
     pub subs_by_kind: HashMap<String, Vec<String>>,
 }
@@ -64,6 +69,7 @@ impl QuestEngine {
             interpreter: ManuallyDrop::new(interpreter),
             quests: HashMap::new(),
             active_states: HashMap::new(),
+            snapshot_states: HashMap::new(),
             subs_by_kind: HashMap::new(),
         }
     }
@@ -190,7 +196,7 @@ impl QuestEngine {
         let on_start = def.on_start.clone();
         let default_state = def.default_state.clone();
 
-        let state = self.interpreter.enter(|vm| {
+        let (state, snapshot) = self.interpreter.enter(|vm| {
             let state = match &default_state {
                 Some(default) => deep_copy(default, vm).unwrap_or_else(|| new_empty_dict(vm)),
                 None => new_empty_dict(vm),
@@ -200,10 +206,12 @@ impl QuestEngine {
                     warn!("quest '{quest_id}' on_start failed: {err}");
                 }
             }
-            state
+            let snap = python_to_json(&state, vm);
+            (state, snap)
         });
 
-        self.active_states.insert(key, state);
+        self.active_states.insert(key.clone(), state);
+        self.snapshot_states.insert(key, snapshot);
         let _ = player_id;
         true
     }
@@ -232,16 +240,19 @@ impl QuestEngine {
             return;
         };
 
-        self.interpreter.enter(|vm| {
+        let snapshot = self.interpreter.enter(|vm| {
             let py_name = name.to_pyobject(vm);
             let py_args = vm
                 .ctx
                 .new_list(args.into_iter().map(|s| s.to_pyobject(vm)).collect())
                 .into();
-            if let Err(err) = invoke_hook(vm, on_command, vec![py_name, py_args, state]) {
+            if let Err(err) = invoke_hook(vm, on_command, vec![py_name, py_args, state.clone()]) {
                 warn!("quest '{quest_id}' on_command failed: {err}");
             }
+            python_to_json(&state, vm)
         });
+        self.snapshot_states
+            .insert((player_id, quest_id.to_owned()), snapshot);
     }
 
     /// Fan a `QuestEvent` out to every (player, quest) pair that subscribes
@@ -271,18 +282,68 @@ impl QuestEngine {
                 continue;
             };
 
-            self.interpreter.enter(|vm| {
+            let snapshot = self.interpreter.enter(|vm| {
                 let ev_dict = event_to_pydict(event, vm);
-                if let Err(err) = invoke_hook(vm, on_event, vec![ev_dict, state]) {
+                if let Err(err) = invoke_hook(vm, on_event, vec![ev_dict, state.clone()]) {
                     warn!("quest '{quest_id}' on_event failed: {err}");
                 }
+                python_to_json(&state, vm)
             });
+            self.snapshot_states
+                .insert((player_id, quest_id.clone()), snapshot);
         }
     }
 
     /// Remove active state — used by `complete_quest` / `fail_quest` API.
     pub fn end_quest(&mut self, player_id: u64, quest_id: &str) {
-        self.active_states.remove(&(player_id, quest_id.to_owned()));
+        let key = (player_id, quest_id.to_owned());
+        self.active_states.remove(&key);
+        self.snapshot_states.remove(&key);
+    }
+
+    /// Re-hydrate `active_states` for `player_id` from the stash slice
+    /// produced by [`flush_to_stash`]. Called from a Bevy system on
+    /// `Added<Player>` so quest state survives logout/login. Stash keys
+    /// shaped `quest:<id>:state` are recognised; everything else is
+    /// ignored.
+    pub fn restore_for_player(
+        &mut self,
+        player_id: u64,
+        stash: &std::collections::HashMap<String, serde_json::Value>,
+    ) {
+        for (key, value) in stash {
+            let Some(quest_id) = key
+                .strip_prefix("quest:")
+                .and_then(|rest| rest.strip_suffix(":state"))
+            else {
+                continue;
+            };
+            if !self.quests.contains_key(quest_id) {
+                // Skip stale entries — the underlying .py was removed.
+                continue;
+            }
+            let py_state = self.interpreter.enter(|vm| json_to_python(value, vm));
+            self.active_states
+                .insert((player_id, quest_id.to_owned()), py_state);
+            self.snapshot_states
+                .insert((player_id, quest_id.to_owned()), value.clone());
+        }
+    }
+
+    /// Copy this player's `snapshot_states` into the stash. Called from
+    /// `mirror_quest_state_to_stash` on autosave / logout. Existing
+    /// non-quest keys are left untouched.
+    pub fn flush_to_stash(
+        &self,
+        player_id: u64,
+        stash: &mut std::collections::HashMap<String, serde_json::Value>,
+    ) {
+        for ((pid, quest_id), snapshot) in &self.snapshot_states {
+            if *pid != player_id {
+                continue;
+            }
+            stash.insert(format!("quest:{quest_id}:state"), snapshot.clone());
+        }
     }
 }
 
@@ -350,6 +411,83 @@ fn format_py_error(
     buf
 }
 
+/// Walk a Python value into a `serde_json::Value`. Anything not dict /
+/// list / int / float / bool / str / None is dropped to `Null` so we
+/// never panic on unexpected object types — quest scripts can stash
+/// whatever they want, but only the JSON-shaped subset round-trips.
+fn python_to_json(obj: &PyObjectRef, vm: &VirtualMachine) -> serde_json::Value {
+    use rustpython_vm::builtins::{PyDict, PyList};
+    use rustpython_vm::AsObject;
+
+    if vm.is_none(obj) {
+        return serde_json::Value::Null;
+    }
+    if obj.class().is(vm.ctx.types.bool_type) {
+        if let Ok(b) = obj.clone().try_into_value::<bool>(vm) {
+            return serde_json::Value::Bool(b);
+        }
+    }
+    if let Ok(n) = obj.clone().try_into_value::<i64>(vm) {
+        return serde_json::Value::from(n);
+    }
+    if let Ok(n) = obj.clone().try_into_value::<f64>(vm) {
+        return serde_json::Number::from_f64(n)
+            .map(serde_json::Value::Number)
+            .unwrap_or(serde_json::Value::Null);
+    }
+    if let Ok(s) = obj.clone().try_into_value::<String>(vm) {
+        return serde_json::Value::String(s);
+    }
+    if let Some(list) = obj.downcast_ref::<PyList>() {
+        let borrowed = list.borrow_vec();
+        let out = borrowed
+            .iter()
+            .map(|item| python_to_json(item, vm))
+            .collect();
+        return serde_json::Value::Array(out);
+    }
+    if let Some(dict) = obj.downcast_ref::<PyDict>() {
+        let mut out = serde_json::Map::new();
+        for (k, v) in dict {
+            let Ok(key) = k.clone().try_into_value::<String>(vm) else {
+                continue;
+            };
+            out.insert(key, python_to_json(&v, vm));
+        }
+        return serde_json::Value::Object(out);
+    }
+    serde_json::Value::Null
+}
+
+fn json_to_python(value: &serde_json::Value, vm: &VirtualMachine) -> PyObjectRef {
+    match value {
+        serde_json::Value::Null => vm.ctx.none(),
+        serde_json::Value::Bool(b) => b.to_pyobject(vm),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                i.to_pyobject(vm)
+            } else if let Some(f) = n.as_f64() {
+                f.to_pyobject(vm)
+            } else {
+                vm.ctx.none()
+            }
+        }
+        serde_json::Value::String(s) => s.clone().to_pyobject(vm),
+        serde_json::Value::Array(items) => {
+            let py_items: Vec<PyObjectRef> = items.iter().map(|v| json_to_python(v, vm)).collect();
+            vm.ctx.new_list(py_items).into()
+        }
+        serde_json::Value::Object(map) => {
+            let dict = PyDict::new_ref(&vm.ctx);
+            for (key, val) in map {
+                dict.set_item(key.as_str(), json_to_python(val, vm), vm)
+                    .ok();
+            }
+            dict.into()
+        }
+    }
+}
+
 fn event_to_pydict(event: &QuestEvent, vm: &VirtualMachine) -> PyObjectRef {
     let dict = PyDict::new_ref(&vm.ctx);
     let kind = event.kind().to_pyobject(vm);
@@ -369,4 +507,29 @@ fn event_to_pydict(event: &QuestEvent, vm: &VirtualMachine) -> PyObjectRef {
         }
     }
     dict.into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `python_to_json` ↔ `json_to_python` round-trip the JSON-shaped
+    /// subset (None/bool/int/float/str/list/dict). Anything else collapses
+    /// to `Null` — verified separately for tuples/complex types.
+    #[test]
+    fn json_subset_round_trips_through_python() {
+        let value = serde_json::json!({
+            "rats": 2,
+            "tags": ["dragon", "rat"],
+            "active": true,
+            "ratio": 0.5,
+            "nested": { "level": 3, "flag": false, "missing": null }
+        });
+        let interpreter = InterpreterConfig::new().init_stdlib().interpreter();
+        let restored = interpreter.enter(|vm| {
+            let py = json_to_python(&value, vm);
+            python_to_json(&py, vm)
+        });
+        assert_eq!(restored, value);
+    }
 }

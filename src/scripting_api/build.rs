@@ -13,6 +13,7 @@ use bevy::ecs::query::Has;
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
+use crate::crafting::CharacterStash;
 use crate::dialog::components::DialogNode;
 use crate::magic::resources::SpellDefinitions;
 use crate::npc::components::Npc;
@@ -49,6 +50,7 @@ pub struct WorldSnapshotParams<'w, 's> {
             &'static Inventory,
             Option<&'static Facing>,
             &'static OverworldObject,
+            Option<&'static CharacterStash>,
         ),
         With<Player>,
     >,
@@ -113,8 +115,9 @@ impl<'w, 's> WorldSnapshotParams<'w, 's> {
         let mut local_player_id: Option<u64> = None;
         let mut local_player_space: Option<u64> = None;
         let mut caller_inventory: HashMap<String, u32> = HashMap::new();
+        let mut caller_stash: HashMap<String, serde_json::Value> = HashMap::new();
 
-        for (identity, resident, tile, vitals, inventory, facing, player_object) in
+        for (identity, resident, tile, vitals, inventory, facing, player_object, stash) in
             self.player_query.iter()
         {
             let view = PlayerView {
@@ -141,6 +144,9 @@ impl<'w, 's> WorldSnapshotParams<'w, 's> {
                 local_player_id = Some(identity.id.0);
                 local_player_space = Some(resident.space_id.0);
                 caller_inventory = collect_inventory_counts(inventory);
+                if let Some(stash) = stash {
+                    caller_stash = stash.entries.clone();
+                }
             }
 
             players.push(view);
@@ -197,6 +203,7 @@ impl<'w, 's> WorldSnapshotParams<'w, 's> {
             local_player_id,
             local_player_space_id: local_player_space,
             caller_inventory,
+            caller_stash,
         }
     }
 }

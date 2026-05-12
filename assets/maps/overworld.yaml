@@ -1059,8 +1059,24 @@ objects:
   - x: 7
     y: 7
     z: 1
+- type: flower_mana_potion_recipe
+  placement:
+  - x: 36
+    y: 24
 - type: flowers
   placement:
+  - x: 33
+    y: 23
+  - x: 34
+    y: 23
+  - x: 36
+    y: 23
+  - x: 37
+    y: 23
+  - x: 33
+    y: 24
+  - x: 37
+    y: 24
   - x: 38
     y: 4
   - x: 24

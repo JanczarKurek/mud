@@ -15,6 +15,7 @@ use crate::app::state::ClientAppState;
 use crate::app::title_screen::TitleScreenPlugin;
 use crate::client_effects::ClientEffectsPlugin;
 use crate::combat::CombatPlugin;
+use crate::crafting::{CraftingClientPlugin, CraftingServerPlugin};
 use crate::diagnostics::DiagnosticsPlugin;
 use crate::dialog::DialogServerPlugin;
 use crate::editor::EditorPlugin;
@@ -153,6 +154,7 @@ impl Plugin for GameAppPlugin {
                     PlayerServerPlugin,
                     CombatPlugin,
                     MagicPlugin,
+                    CraftingServerPlugin,
                     PersistenceServerPlugin { save_path },
                     AccountsServerPlugin { db_path },
                 ));
@@ -187,6 +189,7 @@ impl Plugin for GameAppPlugin {
                     ScriptingPlugin,
                     EditorPlugin,
                     DiagnosticsPlugin,
+                    CraftingClientPlugin,
                     // Added after DefaultPlugins so YarnSpinnerPlugin can see
                     // AssetServer for `.yarn` compilation.
                     DialogServerPlugin,
@@ -214,6 +217,7 @@ impl Plugin for GameAppPlugin {
                     WorldClientPlugin,
                     PlayerClientPlugin,
                     MagicPlugin,
+                    CraftingClientPlugin,
                     UiPlugin,
                     ClientEffectsPlugin,
                     ScriptingPlugin,
@@ -247,6 +251,7 @@ impl Plugin for GameAppPlugin {
                     PlayerServerPlugin,
                     CombatPlugin,
                     MagicPlugin,
+                    CraftingServerPlugin,
                     TerminalCtrlCHandlerPlugin,
                     PersistenceServerPlugin { save_path },
                     AccountsServerPlugin { db_path },

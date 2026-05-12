@@ -95,6 +95,9 @@ pub struct WorldSnapshot {
     /// Only populated for the caller in quest contexts; admin contexts may
     /// leave it empty (admin verbs don't currently need it).
     pub caller_inventory: HashMap<String, u32>,
+    /// Caller's `CharacterStash` entries at the time the snapshot was built.
+    /// Quest hooks and admin verbs read from this via `world.stash_*`.
+    pub caller_stash: HashMap<String, serde_json::Value>,
 }
 
 pub fn vitals_to_dict(vitals: &VitalsView, vm: &VirtualMachine) -> PyObjectRef {

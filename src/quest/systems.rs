@@ -16,10 +16,11 @@ use bevy::prelude::*;
 use bevy_yarnspinner::events::ExecuteCommand;
 use bevy_yarnspinner::prelude::YarnValue;
 
+use crate::crafting::CharacterStash;
 use crate::dialog::components::DialogSession;
 use crate::dialog::resources::CharacterVarStores;
 use crate::game::resources::PendingGameCommands;
-use crate::player::components::PlayerId;
+use crate::player::components::{Player, PlayerId, PlayerIdentity};
 use crate::quest::engine::QuestEngine;
 use crate::quest::events::PendingQuestEvents;
 use crate::quest::python::{QuestApiContext, QuestApiOutbox};
@@ -214,6 +215,34 @@ pub fn handle_yarn_quest_commands(
     };
 
     pending_quests.entries.push(request);
+}
+
+/// Restore each freshly-spawned player's quest `state` dicts from their
+/// `CharacterStash`. Runs after `spawn_player_from_dump` so the stash
+/// component is already present.
+pub fn restore_quest_state_on_player_added(
+    mut engine: NonSendMut<QuestEngine>,
+    players: Query<(&PlayerIdentity, &CharacterStash), Added<Player>>,
+) {
+    for (identity, stash) in &players {
+        engine.restore_for_player(identity.id.0, &stash.entries);
+    }
+}
+
+/// Copy each player's quest snapshots into their `CharacterStash` so the
+/// per-character autosave path writes them out. Runs in the `Last`
+/// schedule, before `persist_disconnected_players` and
+/// `autosave_all_players` in `src/accounts/autosave.rs`.
+pub fn mirror_quest_state_to_stash(
+    engine: Option<NonSendMut<QuestEngine>>,
+    mut players: Query<(&PlayerIdentity, &mut CharacterStash), With<Player>>,
+) {
+    let Some(engine) = engine else {
+        return;
+    };
+    for (identity, mut stash) in &mut players {
+        engine.flush_to_stash(identity.id.0, &mut stash.entries);
+    }
 }
 
 fn apply_outbox(

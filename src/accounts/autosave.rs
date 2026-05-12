@@ -4,6 +4,7 @@ use bevy::prelude::*;
 
 use crate::accounts::resources::{AccountDbHandle, AutosaveConfig};
 use crate::combat::components::{AttackProfile, CombatLeash};
+use crate::crafting::CharacterStash;
 use crate::dialog::resources::CharacterVarStores;
 use crate::magic::effects::MagicEffects;
 use crate::network::resources::PendingPlayerSaves;
@@ -41,6 +42,7 @@ type PlayerStateQueryData<'a> = (
         Option<&'a Class>,
         bevy::ecs::query::Has<ClassChosen>,
         Option<&'a MagicEffects>,
+        Option<&'a CharacterStash>,
     ),
 );
 
@@ -67,11 +69,13 @@ fn save_entity(
         combat_leash,
         facing,
         experience,
-        (class, class_chosen, magic_effects),
+        (class, class_chosen, magic_effects, stash),
     ) = row;
 
     let empty_effects = MagicEffects::default();
     let effects_ref = magic_effects.unwrap_or(&empty_effects);
+    let empty_stash = CharacterStash::default();
+    let stash_ref = stash.unwrap_or(&empty_stash);
 
     let mut dump = build_player_state_dump(
         identity,
@@ -90,6 +94,7 @@ fn save_entity(
         class.copied().unwrap_or_default(),
         class_chosen,
         effects_ref,
+        stash_ref,
     );
 
     if let Some(stores) = var_stores {

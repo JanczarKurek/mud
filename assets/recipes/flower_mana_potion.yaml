@@ -1,0 +1,7 @@
+name: Flower Mana Potion
+description: Crush two fresh flowers into a flask of cool blue draught.
+inputs:
+  - { type_id: flowers, count: 2 }
+outputs:
+  - { type_id: potion, count: 1 }
+xp_award: 5

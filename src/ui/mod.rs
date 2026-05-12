@@ -4,6 +4,7 @@ pub mod item_details;
 pub mod menu_bar;
 pub mod minimap;
 pub mod movable_window;
+pub mod recipe_book;
 pub mod resources;
 pub mod setup;
 pub mod sprite_state;

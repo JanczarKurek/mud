@@ -260,4 +260,32 @@ pub enum GameCommand {
         ware_index: usize,
         quantity: u32,
     },
+    /// Write or delete a key in the acting player's `CharacterStash`.
+    /// `value = Some(json)` upserts; `value = None` deletes. Drained by
+    /// `process_stash_commands` (CraftingServerPlugin) in `CommandIntercept`.
+    ///
+    /// Sources: Python `world.stash_set/delete`, Yarn `<<stash_set>>`, and
+    /// future server-side systems. Like `AdminSpawn` and friends, this is
+    /// currently not gated at the wire boundary — a malicious TCP client
+    /// could push it directly. Wire-side gating of admin/internal commands
+    /// is a separate issue tracked outside this feature.
+    StashMutate {
+        key: String,
+        value: Option<serde_json::Value>,
+    },
+    /// Grant a recipe to the acting player's `recipes:known` set.
+    /// Idempotent — re-granting a known recipe emits no events. Sources:
+    /// Yarn `<<give_recipe>>`, `UseItem` on a scroll with
+    /// `learns_recipe: <id>`, auto-learn on level/class match.
+    LearnRecipe {
+        recipe_id: String,
+    },
+    /// Craft `recipe_id` for the acting player. Server validates: player
+    /// knows the recipe, has all inputs in their backpack, and (when
+    /// `station` is set) is adjacent to a matching world object. On success
+    /// the inputs are consumed and outputs granted; the player's chat log
+    /// gets a narrator line and a `GameEvent::ItemCrafted` is emitted.
+    CraftItem {
+        recipe_id: String,
+    },
 }

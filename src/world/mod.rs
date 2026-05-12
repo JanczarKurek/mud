@@ -47,7 +47,6 @@ use crate::world::lighting::{advance_world_clock, sync_object_light_components, 
 use crate::world::map_layout::SpaceDefinitions;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
-use crate::world::vfx::VfxDefinitions;
 use crate::world::resources::{
     ClientRemotePlayerProjectionState, ClientWorldProjectionState, SpaceManager, ViewScrollOffset,
 };
@@ -57,6 +56,7 @@ use crate::world::systems::{
     sync_client_world_projection, sync_combat_health_bars, sync_player_z,
     sync_remote_player_projection, sync_tile_transforms,
 };
+use crate::world::vfx::VfxDefinitions;
 
 pub struct WorldServerPlugin;
 

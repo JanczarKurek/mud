@@ -12,7 +12,7 @@
 use bevy::prelude::*;
 use bevy_yarnspinner::prelude::*;
 
-use crate::dialog::resources::PlayerInventorySnapshots;
+use crate::dialog::resources::{PlayerInventorySnapshots, PlayerStashSnapshots};
 
 /// Installs runner-local functions. Called once per `DialogueRunner` at
 /// session creation; `player_id` is captured in the closures so every Yarn
@@ -21,6 +21,7 @@ pub fn install(
     runner: &mut DialogueRunner,
     _commands: &mut Commands,
     snapshots: &PlayerInventorySnapshots,
+    stash_snapshots: &PlayerStashSnapshots,
     player_id: u64,
 ) {
     let snapshot = snapshots.by_player.clone();
@@ -32,5 +33,61 @@ pub fn install(
                 .get(&player_id)
                 .and_then(|per_player| per_player.get(&type_id))
                 .is_some_and(|total| *total >= count.max(0.0) as u32)
+        });
+
+    // --- Stash readers --------------------------------------------------
+    //
+    // Yarn's static-typed library functions force us to expose one getter
+    // per return type (`*_str`, `*_num`, `*_bool`). Each returns a sensible
+    // default when the key is missing or the JSON value is the wrong shape.
+    // Authors gate with `stash_has(key)` first when they need to distinguish
+    // "absent" from "present but wrong type".
+
+    let stash = stash_snapshots.by_player.clone();
+    runner
+        .library_mut()
+        .add_function("stash_has", move |key: String| -> bool {
+            let guard = stash.read().expect("stash snapshot RwLock poisoned");
+            guard
+                .get(&player_id)
+                .map(|entries| entries.contains_key(&key))
+                .unwrap_or(false)
+        });
+
+    let stash = stash_snapshots.by_player.clone();
+    runner
+        .library_mut()
+        .add_function("stash_get_str", move |key: String| -> String {
+            let guard = stash.read().expect("stash snapshot RwLock poisoned");
+            guard
+                .get(&player_id)
+                .and_then(|entries| entries.get(&key))
+                .and_then(|value| value.as_str().map(|s| s.to_owned()))
+                .unwrap_or_default()
+        });
+
+    let stash = stash_snapshots.by_player.clone();
+    runner
+        .library_mut()
+        .add_function("stash_get_num", move |key: String| -> f32 {
+            let guard = stash.read().expect("stash snapshot RwLock poisoned");
+            guard
+                .get(&player_id)
+                .and_then(|entries| entries.get(&key))
+                .and_then(|value| value.as_f64())
+                .map(|n| n as f32)
+                .unwrap_or(0.0)
+        });
+
+    let stash = stash_snapshots.by_player.clone();
+    runner
+        .library_mut()
+        .add_function("stash_get_bool", move |key: String| -> bool {
+            let guard = stash.read().expect("stash snapshot RwLock poisoned");
+            guard
+                .get(&player_id)
+                .and_then(|entries| entries.get(&key))
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false)
         });
 }

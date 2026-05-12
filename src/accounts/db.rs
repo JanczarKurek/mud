@@ -357,6 +357,7 @@ mod tests {
             class: Default::default(),
             class_chosen: true,
             magic_effects: Default::default(),
+            stash: Default::default(),
         };
         db.save_character(id, &dump).unwrap();
 

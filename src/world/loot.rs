@@ -115,4 +115,3 @@ pub fn spawn_corpse_for_npc(
         remaining_seconds: loot_table.corpse_despawn_seconds,
     });
 }
-

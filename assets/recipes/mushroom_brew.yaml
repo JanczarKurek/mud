@@ -1,0 +1,10 @@
+name: Mushroom Brew
+description: A bubbling broth of cave mushroom and apple. Slowly restores health.
+inputs:
+  - { type_id: cave_mushroom, count: 3 }
+  - { type_id: apple, count: 1 }
+outputs:
+  - { type_id: potion, count: 1 }
+station: campfire
+auto_learn: { class: Cleric, min_level: 1 }
+xp_award: 25

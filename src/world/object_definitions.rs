@@ -119,6 +119,12 @@ pub struct OverworldObjectDefinition {
     /// `Shopkeeper` component on this NPC. See `crate::game::shop`.
     #[serde(default)]
     pub shopkeeper: Option<crate::game::shop::ShopkeeperDef>,
+    /// When set, using this item (`UseItem`) teaches the recipe with this
+    /// id and consumes the scroll. The recipe must exist in
+    /// `assets/recipes/`. Designed to share the same use-flow that spell
+    /// scrolls already follow.
+    #[serde(default)]
+    pub learns_recipe: Option<String>,
 }
 
 /// Per-state override of the rendering / collider knobs on
@@ -656,6 +662,7 @@ impl OverworldObjectDefinition {
             || self.use_effects.restore_mana > 0.0
             || self.use_effects.regen_duration_seconds > 0.0
             || self.spell_id.is_some()
+            || self.learns_recipe.is_some()
     }
 
     /// Sprite path for `state`, falling back to the base `render.sprite_path`

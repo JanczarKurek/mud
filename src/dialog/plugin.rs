@@ -6,10 +6,12 @@ use bevy_yarnspinner::prelude::*;
 use crate::app::state::simulation_active;
 use crate::dialog::resources::{
     CharacterVarStores, DialogSessionRegistry, PendingDialogOptions, PlayerInventorySnapshots,
+    PlayerStashSnapshots,
 };
 use crate::dialog::systems::{
     forward_dialogue_completed, forward_present_line, forward_present_options,
-    handle_yarn_item_commands, process_dialog_commands, refresh_inventory_snapshots,
+    handle_yarn_item_commands, handle_yarn_recipe_commands, handle_yarn_stash_commands,
+    process_dialog_commands, refresh_inventory_snapshots, refresh_stash_snapshots,
 };
 use crate::game::CommandIntercept;
 
@@ -30,6 +32,7 @@ impl Plugin for DialogServerPlugin {
         .insert_resource(PendingDialogOptions::default())
         .insert_resource(CharacterVarStores::default())
         .insert_resource(PlayerInventorySnapshots::default())
+        .insert_resource(PlayerStashSnapshots::default())
         // `CommandIntercept` is a `SystemSet` configured by `GameServerPlugin`
         // to sit between `tick_player_movement_cooldowns` and
         // `process_game_commands`. Binding to the set (rather than `.before(fn)`)
@@ -47,11 +50,13 @@ impl Plugin for DialogServerPlugin {
         // `take_item` effects inside the same dialog turn.
         .add_systems(
             PreUpdate,
-            refresh_inventory_snapshots.run_if(simulation_active),
+            (refresh_inventory_snapshots, refresh_stash_snapshots).run_if(simulation_active),
         )
         .add_observer(forward_present_line)
         .add_observer(forward_present_options)
         .add_observer(forward_dialogue_completed)
-        .add_observer(handle_yarn_item_commands);
+        .add_observer(handle_yarn_item_commands)
+        .add_observer(handle_yarn_stash_commands)
+        .add_observer(handle_yarn_recipe_commands);
     }
 }

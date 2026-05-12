@@ -8,11 +8,11 @@ use crate::player::classes::Class;
 use crate::player::components::{AttributeSet, ChatLog, Inventory, InventoryStack, PlayerId};
 use crate::player::progression::ExperienceView;
 use crate::world::components::{SpaceId, SpacePosition, TilePosition};
-use bevy::math::Vec2;
 use crate::world::direction::Direction;
 use crate::world::floor_definitions::FloorTypeId;
 use crate::world::floor_map::FloorMap;
 use crate::world::map_layout::SpaceLightingDef;
+use bevy::math::Vec2;
 
 pub type InventoryState = Inventory;
 pub type ChatLogState = ChatLog;
@@ -71,6 +71,21 @@ pub enum GameUiEvent {
     VfxSpawn {
         definition_id: String,
         anchor: VfxAnchor,
+    },
+    /// Transient overlay shown when the local player learns a recipe.
+    /// Carries the human-readable `recipe_name` for display; clients fall
+    /// back to `recipe_id` when the name isn't in their local
+    /// `RecipeDefinitions`.
+    RecipeLearnedToast {
+        recipe_id: String,
+        recipe_name: String,
+    },
+    /// One-shot: ask the client to open the recipe-book panel. When
+    /// `filter_station` is set the panel filters to recipes that require
+    /// that station type — used by the right-click "Craft" verb on station
+    /// objects.
+    OpenRecipeBook {
+        filter_station: Option<String>,
     },
 }
 
@@ -388,6 +403,23 @@ pub enum GameEvent {
     TradeStateChanged {
         state: Option<crate::game::trade::ClientTradeView>,
     },
+    /// Baseline / corrective replication of the local player's learned
+    /// recipe set. Same pattern as `PlayerExperienceChanged` — emitted on
+    /// bootstrap and whenever the projection detects drift between the
+    /// last-projected set and the player's `CharacterStash`.
+    LearnedRecipesChanged {
+        recipes: std::collections::BTreeSet<String>,
+    },
+    /// Delta event: the local player just learned `recipe_id`. Drives the
+    /// recipe-learned toast and chat narrator line.
+    RecipeLearned {
+        recipe_id: String,
+    },
+    /// Delta event: a craft completed. Drives the chat narrator line for
+    /// the local player.
+    ItemCrafted {
+        recipe_id: String,
+    },
 }
 
 #[derive(Resource, Default)]
@@ -511,4 +543,10 @@ pub struct ClientGameState {
     /// `GameEvent::TradeStateChanged`; the trade panel reads from this.
     #[serde(default)]
     pub current_trade: Option<crate::game::trade::ClientTradeView>,
+    /// Recipes the local player has learned. Drives the recipe-book UI.
+    /// Folded from `GameEvent::LearnedRecipesChanged` (baseline) and
+    /// `GameEvent::RecipeLearned` (delta). `BTreeSet` for deterministic
+    /// iteration in the UI.
+    #[serde(default)]
+    pub learned_recipes: std::collections::BTreeSet<String>,
 }
