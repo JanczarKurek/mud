@@ -1,0 +1,4 @@
+low: cobblestone
+high: grass
+tile_size_px: 16
+atlas_path: floors/transitions/cobblestone__grass/tileset.png
