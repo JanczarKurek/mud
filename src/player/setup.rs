@@ -84,6 +84,15 @@ pub fn spawn_embedded_player_authoritative(
         return;
     }
 
+    let display_name = db
+        .as_deref()
+        .and_then(|h| {
+            h.lock()
+                .account_display_name(crate::accounts::LOCAL_ACCOUNT_ID)
+                .ok()
+        })
+        .unwrap_or_else(|| crate::accounts::LOCAL_ACCOUNT_USERNAME.to_owned());
+
     // Prefer restoring the local character from the account DB if one exists —
     // this is how embedded-mode persistence round-trips now that player state
     // lives in the accounts DB rather than the world snapshot.
@@ -92,7 +101,13 @@ pub fn spawn_embedded_player_authoritative(
             let fallback_space_id = world_config.current_space_id;
             let player_id_u64 = dump.player_id.0;
             let yarn_vars = dump.yarn_vars.clone();
-            spawn_player_from_dump(&mut commands, &mut object_registry, dump, fallback_space_id);
+            spawn_player_from_dump(
+                &mut commands,
+                &mut object_registry,
+                dump,
+                fallback_space_id,
+                display_name,
+            );
             if let Some(stores) = var_stores.as_deref_mut() {
                 stores.restore(player_id_u64, yarn_vars);
             }
@@ -108,6 +123,7 @@ pub fn spawn_embedded_player_authoritative(
         PlayerId(crate::accounts::LOCAL_ACCOUNT_ID as u64),
         object_id,
         spawn_tile,
+        display_name,
     );
     let mut starter = Inventory::default();
     seed_starter_inventory(&mut starter);
@@ -120,6 +136,7 @@ pub fn spawn_player_authoritative(
     player_id: PlayerId,
     object_id: u64,
     tile_position: TilePosition,
+    display_name: String,
 ) -> Entity {
     spawn_player_authoritative_in_space(
         commands,
@@ -127,6 +144,7 @@ pub fn spawn_player_authoritative(
         object_id,
         world_config.current_space_id,
         tile_position,
+        display_name,
     )
 }
 
@@ -138,6 +156,7 @@ pub fn spawn_player_from_dump(
     object_registry: &mut ObjectRegistry,
     dump: PlayerStateDump,
     fallback_space_id: SpaceId,
+    display_name: String,
 ) -> Entity {
     let space_id = dump.space_id.unwrap_or(fallback_space_id);
     let mut inventory = dump.inventory;
@@ -153,6 +172,7 @@ pub fn spawn_player_from_dump(
             Player,
             PlayerIdentity {
                 id: dump.player_id,
+                display_name,
                 home_position: dump.home_position,
             },
             inventory,
@@ -199,6 +219,7 @@ pub fn spawn_player_authoritative_in_space(
     object_id: u64,
     space_id: SpaceId,
     tile_position: TilePosition,
+    display_name: String,
 ) -> Entity {
     let base_stats = BaseStats::default();
     let derived_stats = DerivedStats::from_base(&base_stats);
@@ -210,6 +231,7 @@ pub fn spawn_player_authoritative_in_space(
             Player,
             PlayerIdentity {
                 id: player_id,
+                display_name,
                 home_position: None,
             },
             Inventory::default(),

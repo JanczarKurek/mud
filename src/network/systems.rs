@@ -467,7 +467,14 @@ fn handle_auth_attempt(
 
     // Resolve the player entity — either restored from the DB or spawned fresh.
     let player_id = PlayerId(account_id as u64);
-    let existing = db.lock().load_character(account_id).ok().flatten();
+    let (existing, display_name) = {
+        let guard = db.lock();
+        let display_name = guard
+            .account_display_name(account_id)
+            .unwrap_or_else(|_| username.to_owned());
+        let existing = guard.load_character(account_id).ok().flatten();
+        (existing, display_name)
+    };
 
     let entity = if let Some(dump) = existing {
         let dump_player_id = dump.player_id.0;
@@ -477,6 +484,7 @@ fn handle_auth_attempt(
             object_registry,
             dump,
             world_config.current_space_id,
+            display_name,
         );
         if let Some(stores) = var_stores {
             stores.restore(dump_player_id, yarn_vars);
@@ -504,6 +512,7 @@ fn handle_auth_attempt(
             object_id,
             spawn_space_id,
             spawn_tile,
+            display_name,
         );
         let mut starter = Inventory::default();
         seed_starter_inventory(&mut starter);

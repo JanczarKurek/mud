@@ -1,5 +1,5 @@
 use bevy::ecs::message::MessageReader;
-use bevy::input::keyboard::{Key, KeyCode, KeyboardInput};
+use bevy::input::keyboard::{KeyCode, KeyboardInput};
 use bevy::prelude::*;
 use bevy_terminal::{
     LineStyle, Terminal, TerminalCompletionRequest, TerminalFocus, TerminalSubmit,
@@ -42,21 +42,20 @@ pub fn toggle_python_console(
         } else {
             None
         };
+        // Record the toggle key so `terminal_input` (same PreUpdate, ordered
+        // after this system) drops it instead of inserting a backtick into
+        // the freshly-focused buffer. Only needed on open — closing the
+        // console flips focus to None, in which case `terminal_input` early-
+        // returns and drains by itself.
+        if console_state.is_open {
+            focus.absorbed_key = Some(event.key_code);
+        }
         for mut node in &mut panel_query {
             node.display = if console_state.is_open {
                 Display::Flex
             } else {
                 Display::None
             };
-        }
-        // Swallow the toggling event — we don't want `terminal_input` (which
-        // runs in the same PreUpdate schedule) to insert a backtick into
-        // the console buffer.
-        if matches!(event.logical_key, Key::Character(_)) {
-            // No-op: KeyboardInput is an event stream; we can't unsend it.
-            // Instead, `terminal_input` is ordered after this system in the
-            // PreUpdate set so it sees a fresh `focus.focused` and doesn't
-            // claim Backquote. See `ScriptingPlugin::build`.
         }
         break;
     }

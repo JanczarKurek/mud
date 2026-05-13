@@ -51,6 +51,12 @@ pub struct TerminalFocusId(pub u32);
 #[derive(Resource, Default, Debug)]
 pub struct TerminalFocus {
     pub focused: Option<TerminalFocusId>,
+    /// Key whose just-pressed event `terminal_input` should drop on its next
+    /// run. Outer code sets this when it focuses a terminal in response to a
+    /// hotkey, so the same keystroke doesn't also insert a character into
+    /// the freshly-focused input row. Cleared (taken) by `terminal_input`
+    /// each frame.
+    pub absorbed_key: Option<bevy::input::keyboard::KeyCode>,
 }
 
 #[derive(Resource, Clone, Debug)]

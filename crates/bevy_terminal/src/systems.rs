@@ -46,7 +46,7 @@ fn ancestor_is(
 /// whose `focus_id` matches `TerminalFocus::focused`. Runs in `PreUpdate`.
 #[allow(clippy::too_many_arguments)]
 pub fn terminal_input(
-    focus: Res<TerminalFocus>,
+    mut focus: ResMut<TerminalFocus>,
     mut key_events: MessageReader<KeyboardInput>,
     mut wheel_events: MessageReader<MouseWheel>,
     mut submit_events: bevy::ecs::message::MessageWriter<TerminalSubmit>,
@@ -56,6 +56,9 @@ pub fn terminal_input(
     parents: Query<&ChildOf>,
     viewport_entities: Query<Entity, With<TerminalViewport>>,
 ) {
+    // Drain in all paths so a stale absorb token from a previous
+    // close-then-reopen never bleeds into a subsequent frame.
+    let absorbed_key = focus.absorbed_key.take();
     let Some(focused_id) = focus.focused else {
         // Drain so we don't accumulate events while no terminal is focused.
         key_events.read().for_each(|_| {});
@@ -106,6 +109,9 @@ pub fn terminal_input(
 
     for event in key_events.read() {
         if !event.state.is_pressed() {
+            continue;
+        }
+        if Some(event.key_code) == absorbed_key {
             continue;
         }
         match event.key_code {

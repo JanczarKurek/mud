@@ -1,3 +1,4 @@
+pub mod chat;
 pub mod commands;
 pub mod currency;
 pub mod helpers;
@@ -11,6 +12,7 @@ use bevy::prelude::*;
 
 use crate::app::state::simulation_active;
 use crate::combat::systems::resolve_battle_turn;
+use crate::game::chat::process_say_commands;
 use crate::game::projection::{
     apply_game_events_to_client_state, collect_game_events_from_authority,
 };
@@ -59,6 +61,12 @@ impl Plugin for GameServerPlugin {
             .add_systems(
                 Update,
                 process_rotate_commands
+                    .in_set(CommandIntercept)
+                    .run_if(simulation_active),
+            )
+            .add_systems(
+                Update,
+                process_say_commands
                     .in_set(CommandIntercept)
                     .run_if(simulation_active),
             )

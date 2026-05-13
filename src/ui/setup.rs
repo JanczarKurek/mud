@@ -180,7 +180,10 @@ pub fn spawn_hud(
         TerminalConfig {
             initial_lines: Vec::new(),
             capacity: 256,
-            input: None,
+            input: Some(TerminalInputConfig {
+                prompt: "> ".to_owned(),
+                completion: false,
+            }),
             focus_id: CHAT_TERMINAL_FOCUS_ID,
             width: percent(100.0),
             height: Val::Auto,

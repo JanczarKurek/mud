@@ -1,3 +1,4 @@
+pub mod chat_input;
 pub mod components;
 pub mod dialog;
 pub mod item_details;
@@ -23,6 +24,7 @@ pub const PYTHON_CONSOLE_FOCUS_ID: TerminalFocusId = TerminalFocusId(1);
 pub const CHAT_TERMINAL_FOCUS_ID: TerminalFocusId = TerminalFocusId(2);
 
 use crate::app::state::ClientAppState;
+use crate::ui::chat_input::{handle_chat_submissions, toggle_chat_focus};
 use crate::ui::dialog::{
     auto_pin_dialog_transcript_scroll, handle_dialog_panel_clicks,
     handle_dialog_transcript_scrolling, sync_dialog_panel_continue_button,
@@ -320,6 +322,18 @@ impl Plugin for UiPlugin {
             Update,
             handle_trade_popup_close_click
                 .after(sync_trade_window_lifecycle)
+                .run_if(in_state(ClientAppState::InGame)),
+        )
+        .add_systems(
+            PreUpdate,
+            toggle_chat_focus
+                .before(bevy_terminal::terminal_input)
+                .run_if(in_state(ClientAppState::InGame)),
+        )
+        .add_systems(
+            Update,
+            handle_chat_submissions
+                .before(crate::game::CommandIntercept)
                 .run_if(in_state(ClientAppState::InGame)),
         );
     }

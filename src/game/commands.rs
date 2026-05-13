@@ -288,4 +288,12 @@ pub enum GameCommand {
     CraftItem {
         recipe_id: String,
     },
+    /// Player typed a chat message. Server trims the text, validates length
+    /// (1..=`chat::CHAT_MAX_LEN`), and pushes a formatted `"[name]: text"`
+    /// line into every player's `ChatLog` whose `SpaceResident` matches the
+    /// speaker and is within `chat::CHAT_RADIUS_TILES` Chebyshev distance —
+    /// the speaker included.
+    Say {
+        text: String,
+    },
 }

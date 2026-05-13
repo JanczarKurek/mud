@@ -994,6 +994,7 @@ mod tests {
             PlayerId(42),
             object_id,
             spawn_tile,
+            "tester".to_owned(),
         );
         app.world_mut().flush();
 

@@ -261,10 +261,7 @@ mod tests {
             .world_mut()
             .spawn((
                 Player,
-                PlayerIdentity {
-                    id: PlayerId(42),
-                    home_position: None,
-                },
+                PlayerIdentity::new(PlayerId(42)),
                 CharacterStash::default(),
             ))
             .id();
@@ -316,10 +313,7 @@ mod tests {
             .world_mut()
             .spawn((
                 Player,
-                PlayerIdentity {
-                    id: PlayerId(9),
-                    home_position: None,
-                },
+                PlayerIdentity::new(PlayerId(9)),
                 stash,
                 inventory,
                 ChatLog::default(),
@@ -390,10 +384,7 @@ mod tests {
             .world_mut()
             .spawn((
                 Player,
-                PlayerIdentity {
-                    id: PlayerId(9),
-                    home_position: None,
-                },
+                PlayerIdentity::new(PlayerId(9)),
                 stash,
                 Inventory::default(),
                 ChatLog::default(),
@@ -437,10 +428,7 @@ mod tests {
             .world_mut()
             .spawn((
                 Player,
-                PlayerIdentity {
-                    id: PlayerId(7),
-                    home_position: None,
-                },
+                PlayerIdentity::new(PlayerId(7)),
                 CharacterStash {
                     entries: [(String::from("doomed"), serde_json::json!(1))]
                         .into_iter()

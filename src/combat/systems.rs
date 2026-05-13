@@ -384,7 +384,7 @@ fn combatant_name(
         .unwrap_or_else(|| overworld_object.definition_id.clone())
 }
 
-fn chebyshev_distance(a: &TilePosition, b: &TilePosition) -> i32 {
+pub(crate) fn chebyshev_distance(a: &TilePosition, b: &TilePosition) -> i32 {
     if a.z != b.z {
         return i32::MAX;
     }

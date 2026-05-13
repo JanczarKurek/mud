@@ -226,6 +226,26 @@ impl AccountDb {
         )?;
         Ok(n > 0)
     }
+
+    /// Resolve a chat / UI display name for an account row. Prefers
+    /// `character_name` when set, falling back to `username`. Returns
+    /// `format!("Player#{account_id}")` for ids that do not exist — callers
+    /// should treat that as a graceful default rather than an error.
+    pub fn account_display_name(&self, account_id: i64) -> Result<String, rusqlite::Error> {
+        let row: Option<(Option<String>, String)> = self
+            .conn
+            .query_row(
+                "SELECT character_name, username FROM accounts WHERE account_id = ?1",
+                params![account_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        Ok(match row {
+            Some((Some(name), _)) if !name.trim().is_empty() => name,
+            Some((_, username)) => username,
+            None => format!("Player#{account_id}"),
+        })
+    }
 }
 
 fn validate_username(username: &str) -> Result<String, AuthError> {

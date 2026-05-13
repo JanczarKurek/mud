@@ -20,9 +20,14 @@ pub struct Player;
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct PlayerId(pub u64);
 
-#[derive(Component, Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Component, Clone, Debug, Eq, PartialEq)]
 pub struct PlayerIdentity {
     pub id: PlayerId,
+    /// Human-readable name shown in chat lines and other UI. Sourced from the
+    /// account DB's `character_name` (falling back to `username`) at login. For
+    /// fresh test spawns the `new` constructor generates a `Player#<id>`
+    /// placeholder so unit tests don't need to plumb a real name.
+    pub display_name: String,
     /// Where this character respawns after death. `None` means "use map
     /// center" — fresh characters start with no explicit home, then can set
     /// one with the `SetHome` command. Restored from the account DB on login.
@@ -33,9 +38,18 @@ pub struct PlayerIdentity {
 }
 
 impl PlayerIdentity {
-    pub const fn new(id: PlayerId) -> Self {
+    pub fn new(id: PlayerId) -> Self {
         Self {
             id,
+            display_name: format!("Player#{}", id.0),
+            home_position: None,
+        }
+    }
+
+    pub fn with_display_name(id: PlayerId, display_name: String) -> Self {
+        Self {
+            id,
+            display_name,
             home_position: None,
         }
     }
@@ -275,8 +289,9 @@ impl Default for ChatLog {
             lines: vec![
                 "[Narrator]: Right-click an item to inspect it.".to_owned(),
                 "[Narrator]: Right-click a nearby barrel to open it.".to_owned(),
+                "[Narrator]: Press T to chat with players nearby.".to_owned(),
             ],
-            max_lines: 8,
+            max_lines: 64,
         }
     }
 }

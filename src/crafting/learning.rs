@@ -132,10 +132,7 @@ mod tests {
             .world_mut()
             .spawn((
                 Player,
-                PlayerIdentity {
-                    id: PlayerId(1),
-                    home_position: None,
-                },
+                PlayerIdentity::new(PlayerId(1)),
                 CharacterStash::default(),
                 ChatLogState::default(),
             ))

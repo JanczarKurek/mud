@@ -1161,31 +1161,39 @@ fn effect_label(kind: crate::magic::resources::EffectKind) -> &'static str {
     }
 }
 
-/// Diff-push new chat lines from `ClientGameState.chat_log_lines` into the
-/// `ChatTerminal` widget. `Local<usize>` tracks the last mirrored length so
-/// we only push new arrivals — the widget owns its own scrollback. If the
-/// source vector ever shrinks (e.g. on save-state reset) we resync from
-/// scratch by clearing the buffer.
+/// Mirror `ClientGameState.chat_log_lines` into the `ChatTerminal` widget.
+/// `Local<Vec<String>>` tracks the last mirrored snapshot so we can detect
+/// any change — appends, shrinks, or rotations once the bounded ChatLog hits
+/// its `max_lines` cap (without a content-aware compare, a chat message that
+/// rotates the oldest line out would slip past since the length stays the
+/// same). On any mismatch we re-sync the whole buffer.
 pub fn sync_chat_log(
     client_state: Res<ClientGameState>,
-    mut last_mirrored: Local<usize>,
+    mut last_lines: Local<Vec<String>>,
     mut chat_query: Query<&mut bevy_terminal::Terminal, With<ChatTerminal>>,
 ) {
     let Ok(mut terminal) = chat_query.single_mut() else {
         return;
     };
-    let total = client_state.chat_log_lines.len();
-    if total < *last_mirrored {
-        terminal.clear();
-        *last_mirrored = 0;
-    }
-    if total == *last_mirrored {
+    if *last_lines == client_state.chat_log_lines {
         return;
     }
-    for line in &client_state.chat_log_lines[*last_mirrored..total] {
-        terminal.push(line.clone(), classify_chat_line(line));
+    // Fast path: pure append. Keeps the widget's existing scroll position
+    // since `terminal.push` doesn't reset scroll. Falls through to a full
+    // resync if the prefix diverges.
+    if client_state.chat_log_lines.len() >= last_lines.len()
+        && client_state.chat_log_lines[..last_lines.len()] == last_lines[..]
+    {
+        for line in &client_state.chat_log_lines[last_lines.len()..] {
+            terminal.push(line.clone(), classify_chat_line(line));
+        }
+    } else {
+        terminal.clear();
+        for line in &client_state.chat_log_lines {
+            terminal.push(line.clone(), classify_chat_line(line));
+        }
     }
-    *last_mirrored = total;
+    *last_lines = client_state.chat_log_lines.clone();
 }
 
 fn classify_chat_line(line: &str) -> bevy_terminal::LineStyle {
