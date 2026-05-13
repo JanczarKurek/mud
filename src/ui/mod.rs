@@ -14,6 +14,13 @@ pub mod time_of_day_button;
 pub mod trade;
 
 use bevy::prelude::*;
+use bevy_terminal::TerminalFocusId;
+
+/// Stable focus IDs for the project's terminal-widget instances. Outer
+/// systems flip `TerminalFocus::focused` to these when toggling the
+/// console / chat input.
+pub const PYTHON_CONSOLE_FOCUS_ID: TerminalFocusId = TerminalFocusId(1);
+pub const CHAT_TERMINAL_FOCUS_ID: TerminalFocusId = TerminalFocusId(2);
 
 use crate::app::state::ClientAppState;
 use crate::ui::dialog::{
@@ -254,8 +261,13 @@ impl Plugin for UiPlugin {
         )
         .add_systems(
             Update,
+            handle_minimap_keybinds
+                .run_if(in_state(ClientAppState::InGame))
+                .run_if(bevy_terminal::terminal_not_focused),
+        )
+        .add_systems(
+            Update,
             (
-                handle_minimap_keybinds,
                 handle_minimap_scroll_wheel,
                 handle_minimap_zoom_buttons,
                 sync_full_map_window_visibility,

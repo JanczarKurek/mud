@@ -1,0 +1,15 @@
+[package]
+name = "bevy_terminal"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = { version = "0.18", default-features = false, features = [
+    "bevy_ui",
+    "bevy_text",
+    "bevy_window",
+    "bevy_color",
+    "bevy_asset",
+    "bevy_state",
+    "default_font",
+] }

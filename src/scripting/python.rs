@@ -3,17 +3,17 @@
 //!
 //! Each `execute()` call builds an `AdminApiContext` from a fresh
 //! `WorldSnapshot`, installs it for the duration of the Python invocation,
-//! and drains the queued `GameCommand`s + log lines back to the caller.
+//! and returns the queued `GameCommand`s plus styled output lines.
 
 use std::mem::ManuallyDrop;
 use std::sync::{Arc, Mutex};
 
+use bevy_terminal::LineStyle;
 use rustpython::InterpreterConfig;
 use rustpython_vm::scope::Scope;
 use rustpython_vm::Interpreter;
 
 use crate::game::commands::GameCommand;
-use crate::scripting::resources::PythonConsoleState;
 use crate::scripting_api::bindings::world_api;
 use crate::scripting_api::{install_ctx, ApiContext, ApiError, WorldSnapshot};
 
@@ -83,6 +83,13 @@ impl ApiContext for AdminApiContext {
     }
 }
 
+/// Result of running a single REPL submission.
+#[derive(Default, Debug)]
+pub struct PythonExecOutput {
+    pub lines: Vec<(String, LineStyle)>,
+    pub commands: Vec<GameCommand>,
+}
+
 pub struct PythonConsoleHost {
     interpreter: ManuallyDrop<Interpreter>,
     scope: ManuallyDrop<Scope>,
@@ -113,14 +120,10 @@ impl PythonConsoleHost {
     }
 
     /// Run one Python input string in the persistent scope. Returns the
-    /// queued `GameCommand`s the script produced (caller pushes them into
+    /// queued `GameCommand`s the script produced plus the styled output
+    /// lines (caller forwards them to the terminal widget and
     /// `PendingGameCommands`).
-    pub fn execute(
-        &mut self,
-        state: &mut PythonConsoleState,
-        command: &str,
-        snapshot: WorldSnapshot,
-    ) -> Vec<GameCommand> {
+    pub fn execute(&mut self, command: &str, snapshot: WorldSnapshot) -> PythonExecOutput {
         let context = Arc::new(AdminApiContext::new(snapshot));
         let trait_ctx: Arc<dyn ApiContext> = context.clone();
 
@@ -130,8 +133,12 @@ impl PythonConsoleHost {
             })
         });
 
+        let mut output = PythonExecOutput::default();
+
         if let Err(error) = result {
-            state.push_output(format!("Python error: {error:?}"));
+            output
+                .lines
+                .push((format!("Python error: {error:?}"), LineStyle::Traceback));
         }
 
         let (queued_commands, log_lines, reset_pending) = {
@@ -144,7 +151,7 @@ impl PythonConsoleHost {
         };
 
         for line in log_lines {
-            state.push_output(line);
+            output.lines.push((line, LineStyle::Stdout));
         }
 
         if reset_pending {
@@ -157,10 +164,37 @@ impl PythonConsoleHost {
                 ManuallyDrop::drop(&mut self.scope);
                 self.scope = ManuallyDrop::new(new_scope);
             }
-            state.push_output("[System] world.reset(): scope cleared.".to_owned());
+            output.lines.push((
+                "[System] world.reset(): scope cleared.".to_owned(),
+                LineStyle::System,
+            ));
         }
 
-        queued_commands
+        output.commands = queued_commands;
+        output
+    }
+
+    /// Return identifiers in the persistent scope whose name starts with
+    /// `prefix`. Used to power Tab completion.
+    pub fn complete_prefix(&self, prefix: &str) -> Vec<String> {
+        let prefix_owned = prefix.to_owned();
+        self.interpreter.enter(|vm| {
+            let globals = self.scope.globals.clone();
+            let mut matches: Vec<String> = (&*globals)
+                .into_iter()
+                .filter_map(|(key, _value)| {
+                    let s = key.str(vm).ok()?.as_str().to_owned();
+                    if s.starts_with(&prefix_owned) {
+                        Some(s)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            matches.sort();
+            matches.dedup();
+            matches
+        })
     }
 }
 

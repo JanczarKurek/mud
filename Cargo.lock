@@ -1569,6 +1569,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy_terminal"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+]
+
+[[package]]
 name = "bevy_text"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4247,6 +4254,7 @@ dependencies = [
  "argon2",
  "base64 0.22.1",
  "bevy",
+ "bevy_terminal",
  "bevy_yarnspinner",
  "dirs",
  "libsqlite3-sys",

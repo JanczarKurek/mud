@@ -15,15 +15,16 @@ use crate::magic::resources::{SpellDefinitions, SpellTargeting};
 use crate::player::components::InventoryStack;
 use crate::scripting::resources::PythonConsoleState;
 use crate::ui::components::{
-    BackpackSlotRow, ChatLogText, ContainerSlotButton, ContainerSlotImage, ContextMenuAttackButton,
-    ContextMenuInspectButton, ContextMenuOpenButton, ContextMenuRoot, ContextMenuTakePartialButton,
-    ContextMenuUseButton, ContextMenuUseOnButton, CurrentCombatTargetLabel, DockedPanelBody,
-    DockedPanelCanvas, DockedPanelCloseButton, DockedPanelDragHandle, DockedPanelResizeHandle,
-    DockedPanelRoot, DockedPanelTitle, DragPreviewImage, DragPreviewLabel, DragPreviewQuantity,
-    DragPreviewRoot, EquipmentSlotButton, EquipmentSlotImage, HealthFill, ItemSlotButton,
-    ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot,
-    ManaFill, RightSidebarRoot, TakePartialAmountLabel, TakePartialCancelButton,
-    TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot,
+    BackpackSlotRow, ChatTerminal, ContainerSlotButton, ContainerSlotImage,
+    ContextMenuAttackButton, ContextMenuInspectButton, ContextMenuOpenButton, ContextMenuRoot,
+    ContextMenuTakePartialButton, ContextMenuUseButton, ContextMenuUseOnButton,
+    CurrentCombatTargetLabel, DockedPanelBody, DockedPanelCanvas, DockedPanelCloseButton,
+    DockedPanelDragHandle, DockedPanelResizeHandle, DockedPanelRoot, DockedPanelTitle,
+    DragPreviewImage, DragPreviewLabel, DragPreviewQuantity, DragPreviewRoot, EquipmentSlotButton,
+    EquipmentSlotImage, HealthFill, ItemSlotButton, ItemSlotImage, ItemSlotKind,
+    ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot, ManaFill, RightSidebarRoot,
+    TakePartialAmountLabel, TakePartialCancelButton, TakePartialConfirmButton,
+    TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot,
 };
 use crate::ui::resources::{
     ContextMenuState, ContextMenuTarget, CursorMode, CursorState, DockedPanelDragState,
@@ -1160,15 +1161,41 @@ fn effect_label(kind: crate::magic::resources::EffectKind) -> &'static str {
     }
 }
 
+/// Diff-push new chat lines from `ClientGameState.chat_log_lines` into the
+/// `ChatTerminal` widget. `Local<usize>` tracks the last mirrored length so
+/// we only push new arrivals — the widget owns its own scrollback. If the
+/// source vector ever shrinks (e.g. on save-state reset) we resync from
+/// scratch by clearing the buffer.
 pub fn sync_chat_log(
     client_state: Res<ClientGameState>,
-    mut chat_query: Query<&mut Text, With<ChatLogText>>,
+    mut last_mirrored: Local<usize>,
+    mut chat_query: Query<&mut bevy_terminal::Terminal, With<ChatTerminal>>,
 ) {
-    let Ok(mut chat_text) = chat_query.single_mut() else {
+    let Ok(mut terminal) = chat_query.single_mut() else {
         return;
     };
+    let total = client_state.chat_log_lines.len();
+    if total < *last_mirrored {
+        terminal.clear();
+        *last_mirrored = 0;
+    }
+    if total == *last_mirrored {
+        return;
+    }
+    for line in &client_state.chat_log_lines[*last_mirrored..total] {
+        terminal.push(line.clone(), classify_chat_line(line));
+    }
+    *last_mirrored = total;
+}
 
-    chat_text.0 = client_state.chat_log_lines.join("\n");
+fn classify_chat_line(line: &str) -> bevy_terminal::LineStyle {
+    if line.starts_with("[System]") || line.starts_with("[System ") {
+        bevy_terminal::LineStyle::ChatSystem
+    } else if line.contains("whispers") {
+        bevy_terminal::LineStyle::ChatWhisper
+    } else {
+        bevy_terminal::LineStyle::ChatSay
+    }
 }
 
 pub fn sync_context_menu_root(

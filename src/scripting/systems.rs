@@ -1,202 +1,192 @@
 use bevy::ecs::message::MessageReader;
 use bevy::input::keyboard::{Key, KeyCode, KeyboardInput};
-use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
+use bevy_terminal::{
+    LineStyle, Terminal, TerminalCompletionRequest, TerminalFocus, TerminalSubmit,
+};
 
 use crate::game::resources::PendingGameCommands;
 use crate::player::components::{Player, PlayerIdentity};
 use crate::scripting::python::PythonConsoleHost;
 use crate::scripting::resources::PythonConsoleState;
 use crate::scripting_api::build::WorldSnapshotParams;
-use crate::ui::components::{
-    PythonConsoleInput, PythonConsoleOutput, PythonConsolePanel, PythonConsoleScrollbarThumb,
-};
+use crate::ui::components::{PythonConsolePanel, PythonConsoleTerminal};
+use crate::ui::PYTHON_CONSOLE_FOCUS_ID;
 
-pub fn handle_python_console_input(
-    mut keyboard_input_events: MessageReader<KeyboardInput>,
-    mut mouse_wheel_events: MessageReader<MouseWheel>,
+/// Toggle the Python console on backtick. Lives outside the
+/// `terminal_not_focused` run-condition so the same keystroke can both
+/// open *and* close the console. Escape closes when focused.
+pub fn toggle_python_console(
+    mut key_events: MessageReader<KeyboardInput>,
     mut console_state: ResMut<PythonConsoleState>,
-    mut pending_commands: ResMut<PendingGameCommands>,
-    mut host: NonSendMut<PythonConsoleHost>,
-    snapshot_params: WorldSnapshotParams,
-    local_player_query: Query<&PlayerIdentity, With<Player>>,
+    mut focus: ResMut<TerminalFocus>,
+    mut panel_query: Query<&mut Node, With<PythonConsolePanel>>,
 ) {
-    if console_state.is_open {
-        for event in mouse_wheel_events.read() {
-            if event.y > 0.0 {
-                console_state.scroll_up(event.y.ceil() as usize * 3);
-            } else if event.y < 0.0 {
-                console_state.scroll_down(event.y.abs().ceil() as usize * 3);
-            }
-        }
-    }
-
-    for event in keyboard_input_events.read() {
+    for event in key_events.read() {
         if !event.state.is_pressed() {
             continue;
         }
-
-        if event.key_code == KeyCode::Backquote {
+        let want_toggle = matches!(event.key_code, KeyCode::Backquote);
+        let want_close = matches!(event.key_code, KeyCode::Escape) && console_state.is_open;
+        if !want_toggle && !want_close {
+            continue;
+        }
+        if want_toggle {
             console_state.is_open = !console_state.is_open;
-            console_state.history_index = None;
-            console_state.scroll_offset = 0;
-            continue;
+        } else {
+            console_state.is_open = false;
         }
-
-        if !console_state.is_open {
-            continue;
+        // Update focus and visibility together so neither lags by a frame.
+        focus.focused = if console_state.is_open {
+            Some(PYTHON_CONSOLE_FOCUS_ID)
+        } else {
+            None
+        };
+        for mut node in &mut panel_query {
+            node.display = if console_state.is_open {
+                Display::Flex
+            } else {
+                Display::None
+            };
         }
-
-        match event.key_code {
-            KeyCode::Escape => {
-                console_state.is_open = false;
-                console_state.history_index = None;
-            }
-            KeyCode::Enter => {
-                let command = console_state.input.trim().to_owned();
-                if command.is_empty() {
-                    console_state.input.clear();
-                    continue;
-                }
-
-                console_state.push_output(format!(">>> {command}"));
-                console_state.history.push(command.clone());
-                console_state.history_index = None;
-                console_state.input.clear();
-
-                let caller = local_player_query.iter().next().map(|identity| identity.id);
-                let snapshot = snapshot_params.build_for_player(caller);
-
-                let queued = host.execute(&mut console_state, &command, snapshot);
-                for cmd in queued {
-                    match caller {
-                        Some(id) => pending_commands.push_for_player(id, cmd),
-                        None => pending_commands.push(cmd),
-                    }
-                }
-            }
-            KeyCode::Backspace => {
-                console_state.input.pop();
-            }
-            KeyCode::ArrowUp => {
-                history_up(&mut console_state);
-            }
-            KeyCode::ArrowDown => {
-                history_down(&mut console_state);
-            }
-            KeyCode::PageUp => {
-                scroll_page_up(&mut console_state);
-            }
-            KeyCode::PageDown => {
-                scroll_page_down(&mut console_state);
-            }
-            KeyCode::Tab => {}
-            _ => {
-                if event.repeat {
-                    continue;
-                }
-
-                match &event.logical_key {
-                    Key::PageUp => {
-                        scroll_page_up(&mut console_state);
-                    }
-                    Key::PageDown => {
-                        scroll_page_down(&mut console_state);
-                    }
-                    Key::Character(character) => {
-                        console_state.input.push_str(character.as_str());
-                    }
-                    Key::Space => {
-                        console_state.input.push(' ');
-                    }
-                    _ => {}
-                }
-            }
+        // Swallow the toggling event — we don't want `terminal_input` (which
+        // runs in the same PreUpdate schedule) to insert a backtick into
+        // the console buffer.
+        if matches!(event.logical_key, Key::Character(_)) {
+            // No-op: KeyboardInput is an event stream; we can't unsend it.
+            // Instead, `terminal_input` is ordered after this system in the
+            // PreUpdate set so it sees a fresh `focus.focused` and doesn't
+            // claim Backquote. See `ScriptingPlugin::build`.
         }
+        break;
     }
 }
 
-pub fn refresh_python_console_ui(
-    console_state: Res<PythonConsoleState>,
-    mut panel_query: Query<&mut Visibility, With<PythonConsolePanel>>,
-    mut output_query: Query<&mut Text, (With<PythonConsoleOutput>, Without<PythonConsoleInput>)>,
-    mut input_query: Query<&mut Text, (With<PythonConsoleInput>, Without<PythonConsoleOutput>)>,
-    mut scrollbar_query: Query<
-        (&mut Node, &mut Visibility),
-        (
-            With<PythonConsoleScrollbarThumb>,
-            Without<PythonConsolePanel>,
-        ),
-    >,
+/// Take `TerminalSubmit` events from the console terminal, run them through
+/// `PythonConsoleHost`, and push the resulting output lines back into the
+/// `Terminal` component. Queued `GameCommand`s are dispatched through
+/// `PendingGameCommands` using the same caller routing the old handler used.
+pub fn handle_python_console_submissions(
+    mut submissions: MessageReader<TerminalSubmit>,
+    mut host: NonSendMut<PythonConsoleHost>,
+    mut pending_commands: ResMut<PendingGameCommands>,
+    mut terminals: Query<&mut Terminal, With<PythonConsoleTerminal>>,
+    snapshot_params: WorldSnapshotParams,
+    local_player_query: Query<&PlayerIdentity, With<Player>>,
 ) {
-    let Ok(mut panel_visibility) = panel_query.single_mut() else {
-        return;
-    };
-    let Ok(mut output_text) = output_query.single_mut() else {
-        return;
-    };
-    let Ok(mut input_text) = input_query.single_mut() else {
-        return;
-    };
-    let Ok((mut scrollbar_node, mut scrollbar_visibility)) = scrollbar_query.single_mut() else {
-        return;
-    };
+    for submission in submissions.read() {
+        let Ok(mut terminal) = terminals.get_mut(submission.terminal) else {
+            continue;
+        };
+        // Echo the input as a prompt line so users see history mid-stream.
+        terminal.push(format!(">>> {}", submission.text), LineStyle::Prompt);
 
-    *panel_visibility = if console_state.is_open {
-        Visibility::Visible
-    } else {
-        Visibility::Hidden
-    };
-    output_text.0 = console_state.rendered_output();
-    input_text.0 = format!(">>> {}", console_state.input);
+        let caller = local_player_query.iter().next().map(|identity| identity.id);
+        let snapshot = snapshot_params.build_for_player(caller);
+        let output = host.execute(&submission.text, snapshot);
 
-    let (thumb_fraction, progress) = console_state.scrollbar_metrics();
-    *scrollbar_visibility = if thumb_fraction >= 1.0 {
-        Visibility::Hidden
-    } else {
-        Visibility::Visible
-    };
-    scrollbar_node.height = percent(thumb_fraction * 100.0);
-    scrollbar_node.top = percent((1.0 - thumb_fraction) * progress * 100.0);
+        for (line, style) in output.lines {
+            terminal.push(line, style);
+        }
+        for cmd in output.commands {
+            match caller {
+                Some(id) => pending_commands.push_for_player(id, cmd),
+                None => pending_commands.push(cmd),
+            }
+        }
+    }
 }
 
-fn history_up(console_state: &mut PythonConsoleState) {
-    if console_state.history.is_empty() {
-        return;
+/// Resolve a Tab completion request against the persistent scope. A unique
+/// match auto-fills the input via `Terminal::replace_input_token`; multiple
+/// candidates list themselves as a system-styled output line.
+pub fn handle_python_console_completion(
+    mut requests: MessageReader<TerminalCompletionRequest>,
+    host: NonSend<PythonConsoleHost>,
+    mut terminals: Query<&mut Terminal, With<PythonConsoleTerminal>>,
+) {
+    for request in requests.read() {
+        let Ok(mut terminal) = terminals.get_mut(request.terminal) else {
+            continue;
+        };
+        let token = trailing_identifier(&request.text_before_cursor);
+        if token.is_empty() {
+            continue;
+        }
+        let mut matches = host.complete_prefix(token);
+        matches.retain(|m| !m.starts_with('_'));
+        match matches.as_slice() {
+            [] => {}
+            [single] => {
+                let single = single.clone();
+                terminal.replace_input_token(token.chars().count(), &single);
+            }
+            many => {
+                terminal.push(
+                    format!("[completions] {}", many.join(" ")),
+                    LineStyle::System,
+                );
+                if let Some(prefix) = common_prefix(many) {
+                    if prefix.len() > token.len() {
+                        terminal.replace_input_token(token.chars().count(), &prefix);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Pull the last identifier-ish token off the buffer. Stops at the first
+/// non-identifier char scanning right-to-left so `world.gi` returns `gi`.
+fn trailing_identifier(input: &str) -> &str {
+    let bytes = input.as_bytes();
+    let mut split = bytes.len();
+    for (i, b) in bytes.iter().enumerate().rev() {
+        if b.is_ascii_alphanumeric() || *b == b'_' {
+            split = i;
+        } else {
+            break;
+        }
+    }
+    &input[split..]
+}
+
+fn common_prefix(strings: &[String]) -> Option<String> {
+    let first = strings.first()?;
+    let mut prefix_len = first.len();
+    for s in &strings[1..] {
+        prefix_len = prefix_len.min(s.len());
+        for (i, (a, b)) in first.bytes().zip(s.bytes()).enumerate() {
+            if i >= prefix_len {
+                break;
+            }
+            if a != b {
+                prefix_len = i;
+                break;
+            }
+        }
+    }
+    Some(first[..prefix_len].to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trailing_identifier_finds_last_token() {
+        assert_eq!(trailing_identifier("wor"), "wor");
+        assert_eq!(trailing_identifier("world.gi"), "gi");
+        assert_eq!(trailing_identifier("a + b.c"), "c");
+        assert_eq!(trailing_identifier(""), "");
+        assert_eq!(trailing_identifier("  "), "");
     }
 
-    let next_index = match console_state.history_index {
-        Some(0) => 0,
-        Some(index) => index - 1,
-        None => console_state.history.len() - 1,
-    };
-
-    console_state.history_index = Some(next_index);
-    console_state.input = console_state.history[next_index].clone();
-}
-
-fn history_down(console_state: &mut PythonConsoleState) {
-    let Some(index) = console_state.history_index else {
-        return;
-    };
-
-    let next_index = index + 1;
-    if next_index >= console_state.history.len() {
-        console_state.history_index = None;
-        console_state.input.clear();
-        return;
+    #[test]
+    fn common_prefix_handles_empty_and_full_match() {
+        let strings = vec!["world".into(), "worker".into(), "won".into()];
+        assert_eq!(common_prefix(&strings).as_deref(), Some("wo"));
+        let single = vec!["only".into()];
+        assert_eq!(common_prefix(&single).as_deref(), Some("only"));
     }
-
-    console_state.history_index = Some(next_index);
-    console_state.input = console_state.history[next_index].clone();
-}
-
-fn scroll_page_up(console_state: &mut PythonConsoleState) {
-    let lines = console_state.visible_output_lines.saturating_sub(2).max(1);
-    console_state.scroll_up(lines);
-}
-
-fn scroll_page_down(console_state: &mut PythonConsoleState) {
-    let lines = console_state.visible_output_lines.saturating_sub(2).max(1);
-    console_state.scroll_down(lines);
 }

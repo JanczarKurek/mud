@@ -1,3 +1,7 @@
+[workspace]
+members = [".", "crates/bevy_terminal"]
+resolver = "2"
+
 [package]
 name = "mud2"
 version = "0.2.0"
@@ -5,6 +9,7 @@ edition = "2021"
 
 [dependencies]
 bevy = { version = "0.18" }
+bevy_terminal = { path = "crates/bevy_terminal" }
 bevy_yarnspinner = "0.8"
 # Only needed for `VariableStorageError`, which bevy_yarnspinner re-exports
 # as `pub(crate)`. The actual trait lives in `yarnspinner::runtime`.

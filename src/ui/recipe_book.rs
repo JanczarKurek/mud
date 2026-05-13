@@ -50,8 +50,15 @@ pub enum RecipeBookSystemSet {
 pub fn register(app: &mut App) {
     app.add_systems(
         Update,
+        open_recipe_book_on_keybind
+            .run_if(in_state(ClientAppState::InGame))
+            .run_if(simulation_active)
+            .run_if(bevy_terminal::terminal_not_focused)
+            .in_set(RecipeBookSystemSet::Process),
+    )
+    .add_systems(
+        Update,
         (
-            open_recipe_book_on_keybind,
             consume_open_recipe_book_event,
             rebuild_recipe_book_contents,
             handle_craft_button_clicks,

@@ -170,20 +170,13 @@ pub struct ItemTooltipLabel;
 #[derive(Component)]
 pub struct PythonConsolePanel;
 
+/// Marker on the terminal-widget root that hosts the Python console.
 #[derive(Component)]
-pub struct PythonConsoleOutput;
+pub struct PythonConsoleTerminal;
 
+/// Marker on the terminal-widget root that hosts the read-only chat log.
 #[derive(Component)]
-pub struct PythonConsoleInput;
-
-#[derive(Component)]
-pub struct PythonConsoleOutputViewport;
-
-#[derive(Component)]
-pub struct PythonConsoleScrollbarThumb;
-
-#[derive(Component)]
-pub struct ChatLogText;
+pub struct ChatTerminal;
 
 #[derive(Component)]
 pub struct ContextMenuRoot;

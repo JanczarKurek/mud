@@ -69,11 +69,18 @@ impl Plugin for PlayerClientPlugin {
                     sync_authoritative_player_display,
                     sync_authoritative_player_position_view,
                     sync_projected_player_from_client_state,
+                )
+                    .run_if(in_state(ClientAppState::InGame)),
+            )
+            .add_systems(
+                Update,
+                (
                     move_player_on_grid,
                     rotate_nearby_object_on_shortcut,
                     set_home_on_keypress,
                 )
-                    .run_if(in_state(ClientAppState::InGame)),
+                    .run_if(in_state(ClientAppState::InGame))
+                    .run_if(bevy_terminal::terminal_not_focused),
             );
     }
 }

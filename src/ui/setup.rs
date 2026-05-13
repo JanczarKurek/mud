@@ -1,9 +1,9 @@
 use bevy::prelude::*;
-use bevy::text::{Justify, LineBreak, TextLayout};
 use bevy::ui::widget::NodeImageMode;
+use bevy_terminal::{spawn_terminal, LineStyle, TerminalConfig, TerminalInputConfig, TerminalLine};
 
 use crate::ui::components::{
-    BackpackPanelContent, BackpackSlotRow, CarryWeightLabel, ChatLogText, ContainerPanelContent,
+    BackpackPanelContent, BackpackSlotRow, CarryWeightLabel, ChatTerminal, ContainerPanelContent,
     ContainerSlotButton, ContainerSlotImage, ContextMenuAttackButton, ContextMenuInspectButton,
     ContextMenuInteractButton, ContextMenuOfferToTradeButton, ContextMenuOpenButton,
     ContextMenuRoot, ContextMenuTakePartialButton, ContextMenuTalkButton, ContextMenuTradeButton,
@@ -16,17 +16,17 @@ use crate::ui::components::{
     FullMapZoomLabel, FullMapZoomOutButton, HealthFill, HealthLabel, HudMinimapZoomInButton,
     HudMinimapZoomLabel, HudMinimapZoomOutButton, ItemSlotButton, ItemSlotImage, ItemSlotKind,
     ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot, MagicEffectsLabel, ManaFill,
-    ManaLabel, MinimapCanvas, MinimapMode, MinimapView, PythonConsoleInput, PythonConsoleOutput,
-    PythonConsoleOutputViewport, PythonConsolePanel, PythonConsoleScrollbarThumb, RegenBuffLabel,
-    RightSidebarRoot, StatusPanelContent, TakePartialAmountLabel, TakePartialCancelButton,
-    TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot,
-    TradeButtonLabel, TradeColumn,
+    ManaLabel, MinimapCanvas, MinimapMode, MinimapView, PythonConsolePanel, PythonConsoleTerminal,
+    RegenBuffLabel, RightSidebarRoot, StatusPanelContent, TakePartialAmountLabel,
+    TakePartialCancelButton, TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton,
+    TakePartialPopupRoot, TradeButtonLabel, TradeColumn,
 };
 use crate::ui::menu_bar::{spawn_menu_bar, MENU_BAR_HEIGHT};
 use crate::ui::minimap::{make_minimap_image, FULL_MAP_BODY_SIZE, HUD_MINIMAP_SIZE};
 use crate::ui::resources::{DockedPanelState, FullMapWindowState, HudMinimapSettings};
 use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton, ThemedPanel};
 use crate::ui::theme::{Palette, UiThemeAssets};
+use crate::ui::{CHAT_TERMINAL_FOCUS_ID, PYTHON_CONSOLE_FOCUS_ID};
 use crate::world::object_definitions::EquipmentSlot;
 
 pub fn spawn_hud(
@@ -141,7 +141,7 @@ pub fn spawn_hud(
     spawn_character_sheet_button(&mut commands, &asset_server);
     crate::ui::time_of_day_button::spawn_time_of_day_button(&mut commands, &asset_server);
 
-    commands
+    let bottom_bar = commands
         .spawn((
             Node {
                 width: percent(100.0),
@@ -154,155 +154,112 @@ pub fn spawn_hud(
             },
             BackgroundColor(Color::NONE),
         ))
-        .with_children(|parent| {
-            parent
-                .spawn((
-                    Node {
-                        width: percent(30.0),
-                        height: percent(100.0),
-                        flex_direction: FlexDirection::Column,
-                        row_gap: px(10.0),
-                        padding: UiRect::all(px(12.0)),
-                        ..default()
-                    },
-                    BackgroundColor(palette.surface_chat),
-                ))
-                .with_children(|chat_panel| {
-                    spawn_panel_label(chat_panel, "Chat", &palette);
-                    chat_panel.spawn((
-                        Text::new(""),
-                        ChatLogText,
-                        TextFont {
-                            font_size: 16.0,
-                            ..default()
-                        },
-                        TextColor(palette.text_muted),
-                        TextLayout::new(Justify::Left, LineBreak::WordOrCharacter),
-                        Node {
-                            width: percent(100.0),
-                            ..default()
-                        },
-                    ));
-                });
+        .id();
 
-            parent
-                .spawn((
-                    Node {
-                        width: percent(58.0),
-                        height: percent(100.0),
-                        flex_direction: FlexDirection::Column,
-                        row_gap: px(10.0),
-                        padding: UiRect::all(px(12.0)),
-                        ..default()
-                    },
-                    PythonConsolePanel,
-                    BackgroundColor(palette.surface_chat),
-                ))
-                .with_children(|chat_panel| {
-                    spawn_panel_label(chat_panel, "Python Console", &palette);
+    // Chat panel: a read-only terminal widget wrapped in the existing
+    // chat surface for label + padding.
+    let chat_panel = commands
+        .spawn((
+            Node {
+                width: percent(30.0),
+                height: percent(100.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: px(10.0),
+                padding: UiRect::all(px(12.0)),
+                ..default()
+            },
+            BackgroundColor(palette.surface_chat),
+            ChildOf(bottom_bar),
+        ))
+        .id();
+    commands.entity(chat_panel).with_children(|panel| {
+        spawn_panel_label(panel, "Chat", &palette);
+    });
+    let chat_terminal = spawn_terminal(
+        &mut commands,
+        TerminalConfig {
+            initial_lines: Vec::new(),
+            capacity: 256,
+            input: None,
+            focus_id: CHAT_TERMINAL_FOCUS_ID,
+            width: percent(100.0),
+            height: Val::Auto,
+            background: None,
+            ..default()
+        },
+    );
+    commands.entity(chat_terminal).insert((
+        ChatTerminal,
+        Node {
+            width: percent(100.0),
+            flex_grow: 1.0,
+            min_height: px(0.0),
+            flex_direction: FlexDirection::Column,
+            ..default()
+        },
+    ));
+    commands.entity(chat_panel).add_children(&[chat_terminal]);
 
-                    chat_panel
-                        .spawn((
-                            Node {
-                                width: percent(100.0),
-                                flex_grow: 1.0,
-                                min_height: px(0.0),
-                                column_gap: px(8.0),
-                                ..default()
-                            },
-                            BackgroundColor(Color::NONE),
-                        ))
-                        .with_children(|output_row| {
-                            output_row
-                                .spawn((
-                                    Node {
-                                        flex_grow: 1.0,
-                                        min_height: px(0.0),
-                                        overflow: Overflow::clip(),
-                                        padding: UiRect {
-                                            left: px(8.0),
-                                            right: px(8.0),
-                                            top: px(8.0),
-                                            bottom: px(14.0),
-                                        },
-                                        ..default()
-                                    },
-                                    PythonConsoleOutputViewport,
-                                    BackgroundColor(palette.surface_console_output),
-                                ))
-                                .with_children(|output_viewport| {
-                                    output_viewport.spawn((
-                                        Text::new(""),
-                                        PythonConsoleOutput,
-                                        TextFont {
-                                            font_size: 16.0,
-                                            ..default()
-                                        },
-                                        TextColor(palette.text_muted),
-                                        TextLayout::new(Justify::Left, LineBreak::WordOrCharacter),
-                                        Node {
-                                            width: percent(100.0),
-                                            ..default()
-                                        },
-                                    ));
-                                });
-
-                            output_row
-                                .spawn((
-                                    Node {
-                                        width: px(10.0),
-                                        height: percent(100.0),
-                                        padding: UiRect::vertical(px(2.0)),
-                                        ..default()
-                                    },
-                                    BackgroundColor(palette.surface_scrollbar_track),
-                                ))
-                                .with_children(|track| {
-                                    track
-                                        .spawn((
-                                            Node {
-                                                width: percent(100.0),
-                                                height: percent(100.0),
-                                                position_type: PositionType::Relative,
-                                                ..default()
-                                            },
-                                            BackgroundColor(Color::NONE),
-                                        ))
-                                        .with_children(|thumb_parent| {
-                                            thumb_parent.spawn((
-                                                Node {
-                                                    width: percent(100.0),
-                                                    height: percent(100.0),
-                                                    min_height: px(20.0),
-                                                    position_type: PositionType::Absolute,
-                                                    top: px(0.0),
-                                                    ..default()
-                                                },
-                                                PythonConsoleScrollbarThumb,
-                                                BackgroundColor(palette.surface_scrollbar_thumb),
-                                            ));
-                                        });
-                                });
-                        });
-
-                    chat_panel.spawn((
-                        Node {
-                            width: percent(100.0),
-                            min_height: px(34.0),
-                            padding: UiRect::axes(px(6.0), px(4.0)),
-                            ..default()
-                        },
-                        BackgroundColor(palette.surface_console_input),
-                        Text::new(">>> "),
-                        PythonConsoleInput,
-                        TextFont {
-                            font_size: 18.0,
-                            ..default()
-                        },
-                        TextColor(palette.text_accent),
-                    ));
-                });
-        });
+    // Python console: read-write terminal hidden until backtick toggles it
+    // visible. The wrapping panel matches the chat panel's styling so the
+    // two share visual treatment.
+    let console_panel = commands
+        .spawn((
+            Node {
+                width: percent(58.0),
+                height: percent(100.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: px(10.0),
+                padding: UiRect::all(px(12.0)),
+                display: Display::None,
+                ..default()
+            },
+            PythonConsolePanel,
+            BackgroundColor(palette.surface_chat),
+            ChildOf(bottom_bar),
+        ))
+        .id();
+    commands.entity(console_panel).with_children(|panel| {
+        spawn_panel_label(panel, "Python Console", &palette);
+    });
+    let console_terminal = spawn_terminal(
+        &mut commands,
+        TerminalConfig {
+            initial_lines: vec![
+                TerminalLine::new(
+                    "[System] Press ` to toggle the Python console.",
+                    LineStyle::System,
+                ),
+                TerminalLine::new(
+                    "[Hint] world.player(), world.objects(), world.spawn(type, x, y), world.give(type, n).",
+                    LineStyle::System,
+                ),
+            ],
+            capacity: 512,
+            input: Some(TerminalInputConfig {
+                prompt: ">>> ".to_owned(),
+                completion: true,
+            }),
+            focus_id: PYTHON_CONSOLE_FOCUS_ID,
+            width: percent(100.0),
+            height: Val::Auto,
+            background: Some(palette.surface_console_output),
+            ..default()
+        },
+    );
+    commands.entity(console_terminal).insert((
+        PythonConsoleTerminal,
+        Node {
+            width: percent(100.0),
+            flex_grow: 1.0,
+            min_height: px(0.0),
+            flex_direction: FlexDirection::Column,
+            ..default()
+        },
+    ));
+    commands
+        .entity(console_panel)
+        .add_children(&[console_terminal]);
 
     commands
         .spawn((
