@@ -615,7 +615,12 @@ pub(crate) fn point_in_ui_node(
     computed: &ComputedNode,
     transform: &UiGlobalTransform,
 ) -> bool {
-    computed.contains_point(*transform, point)
+    // `point` comes from `Window::cursor_position()` in logical pixels, but
+    // `ComputedNode` / `UiGlobalTransform` are in physical pixels. On HiDPI
+    // displays (scale_factor > 1) we must scale up or the hit-test misses.
+    let inv = computed.inverse_scale_factor();
+    let physical_point = if inv > 0.0 { point / inv } else { point };
+    computed.contains_point(*transform, physical_point)
 }
 
 trait ClientTradeViewExt {

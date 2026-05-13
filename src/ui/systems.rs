@@ -3332,7 +3332,17 @@ fn point_in_ui_node(
     computed_node: &ComputedNode,
     global_transform: &UiGlobalTransform,
 ) -> bool {
-    computed_node.contains_point(*global_transform, cursor_position)
+    // `Window::cursor_position()` is in logical pixels, but `ComputedNode`
+    // geometry and `UiGlobalTransform` are in physical pixels. They diverge
+    // on HiDPI displays (e.g. macOS Retina, scale_factor = 2.0), so scale
+    // the cursor up before hit-testing or every UI click misses.
+    let inv = computed_node.inverse_scale_factor();
+    let physical_cursor = if inv > 0.0 {
+        cursor_position / inv
+    } else {
+        cursor_position
+    };
+    computed_node.contains_point(*global_transform, physical_cursor)
 }
 
 pub(crate) fn stack_in_slot_kind(
