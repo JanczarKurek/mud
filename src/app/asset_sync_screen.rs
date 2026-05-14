@@ -2,6 +2,8 @@ use bevy::prelude::*;
 
 use crate::app::state::ClientAppState;
 use crate::network::resources::AssetSyncState;
+use crate::ui::retro_bar::{spawn_retro_bar, RetroBarStyle};
+use crate::ui::theme::Palette;
 
 pub struct AssetSyncScreenPlugin;
 
@@ -29,7 +31,7 @@ struct AssetSyncStatusText;
 #[derive(Component)]
 struct AssetSyncLogText;
 
-fn spawn_asset_sync_screen(mut commands: Commands) {
+fn spawn_asset_sync_screen(mut commands: Commands, palette: Res<Palette>) {
     commands
         .spawn((
             AssetSyncRoot,
@@ -78,29 +80,14 @@ fn spawn_asset_sync_screen(mut commands: Commands) {
                     TextColor(Color::srgb(0.65, 0.60, 0.55)),
                 ));
 
-                // Progress bar background
-                panel
-                    .spawn((
-                        Node {
-                            width: Val::Percent(100.0),
-                            height: Val::Px(14.0),
-                            border: UiRect::all(Val::Px(1.0)),
-                            ..default()
-                        },
-                        BackgroundColor(Color::srgb(0.12, 0.11, 0.10)),
-                        BorderColor::all(Color::srgba(0.30, 0.25, 0.20, 0.40)),
-                    ))
-                    .with_children(|bar| {
-                        bar.spawn((
-                            AssetSyncProgressFill,
-                            Node {
-                                width: Val::Percent(0.0),
-                                height: Val::Percent(100.0),
-                                ..default()
-                            },
-                            BackgroundColor(Color::srgb(0.35, 0.65, 0.35)),
-                        ));
-                    });
+                spawn_retro_bar(
+                    panel,
+                    &palette,
+                    RetroBarStyle::default()
+                        .with_fill(Color::srgb(0.35, 0.65, 0.35))
+                        .with_initial_ratio(0.0),
+                    AssetSyncProgressFill,
+                );
 
                 // Log text
                 panel.spawn((

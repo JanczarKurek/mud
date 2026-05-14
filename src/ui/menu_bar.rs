@@ -6,8 +6,7 @@ use crate::ui::components::{
     MenuBarItemButton, MenuBarRoot, MenuDropdownEntryButton, MenuDropdownRoot,
 };
 use crate::ui::resources::{
-    DockedPanelState, FullMapWindowState, MenuAction, MenuBarId, OpenMenuState,
-    PendingMenuActions,
+    DockedPanelState, FullMapWindowState, MenuAction, MenuBarId, OpenMenuState, PendingMenuActions,
 };
 use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton, ThemedPanel};
 use crate::ui::theme::{Palette, UiThemeAssets};

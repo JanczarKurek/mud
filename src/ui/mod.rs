@@ -13,6 +13,7 @@ pub mod mountable_panel;
 pub mod movable_window;
 pub mod recipe_book;
 pub mod resources;
+pub mod retro_bar;
 pub mod setup;
 pub mod sprite_state;
 pub mod status_panel;
@@ -31,22 +32,22 @@ pub const PYTHON_CONSOLE_FOCUS_ID: TerminalFocusId = TerminalFocusId(1);
 pub const CHAT_TERMINAL_FOCUS_ID: TerminalFocusId = TerminalFocusId(2);
 
 use crate::app::state::ClientAppState;
+use crate::ui::backpack_panel::BackpackPanel;
 use crate::ui::chat_input::{handle_chat_submissions, toggle_chat_focus};
+use crate::ui::container_panel::ContainerPanel;
+use crate::ui::current_target_panel::CurrentTargetPanel;
 use crate::ui::dialog::{
     auto_pin_dialog_transcript_scroll, handle_dialog_panel_clicks,
     handle_dialog_transcript_scrolling, sync_dialog_panel_continue_button,
     sync_dialog_panel_options, sync_dialog_panel_transcript, sync_dialog_window_lifecycle,
     DialogPanelRenderState,
 };
+use crate::ui::equipment_panel::EquipmentPanel;
 use crate::ui::menu_bar::{apply_menu_actions, handle_menu_bar_clicks, sync_menu_dropdowns};
 use crate::ui::minimap::{
     handle_minimap_keybinds, handle_minimap_scroll_wheel, handle_minimap_zoom_buttons,
     sync_full_map_window_visibility, sync_minimap_zoom_labels, update_minimap_images,
 };
-use crate::ui::backpack_panel::BackpackPanel;
-use crate::ui::container_panel::ContainerPanel;
-use crate::ui::current_target_panel::CurrentTargetPanel;
-use crate::ui::equipment_panel::EquipmentPanel;
 use crate::ui::minimap_panel::MinimapPanel;
 use crate::ui::mountable_panel::{MountablePanelLifecycleSet, MountablePanelPlugin};
 use crate::ui::resources::{

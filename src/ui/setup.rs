@@ -4,31 +4,30 @@ use bevy_terminal::{spawn_terminal, LineStyle, TerminalConfig, TerminalInputConf
 
 use crate::ui::components::{
     BackpackPanelContent, BackpackPanelUndockButton, BackpackSlotRow, CarryWeightLabel,
-    ChatTerminal, ContainerPanelContent, ContainerPanelUndockButton,
-    CurrentTargetPanelUndockButton, MinimapPanelUndockButton,
-    ContainerSlotButton, ContainerSlotImage, ContextMenuAttackButton, ContextMenuInspectButton,
+    ChatTerminal, ContainerPanelContent, ContainerPanelUndockButton, ContainerSlotButton,
+    ContainerSlotImage, ContextMenuAttackButton, ContextMenuInspectButton,
     ContextMenuInteractButton, ContextMenuOfferToTradeButton, ContextMenuOpenButton,
     ContextMenuRoot, ContextMenuTakePartialButton, ContextMenuTalkButton, ContextMenuTradeButton,
     ContextMenuUseButton, ContextMenuUseOnButton, CurrentCombatTargetLabel,
-    CurrentTargetPanelContent, DockedPanelBody, DockedPanelCanvas, DockedPanelCloseButton,
-    DockedPanelDragHandle, DockedPanelResizeHandle, DockedPanelRoot, DockedPanelTitle,
-    DragPreviewImage, DragPreviewLabel, DragPreviewQuantity, DragPreviewRoot,
+    CurrentTargetPanelContent, CurrentTargetPanelUndockButton, DockedPanelBody, DockedPanelCanvas,
+    DockedPanelCloseButton, DockedPanelDragHandle, DockedPanelResizeHandle, DockedPanelRoot,
+    DockedPanelTitle, DragPreviewImage, DragPreviewLabel, DragPreviewQuantity, DragPreviewRoot,
     EquipmentPanelContent, EquipmentPanelUndockButton, EquipmentSlotButton, EquipmentSlotImage,
-    ExperienceFill,
-    ExperienceLabel, FullMapBodyRoot, FullMapCloseButton, FullMapWindowRoot, FullMapZoomInButton,
-    FullMapZoomLabel, FullMapZoomOutButton, HealthFill, HealthLabel, HudMinimapZoomInButton,
-    HudMinimapZoomLabel, HudMinimapZoomOutButton, ItemSlotButton, ItemSlotImage, ItemSlotKind,
-    ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot, MagicEffectsLabel, ManaFill,
-    ManaLabel, MinimapCanvas, MinimapMode, MinimapView, PythonConsolePanel, PythonConsoleTerminal,
-    RegenBuffLabel, RightSidebarRoot, StatusPanelContent, StatusPanelUndockButton,
-    TakePartialAmountLabel,
-    TakePartialCancelButton, TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton,
-    TakePartialPopupRoot, TradeButtonLabel, TradeColumn,
+    ExperienceFill, ExperienceLabel, FullMapBodyRoot, FullMapCloseButton, FullMapWindowRoot,
+    FullMapZoomInButton, FullMapZoomLabel, FullMapZoomOutButton, HealthFill, HealthLabel,
+    HudMinimapZoomInButton, HudMinimapZoomLabel, HudMinimapZoomOutButton, ItemSlotButton,
+    ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot,
+    MagicEffectsLabel, ManaFill, ManaLabel, MinimapCanvas, MinimapMode, MinimapPanelUndockButton,
+    MinimapView, PythonConsolePanel, PythonConsoleTerminal, RegenBuffLabel, RightSidebarRoot,
+    StatusPanelContent, StatusPanelUndockButton, TakePartialAmountLabel, TakePartialCancelButton,
+    TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot,
+    TradeButtonLabel, TradeColumn,
 };
 use crate::ui::menu_bar::{spawn_menu_bar, MENU_BAR_HEIGHT};
 use crate::ui::minimap::{make_minimap_image, FULL_MAP_BODY_SIZE, HUD_MINIMAP_SIZE};
 use crate::ui::movable_window::{spawn_themed_close_button, spawn_themed_icon_button};
 use crate::ui::resources::{DockedPanelState, FullMapWindowState, HudMinimapSettings};
+use crate::ui::retro_bar::{spawn_retro_bar, RetroBarStyle};
 use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton, ThemedPanel};
 use crate::ui::theme::{Palette, UiThemeAssets};
 use crate::ui::{CHAT_TERMINAL_FOCUS_ID, PYTHON_CONSOLE_FOCUS_ID};
@@ -678,7 +677,7 @@ pub(crate) fn spawn_status_panel_body(parent: &mut ChildSpawnerCommands, palette
                 panel,
                 palette,
                 "XP",
-                Color::srgb(0.86, 0.72, 0.32),
+                palette.vital_experience_fill,
                 ExperienceFill,
                 ExperienceLabel,
             );
@@ -1169,7 +1168,7 @@ fn spawn_panel_label(parent: &mut ChildSpawnerCommands, label: &str, palette: &P
     ));
 }
 
-fn spawn_vital_bar<T: Component>(
+fn spawn_vital_bar<T: Bundle>(
     parent: &mut ChildSpawnerCommands,
     palette: &Palette,
     label: &str,
@@ -1204,28 +1203,14 @@ fn spawn_vital_bar<T: Component>(
                 },
             ));
 
-            bar_group
-                .spawn((
-                    Node {
-                        flex_grow: 1.0,
-                        height: px(16.0),
-                        padding: UiRect::all(px(2.0)),
-                        align_items: AlignItems::Center,
-                        ..default()
-                    },
-                    BackgroundColor(palette.surface_vital_bg),
-                ))
-                .with_children(|bar_container| {
-                    bar_container.spawn((
-                        Node {
-                            width: percent(100.0),
-                            height: percent(100.0),
-                            ..default()
-                        },
-                        marker,
-                        BackgroundColor(fill_color),
-                    ));
-                });
+            spawn_retro_bar(
+                bar_group,
+                palette,
+                RetroBarStyle::default()
+                    .with_fill(fill_color)
+                    .with_height(14.0),
+                marker,
+            );
         });
 }
 
@@ -1737,11 +1722,7 @@ fn spawn_full_map_window(
                                         "+",
                                         FullMapZoomInButton,
                                     );
-                                    spawn_themed_close_button(
-                                        controls,
-                                        theme,
-                                        FullMapCloseButton,
-                                    );
+                                    spawn_themed_close_button(controls, theme, FullMapCloseButton);
                                 });
                         });
 

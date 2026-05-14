@@ -700,8 +700,7 @@ fn handle_give_item(
         if grant == 0 {
             break;
         }
-        let mut stack =
-            InventoryStack::item(type_id.to_owned(), ObjectProperties::new(), grant);
+        let mut stack = InventoryStack::item(type_id.to_owned(), ObjectProperties::new(), grant);
         // Pouches granted this way (admin /give, dialog give_item, crafting
         // outputs, scripting) need their contents vec pre-initialized so
         // the inventory UI treats them as openable containers. Without

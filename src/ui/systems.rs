@@ -3118,9 +3118,7 @@ pub fn handle_docked_panel_dragging(
         let Some(origin) = drag_state.press_origin else {
             return;
         };
-        if cursor_position.distance(origin)
-            < crate::ui::resources::DOCKED_PANEL_DRAG_THRESHOLD_PX
-        {
+        if cursor_position.distance(origin) < crate::ui::resources::DOCKED_PANEL_DRAG_THRESHOLD_PX {
             return;
         }
         drag_state.passed_threshold = true;

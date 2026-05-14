@@ -221,8 +221,8 @@ pub fn sync_panel_floating_lifecycle<P: MountablePanel>(
     // Despawn floating windows that shouldn't be up anymore.
     for (entity, root) in &existing {
         let key = root.key();
-        let should_float = active.contains(&key)
-            && matches!(modes.mode(key), PanelMountMode::Floating { .. });
+        let should_float =
+            active.contains(&key) && matches!(modes.mode(key), PanelMountMode::Floating { .. });
         if !should_float {
             commands.entity(entity).despawn();
             if drag.focused == Some(entity) {
@@ -266,8 +266,8 @@ pub fn sync_panel_floating_lifecycle<P: MountablePanel>(
     }
     for key in considered {
         let panel_id = P::panel_id_for(key);
-        let floating = active.contains(&key)
-            && matches!(modes.mode(key), PanelMountMode::Floating { .. });
+        let floating =
+            active.contains(&key) && matches!(modes.mode(key), PanelMountMode::Floating { .. });
         panel_state.set_floating(panel_id, floating);
     }
 

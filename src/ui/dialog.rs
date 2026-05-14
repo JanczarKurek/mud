@@ -18,8 +18,8 @@ use crate::ui::components::{
     DialogPanelTranscriptScrollNode,
 };
 use crate::ui::movable_window::{
-    spawn_movable_window, spawn_themed_close_button, val_to_px, MovableWindowDrag,
-    MovableWindowId, MOVABLE_WINDOW_DEFAULT_MIN_SIZE,
+    spawn_movable_window, spawn_themed_close_button, val_to_px, MovableWindowDrag, MovableWindowId,
+    MOVABLE_WINDOW_DEFAULT_MIN_SIZE,
 };
 use crate::ui::resources::{ActiveDialogState, DialogEntry, DialogEntryKind};
 use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton};

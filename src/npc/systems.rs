@@ -159,7 +159,9 @@ pub fn update_roaming_npcs(
 
         match outcome.target {
             TargetChange::Set(target) => {
-                commands.entity(entity).insert(CombatTarget { entity: target });
+                commands
+                    .entity(entity)
+                    .insert(CombatTarget { entity: target });
             }
             TargetChange::Clear => {
                 commands.entity(entity).remove::<CombatTarget>();
@@ -301,9 +303,8 @@ fn tick_wander(input: &mut StepAiInput<'_>) -> AiOutcome {
         return AiOutcome {
             next_state: AiState::Wander,
             next_memory: AiMemory {
-                last_step: step.map(|p| {
-                    IVec2::new(p.x - input.tile_position.x, p.y - input.tile_position.y)
-                }),
+                last_step: step
+                    .map(|p| IVec2::new(p.x - input.tile_position.x, p.y - input.tile_position.y)),
             },
             target: TargetChange::Keep,
             move_to: step,
@@ -437,17 +438,10 @@ fn tick_alert(
     }
 }
 
-fn tick_pursue_or_engage(
-    input: &mut StepAiInput<'_>,
-    target: Entity,
-    engaged: bool,
-) -> AiOutcome {
+fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: bool) -> AiOutcome {
     // Validate target still exists and is in the same space.
-    let Some((_, target_space, target_pos)) = input
-        .players
-        .iter()
-        .copied()
-        .find(|(e, _, _)| *e == target)
+    let Some((_, target_space, target_pos)) =
+        input.players.iter().copied().find(|(e, _, _)| *e == target)
     else {
         return AiOutcome {
             next_state: AiState::Wander,
@@ -495,7 +489,12 @@ fn tick_pursue_or_engage(
 
     // Line of sight maintenance.
     if hostile.requires_line_of_sight
-        && !has_line_of_sight(input.tile_position, target_pos, input.space_id, input.blockers)
+        && !has_line_of_sight(
+            input.tile_position,
+            target_pos,
+            input.space_id,
+            input.blockers,
+        )
     {
         return AiOutcome {
             next_state: AiState::Alert {
@@ -702,11 +701,8 @@ fn strafe_step(
             if x == 0 && y == 0 {
                 continue;
             }
-            let candidate = TilePosition::new(
-                tile_position.x + x,
-                tile_position.y + y,
-                tile_position.z,
-            );
+            let candidate =
+                TilePosition::new(tile_position.x + x, tile_position.y + y, tile_position.z);
             if is_blocked_position(
                 entity,
                 space_id,
@@ -893,8 +889,7 @@ fn astar_next_step(
                 if dx == 0 && dy == 0 {
                     continue;
                 }
-                let neighbor =
-                    TilePosition::new(current.x + dx, current.y + dy, current.z);
+                let neighbor = TilePosition::new(current.x + dx, current.y + dy, current.z);
                 if is_blocked_position(
                     entity,
                     space_id,
@@ -1048,10 +1043,7 @@ fn order_cardinals_by_preference(preferred: IVec2) -> [IVec2; 4] {
     out
 }
 
-fn sample_step_interval(
-    behavior: &RoamingBehavior,
-    random_state: &mut RoamingRandomState,
-) -> f32 {
+fn sample_step_interval(behavior: &RoamingBehavior, random_state: &mut RoamingRandomState) -> f32 {
     let base = behavior.step_interval_seconds.max(0.05);
     let jitter_range = behavior.step_interval_jitter_seconds.max(0.0);
     if jitter_range <= 0.0 {
@@ -1583,9 +1575,16 @@ mod tests {
         assert!(initial_target == first || initial_target == _second);
 
         // Reset timer so we tick again.
-        app.world_mut().get_mut::<RoamingStepTimer>(npc).unwrap().remaining_seconds = 0.0;
+        app.world_mut()
+            .get_mut::<RoamingStepTimer>(npc)
+            .unwrap()
+            .remaining_seconds = 0.0;
         // Move the *other* player to be much closer than the original target.
-        let other = if initial_target == first { _second } else { first };
+        let other = if initial_target == first {
+            _second
+        } else {
+            first
+        };
         let mut other_pos = app.world_mut().get_mut::<TilePosition>(other).unwrap();
         *other_pos = TilePosition::ground(5, 6);
         // Also reset the NPC's timer.
