@@ -257,20 +257,48 @@ pub struct StatusPanelContent;
 /// Title-bar button on the docked status panel that pops the panel out
 /// into a floating `MovableWindow`. Click flips `StatusPanelMode` to
 /// `Floating`.
-#[derive(Component)]
+#[derive(Component, Default)]
 pub struct StatusPanelUndockButton;
 
 /// Title-bar button on the floating status window that re-docks the
 /// panel back into the right sidebar. Click flips `StatusPanelMode` to
 /// `Mounted`.
-#[derive(Component)]
+#[derive(Component, Default)]
 pub struct StatusPanelDockButton;
 
 /// Marker on the root of the floating status window (the
 /// `MovableWindow` spawned when `StatusPanelMode == Floating`). Used by
 /// the lifecycle system to find / despawn the window.
-#[derive(Component)]
+#[derive(Component, Default)]
 pub struct StatusPanelFloatingRoot;
+
+/// Title-bar button on the docked equipment panel that pops it out into
+/// a floating `MovableWindow`. Click flips `EquipmentPanelMode` to
+/// `Floating`. Mirror of `StatusPanelUndockButton`.
+#[derive(Component, Default)]
+pub struct EquipmentPanelUndockButton;
+
+/// Title-bar button on the floating equipment window that re-docks it.
+/// Click flips `EquipmentPanelMode` to `Mounted`.
+#[derive(Component, Default)]
+pub struct EquipmentPanelDockButton;
+
+/// Marker on the root of the floating equipment window. Used by the
+/// lifecycle system to find / despawn the window.
+#[derive(Component, Default)]
+pub struct EquipmentPanelFloatingRoot;
+
+/// Title-bar undock button on the docked backpack panel.
+#[derive(Component, Default)]
+pub struct BackpackPanelUndockButton;
+
+/// Title-bar dock-back button on the floating backpack window.
+#[derive(Component, Default)]
+pub struct BackpackPanelDockButton;
+
+/// Marker on the root of the floating backpack window.
+#[derive(Component, Default)]
+pub struct BackpackPanelFloatingRoot;
 
 #[derive(Component)]
 pub struct EquipmentPanelContent;

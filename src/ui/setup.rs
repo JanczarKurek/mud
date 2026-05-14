@@ -3,7 +3,8 @@ use bevy::ui::widget::NodeImageMode;
 use bevy_terminal::{spawn_terminal, LineStyle, TerminalConfig, TerminalInputConfig, TerminalLine};
 
 use crate::ui::components::{
-    BackpackPanelContent, BackpackSlotRow, CarryWeightLabel, ChatTerminal, ContainerPanelContent,
+    BackpackPanelContent, BackpackPanelUndockButton, BackpackSlotRow, CarryWeightLabel,
+    ChatTerminal, ContainerPanelContent,
     ContainerSlotButton, ContainerSlotImage, ContextMenuAttackButton, ContextMenuInspectButton,
     ContextMenuInteractButton, ContextMenuOfferToTradeButton, ContextMenuOpenButton,
     ContextMenuRoot, ContextMenuTakePartialButton, ContextMenuTalkButton, ContextMenuTradeButton,
@@ -11,7 +12,8 @@ use crate::ui::components::{
     CurrentTargetPanelContent, DockedPanelBody, DockedPanelCanvas, DockedPanelCloseButton,
     DockedPanelDragHandle, DockedPanelResizeHandle, DockedPanelRoot, DockedPanelTitle,
     DragPreviewImage, DragPreviewLabel, DragPreviewQuantity, DragPreviewRoot,
-    EquipmentPanelContent, EquipmentSlotButton, EquipmentSlotImage, ExperienceFill,
+    EquipmentPanelContent, EquipmentPanelUndockButton, EquipmentSlotButton, EquipmentSlotImage,
+    ExperienceFill,
     ExperienceLabel, FullMapBodyRoot, FullMapCloseButton, FullMapWindowRoot, FullMapZoomInButton,
     FullMapZoomLabel, FullMapZoomOutButton, HealthFill, HealthLabel, HudMinimapZoomInButton,
     HudMinimapZoomLabel, HudMinimapZoomOutButton, ItemSlotButton, ItemSlotImage, ItemSlotKind,
@@ -724,8 +726,30 @@ fn spawn_equipment_panel(
     theme: &UiThemeAssets,
     palette: &Palette,
 ) {
-    spawn_docked_panel(parent, panel_id, theme, palette, |body| {
-        body.spawn((
+    let undock_image = theme.undock_button.clone();
+    let theme_clone = theme.clone();
+    spawn_docked_panel_with_extras(
+        parent,
+        panel_id,
+        theme,
+        palette,
+        |title_extras| {
+            spawn_themed_icon_button(title_extras, undock_image, EquipmentPanelUndockButton);
+        },
+        |body| spawn_equipment_panel_body(body, &theme_clone, palette),
+    );
+}
+
+/// Body contents of the equipment panel — the paperdoll grid of slots.
+/// Shared between the docked (`spawn_equipment_panel`) and floating
+/// (`spawn_floating_equipment_window`) variants so both stay in sync.
+pub(crate) fn spawn_equipment_panel_body(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+) {
+    parent
+        .spawn((
             Node {
                 width: percent(100.0),
                 flex_direction: FlexDirection::Column,
@@ -743,7 +767,6 @@ fn spawn_equipment_panel(
             spawn_slot_row(paperdoll, theme, palette, &["Legs", "Backpack", "Ring"]);
             spawn_slot_row(paperdoll, theme, palette, &["Boots", "Ammo"]);
         });
-    });
 }
 
 fn spawn_backpack_panel(
@@ -752,8 +775,30 @@ fn spawn_backpack_panel(
     theme: &UiThemeAssets,
     palette: &Palette,
 ) {
-    spawn_docked_panel(parent, panel_id, theme, palette, |body| {
-        body.spawn((
+    let undock_image = theme.undock_button.clone();
+    let theme_clone = theme.clone();
+    spawn_docked_panel_with_extras(
+        parent,
+        panel_id,
+        theme,
+        palette,
+        |title_extras| {
+            spawn_themed_icon_button(title_extras, undock_image, BackpackPanelUndockButton);
+        },
+        |body| spawn_backpack_panel_body(body, &theme_clone, palette),
+    );
+}
+
+/// Body contents of the backpack panel — the 4x4 inventory grid.
+/// Shared between docked (`spawn_backpack_panel`) and floating
+/// (`spawn_floating_backpack_window`) variants.
+pub(crate) fn spawn_backpack_panel_body(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+) {
+    parent
+        .spawn((
             Node {
                 width: percent(100.0),
                 flex_direction: FlexDirection::Column,
@@ -782,7 +827,6 @@ fn spawn_backpack_panel(
                 });
             }
         });
-    });
 }
 
 fn spawn_docked_panel_canvas(

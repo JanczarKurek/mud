@@ -47,6 +47,12 @@ pub enum MovableWindowId {
     /// `sync_status_panel_floating_lifecycle` when `StatusPanelMode`
     /// flips to `Floating`; despawned when it flips back to `Mounted`.
     StatusPanel,
+    /// Floating-mode equipment panel (paperdoll slots). Singleton.
+    /// Spawned by `sync_equipment_panel_floating_lifecycle`.
+    EquipmentPanel,
+    /// Floating-mode backpack panel (4x4 inventory grid). Singleton.
+    /// Spawned by `sync_backpack_panel_floating_lifecycle`.
+    BackpackPanel,
 }
 
 #[derive(Component)]

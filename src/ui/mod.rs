@@ -1,9 +1,12 @@
+pub mod backpack_panel;
 pub mod chat_input;
 pub mod components;
 pub mod dialog;
+pub mod equipment_panel;
 pub mod item_details;
 pub mod menu_bar;
 pub mod minimap;
+pub mod mountable_panel;
 pub mod movable_window;
 pub mod recipe_book;
 pub mod resources;
@@ -37,18 +40,18 @@ use crate::ui::minimap::{
     handle_minimap_keybinds, handle_minimap_scroll_wheel, handle_minimap_zoom_buttons,
     sync_full_map_window_visibility, sync_minimap_zoom_labels, update_minimap_images,
 };
+use crate::ui::backpack_panel::BackpackPanel;
+use crate::ui::equipment_panel::EquipmentPanel;
+use crate::ui::mountable_panel::MountablePanelPlugin;
 use crate::ui::resources::{
     ActiveDialogState, CharacterSheetState, ContextMenuState, CursorState, DockedPanelDragState,
     DockedPanelResizeState, DockedPanelState, DragState, FullMapWindowState, HudMinimapSettings,
-    OpenMenuState, PendingMenuActions, SpellTargetingState, StatusPanelMode, TakePartialState,
-    TradePopupState, UseOnState,
+    OpenMenuState, PendingMenuActions, SpellTargetingState, TakePartialState, TradePopupState,
+    UseOnState,
 };
 use crate::ui::setup::spawn_hud;
 use crate::ui::sprite_state::sync_object_state_visuals;
-use crate::ui::status_panel::{
-    handle_status_panel_dock_click, handle_status_panel_undock_click,
-    sync_status_panel_floating_lifecycle,
-};
+use crate::ui::status_panel::StatusPanel;
 use crate::ui::systems::{
     apply_game_ui_events, consume_death_summary_events, consume_level_up_toasts,
     handle_attack_targeting, handle_character_sheet_button_click,
@@ -89,6 +92,9 @@ impl Plugin for UiPlugin {
             UiThemePlugin,
             crate::ui::movable_window::MovableWindowPlugin,
             crate::ui::item_details::ItemDetailsPlugin,
+            MountablePanelPlugin::<StatusPanel>::default(),
+            MountablePanelPlugin::<EquipmentPanel>::default(),
+            MountablePanelPlugin::<BackpackPanel>::default(),
         ))
         .insert_resource(ContextMenuState::default())
         .insert_resource(DockedPanelState::default())
@@ -109,7 +115,6 @@ impl Plugin for UiPlugin {
         .insert_resource(TradePanelRenderState::default())
         .insert_resource(TradePopupState::default())
         .insert_resource(TimeOfDayPopupState::default())
-        .insert_resource(StatusPanelMode::default())
         .add_systems(
             OnEnter(ClientAppState::InGame),
             (spawn_hud, setup_native_custom_cursor),
@@ -185,17 +190,6 @@ impl Plugin for UiPlugin {
                 handle_time_of_day_popup_close_click,
                 sync_time_of_day_window_lifecycle,
                 update_time_of_day_popup_contents,
-            )
-                .run_if(in_state(ClientAppState::InGame)),
-        )
-        .add_systems(
-            Update,
-            (
-                handle_status_panel_undock_click,
-                handle_status_panel_dock_click,
-                sync_status_panel_floating_lifecycle
-                    .after(handle_status_panel_undock_click)
-                    .after(handle_status_panel_dock_click),
             )
                 .run_if(in_state(ClientAppState::InGame)),
         )

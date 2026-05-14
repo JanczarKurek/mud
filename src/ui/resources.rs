@@ -2,6 +2,7 @@ use bevy::prelude::*;
 
 use crate::game::commands::ItemReference;
 use crate::ui::components::ItemSlotKind;
+use crate::ui::mountable_panel::{PanelModeAccess, PanelMountMode};
 use crate::world::components::TilePosition;
 
 #[derive(Clone, Copy)]
@@ -221,23 +222,46 @@ pub struct DockedPanelState {
     pub panels: Vec<DockedPanel>,
 }
 
-/// Whether the status (HP/MP/XP/effects) panel is currently docked in the
-/// right sidebar or floating as a `MovableWindow`. The floating variant
-/// remembers its last on-screen position so re-popping out lands the
-/// window where it was before the user re-docked it.
-///
-/// Pilot for the broader "any HUD panel can be mounted or floated"
-/// system. If this works well, the same shape will be reused for
-/// Equipment / Backpack / etc.
-#[derive(Resource, Clone, Copy, Debug)]
-pub enum StatusPanelMode {
-    Mounted,
-    Floating { last_position: Vec2 },
+/// Mount state for the Status panel (HP / MP / XP / effects / carry).
+/// Newtype around [`PanelMountMode`] so each mountable panel has its own
+/// distinct resource type. The single-field tuple struct is read /
+/// mutated through [`PanelModeAccess`] by the generic mount lifecycle
+/// systems in [`crate::ui::mountable_panel`].
+#[derive(Resource, Clone, Copy, Debug, Default)]
+pub struct StatusPanelMode(pub PanelMountMode);
+
+impl PanelModeAccess for StatusPanelMode {
+    fn mode(&self) -> PanelMountMode {
+        self.0
+    }
+    fn set_mode(&mut self, mode: PanelMountMode) {
+        self.0 = mode;
+    }
 }
 
-impl Default for StatusPanelMode {
-    fn default() -> Self {
-        Self::Mounted
+/// Mount state for the Equipment panel (paperdoll slots).
+#[derive(Resource, Clone, Copy, Debug, Default)]
+pub struct EquipmentPanelMode(pub PanelMountMode);
+
+impl PanelModeAccess for EquipmentPanelMode {
+    fn mode(&self) -> PanelMountMode {
+        self.0
+    }
+    fn set_mode(&mut self, mode: PanelMountMode) {
+        self.0 = mode;
+    }
+}
+
+/// Mount state for the Backpack panel (4x4 inventory grid).
+#[derive(Resource, Clone, Copy, Debug, Default)]
+pub struct BackpackPanelMode(pub PanelMountMode);
+
+impl PanelModeAccess for BackpackPanelMode {
+    fn mode(&self) -> PanelMountMode {
+        self.0
+    }
+    fn set_mode(&mut self, mode: PanelMountMode) {
+        self.0 = mode;
     }
 }
 
