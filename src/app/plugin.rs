@@ -7,6 +7,7 @@ use bevy::window::Window;
 use std::path::PathBuf;
 
 use crate::accounts::AccountsServerPlugin;
+use crate::app::about_screen::AboutScreenPlugin;
 use crate::app::asset_sync_screen::AssetSyncScreenPlugin;
 use crate::app::auth_screen::AuthScreenPlugin;
 use crate::app::character_create_screen::CharacterCreateScreenPlugin;
@@ -199,6 +200,7 @@ impl Plugin for GameAppPlugin {
                         runtime: self.runtime,
                         server_addr: self.server_addr.clone(),
                     },
+                    AboutScreenPlugin,
                     CharacterSelectScreenPlugin {
                         runtime: self.runtime,
                     },
@@ -248,7 +250,8 @@ impl Plugin for GameAppPlugin {
                     CharacterCreateScreenPlugin {
                         runtime: self.runtime,
                     },
-                ));
+                ))
+                .add_plugins(AboutScreenPlugin);
             }
             AppRuntime::HeadlessServer => {
                 let defaults = server_paths();

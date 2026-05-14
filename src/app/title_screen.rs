@@ -122,6 +122,7 @@ enum TitleAction {
     Connect,
     ToggleRegister,
     OpenMapEditor,
+    OpenAbout,
     Exit,
 }
 
@@ -414,7 +415,7 @@ fn spawn_title_screen(
                                                 TextColor(palette.text_accent),
                                             ));
                                             authors.spawn((
-                                                Text::new("1. Codex\n2. Janczar Knurek"),
+                                                Text::new("1. Claude\n2. Codex\n3. Janczar Knurek"),
                                                 TextFont {
                                                     font_size: 18.0,
                                                     ..default()
@@ -448,6 +449,13 @@ fn spawn_title_screen(
                                                     TitleAction::OpenMapEditor,
                                                 );
                                             }
+                                            spawn_action_button(
+                                                actions,
+                                                &theme,
+                                                &palette,
+                                                "About",
+                                                TitleAction::OpenAbout,
+                                            );
                                             spawn_action_button(
                                                 actions,
                                                 &theme,
@@ -584,6 +592,9 @@ fn handle_title_screen_buttons(
             }
             TitleAction::OpenMapEditor => {
                 next_state.set(ClientAppState::MapEditor);
+            }
+            TitleAction::OpenAbout => {
+                next_state.set(ClientAppState::About);
             }
             TitleAction::Exit => {
                 exit_messages.write(AppExit::Success);

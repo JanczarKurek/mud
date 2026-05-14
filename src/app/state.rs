@@ -4,6 +4,9 @@ use bevy::prelude::*;
 pub enum ClientAppState {
     #[default]
     TitleScreen,
+    /// Static credits + greetings screen, reachable from the title screen.
+    /// Returns to `TitleScreen` via Back / Escape.
+    About,
     /// TCP-only: credentials have been entered; we're waiting for the server
     /// to accept the login/register. Transitions to `CharacterSelect` on
     /// success or back to `TitleScreen` on failure.

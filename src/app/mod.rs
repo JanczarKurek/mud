@@ -1,3 +1,4 @@
+pub mod about_screen;
 pub mod asset_sync_screen;
 pub mod auth_screen;
 pub mod character_create_screen;
