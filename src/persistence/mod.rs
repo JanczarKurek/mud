@@ -13,7 +13,8 @@ use crate::combat::components::{AttackProfile, CombatLeash, CombatTarget};
 use crate::magic::effects::MagicEffects;
 use crate::network::resources::TcpServerState;
 use crate::npc::components::{
-    HostileBehavior, Npc, RoamingBehavior, RoamingRandomState, RoamingStepTimer, SpawnGroupMember,
+    AiMemory, AiState, HostileBehavior, Npc, RoamingBehavior, RoamingRandomState, RoamingStepTimer,
+    SpawnGroupMember,
 };
 use crate::npc::spawn_groups::{PendingSpawnGroupDumps, SpawnGroupRegistry, SpawnGroupRuntimeDump};
 use crate::player::components::{
@@ -817,7 +818,13 @@ fn load_world_from_snapshot(
             entity.insert(ObjectState(state_value));
         }
         if let Some(npc) = object.npc {
-            entity.insert(Npc);
+            // AiState / AiMemory are not persisted (they hold transient FSM
+            // state plus an Entity target that can't round-trip through a
+            // snapshot). The roaming tick query requires both, so loaded NPCs
+            // need fresh defaults — otherwise they're silently filtered out
+            // of `update_roaming_npcs` and stand still until killed and
+            // respawned.
+            entity.insert((Npc, AiState::default(), AiMemory::default()));
             if let Some(base_stats) = npc.base_stats {
                 entity.insert(base_stats);
             }
@@ -1237,5 +1244,135 @@ mod tests {
         let json = serde_json::to_string(&lantern).unwrap();
         let restored: WorldObjectStateDump = serde_json::from_str(&json).unwrap();
         assert_eq!(restored.remaining_ttl, Some(600.0));
+    }
+
+    /// Loaded NPCs must have `AiState` and `AiMemory` attached. The roaming
+    /// tick query requires both as non-optional components, so an NPC missing
+    /// them is silently skipped — it stands still until something kills it
+    /// and a respawn creates a fresh entity. Regression for the gap between
+    /// the fresh-spawn path in `world::setup` and the snapshot load path here.
+    #[test]
+    fn loaded_npc_has_ai_state_and_memory_components() {
+        use crate::npc::components::{AiMemory, AiState};
+
+        let save_path =
+            std::env::temp_dir().join(format!("mud2-world-npc-load-{}.json", std::process::id()));
+        let _ = std::fs::remove_file(&save_path);
+
+        let dump = WorldStateDump {
+            format_version: 10,
+            saved_at_unix_seconds: 0,
+            world_config: WorldConfigDump {
+                current_space_id: Some(crate::world::components::SpaceId(7)),
+                map_width: 32,
+                map_height: 24,
+                tile_size: 48.0,
+                fill_floor_type: Some("grass".to_owned()),
+            },
+            map_layout: Some(MapLayoutDump {
+                width: 32,
+                height: 24,
+                fill_floor_type: "grass".to_owned(),
+            }),
+            spaces: vec![RuntimeSpaceDump {
+                id: crate::world::components::SpaceId(7),
+                authored_id: "overworld".to_owned(),
+                width: 32,
+                height: 24,
+                fill_floor_type: "grass".to_owned(),
+                permanence: SpacePermanence::Persistent,
+                instance_owner: None,
+            }],
+            network: NetworkStateDump {
+                next_connection_id: 0,
+            },
+            world_objects: vec![WorldObjectStateDump {
+                object_id: 99,
+                definition_id: "goblin".to_owned(),
+                properties: Default::default(),
+                space_id: Some(crate::world::components::SpaceId(7)),
+                tile_position: Some(TilePosition::ground(10, 10)),
+                collider: false,
+                movable: false,
+                rotatable: false,
+                storable: false,
+                container_slots: None,
+                npc: Some(NpcStateDump {
+                    base_stats: Some(BaseStats::default()),
+                    derived_stats: Some(DerivedStats::default()),
+                    vital_stats: Some(VitalStats::full(25.0, 0.0)),
+                    attack_profile: Some(AttackProfile::melee()),
+                    combat_leash: Some(CombatLeash {
+                        max_distance_tiles: 8,
+                    }),
+                    combat_target_object_id: None,
+                    roaming_behavior: Some(RoamingBehavior {
+                        bounds: crate::npc::components::RoamBounds {
+                            min_x: 0,
+                            min_y: 0,
+                            max_x: 20,
+                            max_y: 20,
+                        },
+                        step_interval_seconds: 0.5,
+                        step_interval_jitter_seconds: 0.0,
+                        idle_pause_chance: 0.0,
+                        momentum_bias: 0.6,
+                    }),
+                    hostile_behavior: Some(HostileBehavior {
+                        detect_distance_tiles: 5,
+                        disengage_distance_tiles: 8,
+                        alert_duration_seconds: 4.0,
+                        requires_line_of_sight: true,
+                    }),
+                    // Pin the timer far in the future so the loaded NPC doesn't
+                    // immediately wander off (10,10) before the test queries it.
+                    roaming_step_timer: Some(RoamingStepTimer {
+                        remaining_seconds: 1000.0,
+                    }),
+                    roaming_random_state: Some(RoamingRandomState { seed: 1 }),
+                    spawn_group: None,
+                    magic_effects: Default::default(),
+                }),
+                quantity: None,
+                remaining_ttl: None,
+                facing: None,
+            }],
+            floor_maps: vec![],
+            spawn_groups: vec![],
+            world_time: 0.0,
+        };
+        write_world_dump(&save_path, &dump).unwrap();
+
+        let mut app = setup_server_app(&save_path);
+        app.update();
+
+        let world = app.world_mut();
+        let mut npc_query = world.query_filtered::<
+            (&OverworldObject, &TilePosition, Option<&AiState>, Option<&AiMemory>),
+            With<Npc>,
+        >();
+        let mut saw_snapshot_goblin = false;
+        for (object, tile, ai_state, ai_memory) in npc_query.iter(world) {
+            assert!(
+                ai_state.is_some(),
+                "loaded NPC {} at {tile:?} is missing AiState — update_roaming_npcs requires it",
+                object.definition_id,
+            );
+            assert!(
+                ai_memory.is_some(),
+                "loaded NPC {} at {tile:?} is missing AiMemory — update_roaming_npcs requires it",
+                object.definition_id,
+            );
+            if object.definition_id == "goblin" && *tile == TilePosition::ground(10, 10) {
+                saw_snapshot_goblin = true;
+            }
+        }
+        assert!(
+            saw_snapshot_goblin,
+            "the goblin from the snapshot should have been restored at (10,10) with \
+             AiState and AiMemory components",
+        );
+
+        let _ = std::fs::remove_file(save_path);
     }
 }
