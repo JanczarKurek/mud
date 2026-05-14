@@ -210,12 +210,6 @@ pub enum GameCommand {
     /// Persisted on the next autosave (or immediately if an account DB is
     /// attached).
     SetHome,
-    /// Select / change the player's class (Phase B).
-    /// Currently allowed any time — the §7 combat-math rewrite that would
-    /// gate this on "first time only" is a separate batch.
-    ChooseClass {
-        class: crate::player::classes::Class,
-    },
     /// Open a trade window with a target (another player or, in later phases,
     /// a shopkeeper NPC). Server validates adjacency and routes
     /// `OpenTradePanel` UI events to both sides.

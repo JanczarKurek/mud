@@ -5,12 +5,28 @@ pub enum ClientAppState {
     #[default]
     TitleScreen,
     /// TCP-only: credentials have been entered; we're waiting for the server
-    /// to accept the login/register. Transitions to `AssetSync` on success or
-    /// back to `TitleScreen` on failure.
+    /// to accept the login/register. Transitions to `CharacterSelect` on
+    /// success or back to `TitleScreen` on failure.
     Authenticating,
+    /// Account is authenticated; show the character roster + Create button.
+    /// Transitions to `CharacterCreate` (user clicks Create new) or to
+    /// `AssetSync` (user picks a character to play).
+    CharacterSelect,
+    /// Form for creating a new character (name + class + attributes).
+    /// Transitions back to `CharacterSelect` on success or cancel.
+    CharacterCreate,
     AssetSync,
     InGame,
     MapEditor,
+}
+
+/// EmbeddedClient-only: the `character_id` the user picked on the Character
+/// Select screen. Read by `spawn_embedded_player_authoritative` on transition
+/// to `InGame`. `None` means "pick the most recently played" (e.g. for the
+/// very first frame before the user has interacted with the select screen).
+#[derive(Resource, Default, Debug, Clone, Copy)]
+pub struct LocalSelectedCharacter {
+    pub character_id: Option<i64>,
 }
 
 /// Runtime switch toggled by the diagnostics overlay (F8) so we can compare

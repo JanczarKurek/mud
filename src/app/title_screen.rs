@@ -576,7 +576,7 @@ fn handle_title_screen_buttons(
                         next_state.set(ClientAppState::AssetSync);
                     }
                 } else {
-                    next_state.set(ClientAppState::InGame);
+                    next_state.set(ClientAppState::CharacterSelect);
                 }
             }
             TitleAction::ToggleRegister => {

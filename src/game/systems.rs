@@ -581,20 +581,6 @@ pub fn process_game_commands(
                     "process_game_commands saw a chat command — check system ordering"
                 );
             }
-            GameCommand::ChooseClass { class } => {
-                // Insert/replace the `Class` component and the `ClassChosen`
-                // marker. `refresh_derived_player_stats` picks up the change
-                // next frame and recomputes max HP/mana according to the
-                // new class table.
-                commands
-                    .entity(player_entity)
-                    .insert((class, crate::player::classes::ClassChosen));
-                if let Ok((_, _, _, mut chat_log, _, _, _, _, _)) =
-                    player_queries.p2().get_mut(player_entity)
-                {
-                    chat_log.push_narrator(format!("You are now a {}.", class.label()));
-                }
-            }
         }
     }
 }

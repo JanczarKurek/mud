@@ -143,7 +143,7 @@ fn poll_auth_result(
         Some(ServerMessage::AuthResult { ok: true, .. }) => {
             info!("auth: accepted by {}", config.server_addr);
             pending.error_message = None;
-            next_state.set(ClientAppState::AssetSync);
+            next_state.set(ClientAppState::CharacterSelect);
         }
         Some(ServerMessage::AuthResult { ok: false, reason }) => {
             let message = reason.unwrap_or_else(|| "auth rejected".to_owned());

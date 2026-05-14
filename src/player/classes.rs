@@ -59,12 +59,6 @@ impl GoodSaves {
     };
 }
 
-/// Marker on player entities: the player has explicitly picked their class
-/// via `ChooseClass`. Distinct from the always-present `Class` component so
-/// the picker UI knows when to show — see `docs/progression.md` Phase B.
-#[derive(Component, Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ClassChosen;
-
 /// The four base classes shipping in v1.
 #[derive(Component, Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub enum Class {

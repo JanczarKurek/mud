@@ -49,20 +49,6 @@ pub struct LevelUpToast {
     pub remaining_seconds: f32,
 }
 
-/// Root of the class-picker fullscreen modal that's shown to fresh
-/// characters before they enter the world. Single instance — spawned by
-/// `manage_class_picker` when the local player is a fresh character
-/// (`!class_chosen`), despawned when the server confirms class_chosen=true.
-#[derive(Component)]
-pub struct ClassPickerOverlay;
-
-/// Marker on each class option button inside the picker overlay. Click
-/// dispatches `GameCommand::ChooseClass { class }`.
-#[derive(Component, Clone, Copy)]
-pub struct ClassPickerButton {
-    pub class: crate::player::classes::Class,
-}
-
 /// Root of the post-death recap overlay. Owned by a single instance —
 /// despawned when its dismiss button is clicked.
 #[derive(Component)]

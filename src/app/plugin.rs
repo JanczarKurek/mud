@@ -9,9 +9,11 @@ use std::path::PathBuf;
 use crate::accounts::AccountsServerPlugin;
 use crate::app::asset_sync_screen::AssetSyncScreenPlugin;
 use crate::app::auth_screen::AuthScreenPlugin;
+use crate::app::character_create_screen::CharacterCreateScreenPlugin;
+use crate::app::character_select_screen::CharacterSelectScreenPlugin;
 use crate::app::paths::{client_paths, embedded_paths, server_paths};
 use crate::app::setup::setup_camera;
-use crate::app::state::ClientAppState;
+use crate::app::state::{ClientAppState, LocalSelectedCharacter};
 use crate::app::title_screen::TitleScreenPlugin;
 use crate::client_effects::ClientEffectsPlugin;
 use crate::combat::CombatPlugin;
@@ -25,13 +27,12 @@ use crate::network::resources::TcpClientTlsConfig;
 use crate::network::transport::{build_client_tls_config, load_server_tls_config};
 use crate::network::{TcpClientPlugin, TcpServerPlugin};
 use crate::npc::NpcPlugin;
-use crate::persistence::{PersistenceServerPlugin, PersistenceStartupSet};
+use crate::persistence::PersistenceServerPlugin;
 use crate::player::setup::spawn_embedded_player_authoritative;
 use crate::player::{PlayerClientPlugin, PlayerServerPlugin};
 use crate::quest::QuestPlugin;
 use crate::scripting::ScriptingPlugin;
 use crate::ui::UiPlugin;
-use crate::world::setup::WorldStartupSet;
 use crate::world::{WorldClientPlugin, WorldServerPlugin};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -174,12 +175,12 @@ impl Plugin for GameAppPlugin {
                         }),
                 )
                 .init_state::<ClientAppState>()
+                .insert_resource(LocalSelectedCharacter::default())
                 .add_systems(Startup, setup_camera)
                 .add_systems(
-                    Startup,
+                    OnEnter(ClientAppState::InGame),
                     spawn_embedded_player_authoritative
-                        .after(PersistenceStartupSet::LoadSnapshot)
-                        .after(WorldStartupSet::InitializeRuntimeSpaces),
+                        .before(crate::player::setup::spawn_player_visual),
                 )
                 .add_plugins((
                     WorldClientPlugin,
@@ -197,6 +198,12 @@ impl Plugin for GameAppPlugin {
                     TitleScreenPlugin {
                         runtime: self.runtime,
                         server_addr: self.server_addr.clone(),
+                    },
+                    CharacterSelectScreenPlugin {
+                        runtime: self.runtime,
+                    },
+                    CharacterCreateScreenPlugin {
+                        runtime: self.runtime,
                     },
                 ));
             }
@@ -235,6 +242,12 @@ impl Plugin for GameAppPlugin {
                     },
                     AssetSyncScreenPlugin,
                     AuthScreenPlugin,
+                    CharacterSelectScreenPlugin {
+                        runtime: self.runtime,
+                    },
+                    CharacterCreateScreenPlugin {
+                        runtime: self.runtime,
+                    },
                 ));
             }
             AppRuntime::HeadlessServer => {

@@ -326,6 +326,44 @@ pub struct AttributeSet {
     pub focus: i32,
 }
 
+/// Point-buy rules used by character creation:
+/// 6 attributes start at 10, pool of 12 points to distribute, each attribute
+/// clamped to [8, 18]. Cost = 1 point per +1 above 10 (negatives refund).
+/// Total spend must equal exactly the budget.
+pub const POINT_BUY_BUDGET: i32 = 12;
+pub const ATTR_FLOOR: i32 = 8;
+pub const ATTR_CEILING: i32 = 18;
+pub const ATTR_BASELINE: i32 = 10;
+
+/// Validates an `AttributeSet` against the character-creation point-buy rules.
+/// Shared between the client UI (to enable/disable the Create button) and the
+/// server (to reject crafted `CreateCharacter` messages).
+pub fn validate_point_buy(attrs: &AttributeSet) -> Result<(), String> {
+    let values = [
+        ("strength", attrs.strength),
+        ("agility", attrs.agility),
+        ("constitution", attrs.constitution),
+        ("willpower", attrs.willpower),
+        ("charisma", attrs.charisma),
+        ("focus", attrs.focus),
+    ];
+    let mut total = 0;
+    for (name, value) in values {
+        if value < ATTR_FLOOR || value > ATTR_CEILING {
+            return Err(format!(
+                "{name} must be between {ATTR_FLOOR} and {ATTR_CEILING}"
+            ));
+        }
+        total += value - ATTR_BASELINE;
+    }
+    if total != POINT_BUY_BUDGET {
+        return Err(format!(
+            "must spend exactly {POINT_BUY_BUDGET} points (currently {total})"
+        ));
+    }
+    Ok(())
+}
+
 impl AttributeSet {
     pub const fn new(
         strength: i32,

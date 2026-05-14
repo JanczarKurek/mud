@@ -5,15 +5,21 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::accounts::hashing::{hash_password, verify_password};
 use crate::persistence::PlayerStateDump;
+use crate::player::classes::Class;
+use crate::player::components::{validate_point_buy, AttributeSet};
 
-/// Account id reserved for the embedded single-player local character.
+/// Account id reserved for the embedded single-player local account. Note
+/// `PlayerId` now derives from `character_id`, not `account_id`, so this only
+/// identifies the *owner* of local characters — they get normal character ids.
 pub const LOCAL_ACCOUNT_ID: i64 = 0;
 pub const LOCAL_ACCOUNT_USERNAME: &str = "local";
 
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 const MAX_USERNAME_LEN: usize = 32;
 const MIN_USERNAME_LEN: usize = 3;
 const MIN_PASSWORD_LEN: usize = 6;
+const MAX_CHARACTER_NAME_LEN: usize = 24;
+const MIN_CHARACTER_NAME_LEN: usize = 3;
 
 #[derive(Debug)]
 pub enum AuthError {
@@ -22,6 +28,10 @@ pub enum AuthError {
     UsernameTaken,
     UnknownUser,
     WrongPassword,
+    CharacterNameInvalid(&'static str),
+    CharacterNameTaken,
+    CharacterNotFound,
+    PointBuyInvalid(String),
     Database(rusqlite::Error),
     Hashing(String),
 }
@@ -34,6 +44,10 @@ impl std::fmt::Display for AuthError {
             AuthError::UsernameTaken => write!(f, "username already taken"),
             AuthError::UnknownUser => write!(f, "unknown user"),
             AuthError::WrongPassword => write!(f, "wrong password"),
+            AuthError::CharacterNameInvalid(msg) => write!(f, "character name invalid: {msg}"),
+            AuthError::CharacterNameTaken => write!(f, "character name already taken"),
+            AuthError::CharacterNotFound => write!(f, "character not found"),
+            AuthError::PointBuyInvalid(msg) => write!(f, "attributes invalid: {msg}"),
             AuthError::Database(err) => write!(f, "database error: {err}"),
             AuthError::Hashing(err) => write!(f, "hashing error: {err}"),
         }
@@ -46,6 +60,14 @@ impl From<rusqlite::Error> for AuthError {
     fn from(err: rusqlite::Error) -> Self {
         AuthError::Database(err)
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct CharacterSummary {
+    pub character_id: i64,
+    pub name: String,
+    pub class: Class,
+    pub level: u32,
 }
 
 pub struct AccountDb {
@@ -75,6 +97,22 @@ impl AccountDb {
     }
 
     fn run_migrations(&mut self) -> rusqlite::Result<()> {
+        // Alpha: no migration of pre-v2 data. If we find an older schema,
+        // drop the old single-character columns by dropping the accounts row
+        // payloads entirely and recreating the characters table from scratch.
+        let prior_version: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'schema_version'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap_or(None);
+        let prior_version = prior_version
+            .and_then(|s| s.parse::<i64>().ok())
+            .unwrap_or(0);
+
         self.conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS accounts (
                 account_id     INTEGER PRIMARY KEY,
@@ -89,10 +127,34 @@ impl AccountDb {
             CREATE TABLE IF NOT EXISTS meta (
                 key   TEXT PRIMARY KEY,
                 value TEXT NOT NULL
-            );",
+            );
+            CREATE TABLE IF NOT EXISTS characters (
+                character_id   INTEGER PRIMARY KEY,
+                account_id     INTEGER NOT NULL,
+                character_name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                class          TEXT NOT NULL,
+                state_json     TEXT,
+                created_at     INTEGER NOT NULL,
+                last_played_at INTEGER,
+                updated_at     INTEGER NOT NULL,
+                FOREIGN KEY(account_id) REFERENCES accounts(account_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_characters_account ON characters(account_id);",
         )?;
+
+        if prior_version > 0 && prior_version < SCHEMA_VERSION {
+            // Wipe pre-v2 single-character state from the accounts table.
+            // The characters table is already empty (just-created) so there's
+            // nothing to migrate into it. Alpha — no preservation guarantee.
+            self.conn.execute(
+                "UPDATE accounts SET character_name = NULL, state_json = NULL",
+                [],
+            )?;
+        }
+
         self.conn.execute(
-            "INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', ?1)",
+            "INSERT INTO meta (key, value) VALUES ('schema_version', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             params![SCHEMA_VERSION.to_string()],
         )?;
         Ok(())
@@ -136,9 +198,6 @@ impl AccountDb {
     }
 
     pub fn verify_login(&mut self, username: &str, password: &str) -> Result<i64, AuthError> {
-        // Login is lenient: any lookup that doesn't match a row with a password
-        // returns UnknownUser, regardless of username shape. Validation happens
-        // on create_account only.
         let normalized = username.trim();
 
         let row: Option<(i64, Option<String>)> = self
@@ -154,8 +213,6 @@ impl AccountDb {
             return Err(AuthError::UnknownUser);
         };
 
-        // Accounts with NULL password_hash (e.g. the reserved local account)
-        // cannot be authenticated through this flow.
         let Some(stored_hash) = stored_hash else {
             return Err(AuthError::UnknownUser);
         };
@@ -173,15 +230,140 @@ impl AccountDb {
         Ok(account_id)
     }
 
-    pub fn load_character(
+    pub fn account_username(&self, account_id: i64) -> Result<Option<String>, rusqlite::Error> {
+        self.conn
+            .query_row(
+                "SELECT username FROM accounts WHERE account_id = ?1",
+                params![account_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+    }
+
+    /// List all characters owned by an account, newest first by `last_played_at`
+    /// then `created_at`.
+    pub fn list_characters(
         &self,
         account_id: i64,
+    ) -> Result<Vec<CharacterSummary>, rusqlite::Error> {
+        let mut stmt = self.conn.prepare(
+            "SELECT character_id, character_name, class, state_json
+             FROM characters
+             WHERE account_id = ?1
+             ORDER BY COALESCE(last_played_at, created_at) DESC, character_id ASC",
+        )?;
+        let rows = stmt.query_map(params![account_id], |row| {
+            let character_id: i64 = row.get(0)?;
+            let name: String = row.get(1)?;
+            let class_str: String = row.get(2)?;
+            let state_json: Option<String> = row.get(3)?;
+            Ok((character_id, name, class_str, state_json))
+        })?;
+
+        let mut summaries = Vec::new();
+        for entry in rows {
+            let (character_id, name, class_str, state_json) = entry?;
+            let class = parse_class(&class_str).unwrap_or_default();
+            let level = state_json
+                .as_deref()
+                .and_then(|json| serde_json::from_str::<PlayerStateDump>(json).ok())
+                .map(|dump| dump.experience.level)
+                .unwrap_or(1);
+            summaries.push(CharacterSummary {
+                character_id,
+                name,
+                class,
+                level,
+            });
+        }
+        Ok(summaries)
+    }
+
+    /// Create a new character row for the given account. Seeds an initial
+    /// `state_json` so the first `SelectCharacter` has a saved snapshot to
+    /// restore. Returns the new `character_id`.
+    pub fn create_character(
+        &mut self,
+        account_id: i64,
+        name: &str,
+        class: Class,
+        attributes: AttributeSet,
+    ) -> Result<i64, AuthError> {
+        let normalized = validate_character_name(name)?;
+        validate_point_buy(&attributes).map_err(AuthError::PointBuyInvalid)?;
+
+        let now = now_seconds();
+        let class_str = class_to_str(class);
+
+        let inserted = self.conn.execute(
+            "INSERT INTO characters (account_id, character_name, class, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?4)",
+            params![account_id, normalized, class_str, now],
+        );
+        let character_id = match inserted {
+            Ok(_) => self.conn.last_insert_rowid(),
+            Err(rusqlite::Error::SqliteFailure(err, _))
+                if err.code == rusqlite::ErrorCode::ConstraintViolation =>
+            {
+                return Err(AuthError::CharacterNameTaken);
+            }
+            Err(err) => return Err(AuthError::Database(err)),
+        };
+
+        // Seed an initial state_json so the next SelectCharacter has a dump
+        // to restore (with the chosen class + attributes).
+        let dump = build_initial_dump(character_id, class, attributes);
+        if let Ok(json) = serde_json::to_string(&dump) {
+            self.conn.execute(
+                "UPDATE characters SET state_json = ?1, updated_at = ?2 WHERE character_id = ?3",
+                params![json, now, character_id],
+            )?;
+        }
+
+        Ok(character_id)
+    }
+
+    pub fn delete_character(
+        &mut self,
+        account_id: i64,
+        character_id: i64,
+    ) -> Result<(), AuthError> {
+        let affected = self.conn.execute(
+            "DELETE FROM characters WHERE character_id = ?1 AND account_id = ?2",
+            params![character_id, account_id],
+        )?;
+        if affected == 0 {
+            return Err(AuthError::CharacterNotFound);
+        }
+        Ok(())
+    }
+
+    /// Returns true iff `character_id` exists and is owned by `account_id`.
+    pub fn character_belongs_to_account(
+        &self,
+        account_id: i64,
+        character_id: i64,
+    ) -> Result<bool, rusqlite::Error> {
+        let n: i64 = self.conn.query_row(
+            "SELECT COUNT(1) FROM characters WHERE character_id = ?1 AND account_id = ?2",
+            params![character_id, account_id],
+            |row| row.get(0),
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Loads the persisted state for a character. Returns `None` if the
+    /// character has no `state_json` set yet (shouldn't happen post-create
+    /// since `create_character` seeds one, but kept tolerant).
+    pub fn load_character(
+        &self,
+        character_id: i64,
     ) -> Result<Option<PlayerStateDump>, rusqlite::Error> {
         let json: Option<String> = self
             .conn
             .query_row(
-                "SELECT state_json FROM accounts WHERE account_id = ?1",
-                params![account_id],
+                "SELECT state_json FROM characters WHERE character_id = ?1",
+                params![character_id],
                 |row| row.get(0),
             )
             .optional()?
@@ -194,9 +376,7 @@ impl AccountDb {
         match serde_json::from_str::<PlayerStateDump>(&json) {
             Ok(dump) => Ok(Some(dump)),
             Err(err) => {
-                bevy::log::warn!(
-                    "failed to deserialize stored character for account {account_id}: {err}"
-                );
+                bevy::log::warn!("failed to deserialize stored character {character_id}: {err}");
                 Ok(None)
             }
         }
@@ -204,7 +384,7 @@ impl AccountDb {
 
     pub fn save_character(
         &self,
-        account_id: i64,
+        character_id: i64,
         dump: &PlayerStateDump,
     ) -> Result<(), rusqlite::Error> {
         let json = serde_json::to_string(dump).map_err(|err| {
@@ -212,8 +392,12 @@ impl AccountDb {
         })?;
         let now = now_seconds();
         self.conn.execute(
-            "UPDATE accounts SET state_json = ?1, updated_at = ?2 WHERE account_id = ?3",
-            params![json, now, account_id],
+            "UPDATE characters
+             SET state_json = ?1,
+                 last_played_at = ?2,
+                 updated_at = ?2
+             WHERE character_id = ?3",
+            params![json, now, character_id],
         )?;
         Ok(())
     }
@@ -227,24 +411,83 @@ impl AccountDb {
         Ok(n > 0)
     }
 
-    /// Resolve a chat / UI display name for an account row. Prefers
-    /// `character_name` when set, falling back to `username`. Returns
-    /// `format!("Player#{account_id}")` for ids that do not exist — callers
-    /// should treat that as a graceful default rather than an error.
-    pub fn account_display_name(&self, account_id: i64) -> Result<String, rusqlite::Error> {
-        let row: Option<(Option<String>, String)> = self
+    /// Resolve a chat / UI display name for a *character*. Returns the
+    /// character's name, or `format!("Player#{character_id}")` if the
+    /// character has been deleted (graceful default for stale references).
+    pub fn character_display_name(&self, character_id: i64) -> Result<String, rusqlite::Error> {
+        let row: Option<String> = self
             .conn
             .query_row(
-                "SELECT character_name, username FROM accounts WHERE account_id = ?1",
-                params![account_id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                "SELECT character_name FROM characters WHERE character_id = ?1",
+                params![character_id],
+                |row| row.get(0),
             )
             .optional()?;
-        Ok(match row {
-            Some((Some(name), _)) if !name.trim().is_empty() => name,
-            Some((_, username)) => username,
-            None => format!("Player#{account_id}"),
-        })
+        Ok(row.unwrap_or_else(|| format!("Player#{character_id}")))
+    }
+}
+
+fn build_initial_dump(
+    character_id: i64,
+    class: Class,
+    attributes: AttributeSet,
+) -> PlayerStateDump {
+    use crate::combat::components::{AttackProfile, CombatLeash};
+    use crate::magic::effects::MagicEffects;
+    use crate::player::components::{
+        BaseStats, ChatLog, DerivedStats, Inventory, MovementCooldown, PlayerId, VitalStats,
+    };
+    use crate::world::components::TilePosition;
+
+    let base_stats = BaseStats {
+        attributes,
+        max_health: 0,
+        max_mana: 0,
+        storage_slots: 8,
+    };
+    let derived = DerivedStats::from_base_with_class(&base_stats, class, 1);
+    let vital = VitalStats::full(derived.max_health as f32, derived.max_mana as f32);
+
+    PlayerStateDump {
+        player_id: PlayerId(character_id as u64),
+        space_id: None,
+        tile_position: TilePosition::ground(0, 0),
+        inventory: Inventory::default(),
+        chat_log: ChatLog::default(),
+        base_stats,
+        derived_stats: derived,
+        vital_stats: vital,
+        movement_cooldown: MovementCooldown::default(),
+        attack_profile: AttackProfile::melee(),
+        combat_leash: CombatLeash {
+            max_distance_tiles: 6,
+        },
+        yarn_vars: Default::default(),
+        facing: Default::default(),
+        home_position: None,
+        experience: Default::default(),
+        class,
+        magic_effects: MagicEffects::default(),
+        stash: Default::default(),
+    }
+}
+
+fn class_to_str(class: Class) -> &'static str {
+    match class {
+        Class::Fighter => "Fighter",
+        Class::Wizard => "Wizard",
+        Class::Cleric => "Cleric",
+        Class::Vagabond => "Vagabond",
+    }
+}
+
+fn parse_class(s: &str) -> Option<Class> {
+    match s {
+        "Fighter" => Some(Class::Fighter),
+        "Wizard" => Some(Class::Wizard),
+        "Cleric" => Some(Class::Cleric),
+        "Vagabond" => Some(Class::Vagabond),
+        _ => None,
     }
 }
 
@@ -270,6 +513,32 @@ fn validate_username(username: &str) -> Result<String, AuthError> {
     Ok(trimmed.to_owned())
 }
 
+fn validate_character_name(name: &str) -> Result<String, AuthError> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(AuthError::CharacterNameInvalid("must not be empty"));
+    }
+    if trimmed.len() < MIN_CHARACTER_NAME_LEN {
+        return Err(AuthError::CharacterNameInvalid(
+            "must be at least 3 characters",
+        ));
+    }
+    if trimmed.len() > MAX_CHARACTER_NAME_LEN {
+        return Err(AuthError::CharacterNameInvalid(
+            "must be at most 24 characters",
+        ));
+    }
+    if !trimmed
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == ' ')
+    {
+        return Err(AuthError::CharacterNameInvalid(
+            "may only contain letters, digits, spaces, underscore, and hyphen",
+        ));
+    }
+    Ok(trimmed.to_owned())
+}
+
 fn validate_password(password: &str) -> Result<(), AuthError> {
     if password.len() < MIN_PASSWORD_LEN {
         return Err(AuthError::PasswordInvalid("must be at least 6 characters"));
@@ -287,6 +556,12 @@ fn now_seconds() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn balanced_attrs() -> AttributeSet {
+        // 6 attributes at 10 + 12 budget — split as +2 each to STR/AGI/CON
+        // and +2 each to WIL/CHA/FOC gives exactly 12 spent.
+        AttributeSet::new(12, 12, 12, 12, 12, 12)
+    }
 
     #[test]
     fn creates_and_verifies_account() {
@@ -324,7 +599,6 @@ mod tests {
             db.create_account("ALICE", "hunter3!"),
             Err(AuthError::UsernameTaken)
         ));
-        // But login with different casing works:
         db.verify_login("alice", "hunter2!").unwrap();
     }
 
@@ -332,15 +606,81 @@ mod tests {
     fn local_account_is_reserved() {
         let mut db = AccountDb::open_in_memory().unwrap();
         assert!(db.account_exists(LOCAL_ACCOUNT_ID).unwrap());
-        // Cannot register as "local":
         assert!(matches!(
             db.create_account("local", "whatever1"),
             Err(AuthError::UsernameInvalid(_))
         ));
-        // Cannot authenticate against it (no password hash):
         assert!(matches!(
             db.verify_login("local", "whatever"),
             Err(AuthError::UnknownUser)
+        ));
+    }
+
+    #[test]
+    fn creates_and_lists_characters() {
+        let mut db = AccountDb::open_in_memory().unwrap();
+        let account = db.create_account("carol", "hunter2!").unwrap();
+        let attrs = balanced_attrs();
+        let c1 = db
+            .create_character(account, "Hero", Class::Fighter, attrs)
+            .unwrap();
+        let c2 = db
+            .create_character(account, "Mage", Class::Wizard, attrs)
+            .unwrap();
+        assert!(c1 > 0 && c2 > 0 && c1 != c2);
+
+        let list = db.list_characters(account).unwrap();
+        assert_eq!(list.len(), 2);
+        // Both names should appear regardless of ordering.
+        let names: Vec<_> = list.iter().map(|c| c.name.as_str()).collect();
+        assert!(names.contains(&"Hero"));
+        assert!(names.contains(&"Mage"));
+    }
+
+    #[test]
+    fn rejects_duplicate_character_name() {
+        let mut db = AccountDb::open_in_memory().unwrap();
+        let a = db.create_account("dave", "hunter2!").unwrap();
+        let b = db.create_account("eve", "hunter2!").unwrap();
+        let attrs = balanced_attrs();
+        db.create_character(a, "Shared", Class::Fighter, attrs)
+            .unwrap();
+        // Same account: rejected.
+        assert!(matches!(
+            db.create_character(a, "Shared", Class::Wizard, attrs),
+            Err(AuthError::CharacterNameTaken)
+        ));
+        // Different account: also rejected (names are globally unique).
+        assert!(matches!(
+            db.create_character(b, "shared", Class::Wizard, attrs),
+            Err(AuthError::CharacterNameTaken)
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_point_buy() {
+        let mut db = AccountDb::open_in_memory().unwrap();
+        let a = db.create_account("frank", "hunter2!").unwrap();
+        // All 10s = 0 spent, budget is 12 — must fail.
+        let attrs = AttributeSet::new(10, 10, 10, 10, 10, 10);
+        assert!(matches!(
+            db.create_character(a, "Cheater", Class::Fighter, attrs),
+            Err(AuthError::PointBuyInvalid(_))
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_character_name() {
+        let mut db = AccountDb::open_in_memory().unwrap();
+        let a = db.create_account("greg", "hunter2!").unwrap();
+        let attrs = balanced_attrs();
+        assert!(matches!(
+            db.create_character(a, "", Class::Fighter, attrs),
+            Err(AuthError::CharacterNameInvalid(_))
+        ));
+        assert!(matches!(
+            db.create_character(a, "ab", Class::Fighter, attrs),
+            Err(AuthError::CharacterNameInvalid(_))
         ));
     }
 
@@ -353,11 +693,17 @@ mod tests {
         use crate::world::components::{SpaceId, TilePosition};
 
         let mut db = AccountDb::open_in_memory().unwrap();
-        let id = db.create_account("carol", "hunter2!").unwrap();
-        assert!(db.load_character(id).unwrap().is_none());
+        let account = db.create_account("hank", "hunter2!").unwrap();
+        let attrs = balanced_attrs();
+        let cid = db
+            .create_character(account, "Roundtrip", Class::Fighter, attrs)
+            .unwrap();
+        // create_character seeds an initial dump, so load_character succeeds.
+        let initial = db.load_character(cid).unwrap().unwrap();
+        assert_eq!(initial.player_id, PlayerId(cid as u64));
 
         let dump = PlayerStateDump {
-            player_id: PlayerId(id as u64),
+            player_id: PlayerId(cid as u64),
             space_id: Some(SpaceId(1)),
             tile_position: TilePosition::ground(5, 7),
             inventory: Inventory::default(),
@@ -374,16 +720,46 @@ mod tests {
             facing: Default::default(),
             home_position: None,
             experience: Default::default(),
-            class: Default::default(),
-            class_chosen: true,
+            class: Class::Fighter,
             magic_effects: Default::default(),
             stash: Default::default(),
         };
-        db.save_character(id, &dump).unwrap();
+        db.save_character(cid, &dump).unwrap();
 
-        let loaded = db.load_character(id).unwrap().unwrap();
-        assert_eq!(loaded.player_id, PlayerId(id as u64));
+        let loaded = db.load_character(cid).unwrap().unwrap();
+        assert_eq!(loaded.player_id, PlayerId(cid as u64));
         assert_eq!(loaded.tile_position, TilePosition::ground(5, 7));
+    }
+
+    #[test]
+    fn delete_character_removes_row() {
+        let mut db = AccountDb::open_in_memory().unwrap();
+        let a = db.create_account("ivy", "hunter2!").unwrap();
+        let attrs = balanced_attrs();
+        let cid = db
+            .create_character(a, "Doomed", Class::Wizard, attrs)
+            .unwrap();
+        assert_eq!(db.list_characters(a).unwrap().len(), 1);
+        db.delete_character(a, cid).unwrap();
+        assert!(db.list_characters(a).unwrap().is_empty());
+        assert!(matches!(
+            db.delete_character(a, cid),
+            Err(AuthError::CharacterNotFound)
+        ));
+    }
+
+    #[test]
+    fn point_buy_validation() {
+        assert!(validate_point_buy(&AttributeSet::new(12, 12, 12, 12, 12, 12)).is_ok());
+        // All 10s = 0 spent.
+        assert!(validate_point_buy(&AttributeSet::new(10, 10, 10, 10, 10, 10)).is_err());
+        // Below floor.
+        assert!(validate_point_buy(&AttributeSet::new(7, 13, 13, 13, 13, 13)).is_err());
+        // Above ceiling.
+        assert!(validate_point_buy(&AttributeSet::new(19, 11, 10, 10, 10, 10)).is_err());
+        // Refund-into-pool: drop one to 8 (refunds 2), lift another to 18
+        // (costs 8), spread the remaining 6 among the rest = 12 total spent.
+        assert!(validate_point_buy(&AttributeSet::new(8, 18, 12, 12, 12, 10)).is_ok());
     }
 
     #[test]

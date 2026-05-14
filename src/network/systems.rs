@@ -309,14 +309,6 @@ pub fn poll_tcp_server_messages(
                         &password,
                         is_register,
                         db.as_deref(),
-                        var_stores.as_deref_mut(),
-                        &mut commands,
-                        &world_config,
-                        &authored_spaces,
-                        &space_manager,
-                        &collider_query,
-                        &player_position_query,
-                        &mut object_registry,
                         &mut disconnected,
                     );
                 }
@@ -328,6 +320,31 @@ pub fn poll_tcp_server_messages(
                         &password,
                         is_register,
                         db.as_deref(),
+                        &mut disconnected,
+                    );
+                }
+                Ok(ClientMessage::ListCharacters) => {
+                    handle_list_characters(peer, db.as_deref(), &mut disconnected);
+                }
+                Ok(ClientMessage::CreateCharacter {
+                    name,
+                    class,
+                    attributes,
+                }) => {
+                    handle_create_character(
+                        peer,
+                        &name,
+                        class,
+                        attributes,
+                        db.as_deref(),
+                        &mut disconnected,
+                    );
+                }
+                Ok(ClientMessage::SelectCharacter { character_id }) => {
+                    handle_select_character(
+                        peer,
+                        character_id,
+                        db.as_deref(),
                         var_stores.as_deref_mut(),
                         &mut commands,
                         &world_config,
@@ -338,6 +355,9 @@ pub fn poll_tcp_server_messages(
                         &mut object_registry,
                         &mut disconnected,
                     );
+                }
+                Ok(ClientMessage::DeleteCharacter { character_id }) => {
+                    handle_delete_character(peer, character_id, db.as_deref(), &mut disconnected);
                 }
                 Ok(ClientMessage::Command(command)) => {
                     if let Some(player_id) = peer.player_id {
@@ -405,28 +425,19 @@ pub fn poll_tcp_server_messages(
     }
 }
 
-/// Attempts to authenticate a peer against the account DB, then spawns the
-/// player entity (either loaded from the DB or freshly initialized). Writes an
-/// `AuthResult` to the peer either way.
-#[allow(clippy::too_many_arguments)]
+/// Attempts to authenticate a peer against the account DB. On success the
+/// peer transitions to `AwaitingCharacter` — no player entity is spawned yet.
+/// The client follows up with `ListCharacters` and then `SelectCharacter` /
+/// `CreateCharacter`.
 fn handle_auth_attempt(
     peer: &mut TcpServerPeer,
     username: &str,
     password: &str,
     is_register: bool,
     db: Option<&AccountDbHandle>,
-    var_stores: Option<&mut crate::dialog::resources::CharacterVarStores>,
-    commands: &mut Commands,
-    world_config: &WorldConfig,
-    authored_spaces: &SpaceDefinitions,
-    space_manager: &SpaceManager,
-    collider_query: &Query<(&SpaceResident, &TilePosition), With<Collider>>,
-    player_position_query: &Query<(&SpaceResident, &TilePosition), With<Player>>,
-    object_registry: &mut ObjectRegistry,
     disconnected: &mut bool,
 ) {
-    if peer.is_authed() {
-        // Auth attempted on an already-authed peer — ignore, don't respond.
+    if peer.is_authed() || peer.is_awaiting_character() {
         return;
     }
 
@@ -445,8 +456,6 @@ fn handle_auth_attempt(
             guard
                 .create_account(username, password)
                 .and_then(|account_id| {
-                    // After create, log them in to record last_login_at and to
-                    // exercise the same code path as Login.
                     guard.verify_login(username, password)?;
                     Ok(account_id)
                 })
@@ -465,20 +474,239 @@ fn handle_auth_attempt(
         }
     };
 
-    // Resolve the player entity — either restored from the DB or spawned fresh.
-    let player_id = PlayerId(account_id as u64);
-    let (existing, display_name) = {
+    peer.auth_state = PeerAuthState::AwaitingCharacter { account_id };
+    info!(
+        "peer {} authenticated as account {account_id} ({username}); awaiting character select",
+        peer.connection_id.0
+    );
+    write_message(
+        &mut peer.stream,
+        &ServerMessage::AuthResult {
+            ok: true,
+            reason: None,
+        },
+        disconnected,
+    );
+}
+
+/// Responds to `ClientMessage::ListCharacters` with the roster for this
+/// peer's account.
+fn handle_list_characters(
+    peer: &mut TcpServerPeer,
+    db: Option<&AccountDbHandle>,
+    disconnected: &mut bool,
+) {
+    let Some(account_id) = peer.account_id() else {
+        return;
+    };
+    let Some(db) = db else {
+        return;
+    };
+    let summaries = {
         let guard = db.lock();
-        let display_name = guard
-            .account_display_name(account_id)
-            .unwrap_or_else(|_| username.to_owned());
-        let existing = guard.load_character(account_id).ok().flatten();
-        (existing, display_name)
+        guard.list_characters(account_id).unwrap_or_default()
+    };
+    let list: Vec<crate::network::protocol::CharacterSummary> = summaries
+        .into_iter()
+        .map(|s| crate::network::protocol::CharacterSummary {
+            character_id: s.character_id,
+            name: s.name,
+            class: s.class,
+            level: s.level,
+        })
+        .collect();
+    write_message(
+        &mut peer.stream,
+        &ServerMessage::CharacterList(list),
+        disconnected,
+    );
+}
+
+/// Creates a new character for this peer's account. On success replies with
+/// `CharacterCreateResult { ok: true }` and an updated `CharacterList`.
+fn handle_create_character(
+    peer: &mut TcpServerPeer,
+    name: &str,
+    class: crate::player::classes::Class,
+    attributes: crate::player::components::AttributeSet,
+    db: Option<&AccountDbHandle>,
+    disconnected: &mut bool,
+) {
+    let Some(account_id) = peer.account_id() else {
+        return;
+    };
+    if !peer.is_awaiting_character() {
+        return;
+    }
+    let Some(db) = db else {
+        write_message(
+            &mut peer.stream,
+            &ServerMessage::CharacterCreateResult {
+                ok: false,
+                character_id: None,
+                reason: Some("server has no account database".to_owned()),
+            },
+            disconnected,
+        );
+        return;
     };
 
-    let entity = if let Some(dump) = existing {
-        let dump_player_id = dump.player_id.0;
+    let result = {
+        let mut guard = db.lock();
+        guard.create_character(account_id, name, class, attributes)
+    };
+
+    match result {
+        Ok(character_id) => {
+            info!(
+                "peer {} created character {character_id} ({name}) for account {account_id}",
+                peer.connection_id.0
+            );
+            write_message(
+                &mut peer.stream,
+                &ServerMessage::CharacterCreateResult {
+                    ok: true,
+                    character_id: Some(character_id),
+                    reason: None,
+                },
+                disconnected,
+            );
+            handle_list_characters(peer, Some(db), disconnected);
+        }
+        Err(err) => {
+            let reason = reason_for_auth_error(&err);
+            info!(
+                "peer {} character create rejected: {reason}",
+                peer.connection_id.0
+            );
+            write_message(
+                &mut peer.stream,
+                &ServerMessage::CharacterCreateResult {
+                    ok: false,
+                    character_id: None,
+                    reason: Some(reason),
+                },
+                disconnected,
+            );
+        }
+    }
+}
+
+/// Deletes a character owned by this peer's account, then re-broadcasts the
+/// updated character list.
+fn handle_delete_character(
+    peer: &mut TcpServerPeer,
+    character_id: i64,
+    db: Option<&AccountDbHandle>,
+    disconnected: &mut bool,
+) {
+    let Some(account_id) = peer.account_id() else {
+        return;
+    };
+    if !peer.is_awaiting_character() {
+        return;
+    }
+    let Some(db) = db else {
+        return;
+    };
+    {
+        let mut guard = db.lock();
+        if let Err(err) = guard.delete_character(account_id, character_id) {
+            warn!(
+                "peer {} delete_character failed: {err}",
+                peer.connection_id.0
+            );
+        }
+    }
+    handle_list_characters(peer, Some(db), disconnected);
+}
+
+/// Selects a character and spawns the corresponding player entity. The peer
+/// transitions to `Authed`, after which the asset-manifest + gameplay-event
+/// stream begins.
+#[allow(clippy::too_many_arguments)]
+fn handle_select_character(
+    peer: &mut TcpServerPeer,
+    character_id: i64,
+    db: Option<&AccountDbHandle>,
+    var_stores: Option<&mut crate::dialog::resources::CharacterVarStores>,
+    commands: &mut Commands,
+    world_config: &WorldConfig,
+    authored_spaces: &SpaceDefinitions,
+    space_manager: &SpaceManager,
+    collider_query: &Query<(&SpaceResident, &TilePosition), With<Collider>>,
+    player_position_query: &Query<(&SpaceResident, &TilePosition), With<Player>>,
+    object_registry: &mut ObjectRegistry,
+    disconnected: &mut bool,
+) {
+    let Some(account_id) = peer.account_id() else {
+        return;
+    };
+    if !peer.is_awaiting_character() {
+        return;
+    }
+    let Some(db) = db else {
+        return;
+    };
+
+    // Verify ownership.
+    let owns = {
+        let guard = db.lock();
+        guard
+            .character_belongs_to_account(account_id, character_id)
+            .unwrap_or(false)
+    };
+    if !owns {
+        warn!(
+            "peer {} tried to select character {character_id} not owned by account {account_id}",
+            peer.connection_id.0
+        );
+        return;
+    }
+
+    // Load the persisted dump and the display name.
+    let (existing_dump, display_name) = {
+        let guard = db.lock();
+        let dump = guard.load_character(character_id).ok().flatten();
+        let name = guard
+            .character_display_name(character_id)
+            .unwrap_or_else(|_| format!("Player#{character_id}"));
+        (dump, name)
+    };
+
+    let player_id = PlayerId(character_id as u64);
+
+    let entity = if let Some(mut dump) = existing_dump {
+        // Force the dump's player_id to the canonical character_id (legacy
+        // dumps may have any value here).
+        dump.player_id = player_id;
+        // If the dump has no space/position set yet (fresh character), pick a
+        // spawn tile now.
+        let needs_spawn_location =
+            dump.space_id.is_none() || (dump.tile_position.x == 0 && dump.tile_position.y == 0);
+        if needs_spawn_location {
+            if let Some((space_id, tile)) = find_spawn_location(
+                world_config,
+                authored_spaces,
+                space_manager,
+                collider_query,
+                player_position_query,
+            ) {
+                dump.space_id = Some(space_id);
+                dump.tile_position = tile;
+            }
+        }
         let yarn_vars = dump.yarn_vars.clone();
+        let needs_starter_seed = dump
+            .inventory
+            .backpack_slots
+            .iter()
+            .all(|slot| slot.is_none())
+            && dump
+                .inventory
+                .equipment_slots
+                .iter()
+                .all(|(_, item)| item.is_none());
         let entity = spawn_player_from_dump(
             commands,
             object_registry,
@@ -486,11 +714,19 @@ fn handle_auth_attempt(
             world_config.current_space_id,
             display_name,
         );
+        if needs_starter_seed {
+            let mut starter = Inventory::default();
+            seed_starter_inventory(&mut starter);
+            commands.entity(entity).insert(starter);
+        }
         if let Some(stores) = var_stores {
-            stores.restore(dump_player_id, yarn_vars);
+            stores.restore(player_id.0, yarn_vars);
         }
         entity
     } else {
+        // Defensive fallback: create_character seeds state_json, so this
+        // branch shouldn't normally fire. Spawn a fresh default at a free
+        // spawn tile.
         let Some((spawn_space_id, spawn_tile)) = find_spawn_location(
             world_config,
             authored_spaces,
@@ -499,10 +735,9 @@ fn handle_auth_attempt(
             player_position_query,
         ) else {
             warn!(
-                "peer {} authenticated but no free spawn tile is available",
+                "peer {} selected character but no free spawn tile is available",
                 peer.connection_id.0
             );
-            send_auth_failure(peer, "no free spawn location", disconnected);
             return;
         };
         let object_id = object_registry.allocate_runtime_id("player");
@@ -520,19 +755,19 @@ fn handle_auth_attempt(
         entity
     };
 
-    peer.auth_state = PeerAuthState::Authed { account_id };
+    peer.auth_state = PeerAuthState::Authed {
+        account_id,
+        character_id,
+    };
     peer.player_id = Some(player_id);
     peer.player_entity = Some(entity);
     info!(
-        "peer {} authenticated as account {account_id} ({username})",
+        "peer {} selected character {character_id} (account {account_id})",
         peer.connection_id.0
     );
     write_message(
         &mut peer.stream,
-        &ServerMessage::AuthResult {
-            ok: true,
-            reason: None,
-        },
+        &ServerMessage::CharacterSelected { character_id },
         disconnected,
     );
 }
@@ -555,6 +790,10 @@ fn reason_for_auth_error(err: &AuthError) -> String {
         AuthError::UsernameTaken => "username already taken".to_owned(),
         AuthError::UnknownUser => "unknown user".to_owned(),
         AuthError::WrongPassword => "wrong password".to_owned(),
+        AuthError::CharacterNameInvalid(msg) => format!("character name invalid: {msg}"),
+        AuthError::CharacterNameTaken => "character name already taken".to_owned(),
+        AuthError::CharacterNotFound => "character not found".to_owned(),
+        AuthError::PointBuyInvalid(msg) => msg.clone(),
         // Don't leak internal errors to the client.
         AuthError::Database(_) | AuthError::Hashing(_) => "internal server error".to_owned(),
     }
@@ -728,6 +967,13 @@ pub fn poll_tcp_client_messages(
                 // AuthResult is handled by the Authenticating-state systems;
                 // reaching InGame means auth already succeeded.
             }
+            Ok(ServerMessage::CharacterList(_))
+            | Ok(ServerMessage::CharacterCreateResult { .. })
+            | Ok(ServerMessage::CharacterSelected { .. }) => {
+                // Character-flow messages are handled by the CharacterSelect /
+                // CharacterCreate-state systems; reaching InGame means a
+                // character was already selected.
+            }
             Err(error) => warn!("failed to parse server message: {error}"),
         }
     }
@@ -795,14 +1041,15 @@ fn disconnect_peer(
 ) {
     if let Some(peer) = server_state.peers.remove(&connection_id) {
         info!("TCP client disconnected");
-        if let (Some(account_id), Some(player_entity)) = (peer.account_id(), peer.player_entity) {
+        if let (Some(character_id), Some(player_entity)) = (peer.character_id(), peer.player_entity)
+        {
             // Defer the snapshot+despawn to `persist_disconnected_players` in
             // the `Last` schedule — that system holds the heavy player query
             // needed to build a `PlayerStateDump`.
             pending_saves
                 .entries
                 .push(crate::network::resources::PendingPlayerSave {
-                    account_id,
+                    character_id,
                     player_entity,
                 });
         } else if let Some(entity) = peer.player_entity {

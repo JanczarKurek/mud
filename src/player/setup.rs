@@ -4,7 +4,7 @@ use crate::combat::components::{AttackProfile, CombatLeash};
 use crate::crafting::CharacterStash;
 use crate::magic::effects::MagicEffects;
 use crate::persistence::{PlayerStateDump, WorldSnapshotStatus};
-use crate::player::classes::{Class, ClassChosen};
+use crate::player::classes::Class;
 use crate::player::components::{
     BaseStats, ChatLog, DefenseStats, DerivedStats, EquippedItem, Inventory, InventoryStack,
     MovementCooldown, Player, PlayerId, PlayerIdentity, RegenBuffs, RegenTickers, VitalStats,
@@ -69,10 +69,8 @@ pub fn spawn_embedded_player_authoritative(
     player_query: Query<Option<&PlayerIdentity>, With<Player>>,
     db: Option<Res<crate::accounts::AccountDbHandle>>,
     mut var_stores: Option<ResMut<crate::dialog::resources::CharacterVarStores>>,
+    selected: Option<Res<crate::app::state::LocalSelectedCharacter>>,
 ) {
-    // If the snapshot loaded player entities, don't create a duplicate.
-    // But if the snapshot had NO players (e.g. server saved after all clients left),
-    // we still need to spawn the local player.
     if snapshot_status
         .as_ref()
         .is_some_and(|s| s.loaded && s.players_restored)
@@ -80,40 +78,77 @@ pub fn spawn_embedded_player_authoritative(
         return;
     }
 
-    // Don't spawn if any player entity already exists.
     if player_query.iter().next().is_some() {
         return;
     }
 
-    let display_name = db
-        .as_deref()
-        .and_then(|h| {
-            h.lock()
-                .account_display_name(crate::accounts::LOCAL_ACCOUNT_ID)
-                .ok()
-        })
-        .unwrap_or_else(|| crate::accounts::LOCAL_ACCOUNT_USERNAME.to_owned());
+    let Some(db) = db.as_deref() else {
+        return;
+    };
 
-    // Prefer restoring the local character from the account DB if one exists —
-    // this is how embedded-mode persistence round-trips now that player state
-    // lives in the accounts DB rather than the world snapshot.
-    if let Some(db) = db.as_deref() {
-        if let Ok(Some(dump)) = db.lock().load_character(crate::accounts::LOCAL_ACCOUNT_ID) {
-            let fallback_space_id = world_config.current_space_id;
-            let player_id_u64 = dump.player_id.0;
-            let yarn_vars = dump.yarn_vars.clone();
-            spawn_player_from_dump(
-                &mut commands,
-                &mut object_registry,
-                dump,
-                fallback_space_id,
-                display_name,
-            );
-            if let Some(stores) = var_stores.as_deref_mut() {
-                stores.restore(player_id_u64, yarn_vars);
-            }
+    // Prefer the character explicitly chosen on the CharacterSelect screen.
+    // Fall back to "most recently played" if nothing's been chosen yet.
+    let target_character_id = selected.as_ref().and_then(|s| s.character_id);
+
+    let (character_id, dump, display_name) = {
+        let guard = db.lock();
+        let summary = match target_character_id {
+            Some(id) => guard
+                .list_characters(crate::accounts::LOCAL_ACCOUNT_ID)
+                .unwrap_or_default()
+                .into_iter()
+                .find(|c| c.character_id == id),
+            None => guard
+                .list_characters(crate::accounts::LOCAL_ACCOUNT_ID)
+                .unwrap_or_default()
+                .into_iter()
+                .next(),
+        };
+        let Some(summary) = summary else {
             return;
+        };
+        let dump = guard.load_character(summary.character_id).ok().flatten();
+        (summary.character_id, dump, summary.name)
+    };
+
+    let player_id = PlayerId(character_id as u64);
+    if let Some(mut dump) = dump {
+        dump.player_id = player_id;
+        let needs_spawn_location =
+            dump.space_id.is_none() || (dump.tile_position.x == 0 && dump.tile_position.y == 0);
+        if needs_spawn_location {
+            dump.space_id = Some(world_config.current_space_id);
+            dump.tile_position =
+                TilePosition::ground(world_config.map_width / 2, world_config.map_height / 2);
         }
+        let yarn_vars = dump.yarn_vars.clone();
+        let needs_starter_seed = dump
+            .inventory
+            .backpack_slots
+            .iter()
+            .all(|slot| slot.is_none())
+            && dump
+                .inventory
+                .equipment_slots
+                .iter()
+                .all(|(_, item)| item.is_none());
+        let fallback_space_id = world_config.current_space_id;
+        let entity = spawn_player_from_dump(
+            &mut commands,
+            &mut object_registry,
+            dump,
+            fallback_space_id,
+            display_name,
+        );
+        if needs_starter_seed {
+            let mut starter = Inventory::default();
+            seed_starter_inventory(&mut starter);
+            commands.entity(entity).insert(starter);
+        }
+        if let Some(stores) = var_stores.as_deref_mut() {
+            stores.restore(player_id.0, yarn_vars);
+        }
+        return;
     }
 
     let spawn_tile = TilePosition::ground(world_config.map_width / 2, world_config.map_height / 2);
@@ -121,7 +156,7 @@ pub fn spawn_embedded_player_authoritative(
     let entity = spawn_player_authoritative(
         &mut commands,
         &world_config,
-        PlayerId(crate::accounts::LOCAL_ACCOUNT_ID as u64),
+        player_id,
         object_id,
         spawn_tile,
         display_name,
@@ -163,7 +198,6 @@ pub fn spawn_player_from_dump(
     let mut inventory = dump.inventory;
     inventory.ensure_slots();
     let object_id = object_registry.allocate_runtime_id("player");
-    let class_chosen = dump.class_chosen;
     let stash = CharacterStash {
         entries: dump.stash,
     };
@@ -212,9 +246,6 @@ pub fn spawn_player_from_dump(
             ),
         ))
         .id();
-    if class_chosen {
-        commands.entity(entity).insert(ClassChosen);
-    }
     entity
 }
 

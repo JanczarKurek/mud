@@ -47,9 +47,13 @@ pub struct TcpServerConfig {
 pub enum PeerAuthState {
     /// Accepts only `Login` / `Register` messages. No player entity exists yet.
     AwaitingAuth,
-    /// Credentials accepted. Asset sync and gameplay messages are allowed from
-    /// here on. `account_id` is the primary key in the accounts DB.
-    Authed { account_id: i64 },
+    /// Credentials accepted. Accepts only `ListCharacters` / `CreateCharacter`
+    /// / `SelectCharacter` / `DeleteCharacter`. No player entity exists yet.
+    AwaitingCharacter { account_id: i64 },
+    /// A character has been selected. Asset sync and gameplay messages are
+    /// allowed from here on. `account_id` owns the character; `character_id`
+    /// is the gameplay identity (and is the source of `PlayerId`).
+    Authed { account_id: i64, character_id: i64 },
 }
 
 pub struct TcpServerPeer {
@@ -75,10 +79,22 @@ impl TcpServerPeer {
         matches!(self.auth_state, PeerAuthState::Authed { .. })
     }
 
+    pub fn is_awaiting_character(&self) -> bool {
+        matches!(self.auth_state, PeerAuthState::AwaitingCharacter { .. })
+    }
+
     pub fn account_id(&self) -> Option<i64> {
         match self.auth_state {
-            PeerAuthState::Authed { account_id } => Some(account_id),
+            PeerAuthState::Authed { account_id, .. } => Some(account_id),
+            PeerAuthState::AwaitingCharacter { account_id } => Some(account_id),
             PeerAuthState::AwaitingAuth => None,
+        }
+    }
+
+    pub fn character_id(&self) -> Option<i64> {
+        match self.auth_state {
+            PeerAuthState::Authed { character_id, .. } => Some(character_id),
+            _ => None,
         }
     }
 }
@@ -99,7 +115,7 @@ pub struct PendingPlayerSaves {
 }
 
 pub struct PendingPlayerSave {
-    pub account_id: i64,
+    pub character_id: i64,
     pub player_entity: Entity,
 }
 

@@ -9,7 +9,7 @@ use crate::dialog::resources::CharacterVarStores;
 use crate::magic::effects::MagicEffects;
 use crate::network::resources::PendingPlayerSaves;
 use crate::persistence::build_player_state_dump;
-use crate::player::classes::{Class, ClassChosen};
+use crate::player::classes::Class;
 use crate::player::components::{
     BaseStats, ChatLog, DerivedStats, Inventory, MovementCooldown, Player, PlayerIdentity,
     VitalStats,
@@ -40,7 +40,6 @@ type PlayerStateQueryData<'a> = (
     Option<&'a Experience>,
     (
         Option<&'a Class>,
-        bevy::ecs::query::Has<ClassChosen>,
         Option<&'a MagicEffects>,
         Option<&'a CharacterStash>,
     ),
@@ -50,7 +49,7 @@ type PlayerStateQueryFilter = With<Player>;
 
 fn save_entity(
     db: &AccountDbHandle,
-    account_id: i64,
+    character_id: i64,
     row: <PlayerStateQueryData<'_> as bevy::ecs::query::QueryData>::Item<'_, '_>,
     var_stores: Option<&CharacterVarStores>,
 ) {
@@ -69,7 +68,7 @@ fn save_entity(
         combat_leash,
         facing,
         experience,
-        (class, class_chosen, magic_effects, stash),
+        (class, magic_effects, stash),
     ) = row;
 
     let empty_effects = MagicEffects::default();
@@ -92,7 +91,6 @@ fn save_entity(
         facing.copied().unwrap_or_default().0,
         experience.copied().unwrap_or_default(),
         class.copied().unwrap_or_default(),
-        class_chosen,
         effects_ref,
         stash_ref,
     );
@@ -101,8 +99,8 @@ fn save_entity(
         dump.yarn_vars = stores.snapshot_for(identity.id.0);
     }
 
-    if let Err(err) = db.lock().save_character(account_id, &dump) {
-        warn!("failed to save character for account {account_id}: {err}");
+    if let Err(err) = db.lock().save_character(character_id, &dump) {
+        warn!("failed to save character {character_id}: {err}");
     }
 }
 
@@ -122,16 +120,15 @@ pub fn persist_disconnected_players(
     let entries = std::mem::take(&mut pending_saves.entries);
     for entry in entries {
         if let (Some(db), Ok(row)) = (db.as_deref(), player_query.get(entry.player_entity)) {
-            save_entity(db, entry.account_id, row, var_stores.as_deref());
+            save_entity(db, entry.character_id, row, var_stores.as_deref());
         }
         commands.entity(entry.player_entity).despawn();
     }
 }
 
 /// Periodic autosave of every `Player` entity currently in the ECS world. The
-/// account id is derived from `PlayerIdentity.id`, which the auth path sets to
-/// `PlayerId(account_id as u64)`; embedded mode uses `PlayerId(0)` which maps
-/// to the reserved local account.
+/// character id is derived from `PlayerIdentity.id`, which is now set to
+/// `PlayerId(character_id as u64)` by the auth/character-selection path.
 pub fn autosave_all_players(
     time: Res<Time>,
     config: Res<AutosaveConfig>,
@@ -151,8 +148,8 @@ pub fn autosave_all_players(
     };
 
     for row in player_query.iter() {
-        let account_id = row.1.id.0 as i64;
-        save_entity(db, account_id, row, var_stores.as_deref());
+        let character_id = row.1.id.0 as i64;
+        save_entity(db, character_id, row, var_stores.as_deref());
     }
 }
 
@@ -171,7 +168,7 @@ pub fn save_all_players_on_app_exit(
         return;
     };
     for row in player_query.iter() {
-        let account_id = row.1.id.0 as i64;
-        save_entity(db, account_id, row, var_stores.as_deref());
+        let character_id = row.1.id.0 as i64;
+        save_entity(db, character_id, row, var_stores.as_deref());
     }
 }

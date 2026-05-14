@@ -31,7 +31,7 @@ use crate::game::shop::{Shopkeeper, StockMode, Stockpile};
 use crate::game::trade::{ActiveTrades, TradeParticipants, TradePartnerKind, WareView};
 use crate::magic::effects::MagicEffects;
 use crate::npc::components::Npc;
-use crate::player::classes::{Class, ClassChosen};
+use crate::player::classes::Class;
 use crate::player::components::{
     CurrentCarryWeight, DerivedStats, Encumbered, MaxCarryWeight, Player, PlayerId, PlayerIdentity,
     RegenBuffs, VitalStats,
@@ -69,7 +69,6 @@ pub type ProjectionPlayerQuery<'w, 's> = Query<
         Option<&'static Experience>,
         (
             Option<&'static Class>,
-            Has<ClassChosen>,
             Option<&'static crate::crafting::CharacterStash>,
         ),
         Option<&'static MagicEffects>,
@@ -172,7 +171,7 @@ pub fn compute_events_for_peer(
         regen_buffs,
         (max_carry, current_carry, is_encumbered),
         experience,
-        (class, class_chosen, stash),
+        (class, stash),
         magic_effects,
     ) in player_query.iter()
     {
@@ -328,12 +327,6 @@ pub fn compute_events_for_peer(
                 if let Some(c) = projected_class {
                     events.push(GameEvent::PlayerClassChanged { class: c });
                 }
-            }
-
-            if previous.class_chosen != class_chosen {
-                events.push(GameEvent::PlayerClassChosenChanged {
-                    chosen: class_chosen,
-                });
             }
 
             let projected_attributes = derived_stats.attributes;
@@ -807,9 +800,6 @@ pub fn apply_event_to_state(state: &mut ClientGameState, event: GameEvent) {
         GameEvent::PlayerClassChanged { class } => {
             state.class = Some(class);
         }
-        GameEvent::PlayerClassChosenChanged { chosen } => {
-            state.class_chosen = chosen;
-        }
         GameEvent::PlayerAttributesChanged { attributes } => {
             state.attributes = Some(attributes);
         }
@@ -966,9 +956,6 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
         GameEvent::ExperienceLost { amount } => info!("client lost {} xp", amount),
         GameEvent::PlayerClassChanged { class } => {
             info!("client player class set: {:?}", class)
-        }
-        GameEvent::PlayerClassChosenChanged { chosen } => {
-            info!("client player class_chosen: {}", chosen)
         }
         GameEvent::PlayerAttributesChanged { attributes } => {
             debug!(

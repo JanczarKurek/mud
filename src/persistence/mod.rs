@@ -197,18 +197,11 @@ pub struct PlayerStateDump {
     /// existed default to a fresh level-1 character.
     #[serde(default)]
     pub experience: crate::player::progression::Experience,
-    /// Selected class. `#[serde(default)]` (Fighter) so legacy rows that
-    /// pre-date the class system silently migrate to Fighter on load — this
-    /// is the documented behavior in `docs/progression.md` Phase B.
+    /// Selected class. Set at character creation via the Character Create
+    /// screen. `#[serde(default)]` (Fighter) so any legacy row without a
+    /// class field silently migrates to Fighter on load.
     #[serde(default)]
     pub class: crate::player::classes::Class,
-    /// Has the player explicitly picked a class via `ChooseClass`? Defaults
-    /// to `true` so legacy rows (which pre-date the class system) silently
-    /// migrate to Fighter without re-prompting. Fresh characters created
-    /// post-Phase-B explicitly write `false` and see the picker UI on first
-    /// entry.
-    #[serde(default = "default_class_chosen_true")]
-    pub class_chosen: bool,
     /// Active timed magical effects (buffs / debuffs) on the player.
     /// `#[serde(default)]` so rows written before this field existed default
     /// to no active effects.
@@ -219,10 +212,6 @@ pub struct PlayerStateDump {
     /// without growing this struct. See `crate::crafting::stash`.
     #[serde(default)]
     pub stash: std::collections::HashMap<String, serde_json::Value>,
-}
-
-fn default_class_chosen_true() -> bool {
-    true
 }
 
 /// Build a `PlayerStateDump` from the components of a single player entity.
@@ -244,7 +233,6 @@ pub fn build_player_state_dump(
     facing: crate::world::direction::Direction,
     experience: crate::player::progression::Experience,
     class: crate::player::classes::Class,
-    class_chosen: bool,
     magic_effects: &MagicEffects,
     stash: &crate::crafting::CharacterStash,
 ) -> PlayerStateDump {
@@ -265,7 +253,6 @@ pub fn build_player_state_dump(
         home_position: identity.home_position,
         experience,
         class,
-        class_chosen,
         magic_effects: magic_effects.clone(),
         stash: stash.entries.clone(),
     }
@@ -1149,7 +1136,6 @@ mod tests {
             home_position: None,
             experience: Default::default(),
             class: Default::default(),
-            class_chosen: true,
             magic_effects: Default::default(),
             stash: Default::default(),
         };
@@ -1208,7 +1194,6 @@ mod tests {
             home_position: None,
             experience: Default::default(),
             class: Default::default(),
-            class_chosen: true,
             magic_effects: effects.clone(),
             stash: Default::default(),
         };
@@ -1347,10 +1332,12 @@ mod tests {
         app.update();
 
         let world = app.world_mut();
-        let mut npc_query = world.query_filtered::<
-            (&OverworldObject, &TilePosition, Option<&AiState>, Option<&AiMemory>),
-            With<Npc>,
-        >();
+        let mut npc_query = world.query_filtered::<(
+            &OverworldObject,
+            &TilePosition,
+            Option<&AiState>,
+            Option<&AiMemory>,
+        ), With<Npc>>();
         let mut saw_snapshot_goblin = false;
         for (object, tile, ai_state, ai_memory) in npc_query.iter(world) {
             assert!(

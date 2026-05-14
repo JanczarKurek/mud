@@ -380,15 +380,9 @@ pub enum GameEvent {
         amount: u64,
     },
     /// Replicated when the local player's selected class changes (or is first
-    /// projected). Driven by the `ChooseClass` command + bootstrap diff.
+    /// projected). Driven by the bootstrap diff after a character is loaded.
     PlayerClassChanged {
         class: Class,
-    },
-    /// Replicated when the player's `class_chosen` flag flips (typically once,
-    /// the first time they pick from the class picker). Drives the UI to hide
-    /// the picker overlay.
-    PlayerClassChosenChanged {
-        chosen: bool,
     },
     /// Replicates the *effective* attribute set (base + equipment bonuses)
     /// for the local player. Drives the Character sheet's attributes grid;
@@ -528,13 +522,6 @@ pub struct ClientGameState {
     /// `PlayerClassChanged` event lands.
     #[serde(default)]
     pub class: Option<Class>,
-    /// Replicated `class_chosen` flag for the local player. UI picker shows
-    /// when `class_chosen == false` (and `local_player_id` is `Some`). On
-    /// bootstrap defaults to `false` so the very first frame doesn't flash
-    /// the picker for already-chosen characters — the projection
-    /// immediately corrects it.
-    #[serde(default)]
-    pub class_chosen: bool,
     /// Replicated effective attribute set (base + equipment) for the local
     /// player. `None` until the first `PlayerAttributesChanged` event lands.
     #[serde(default)]

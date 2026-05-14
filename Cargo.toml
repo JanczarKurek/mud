@@ -62,6 +62,7 @@ profiling = ["bevy/trace_chrome"]
 # subscribers, only one tracing layer at a time. See
 # docs/movement_perf_investigation.md "Round 2 — Tracy" for usage.
 tracy = ["bevy/trace_tracy"]
+debug = ["bevy/debug"]
 
 [[bin]]
 name = "gen_schemas"
