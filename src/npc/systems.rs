@@ -884,36 +884,50 @@ fn astar_next_step(
 
         let current_g = *g_score.get(&current).unwrap_or(&i32::MAX);
 
-        for dy in -1..=1 {
-            for dx in -1..=1 {
-                if dx == 0 && dy == 0 {
-                    continue;
-                }
-                let neighbor = TilePosition::new(current.x + dx, current.y + dy, current.z);
-                if is_blocked_position(
-                    entity,
-                    space_id,
-                    neighbor,
-                    blockers,
-                    npc_tiles,
-                    Some(player_tiles),
-                    goal_override,
-                ) {
-                    continue;
-                }
-                let tentative_g = current_g + 1; // Chebyshev: uniform cost.
-                let existing = g_score.get(&neighbor).copied().unwrap_or(i32::MAX);
-                if tentative_g < existing {
-                    came_from.insert(neighbor, current);
-                    g_score.insert(neighbor, tentative_g);
-                    let f = tentative_g + chebyshev_distance(neighbor, goal);
-                    counter = counter.wrapping_add(1);
-                    open.push(Reverse(AstarNode {
-                        f,
-                        counter,
-                        pos: neighbor,
-                    }));
-                }
+        // Push neighbors in goal-direction-preferred order so the priority
+        // queue's insertion-order tiebreaker resolves equal-f ties toward
+        // the goal. Row-major iteration biased ties toward (-1,-1), which
+        // made goblins zigzag through south-west when pursuing a player to
+        // the north-west.
+        let gdx = (goal.x - current.x).signum();
+        let gdy = (goal.y - current.y).signum();
+        let mut deltas: [(i32, i32); 8] = [
+            (-1, -1),
+            (0, -1),
+            (1, -1),
+            (-1, 0),
+            (1, 0),
+            (-1, 1),
+            (0, 1),
+            (1, 1),
+        ];
+        deltas.sort_by_key(|&(ddx, ddy)| neighbor_alignment_penalty(ddx, ddy, gdx, gdy));
+
+        for (dx, dy) in deltas {
+            let neighbor = TilePosition::new(current.x + dx, current.y + dy, current.z);
+            if is_blocked_position(
+                entity,
+                space_id,
+                neighbor,
+                blockers,
+                npc_tiles,
+                Some(player_tiles),
+                goal_override,
+            ) {
+                continue;
+            }
+            let tentative_g = current_g + 1; // Chebyshev: uniform cost.
+            let existing = g_score.get(&neighbor).copied().unwrap_or(i32::MAX);
+            if tentative_g < existing {
+                came_from.insert(neighbor, current);
+                g_score.insert(neighbor, tentative_g);
+                let f = tentative_g + chebyshev_distance(neighbor, goal);
+                counter = counter.wrapping_add(1);
+                open.push(Reverse(AstarNode {
+                    f,
+                    counter,
+                    pos: neighbor,
+                }));
             }
         }
     }
@@ -1050,6 +1064,32 @@ fn sample_step_interval(behavior: &RoamingBehavior, random_state: &mut RoamingRa
         return base;
     }
     base + next_random_f32(random_state) * jitter_range
+}
+
+/// Lower penalty = preferred neighbor. Returns 0 for a step that matches the
+/// goal direction on every active axis, with rising penalties for perpendicular
+/// and anti-aligned moves. When the goal sits on the same row or column, the
+/// off-axis cost just rewards staying on that line.
+fn neighbor_alignment_penalty(ddx: i32, ddy: i32, gdx: i32, gdy: i32) -> i32 {
+    let ax = if gdx == 0 {
+        ddx.abs()
+    } else if ddx == gdx {
+        0
+    } else if ddx == 0 {
+        1
+    } else {
+        2
+    };
+    let ay = if gdy == 0 {
+        ddy.abs()
+    } else if ddy == gdy {
+        0
+    } else if ddy == 0 {
+        1
+    } else {
+        2
+    };
+    ax + ay
 }
 
 fn chebyshev_distance(a: TilePosition, b: TilePosition) -> i32 {
@@ -1638,6 +1678,74 @@ mod tests {
         assert_ne!(npc_position, TilePosition::ground(6, 5));
         assert_ne!(npc_position, TilePosition::ground(6, 4));
         assert_ne!(npc_position, TilePosition::ground(6, 6));
+    }
+
+    #[test]
+    fn melee_npc_does_not_zigzag_when_player_is_top_left() {
+        // Regression: A* used row-major neighbor expansion (SW first), so the
+        // priority queue's insertion-order tiebreaker steered the first step
+        // south-west when the player sat to the north-west of the goblin. The
+        // goblin would visibly take a bottom-left step before swinging back
+        // up. Cover both the "mostly-west, slightly north" case (the one that
+        // tripped the bug in play) and the directly-west case (a tighter
+        // three-way tie among SW, W, NW).
+        let start = TilePosition::ground(5, 5);
+        for player_position in [
+            TilePosition::ground(2, 6),
+            TilePosition::ground(2, 5),
+            TilePosition::ground(1, 6),
+        ] {
+            let mut app = App::new();
+            app.add_plugins(MinimalPlugins);
+            spawn_player(&mut app, 1, player_position);
+            let npc = spawn_melee(&mut app, start);
+
+            app.add_systems(Update, update_roaming_npcs);
+            app.update();
+
+            let npc_position = *app.world().get::<TilePosition>(npc).unwrap();
+            assert!(
+                npc_position.y >= start.y,
+                "goblin must not step south when player at {player_position:?} is to the \
+                 north-west of {start:?}; ended at {npc_position:?}",
+            );
+            let before = chebyshev_distance(start, player_position);
+            let after = chebyshev_distance(npc_position, player_position);
+            assert!(
+                after < before,
+                "goblin must close one step toward {player_position:?} (was {before}, now \
+                 {after}); ended at {npc_position:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn melee_npc_walks_straight_when_player_is_cardinal() {
+        // Directly-north / directly-east players should produce a cardinal
+        // first step, not a diagonal. The old row-major expansion would push
+        // the goblin onto a diagonal in this case too — visually fine, but
+        // covered here so the alignment-aware tiebreaker doesn't regress.
+        for (player_position, expected) in [
+            (TilePosition::ground(5, 8), TilePosition::ground(5, 6)),
+            (TilePosition::ground(8, 5), TilePosition::ground(6, 5)),
+            (TilePosition::ground(5, 2), TilePosition::ground(5, 4)),
+            (TilePosition::ground(2, 5), TilePosition::ground(4, 5)),
+        ] {
+            let mut app = App::new();
+            app.add_plugins(MinimalPlugins);
+            spawn_player(&mut app, 1, player_position);
+            let npc = spawn_melee(&mut app, TilePosition::ground(5, 5));
+
+            app.add_systems(Update, update_roaming_npcs);
+            app.update();
+
+            let npc_position = *app.world().get::<TilePosition>(npc).unwrap();
+            assert_eq!(
+                npc_position, expected,
+                "goblin chasing cardinal-direction player at {player_position:?} should \
+                 take the straight cardinal step",
+            );
+        }
     }
 
     #[test]
