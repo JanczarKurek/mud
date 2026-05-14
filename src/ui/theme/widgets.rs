@@ -102,8 +102,15 @@ pub fn spawn_themed_panel(
 
 /// Per-frame recolor of every `ThemedButton`. One system covers every themed
 /// surface in the project.
+///
+/// Primary / Secondary buttons additionally swap their `ImageNode.image` to
+/// one of three procedural warm-gold beveled frames (idle / hover / pressed),
+/// giving a tactile pushed-in look on press. The original 1px Node border
+/// stays in place but its color is hidden — the texture's bevel supplies the
+/// visual perimeter.
 pub fn apply_themed_button_tint(
     palette: Res<Palette>,
+    theme: Res<UiThemeAssets>,
     mut query: Query<(
         &Interaction,
         &ThemedButton,
@@ -112,10 +119,41 @@ pub fn apply_themed_button_tint(
     )>,
 ) {
     for (interaction, themed, mut image, mut border) in &mut query {
-        let (bg, border_color, _text) =
-            colors_for(&palette, themed.style, themed.selected, *interaction);
-        image.color = bg;
-        *border = BorderColor::all(border_color);
+        match themed.style {
+            ButtonStyle::Primary | ButtonStyle::Secondary => {
+                let target = match interaction {
+                    Interaction::Pressed => &theme.button_frame_pressed,
+                    Interaction::Hovered => &theme.button_frame_hover,
+                    Interaction::None => &theme.button_frame_idle,
+                };
+                if image.image != *target {
+                    image.image = target.clone();
+                }
+                image.color = match themed.style {
+                    ButtonStyle::Primary => Color::WHITE,
+                    ButtonStyle::Secondary => secondary_tint_for(*interaction),
+                    _ => unreachable!(),
+                };
+                *border = BorderColor::all(Color::NONE);
+            }
+            _ => {
+                let (bg, border_color, _text) =
+                    colors_for(&palette, themed.style, themed.selected, *interaction);
+                image.color = bg;
+                *border = BorderColor::all(border_color);
+            }
+        }
+    }
+}
+
+/// Multiplier applied to the gold button texture for `ButtonStyle::Secondary`,
+/// quieting it into a tan/brown sibling of Primary without needing a second
+/// set of generated images.
+fn secondary_tint_for(interaction: Interaction) -> Color {
+    match interaction {
+        Interaction::Pressed => Color::srgb(0.82, 0.74, 0.58),
+        Interaction::Hovered => Color::srgb(0.74, 0.64, 0.48),
+        Interaction::None => Color::srgb(0.62, 0.52, 0.40),
     }
 }
 

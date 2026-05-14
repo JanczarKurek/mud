@@ -2,6 +2,8 @@ use bevy::prelude::*;
 use bevy::sprite::{BorderRect, SliceScaleMode, TextureSlicer};
 use bevy::ui::widget::NodeImageMode;
 
+use crate::ui::theme::procedural_button::{build_button_frames, ButtonFrameHandles};
+
 /// Handles and 9-slice config for every themed surface. Placeholder art lives
 /// in `assets/ui/theme/*.png` (plain white PNGs); real hand-painted frames
 /// drop in later by overwriting those files.
@@ -13,6 +15,11 @@ pub struct UiThemeAssets {
     pub title_bar_slicer: TextureSlicer,
     pub button_frame: Handle<Image>,
     pub button_frame_slicer: TextureSlicer,
+    /// Procedural warm-gold beveled frames for Primary / Secondary buttons.
+    /// Swapped per-interaction by `apply_themed_button_tint`.
+    pub button_frame_idle: Handle<Image>,
+    pub button_frame_hover: Handle<Image>,
+    pub button_frame_pressed: Handle<Image>,
     pub slot_frame: Handle<Image>,
     pub slot_frame_slicer: TextureSlicer,
     pub divider: Handle<Image>,
@@ -29,7 +36,12 @@ pub struct UiThemeAssets {
 }
 
 impl UiThemeAssets {
-    pub fn load(asset_server: &AssetServer) -> Self {
+    pub fn load(asset_server: &AssetServer, images: &mut Assets<Image>) -> Self {
+        let ButtonFrameHandles {
+            idle: button_frame_idle,
+            hover: button_frame_hover,
+            pressed: button_frame_pressed,
+        } = build_button_frames(images);
         Self {
             panel_frame: asset_server.load("ui/theme/panel_frame.png"),
             panel_frame_slicer: tiled_slicer(8.0),
@@ -37,6 +49,9 @@ impl UiThemeAssets {
             title_bar_slicer: tiled_slicer(4.0),
             button_frame: asset_server.load("ui/theme/button_frame.png"),
             button_frame_slicer: slicer(4.0),
+            button_frame_idle,
+            button_frame_hover,
+            button_frame_pressed,
             slot_frame: asset_server.load("ui/theme/slot_frame.png"),
             slot_frame_slicer: slicer(2.0),
             divider: asset_server.load("ui/theme/divider.png"),
