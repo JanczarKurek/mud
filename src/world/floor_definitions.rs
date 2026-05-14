@@ -506,9 +506,9 @@ mod tests {
         let c = "cobblestone".to_owned();
         let (low, high, def) = defs
             .transition_for(&g, &c)
-            .expect("grass__cobblestone smoke-test transition should be loaded");
-        assert_eq!(low, "grass");
-        assert_eq!(high, "cobblestone");
+            .expect("cobblestone__grass smoke-test transition should be loaded");
+        assert_eq!(low, "cobblestone");
+        assert_eq!(high, "grass");
         assert_eq!(def.tile_size_px, 16);
     }
 }
