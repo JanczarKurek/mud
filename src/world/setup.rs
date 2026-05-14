@@ -3,7 +3,8 @@ use bevy::prelude::*;
 use crate::combat::components::{AttackProfile, CombatLeash};
 use crate::combat::damage_expr::DamageExpr;
 use crate::npc::components::{
-    HostileBehavior, Npc, RoamBounds, RoamingBehavior, RoamingRandomState, RoamingStepTimer,
+    AiMemory, AiState, HostileBehavior, Npc, RoamBounds, RoamingBehavior, RoamingRandomState,
+    RoamingStepTimer,
 };
 use crate::persistence::WorldSnapshotStatus;
 use crate::player::components::InventoryStack;
@@ -268,11 +269,16 @@ pub fn spawn_overworld_object_instance(
                                 max_y: bounds.max_y,
                             },
                             step_interval_seconds: step,
+                            step_interval_jitter_seconds: step * 0.3,
+                            idle_pause_chance: 0.3,
+                            momentum_bias: 0.6,
                         },
                         RoamingStepTimer {
                             remaining_seconds: jitter_frac * step,
                         },
                         RoamingRandomState { seed },
+                        AiState::default(),
+                        AiMemory::default(),
                     ));
                 }
                 MapBehavior::RoamAndChase {
@@ -291,11 +297,16 @@ pub fn spawn_overworld_object_instance(
                                 max_y: bounds.max_y,
                             },
                             step_interval_seconds: step,
+                            step_interval_jitter_seconds: step * 0.3,
+                            idle_pause_chance: 0.3,
+                            momentum_bias: 0.6,
                         },
                         HostileBehavior {
                             detect_distance_tiles: (*detect_distance_tiles).max(1),
                             disengage_distance_tiles: (*disengage_distance_tiles)
                                 .max(*detect_distance_tiles),
+                            alert_duration_seconds: 4.0,
+                            requires_line_of_sight: true,
                         },
                         CombatLeash {
                             max_distance_tiles: (*disengage_distance_tiles)
@@ -305,6 +316,8 @@ pub fn spawn_overworld_object_instance(
                             remaining_seconds: jitter_frac * step,
                         },
                         RoamingRandomState { seed },
+                        AiState::default(),
+                        AiMemory::default(),
                     ));
                 }
             }
