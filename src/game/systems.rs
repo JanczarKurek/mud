@@ -841,6 +841,9 @@ fn handle_move_player(
     if let Ok(effects) = player_magic_effects.get(player_entity) {
         cooldown_scale *= effects.haste_multiplier();
     }
+    if delta.x != 0 && delta.y != 0 {
+        cooldown_scale *= std::f32::consts::SQRT_2;
+    }
     movement_cooldown.remaining_seconds = movement_cooldown.step_interval_seconds * cooldown_scale;
 
     if let Some(direction) = Direction::from_delta(delta.x, delta.y) {

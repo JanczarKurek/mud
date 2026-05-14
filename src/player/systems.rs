@@ -385,16 +385,59 @@ fn movement_direction(keyboard_input: &ButtonInput<KeyCode>) -> Option<MoveDelta
     {
         return None;
     }
+
+    let mut x = 0i32;
+    let mut y = 0i32;
+
     if keyboard_input.pressed(KeyCode::ArrowUp) || keyboard_input.pressed(KeyCode::KeyW) {
-        Some(MoveDelta { x: 0, y: 1 })
-    } else if keyboard_input.pressed(KeyCode::ArrowDown) || keyboard_input.pressed(KeyCode::KeyS) {
-        Some(MoveDelta { x: 0, y: -1 })
-    } else if keyboard_input.pressed(KeyCode::ArrowLeft) || keyboard_input.pressed(KeyCode::KeyA) {
-        Some(MoveDelta { x: -1, y: 0 })
-    } else if keyboard_input.pressed(KeyCode::ArrowRight) || keyboard_input.pressed(KeyCode::KeyD) {
-        Some(MoveDelta { x: 1, y: 0 })
-    } else {
+        y += 1;
+    }
+    if keyboard_input.pressed(KeyCode::ArrowDown) || keyboard_input.pressed(KeyCode::KeyS) {
+        y -= 1;
+    }
+    if keyboard_input.pressed(KeyCode::ArrowRight) || keyboard_input.pressed(KeyCode::KeyD) {
+        x += 1;
+    }
+    if keyboard_input.pressed(KeyCode::ArrowLeft) || keyboard_input.pressed(KeyCode::KeyA) {
+        x -= 1;
+    }
+
+    if keyboard_input.pressed(KeyCode::Numpad8) {
+        y += 1;
+    }
+    if keyboard_input.pressed(KeyCode::Numpad2) {
+        y -= 1;
+    }
+    if keyboard_input.pressed(KeyCode::Numpad6) {
+        x += 1;
+    }
+    if keyboard_input.pressed(KeyCode::Numpad4) {
+        x -= 1;
+    }
+    if keyboard_input.pressed(KeyCode::Numpad9) {
+        x += 1;
+        y += 1;
+    }
+    if keyboard_input.pressed(KeyCode::Numpad7) {
+        x -= 1;
+        y += 1;
+    }
+    if keyboard_input.pressed(KeyCode::Numpad3) {
+        x += 1;
+        y -= 1;
+    }
+    if keyboard_input.pressed(KeyCode::Numpad1) {
+        x -= 1;
+        y -= 1;
+    }
+
+    let x = x.clamp(-1, 1);
+    let y = y.clamp(-1, 1);
+
+    if x == 0 && y == 0 {
         None
+    } else {
+        Some(MoveDelta { x, y })
     }
 }
 
