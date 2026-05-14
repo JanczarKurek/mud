@@ -53,6 +53,16 @@ pub enum MovableWindowId {
     /// Floating-mode backpack panel (4x4 inventory grid). Singleton.
     /// Spawned by `sync_backpack_panel_floating_lifecycle`.
     BackpackPanel,
+    /// Floating-mode current-target combat panel. Singleton.
+    CurrentTargetPanel,
+    /// Floating-mode minimap panel. Singleton.
+    MinimapPanel,
+    /// Floating-mode container panel. There can be up to
+    /// `DockedPanelState::MAX_OPEN_CONTAINERS` instances, distinguished
+    /// by the sidebar slot they came from (`panel_id`). The underlying
+    /// `object_id` is resolved on demand via
+    /// `DockedPanelState::container_object_id_for_panel`.
+    ContainerPanel { panel_id: usize },
 }
 
 #[derive(Component)]
@@ -146,11 +156,15 @@ pub fn find_window_by_id(
 
 /// Entity handles returned by [`spawn_movable_window`]. The consumer adds
 /// their content as children of `body` and (optionally) a custom close
-/// button or other widgets as children of `title_bar`.
+/// button or other widgets as children of `title_bar`. `title_text` is
+/// the title `Text` entity inside `title_bar` — callers can insert
+/// extra markers on it (e.g. `DockedPanelTitle` so a shared sync
+/// system updates the label) without despawning the default.
 pub struct MovableWindowEntities {
     pub root: Entity,
     pub body: Entity,
     pub title_bar: Entity,
+    pub title_text: Entity,
 }
 
 /// Spawn a bare movable window: root with the panel-frame background, a
@@ -217,16 +231,17 @@ pub fn spawn_movable_window(
         ))
         .id();
 
-    commands.entity(title_bar).with_children(|bar| {
-        bar.spawn((
+    let title_text = commands
+        .spawn((
             Text::new(title.to_owned()),
             TextFont {
                 font_size: 14.0,
                 ..default()
             },
             TextColor(palette.text_accent),
-        ));
-    });
+        ))
+        .id();
+    commands.entity(title_bar).add_child(title_text);
 
     let body = commands
         .spawn((
@@ -268,6 +283,7 @@ pub fn spawn_movable_window(
         root,
         body,
         title_bar,
+        title_text,
     }
 }
 

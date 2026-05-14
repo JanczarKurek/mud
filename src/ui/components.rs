@@ -272,6 +272,10 @@ pub struct StatusPanelDockButton;
 #[derive(Component, Default)]
 pub struct StatusPanelFloatingRoot;
 
+/// Close-X on the floating status window.
+#[derive(Component, Default)]
+pub struct StatusPanelFloatingCloseButton;
+
 /// Title-bar button on the docked equipment panel that pops it out into
 /// a floating `MovableWindow`. Click flips `EquipmentPanelMode` to
 /// `Floating`. Mirror of `StatusPanelUndockButton`.
@@ -288,6 +292,10 @@ pub struct EquipmentPanelDockButton;
 #[derive(Component, Default)]
 pub struct EquipmentPanelFloatingRoot;
 
+/// Close-X on the floating equipment window.
+#[derive(Component, Default)]
+pub struct EquipmentPanelFloatingCloseButton;
+
 /// Title-bar undock button on the docked backpack panel.
 #[derive(Component, Default)]
 pub struct BackpackPanelUndockButton;
@@ -299,6 +307,131 @@ pub struct BackpackPanelDockButton;
 /// Marker on the root of the floating backpack window.
 #[derive(Component, Default)]
 pub struct BackpackPanelFloatingRoot;
+
+/// Close-X on the floating backpack window.
+#[derive(Component, Default)]
+pub struct BackpackPanelFloatingCloseButton;
+
+/// Title-bar undock arrow on the docked combat-target panel.
+#[derive(Component, Default)]
+pub struct CurrentTargetPanelUndockButton;
+
+/// Title-bar dock-back arrow on the floating combat-target window.
+#[derive(Component, Default)]
+pub struct CurrentTargetPanelDockButton;
+
+/// Marker on the root of the floating combat-target window.
+#[derive(Component, Default)]
+pub struct CurrentTargetPanelFloatingRoot;
+
+/// Close-X on the floating combat-target window.
+#[derive(Component, Default)]
+pub struct CurrentTargetPanelFloatingCloseButton;
+
+/// Title-bar undock arrow on the docked minimap panel.
+#[derive(Component, Default)]
+pub struct MinimapPanelUndockButton;
+
+/// Title-bar dock-back arrow on the floating minimap window.
+#[derive(Component, Default)]
+pub struct MinimapPanelDockButton;
+
+/// Marker on the root of the floating minimap window.
+#[derive(Component, Default)]
+pub struct MinimapPanelFloatingRoot;
+
+/// Close-X on the floating minimap window.
+#[derive(Component, Default)]
+pub struct MinimapPanelFloatingCloseButton;
+
+/// Title-bar undock arrow on a docked panel from the
+/// container/pouch pool. Carries the `panel_id` so the click handler
+/// can flip the matching entry in `ContainerPanelModes` without
+/// walking the entity hierarchy.
+#[derive(Component)]
+pub struct ContainerPanelUndockButton {
+    pub panel_id: usize,
+}
+
+/// Title-bar dock-back arrow on a floating container/pouch window.
+#[derive(Component)]
+pub struct ContainerPanelDockButton {
+    pub panel_id: usize,
+}
+
+/// Marker on the root of a floating container/pouch window. The
+/// lifecycle system finds windows by `panel_id` (the docked-pool slot
+/// the panel originated from); the underlying `object_id` (containers)
+/// or `backpack_slot` (pouches) is resolved via `DockedPanelState`.
+#[derive(Component)]
+pub struct ContainerFloatingRoot {
+    pub panel_id: usize,
+}
+
+/// Close-X button on a floating container/pouch window. Click fires
+/// `GameCommand::CloseContainer { object_id }` for containers (looked
+/// up via panel_id) and immediately removes the panel from
+/// `DockedPanelState`. For pouches, just removes from state.
+#[derive(Component)]
+pub struct ContainerFloatingCloseButton {
+    pub panel_id: usize,
+}
+
+use crate::ui::mountable_panel::PanelInstanceMarker;
+
+macro_rules! impl_unit_panel_instance_marker {
+    ($($name:ident),* $(,)?) => {
+        $(
+            impl PanelInstanceMarker for $name {
+                type Key = ();
+                fn key(&self) -> () {}
+                fn new(_: ()) -> Self { Self }
+            }
+        )*
+    };
+}
+
+impl_unit_panel_instance_marker!(
+    StatusPanelUndockButton,
+    StatusPanelDockButton,
+    StatusPanelFloatingRoot,
+    StatusPanelFloatingCloseButton,
+    EquipmentPanelUndockButton,
+    EquipmentPanelDockButton,
+    EquipmentPanelFloatingRoot,
+    EquipmentPanelFloatingCloseButton,
+    BackpackPanelUndockButton,
+    BackpackPanelDockButton,
+    BackpackPanelFloatingRoot,
+    BackpackPanelFloatingCloseButton,
+    CurrentTargetPanelUndockButton,
+    CurrentTargetPanelDockButton,
+    CurrentTargetPanelFloatingRoot,
+    CurrentTargetPanelFloatingCloseButton,
+    MinimapPanelUndockButton,
+    MinimapPanelDockButton,
+    MinimapPanelFloatingRoot,
+    MinimapPanelFloatingCloseButton,
+);
+
+macro_rules! impl_indexed_panel_instance_marker {
+    ($($name:ident),* $(,)?) => {
+        $(
+            impl PanelInstanceMarker for $name {
+                type Key = usize;
+                fn key(&self) -> usize { self.panel_id }
+                fn new(panel_id: usize) -> Self { Self { panel_id } }
+            }
+        )*
+    };
+}
+
+impl_indexed_panel_instance_marker!(
+    ContainerPanelUndockButton,
+    ContainerPanelDockButton,
+    ContainerFloatingRoot,
+    ContainerFloatingCloseButton,
+);
 
 #[derive(Component)]
 pub struct EquipmentPanelContent;

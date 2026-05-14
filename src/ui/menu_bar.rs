@@ -6,7 +6,7 @@ use crate::ui::components::{
     MenuBarItemButton, MenuBarRoot, MenuDropdownEntryButton, MenuDropdownRoot,
 };
 use crate::ui::resources::{
-    DockedPanelKind, DockedPanelState, FullMapWindowState, MenuAction, MenuBarId, OpenMenuState,
+    DockedPanelState, FullMapWindowState, MenuAction, MenuBarId, OpenMenuState,
     PendingMenuActions,
 };
 use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton, ThemedPanel};
@@ -31,6 +31,7 @@ const MENU_DEFINITIONS: &[MenuDefinition] = &[
         label: "View",
         entries: &[
             ("Full Map  (M)", MenuAction::ToggleFullMap),
+            ("Minimap", MenuAction::ToggleMinimap),
             ("Inventory", MenuAction::ToggleBackpack),
             ("Character", MenuAction::ToggleStatus),
             ("Equipment", MenuAction::ToggleEquipment),
@@ -247,13 +248,16 @@ pub fn apply_menu_actions(
                 full_map_state.open = !full_map_state.open;
             }
             MenuAction::ToggleStatus => {
-                toggle_panel(&mut panel_state, DockedPanelState::STATUS_PANEL_ID);
+                toggle_panel::<crate::ui::status_panel::StatusPanel>(&mut panel_state);
             }
             MenuAction::ToggleBackpack => {
-                toggle_panel(&mut panel_state, DockedPanelState::BACKPACK_PANEL_ID);
+                toggle_panel::<crate::ui::backpack_panel::BackpackPanel>(&mut panel_state);
             }
             MenuAction::ToggleEquipment => {
-                toggle_panel(&mut panel_state, DockedPanelState::EQUIPMENT_PANEL_ID);
+                toggle_panel::<crate::ui::equipment_panel::EquipmentPanel>(&mut panel_state);
+            }
+            MenuAction::ToggleMinimap => {
+                toggle_panel::<crate::ui::minimap_panel::MinimapPanel>(&mut panel_state);
             }
             MenuAction::Quit => {
                 app_exit.write(AppExit::Success);
@@ -262,38 +266,19 @@ pub fn apply_menu_actions(
     }
 }
 
-fn toggle_panel(panel_state: &mut DockedPanelState, panel_id: usize) {
+/// Generic toggle for any singleton [`MountablePanel`] — close if open,
+/// otherwise push a fresh `DockedPanel` via the trait's
+/// `docked_definition(())`. Each `MenuAction::Toggle*` call site just
+/// supplies the panel type parameter.
+///
+/// [`MountablePanel`]: crate::ui::mountable_panel::MountablePanel
+fn toggle_panel<P: crate::ui::mountable_panel::MountablePanel<Key = ()>>(
+    panel_state: &mut DockedPanelState,
+) {
+    let panel_id = P::panel_id_for(());
     if panel_state.is_open(panel_id) {
         panel_state.close_panel(panel_id);
-        return;
+    } else if let Some(docked) = P::docked_definition(()) {
+        panel_state.panels.push(docked);
     }
-
-    let (kind, title, height) = match panel_id {
-        DockedPanelState::STATUS_PANEL_ID => (
-            DockedPanelKind::Status,
-            "Status",
-            DockedPanelState::DEFAULT_STATUS_PANEL_HEIGHT,
-        ),
-        DockedPanelState::EQUIPMENT_PANEL_ID => (
-            DockedPanelKind::Equipment,
-            "Equipment",
-            DockedPanelState::DEFAULT_EQUIPMENT_PANEL_HEIGHT,
-        ),
-        DockedPanelState::BACKPACK_PANEL_ID => (
-            DockedPanelKind::Backpack,
-            "Backpack",
-            DockedPanelState::DEFAULT_BACKPACK_PANEL_HEIGHT,
-        ),
-        _ => return,
-    };
-
-    panel_state.panels.push(crate::ui::resources::DockedPanel {
-        id: panel_id,
-        kind,
-        title: title.to_owned(),
-        height,
-        closable: true,
-        resizable: true,
-        movable: true,
-    });
 }

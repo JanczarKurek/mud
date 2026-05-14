@@ -1,39 +1,68 @@
 //! [`MountablePanel`] impl for the Status (HP / MP / XP / effects /
-//! carry-weight) panel. All lifecycle plumbing lives in
-//! [`crate::ui::mountable_panel`]; this module supplies the per-panel
-//! constants and points at the body builder.
+//! carry-weight) panel. Singleton: `Key = ()`. All lifecycle plumbing
+//! lives in [`crate::ui::mountable_panel`].
 
 use bevy::prelude::*;
 
 use crate::ui::components::{
-    StatusPanelDockButton, StatusPanelFloatingRoot, StatusPanelUndockButton,
+    StatusPanelDockButton, StatusPanelFloatingCloseButton, StatusPanelFloatingRoot,
+    StatusPanelUndockButton,
 };
 use crate::ui::mountable_panel::MountablePanel;
 use crate::ui::movable_window::MovableWindowId;
-use crate::ui::resources::{DockedPanelKind, DockedPanelState, StatusPanelMode};
+use crate::ui::resources::{DockedPanel, DockedPanelKind, DockedPanelState, StatusPanelMode};
 use crate::ui::setup::spawn_status_panel_body;
 use crate::ui::theme::{Palette, UiThemeAssets};
 
-/// Zero-sized marker. Used as the type parameter for the generic
-/// [`crate::ui::mountable_panel`] systems registered on the Status
-/// panel.
 pub struct StatusPanel;
 
 impl MountablePanel for StatusPanel {
-    type Mode = StatusPanelMode;
+    type Key = ();
+    type Modes = StatusPanelMode;
     type UndockButton = StatusPanelUndockButton;
     type DockButton = StatusPanelDockButton;
     type FloatingRoot = StatusPanelFloatingRoot;
+    type FloatingCloseButton = StatusPanelFloatingCloseButton;
 
-    const PANEL_ID: usize = DockedPanelState::STATUS_PANEL_ID;
-    const MOVABLE_WINDOW_ID: MovableWindowId = MovableWindowId::StatusPanel;
-    const TITLE: &'static str = "Status";
-    const FLOATING_SIZE: Vec2 = Vec2::new(260.0, 180.0);
-    const FLOATING_POSITION: Vec2 = Vec2::new(360.0, 120.0);
-    const PANEL_KIND: DockedPanelKind = DockedPanelKind::Status;
-    const PANEL_HEIGHT: f32 = DockedPanelState::DEFAULT_STATUS_PANEL_HEIGHT;
+    fn movable_window_id(_: ()) -> MovableWindowId {
+        MovableWindowId::StatusPanel
+    }
+    fn floating_size(_: ()) -> Vec2 {
+        Vec2::new(260.0, 180.0)
+    }
+    fn floating_position(_: ()) -> Vec2 {
+        Vec2::new(360.0, 120.0)
+    }
+    fn panel_id_for(_: ()) -> usize {
+        DockedPanelState::STATUS_PANEL_ID
+    }
+    fn active_keys(panel_state: &DockedPanelState) -> Vec<()> {
+        if panel_state.is_open(Self::panel_id_for(())) {
+            vec![()]
+        } else {
+            vec![]
+        }
+    }
 
-    fn spawn_body(parent: &mut ChildSpawnerCommands, _theme: &UiThemeAssets, palette: &Palette) {
+    fn docked_definition(_: ()) -> Option<DockedPanel> {
+        Some(DockedPanel {
+            id: DockedPanelState::STATUS_PANEL_ID,
+            kind: DockedPanelKind::Status,
+            title: "Status".to_owned(),
+            height: DockedPanelState::DEFAULT_STATUS_PANEL_HEIGHT,
+            closable: true,
+            resizable: true,
+            movable: true,
+        })
+    }
+
+    fn spawn_body(
+        parent: &mut ChildSpawnerCommands,
+        _: (),
+        _theme: &UiThemeAssets,
+        palette: &Palette,
+        _asset_server: &AssetServer,
+    ) {
         spawn_status_panel_body(parent, palette);
     }
 }

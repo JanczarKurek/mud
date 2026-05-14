@@ -281,16 +281,14 @@ pub fn handle_docked_panel_close_buttons(
                 Some(DockedPanelKind::PouchInBackpack { .. }) => {
                     docked_panel_state.close_panel(button.panel_id);
                 }
-                // Status / Equipment / Backpack are menu-bar-toggleable
-                // panels — the close-X mirrors the menu-bar toggle (hide
-                // from the sidebar; re-show via the menu). Minimap stays
-                // a no-op because it isn't menu-toggleable yet.
+                // Menu-bar-toggleable singletons — close-X just removes
+                // the docked row; the View menu re-opens it.
                 Some(DockedPanelKind::Status)
                 | Some(DockedPanelKind::Equipment)
-                | Some(DockedPanelKind::Backpack) => {
+                | Some(DockedPanelKind::Backpack)
+                | Some(DockedPanelKind::Minimap) => {
                     docked_panel_state.close_panel(button.panel_id);
                 }
-                Some(DockedPanelKind::Minimap) => {}
                 None => {}
             }
             return;
@@ -2114,12 +2112,22 @@ pub fn sync_docked_panel_layout(
         Query<(&DockedPanelResizeHandle, &mut Visibility), With<DockedPanelResizeHandle>>,
     )>,
 ) {
+    // Panels rendered as a floating window are still in
+    // `docked_panel_state.panels` so slot resolution keeps working;
+    // we just skip their sidebar row here. The floating set is
+    // maintained by `sync_panel_floating_lifecycle` across every
+    // `MountablePanel` impl.
+    let is_floating = |panel_id: usize| docked_panel_state.is_floating(panel_id);
+
     for (panel_root, mut node, mut visibility) in &mut panel_queries.p0() {
-        if let Some(panel) = docked_panel_state.panel(panel_root.panel_id) {
+        let panel = docked_panel_state.panel(panel_root.panel_id);
+        let floating = is_floating(panel_root.panel_id);
+        if let Some(panel) = panel.filter(|_| !floating) {
             let top_offset = docked_panel_state
                 .panels
                 .iter()
                 .take_while(|candidate| candidate.id != panel_root.panel_id)
+                .filter(|candidate| !is_floating(candidate.id))
                 .map(|candidate| candidate.height + 8.0)
                 .sum::<f32>();
             node.display = Display::Flex;
@@ -2137,6 +2145,7 @@ pub fn sync_docked_panel_layout(
         *visibility = if docked_panel_state
             .panel(close_button.panel_id)
             .is_some_and(|panel| panel.closable)
+            && !is_floating(close_button.panel_id)
         {
             Visibility::Visible
         } else {
@@ -2148,6 +2157,7 @@ pub fn sync_docked_panel_layout(
         *visibility = if docked_panel_state
             .panel(resize_handle.panel_id)
             .is_some_and(|panel| panel.resizable)
+            && !is_floating(resize_handle.panel_id)
         {
             Visibility::Visible
         } else {
@@ -3056,6 +3066,8 @@ pub fn handle_docked_panel_dragging(
     let Some(cursor_position) = window.cursor_position() else {
         if mouse_input.just_released(MouseButton::Left) {
             drag_state.panel_id = None;
+            drag_state.press_origin = None;
+            drag_state.passed_threshold = false;
         }
         return;
     };
@@ -3077,6 +3089,8 @@ pub fn handle_docked_panel_dragging(
             }
 
             drag_state.panel_id = Some(handle.panel_id);
+            drag_state.press_origin = Some(cursor_position);
+            drag_state.passed_threshold = false;
             break;
         }
     }
@@ -3087,11 +3101,29 @@ pub fn handle_docked_panel_dragging(
 
     if mouse_input.just_released(MouseButton::Left) {
         drag_state.panel_id = None;
+        drag_state.press_origin = None;
+        drag_state.passed_threshold = false;
         return;
     }
 
     if !mouse_input.pressed(MouseButton::Left) {
         return;
+    }
+
+    // Don't start reordering until the cursor has moved past the drag
+    // threshold from the click-down point — otherwise a plain click
+    // on the title bar snaps the panel to wherever the cursor happens
+    // to be relative to the other panel centers.
+    if !drag_state.passed_threshold {
+        let Some(origin) = drag_state.press_origin else {
+            return;
+        };
+        if cursor_position.distance(origin)
+            < crate::ui::resources::DOCKED_PANEL_DRAG_THRESHOLD_PX
+        {
+            return;
+        }
+        drag_state.passed_threshold = true;
     }
 
     let mut ordered_panels = docked_panel_state

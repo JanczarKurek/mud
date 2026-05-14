@@ -1,8 +1,10 @@
+use std::collections::HashMap;
+
 use bevy::prelude::*;
 
 use crate::game::commands::ItemReference;
 use crate::ui::components::ItemSlotKind;
-use crate::ui::mountable_panel::{PanelModeAccess, PanelMountMode};
+use crate::ui::mountable_panel::{ModeStore, PanelMountMode};
 use crate::world::components::TilePosition;
 
 #[derive(Clone, Copy)]
@@ -220,48 +222,84 @@ pub struct DockedPanel {
 #[derive(Resource)]
 pub struct DockedPanelState {
     pub panels: Vec<DockedPanel>,
+    /// `panel_id`s currently rendered as a floating window rather than
+    /// in the sidebar. Maintained by `sync_panel_floating_lifecycle`
+    /// across all `MountablePanel` impls. The layout system consults
+    /// this for both visibility (hide the docked entity) and
+    /// y-stacking (skip floating rows in the offset sum).
+    pub floating: std::collections::HashSet<usize>,
 }
 
-/// Mount state for the Status panel (HP / MP / XP / effects / carry).
-/// Newtype around [`PanelMountMode`] so each mountable panel has its own
-/// distinct resource type. The single-field tuple struct is read /
-/// mutated through [`PanelModeAccess`] by the generic mount lifecycle
-/// systems in [`crate::ui::mountable_panel`].
-#[derive(Resource, Clone, Copy, Debug, Default)]
-pub struct StatusPanelMode(pub PanelMountMode);
+/// Single-instance mount-state newtype around [`PanelMountMode`]. One
+/// per singleton panel — Bevy resources are looked up by concrete type,
+/// so each singleton needs its own distinct resource. The [`ModeStore`]
+/// impl is the same for all of them; the macro below stamps it out.
+macro_rules! singleton_mode_resource {
+    ($($name:ident),* $(,)?) => {
+        $(
+            #[derive(Resource, Clone, Copy, Debug, Default)]
+            pub struct $name(pub PanelMountMode);
 
-impl PanelModeAccess for StatusPanelMode {
-    fn mode(&self) -> PanelMountMode {
-        self.0
-    }
-    fn set_mode(&mut self, mode: PanelMountMode) {
-        self.0 = mode;
+            impl ModeStore for $name {
+                type Key = ();
+                fn mode(&self, _: ()) -> PanelMountMode { self.0 }
+                fn set_mode(&mut self, _: (), mode: PanelMountMode) { self.0 = mode; }
+                fn clear(&mut self, _: ()) { self.0 = PanelMountMode::default(); }
+                fn known_keys(&self) -> Vec<()> {
+                    // Only report a known key while the entry is
+                    // non-default — that way the lifecycle GC step
+                    // doesn't have to special-case the singleton
+                    // resting state.
+                    match self.0 {
+                        PanelMountMode::Mounted => vec![],
+                        PanelMountMode::Floating { .. } => vec![()],
+                    }
+                }
+            }
+        )*
+    };
+}
+
+singleton_mode_resource!(
+    StatusPanelMode,
+    EquipmentPanelMode,
+    BackpackPanelMode,
+    CurrentTargetPanelMode,
+    MinimapPanelMode,
+);
+
+/// Per-instance mount state for the container/pouch panel pool. Keyed
+/// by the fixed sidebar `panel_id` (`FIRST_CONTAINER_PANEL_ID..`),
+/// shared across `Container` and `PouchInBackpack` kinds since they
+/// reuse the same docked-panel pool and the same body builder.
+///
+/// Missing entries default to `Mounted` on read. Entries are cleared
+/// when the underlying panel disappears from `DockedPanelState`
+/// (server closed the container, player walked away, pouch emptied).
+#[derive(Resource, Default)]
+pub struct ContainerPanelModes {
+    pub modes: HashMap<usize, PanelMountMode>,
+}
+
+impl ContainerPanelModes {
+    pub fn is_floating(&self, panel_id: usize) -> bool {
+        matches!(self.mode(panel_id), PanelMountMode::Floating { .. })
     }
 }
 
-/// Mount state for the Equipment panel (paperdoll slots).
-#[derive(Resource, Clone, Copy, Debug, Default)]
-pub struct EquipmentPanelMode(pub PanelMountMode);
-
-impl PanelModeAccess for EquipmentPanelMode {
-    fn mode(&self) -> PanelMountMode {
-        self.0
+impl ModeStore for ContainerPanelModes {
+    type Key = usize;
+    fn mode(&self, panel_id: usize) -> PanelMountMode {
+        self.modes.get(&panel_id).copied().unwrap_or_default()
     }
-    fn set_mode(&mut self, mode: PanelMountMode) {
-        self.0 = mode;
+    fn set_mode(&mut self, panel_id: usize, mode: PanelMountMode) {
+        self.modes.insert(panel_id, mode);
     }
-}
-
-/// Mount state for the Backpack panel (4x4 inventory grid).
-#[derive(Resource, Clone, Copy, Debug, Default)]
-pub struct BackpackPanelMode(pub PanelMountMode);
-
-impl PanelModeAccess for BackpackPanelMode {
-    fn mode(&self) -> PanelMountMode {
-        self.0
+    fn clear(&mut self, panel_id: usize) {
+        self.modes.remove(&panel_id);
     }
-    fn set_mode(&mut self, mode: PanelMountMode) {
-        self.0 = mode;
+    fn known_keys(&self) -> Vec<usize> {
+        self.modes.keys().copied().collect()
     }
 }
 
@@ -383,6 +421,18 @@ impl DockedPanelState {
         self.panel(panel_id).is_some()
     }
 
+    pub fn is_floating(&self, panel_id: usize) -> bool {
+        self.floating.contains(&panel_id)
+    }
+
+    pub fn set_floating(&mut self, panel_id: usize, floating: bool) {
+        if floating {
+            self.floating.insert(panel_id);
+        } else {
+            self.floating.remove(&panel_id);
+        }
+    }
+
     pub fn move_panel_to_index(&mut self, panel_id: usize, target_index: usize) {
         let Some(current_index) = self.panels.iter().position(|panel| panel.id == panel_id) else {
             return;
@@ -450,13 +500,14 @@ impl DockedPanelState {
 impl Default for DockedPanelState {
     fn default() -> Self {
         Self {
+            floating: std::collections::HashSet::new(),
             panels: vec![
                 DockedPanel {
                     id: Self::MINIMAP_PANEL_ID,
                     kind: DockedPanelKind::Minimap,
                     title: "Minimap".to_owned(),
                     height: Self::DEFAULT_MINIMAP_PANEL_HEIGHT,
-                    closable: false,
+                    closable: true,
                     resizable: true,
                     movable: true,
                 },
@@ -502,7 +553,21 @@ pub struct DockedPanelResizeState {
 #[derive(Resource, Default)]
 pub struct DockedPanelDragState {
     pub panel_id: Option<usize>,
+    /// Cursor position at mouse-down, used as the anchor for the drag
+    /// threshold — reordering doesn't fire until the cursor has moved
+    /// at least [`DOCKED_PANEL_DRAG_THRESHOLD_PX`] from this point.
+    /// `None` while idle.
+    pub press_origin: Option<Vec2>,
+    /// `true` once the cursor has moved past the threshold this drag.
+    /// Latches on so a release after movement doesn't re-test.
+    pub passed_threshold: bool,
 }
+
+/// Pixels the cursor must travel from the press point before clicks
+/// on a docked-panel title bar start reordering. Plain clicks below
+/// this stay no-ops so docked windows don't snap around on accidental
+/// or focus-only clicks.
+pub const DOCKED_PANEL_DRAG_THRESHOLD_PX: f32 = 6.0;
 
 #[derive(Resource, Default)]
 pub struct DragState {
@@ -627,6 +692,7 @@ pub enum MenuAction {
     ToggleStatus,
     ToggleBackpack,
     ToggleEquipment,
+    ToggleMinimap,
     Quit,
 }
 

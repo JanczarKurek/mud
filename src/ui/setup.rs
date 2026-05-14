@@ -4,7 +4,8 @@ use bevy_terminal::{spawn_terminal, LineStyle, TerminalConfig, TerminalInputConf
 
 use crate::ui::components::{
     BackpackPanelContent, BackpackPanelUndockButton, BackpackSlotRow, CarryWeightLabel,
-    ChatTerminal, ContainerPanelContent,
+    ChatTerminal, ContainerPanelContent, ContainerPanelUndockButton,
+    CurrentTargetPanelUndockButton, MinimapPanelUndockButton,
     ContainerSlotButton, ContainerSlotImage, ContextMenuAttackButton, ContextMenuInspectButton,
     ContextMenuInteractButton, ContextMenuOfferToTradeButton, ContextMenuOpenButton,
     ContextMenuRoot, ContextMenuTakePartialButton, ContextMenuTalkButton, ContextMenuTradeButton,
@@ -106,7 +107,7 @@ pub fn spawn_hud(
                             spawn_minimap_panel(
                                 dock_canvas,
                                 DockedPanelState::MINIMAP_PANEL_ID,
-                                &mut images,
+                                &asset_server,
                                 hud_minimap_settings.zoom,
                                 &theme,
                                 &palette,
@@ -939,28 +940,39 @@ fn spawn_current_target_panel(
     theme: &UiThemeAssets,
     palette: &Palette,
 ) {
-    spawn_docked_panel(
+    let undock_image = theme.undock_button.clone();
+    spawn_docked_panel_with_extras(
         parent,
         DockedPanelState::CURRENT_TARGET_PANEL_ID,
         theme,
         palette,
-        |body| {
-            body.spawn((
-                Text::new("Target: none"),
-                CurrentCombatTargetLabel,
-                CurrentTargetPanelContent,
-                TextFont {
-                    font_size: 14.0,
-                    ..default()
-                },
-                TextColor(palette.text_muted),
-                Node {
-                    width: percent(100.0),
-                    ..default()
-                },
-            ));
+        |title_extras| {
+            spawn_themed_icon_button(title_extras, undock_image, CurrentTargetPanelUndockButton);
         },
+        |body| spawn_current_target_panel_body(body, palette),
     );
+}
+
+/// Body contents of the combat-target panel — just the label. Shared
+/// between docked and floating variants via the `MountablePanel` impl.
+pub(crate) fn spawn_current_target_panel_body(
+    parent: &mut ChildSpawnerCommands,
+    palette: &Palette,
+) {
+    parent.spawn((
+        Text::new("Target: none"),
+        CurrentCombatTargetLabel,
+        CurrentTargetPanelContent,
+        TextFont {
+            font_size: 14.0,
+            ..default()
+        },
+        TextColor(palette.text_muted),
+        Node {
+            width: percent(100.0),
+            ..default()
+        },
+    ));
 }
 
 fn spawn_container_panel(
@@ -969,8 +981,36 @@ fn spawn_container_panel(
     theme: &UiThemeAssets,
     palette: &Palette,
 ) {
-    spawn_docked_panel(parent, panel_id, theme, palette, |body| {
-        body.spawn((
+    let undock_image = theme.undock_button.clone();
+    spawn_docked_panel_with_extras(
+        parent,
+        panel_id,
+        theme,
+        palette,
+        |title_extras| {
+            spawn_themed_icon_button(
+                title_extras,
+                undock_image,
+                ContainerPanelUndockButton { panel_id },
+            );
+        },
+        |body| spawn_container_panel_body(body, theme, palette, panel_id),
+    );
+}
+
+/// Body builder for the 4×4 container slot grid. Shared between the
+/// pre-spawned docked panel pool and the floating window spawned by
+/// `sync_container_floating_lifecycle` — both call into the same slot
+/// resolution path keyed on `panel_id`, so the floating window's items
+/// follow the docked panel's `object_id` automatically.
+pub(crate) fn spawn_container_panel_body(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+    panel_id: usize,
+) {
+    parent
+        .spawn((
             Node {
                 width: percent(100.0),
                 flex_direction: FlexDirection::Column,
@@ -998,24 +1038,13 @@ fn spawn_container_panel(
                 });
             }
         });
-    });
 }
 
-fn spawn_docked_panel(
-    parent: &mut ChildSpawnerCommands,
-    panel_id: usize,
-    theme: &UiThemeAssets,
-    palette: &Palette,
-    spawn_body: impl FnOnce(&mut ChildSpawnerCommands),
-) {
-    spawn_docked_panel_with_extras(parent, panel_id, theme, palette, |_| {}, spawn_body);
-}
-
-/// `spawn_docked_panel`, but with an extra closure that runs in the
-/// title-bar row right before the close-X button. Used by panels that
-/// want additional title-bar controls (e.g. the status panel's undock /
-/// pop-out button). Passing `|_| {}` as `spawn_title_extras` is
-/// equivalent to calling [`spawn_docked_panel`] directly.
+/// Spawn a docked sidebar panel — wood-grain framed container with a
+/// draggable title bar, close-X, body area, and resize handle. The
+/// `spawn_title_extras` closure runs in the title-bar row right before
+/// the close-X (used by panels that want additional title-bar buttons
+/// like an undock arrow); pass `|_| {}` for no extras.
 fn spawn_docked_panel_with_extras(
     parent: &mut ChildSpawnerCommands,
     panel_id: usize,
@@ -1455,69 +1484,119 @@ fn spawn_context_button<T: Component>(
 fn spawn_minimap_panel(
     parent: &mut ChildSpawnerCommands,
     panel_id: usize,
-    images: &mut Assets<Image>,
+    asset_server: &AssetServer,
     zoom: crate::ui::resources::MinimapZoom,
     theme: &UiThemeAssets,
     palette: &Palette,
 ) {
-    let image_handle = images.add(make_minimap_image(zoom));
-    spawn_docked_panel(parent, panel_id, theme, palette, move |body| {
-        body.spawn((Node {
+    let undock_image = theme.undock_button.clone();
+    let theme_clone = theme.clone();
+    let palette_clone = *palette;
+    let asset_server_clone = asset_server.clone();
+    spawn_docked_panel_with_extras(
+        parent,
+        panel_id,
+        theme,
+        palette,
+        |title_extras| {
+            spawn_themed_icon_button(title_extras, undock_image, MinimapPanelUndockButton);
+        },
+        move |body| {
+            spawn_minimap_panel_body_with_zoom(
+                body,
+                &theme_clone,
+                &palette_clone,
+                &asset_server_clone,
+                zoom,
+            );
+        },
+    );
+}
+
+/// Body contents of the minimap panel — the rendered minimap image plus
+/// zoom +/− controls. Shared by the docked and floating variants. The
+/// floating spawn path uses the default zoom; `update_minimap_images`
+/// snaps the image to the user's saved `HudMinimapSettings.zoom` on the
+/// next frame.
+pub(crate) fn spawn_minimap_panel_body(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+    asset_server: &AssetServer,
+) {
+    spawn_minimap_panel_body_with_zoom(
+        parent,
+        theme,
+        palette,
+        asset_server,
+        crate::ui::resources::MinimapZoom::default(),
+    );
+}
+
+fn spawn_minimap_panel_body_with_zoom(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+    asset_server: &AssetServer,
+    zoom: crate::ui::resources::MinimapZoom,
+) {
+    let image_handle = asset_server.add(make_minimap_image(zoom));
+    parent
+        .spawn((Node {
             width: percent(100.0),
             flex_direction: FlexDirection::Column,
             align_items: AlignItems::Center,
             row_gap: px(6.0),
             ..default()
         },))
-            .with_children(|container| {
-                container.spawn((
-                    Node {
-                        width: px(HUD_MINIMAP_SIZE),
-                        height: px(HUD_MINIMAP_SIZE),
-                        position_type: PositionType::Relative,
-                        overflow: Overflow::clip(),
-                        ..default()
-                    },
-                    BackgroundColor(palette.surface_minimap_bg),
-                    ImageNode::new(image_handle.clone()).with_mode(NodeImageMode::Stretch),
-                    MinimapView {
-                        mode: MinimapMode::HudSmall,
-                    },
-                    MinimapCanvas {
-                        image_handle: image_handle.clone(),
-                        last_zoom: Some(zoom),
-                    },
-                ));
+        .with_children(|container| {
+            container.spawn((
+                Node {
+                    width: px(HUD_MINIMAP_SIZE),
+                    height: px(HUD_MINIMAP_SIZE),
+                    position_type: PositionType::Relative,
+                    overflow: Overflow::clip(),
+                    ..default()
+                },
+                BackgroundColor(palette.surface_minimap_bg),
+                ImageNode::new(image_handle.clone()).with_mode(NodeImageMode::Stretch),
+                MinimapView {
+                    mode: MinimapMode::HudSmall,
+                },
+                MinimapCanvas {
+                    image_handle: image_handle.clone(),
+                    last_zoom: Some(zoom),
+                },
+            ));
 
-                container
-                    .spawn((Node {
-                        width: percent(100.0),
-                        flex_direction: FlexDirection::Row,
-                        justify_content: JustifyContent::Center,
-                        align_items: AlignItems::Center,
-                        column_gap: px(6.0),
-                        ..default()
-                    },))
-                    .with_children(|row| {
-                        spawn_zoom_button(row, theme, palette, "-", HudMinimapZoomOutButton);
-                        row.spawn((
-                            Text::new(zoom.label()),
-                            HudMinimapZoomLabel,
-                            TextFont {
-                                font_size: 14.0,
-                                ..default()
-                            },
-                            TextColor(palette.text_primary),
-                            Node {
-                                min_width: px(64.0),
-                                justify_content: JustifyContent::Center,
-                                ..default()
-                            },
-                        ));
-                        spawn_zoom_button(row, theme, palette, "+", HudMinimapZoomInButton);
-                    });
-            });
-    });
+            container
+                .spawn((Node {
+                    width: percent(100.0),
+                    flex_direction: FlexDirection::Row,
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    column_gap: px(6.0),
+                    ..default()
+                },))
+                .with_children(|row| {
+                    spawn_zoom_button(row, theme, palette, "-", HudMinimapZoomOutButton);
+                    row.spawn((
+                        Text::new(zoom.label()),
+                        HudMinimapZoomLabel,
+                        TextFont {
+                            font_size: 14.0,
+                            ..default()
+                        },
+                        TextColor(palette.text_primary),
+                        Node {
+                            min_width: px(64.0),
+                            justify_content: JustifyContent::Center,
+                            ..default()
+                        },
+                    ));
+                    spawn_zoom_button(row, theme, palette, "+", HudMinimapZoomInButton);
+                });
+        });
 }
 
 fn spawn_zoom_button<T: Component>(

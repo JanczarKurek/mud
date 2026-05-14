@@ -700,11 +700,17 @@ fn handle_give_item(
         if grant == 0 {
             break;
         }
-        inventory.backpack_slots[empty_index] = Some(InventoryStack::item(
-            type_id.to_owned(),
-            ObjectProperties::new(),
-            grant,
-        ));
+        let mut stack =
+            InventoryStack::item(type_id.to_owned(), ObjectProperties::new(), grant);
+        // Pouches granted this way (admin /give, dialog give_item, crafting
+        // outputs, scripting) need their contents vec pre-initialized so
+        // the inventory UI treats them as openable containers. Without
+        // this, the player has to drop and re-pick the pouch before the
+        // "Open" action shows up.
+        if let Some(capacity) = definition.container_capacity {
+            stack.contained_slots = Some(vec![None; capacity]);
+        }
+        inventory.backpack_slots[empty_index] = Some(stack);
         current_weight += per_unit_weight * grant as f32;
         remaining -= grant;
     }

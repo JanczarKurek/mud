@@ -1,11 +1,14 @@
 pub mod backpack_panel;
 pub mod chat_input;
 pub mod components;
+pub mod container_panel;
+pub mod current_target_panel;
 pub mod dialog;
 pub mod equipment_panel;
 pub mod item_details;
 pub mod menu_bar;
 pub mod minimap;
+pub mod minimap_panel;
 pub mod mountable_panel;
 pub mod movable_window;
 pub mod recipe_book;
@@ -41,8 +44,11 @@ use crate::ui::minimap::{
     sync_full_map_window_visibility, sync_minimap_zoom_labels, update_minimap_images,
 };
 use crate::ui::backpack_panel::BackpackPanel;
+use crate::ui::container_panel::ContainerPanel;
+use crate::ui::current_target_panel::CurrentTargetPanel;
 use crate::ui::equipment_panel::EquipmentPanel;
-use crate::ui::mountable_panel::MountablePanelPlugin;
+use crate::ui::minimap_panel::MinimapPanel;
+use crate::ui::mountable_panel::{MountablePanelLifecycleSet, MountablePanelPlugin};
 use crate::ui::resources::{
     ActiveDialogState, CharacterSheetState, ContextMenuState, CursorState, DockedPanelDragState,
     DockedPanelResizeState, DockedPanelState, DragState, FullMapWindowState, HudMinimapSettings,
@@ -95,6 +101,9 @@ impl Plugin for UiPlugin {
             MountablePanelPlugin::<StatusPanel>::default(),
             MountablePanelPlugin::<EquipmentPanel>::default(),
             MountablePanelPlugin::<BackpackPanel>::default(),
+            MountablePanelPlugin::<CurrentTargetPanel>::default(),
+            MountablePanelPlugin::<MinimapPanel>::default(),
+            MountablePanelPlugin::<ContainerPanel>::default(),
         ))
         .insert_resource(ContextMenuState::default())
         .insert_resource(DockedPanelState::default())
@@ -140,7 +149,7 @@ impl Plugin for UiPlugin {
                 sync_context_menu_use_on_button,
                 sync_context_menu_talk_button,
                 sync_current_combat_target,
-                sync_docked_panel_layout,
+                sync_docked_panel_layout.after(MountablePanelLifecycleSet),
                 sync_docked_panel_titles,
             )
                 .run_if(in_state(ClientAppState::InGame)),
@@ -285,7 +294,11 @@ impl Plugin for UiPlugin {
                 handle_minimap_zoom_buttons,
                 sync_full_map_window_visibility,
                 sync_minimap_zoom_labels,
-                update_minimap_images,
+                // Run before the lifecycle's despawn so the dot-spawn
+                // commands queue before the canvas despawn — the
+                // recursive despawn then cleans up dots via Children
+                // rather than leaving them orphaned on screen.
+                update_minimap_images.before(MountablePanelLifecycleSet),
             )
                 .run_if(in_state(ClientAppState::InGame)),
         )
