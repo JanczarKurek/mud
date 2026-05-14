@@ -16,7 +16,7 @@ use bevy::window::PrimaryWindow;
 
 use crate::game::commands::GameCommand;
 use crate::game::resources::{ClientGameState, PendingGameCommands};
-use crate::game::trade::{ClientTradeView, TradeOfferEntry, WareView};
+use crate::game::trade::{ClientTradeView, TradeOfferEntry, TradeSessionId, WareView};
 use crate::ui::components::{
     ItemSlotButton, ItemSlotKind, TradeButtonLabel, TradeCancelButton, TradeColumn,
     TradeConfirmButton, TradePartnerLabel, TradePopupCloseButton, TradePopupRoot, TradeReadyButton,
@@ -32,8 +32,16 @@ use crate::world::object_definitions::OverworldObjectDefinitions;
 
 /// Caches the most-recently-rendered signature per column so the children
 /// rebuild only fires when the column's content actually changes.
+///
+/// `session_id` pins the cache to a specific trade session — when the
+/// session closes (or a new one starts), the column entities have been
+/// despawned and respawned with empty children, so we wipe the cached
+/// signatures to force a fresh build. Without this, re-opening a trade
+/// with the same partner+wares leaves the columns blank (cache hits
+/// against stale state from the previous session's entities).
 #[derive(Resource, Default)]
 pub struct TradePanelRenderState {
+    pub session_id: Option<TradeSessionId>,
     pub merchant: Option<String>,
     pub us: Option<String>,
     pub them: Option<String>,
@@ -338,6 +346,13 @@ pub fn sync_trade_panel_rows(
     mut commands: Commands,
 ) {
     let view = client_state.current_trade.as_ref();
+    let current_session_id = view.map(|v| v.session_id);
+    if render_state.session_id != current_session_id {
+        render_state.session_id = current_session_id;
+        render_state.merchant = None;
+        render_state.us = None;
+        render_state.them = None;
+    }
     let (merchant_sig, us_sig, them_sig) = match view {
         Some(view) => (
             merchant_signature(view.wares.as_deref()),
