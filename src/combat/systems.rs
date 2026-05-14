@@ -7,8 +7,8 @@ use crate::game::resources::{GameUiEvent, PendingGameUiEvents, VfxAnchor};
 use crate::magic::resources::SpellDefinitions;
 use crate::npc::components::Npc;
 use crate::player::components::{
-    AmmoConsumption, AttributeSet, ChatLog, DerivedStats, Inventory, Player, PlayerId,
-    PlayerIdentity, VitalStats, WeaponDamage,
+    AmmoConsumption, AttributeSet, ChatLog, DefenseStats, DerivedStats, Inventory, Player,
+    PlayerId, PlayerIdentity, VitalStats, WeaponDamage,
 };
 use crate::player::lifecycle::{PendingPlayerDeath, PendingPlayerDeaths};
 use crate::player::progression::{xp_grant_for_kill, Experience, PendingXpGrant, PendingXpGrants};
@@ -34,6 +34,29 @@ struct CombatantSnapshot {
     player_id: Option<u64>,
     ranged_projectile_sprite: Option<String>,
     level: Option<u32>,
+    armor: i32,
+    block: i32,
+}
+
+/// Pure mitigation math. `block_roll` and `armor_roll` are pre-rolled values in
+/// `0..=defense_value`. Floor at 1 to preserve the no-zero-damage invariant.
+fn apply_defenses(raw: i32, block_roll: i32, armor_roll: i32) -> i32 {
+    (raw - block_roll - armor_roll).max(1)
+}
+
+/// Roll a uniform integer in `0..=max`. Uses the same nanosecond+salt pattern
+/// as `roll_die` — see `damage_expr::roll_die`.
+fn roll_defense(max: i32, salt: u64) -> i32 {
+    if max <= 0 {
+        return 0;
+    }
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.subsec_nanos() as u64)
+        .unwrap_or(0);
+    let mixed = nanos.wrapping_add(salt.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+    (mixed % (max as u64 + 1)) as i32
 }
 
 pub fn clear_invalid_combat_targets(
@@ -89,6 +112,7 @@ pub fn resolve_battle_turn(
             Option<&PlayerIdentity>,
             Option<&Inventory>,
             Option<&Experience>,
+            Option<&DefenseStats>,
         )>,
         Query<(
             &mut VitalStats,
@@ -134,6 +158,7 @@ pub fn resolve_battle_turn(
                 player_identity,
                 inventory,
                 experience,
+                defense_stats,
             )| {
                 let damage_expr = weapon_damage
                     .map(|wd| wd.0.clone())
@@ -171,6 +196,8 @@ pub fn resolve_battle_turn(
                     player_id,
                     ranged_projectile_sprite,
                     level: experience.map(|e| e.level),
+                    armor: defense_stats.map(|d| d.armor).unwrap_or(0),
+                    block: defense_stats.map(|d| d.block).unwrap_or(0),
                 }
             },
         )
@@ -222,7 +249,10 @@ pub fn resolve_battle_turn(
             }
         }
 
-        let damage = attacker.damage_expr.roll(&attacker.attributes).max(1);
+        let raw = attacker.damage_expr.roll(&attacker.attributes).max(1);
+        let block_roll = roll_defense(target.block, 0);
+        let armor_roll = roll_defense(target.armor, 1);
+        let damage = apply_defenses(raw, block_roll, armor_roll);
 
         if is_ranged {
             let sprite_id = attacker
@@ -389,4 +419,51 @@ pub(crate) fn chebyshev_distance(a: &TilePosition, b: &TilePosition) -> i32 {
         return i32::MAX;
     }
     (a.x - b.x).abs().max((a.y - b.y).abs())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zero_defenses_passes_raw_through() {
+        assert_eq!(apply_defenses(5, 0, 0), 5);
+        assert_eq!(apply_defenses(100, 0, 0), 100);
+    }
+
+    #[test]
+    fn block_subtracts_from_raw() {
+        assert_eq!(apply_defenses(10, 3, 0), 7);
+    }
+
+    #[test]
+    fn armor_subtracts_from_raw() {
+        assert_eq!(apply_defenses(10, 0, 4), 6);
+    }
+
+    #[test]
+    fn block_and_armor_stack() {
+        assert_eq!(apply_defenses(10, 2, 3), 5);
+    }
+
+    #[test]
+    fn floor_holds_when_mitigation_exceeds_damage() {
+        assert_eq!(apply_defenses(2, 100, 0), 1);
+        assert_eq!(apply_defenses(2, 0, 100), 1);
+        assert_eq!(apply_defenses(1, 50, 50), 1);
+    }
+
+    #[test]
+    fn roll_defense_zero_max_returns_zero() {
+        assert_eq!(roll_defense(0, 0), 0);
+        assert_eq!(roll_defense(-5, 0), 0);
+    }
+
+    #[test]
+    fn roll_defense_within_range() {
+        for salt in 0..10 {
+            let r = roll_defense(5, salt);
+            assert!((0..=5).contains(&r), "roll {r} out of 0..=5 (salt={salt})");
+        }
+    }
 }

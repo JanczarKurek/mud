@@ -918,8 +918,8 @@ mod tests {
     use crate::magic::MagicPlugin;
     use crate::npc::NpcPlugin;
     use crate::player::components::{
-        BaseStats, ChatLog, DerivedStats, Inventory, MovementCooldown, Player, PlayerId,
-        PlayerIdentity, VitalStats, WeaponDamage,
+        BaseStats, ChatLog, DefenseStats, DerivedStats, Inventory, MovementCooldown, Player,
+        PlayerId, PlayerIdentity, VitalStats, WeaponDamage,
     };
     use crate::player::PlayerServerPlugin;
     use crate::world::components::{Collider, OverworldObject};
@@ -960,7 +960,11 @@ mod tests {
                 derived_stats,
                 VitalStats::full(max_health, max_mana),
                 MovementCooldown::default(),
-                (AttackProfile::melee(), WeaponDamage::default()),
+                (
+                    AttackProfile::melee(),
+                    WeaponDamage::default(),
+                    DefenseStats::default(),
+                ),
                 CombatLeash {
                     max_distance_tiles: 6,
                 },

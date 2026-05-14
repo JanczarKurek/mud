@@ -75,6 +75,10 @@ pub struct OverworldObjectDefinition {
     #[serde(default)]
     pub damage: Option<String>,
     #[serde(default)]
+    pub armor: i32,
+    #[serde(default)]
+    pub block: i32,
+    #[serde(default)]
     pub hp: Option<String>,
     /// Creature level (HD per `docs/content_bible.md` §6). Drives XP awarded
     /// on kill via `xp_grant_for_kill`. Optional so non-creature definitions

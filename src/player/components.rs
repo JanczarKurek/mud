@@ -14,6 +14,12 @@ impl Default for WeaponDamage {
     }
 }
 
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+pub struct DefenseStats {
+    pub armor: i32,
+    pub block: i32,
+}
+
 #[derive(Component)]
 pub struct Player;
 

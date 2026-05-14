@@ -3,6 +3,7 @@ name: Leather Helmet
 weight: 1.0
 description: A stitched leather cap with a reinforced brow.
 equipment_slot: helmet
+armor: 1
 render:
   debug_color: [129, 85, 53]
   debug_size: 0.56

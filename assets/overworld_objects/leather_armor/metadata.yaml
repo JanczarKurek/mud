@@ -3,6 +3,7 @@ name: Leather Armor
 weight: 8.0
 description: A sturdy leather cuirass with shoulder guards.
 equipment_slot: armor
+armor: 3
 render:
   debug_color: [122, 78, 49]
   debug_size: 0.62

@@ -3,6 +3,7 @@ name: Leather Legs
 weight: 3.0
 description: A pair of practical leather leggings.
 equipment_slot: legs
+armor: 2
 render:
   debug_color: [118, 76, 45]
   debug_size: 0.58

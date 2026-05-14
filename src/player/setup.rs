@@ -6,8 +6,9 @@ use crate::magic::effects::MagicEffects;
 use crate::persistence::{PlayerStateDump, WorldSnapshotStatus};
 use crate::player::classes::{Class, ClassChosen};
 use crate::player::components::{
-    BaseStats, ChatLog, DerivedStats, EquippedItem, Inventory, InventoryStack, MovementCooldown,
-    Player, PlayerId, PlayerIdentity, RegenBuffs, RegenTickers, VitalStats, WeaponDamage,
+    BaseStats, ChatLog, DefenseStats, DerivedStats, EquippedItem, Inventory, InventoryStack,
+    MovementCooldown, Player, PlayerId, PlayerIdentity, RegenBuffs, RegenTickers, VitalStats,
+    WeaponDamage,
 };
 use crate::player::progression::Experience;
 use crate::world::components::{
@@ -181,7 +182,11 @@ pub fn spawn_player_from_dump(
             dump.derived_stats,
             dump.vital_stats,
             dump.movement_cooldown,
-            (dump.attack_profile, WeaponDamage::default()),
+            (
+                dump.attack_profile,
+                WeaponDamage::default(),
+                DefenseStats::default(),
+            ),
             (
                 dump.combat_leash,
                 RegenTickers::default(),
@@ -240,7 +245,11 @@ pub fn spawn_player_authoritative_in_space(
             derived_stats,
             VitalStats::full(max_health, max_mana),
             MovementCooldown::default(),
-            (AttackProfile::melee(), WeaponDamage::default()),
+            (
+                AttackProfile::melee(),
+                WeaponDamage::default(),
+                DefenseStats::default(),
+            ),
             (
                 CombatLeash {
                     max_distance_tiles: 6,

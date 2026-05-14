@@ -7,8 +7,8 @@ use crate::game::commands::{GameCommand, MoveDelta, RotationDirection};
 use crate::game::resources::{ClientGameState, InventoryState, PendingGameCommands};
 use crate::player::classes::Class;
 use crate::player::components::{
-    AttributeSet, BaseStats, CurrentCarryWeight, DerivedStats, Encumbered, MaxCarryWeight, Player,
-    PlayerIdentity, VitalStats, WeaponDamage,
+    AttributeSet, BaseStats, CurrentCarryWeight, DefenseStats, DerivedStats, Encumbered,
+    MaxCarryWeight, Player, PlayerIdentity, VitalStats, WeaponDamage,
 };
 use crate::player::progression::Experience;
 use crate::scripting::resources::PythonConsoleState;
@@ -32,6 +32,7 @@ pub fn refresh_derived_player_stats(
             &mut VitalStats,
             &mut AttackProfile,
             &mut WeaponDamage,
+            &mut DefenseStats,
             Option<&mut MaxCarryWeight>,
             Option<&mut CurrentCarryWeight>,
             Has<Encumbered>,
@@ -49,6 +50,7 @@ pub fn refresh_derived_player_stats(
         mut vital_stats,
         mut attack_profile,
         mut weapon_damage,
+        mut defense_stats,
         max_carry,
         current_carry,
         was_encumbered,
@@ -61,6 +63,8 @@ pub fn refresh_derived_player_stats(
         let mut max_mana = base_stats.max_mana;
         let mut storage_slots = base_stats.storage_slots;
         let mut equipped_weapon_def_id: Option<String> = None;
+        let mut armor_total: i32 = 0;
+        let mut block_total: i32 = 0;
 
         for (slot, equipped_item) in &inventory_state.equipment_slots {
             let Some(item) = equipped_item else {
@@ -82,8 +86,20 @@ pub fn refresh_derived_player_stats(
             max_mana += definition.stats.max_mana;
             storage_slots += definition.stats.storage_slots;
 
-            if *slot == EquipmentSlot::Weapon {
-                equipped_weapon_def_id = Some(item.type_id.clone());
+            match slot {
+                EquipmentSlot::Weapon => {
+                    equipped_weapon_def_id = Some(item.type_id.clone());
+                }
+                EquipmentSlot::Armor
+                | EquipmentSlot::Helmet
+                | EquipmentSlot::Legs
+                | EquipmentSlot::Boots => {
+                    armor_total += definition.armor;
+                }
+                EquipmentSlot::Shield => {
+                    block_total += definition.block;
+                }
+                _ => {}
             }
         }
 
@@ -146,6 +162,14 @@ pub fn refresh_derived_player_stats(
         }
         if weapon_damage.0 != next_damage {
             weapon_damage.0 = next_damage;
+        }
+
+        let next_defense = DefenseStats {
+            armor: armor_total,
+            block: block_total,
+        };
+        if *defense_stats != next_defense {
+            *defense_stats = next_defense;
         }
 
         // Carry weight: cap derives from final (post-equipment) STR; current
@@ -378,8 +402,30 @@ fn movement_direction(keyboard_input: &ButtonInput<KeyCode>) -> Option<MoveDelta
 mod tests {
     use super::*;
     use crate::game::resources::ClientVitalStats;
-    use crate::player::components::PlayerIdentity;
+    use crate::player::components::{EquippedItem, Inventory, PlayerIdentity};
     use crate::world::components::{SpaceId, SpacePosition};
+    use crate::world::object_definitions::OverworldObjectDefinition;
+    use std::collections::HashMap;
+
+    fn equipment_def(slot: &str, armor: i32, block: i32) -> OverworldObjectDefinition {
+        let yaml = format!(
+            r#"
+name: Test Item
+description: ""
+colliding: false
+movable: true
+storable: true
+equipment_slot: {slot}
+armor: {armor}
+block: {block}
+render:
+  z_index: 0.0
+  debug_color: [0, 0, 0]
+  debug_size: 1.0
+"#
+        );
+        serde_yaml::from_str(&yaml).expect("definition parses")
+    }
 
     fn default_world_config() -> WorldConfig {
         WorldConfig {
@@ -505,5 +551,77 @@ mod tests {
         assert_eq!(displayed_vitals.max_health, 40.0);
         assert_eq!(displayed_vitals.mana, 6.0);
         assert_eq!(displayed_vitals.max_mana, 18.0);
+    }
+
+    fn spawn_test_player(app: &mut App, inventory: Inventory) -> Entity {
+        let base_stats = BaseStats::default();
+        let derived_stats = DerivedStats::from_base(&base_stats);
+        app.world_mut()
+            .spawn((
+                Player,
+                PlayerIdentity::new(crate::player::components::PlayerId(0)),
+                inventory,
+                base_stats,
+                derived_stats,
+                VitalStats::full(
+                    derived_stats.max_health as f32,
+                    derived_stats.max_mana as f32,
+                ),
+                crate::combat::components::AttackProfile::melee(),
+                WeaponDamage::default(),
+                DefenseStats::default(),
+            ))
+            .id()
+    }
+
+    #[test]
+    fn armor_sums_across_defensive_slots() {
+        let mut definitions = HashMap::new();
+        definitions.insert("test_armor".to_owned(), equipment_def("armor", 3, 0));
+        definitions.insert("test_helmet".to_owned(), equipment_def("helmet", 1, 0));
+        definitions.insert("test_legs".to_owned(), equipment_def("legs", 2, 0));
+        definitions.insert("test_boots".to_owned(), equipment_def("boots", 1, 0));
+        definitions.insert("test_shield".to_owned(), equipment_def("shield", 0, 3));
+
+        let mut inventory = Inventory::default();
+        inventory.restore_equipment_item(EquipmentSlot::Armor, EquippedItem::new("test_armor"));
+        inventory.restore_equipment_item(EquipmentSlot::Helmet, EquippedItem::new("test_helmet"));
+        inventory.restore_equipment_item(EquipmentSlot::Legs, EquippedItem::new("test_legs"));
+        inventory.restore_equipment_item(EquipmentSlot::Boots, EquippedItem::new("test_boots"));
+        inventory.restore_equipment_item(EquipmentSlot::Shield, EquippedItem::new("test_shield"));
+
+        let mut app = App::new();
+        app.insert_resource(OverworldObjectDefinitions::new_for_test(definitions));
+        let entity = spawn_test_player(&mut app, inventory);
+        app.add_systems(Update, refresh_derived_player_stats);
+        app.update();
+
+        let defense = app.world().entity(entity).get::<DefenseStats>().unwrap();
+        assert_eq!(defense.armor, 7);
+        assert_eq!(defense.block, 3);
+    }
+
+    #[test]
+    fn non_defensive_slots_do_not_contribute_armor() {
+        // A weapon with armor: 5 (shouldn't happen via YAML in practice) is
+        // ignored — only Armor/Helmet/Legs/Boots count toward armor, and only
+        // Shield counts toward block.
+        let mut definitions = HashMap::new();
+        definitions.insert("bad_weapon".to_owned(), equipment_def("weapon", 5, 0));
+        definitions.insert("bad_ring".to_owned(), equipment_def("ring", 5, 5));
+
+        let mut inventory = Inventory::default();
+        inventory.restore_equipment_item(EquipmentSlot::Weapon, EquippedItem::new("bad_weapon"));
+        inventory.restore_equipment_item(EquipmentSlot::Ring, EquippedItem::new("bad_ring"));
+
+        let mut app = App::new();
+        app.insert_resource(OverworldObjectDefinitions::new_for_test(definitions));
+        let entity = spawn_test_player(&mut app, inventory);
+        app.add_systems(Update, refresh_derived_player_stats);
+        app.update();
+
+        let defense = app.world().entity(entity).get::<DefenseStats>().unwrap();
+        assert_eq!(defense.armor, 0);
+        assert_eq!(defense.block, 0);
     }
 }

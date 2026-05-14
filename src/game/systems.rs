@@ -25,7 +25,7 @@ use crate::world::floor_map::FloorMaps;
 use crate::world::loot::spawn_corpse_for_npc;
 use crate::world::map_layout::{ObjectProperties, SpaceDefinitions};
 use crate::world::object_definitions::{
-    EquipmentSlot, OverworldObjectDefinition, OverworldObjectDefinitions,
+    AttackProfileKindDef, EquipmentSlot, OverworldObjectDefinition, OverworldObjectDefinitions,
 };
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::resources::SpaceManager;
@@ -3326,11 +3326,33 @@ fn object_description_for_type(
     )
     .unwrap_or_else(|| definition.description_for_count(count).to_owned());
     let description = description_text.trim();
-    if description.is_empty() {
-        Some(format!("Just a {}.", display_name.to_lowercase()))
+    let mut text = if description.is_empty() {
+        format!("Just a {}.", display_name.to_lowercase())
     } else {
-        Some(description.to_owned())
+        description.to_owned()
+    };
+
+    if definition.equipment_slot == Some(EquipmentSlot::Weapon) {
+        if let Some(damage) = &definition.damage {
+            text.push_str(&format!("\nDamage: {damage}"));
+        }
+        if let Some(profile) = &definition.attack_profile {
+            match profile.kind {
+                AttackProfileKindDef::Melee => text.push_str("\nAttack: melee"),
+                AttackProfileKindDef::Ranged => {
+                    let range = definition.base_range_tiles.unwrap_or(4);
+                    text.push_str(&format!("\nAttack: ranged ({range} tiles)"));
+                }
+            }
+        }
     }
+    if definition.armor > 0 {
+        text.push_str(&format!("\nArmor: {}", definition.armor));
+    }
+    if definition.block > 0 {
+        text.push_str(&format!("\nBlock: {}", definition.block));
+    }
+    Some(text)
 }
 
 fn type_is_storable(type_id: &str, definitions: &OverworldObjectDefinitions) -> bool {
@@ -3450,8 +3472,8 @@ mod tests {
     use crate::game::GameServerPlugin;
     use crate::magic::MagicPlugin;
     use crate::player::components::{
-        BaseStats, ChatLog, DerivedStats, Inventory, MovementCooldown, Player, PlayerId,
-        PlayerIdentity, VitalStats, WeaponDamage,
+        BaseStats, ChatLog, DefenseStats, DerivedStats, Inventory, MovementCooldown, Player,
+        PlayerId, PlayerIdentity, VitalStats, WeaponDamage,
     };
     use crate::player::PlayerServerPlugin;
     use crate::world::components::{Collider, OverworldObject};
@@ -3491,7 +3513,11 @@ mod tests {
                 derived_stats,
                 VitalStats::full(max_health, max_mana),
                 MovementCooldown::default(),
-                (AttackProfile::melee(), WeaponDamage::default()),
+                (
+                    AttackProfile::melee(),
+                    WeaponDamage::default(),
+                    DefenseStats::default(),
+                ),
                 CombatLeash {
                     max_distance_tiles: 6,
                 },

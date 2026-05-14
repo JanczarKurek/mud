@@ -674,6 +674,20 @@ The `text` value supports three count placeholders in addition to the normal `{p
 - Examples: `1d8+30+constitution*3`, `2d20+80+constitution*6`, `50+constitution*5` (deterministic)
 - Player HP is unaffected by this field.
 
+### `armor`
+- Type: integer
+- Optional: yes
+- Default: `0`
+- Meaning: damage reduction for items equipped in defensive slots (`armor`, `helmet`, `legs`, `boots`). The values are summed across all equipped pieces. On every incoming hit the defender rolls a uniform integer in `0..=armor_total` and subtracts it from the damage. Final damage is floored at `1`.
+- Only counted when worn in one of the four defensive slots above; setting `armor` on a weapon or ring has no effect.
+
+### `block`
+- Type: integer
+- Optional: yes
+- Default: `0`
+- Meaning: damage reduction specific to the `shield` slot, rolled as a separate pre-armor pass. Defender rolls `0..=block` and subtracts before the armor roll. Combined with `armor` the order is: `damage = max(1, raw - block_roll - armor_roll)`.
+- Only counted when equipped in the `shield` slot.
+
 ### `use_effects`
 - Type: mapping
 - Optional: yes
