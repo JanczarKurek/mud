@@ -23,7 +23,7 @@ use crate::ui::components::{
     TradeSlotButton,
 };
 use crate::ui::movable_window::{
-    spawn_movable_window, val_to_px, MovableWindowDrag, MovableWindowId,
+    spawn_movable_window, spawn_themed_close_button, val_to_px, MovableWindowDrag, MovableWindowId,
 };
 use crate::ui::resources::TradePopupState;
 use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton};
@@ -211,14 +211,7 @@ fn spawn_trade_window(
     // despawning the entity directly — the despawn happens via the
     // lifecycle once the server confirms the trade ended.
     commands.entity(spawned.title_bar).with_children(|bar| {
-        crate::ui::setup::spawn_small_button(
-            bar,
-            theme,
-            palette,
-            ButtonStyle::Secondary,
-            "X",
-            TradePopupCloseButton,
-        );
+        spawn_themed_close_button(bar, theme, TradePopupCloseButton);
     });
 
     commands.entity(spawned.body).with_children(|body| {

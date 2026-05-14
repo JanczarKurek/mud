@@ -124,7 +124,7 @@ pub fn spawn_menu_bar(commands: &mut Commands, theme: &UiThemeAssets, palette: &
                 },
                 ImageNode::new(theme.panel_frame.clone())
                     .with_mode(theme.panel_image_mode())
-                    .with_color(palette.surface_panel),
+                    .with_color(Color::WHITE),
                 BackgroundColor(Color::NONE),
                 BorderColor::all(palette.border_muted),
                 GlobalZIndex(i32::MAX - 19),

@@ -26,9 +26,9 @@ use bevy::prelude::*;
 use crate::game::resources::ClientGameState;
 use crate::ui::menu_bar::MENU_BAR_HEIGHT;
 use crate::ui::movable_window::{
-    spawn_movable_window, MovableWindowDrag, MovableWindowId, MOVABLE_WINDOW_DEFAULT_MIN_SIZE,
+    spawn_movable_window, spawn_themed_close_button, MovableWindowDrag, MovableWindowId,
+    MOVABLE_WINDOW_DEFAULT_MIN_SIZE,
 };
-use crate::ui::theme::widgets::ButtonStyle;
 use crate::ui::theme::{Palette, UiThemeAssets};
 
 const BUTTON_SIZE: f32 = 48.0;
@@ -195,14 +195,7 @@ fn spawn_time_of_day_window(
     // path would despawn the window directly, leaving our state stuck on
     // `open = true`.
     commands.entity(spawned.title_bar).with_children(|bar| {
-        crate::ui::setup::spawn_small_button(
-            bar,
-            theme,
-            palette,
-            ButtonStyle::Secondary,
-            "X",
-            TimeOfDayPopupCloseButton,
-        );
+        spawn_themed_close_button(bar, theme, TimeOfDayPopupCloseButton);
     });
 
     commands.entity(spawned.body).with_children(|body| {

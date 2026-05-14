@@ -17,7 +17,6 @@ use bevy::window::PrimaryWindow;
 
 use crate::app::state::ClientAppState;
 use crate::ui::components::ItemSlotKind;
-use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton};
 use crate::ui::theme::{Palette, UiThemeAssets};
 
 /// Stable identity for a movable window. Used to dedupe re-opens — if a
@@ -101,7 +100,7 @@ pub struct MovableWindowResize {
 pub const MOVABLE_WINDOW_Z_BASE: i32 = i32::MAX - 20;
 pub const MOVABLE_WINDOW_Z_FOCUSED: i32 = i32::MAX - 11;
 pub const MOVABLE_WINDOW_CASCADE_PX: f32 = 32.0;
-pub const MOVABLE_WINDOW_RESIZE_HANDLE_PX: f32 = 14.0;
+pub const MOVABLE_WINDOW_RESIZE_HANDLE_PX: f32 = 18.0;
 pub const MOVABLE_WINDOW_DEFAULT_MIN_SIZE: Vec2 = Vec2::new(220.0, 160.0);
 
 pub struct MovableWindowPlugin;
@@ -180,7 +179,7 @@ pub fn spawn_movable_window(
             },
             ImageNode::new(theme.panel_frame.clone())
                 .with_mode(theme.panel_image_mode())
-                .with_color(palette.surface_panel),
+                .with_color(Color::WHITE),
             BackgroundColor(Color::NONE),
             BorderColor::all(palette.border_accent),
             GlobalZIndex(MOVABLE_WINDOW_Z_BASE),
@@ -200,7 +199,10 @@ pub fn spawn_movable_window(
                 flex_shrink: 0.0,
                 ..default()
             },
-            BackgroundColor(palette.surface_raised),
+            ImageNode::new(theme.title_bar.clone())
+                .with_mode(theme.title_bar_image_mode())
+                .with_color(Color::WHITE),
+            BackgroundColor(Color::NONE),
             BorderColor::all(palette.border_slot),
         ))
         .id();
@@ -244,7 +246,7 @@ pub fn spawn_movable_window(
                 height: px(MOVABLE_WINDOW_RESIZE_HANDLE_PX),
                 ..default()
             },
-            BackgroundColor(palette.border_accent),
+            ImageNode::new(theme.resize_corner.clone()),
         ))
         .id();
 
@@ -259,44 +261,39 @@ pub fn spawn_movable_window(
     }
 }
 
-/// Spawn the default close (X) button as a child of `parent` (typically the
+/// Shared visual for any "X" close button in a movable window — the brass
+/// medallion (no rectangular frame underneath). `marker` distinguishes
+/// which close-handler picks up the click (the standard despawn handler
+/// vs. Dialog's `DialogEnd` emission vs. Trade's `CancelTrade`).
+pub fn spawn_themed_close_button<M: Bundle>(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
+    marker: M,
+) {
+    parent.spawn((
+        Button,
+        marker,
+        Node {
+            width: px(18.0),
+            height: px(18.0),
+            ..default()
+        },
+        ImageNode::new(theme.close_button.clone()),
+        BackgroundColor(Color::NONE),
+    ));
+}
+
+/// Spawn the default close button as a child of `parent` (typically the
 /// title bar). Click despawns `owner` via [`handle_movable_window_close`].
+/// The `palette` arg is unused but kept in the signature so existing call
+/// sites stay unchanged.
 pub fn spawn_movable_window_close_button(
     parent: &mut ChildSpawnerCommands,
     theme: &UiThemeAssets,
-    palette: &Palette,
+    _palette: &Palette,
     owner: Entity,
 ) {
-    let (bg, border, _text) = idle_colors(palette, ButtonStyle::Secondary, false);
-    parent
-        .spawn((
-            Button,
-            ThemedButton::new(ButtonStyle::Secondary),
-            MovableWindowCloseButton { owner },
-            Node {
-                width: px(22.0),
-                height: px(22.0),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                border: UiRect::all(px(1.0)),
-                ..default()
-            },
-            ImageNode::new(theme.button_frame.clone())
-                .with_mode(theme.button_image_mode())
-                .with_color(bg),
-            BackgroundColor(Color::NONE),
-            BorderColor::all(border),
-        ))
-        .with_children(|button| {
-            button.spawn((
-                Text::new("X"),
-                TextFont {
-                    font_size: 12.0,
-                    ..default()
-                },
-                TextColor(palette.text_primary),
-            ));
-        });
+    spawn_themed_close_button(parent, theme, MovableWindowCloseButton { owner });
 }
 
 fn handle_movable_window_resize(

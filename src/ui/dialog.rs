@@ -18,8 +18,8 @@ use crate::ui::components::{
     DialogPanelTranscriptScrollNode,
 };
 use crate::ui::movable_window::{
-    spawn_movable_window, val_to_px, MovableWindowDrag, MovableWindowId,
-    MOVABLE_WINDOW_DEFAULT_MIN_SIZE,
+    spawn_movable_window, spawn_themed_close_button, val_to_px, MovableWindowDrag,
+    MovableWindowId, MOVABLE_WINDOW_DEFAULT_MIN_SIZE,
 };
 use crate::ui::resources::{ActiveDialogState, DialogEntry, DialogEntryKind};
 use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton};
@@ -137,35 +137,7 @@ fn spawn_dialog_window(
     // despawning the entity directly — the lifecycle handles the despawn
     // once the server clears the session id.
     commands.entity(spawned.title_bar).with_children(|bar| {
-        let (bg, border, _text) = idle_colors(palette, ButtonStyle::Secondary, false);
-        bar.spawn((
-            Button,
-            ThemedButton::new(ButtonStyle::Secondary),
-            DialogPanelCloseButton,
-            Node {
-                width: px(22.0),
-                height: px(22.0),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                border: UiRect::all(px(1.0)),
-                ..default()
-            },
-            ImageNode::new(theme.button_frame.clone())
-                .with_mode(theme.button_image_mode())
-                .with_color(bg),
-            BackgroundColor(Color::NONE),
-            BorderColor::all(border),
-        ))
-        .with_children(|button| {
-            button.spawn((
-                Text::new("X"),
-                TextFont {
-                    font_size: 12.0,
-                    ..default()
-                },
-                TextColor(palette.text_primary),
-            ));
-        });
+        spawn_themed_close_button(bar, theme, DialogPanelCloseButton);
     });
 
     let theme_owned = theme.clone();

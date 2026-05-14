@@ -282,7 +282,7 @@ pub fn spawn_hud(
             GlobalZIndex(i32::MAX - 6),
             ImageNode::new(theme.panel_frame.clone())
                 .with_mode(theme.panel_image_mode())
-                .with_color(palette.surface_panel),
+                .with_color(Color::WHITE),
             BackgroundColor(Color::NONE),
             BorderColor::all(palette.border_accent),
         ))
@@ -352,7 +352,7 @@ pub fn spawn_hud(
             GlobalZIndex(i32::MAX - 4),
             ImageNode::new(theme.panel_frame.clone())
                 .with_mode(theme.panel_image_mode())
-                .with_color(palette.surface_panel),
+                .with_color(Color::WHITE),
             BackgroundColor(Color::NONE),
             BorderColor::all(palette.border_accent),
         ))
@@ -386,7 +386,7 @@ pub fn spawn_hud(
             GlobalZIndex(i32::MAX - 10),
             ImageNode::new(theme.panel_frame.clone())
                 .with_mode(theme.panel_image_mode())
-                .with_color(palette.surface_panel),
+                .with_color(Color::WHITE),
             BackgroundColor(Color::NONE),
             BorderColor::all(palette.border_accent),
         ))
@@ -460,7 +460,7 @@ fn spawn_take_partial_popup(commands: &mut Commands, theme: &UiThemeAssets, pale
                     },
                     ImageNode::new(theme.panel_frame.clone())
                         .with_mode(theme.panel_image_mode())
-                        .with_color(palette.surface_panel),
+                        .with_color(Color::WHITE),
                     BackgroundColor(Color::NONE),
                     BorderColor::all(palette.border_accent),
                 ))
@@ -962,7 +962,7 @@ fn spawn_docked_panel(
             Visibility::Hidden,
             ImageNode::new(theme.panel_frame.clone())
                 .with_mode(theme.panel_image_mode())
-                .with_color(palette.surface_panel),
+                .with_color(Color::WHITE),
             BackgroundColor(Color::NONE),
             BorderColor::all(palette.border_slot),
         ))
@@ -1538,7 +1538,7 @@ fn spawn_full_map_window(
                     },
                     ImageNode::new(theme.panel_frame.clone())
                         .with_mode(theme.panel_image_mode())
-                        .with_color(palette.surface_panel),
+                        .with_color(Color::WHITE),
                     BackgroundColor(Color::NONE),
                     BorderColor::all(palette.border_accent),
                 ))
