@@ -14,9 +14,18 @@ Outputs to assets/ui/theme/:
   close_button.png  18x18, circular brass medallion with the X embedded,
                     on transparent background. Used as a self-contained
                     close button (no rectangular frame underneath).
+  dock_button.png   18x18, brass medallion with a "dock-into-sidebar"
+                    arrow (left-pointing into a vertical bar). Used on
+                    floating windows to re-dock them to the right side.
+  undock_button.png 18x18, brass medallion with a "pop-out" arrow
+                    (diagonal arrow exiting a frame). Used on docked
+                    panels to float them.
   resize_corner.png 14x14, full-color brass corner ornament for the
                     bottom-right resize handle (matches the panel's
                     bottom-right corner styling with added grip lines).
+  resize_grip.png   16x10, horizontal brass grip strip used by the docked
+                    panels' bottom resize-edge handle. Tileable along
+                    the panel's full width.
 
 Re-run after changes:
     python3 scripts/gen_ui_theme_assets.py
@@ -257,41 +266,9 @@ def gen_divider():
 
 def gen_close_button():
     """18x18 circular brass medallion with the X already embedded. Used as a
-    self-contained close button — no rectangular button_frame underneath.
-
-    Three concentric rings: outline (dark), brass body (with light bevel),
-    inner shadow. The X is drawn on top with the same brass palette as the
-    standalone close_icon for visual consistency."""
+    self-contained close button — no rectangular button_frame underneath."""
     img = new_img(18, 18, CLEAR)
-    cx, cy = 8.5, 8.5
-    # Render the disc one pixel at a time so we control every edge pixel.
-    for y in range(18):
-        for x in range(18):
-            dx = x - cx
-            dy = y - cy
-            r = (dx * dx + dy * dy) ** 0.5
-            if r > 8.5:
-                continue  # transparent outside the disc
-            if r > 7.5:
-                px(img, x, y, OUTLINE)
-            elif r > 6.5:
-                # Outer bevel ring — bright on the top-left, darker bottom-right.
-                if dx + dy < -1:
-                    px(img, x, y, BRASS_HI)
-                elif dx + dy < 1:
-                    px(img, x, y, BRASS_MID)
-                else:
-                    px(img, x, y, BRASS_LO)
-            elif r > 4.5:
-                # Brass body.
-                px(img, x, y, BRASS_MID)
-            elif r > 3.5:
-                # Inner shadow ring.
-                px(img, x, y, BRASS_DARK)
-            else:
-                # Center face — slightly lighter wood so the X reads on it.
-                px(img, x, y, WOOD_DARK)
-
+    _draw_medallion(img)
     # Inset X (4-px long diagonals around the disc center).
     for i in range(5):
         ax, ay = 6 + i, 6 + i
@@ -301,6 +278,109 @@ def gen_close_button():
         px(img, ax, ay - 1, BRASS_MID)
         px(img, bx, by - 1, BRASS_MID)
     img.save(f"{OUT_DIR}/close_button.png")
+
+
+def _draw_medallion(img):
+    """Stamp an 18x18 brass medallion (background ring + dark face). Caller
+    overlays an icon on top of the dark face. Same recipe as
+    `gen_close_button`; factored out so the dock/undock buttons match."""
+    cx, cy = 8.5, 8.5
+    for y in range(18):
+        for x in range(18):
+            dx = x - cx
+            dy = y - cy
+            r = (dx * dx + dy * dy) ** 0.5
+            if r > 8.5:
+                continue
+            if r > 7.5:
+                px(img, x, y, OUTLINE)
+            elif r > 6.5:
+                if dx + dy < -1:
+                    px(img, x, y, BRASS_HI)
+                elif dx + dy < 1:
+                    px(img, x, y, BRASS_MID)
+                else:
+                    px(img, x, y, BRASS_LO)
+            elif r > 4.5:
+                px(img, x, y, BRASS_MID)
+            elif r > 3.5:
+                px(img, x, y, BRASS_DARK)
+            else:
+                px(img, x, y, WOOD_DARK)
+
+
+def gen_dock_button():
+    """18x18 brass medallion with an arrow pointing right into a vertical
+    bar — visual metaphor for "send this window into the sidebar dock"."""
+    img = new_img(18, 18, CLEAR)
+    _draw_medallion(img)
+    # Arrow shaft (3 pixels horizontal, leftward bias).
+    for x in (6, 7, 8):
+        px(img, x, 8, BRASS_HI)
+        px(img, x, 9, BRASS_MID)
+    # Arrowhead (right-pointing chevron).
+    px(img, 9, 7, BRASS_HI)
+    px(img, 10, 8, BRASS_HI)
+    px(img, 10, 9, BRASS_HI)
+    px(img, 9, 10, BRASS_HI)
+    # Vertical "dock" bar to the right of the arrow.
+    for y in (6, 7, 8, 9, 10, 11):
+        px(img, 12, y, BRASS_HI)
+    img.save(f"{OUT_DIR}/dock_button.png")
+
+
+def gen_undock_button():
+    """18x18 brass medallion with a diagonal arrow exiting a frame in the
+    top-right — visual metaphor for "pop this docked panel out into a
+    floating window"."""
+    img = new_img(18, 18, CLEAR)
+    _draw_medallion(img)
+    # Small frame in the bottom-left quadrant (3x3 hollow square).
+    for x in (5, 6, 7):
+        px(img, x, 12, BRASS_HI)
+        px(img, x, 10, BRASS_HI)
+    for y in (10, 11, 12):
+        px(img, 5, y, BRASS_HI)
+        px(img, 7, y, BRASS_HI)
+    # Diagonal arrow exiting toward the top-right (4-pixel diagonal).
+    for i in range(4):
+        px(img, 8 + i, 9 - i, BRASS_HI)
+    # Arrowhead: two pixels marking the tip of the diagonal.
+    px(img, 12, 5, BRASS_HI)
+    px(img, 11, 5, BRASS_HI)
+    px(img, 12, 6, BRASS_HI)
+    img.save(f"{OUT_DIR}/undock_button.png")
+
+
+def gen_resize_grip():
+    """16x10 horizontal brass grip used by docked-panel resize handles
+    (drag the bottom edge to resize the panel vertically).
+
+    Dark wood border top + bottom, brass middle band with three pairs of
+    raised pinstripe dashes acting as a "drag-this-edge" affordance. Tile
+    horizontally across the panel's full width.
+    """
+    img = new_img(16, 10, WOOD_DARK)
+    # Outer outline top + bottom, no left/right (tiles horizontally).
+    hline(img, 0, 0, 16, OUTLINE)
+    hline(img, 0, 9, 16, OUTLINE)
+    # Brass band background spanning the middle 6 rows.
+    for y in (2, 3, 4, 5, 6, 7):
+        for x in range(16):
+            px(img, x, y, BRASS_LO if y in (2, 7) else BRASS_MID)
+    # Top + bottom shadow rows just inside the outline.
+    hline(img, 0, 1, 16, BRASS_DARK)
+    hline(img, 0, 8, 16, BRASS_DARK)
+    # Three pairs of pinstripe grip dashes (highlight + shadow). Centered
+    # vertically. Spaced at x = 2, 8, 14 for visual rhythm.
+    for cx in (2, 8, 14):
+        # Two-pixel-wide stub.
+        for ox in (0, 1):
+            px(img, cx + ox, 3, BRASS_HI)
+            px(img, cx + ox, 4, BRASS_MID)
+            px(img, cx + ox, 5, BRASS_LO)
+            px(img, cx + ox, 6, BRASS_DARK)
+    img.save(f"{OUT_DIR}/resize_grip.png")
 
 
 def gen_resize_corner():
@@ -382,6 +462,9 @@ def main():
     gen_divider()
     gen_close_icon()
     gen_close_button()
+    gen_dock_button()
+    gen_undock_button()
+    gen_resize_grip()
     gen_resize_corner()
     print(f"Generated theme assets in {OUT_DIR}/")
 

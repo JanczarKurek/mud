@@ -18,7 +18,14 @@ pub struct UiThemeAssets {
     pub divider: Handle<Image>,
     pub close_icon: Handle<Image>,
     pub close_button: Handle<Image>,
+    pub dock_button: Handle<Image>,
+    pub undock_button: Handle<Image>,
     pub resize_corner: Handle<Image>,
+    pub resize_grip: Handle<Image>,
+    /// Tile-mode slicer for `resize_grip` — keeps the 16-px wide texture
+    /// at native pixel size while it stretches horizontally across the
+    /// docked panel's full width.
+    pub resize_grip_slicer: TextureSlicer,
 }
 
 impl UiThemeAssets {
@@ -35,7 +42,19 @@ impl UiThemeAssets {
             divider: asset_server.load("ui/theme/divider.png"),
             close_icon: asset_server.load("ui/theme/close_icon.png"),
             close_button: asset_server.load("ui/theme/close_button.png"),
+            dock_button: asset_server.load("ui/theme/dock_button.png"),
+            undock_button: asset_server.load("ui/theme/undock_button.png"),
             resize_corner: asset_server.load("ui/theme/resize_corner.png"),
+            resize_grip: asset_server.load("ui/theme/resize_grip.png"),
+            resize_grip_slicer: TextureSlicer {
+                // Zero border = the whole 16x10 image is the "center"
+                // region, tiled at native pixel size across the full
+                // width of the docked panel.
+                border: BorderRect::all(0.0),
+                center_scale_mode: SliceScaleMode::Tile { stretch_value: 1.0 },
+                sides_scale_mode: SliceScaleMode::Stretch,
+                max_corner_scale: 1.0,
+            },
         }
     }
 
@@ -53,6 +72,10 @@ impl UiThemeAssets {
 
     pub fn slot_image_mode(&self) -> NodeImageMode {
         NodeImageMode::Sliced(self.slot_frame_slicer.clone())
+    }
+
+    pub fn resize_grip_image_mode(&self) -> NodeImageMode {
+        NodeImageMode::Sliced(self.resize_grip_slicer.clone())
     }
 }
 

@@ -43,6 +43,10 @@ pub enum MovableWindowId {
     /// learned recipe with input availability indicators and a Craft
     /// button per row.
     RecipeBook,
+    /// Floating-mode status panel (HP/MP/XP). Singleton. Spawned by
+    /// `sync_status_panel_floating_lifecycle` when `StatusPanelMode`
+    /// flips to `Floating`; despawned when it flips back to `Mounted`.
+    StatusPanel,
 }
 
 #[derive(Component)]
@@ -261,13 +265,13 @@ pub fn spawn_movable_window(
     }
 }
 
-/// Shared visual for any "X" close button in a movable window — the brass
-/// medallion (no rectangular frame underneath). `marker` distinguishes
-/// which close-handler picks up the click (the standard despawn handler
-/// vs. Dialog's `DialogEnd` emission vs. Trade's `CancelTrade`).
-pub fn spawn_themed_close_button<M: Bundle>(
+/// Shared visual for any 18x18 brass-medallion title-bar button (close,
+/// dock-toggle, etc.). `image` is the medallion texture (e.g.
+/// `theme.close_button.clone()`); `marker` distinguishes which click
+/// handler picks up the press.
+pub fn spawn_themed_icon_button<M: Bundle>(
     parent: &mut ChildSpawnerCommands,
-    theme: &UiThemeAssets,
+    image: Handle<Image>,
     marker: M,
 ) {
     parent.spawn((
@@ -278,9 +282,19 @@ pub fn spawn_themed_close_button<M: Bundle>(
             height: px(18.0),
             ..default()
         },
-        ImageNode::new(theme.close_button.clone()),
+        ImageNode::new(image),
         BackgroundColor(Color::NONE),
     ));
+}
+
+/// Convenience wrapper for the close-X medallion. Equivalent to calling
+/// [`spawn_themed_icon_button`] with `theme.close_button`.
+pub fn spawn_themed_close_button<M: Bundle>(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
+    marker: M,
+) {
+    spawn_themed_icon_button(parent, theme.close_button.clone(), marker);
 }
 
 /// Spawn the default close button as a child of `parent` (typically the

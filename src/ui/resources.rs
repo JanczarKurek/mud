@@ -221,6 +221,26 @@ pub struct DockedPanelState {
     pub panels: Vec<DockedPanel>,
 }
 
+/// Whether the status (HP/MP/XP/effects) panel is currently docked in the
+/// right sidebar or floating as a `MovableWindow`. The floating variant
+/// remembers its last on-screen position so re-popping out lands the
+/// window where it was before the user re-docked it.
+///
+/// Pilot for the broader "any HUD panel can be mounted or floated"
+/// system. If this works well, the same shape will be reused for
+/// Equipment / Backpack / etc.
+#[derive(Resource, Clone, Copy, Debug)]
+pub enum StatusPanelMode {
+    Mounted,
+    Floating { last_position: Vec2 },
+}
+
+impl Default for StatusPanelMode {
+    fn default() -> Self {
+        Self::Mounted
+    }
+}
+
 impl DockedPanelState {
     pub const STATUS_PANEL_ID: usize = 0;
     pub const EQUIPMENT_PANEL_ID: usize = 1;
@@ -421,7 +441,7 @@ impl Default for DockedPanelState {
                     kind: DockedPanelKind::Status,
                     title: "Status".to_owned(),
                     height: Self::DEFAULT_STATUS_PANEL_HEIGHT,
-                    closable: false,
+                    closable: true,
                     resizable: true,
                     movable: true,
                 },
@@ -430,7 +450,7 @@ impl Default for DockedPanelState {
                     kind: DockedPanelKind::Equipment,
                     title: "Equipment".to_owned(),
                     height: Self::DEFAULT_EQUIPMENT_PANEL_HEIGHT,
-                    closable: false,
+                    closable: true,
                     resizable: true,
                     movable: true,
                 },
@@ -439,7 +459,7 @@ impl Default for DockedPanelState {
                     kind: DockedPanelKind::Backpack,
                     title: "Backpack".to_owned(),
                     height: Self::DEFAULT_BACKPACK_PANEL_HEIGHT,
-                    closable: false,
+                    closable: true,
                     resizable: true,
                     movable: true,
                 },

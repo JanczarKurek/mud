@@ -17,12 +17,14 @@ use crate::ui::components::{
     HudMinimapZoomLabel, HudMinimapZoomOutButton, ItemSlotButton, ItemSlotImage, ItemSlotKind,
     ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot, MagicEffectsLabel, ManaFill,
     ManaLabel, MinimapCanvas, MinimapMode, MinimapView, PythonConsolePanel, PythonConsoleTerminal,
-    RegenBuffLabel, RightSidebarRoot, StatusPanelContent, TakePartialAmountLabel,
+    RegenBuffLabel, RightSidebarRoot, StatusPanelContent, StatusPanelUndockButton,
+    TakePartialAmountLabel,
     TakePartialCancelButton, TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton,
     TakePartialPopupRoot, TradeButtonLabel, TradeColumn,
 };
 use crate::ui::menu_bar::{spawn_menu_bar, MENU_BAR_HEIGHT};
 use crate::ui::minimap::{make_minimap_image, FULL_MAP_BODY_SIZE, HUD_MINIMAP_SIZE};
+use crate::ui::movable_window::{spawn_themed_close_button, spawn_themed_icon_button};
 use crate::ui::resources::{DockedPanelState, FullMapWindowState, HudMinimapSettings};
 use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton, ThemedPanel};
 use crate::ui::theme::{Palette, UiThemeAssets};
@@ -623,8 +625,26 @@ fn spawn_status_panel(
     theme: &UiThemeAssets,
     palette: &Palette,
 ) {
-    spawn_docked_panel(parent, panel_id, theme, palette, |body| {
-        body.spawn((
+    let undock_image = theme.undock_button.clone();
+    spawn_docked_panel_with_extras(
+        parent,
+        panel_id,
+        theme,
+        palette,
+        |title_extras| {
+            spawn_themed_icon_button(title_extras, undock_image, StatusPanelUndockButton);
+        },
+        |body| spawn_status_panel_body(body, palette),
+    );
+}
+
+/// Body contents of the status panel — HP/MP/XP bars plus the regen,
+/// magic-effects, and carry-weight labels. Shared between the docked
+/// (`spawn_status_panel`) and floating (`spawn_floating_status_window`)
+/// variants so both stay in sync.
+pub(crate) fn spawn_status_panel_body(parent: &mut ChildSpawnerCommands, palette: &Palette) {
+    parent
+        .spawn((
             Node {
                 width: percent(100.0),
                 flex_direction: FlexDirection::Column,
@@ -696,7 +716,6 @@ fn spawn_status_panel(
                 CarryWeightLabel,
             ));
         });
-    });
 }
 
 fn spawn_equipment_panel(
@@ -945,6 +964,22 @@ fn spawn_docked_panel(
     palette: &Palette,
     spawn_body: impl FnOnce(&mut ChildSpawnerCommands),
 ) {
+    spawn_docked_panel_with_extras(parent, panel_id, theme, palette, |_| {}, spawn_body);
+}
+
+/// `spawn_docked_panel`, but with an extra closure that runs in the
+/// title-bar row right before the close-X button. Used by panels that
+/// want additional title-bar controls (e.g. the status panel's undock /
+/// pop-out button). Passing `|_| {}` as `spawn_title_extras` is
+/// equivalent to calling [`spawn_docked_panel`] directly.
+fn spawn_docked_panel_with_extras(
+    parent: &mut ChildSpawnerCommands,
+    panel_id: usize,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+    spawn_title_extras: impl FnOnce(&mut ChildSpawnerCommands),
+    spawn_body: impl FnOnce(&mut ChildSpawnerCommands),
+) {
     parent
         .spawn((
             Node {
@@ -981,7 +1016,7 @@ fn spawn_docked_panel(
                     DockedPanelDragHandle { panel_id },
                     ImageNode::new(theme.title_bar.clone())
                         .with_mode(theme.title_bar_image_mode())
-                        .with_color(palette.surface_title_bar),
+                        .with_color(Color::WHITE),
                     BackgroundColor(Color::NONE),
                 ))
                 .with_children(|title_row| {
@@ -995,12 +1030,28 @@ fn spawn_docked_panel(
                         TextColor(palette.text_primary),
                     ));
 
-                    spawn_close_button(
-                        title_row,
-                        theme,
-                        palette,
-                        DockedPanelCloseButton { panel_id },
-                    );
+                    // Right-cluster: any caller-supplied title-bar
+                    // buttons (e.g. the status panel's undock arrow)
+                    // sit directly next to the close-X. Wrapping them
+                    // in a single row keeps SpaceBetween from pushing
+                    // a lone extras button to the centre.
+                    title_row
+                        .spawn((
+                            Node {
+                                column_gap: px(4.0),
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            BackgroundColor(Color::NONE),
+                        ))
+                        .with_children(|button_cluster| {
+                            spawn_title_extras(button_cluster);
+                            spawn_themed_close_button(
+                                button_cluster,
+                                theme,
+                                DockedPanelCloseButton { panel_id },
+                            );
+                        });
                 });
 
             panel
@@ -1022,49 +1073,14 @@ fn spawn_docked_panel(
             panel.spawn((
                 Node {
                     width: percent(100.0),
-                    height: px(8.0),
+                    height: px(10.0),
                     ..default()
                 },
                 DockedPanelResizeHandle { panel_id },
-                BackgroundColor(palette.surface_resize_handle),
-            ));
-        });
-}
-
-fn spawn_close_button<T: Component>(
-    parent: &mut ChildSpawnerCommands,
-    theme: &UiThemeAssets,
-    palette: &Palette,
-    marker: T,
-) {
-    let (bg, border, text) = idle_colors(palette, ButtonStyle::Danger, false);
-    parent
-        .spawn((
-            Button,
-            ThemedButton::new(ButtonStyle::Danger),
-            marker,
-            Node {
-                width: px(22.0),
-                height: px(22.0),
-                border: UiRect::all(px(1.0)),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                ..default()
-            },
-            ImageNode::new(theme.button_frame.clone())
-                .with_mode(theme.button_image_mode())
-                .with_color(bg),
-            BackgroundColor(Color::NONE),
-            BorderColor::all(border),
-        ))
-        .with_children(|button| {
-            button.spawn((
-                Text::new("x"),
-                TextFont {
-                    font_size: 14.0,
-                    ..default()
-                },
-                TextColor(text),
+                ImageNode::new(theme.resize_grip.clone())
+                    .with_mode(theme.resize_grip_image_mode())
+                    .with_color(Color::WHITE),
+                BackgroundColor(Color::NONE),
             ));
         });
 }
@@ -1598,10 +1614,9 @@ fn spawn_full_map_window(
                                         "+",
                                         FullMapZoomInButton,
                                     );
-                                    spawn_close_button(
+                                    spawn_themed_close_button(
                                         controls,
                                         theme,
-                                        palette,
                                         FullMapCloseButton,
                                     );
                                 });

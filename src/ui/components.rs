@@ -254,6 +254,24 @@ pub struct ContainerPanelContent;
 #[derive(Component)]
 pub struct StatusPanelContent;
 
+/// Title-bar button on the docked status panel that pops the panel out
+/// into a floating `MovableWindow`. Click flips `StatusPanelMode` to
+/// `Floating`.
+#[derive(Component)]
+pub struct StatusPanelUndockButton;
+
+/// Title-bar button on the floating status window that re-docks the
+/// panel back into the right sidebar. Click flips `StatusPanelMode` to
+/// `Mounted`.
+#[derive(Component)]
+pub struct StatusPanelDockButton;
+
+/// Marker on the root of the floating status window (the
+/// `MovableWindow` spawned when `StatusPanelMode == Floating`). Used by
+/// the lifecycle system to find / despawn the window.
+#[derive(Component)]
+pub struct StatusPanelFloatingRoot;
+
 #[derive(Component)]
 pub struct EquipmentPanelContent;
 

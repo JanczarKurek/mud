@@ -281,10 +281,16 @@ pub fn handle_docked_panel_close_buttons(
                 Some(DockedPanelKind::PouchInBackpack { .. }) => {
                     docked_panel_state.close_panel(button.panel_id);
                 }
-                Some(DockedPanelKind::Minimap)
-                | Some(DockedPanelKind::Status)
+                // Status / Equipment / Backpack are menu-bar-toggleable
+                // panels — the close-X mirrors the menu-bar toggle (hide
+                // from the sidebar; re-show via the menu). Minimap stays
+                // a no-op because it isn't menu-toggleable yet.
+                Some(DockedPanelKind::Status)
                 | Some(DockedPanelKind::Equipment)
-                | Some(DockedPanelKind::Backpack) => {}
+                | Some(DockedPanelKind::Backpack) => {
+                    docked_panel_state.close_panel(button.panel_id);
+                }
+                Some(DockedPanelKind::Minimap) => {}
                 None => {}
             }
             return;
@@ -351,9 +357,6 @@ pub fn sync_carry_weight_label(
         With<crate::ui::components::CarryWeightLabel>,
     >,
 ) {
-    let Ok((mut text, mut color)) = label_query.single_mut() else {
-        return;
-    };
     let (new_text, new_color) = match client_state.carry_weight {
         Some(carry) if carry.soft_cap_kg > 0.0 => {
             let label = if carry.encumbered {
@@ -376,11 +379,18 @@ pub fn sync_carry_weight_label(
         }
         _ => (String::new(), palette.text_value),
     };
-    if text.0 != new_text {
-        text.0 = new_text;
-    }
-    if color.0 != new_color {
-        color.0 = new_color;
+    // Iterate (rather than `.single_mut`) because the status panel can
+    // exist in two places at once — the docked sidebar instance and a
+    // floating MovableWindow — when `StatusPanelMode == Floating` is
+    // being transitioned in/out. Each `CarryWeightLabel` gets the same
+    // text.
+    for (mut text, mut color) in &mut label_query {
+        if text.0 != new_text {
+            text.0 = new_text.clone();
+        }
+        if color.0 != new_color {
+            color.0 = new_color;
+        }
     }
 }
 
@@ -1105,9 +1115,6 @@ pub fn sync_regen_buff_label(
     client_state: Res<ClientGameState>,
     mut label_query: Query<&mut Text, With<crate::ui::components::RegenBuffLabel>>,
 ) {
-    let Ok(mut text) = label_query.single_mut() else {
-        return;
-    };
     let new_text = match &client_state.regen_buff {
         Some(buff) if buff.remaining_seconds > 0.0 => {
             let total_seconds = buff.remaining_seconds.ceil() as i32;
@@ -1117,8 +1124,11 @@ pub fn sync_regen_buff_label(
         }
         _ => String::new(),
     };
-    if text.0 != new_text {
-        text.0 = new_text;
+    // See `sync_carry_weight_label` for why we iterate.
+    for mut text in &mut label_query {
+        if text.0 != new_text {
+            text.0 = new_text.clone();
+        }
     }
 }
 
@@ -1126,9 +1136,6 @@ pub fn sync_magic_effects_label(
     client_state: Res<ClientGameState>,
     mut label_query: Query<&mut Text, With<crate::ui::components::MagicEffectsLabel>>,
 ) {
-    let Ok(mut text) = label_query.single_mut() else {
-        return;
-    };
     let new_text = if client_state.active_effects.is_empty() {
         String::new()
     } else {
@@ -1144,8 +1151,11 @@ pub fn sync_magic_effects_label(
             .collect::<Vec<_>>()
             .join("\n")
     };
-    if text.0 != new_text {
-        text.0 = new_text;
+    // See `sync_carry_weight_label` for why we iterate.
+    for mut text in &mut label_query {
+        if text.0 != new_text {
+            text.0 = new_text.clone();
+        }
     }
 }
 
