@@ -345,6 +345,18 @@ pub fn compute_events_for_peer(
                     recipes: projected_recipes,
                 });
             }
+
+            // Replicate the per-character Log. Whole-state snapshot on any
+            // change — fine until log payloads grow large enough that
+            // per-entry deltas become worthwhile.
+            let projected_log = stash
+                .map(crate::log::LogState::from_stash)
+                .unwrap_or_default();
+            if previous.log_state != projected_log {
+                events.push(GameEvent::LogStateChanged {
+                    state: projected_log,
+                });
+            }
         } else {
             seen_remote_player_ids.push(identity.id);
             let position = SpacePosition::new(space_resident.space_id, *tile_position);
@@ -816,6 +828,9 @@ pub fn apply_event_to_state(state: &mut ClientGameState, event: GameEvent) {
             // Pure narration event — chat-log changes arrive via
             // `ChatLogChanged`; nothing to fold into client state here.
         }
+        GameEvent::LogStateChanged { state: log_state } => {
+            state.log_state = log_state;
+        }
     }
 }
 
@@ -994,6 +1009,11 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
         GameEvent::ItemCrafted { recipe_id } => {
             info!("client crafted via recipe {recipe_id}")
         }
+        GameEvent::LogStateChanged { state } => debug!(
+            "client log state replaced: {} sections, {} subentries",
+            state.sections.len(),
+            state.subentry_count(),
+        ),
     }
 }
 

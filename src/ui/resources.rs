@@ -693,6 +693,7 @@ pub enum MenuAction {
     ToggleBackpack,
     ToggleEquipment,
     ToggleMinimap,
+    ToggleLog,
     Logout,
     Quit,
 }

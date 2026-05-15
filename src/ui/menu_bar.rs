@@ -38,6 +38,7 @@ const MENU_DEFINITIONS: &[MenuDefinition] = &[
             ("Inventory", MenuAction::ToggleBackpack),
             ("Character", MenuAction::ToggleStatus),
             ("Equipment", MenuAction::ToggleEquipment),
+            ("Log  (L)", MenuAction::ToggleLog),
         ],
     },
     MenuDefinition {
@@ -252,6 +253,9 @@ pub fn apply_menu_actions(
     mut connection: Option<ResMut<TcpClientConnection>>,
     mut pending_saves: Option<ResMut<PendingPlayerSaves>>,
     local_players: Query<(Entity, &PlayerIdentity), With<Player>>,
+    theme: Option<Res<UiThemeAssets>>,
+    palette: Option<Res<Palette>>,
+    movable_windows: Query<(Entity, &crate::ui::movable_window::MovableWindow)>,
 ) {
     for action in pending.actions.drain(..) {
         match action {
@@ -269,6 +273,14 @@ pub fn apply_menu_actions(
             }
             MenuAction::ToggleMinimap => {
                 toggle_panel::<crate::ui::minimap_panel::MinimapPanel>(&mut panel_state);
+            }
+            MenuAction::ToggleLog => {
+                crate::ui::log_panel::toggle_log_window(
+                    &mut commands,
+                    theme.as_deref(),
+                    palette.as_deref(),
+                    &movable_windows,
+                );
             }
             MenuAction::Logout => {
                 do_logout(

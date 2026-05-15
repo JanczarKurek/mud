@@ -581,6 +581,13 @@ pub fn process_game_commands(
                     "process_game_commands saw a chat command — check system ordering"
                 );
             }
+            GameCommand::UpsertLogEntry { .. }
+            | GameCommand::DeleteLogEntry { .. }
+            | GameCommand::SetQuestPlayerNotes { .. } => {
+                // Drained by `process_log_commands` (LogServerPlugin) in
+                // `CommandIntercept` before this system runs.
+                bevy::log::warn!("process_game_commands saw a log command — check system ordering");
+            }
         }
     }
 }

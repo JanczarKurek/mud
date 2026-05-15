@@ -23,6 +23,7 @@ use crate::diagnostics::DiagnosticsPlugin;
 use crate::dialog::DialogServerPlugin;
 use crate::editor::EditorPlugin;
 use crate::game::{GameClientPlugin, GameServerPlugin};
+use crate::log::{LogClientPlugin, LogServerPlugin};
 use crate::magic::MagicPlugin;
 use crate::network::resources::TcpClientTlsConfig;
 use crate::network::transport::{build_client_tls_config, load_server_tls_config};
@@ -157,6 +158,7 @@ impl Plugin for GameAppPlugin {
                     CombatPlugin,
                     MagicPlugin,
                     CraftingServerPlugin,
+                    LogServerPlugin,
                     PersistenceServerPlugin { save_path },
                     AccountsServerPlugin { db_path },
                 ));
@@ -192,6 +194,7 @@ impl Plugin for GameAppPlugin {
                     EditorPlugin,
                     DiagnosticsPlugin,
                     CraftingClientPlugin,
+                    LogClientPlugin,
                     // Added after DefaultPlugins so YarnSpinnerPlugin can see
                     // AssetServer for `.yarn` compilation.
                     DialogServerPlugin,
@@ -227,6 +230,7 @@ impl Plugin for GameAppPlugin {
                     PlayerClientPlugin,
                     MagicPlugin,
                     CraftingClientPlugin,
+                    LogClientPlugin,
                     UiPlugin,
                     ClientEffectsPlugin,
                     ScriptingPlugin,
@@ -244,14 +248,16 @@ impl Plugin for GameAppPlugin {
                     },
                     AssetSyncScreenPlugin,
                     AuthScreenPlugin,
+                ))
+                .add_plugins((
                     CharacterSelectScreenPlugin {
                         runtime: self.runtime,
                     },
                     CharacterCreateScreenPlugin {
                         runtime: self.runtime,
                     },
-                ))
-                .add_plugins(AboutScreenPlugin);
+                    AboutScreenPlugin,
+                ));
             }
             AppRuntime::HeadlessServer => {
                 let defaults = server_paths();
@@ -268,6 +274,7 @@ impl Plugin for GameAppPlugin {
                     CombatPlugin,
                     MagicPlugin,
                     CraftingServerPlugin,
+                    LogServerPlugin,
                     TerminalCtrlCHandlerPlugin,
                     PersistenceServerPlugin { save_path },
                     AccountsServerPlugin { db_path },

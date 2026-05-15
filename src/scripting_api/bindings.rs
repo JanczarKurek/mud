@@ -44,6 +44,9 @@ Per-character stash (anyone can read/write):
   world.stash_get(key)                   world.stash_set(key, value)
   world.stash_has(key)                   world.stash_delete(key)
 
+Per-character log (quest scripts only):
+  world.log_write(subsection, title, body)
+
 Quest hooks (quest scripts only):
   world.set_var(name, value)             world.get_var(name)
   world.complete_quest(qid)              world.fail_quest(qid)
@@ -882,6 +885,33 @@ pub mod world_api {
             Some(Err(err)) => Err(vm.new_runtime_error(err.as_string())),
             None => Err(vm.new_runtime_error("stash_set: no API context installed".to_owned())),
         }
+    }
+
+    /// `log_write(subsection, title, body)` — append (or replace) an entry
+    /// in the caller's `Quests` log section. Marks the entry as engine-owned:
+    /// the player can't edit `body` from the UI, but can add a free-form
+    /// `player_notes` tail under it. Use for quest journal narration —
+    /// `world.log_write("demo_hunter", "Step 1", "Travel north")`.
+    #[pyfunction]
+    fn log_write(
+        subsection: String,
+        title: String,
+        body: String,
+        vm: &VirtualMachine,
+    ) -> PyResult<()> {
+        if subsection.is_empty() {
+            return Err(vm.new_value_error("log_write: subsection is required".to_owned()));
+        }
+        queue(
+            vm,
+            GameCommand::UpsertLogEntry {
+                section: crate::log::QUESTS_SECTION.to_owned(),
+                subsection,
+                title,
+                body,
+                owner: crate::log::LogOwner::Engine,
+            },
+        )
     }
 
     /// `stash_delete(key)` — remove a key from the caller's stash. No-op

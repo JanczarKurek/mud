@@ -57,6 +57,9 @@ pub enum MovableWindowId {
     CurrentTargetPanel,
     /// Floating-mode minimap panel. Singleton.
     MinimapPanel,
+    /// Per-character Log window (quests + notes). Singleton, toggled by
+    /// `KeyL`. Same lifecycle pattern as `RecipeBook` — close button only.
+    Log,
     /// Floating-mode container panel. There can be up to
     /// `DockedPanelState::MAX_OPEN_CONTAINERS` instances, distinguished
     /// by the sidebar slot they came from (`panel_id`). The underlying

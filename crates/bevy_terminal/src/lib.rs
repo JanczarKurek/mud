@@ -11,11 +11,16 @@
 //! [`terminal_not_focused`] run condition.
 
 mod systems;
+mod textedit;
 mod widget;
 
 pub use systems::{
     terminal_blink_cursor, terminal_has_focus, terminal_input, terminal_not_focused,
     terminal_pin_scroll, terminal_sync_buffer, terminal_sync_input_line,
+};
+pub use textedit::{
+    spawn_text_edit, spawn_text_edit_with, text_edit_blink_caret, text_edit_input, text_edit_sync,
+    TextEdit, TextEditContent, TextEditPlugin, TextEditRoot, TextEditSubmit,
 };
 pub use widget::{
     spawn_terminal, LineStyle, Terminal, TerminalConfig, TerminalCursor, TerminalFocus,

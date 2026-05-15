@@ -10,6 +10,7 @@ pub mod dialog;
 pub mod editor;
 pub mod floor_viewer;
 pub mod game;
+pub mod log;
 pub mod magic;
 pub mod network;
 pub mod npc;

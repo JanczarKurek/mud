@@ -290,4 +290,30 @@ pub enum GameCommand {
     Say {
         text: String,
     },
+    /// Create or replace a log entry for the acting player. Drained by
+    /// `process_log_commands` (LogServerPlugin) in `CommandIntercept`.
+    ///
+    /// Validation: server enforces length caps and owner-gating. Player
+    /// writes with `owner: Engine` are rejected. Engine writes preserve
+    /// any existing `player_notes` on the targeted entry.
+    UpsertLogEntry {
+        section: String,
+        subsection: String,
+        title: String,
+        body: String,
+        owner: crate::log::LogOwner,
+    },
+    /// Remove a log entry. Server rejects deletes targeting engine-owned
+    /// entries.
+    DeleteLogEntry {
+        section: String,
+        subsection: String,
+    },
+    /// Update the player-editable notes tail under a quest entry. Only the
+    /// `player_notes` field is mutated; the engine-owned body is untouched.
+    /// Rejected when the targeted quest entry does not exist.
+    SetQuestPlayerNotes {
+        quest_name: String,
+        text: String,
+    },
 }

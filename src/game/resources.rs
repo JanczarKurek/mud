@@ -414,6 +414,13 @@ pub enum GameEvent {
     ItemCrafted {
         recipe_id: String,
     },
+    /// Baseline / corrective replication of the local player's `LogState`
+    /// (quests + notes). Same pattern as `LearnedRecipesChanged`: emitted
+    /// on bootstrap and whenever the projection detects drift between the
+    /// last-projected log and the player's `CharacterStash["log"]`.
+    LogStateChanged {
+        state: crate::log::LogState,
+    },
 }
 
 #[derive(Resource, Default)]
@@ -536,4 +543,8 @@ pub struct ClientGameState {
     /// iteration in the UI.
     #[serde(default)]
     pub learned_recipes: std::collections::BTreeSet<String>,
+    /// Local player's per-character log (Quests + Notes + future sections).
+    /// Folded from `GameEvent::LogStateChanged`. Drives the Log panel UI.
+    #[serde(default)]
+    pub log_state: crate::log::LogState,
 }

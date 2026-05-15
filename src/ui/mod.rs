@@ -6,6 +6,7 @@ pub mod current_target_panel;
 pub mod dialog;
 pub mod equipment_panel;
 pub mod item_details;
+pub mod log_panel;
 pub mod menu_bar;
 pub mod minimap;
 pub mod minimap_panel;
@@ -30,6 +31,10 @@ use bevy_terminal::TerminalFocusId;
 /// console / chat input.
 pub const PYTHON_CONSOLE_FOCUS_ID: TerminalFocusId = TerminalFocusId(1);
 pub const CHAT_TERMINAL_FOCUS_ID: TerminalFocusId = TerminalFocusId(2);
+/// Focus id for the per-character log panel's multi-line note editor.
+pub const LOG_NOTES_FOCUS_ID: TerminalFocusId = TerminalFocusId(3);
+/// Focus id for the log panel's click-to-edit title input.
+pub const LOG_TITLE_FOCUS_ID: TerminalFocusId = TerminalFocusId(4);
 
 use crate::app::state::ClientAppState;
 use crate::ui::backpack_panel::BackpackPanel;
