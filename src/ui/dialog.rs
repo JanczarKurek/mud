@@ -131,7 +131,9 @@ fn spawn_dialog_window(
         MOVABLE_WINDOW_DEFAULT_MIN_SIZE,
     );
 
-    commands.entity(spawned.root).insert(DialogPanelRoot);
+    commands
+        .entity(spawned.root)
+        .insert((DialogPanelRoot, crate::ui::components::HudRoot));
 
     // Dialog has its own close button that emits `DialogEnd` rather than
     // despawning the entity directly — the lifecycle handles the despawn

@@ -304,7 +304,9 @@ fn spawn_floating_window_for<P: MountablePanel>(
         MOVABLE_WINDOW_DEFAULT_MIN_SIZE,
     );
 
-    commands.entity(root).insert(P::FloatingRoot::new(key));
+    commands
+        .entity(root)
+        .insert((P::FloatingRoot::new(key), crate::ui::components::HudRoot));
 
     // Tag the auto-spawned title text with DockedPanelTitle so the
     // existing `sync_docked_panel_titles` system keeps both docked

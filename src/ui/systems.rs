@@ -520,6 +520,7 @@ fn spawn_character_sheet_overlay(commands: &mut Commands, state: &ClientGameStat
     commands
         .spawn((
             CharacterSheetOverlay,
+            crate::ui::components::HudRoot,
             Node {
                 position_type: PositionType::Absolute,
                 top: px(0.0),
@@ -753,6 +754,7 @@ fn spawn_death_summary_overlay(
     commands
         .spawn((
             DeathSummaryOverlay,
+            crate::ui::components::HudRoot,
             Node {
                 position_type: PositionType::Absolute,
                 top: px(0.0),

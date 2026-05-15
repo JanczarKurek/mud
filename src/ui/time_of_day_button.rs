@@ -106,6 +106,7 @@ pub fn spawn_time_of_day_button(commands: &mut Commands, asset_server: &AssetSer
         .spawn((
             Button,
             TimeOfDayButton,
+            crate::ui::components::HudRoot,
             Node {
                 position_type: PositionType::Absolute,
                 top: Val::Px(MENU_BAR_HEIGHT + 12.0),

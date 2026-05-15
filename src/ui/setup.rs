@@ -15,7 +15,7 @@ use crate::ui::components::{
     EquipmentPanelContent, EquipmentPanelUndockButton, EquipmentSlotButton, EquipmentSlotImage,
     ExperienceFill, ExperienceLabel, FullMapBodyRoot, FullMapCloseButton, FullMapWindowRoot,
     FullMapZoomInButton, FullMapZoomLabel, FullMapZoomOutButton, HealthFill, HealthLabel,
-    HudMinimapZoomInButton, HudMinimapZoomLabel, HudMinimapZoomOutButton, ItemSlotButton,
+    HudMinimapZoomInButton, HudMinimapZoomLabel, HudMinimapZoomOutButton, HudRoot, ItemSlotButton,
     ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot,
     MagicEffectsLabel, ManaFill, ManaLabel, MinimapCanvas, MinimapMode, MinimapPanelUndockButton,
     MinimapView, PythonConsolePanel, PythonConsoleTerminal, RegenBuffLabel, RightSidebarRoot,
@@ -41,16 +41,7 @@ pub fn spawn_hud(
     full_map_state: Res<FullMapWindowState>,
     theme: Res<UiThemeAssets>,
     palette: Res<Palette>,
-    existing_hud: Query<(), With<RightSidebarRoot>>,
 ) {
-    // OnEnter(InGame) re-fires whenever the player toggles into the map
-    // editor and back (and on respawn). The HUD has no matching OnExit
-    // teardown, so without this guard we'd accumulate one extra copy of every
-    // panel each cycle — and `Query::single()` lookups in the click handlers
-    // would silently fail from the second cycle onward.
-    if !existing_hud.is_empty() {
-        return;
-    }
     let theme = theme.clone();
     let palette = *palette;
     commands
@@ -65,6 +56,7 @@ pub fn spawn_hud(
                 ..default()
             },
             BackgroundColor(Color::NONE),
+            HudRoot,
         ))
         .with_children(|parent| {
             parent.spawn((
@@ -157,6 +149,7 @@ pub fn spawn_hud(
                 ..default()
             },
             BackgroundColor(Color::NONE),
+            HudRoot,
         ))
         .id();
 
@@ -282,6 +275,7 @@ pub fn spawn_hud(
                 ..default()
             },
             DragPreviewRoot,
+            HudRoot,
             Visibility::Hidden,
             GlobalZIndex(i32::MAX - 6),
             ImageNode::new(theme.panel_frame.clone())
@@ -352,6 +346,7 @@ pub fn spawn_hud(
                 ..default()
             },
             ItemTooltipRoot,
+            HudRoot,
             Visibility::Hidden,
             GlobalZIndex(i32::MAX - 4),
             ImageNode::new(theme.panel_frame.clone())
@@ -386,6 +381,7 @@ pub fn spawn_hud(
                 ..default()
             },
             ContextMenuRoot,
+            HudRoot,
             Visibility::Hidden,
             GlobalZIndex(i32::MAX - 10),
             ImageNode::new(theme.panel_frame.clone())
@@ -446,6 +442,7 @@ fn spawn_take_partial_popup(commands: &mut Commands, theme: &UiThemeAssets, pale
                 ..default()
             },
             TakePartialPopupRoot,
+            HudRoot,
             Visibility::Hidden,
             GlobalZIndex(i32::MAX - 5),
             BackgroundColor(palette.surface_overlay_dim),
@@ -593,6 +590,7 @@ fn spawn_character_sheet_button(commands: &mut Commands, asset_server: &AssetSer
         .spawn((
             Button,
             crate::ui::components::CharacterSheetButton,
+            HudRoot,
             Node {
                 position_type: PositionType::Absolute,
                 top: px(MENU_BAR_HEIGHT + 12.0),
@@ -1645,6 +1643,7 @@ fn spawn_full_map_window(
                 ..default()
             },
             FullMapWindowRoot,
+            HudRoot,
             GlobalZIndex(i32::MAX - 8),
             BackgroundColor(palette.surface_overlay_dim),
         ))

@@ -3,6 +3,12 @@ use bevy::prelude::*;
 use crate::ui::resources::{MenuAction, MenuBarId, MinimapZoom};
 use crate::world::object_definitions::EquipmentSlot;
 
+/// Marker on every top-level HUD entity spawned by `spawn_hud`. Used by the
+/// `OnExit(InGame)` teardown to despawn the entire HUD recursively when the
+/// player logs out back to the title screen.
+#[derive(Component)]
+pub struct HudRoot;
+
 #[derive(Component)]
 pub struct HealthFill;
 

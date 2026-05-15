@@ -213,7 +213,9 @@ fn spawn_trade_window(
         crate::ui::resources::TradePopupState::MIN_SIZE,
     );
 
-    commands.entity(spawned.root).insert(TradePopupRoot);
+    commands
+        .entity(spawned.root)
+        .insert((TradePopupRoot, crate::ui::components::HudRoot));
 
     // Trade has its own close button that emits `CancelTrade` rather than
     // despawning the entity directly — the despawn happens via the

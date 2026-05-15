@@ -2,8 +2,12 @@ use bevy::app::AppExit;
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, UiGlobalTransform};
 
+use crate::app::state::ClientAppState;
+use crate::game::resources::ClientGameState;
+use crate::network::resources::{PendingPlayerSave, PendingPlayerSaves, TcpClientConnection};
+use crate::player::components::{Player, PlayerIdentity};
 use crate::ui::components::{
-    MenuBarItemButton, MenuBarRoot, MenuDropdownEntryButton, MenuDropdownRoot,
+    HudRoot, MenuBarItemButton, MenuBarRoot, MenuDropdownEntryButton, MenuDropdownRoot,
 };
 use crate::ui::resources::{
     DockedPanelState, FullMapWindowState, MenuAction, MenuBarId, OpenMenuState, PendingMenuActions,
@@ -23,7 +27,7 @@ const MENU_DEFINITIONS: &[MenuDefinition] = &[
     MenuDefinition {
         id: MenuBarId::File,
         label: "File",
-        entries: &[("Quit", MenuAction::Quit)],
+        entries: &[("Logout", MenuAction::Logout), ("Quit", MenuAction::Quit)],
     },
     MenuDefinition {
         id: MenuBarId::View,
@@ -65,6 +69,7 @@ pub fn spawn_menu_bar(commands: &mut Commands, theme: &UiThemeAssets, palette: &
                 ..default()
             },
             MenuBarRoot,
+            HudRoot,
             ImageNode::new(theme.title_bar.clone())
                 .with_mode(theme.title_bar_image_mode())
                 .with_color(palette.surface_title_bar),
@@ -122,6 +127,7 @@ pub fn spawn_menu_bar(commands: &mut Commands, theme: &UiThemeAssets, palette: &
                 MenuDropdownRoot {
                     menu: definition.id,
                 },
+                HudRoot,
                 ImageNode::new(theme.panel_frame.clone())
                     .with_mode(theme.panel_image_mode())
                     .with_color(Color::WHITE),
@@ -235,11 +241,17 @@ pub fn sync_menu_dropdowns(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn apply_menu_actions(
+    mut commands: Commands,
     mut pending: ResMut<PendingMenuActions>,
     mut full_map_state: ResMut<FullMapWindowState>,
     mut panel_state: ResMut<DockedPanelState>,
     mut app_exit: MessageWriter<AppExit>,
+    mut next_state: ResMut<NextState<ClientAppState>>,
+    mut connection: Option<ResMut<TcpClientConnection>>,
+    mut pending_saves: Option<ResMut<PendingPlayerSaves>>,
+    local_players: Query<(Entity, &PlayerIdentity), With<Player>>,
 ) {
     for action in pending.actions.drain(..) {
         match action {
@@ -258,11 +270,49 @@ pub fn apply_menu_actions(
             MenuAction::ToggleMinimap => {
                 toggle_panel::<crate::ui::minimap_panel::MinimapPanel>(&mut panel_state);
             }
+            MenuAction::Logout => {
+                do_logout(
+                    &mut commands,
+                    &mut next_state,
+                    connection.as_deref_mut(),
+                    pending_saves.as_deref_mut(),
+                    &local_players,
+                );
+            }
             MenuAction::Quit => {
                 app_exit.write(AppExit::Success);
             }
         }
     }
+}
+
+/// Tear down the active session and return to the title screen.
+///
+/// TcpClient mode: drops the socket; the server's `disconnect_peer` flushes
+/// the player save. EmbeddedClient mode: queues a save via
+/// `PendingPlayerSaves` (drained by `persist_disconnected_players` in the
+/// `Last` schedule) — the same path used when a TCP peer disconnects.
+fn do_logout(
+    commands: &mut Commands,
+    next_state: &mut NextState<ClientAppState>,
+    connection: Option<&mut TcpClientConnection>,
+    pending_saves: Option<&mut PendingPlayerSaves>,
+    local_players: &Query<(Entity, &PlayerIdentity), With<Player>>,
+) {
+    if let Some(connection) = connection {
+        connection.stream = None;
+        connection.read_buffer.clear();
+    }
+    if let Some(pending_saves) = pending_saves {
+        for (entity, identity) in local_players.iter() {
+            pending_saves.entries.push(PendingPlayerSave {
+                character_id: identity.id.0 as i64,
+                player_entity: entity,
+            });
+        }
+    }
+    commands.insert_resource(ClientGameState::default());
+    next_state.set(ClientAppState::TitleScreen);
 }
 
 /// Generic toggle for any singleton [`MountablePanel`] — close if open,

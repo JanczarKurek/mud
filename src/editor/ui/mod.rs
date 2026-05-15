@@ -63,6 +63,8 @@ pub struct EditorSaveAsTemplateButton;
 pub struct EditorTemplatesToggleButton;
 #[derive(Component)]
 pub struct EditorSpawnGroupsToggleButton;
+#[derive(Component)]
+pub struct EditorExitButton;
 
 // ── Spawn HUD ─────────────────────────────────────────────────────────────────
 
@@ -146,6 +148,9 @@ pub fn spawn_editor_hud(
 
                 // Portal tool toggle
                 spawn_top_btn(bar, "Portal Tool", EditorPortalToolButton);
+
+                // Exit to title screen
+                spawn_top_btn(bar, "Exit to Title", EditorExitButton);
 
                 // Save
                 bar.spawn((
@@ -500,6 +505,17 @@ pub fn handle_spawn_groups_toggle_button_click(
     for interaction in &btn {
         if *interaction == Interaction::Pressed {
             editor_state.spawn_groups_panel_visible = !editor_state.spawn_groups_panel_visible;
+        }
+    }
+}
+
+pub fn handle_exit_button_click(
+    btn: Query<&Interaction, (Changed<Interaction>, With<EditorExitButton>)>,
+    mut next_state: ResMut<NextState<crate::app::state::ClientAppState>>,
+) {
+    for interaction in &btn {
+        if *interaction == Interaction::Pressed {
+            next_state.set(crate::app::state::ClientAppState::TitleScreen);
         }
     }
 }

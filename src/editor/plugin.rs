@@ -51,12 +51,12 @@ use crate::editor::ui::templates_panel::{
     handle_templates_panel_clicks, sync_templates_panel, sync_templates_panel_visibility,
 };
 use crate::editor::ui::{
-    cleanup_editor_hud, handle_generate_dungeon_button_click, handle_new_map_button_click,
-    handle_open_button_click, handle_portal_tool_button_click, handle_redo_button_click,
-    handle_save_as_button_click, handle_save_as_template_button_click, handle_save_button_click,
-    handle_select_tool_button_click, handle_spawn_groups_toggle_button_click,
-    handle_templates_toggle_button_click, handle_undo_button_click, spawn_editor_hud,
-    sync_editor_top_bar,
+    cleanup_editor_hud, handle_exit_button_click, handle_generate_dungeon_button_click,
+    handle_new_map_button_click, handle_open_button_click, handle_portal_tool_button_click,
+    handle_redo_button_click, handle_save_as_button_click, handle_save_as_template_button_click,
+    handle_save_button_click, handle_select_tool_button_click,
+    handle_spawn_groups_toggle_button_click, handle_templates_toggle_button_click,
+    handle_undo_button_click, spawn_editor_hud, sync_editor_top_bar,
 };
 use crate::editor::undo::handle_undo_redo;
 
@@ -271,6 +271,7 @@ impl Plugin for EditorPlugin {
                     handle_save_as_template_button_click,
                     handle_templates_toggle_button_click,
                     handle_spawn_groups_toggle_button_click,
+                    handle_exit_button_click,
                 )
                     .run_if(in_state(ClientAppState::MapEditor)),
             )

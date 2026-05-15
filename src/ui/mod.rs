@@ -128,6 +128,7 @@ impl Plugin for UiPlugin {
             OnEnter(ClientAppState::InGame),
             (spawn_hud, setup_native_custom_cursor),
         )
+        .add_systems(OnExit(ClientAppState::InGame), teardown_hud)
         .add_systems(
             Update,
             (
@@ -356,4 +357,30 @@ impl Plugin for UiPlugin {
                 .run_if(in_state(ClientAppState::InGame)),
         );
     }
+}
+
+/// Despawn every entity tagged with `HudRoot` and reset HUD-owned UI state
+/// so a future `OnEnter(InGame)` rebuilds the HUD from a clean slate.
+#[allow(clippy::too_many_arguments)]
+fn teardown_hud(
+    mut commands: Commands,
+    hud_roots: Query<Entity, With<crate::ui::components::HudRoot>>,
+    mut docked: ResMut<DockedPanelState>,
+    mut full_map: ResMut<FullMapWindowState>,
+    mut open_menu: ResMut<OpenMenuState>,
+    mut pending_actions: ResMut<PendingMenuActions>,
+    mut character_sheet: ResMut<CharacterSheetState>,
+    mut active_dialog: ResMut<ActiveDialogState>,
+    mut trade_popup: ResMut<TradePopupState>,
+) {
+    for entity in &hud_roots {
+        commands.entity(entity).despawn();
+    }
+    *docked = DockedPanelState::default();
+    full_map.open = false;
+    open_menu.open_id = None;
+    pending_actions.actions.clear();
+    character_sheet.open = false;
+    *active_dialog = ActiveDialogState::default();
+    *trade_popup = TradePopupState::default();
 }
