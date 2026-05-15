@@ -316,4 +316,12 @@ pub enum GameCommand {
         quest_name: String,
         text: String,
     },
+    /// Spend skill points on `skill`, raising its rank by up to `ranks` (the
+    /// handler buys ranks one at a time, stopping at the class/level cap or
+    /// when points run out). Drained by `process_allocate_skill_commands` in
+    /// `CommandIntercept` before `process_game_commands` runs.
+    AllocateSkillPoint {
+        skill: crate::player::skills::Skill,
+        ranks: u8,
+    },
 }

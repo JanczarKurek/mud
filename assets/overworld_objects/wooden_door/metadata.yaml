@@ -9,6 +9,9 @@ render:
   sprite_path: overworld_objects/wooden_door/closed.png
   occludes_floor_above: false
 states:
+  locked:
+    sprite_path: overworld_objects/wooden_door/closed.png
+    colliding: true
   closed:
     sprite_path: overworld_objects/wooden_door/closed.png
     colliding: true
@@ -16,7 +19,31 @@ states:
     sprite_path: overworld_objects/wooden_door/open.png
     colliding: false
 initial_state: closed
+lock:
+  lock_id: 7
+  pick_dc: 15
+  force_dc: 18
 interactions:
+  - verb: pick_lock
+    label: Pick Lock
+    from: [locked]
+    to: closed
+    skill_gate:
+      skill: Thievery
+      dc: from_lock_pick
+  - verb: force_lock
+    label: Force Lock
+    from: [locked]
+    to: closed
+    skill_gate:
+      skill: Athletics
+      dc: from_lock_force
+  - verb: use_key
+    label: Use Key
+    from: [locked]
+    to: closed
+    key_gate:
+      source: from_lock
   - verb: open
     label: Open
     from: [closed]

@@ -37,6 +37,7 @@ use crate::player::components::{
     RegenBuffs, VitalStats,
 };
 use crate::player::progression::{Experience, ExperienceView};
+use crate::player::skills::SkillSheet;
 use crate::world::components::{
     Container, Facing, Movable, ObjectState, OverworldObject, Quantity, Rotatable, SpaceId,
     SpacePosition, SpaceResident, TilePosition,
@@ -70,6 +71,7 @@ pub type ProjectionPlayerQuery<'w, 's> = Query<
         (
             Option<&'static Class>,
             Option<&'static crate::crafting::CharacterStash>,
+            Option<&'static SkillSheet>,
         ),
         Option<&'static MagicEffects>,
     ),
@@ -155,6 +157,7 @@ pub fn compute_events_for_peer(
 
     let mut local_player_object_id: Option<u64> = None;
     let mut local_space_id: Option<SpaceId> = None;
+    let mut local_persuasion_ranks: u8 = 0;
     let mut seen_remote_player_ids: Vec<PlayerId> = Vec::new();
 
     for (
@@ -171,7 +174,7 @@ pub fn compute_events_for_peer(
         regen_buffs,
         (max_carry, current_carry, is_encumbered),
         experience,
-        (class, stash),
+        (class, stash, skill_sheet),
         magic_effects,
     ) in player_query.iter()
     {
@@ -355,6 +358,22 @@ pub fn compute_events_for_peer(
             if previous.log_state != projected_log {
                 events.push(GameEvent::LogStateChanged {
                     state: projected_log,
+                });
+            }
+
+            // Replicate the skill sheet. Whole-snapshot diff against the
+            // previous projection — small payload (10 u8s + a u32) so this
+            // is fine even at autosave cadence.
+            let projected_ranks = skill_sheet.map(|s| s.ranks).unwrap_or([0; 10]);
+            let projected_points = skill_sheet.map(|s| s.available_points).unwrap_or(0);
+            local_persuasion_ranks =
+                projected_ranks[crate::player::skills::Skill::Persuasion.index()];
+            if previous.skill_ranks != projected_ranks
+                || previous.available_skill_points != projected_points
+            {
+                events.push(GameEvent::SkillSheetChanged {
+                    ranks: projected_ranks,
+                    available_points: projected_points,
                 });
             }
         } else {
@@ -575,11 +594,22 @@ pub fn compute_events_for_peer(
                                                 StockMode::Infinite => None,
                                                 StockMode::Finite(n) => Some(n),
                                             };
+                                            let modified_price =
+                                                crate::game::trade::vendor_price_for(
+                                                    local_persuasion_ranks,
+                                                    entry.price_copper,
+                                                    crate::game::trade::TradeSide::PlayerBuys,
+                                                );
                                             WareView {
                                                 type_id: entry.type_id.clone(),
                                                 display_name,
-                                                price_copper: entry.price_copper,
+                                                price_copper: modified_price,
                                                 stock_remaining,
+                                                persuasion_modifier_pct:
+                                                    crate::game::trade::persuasion_modifier_pct(
+                                                        local_persuasion_ranks,
+                                                        crate::game::trade::TradeSide::PlayerBuys,
+                                                    ),
                                             }
                                         })
                                         .collect();
@@ -831,6 +861,24 @@ pub fn apply_event_to_state(state: &mut ClientGameState, event: GameEvent) {
         GameEvent::LogStateChanged { state: log_state } => {
             state.log_state = log_state;
         }
+        GameEvent::SkillSheetChanged {
+            ranks,
+            available_points,
+        } => {
+            state.skill_ranks = ranks;
+            state.available_skill_points = available_points;
+        }
+        GameEvent::SkillPointsGranted { amount } => {
+            state.available_skill_points = state.available_skill_points.saturating_add(amount);
+        }
+        GameEvent::SkillRanksChanged {
+            skill,
+            new_rank,
+            remaining_points,
+        } => {
+            state.skill_ranks[skill.index()] = new_rank;
+            state.available_skill_points = remaining_points;
+        }
     }
 }
 
@@ -1013,6 +1061,26 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
             "client log state replaced: {} sections, {} subentries",
             state.sections.len(),
             state.subentry_count(),
+        ),
+        GameEvent::SkillSheetChanged {
+            ranks,
+            available_points,
+        } => debug!(
+            "client skill sheet replaced: ranks {:?} points {}",
+            ranks, available_points
+        ),
+        GameEvent::SkillPointsGranted { amount } => {
+            info!("client gained {amount} skill points")
+        }
+        GameEvent::SkillRanksChanged {
+            skill,
+            new_rank,
+            remaining_points,
+        } => info!(
+            "client skill rank changed: {} -> {} ({} points left)",
+            skill.label(),
+            new_rank,
+            remaining_points
         ),
     }
 }

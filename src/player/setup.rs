@@ -11,6 +11,7 @@ use crate::player::components::{
     WeaponDamage,
 };
 use crate::player::progression::Experience;
+use crate::player::skills::SkillSheet;
 use crate::world::components::{
     Collider, DisplayedVitalStats, Facing, HealthBarDisplayPolicy, OverworldObject, SpaceId,
     SpaceResident, TilePosition, ViewPosition,
@@ -243,6 +244,7 @@ pub fn spawn_player_from_dump(
                 Facing(dump.facing),
                 dump.experience,
                 dump.class,
+                dump.skill_sheet,
             ),
         ))
         .id();
@@ -305,6 +307,7 @@ pub fn spawn_player_authoritative_in_space(
                 Facing::default(),
                 Experience::default(),
                 Class::default(),
+                SkillSheet::default(),
             ),
         ))
         .id()

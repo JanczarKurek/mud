@@ -30,6 +30,15 @@ pub struct ContextMenuState {
     /// torch light/extinguish, lever pull) currently applicable to the
     /// hovered object. `None` means no interact button is shown.
     pub interaction: Option<(String, String)>,
+    /// True when the hovered object has a `pick_lock` interaction available
+    /// from its current state and the actor has at least 1 rank of Thievery.
+    pub can_pick_lock: bool,
+    /// True when the hovered object has a `force_lock` interaction available
+    /// from its current state and the actor has at least 1 rank of Athletics.
+    pub can_force_lock: bool,
+    /// True when the hovered object has a `use_key` interaction available
+    /// from its current state and the actor's inventory contains a matching key.
+    pub can_use_key: bool,
 }
 
 impl ContextMenuState {
@@ -57,6 +66,22 @@ impl ContextMenuState {
         self.can_talk = can_talk;
         self.can_trade = can_trade;
         self.interaction = interaction;
+        // Lock-verb flags are populated separately by the context-menu
+        // opener via `set_lock_verbs` — pre-clear here so a regular
+        // non-lock target doesn't carry stale flags.
+        self.can_pick_lock = false;
+        self.can_force_lock = false;
+        self.can_use_key = false;
+    }
+
+    /// Set the three lock-related verb flags. Called by the context-menu
+    /// opener after `show` when the target has lock-gated interactions in
+    /// scope. Lives as a separate method (rather than another `show`
+    /// argument) so the existing call-sites don't all have to change.
+    pub fn set_lock_verbs(&mut self, can_pick_lock: bool, can_force_lock: bool, can_use_key: bool) {
+        self.can_pick_lock = can_pick_lock;
+        self.can_force_lock = can_force_lock;
+        self.can_use_key = can_use_key;
     }
 
     pub fn hide(&mut self) {
@@ -69,6 +94,9 @@ impl ContextMenuState {
         self.can_talk = false;
         self.can_trade = false;
         self.interaction = None;
+        self.can_pick_lock = false;
+        self.can_force_lock = false;
+        self.can_use_key = false;
     }
 
     pub fn is_visible(&self) -> bool {

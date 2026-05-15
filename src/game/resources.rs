@@ -87,6 +87,14 @@ pub enum GameUiEvent {
     OpenRecipeBook {
         filter_station: Option<String>,
     },
+    /// One-shot: ask the client to open the skills panel (e.g. from the
+    /// HUD button or a future tutorial trigger).
+    OpenSkillsPanel,
+    /// Transient overlay: the local player just gained `amount` skill
+    /// points (typically from a level-up). HUD shows a short toast.
+    SkillPointsToast {
+        amount: u32,
+    },
 }
 
 /// Anchor for a `VfxSpawn` event. `Tile` parks the effect at a static world
@@ -421,6 +429,28 @@ pub enum GameEvent {
     LogStateChanged {
         state: crate::log::LogState,
     },
+    /// Baseline / corrective replication of the local player's `SkillSheet`.
+    /// Emitted on bootstrap and whenever the projection detects drift
+    /// between the projected ranks/points and the authoritative sheet.
+    /// Same pattern as `LearnedRecipesChanged` / `PlayerExperienceChanged`.
+    SkillSheetChanged {
+        ranks: [u8; 10],
+        available_points: u32,
+    },
+    /// Delta event: the local player just gained `amount` skill points
+    /// (from a level-up). The fold adds it to `ClientGameState`.
+    SkillPointsGranted {
+        amount: u32,
+    },
+    /// Delta event: the local player's rank in `skill` changed (typically
+    /// after spending points). Carries the new authoritative rank and the
+    /// remaining unspent-points balance so the panel can stay in sync
+    /// without round-tripping a full sheet.
+    SkillRanksChanged {
+        skill: crate::player::skills::Skill,
+        new_rank: u8,
+        remaining_points: u32,
+    },
 }
 
 #[derive(Resource, Default)]
@@ -547,4 +577,13 @@ pub struct ClientGameState {
     /// Folded from `GameEvent::LogStateChanged`. Drives the Log panel UI.
     #[serde(default)]
     pub log_state: crate::log::LogState,
+    /// Local player's skill ranks (indexed by `Skill::index()`). Folded from
+    /// `GameEvent::SkillSheetChanged` (baseline) and `SkillRanksChanged`
+    /// (delta).
+    #[serde(default)]
+    pub skill_ranks: [u8; 10],
+    /// Unspent skill points the local player can allocate. Folded from
+    /// `SkillPointsGranted` (delta) and `SkillSheetChanged` (baseline).
+    #[serde(default)]
+    pub available_skill_points: u32,
 }

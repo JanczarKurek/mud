@@ -885,6 +885,19 @@ objects:
     - type: glimmer_scroll
     - type: bless_scroll
     - type: light_scroll
+# Phase-2 lock demo: a locked door blocking a side passage, with the key
+# stashed in a nearby unlocked chest. Open by either picking the lock
+# (Thievery), forcing it (Athletics), or using the matching iron key.
+- id: demo_locked_door
+  type: wooden_door
+  properties:
+    state: locked
+  placement: { x: 23, y: 10 }
+- id: demo_key_chest
+  type: iron_chest
+  placement: { x: 24, y: 10 }
+  contents:
+    - type: iron_key
 - type: cyclops
   placement:
   - x: 54

@@ -9,7 +9,9 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::game::resources::{GameUiEvent, PendingGameEvents, PendingGameUiEvents};
-use crate::player::components::{Player, PlayerId, PlayerIdentity};
+use crate::player::classes::Class;
+use crate::player::components::{BaseStats, Player, PlayerId, PlayerIdentity};
+use crate::player::skills::{grant_level_up_skill_points, SkillSheet};
 
 /// Maximum character level. `[tunable]` progression.md §10.
 pub const LEVEL_CAP: u32 = 20;
@@ -118,7 +120,16 @@ pub struct PendingXpGrants {
 /// crossed.
 pub fn apply_xp_grants(
     mut grants: ResMut<PendingXpGrants>,
-    mut player_query: Query<(&PlayerIdentity, &mut Experience), With<Player>>,
+    mut player_query: Query<
+        (
+            &PlayerIdentity,
+            &mut Experience,
+            &mut SkillSheet,
+            &Class,
+            &BaseStats,
+        ),
+        With<Player>,
+    >,
     mut events: ResMut<PendingGameEvents>,
     mut ui_events: ResMut<PendingGameUiEvents>,
 ) {
@@ -128,9 +139,9 @@ pub fn apply_xp_grants(
 
     let drained = std::mem::take(&mut grants.grants);
     for grant in drained {
-        let Some((identity, mut experience)) = player_query
+        let Some((identity, mut experience, mut skill_sheet, class, base_stats)) = player_query
             .iter_mut()
-            .find(|(identity, _)| identity.id == grant.player_id)
+            .find(|(identity, _, _, _, _)| identity.id == grant.player_id)
         else {
             continue;
         };
@@ -156,6 +167,14 @@ pub fn apply_xp_grants(
                 GameUiEvent::LevelUpToast {
                     new_level: experience.level,
                 },
+            );
+            grant_level_up_skill_points(
+                &mut skill_sheet,
+                *class,
+                base_stats,
+                identity,
+                &mut events,
+                &mut ui_events,
             );
         }
     }

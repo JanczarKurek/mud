@@ -362,7 +362,13 @@ fn spawn_log_panel(commands: &mut Commands, theme: &UiThemeAssets, palette: &Pal
 /// the rebuild's editor-buffer reseed always finds a target.
 fn install_body_editor(
     mut commands: Commands,
-    slots: Query<Entity, (With<LogPanelEditorSlot>, Without<LogPanelBodyEditorInstalled>)>,
+    slots: Query<
+        Entity,
+        (
+            With<LogPanelEditorSlot>,
+            Without<LogPanelBodyEditorInstalled>,
+        ),
+    >,
 ) {
     for slot in &slots {
         let editor = spawn_text_edit(&mut commands, LOG_NOTES_FOCUS_ID, "", 14.0);
@@ -903,7 +909,9 @@ fn install_title_editors(
 ) {
     for (entity, anchor) in &anchors {
         let initial = anchor.initial_text.clone();
-        commands.entity(entity).remove::<LogPanelTitleEditorAnchor>();
+        commands
+            .entity(entity)
+            .remove::<LogPanelTitleEditorAnchor>();
         let editor = spawn_text_edit_with(
             &mut commands,
             LOG_TITLE_FOCUS_ID,

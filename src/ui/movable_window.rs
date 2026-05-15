@@ -60,6 +60,10 @@ pub enum MovableWindowId {
     /// Per-character Log window (quests + notes). Singleton, toggled by
     /// `KeyL`. Same lifecycle pattern as `RecipeBook` — close button only.
     Log,
+    /// Skills panel (singleton). Toggled by `KeyK`. Lists all 10 skills with
+    /// current rank, max rank, and a `+` button per row, plus the unspent
+    /// skill-point counter. Lifecycle mirrors `RecipeBook` — close button only.
+    SkillsPanel,
     /// Floating-mode container panel. There can be up to
     /// `DockedPanelState::MAX_OPEN_CONTAINERS` instances, distinguished
     /// by the sidebar slot they came from (`panel_id`). The underlying

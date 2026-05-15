@@ -9,8 +9,35 @@ render:
   debug_size: 0.78
   sprite_path: overworld_objects/iron_chest/closed.png
 states:
+  locked:
+    sprite_path: overworld_objects/iron_chest/closed.png
   closed:
     sprite_path: overworld_objects/iron_chest/closed.png
   open:
     sprite_path: overworld_objects/iron_chest/open.png
 initial_state: closed
+lock:
+  lock_id: 7
+  pick_dc: 12
+  force_dc: 20
+interactions:
+  - verb: pick_lock
+    label: Pick Lock
+    from: [locked]
+    to: closed
+    skill_gate:
+      skill: Thievery
+      dc: from_lock_pick
+  - verb: force_lock
+    label: Force Lock
+    from: [locked]
+    to: closed
+    skill_gate:
+      skill: Athletics
+      dc: from_lock_force
+  - verb: use_key
+    label: Use Key
+    from: [locked]
+    to: closed
+    key_gate:
+      source: from_lock

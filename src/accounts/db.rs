@@ -469,6 +469,7 @@ fn build_initial_dump(
         class,
         magic_effects: MagicEffects::default(),
         stash: Default::default(),
+        skill_sheet: Default::default(),
     }
 }
 
@@ -723,6 +724,7 @@ mod tests {
             class: Class::Fighter,
             magic_effects: Default::default(),
             stash: Default::default(),
+            skill_sheet: Default::default(),
         };
         db.save_character(cid, &dump).unwrap();
 

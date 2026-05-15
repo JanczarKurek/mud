@@ -16,6 +16,7 @@ pub mod recipe_book;
 pub mod resources;
 pub mod retro_bar;
 pub mod setup;
+pub mod skills_panel;
 pub mod sprite_state;
 pub mod status_panel;
 pub mod systems;
@@ -67,16 +68,18 @@ use crate::ui::status_panel::StatusPanel;
 use crate::ui::systems::{
     apply_game_ui_events, consume_death_summary_events, consume_level_up_toasts,
     handle_attack_targeting, handle_character_sheet_button_click,
-    handle_character_sheet_close_click, handle_context_menu_actions, handle_context_menu_opening,
-    handle_death_summary_dismiss, handle_docked_panel_close_buttons, handle_docked_panel_dragging,
-    handle_docked_panel_resizing, handle_docked_panel_scrolling, handle_movable_dragging,
-    handle_spell_targeting, handle_take_partial_buttons, handle_trade_context_menu_actions,
-    handle_use_on_targeting, manage_character_sheet_overlay, manage_open_containers,
-    print_right_sidebar_layout_debug, setup_native_custom_cursor, sync_carry_weight_label,
-    sync_chat_log, sync_container_slot_images, sync_context_menu_attack_button,
+    handle_character_sheet_close_click, handle_context_menu_actions,
+    handle_context_menu_lock_actions, handle_context_menu_opening, handle_death_summary_dismiss,
+    handle_docked_panel_close_buttons, handle_docked_panel_dragging, handle_docked_panel_resizing,
+    handle_docked_panel_scrolling, handle_movable_dragging, handle_spell_targeting,
+    handle_take_partial_buttons, handle_trade_context_menu_actions, handle_use_on_targeting,
+    manage_character_sheet_overlay, manage_open_containers, print_right_sidebar_layout_debug,
+    setup_native_custom_cursor, sync_carry_weight_label, sync_chat_log, sync_container_slot_images,
+    sync_context_menu_attack_button, sync_context_menu_force_lock_button,
     sync_context_menu_interact_button, sync_context_menu_offer_to_trade_button,
-    sync_context_menu_open_button, sync_context_menu_root, sync_context_menu_take_partial_button,
-    sync_context_menu_talk_button, sync_context_menu_trade_button, sync_context_menu_use_button,
+    sync_context_menu_open_button, sync_context_menu_pick_lock_button, sync_context_menu_root,
+    sync_context_menu_take_partial_button, sync_context_menu_talk_button,
+    sync_context_menu_trade_button, sync_context_menu_use_button, sync_context_menu_use_key_button,
     sync_context_menu_use_on_button, sync_current_combat_target, sync_docked_panel_layout,
     sync_docked_panel_titles, sync_drag_preview, sync_equipment_slot_images,
     sync_item_slot_button_visibility, sync_item_tooltip, sync_magic_effects_label,
@@ -221,6 +224,21 @@ impl Plugin for UiPlugin {
             Update,
             handle_context_menu_actions
                 .before(crate::game::CommandIntercept)
+                .run_if(in_state(ClientAppState::InGame)),
+        )
+        .add_systems(
+            Update,
+            handle_context_menu_lock_actions
+                .before(crate::game::CommandIntercept)
+                .run_if(in_state(ClientAppState::InGame)),
+        )
+        .add_systems(
+            Update,
+            (
+                sync_context_menu_pick_lock_button,
+                sync_context_menu_force_lock_button,
+                sync_context_menu_use_key_button,
+            )
                 .run_if(in_state(ClientAppState::InGame)),
         )
         .add_systems(

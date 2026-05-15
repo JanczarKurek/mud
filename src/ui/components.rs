@@ -209,6 +209,24 @@ pub struct ContextMenuOfferToTradeButton;
 #[derive(Component)]
 pub struct ContextMenuInteractButton;
 
+/// Pick Lock button — visible when the hovered object has a `pick_lock`
+/// interaction available from its current state and the actor has at least
+/// 1 rank of Thievery.
+#[derive(Component)]
+pub struct ContextMenuPickLockButton;
+
+/// Force Lock button — visible when the hovered object has a `force_lock`
+/// interaction available from its current state and the actor has at least
+/// 1 rank of Athletics.
+#[derive(Component)]
+pub struct ContextMenuForceLockButton;
+
+/// Use Key button — visible when the hovered object has a `use_key`
+/// interaction available from its current state and the actor's inventory
+/// contains a matching key.
+#[derive(Component)]
+pub struct ContextMenuUseKeyButton;
+
 #[derive(Component)]
 pub struct DialogPanelRoot;
 

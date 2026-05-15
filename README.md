@@ -18,13 +18,17 @@ is a security risk.
 
 ## What's here
 Very much work in progress. For now things that work:
-- Movement
-- Equipment system
-- Basic battle and magic systems
-- Persistant world
-- Multiple world instances (spaces)
-- Multiplayer
-- Dialogs + python-based questing scripting
+- Movement (with diagonals) and grid-based collision
+- Equipment, containers, pouches, currency (copper/silver/gold) and carry weight
+- Combat with classes, XP/levels, partial-drop death penalty
+- Magic system with class-gated spells and level-scaled caster mana
+- Crafting basics with a recipe book
+- Vendors / trading
+- Persistent world with multi-space portals (overworld, underworld, ephemeral dungeons)
+- Multiplayer over plain TCP or TLS, with account login (sqlite + Argon2)
+- Character creation with a class picker
+- Dialogs (yarnspinner) + python-scripted questing with a docked quest log
+- In-app map editor with placement, modal property editing, undo, and YAML serialization
 
 ## How to run
 

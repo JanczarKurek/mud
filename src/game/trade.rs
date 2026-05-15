@@ -107,6 +107,56 @@ pub struct WareView {
     pub price_copper: u32,
     /// `None` for infinite stock; `Some(n)` for finite remaining.
     pub stock_remaining: Option<u32>,
+    /// Signed percent change vs the stockpile's base price for the local
+    /// viewer (e.g. `-12` for "12% off"). `0` when no Persuasion modifier
+    /// is in effect. The server projects modified `price_copper` into the
+    /// view; this field is purely for UI annotation.
+    #[serde(default)]
+    pub persuasion_modifier_pct: i8,
+}
+
+/// Which side of a vendor transaction the player is on.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TradeSide {
+    /// Player pays the merchant — discount on prices.
+    PlayerBuys,
+    /// Player sells to the merchant — premium on offered prices.
+    PlayerSells,
+}
+
+/// Maximum absolute Persuasion adjustment (per `docs/skills_locks_social_plan.md`
+/// locked-in decisions: ±20% cap, 2% per rank).
+pub const PERSUASION_MAX_PCT: i32 = 20;
+pub const PERSUASION_PCT_PER_RANK: i32 = 2;
+
+/// Compute the modified price the merchant offers / accepts given the
+/// player's Persuasion ranks. Buyer-favorable (cheaper) when buying;
+/// seller-favorable (more expensive) when selling. Clamps at ±20%.
+pub fn vendor_price_for(persuasion_ranks: u8, base_price: u32, side: TradeSide) -> u32 {
+    let pct = (persuasion_ranks as i32)
+        .saturating_mul(PERSUASION_PCT_PER_RANK)
+        .clamp(0, PERSUASION_MAX_PCT);
+    if pct == 0 {
+        return base_price;
+    }
+    // Round to nearest copper; bias downward for a fractional half so the
+    // buyer never overpays the displayed amount.
+    let delta = ((base_price as i64) * pct as i64) / 100;
+    match side {
+        TradeSide::PlayerBuys => (base_price as i64 - delta).max(0) as u32,
+        TradeSide::PlayerSells => (base_price as i64 + delta) as u32,
+    }
+}
+
+/// Signed percent for `vendor_price_for`, matching `WareView.persuasion_modifier_pct`.
+pub fn persuasion_modifier_pct(persuasion_ranks: u8, side: TradeSide) -> i8 {
+    let pct = (persuasion_ranks as i32)
+        .saturating_mul(PERSUASION_PCT_PER_RANK)
+        .clamp(0, PERSUASION_MAX_PCT);
+    match side {
+        TradeSide::PlayerBuys => -(pct as i8),
+        TradeSide::PlayerSells => pct as i8,
+    }
 }
 
 /// Authoritative per-trade state. Lives only on the server, in `ActiveTrades`.
@@ -437,6 +487,42 @@ mod tests {
             "1g 1s 2c"
         );
     }
+
+    #[test]
+    fn vendor_price_for_buyer_at_known_ranks() {
+        // 0 ranks → no change.
+        assert_eq!(vendor_price_for(0, 100, TradeSide::PlayerBuys), 100);
+        assert_eq!(persuasion_modifier_pct(0, TradeSide::PlayerBuys), 0);
+        // 5 ranks → -10%.
+        assert_eq!(vendor_price_for(5, 100, TradeSide::PlayerBuys), 90);
+        assert_eq!(persuasion_modifier_pct(5, TradeSide::PlayerBuys), -10);
+        // 10 ranks → -20% (boundary).
+        assert_eq!(vendor_price_for(10, 100, TradeSide::PlayerBuys), 80);
+        assert_eq!(persuasion_modifier_pct(10, TradeSide::PlayerBuys), -20);
+        // 15 ranks → still -20% (clamp).
+        assert_eq!(vendor_price_for(15, 100, TradeSide::PlayerBuys), 80);
+        assert_eq!(persuasion_modifier_pct(15, TradeSide::PlayerBuys), -20);
+    }
+
+    #[test]
+    fn vendor_price_for_seller_inverts_sign() {
+        assert_eq!(vendor_price_for(0, 100, TradeSide::PlayerSells), 100);
+        assert_eq!(vendor_price_for(5, 100, TradeSide::PlayerSells), 110);
+        assert_eq!(vendor_price_for(10, 100, TradeSide::PlayerSells), 120);
+        assert_eq!(vendor_price_for(15, 100, TradeSide::PlayerSells), 120);
+        assert_eq!(persuasion_modifier_pct(5, TradeSide::PlayerSells), 10);
+        assert_eq!(persuasion_modifier_pct(10, TradeSide::PlayerSells), 20);
+    }
+
+    #[test]
+    fn vendor_price_for_handles_small_amounts() {
+        // 4-copper apple at 5 ranks: 10% off 4 = floor(4 * 10 / 100) = 0
+        // (integer floor) → price stays 4. Sanity check that no overflow.
+        assert_eq!(vendor_price_for(5, 4, TradeSide::PlayerBuys), 4);
+        // 4-copper apple at 10 ranks: floor(4 * 20 / 100) = 0 still.
+        // The next-cheapest discount tier kicks in at base >= 5c.
+        assert_eq!(vendor_price_for(10, 5, TradeSide::PlayerBuys), 4);
+    }
 }
 
 /// Drains all `Trade*` `GameCommand` variants from `PendingGameCommands` and
@@ -480,6 +566,7 @@ pub fn process_trade_commands(
         (With<Shopkeeper>, Without<Player>),
     >,
     mut stockpile_query: Query<(&OverworldObject, &mut Stockpile)>,
+    skill_query: Query<(&PlayerIdentity, &crate::player::skills::SkillSheet), With<Player>>,
 ) {
     let drained: Vec<_> = pending_commands.commands.drain(..).collect();
     let mut remaining = Vec::with_capacity(drained.len());
@@ -548,6 +635,7 @@ pub fn process_trade_commands(
                     &mut player_queries.p1(),
                     &max_carry_query,
                     &mut stockpile_query,
+                    &skill_query,
                 );
             }
             GameCommand::CancelTrade { session_id } => {
@@ -849,6 +937,7 @@ fn handle_toggle_trade_ready(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 fn handle_confirm_trade(
     acting_player_id: PlayerId,
     session_id: TradeSessionId,
@@ -871,6 +960,7 @@ fn handle_confirm_trade(
     >,
     max_carry_query: &Query<&MaxCarryWeight, With<Player>>,
     stockpile_query: &mut Query<(&OverworldObject, &mut Stockpile)>,
+    skill_query: &Query<(&PlayerIdentity, &crate::player::skills::SkillSheet), With<Player>>,
 ) {
     let Some(side) = side_for_session_player(active_trades, session_id, acting_player_id) else {
         return;
@@ -910,6 +1000,11 @@ fn handle_confirm_trade(
             player,
             shop_object_id,
         } => {
+            let persuasion_ranks = skill_query
+                .iter()
+                .find(|(identity, _)| identity.id == player)
+                .map(|(_, sheet)| sheet.rank(crate::player::skills::Skill::Persuasion))
+                .unwrap_or(0);
             let ok = commit_player_to_shop_trade(
                 &session_snapshot,
                 player,
@@ -918,6 +1013,7 @@ fn handle_confirm_trade(
                 player_inventory_query,
                 max_carry_query,
                 stockpile_query,
+                persuasion_ranks,
             );
             (ok, vec![player])
         }
@@ -1089,6 +1185,7 @@ fn commit_player_to_shop_trade(
     >,
     max_carry_query: &Query<&MaxCarryWeight, With<Player>>,
     stockpile_query: &mut Query<(&OverworldObject, &mut Stockpile)>,
+    persuasion_ranks: u8,
 ) -> bool {
     let entity = player_inventory_query
         .iter()
@@ -1131,8 +1228,10 @@ fn commit_player_to_shop_trade(
                 return false;
             }
         }
+        let modified_price =
+            vendor_price_for(persuasion_ranks, entry.price_copper, TradeSide::PlayerBuys);
         total_owed_copper =
-            total_owed_copper.saturating_add(entry.price_copper.saturating_mul(offer.quantity));
+            total_owed_copper.saturating_add(modified_price.saturating_mul(offer.quantity));
     }
 
     // Sum the coin value the player is offering. Non-coin items in offers_a

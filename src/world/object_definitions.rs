@@ -129,6 +129,16 @@ pub struct OverworldObjectDefinition {
     /// scrolls already follow.
     #[serde(default)]
     pub learns_recipe: Option<String>,
+    /// Optional lock metadata. When present, declares the `lock_id` (matched
+    /// by keys' `lock_id`) and DC values referenced by interactions whose
+    /// `skill_gate.dc_source` is `FromLockPick` / `FromLockForce`. Only used
+    /// on stateful objects that have a `locked` state.
+    #[serde(default)]
+    pub lock: Option<LockDef>,
+    /// On *items*: the `lock_id` this item's key matches. Used by the
+    /// `key_gate` verb path to find an inventory key for a locked target.
+    #[serde(default)]
+    pub lock_id: Option<u32>,
 }
 
 /// Per-state override of the rendering / collider knobs on
@@ -188,6 +198,65 @@ pub struct ObjectInteractionDef {
     /// door, opening a container panel).
     #[serde(default)]
     pub side_effects: Vec<InteractionSideEffect>,
+    /// Optional skill-check gate (`progression.md` §5). When present, the
+    /// verb runs a `skill_check` against `dc_source` and only transitions on
+    /// success; failures emit a chat-line. The verb is hidden in the context
+    /// menu when the actor's rank in `skill` is 0.
+    #[serde(default)]
+    pub skill_gate: Option<SkillGateDef>,
+    /// Optional key-required gate. When present, the verb is hidden in the
+    /// context menu when the actor's inventory doesn't contain a matching
+    /// `lock_id` key; the handler also re-checks at apply time.
+    #[serde(default)]
+    pub key_gate: Option<KeyGateDef>,
+}
+
+/// Skill-check description authored on an interaction.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct SkillGateDef {
+    pub skill: crate::player::skills::Skill,
+    pub dc: DcSource,
+}
+
+/// Where the DC for a `SkillGateDef` comes from.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub enum DcSource {
+    /// Read `lock.pick_dc` on the object's definition.
+    FromLockPick,
+    /// Read `lock.force_dc` on the object's definition.
+    FromLockForce,
+    /// Use the inline DC value.
+    Fixed(i32),
+}
+
+/// Key-required description authored on an interaction.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct KeyGateDef {
+    pub source: KeyIdSource,
+}
+
+/// Where the required `lock_id` for a `KeyGateDef` comes from.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub enum KeyIdSource {
+    /// Read `lock.lock_id` on the object's definition.
+    FromLock,
+    /// Use the inline id.
+    Fixed(u32),
+}
+
+/// Authored lock metadata on an `OverworldObjectDefinition`.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct LockDef {
+    pub lock_id: u32,
+    pub pick_dc: i32,
+    pub force_dc: i32,
 }
 
 /// Side-effect to run after an interaction transitions an object's state.
@@ -1191,6 +1260,76 @@ interactions:
             }
             other => panic!("unexpected side effect: {:?}", other),
         }
+    }
+
+    #[test]
+    fn lock_and_skill_gates_parse_from_yaml() {
+        let yaml = r#"
+name: Locked Door
+description: ""
+colliding: true
+movable: false
+storable: false
+render:
+  z_index: 0.0
+  debug_color: [0, 0, 0]
+  debug_size: 1.0
+states:
+  locked: { colliding: true }
+  closed: {}
+  open: { colliding: false }
+initial_state: closed
+lock:
+  lock_id: 7
+  pick_dc: 15
+  force_dc: 18
+interactions:
+  - verb: pick_lock
+    from: [locked]
+    to: closed
+    skill_gate:
+      skill: Thievery
+      dc: from_lock_pick
+  - verb: force_lock
+    from: [locked]
+    to: closed
+    skill_gate:
+      skill: Athletics
+      dc: from_lock_force
+  - verb: use_key
+    from: [locked]
+    to: closed
+    key_gate:
+      source: from_lock
+  - verb: open
+    from: [closed]
+    to: open
+"#;
+        let def = parse_def(yaml);
+        let lock = def.lock.expect("lock block parsed");
+        assert_eq!(lock.lock_id, 7);
+        assert_eq!(lock.pick_dc, 15);
+        assert_eq!(lock.force_dc, 18);
+
+        let pick = def
+            .interaction_for("pick_lock", Some("locked"))
+            .expect("pick_lock interaction parsed");
+        let pick_gate = pick.skill_gate.as_ref().expect("skill_gate parsed");
+        assert_eq!(pick_gate.skill, crate::player::skills::Skill::Thievery);
+        assert!(matches!(pick_gate.dc, DcSource::FromLockPick));
+
+        let use_key = def
+            .interaction_for("use_key", Some("locked"))
+            .expect("use_key interaction parsed");
+        let key_gate = use_key.key_gate.as_ref().expect("key_gate parsed");
+        assert!(matches!(key_gate.source, KeyIdSource::FromLock));
+
+        // Plain open interaction still works without gates.
+        let open = def
+            .interaction_for("open", Some("closed"))
+            .expect("open interaction parsed");
+        assert!(open.skill_gate.is_none());
+        assert!(open.key_gate.is_none());
     }
 
     #[test]

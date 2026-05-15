@@ -12,7 +12,9 @@
 use bevy::prelude::*;
 use bevy_yarnspinner::prelude::*;
 
-use crate::dialog::resources::{PlayerInventorySnapshots, PlayerStashSnapshots};
+use crate::dialog::resources::{
+    PlayerInventorySnapshots, PlayerSkillSnapshots, PlayerStashSnapshots,
+};
 
 /// Installs runner-local functions. Called once per `DialogueRunner` at
 /// session creation; `player_id` is captured in the closures so every Yarn
@@ -22,6 +24,7 @@ pub fn install(
     _commands: &mut Commands,
     snapshots: &PlayerInventorySnapshots,
     stash_snapshots: &PlayerStashSnapshots,
+    skill_snapshots: &PlayerSkillSnapshots,
     player_id: u64,
 ) {
     let snapshot = snapshots.by_player.clone();
@@ -89,5 +92,22 @@ pub fn install(
                 .and_then(|entries| entries.get(&key))
                 .and_then(|value| value.as_bool())
                 .unwrap_or(false)
+        });
+
+    // skill_rank("Persuasion") → returns the player's current rank in that
+    // skill, or 0 if the name doesn't match a known skill. Yarn passes
+    // numbers as f32; return f32 so callers can compare with `>` directly.
+    let skills = skill_snapshots.by_player.clone();
+    runner
+        .library_mut()
+        .add_function("skill_rank", move |name: String| -> f32 {
+            let Some(skill) = crate::player::skills::Skill::from_label(&name) else {
+                return 0.0;
+            };
+            let guard = skills.read().expect("skill snapshot RwLock poisoned");
+            guard
+                .get(&player_id)
+                .map(|ranks| ranks[skill.index()] as f32)
+                .unwrap_or(0.0)
         });
 }

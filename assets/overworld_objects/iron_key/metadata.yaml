@@ -1,0 +1,10 @@
+extends: pickup
+name: Iron Key
+description: A heavy iron key. The wards look intricate.
+weight: 0.1
+lock_id: 7
+render:
+  z_index: 0.24
+  debug_color: [180, 175, 140]
+  debug_size: 0.30
+  sprite_path: overworld_objects/iron_key/sprite.png

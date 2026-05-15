@@ -588,6 +588,13 @@ pub fn process_game_commands(
                 // `CommandIntercept` before this system runs.
                 bevy::log::warn!("process_game_commands saw a log command — check system ordering");
             }
+            GameCommand::AllocateSkillPoint { .. } => {
+                // Drained by `process_allocate_skill_commands` (PlayerServerPlugin)
+                // in `CommandIntercept` before this system runs.
+                bevy::log::warn!(
+                    "process_game_commands saw an allocate-skill command — check system ordering"
+                );
+            }
         }
     }
 }

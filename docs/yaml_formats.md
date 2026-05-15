@@ -1733,3 +1733,89 @@ attack_profile:
   kind: melee
   hit_vfx: ember_burst
 ```
+
+## 7. Locks, keys, and skill-gated interactions
+
+Stateful objects (doors, chests) can declare a `lock:` block plus
+interactions whose `from: [locked]` requires either a skill check or a
+matching inventory key. The state machine remains the same `from`/`to`
+transition path — the gates are evaluated server-side before the
+transition fires.
+
+```yaml
+states:
+  locked: { sprite_path: ..., colliding: true }
+  closed: { sprite_path: ... }
+  open:   { sprite_path: ..., colliding: false }
+initial_state: closed
+lock:
+  lock_id: 7
+  pick_dc: 15
+  force_dc: 18
+interactions:
+  - verb: pick_lock
+    label: Pick Lock
+    from: [locked]
+    to: closed
+    skill_gate: { skill: Thievery, dc: from_lock_pick }
+  - verb: force_lock
+    label: Force Lock
+    from: [locked]
+    to: closed
+    skill_gate: { skill: Athletics, dc: from_lock_force }
+  - verb: use_key
+    label: Use Key
+    from: [locked]
+    to: closed
+    key_gate: { source: from_lock }
+  - verb: open
+    from: [closed]
+    to: open
+  - verb: close
+    from: [open]
+    to: closed
+```
+
+- `skill_gate.dc` accepts `from_lock_pick`, `from_lock_force`, or a literal
+  integer via `{ Fixed: 15 }`. Skill ranks come from the actor's
+  `SkillSheet`; an `ability_mod` of the keyed attribute is added.
+- `key_gate.source` accepts `from_lock` (reads `lock.lock_id`) or
+  `{ Fixed: 12 }`. The server walks the actor's backpack + equipment
+  slots for any item whose definition has a matching top-level
+  `lock_id`. Define keys like:
+
+  ```yaml
+  extends: pickup
+  name: Iron Key
+  lock_id: 7
+  ```
+
+The context menu hides skill-gated verbs when the actor's rank in that
+skill is 0, and hides `use_key` when no matching key is in the actor's
+inventory.
+
+## 8. Dialog custom commands
+
+Yarn `.yarn` files may invoke project-specific custom commands beyond
+`<<set>>` / `<<if>>` / variable storage:
+
+| Command | Effect |
+|---|---|
+| `<<give_item "type_id" count>>` | Add `count` of `type_id` to the speaker's backpack. |
+| `<<take_item "type_id" count>>` | Remove up to `count` of `type_id` from the speaker's backpack. |
+| `<<give_recipe "recipe_id">>` | Mark `recipe_id` as learned. |
+| `<<stash_set key value>>` / `<<stash_delete key>>` | Mutate the per-character stash. |
+| `<<start_quest "quest_id">>` / `<<complete_quest "quest_id">>` | Quest state. |
+| `<<skill_check Skill DC>>` | Roll `Skill` against `DC` for the speaker. Writes `$last_skill_check_success` (bool) and `$last_skill_check_total` (number) into the player's Yarn variable store. Next branch reads via `<<if $last_skill_check_success>>`. |
+
+Library functions (read-only, callable from `<<if …>>` expressions):
+
+| Function | Returns |
+|---|---|
+| `has_item("type_id", count)` | `true` when backpack has at least `count` of `type_id`. |
+| `stash_has(key)` / `stash_get_str(key)` / `stash_get_num(key)` / `stash_get_bool(key)` | Stash readers. |
+| `skill_rank("SkillName")` | Speaker's current rank in `SkillName` (or 0). Name is case-insensitive: `"Persuasion"`, `"thievery"`, etc. |
+
+The set of allowed skills mirrors `docs/progression.md §5`: `Athletics`,
+`Stealth`, `Perception`, `Lore`, `Spellcraft`, `Persuasion`, `Survival`,
+`Heal`, `Thievery`, `Concentration`.

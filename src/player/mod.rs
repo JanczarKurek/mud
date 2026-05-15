@@ -4,6 +4,7 @@ pub mod lifecycle;
 pub mod progression;
 pub mod regen;
 pub mod setup;
+pub mod skills;
 pub mod systems;
 
 use bevy::prelude::*;
@@ -15,6 +16,7 @@ use crate::player::lifecycle::{
 use crate::player::progression::{apply_xp_grants, PendingXpGrants};
 use crate::player::regen::{tick_regen_buffs, tick_vital_regen};
 use crate::player::setup::spawn_player_visual;
+use crate::player::skills::process_allocate_skill_commands;
 use crate::player::systems::{
     move_player_on_grid, refresh_derived_player_stats, rotate_nearby_object_on_shortcut,
     set_home_on_keypress, sync_authoritative_player_display,
@@ -49,6 +51,14 @@ impl Plugin for PlayerServerPlugin {
                     .in_set(crate::game::CommandIntercept)
                     .run_if(simulation_active),
             )
+            // Skill-point allocation: same `CommandIntercept` pattern so the
+            // main `process_game_commands` only sees a no-op warning arm.
+            .add_systems(
+                Update,
+                process_allocate_skill_commands
+                    .in_set(crate::game::CommandIntercept)
+                    .run_if(simulation_active),
+            )
             // Handle deaths after combat resolution. resolve_battle_turn fills
             // PendingPlayerDeaths; this drains it.
             .add_systems(
@@ -62,6 +72,7 @@ impl Plugin for PlayerServerPlugin {
 
 impl Plugin for PlayerClientPlugin {
     fn build(&self, app: &mut App) {
+        crate::ui::skills_panel::register(app);
         app.add_systems(OnEnter(ClientAppState::InGame), spawn_player_visual)
             .add_systems(
                 Update,

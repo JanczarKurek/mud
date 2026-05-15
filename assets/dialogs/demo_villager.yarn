@@ -5,6 +5,9 @@ title: FriendlyVillager
 <<declare $hunter_started = false>>
 <<declare $hunter_ready = false>>
 <<declare $hunter_complete = false>>
+<<declare $persuaded_for_bonus = false>>
+<<declare $last_skill_check_success = false>>
+<<declare $last_skill_check_total = 0>>
 
 <<if $hunter_complete>>
     Villager: You've kept the rats at bay and fed me apples. Truly a hero.
@@ -15,6 +18,19 @@ title: FriendlyVillager
         <<complete_quest "hunter">>
         <<set $hunter_complete to true>>
         Villager: Here, have this potion. You've earned it.
+    -> [Persuade] Surely such heroism deserves more than just a potion?  <<if skill_rank("Persuasion") > 0 and $persuaded_for_bonus == false>>
+        <<skill_check "Persuasion" 15>>
+        <<if $last_skill_check_success>>
+            Villager: ...well, when you put it that way. Take these too.
+            <<give_item "potion" 1>>
+            <<give_item "gold_coin" 5>>
+            <<complete_quest "hunter">>
+            <<set $hunter_complete to true>>
+            <<set $persuaded_for_bonus to true>>
+        <<else>>
+            Villager: A hero doesn't haggle, traveler. Take what's offered.
+            <<set $persuaded_for_bonus to true>>
+        <<endif>>
     -> Maybe later.
         Villager: Don't forget to come back!
 <<elseif $hunter_started>>

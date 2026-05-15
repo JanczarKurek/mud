@@ -100,3 +100,28 @@ pub struct PlayerInventorySnapshots {
 pub struct PlayerStashSnapshots {
     pub by_player: Arc<RwLock<HashMap<u64, HashMap<String, serde_json::Value>>>>,
 }
+
+/// Shared snapshot of each player's `SkillSheet.ranks` array. Same pattern
+/// as `PlayerInventorySnapshots`: refreshed once per `PreUpdate` so Yarn
+/// `skill_rank("…")` closures can read it without ECS access. Keyed by
+/// player id; the value is the 10-rank array indexed by `Skill::index()`.
+#[derive(Resource, Default, Clone)]
+pub struct PlayerSkillSnapshots {
+    pub by_player: Arc<RwLock<HashMap<u64, [u8; 10]>>>,
+}
+
+/// One queued `<<skill_check Skill DC>>` invocation. Drained the same frame
+/// by `drain_skill_check_requests`, which performs the check and writes the
+/// result into the player's Yarn `$last_skill_check_*` variables. Lives in
+/// the dialog module since the Yarn observer that fills it is module-local.
+#[derive(Clone, Debug)]
+pub struct PendingSkillCheckRequest {
+    pub player_id: u64,
+    pub skill: crate::player::skills::Skill,
+    pub dc: i32,
+}
+
+#[derive(Resource, Default)]
+pub struct PendingSkillCheckRequests {
+    pub entries: Vec<PendingSkillCheckRequest>,
+}

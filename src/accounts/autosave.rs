@@ -15,6 +15,7 @@ use crate::player::components::{
     VitalStats,
 };
 use crate::player::progression::Experience;
+use crate::player::skills::SkillSheet;
 use crate::world::components::{Facing, SpaceResident, TilePosition};
 
 /// Tracks time since the last autosave sweep; resets when the sweep fires.
@@ -42,6 +43,7 @@ type PlayerStateQueryData<'a> = (
         Option<&'a Class>,
         Option<&'a MagicEffects>,
         Option<&'a CharacterStash>,
+        Option<&'a SkillSheet>,
     ),
 );
 
@@ -68,13 +70,15 @@ fn save_entity(
         combat_leash,
         facing,
         experience,
-        (class, magic_effects, stash),
+        (class, magic_effects, stash, skill_sheet),
     ) = row;
 
     let empty_effects = MagicEffects::default();
     let effects_ref = magic_effects.unwrap_or(&empty_effects);
     let empty_stash = CharacterStash::default();
     let stash_ref = stash.unwrap_or(&empty_stash);
+    let empty_sheet = SkillSheet::default();
+    let sheet_ref = skill_sheet.unwrap_or(&empty_sheet);
 
     let mut dump = build_player_state_dump(
         identity,
@@ -93,6 +97,7 @@ fn save_entity(
         class.copied().unwrap_or_default(),
         effects_ref,
         stash_ref,
+        sheet_ref,
     );
 
     if let Some(stores) = var_stores {

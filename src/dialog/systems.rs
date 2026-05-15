@@ -40,6 +40,7 @@ pub fn process_dialog_commands(
     mut var_stores: ResMut<CharacterVarStores>,
     inventory_snapshots: Res<PlayerInventorySnapshots>,
     stash_snapshots: Res<PlayerStashSnapshots>,
+    skill_snapshots: Res<crate::dialog::resources::PlayerSkillSnapshots>,
     project: Option<Res<YarnProject>>,
     mut commands: Commands,
     player_query: Query<(Entity, &PlayerIdentity), With<Player>>,
@@ -103,6 +104,7 @@ pub fn process_dialog_commands(
                     &mut commands,
                     &inventory_snapshots,
                     &stash_snapshots,
+                    &skill_snapshots,
                     acting_player_id.0,
                 );
                 runner.start_node(&node_name);
@@ -320,6 +322,23 @@ pub fn refresh_stash_snapshots(
     }
 }
 
+/// Refreshes `PlayerSkillSnapshots` so the Yarn `skill_rank(name)` library
+/// function and the same-frame branch-gate queries (`<<if skill_rank…>>`)
+/// can read each player's current ranks without ECS access.
+pub fn refresh_skill_snapshots(
+    snapshots: Res<crate::dialog::resources::PlayerSkillSnapshots>,
+    players: Query<(&PlayerIdentity, &crate::player::skills::SkillSheet), With<Player>>,
+) {
+    let mut write = snapshots
+        .by_player
+        .write()
+        .expect("skill snapshot RwLock poisoned");
+    write.clear();
+    for (identity, sheet) in &players {
+        write.insert(identity.id.0, sheet.ranks);
+    }
+}
+
 /// Observer: translates Yarn `<<give_recipe "id">>` into a
 /// `GameCommand::LearnRecipe` queued for the acting player. Mirrors
 /// `handle_yarn_item_commands` (single-string-arg form). The recipe
@@ -494,4 +513,193 @@ pub fn forward_dialogue_completed(
     pending_options.by_session.remove(&session.session_id);
     commands.entity(event.entity).despawn();
     bevy::log::info!("dialog session {} closed", session.session_id);
+}
+
+/// Observer: translates `<<skill_check Skill DC>>` into a
+/// `PendingSkillCheckRequest` entry. The drain system below picks it up the
+/// same frame and writes `$last_skill_check_*` back into the player's Yarn
+/// variable store.
+pub fn handle_yarn_skill_check_command(
+    event: On<ExecuteCommand>,
+    sessions: Query<&DialogSession>,
+    mut pending: ResMut<crate::dialog::resources::PendingSkillCheckRequests>,
+) {
+    if event.command.name != "skill_check" {
+        return;
+    }
+    let Ok(session) = sessions.get(event.entity) else {
+        return;
+    };
+    let params = &event.command.parameters;
+    if params.len() < 2 {
+        bevy::log::warn!("<<skill_check>> expects (skill_name, dc) — got {params:?}");
+        return;
+    }
+    let skill_name = match &params[0] {
+        YarnValue::String(s) => s.clone(),
+        other => {
+            bevy::log::warn!(
+                "<<skill_check>>: first arg must be a skill name string, got {other:?}"
+            );
+            return;
+        }
+    };
+    let Some(skill) = crate::player::skills::Skill::from_label(&skill_name) else {
+        bevy::log::warn!("<<skill_check>>: unknown skill '{skill_name}'");
+        return;
+    };
+    let dc = match &params[1] {
+        YarnValue::Number(n) => *n as i32,
+        YarnValue::String(s) => match s.parse::<i32>() {
+            Ok(n) => n,
+            Err(err) => {
+                bevy::log::warn!("<<skill_check>>: DC '{s}' not a number: {err}");
+                return;
+            }
+        },
+        other => {
+            bevy::log::warn!("<<skill_check>>: second arg must be a number, got {other:?}");
+            return;
+        }
+    };
+    pending
+        .entries
+        .push(crate::dialog::resources::PendingSkillCheckRequest {
+            player_id: session.player_id,
+            skill,
+            dc,
+        });
+}
+
+/// Drains `PendingSkillCheckRequests`, runs each `skill_check`, and writes
+/// `$last_skill_check_success` (bool) + `$last_skill_check_total` (number)
+/// into the acting player's Yarn variable store. Runs after the observer
+/// fires (which queues a request), so the next dialog turn's `<<if>>` reads
+/// see the freshly-written variables.
+pub fn drain_skill_check_requests(
+    mut pending: ResMut<crate::dialog::resources::PendingSkillCheckRequests>,
+    mut var_stores: ResMut<CharacterVarStores>,
+    players: Query<
+        (
+            &PlayerIdentity,
+            &crate::player::components::BaseStats,
+            &crate::player::skills::SkillSheet,
+        ),
+        With<Player>,
+    >,
+) {
+    if pending.entries.is_empty() {
+        return;
+    }
+    let drained = std::mem::take(&mut pending.entries);
+    for request in drained {
+        let Some((_, base_stats, sheet)) = players
+            .iter()
+            .find(|(identity, _, _)| identity.id.0 == request.player_id)
+        else {
+            continue;
+        };
+        let result = crate::player::skills::skill_check(
+            sheet,
+            &base_stats.attributes,
+            request.skill,
+            request.dc,
+            0,
+        );
+        let mut storage = var_stores.get_or_insert(request.player_id);
+        if let Err(err) = storage.set(
+            "$last_skill_check_success".to_owned(),
+            YarnValue::Boolean(result.success),
+        ) {
+            bevy::log::warn!(
+                "failed to write $last_skill_check_success for player {}: {err:?}",
+                request.player_id
+            );
+        }
+        if let Err(err) = storage.set(
+            "$last_skill_check_total".to_owned(),
+            YarnValue::Number(result.total as f32),
+        ) {
+            bevy::log::warn!(
+                "failed to write $last_skill_check_total for player {}: {err:?}",
+                request.player_id
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dialog::resources::{PendingSkillCheckRequest, PendingSkillCheckRequests};
+    use crate::player::components::{BaseStats, Player as PlayerMarker, PlayerId};
+    use crate::player::skills::{Skill, SkillSheet};
+
+    /// Verify the drain system writes `$last_skill_check_*` Yarn variables
+    /// against the acting player's `SkillSheet` / `AttributeSet`. The skill
+    /// check itself runs through `skill_check` (RNG-driven d20); we don't
+    /// assert on success/failure here, only that the result lands in storage.
+    #[test]
+    fn drain_skill_check_writes_variables() {
+        let mut app = App::new();
+        app.insert_resource(CharacterVarStores::default());
+        app.insert_resource(PendingSkillCheckRequests::default());
+
+        let mut sheet = SkillSheet::default();
+        sheet.set_rank(Skill::Persuasion, 5);
+        app.world_mut().spawn((
+            PlayerMarker,
+            PlayerIdentity::new(PlayerId(42)),
+            BaseStats::default(),
+            sheet,
+        ));
+
+        app.world_mut()
+            .resource_mut::<PendingSkillCheckRequests>()
+            .entries
+            .push(PendingSkillCheckRequest {
+                player_id: 42,
+                skill: Skill::Persuasion,
+                dc: 5,
+            });
+
+        app.add_systems(Update, drain_skill_check_requests);
+        app.update();
+
+        let stores = app.world().resource::<CharacterVarStores>();
+        let snapshot = stores.snapshot_for(42);
+        assert!(snapshot.contains_key("$last_skill_check_success"));
+        assert!(snapshot.contains_key("$last_skill_check_total"));
+    }
+
+    #[test]
+    fn drain_skill_check_drops_unknown_player() {
+        let mut app = App::new();
+        app.insert_resource(CharacterVarStores::default());
+        app.insert_resource(PendingSkillCheckRequests::default());
+
+        app.world_mut()
+            .resource_mut::<PendingSkillCheckRequests>()
+            .entries
+            .push(PendingSkillCheckRequest {
+                player_id: 999,
+                skill: Skill::Persuasion,
+                dc: 10,
+            });
+
+        app.add_systems(Update, drain_skill_check_requests);
+        app.update();
+
+        // No matching player, no variables written.
+        let stores = app.world().resource::<CharacterVarStores>();
+        assert!(stores.snapshot_for(999).is_empty());
+        // Queue is drained regardless.
+        assert!(
+            app.world()
+                .resource::<PendingSkillCheckRequests>()
+                .entries
+                .is_empty(),
+            "drain should empty the queue even on mismatch"
+        );
+    }
 }

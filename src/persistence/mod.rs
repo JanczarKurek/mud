@@ -212,6 +212,11 @@ pub struct PlayerStateDump {
     /// without growing this struct. See `crate::crafting::stash`.
     #[serde(default)]
     pub stash: std::collections::HashMap<String, serde_json::Value>,
+    /// Per-character skill ranks and unspent points. `#[serde(default)]` so
+    /// rows written before the skill system existed default to an empty
+    /// sheet (no ranks, no banked points).
+    #[serde(default)]
+    pub skill_sheet: crate::player::skills::SkillSheet,
 }
 
 /// Build a `PlayerStateDump` from the components of a single player entity.
@@ -235,6 +240,7 @@ pub fn build_player_state_dump(
     class: crate::player::classes::Class,
     magic_effects: &MagicEffects,
     stash: &crate::crafting::CharacterStash,
+    skill_sheet: &crate::player::skills::SkillSheet,
 ) -> PlayerStateDump {
     PlayerStateDump {
         player_id: identity.id,
@@ -255,6 +261,7 @@ pub fn build_player_state_dump(
         class,
         magic_effects: magic_effects.clone(),
         stash: stash.entries.clone(),
+        skill_sheet: skill_sheet.clone(),
     }
 }
 
@@ -1138,6 +1145,7 @@ mod tests {
             class: Default::default(),
             magic_effects: Default::default(),
             stash: Default::default(),
+            skill_sheet: Default::default(),
         };
         let json = serde_json::to_string(&dump_with_home).unwrap();
         // Confirm we didn't accidentally serialize Some(...).
@@ -1195,6 +1203,7 @@ mod tests {
             experience: Default::default(),
             class: Default::default(),
             magic_effects: effects.clone(),
+            skill_sheet: Default::default(),
             stash: Default::default(),
         };
         let json = serde_json::to_string(&dump).unwrap();

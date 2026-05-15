@@ -5,20 +5,22 @@ use bevy_terminal::{spawn_terminal, LineStyle, TerminalConfig, TerminalInputConf
 use crate::ui::components::{
     BackpackPanelContent, BackpackPanelUndockButton, BackpackSlotRow, CarryWeightLabel,
     ChatTerminal, ContainerPanelContent, ContainerPanelUndockButton, ContainerSlotButton,
-    ContainerSlotImage, ContextMenuAttackButton, ContextMenuInspectButton,
-    ContextMenuInteractButton, ContextMenuOfferToTradeButton, ContextMenuOpenButton,
-    ContextMenuRoot, ContextMenuTakePartialButton, ContextMenuTalkButton, ContextMenuTradeButton,
-    ContextMenuUseButton, ContextMenuUseOnButton, CurrentCombatTargetLabel,
-    CurrentTargetPanelContent, CurrentTargetPanelUndockButton, DockedPanelBody, DockedPanelCanvas,
-    DockedPanelCloseButton, DockedPanelDragHandle, DockedPanelResizeHandle, DockedPanelRoot,
-    DockedPanelTitle, DragPreviewImage, DragPreviewLabel, DragPreviewQuantity, DragPreviewRoot,
-    EquipmentPanelContent, EquipmentPanelUndockButton, EquipmentSlotButton, EquipmentSlotImage,
-    ExperienceFill, ExperienceLabel, FullMapBodyRoot, FullMapCloseButton, FullMapWindowRoot,
-    FullMapZoomInButton, FullMapZoomLabel, FullMapZoomOutButton, HealthFill, HealthLabel,
-    HudMinimapZoomInButton, HudMinimapZoomLabel, HudMinimapZoomOutButton, HudRoot, ItemSlotButton,
-    ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot,
-    MagicEffectsLabel, ManaFill, ManaLabel, MinimapCanvas, MinimapMode, MinimapPanelUndockButton,
-    MinimapView, PythonConsolePanel, PythonConsoleTerminal, RegenBuffLabel, RightSidebarRoot,
+    ContainerSlotImage, ContextMenuAttackButton, ContextMenuForceLockButton,
+    ContextMenuInspectButton, ContextMenuInteractButton, ContextMenuOfferToTradeButton,
+    ContextMenuOpenButton, ContextMenuPickLockButton, ContextMenuRoot,
+    ContextMenuTakePartialButton, ContextMenuTalkButton, ContextMenuTradeButton,
+    ContextMenuUseButton, ContextMenuUseKeyButton, ContextMenuUseOnButton,
+    CurrentCombatTargetLabel, CurrentTargetPanelContent, CurrentTargetPanelUndockButton,
+    DockedPanelBody, DockedPanelCanvas, DockedPanelCloseButton, DockedPanelDragHandle,
+    DockedPanelResizeHandle, DockedPanelRoot, DockedPanelTitle, DragPreviewImage, DragPreviewLabel,
+    DragPreviewQuantity, DragPreviewRoot, EquipmentPanelContent, EquipmentPanelUndockButton,
+    EquipmentSlotButton, EquipmentSlotImage, ExperienceFill, ExperienceLabel, FullMapBodyRoot,
+    FullMapCloseButton, FullMapWindowRoot, FullMapZoomInButton, FullMapZoomLabel,
+    FullMapZoomOutButton, HealthFill, HealthLabel, HudMinimapZoomInButton, HudMinimapZoomLabel,
+    HudMinimapZoomOutButton, HudRoot, ItemSlotButton, ItemSlotImage, ItemSlotKind,
+    ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot, MagicEffectsLabel, ManaFill,
+    ManaLabel, MinimapCanvas, MinimapMode, MinimapPanelUndockButton, MinimapView,
+    PythonConsolePanel, PythonConsoleTerminal, RegenBuffLabel, RightSidebarRoot,
     StatusPanelContent, StatusPanelUndockButton, TakePartialAmountLabel, TakePartialCancelButton,
     TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot,
     TradeButtonLabel, TradeColumn,
@@ -419,6 +421,21 @@ pub fn spawn_hud(
                 "Interact",
                 ContextMenuInteractButton,
             );
+            spawn_context_button(
+                menu,
+                &theme,
+                &palette,
+                "Pick Lock",
+                ContextMenuPickLockButton,
+            );
+            spawn_context_button(
+                menu,
+                &theme,
+                &palette,
+                "Force Lock",
+                ContextMenuForceLockButton,
+            );
+            spawn_context_button(menu, &theme, &palette, "Use Key", ContextMenuUseKeyButton);
         });
 
     spawn_take_partial_popup(&mut commands, &theme, &palette);

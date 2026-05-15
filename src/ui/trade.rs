@@ -510,7 +510,12 @@ fn format_ware_label(ware: &WareView, definitions: &OverworldObjectDefinitions) 
         Some(n) => format!("  [{}]", n),
         None => String::new(),
     };
-    format!("{}  {}{}", display, price, stock)
+    let persuasion = if ware.persuasion_modifier_pct != 0 {
+        format!(" (Persuasion {:+}%)", ware.persuasion_modifier_pct)
+    } else {
+        String::new()
+    };
+    format!("{}  {}{}{}", display, price, persuasion, stock)
 }
 
 fn format_offer_label(entry: &TradeOfferEntry, definitions: &OverworldObjectDefinitions) -> String {

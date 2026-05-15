@@ -93,13 +93,21 @@ Implementation lands in phases A–E (detail in `docs/progression.md` §9):
 2. **Phase B — Classes**: ✅ shipped. Per-class HD/BAB/saves/mana tables
    (`src/player/classes.rs`); class picked at character creation via
    `ChooseClass` and the class-picker UI.
-3. **Phase C — Skills**: open. 10-skill `SkillSheet`, point spending,
-   skill-check helper.
+3. **Phase C — Skills**: ✅ shipped. `SkillSheet` component
+   (`src/player/skills.rs`), per-class point budget on level-up,
+   `AllocateSkillPoint` command and Skills panel UI (`KeyK`), `skill_check`
+   helper, and the first cluster of in-game systems consuming it:
+   lockpicking + force-door (`src/world/interactions.rs`), Persuasion-driven
+   vendor pricing (`src/game/trade.rs`), and a Yarn `<<skill_check>>`
+   custom command (`src/dialog/systems.rs`). See
+   `docs/skills_locks_social_plan.md`.
 4. **Phase D — Death penalty**: ✅ shipped. `drain_inventory_with_drop_chance`
    (backpack always drops, per-slot equipment roll), XP-zero rule, and
    `DeathSummary` recap overlay.
-5. **Phase E — Magic gating**: open. `class_access` + `min_caster_level`
-   on spell YAML; level-scaled mana for caster classes.
+5. **Phase E — Magic gating**: ✅ shipped. `class_access` +
+   `min_caster_level` on every spell YAML in `assets/spells/`; level-scaled
+   caster mana via `Class::mana_per_level` consumed by
+   `DerivedStats::from_base_with_class` (`src/player/components.rs`).
 
 The combat-depth items (armor reduction, status effects, elemental
 damage, crit/dodge) are tracked separately in `FEATURE_BACKLOG.md` §1
@@ -147,9 +155,10 @@ Mitigation: format_version is honored, multi-space dump is in place, but
 crash-safe writes and a real migration path are still open.
 
 ### Content risk
-Even a good engine feels empty without content volume. Mitigation: the dialog
-+ quest engines already exist; the next big content unlock is vendors + quest
-log UI + NPC spawners (see `FEATURE_BACKLOG.md` "Living-world batch").
+Even a good engine feels empty without content volume. Mitigation: dialog,
+quests, vendors, the quest-log panel, and NPC spawn pools are all in. The
+next content unlocks are NPC caster AI, status effects, and richer world
+interactables (keys/locks, signs, pressure plates) — see `FEATURE_BACKLOG.md`.
 
 ## 6. Living-Document Rules
 

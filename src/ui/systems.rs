@@ -92,6 +92,14 @@ pub fn apply_game_ui_events(
             other @ GameUiEvent::OpenRecipeBook { .. } => {
                 pending_ui_events.events.push(other);
             }
+            // Skills events: consumed downstream by the skills-panel
+            // systems. Re-queue them so those systems see them this frame.
+            other @ GameUiEvent::OpenSkillsPanel => {
+                pending_ui_events.events.push(other);
+            }
+            other @ GameUiEvent::SkillPointsToast { .. } => {
+                pending_ui_events.events.push(other);
+            }
         }
     }
 }
@@ -1145,6 +1153,48 @@ pub fn sync_context_menu_attack_button(
     };
 }
 
+pub fn sync_context_menu_pick_lock_button(
+    context_menu_state: Res<ContextMenuState>,
+    mut button_query: Query<&mut Node, With<crate::ui::components::ContextMenuPickLockButton>>,
+) {
+    let Ok(mut node) = button_query.single_mut() else {
+        return;
+    };
+    node.display = if context_menu_state.can_pick_lock {
+        Display::Flex
+    } else {
+        Display::None
+    };
+}
+
+pub fn sync_context_menu_force_lock_button(
+    context_menu_state: Res<ContextMenuState>,
+    mut button_query: Query<&mut Node, With<crate::ui::components::ContextMenuForceLockButton>>,
+) {
+    let Ok(mut node) = button_query.single_mut() else {
+        return;
+    };
+    node.display = if context_menu_state.can_force_lock {
+        Display::Flex
+    } else {
+        Display::None
+    };
+}
+
+pub fn sync_context_menu_use_key_button(
+    context_menu_state: Res<ContextMenuState>,
+    mut button_query: Query<&mut Node, With<crate::ui::components::ContextMenuUseKeyButton>>,
+) {
+    let Ok(mut node) = button_query.single_mut() else {
+        return;
+    };
+    node.display = if context_menu_state.can_use_key {
+        Display::Flex
+    } else {
+        Display::None
+    };
+}
+
 pub fn sync_context_menu_talk_button(
     context_menu_state: Res<ContextMenuState>,
     mut button_query: Query<&mut Node, With<crate::ui::components::ContextMenuTalkButton>>,
@@ -1450,8 +1500,67 @@ pub fn handle_context_menu_actions(
         context_menu_state.hide();
         return;
     }
+}
 
-    context_menu_state.hide();
+/// Handler split out from `handle_context_menu_actions` so the lock-related
+/// verb buttons don't push the parent ParamSet over Bevy's 8-query cap.
+pub fn handle_context_menu_lock_actions(
+    mouse_input: Res<ButtonInput<MouseButton>>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    mut context_menu_state: ResMut<ContextMenuState>,
+    mut pending_commands: ResMut<PendingGameCommands>,
+    mut menu_queries: ParamSet<(
+        Query<
+            (&ComputedNode, &UiGlobalTransform),
+            With<crate::ui::components::ContextMenuPickLockButton>,
+        >,
+        Query<
+            (&ComputedNode, &UiGlobalTransform),
+            With<crate::ui::components::ContextMenuForceLockButton>,
+        >,
+        Query<
+            (&ComputedNode, &UiGlobalTransform),
+            With<crate::ui::components::ContextMenuUseKeyButton>,
+        >,
+    )>,
+) {
+    if !mouse_input.just_pressed(MouseButton::Left) || !context_menu_state.is_visible() {
+        return;
+    }
+    let Ok(window) = window_query.single() else {
+        return;
+    };
+    let Some(cursor_position) = window.cursor_position() else {
+        return;
+    };
+
+    let Some(ContextMenuTarget::World(object_id)) = context_menu_state.target else {
+        return;
+    };
+
+    let verb = if context_menu_state.can_pick_lock
+        && is_cursor_over_button(cursor_position, &menu_queries.p0())
+    {
+        Some("pick_lock")
+    } else if context_menu_state.can_force_lock
+        && is_cursor_over_button(cursor_position, &menu_queries.p1())
+    {
+        Some("force_lock")
+    } else if context_menu_state.can_use_key
+        && is_cursor_over_button(cursor_position, &menu_queries.p2())
+    {
+        Some("use_key")
+    } else {
+        None
+    };
+
+    if let Some(verb) = verb {
+        pending_commands.push(GameCommand::InteractWithObject {
+            object_id,
+            verb: verb.to_owned(),
+        });
+        context_menu_state.hide();
+    }
 }
 
 /// Trade-related context-menu buttons (Trade / Offer to Trade) live in a
@@ -1942,6 +2051,10 @@ pub fn handle_context_menu_opening(
             near && object.is_shopkeeper,
             interaction,
         );
+        if near {
+            let (pick, force, key) = lock_verb_visibility(object, &definitions, &client_state);
+            context_menu_state.set_lock_verbs(pick, force, key);
+        }
         info!(
             "context_open_world_success object_id={} has_container={} can_use={} can_attack={} near={}",
             object.object_id, object.is_container, can_use, object.is_npc, near
@@ -3416,8 +3529,14 @@ fn applicable_interaction(
         return None;
     }
     let current_state = object.state.as_deref();
+    // Skip lock-gated verbs here so they don't shadow non-lock interactions
+    // (e.g. "Open" from a locked door's closed state). The lock buttons are
+    // surfaced via `lock_verb_visibility` instead.
     let interaction = definition.interactions.iter().find(|i| {
-        i.from.is_empty() || current_state.is_some_and(|cs| i.from.iter().any(|s| s == cs))
+        let state_matches =
+            i.from.is_empty() || current_state.is_some_and(|cs| i.from.iter().any(|s| s == cs));
+        let is_lock_verb = i.skill_gate.is_some() || i.key_gate.is_some();
+        state_matches && !is_lock_verb
     })?;
     let label = interaction.label.clone().unwrap_or_else(|| {
         let mut chars = interaction.verb.chars();
@@ -3427,6 +3546,90 @@ fn applicable_interaction(
         }
     });
     Some((interaction.verb.clone(), label))
+}
+
+/// Returns `(can_pick_lock, can_force_lock, can_use_key)` for the hovered
+/// object. Buttons appear whenever the target offers the corresponding
+/// interaction from its current state — even at 0 ranks, so the player sees
+/// the option and learns that ranks are needed via the server-side failure
+/// chat line. `can_use_key` still requires a matching key in inventory (no
+/// point surfacing a button that the server will immediately reject).
+fn lock_verb_visibility(
+    object: &crate::game::resources::ClientWorldObjectState,
+    definitions: &OverworldObjectDefinitions,
+    client_state: &ClientGameState,
+) -> (bool, bool, bool) {
+    let Some(definition) = definitions.get(&object.definition_id) else {
+        return (false, false, false);
+    };
+    let current_state = object.state.as_deref();
+
+    let state_matches = |interaction: &crate::world::object_definitions::ObjectInteractionDef| {
+        interaction.from.is_empty()
+            || current_state.is_some_and(|cs| interaction.from.iter().any(|s| s == cs))
+    };
+
+    let mut can_pick_lock = false;
+    let mut can_force_lock = false;
+    let mut can_use_key = false;
+    for interaction in &definition.interactions {
+        if !state_matches(interaction) {
+            continue;
+        }
+        if let Some(skill_gate) = &interaction.skill_gate {
+            match skill_gate.skill {
+                crate::player::skills::Skill::Thievery => can_pick_lock = true,
+                crate::player::skills::Skill::Athletics => can_force_lock = true,
+                _ => {}
+            }
+        }
+        if let Some(key_gate) = &interaction.key_gate {
+            let required_id = match key_gate.source {
+                crate::world::object_definitions::KeyIdSource::FromLock => {
+                    definition.lock.as_ref().map(|l| l.lock_id)
+                }
+                crate::world::object_definitions::KeyIdSource::Fixed(id) => Some(id),
+            };
+            if required_id.is_some_and(|id| client_inventory_has_key(client_state, definitions, id))
+            {
+                can_use_key = true;
+            }
+        }
+    }
+    (can_pick_lock, can_force_lock, can_use_key)
+}
+
+/// Walk the projected local inventory for an item whose definition has a
+/// matching `lock_id`. The server-side equivalent lives in
+/// `world::interactions::inventory_has_key`; both must agree on which slots
+/// to inspect so the verb visibility matches the server's apply-time check.
+fn client_inventory_has_key(
+    client_state: &ClientGameState,
+    definitions: &OverworldObjectDefinitions,
+    lock_id: u32,
+) -> bool {
+    for stack in client_state.inventory.backpack_slots.iter().flatten() {
+        if definitions
+            .get(&stack.type_id)
+            .and_then(|d| d.lock_id)
+            .is_some_and(|id| id == lock_id)
+        {
+            return true;
+        }
+    }
+    for (_, item) in &client_state.inventory.equipment_slots {
+        let Some(item) = item else {
+            continue;
+        };
+        if definitions
+            .get(&item.type_id)
+            .and_then(|d| d.lock_id)
+            .is_some_and(|id| id == lock_id)
+        {
+            return true;
+        }
+    }
+    false
 }
 
 fn object_is_usable(

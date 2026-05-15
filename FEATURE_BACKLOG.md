@@ -3,11 +3,14 @@
 ## Context
 
 The core loop works locally and over TLS-capable TCP: movement, combat,
-magic, containers, equipment, NPC AI (melee + kiting ranged) with spawn
-pools, multi-space portals, account-level persistence, dialog
-(yarnspinner), a Python-scripted quest engine, currency + pouches + carry
-weight, XP/levels with classes (Phase A/B), partial-drop death penalty
-(Phase D), HP/mana regen with food buffs, floor-type tiling, and an F3–F12
+magic (with class-gated spells and level-scaled caster mana), containers,
+equipment, NPC AI (melee + kiting ranged) with spawn pools, multi-space
+portals, account-level persistence, character creation with a class
+picker, dialog (yarnspinner), a Python-scripted quest engine with a
+docked quest-log panel, vendors / trading, basic crafting with recipes,
+chat input, currency + pouches + carry weight, XP/levels with classes
+(Phase A/B), partial-drop death penalty (Phase D), HP/mana regen with
+food buffs, floor-type tiling, an in-app map editor, and an F3–F12
 diagnostics overlay all function.
 
 This doc lists *systems-sized* gaps so whatever we pick next is chosen against
@@ -28,19 +31,18 @@ Grouped by system, not ranked.
 Designed in **`docs/progression.md`** (D&D 3.5e-flavored: classes
 Fighter/Wizard/Cleric/Vagabond, XP+levels, 10-skill sheet with skill
 points, level-scaled mana, partial-drop death penalty). Phasing A–E
-lives in that doc §9 and is tracked from `PLAN.md` §4.2. Phases A
-(XP+level), B (classes), and D (death penalty) are shipped — only **Phase C**
-(10-skill `SkillSheet` + point spending + skill-check helper) and
-**Phase E** (`class_access` / `min_caster_level` on spells, level-scaled
-mana for casters) remain.
+lives in that doc §9 and is tracked from `PLAN.md` §4.2. All five phases
+are shipped, including **Phase C** — `SkillSheet`, point spending, and
+the `skill_check` helper plus its first in-game consumers (locks,
+Persuasion-driven vendor pricing, Yarn `<<skill_check>>`). Skills
+deferred to future batches (Stealth/Perception/Survival/Spellcraft/etc.)
+are tracked in `docs/skills_locks_social_plan.md`.
 
 Additional progression-adjacent items not in scope of that doc:
 - **Soul / stamina** — regen caps that shape session length. Independent
   of the level/skill loop; lands when we want to gate grind sessions.
 
 ### NPC depth
-- **Vendors / trading** — buy/sell UI, per-NPC stock. Dialogue and currency (copper/silver/gold) are in place; the missing piece is a vendor panel + price ladder + buy/sell flow.
-- **Quest log UI** — quest *engine* exists (`src/quest/`); there is no docked panel showing accepted/completed quests. Fits well as `DockedPanelKind::QuestLog`.
 - **NPC caster AI** — only melee roam-and-chase and ranged kiter exist. No mob can cast spells.
 
 ### Combat depth
@@ -51,7 +53,7 @@ Additional progression-adjacent items not in scope of that doc:
 - **Cooldowns** — spells are mana-gated only; spam-castable.
 
 ### Magic expansion
-- **Spellbook UI + spell learning** — only two spells exist as scrolls (`assets/spells/`); no way to "know" a spell. Requires Phase E spell gating (`class_access` / `min_caster_level`).
+- **Spellbook UI + spell learning** — `assets/spells/` now has 13 spells with `class_access` / `min_caster_level` gating, but spells are still scroll-only; there is no docked spellbook and no way for a character to "know" a spell.
 - **AoE + rune system** — Tibia-style runes (targetable consumables) fit on top of the existing scroll model.
 - **Buffs / debuffs from spells** — depends on the status-effect system above.
 
@@ -80,7 +82,6 @@ Additional progression-adjacent items not in scope of that doc:
 - **Ladders / ropes** — listed in the stacked-floors Phase 3 backlog (`sinkhole` is already a working "hole" instance).
 
 ### Chat & social
-- **Chat input** — chat log exists (`ChatLogText`) but there is no `/say`, `/shout`, `/whisper`, `/emote` command path.
 - **Channels** — local vs global vs private.
 - **Party / group** — shared target highlighting, XP split.
 
@@ -96,7 +97,6 @@ Additional progression-adjacent items not in scope of that doc:
 - **Durability / wear** — no break mechanic.
 - **Rarity tiers + enchantments** — flat equipment today.
 - **Hunger meter** — food items grant a temporary regen buff (`RegenBuffs` in `src/player/regen.rs`), but there is no hunger gauge that decays over time and gates eating.
-- **Item-on-item crafting / combining** — no recipe system.
 - **Ground-item decay timers** — corpses persist forever after save.
 - **Pouch panel auto-retarget** — moving a pouch from backpack slot 2 → 7
   while the pouch panel is open silently closes the panel rather than
@@ -131,10 +131,8 @@ Additional progression-adjacent items not in scope of that doc:
 Some features share infrastructure and are cheaper built together. Rough clusters
 in case you want to scope a "batch":
 
-- **Living-world batch** *(builds on shipped dialog + quest engine + currency + spawners)*: Vendor UI + Quest log panel — the remaining gaps that turn the existing dialog/quest tech into actual content. Currency (copper/silver/gold) and NPC spawn pools already ship.
 - **Stacked floors finish batch**: Editor floor selector + `FloorIndicatorLabel` HUD + ladder/rope transitions. Wraps up the paused Phase 2/3 of `docs/stacked_floors_plan.md` (yaml schema docs and `sinkhole` already shipped).
-- **Progression finishing batch**: Phase C (skills) + Phase E (spell `class_access` / `min_caster_level` + level-scaled caster mana). Phases A/B/D are already in. Shares the to-hit/damage rewrite in `src/combat/systems.rs` with the combat-depth batch.
-- **Combat depth batch**: Armor/shield + status effects + elemental damage + critical/dodge — one pass through `src/combat/systems.rs` covers all of them.
+- **Combat depth batch**: Armor/shield + status effects + elemental damage + critical/dodge — one pass through `src/combat/systems.rs` covers all of them. Picks up Phase C (skills) too if `SkillSheet` lands at the same time, since both touch the to-hit/damage path.
 - **Production-readiness batch**: Atomic save writes + save migration framework + structured logging + in-game admin commands (≈ `PLAN.md` Phase 8). Diagnostics overlay is already shipped.
 - **Multiplayer scaling batch**: AoI + reconnection + multi-character per account + rate limiting + TOFU pinning. Has to happen before non-trivial player count.
 
