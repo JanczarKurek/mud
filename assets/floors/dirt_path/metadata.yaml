@@ -2,4 +2,5 @@ id: dirt_path
 name: Dirt Path
 priority: 20
 tile_size_px: 16
+atlas_path: floors/dirt_path/tileset.png
 debug_color: [142, 100, 52]
