@@ -106,6 +106,16 @@ pub enum GameCommand {
         object_id: u64,
         verb: String,
     },
+    /// Server-internal command pushed by `handle_use_item_on` when a tool was
+    /// used on a target with a matching `tool_gate` interaction. Runs the same
+    /// interaction pipeline as `InteractWithObject` (skill_gate, state
+    /// transition, grants_items, respawn, side_effects) but bypasses the
+    /// tool_gate check — `handle_use_item_on` already validated the tool was
+    /// present and consumed its charge. Never emitted by clients.
+    ApplyToolInteraction {
+        target_object_id: u64,
+        verb: String,
+    },
     Inspect {
         target: InspectTarget,
     },

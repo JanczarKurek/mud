@@ -1,8 +1,9 @@
 extends: equipment
 name: Fishing Rod
 weight: 1.5
-description: A slender rod with a length of waxed line. Equip it to fish from the water's edge.
+description: A slender rod with a length of waxed line. Use it on fishing spots at the water's edge.
 equipment_slot: weapon
+infinite_uses: true
 render:
   z_index: 0.26
   debug_color: [150, 110, 70]

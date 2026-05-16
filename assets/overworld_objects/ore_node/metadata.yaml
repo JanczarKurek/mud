@@ -20,7 +20,7 @@ interactions:
     to: depleted
     tool_gate:
       required_type_id: pickaxe
-      fail_message: "You need a pickaxe equipped to mine ore."
+      fail_message: "You need a pickaxe to mine ore."
     skill_gate:
       skill: Survival
       dc: !fixed 10

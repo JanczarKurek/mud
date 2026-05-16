@@ -5,7 +5,9 @@ use std::collections::HashSet;
 use bevy::ecs::message::{MessageReader, MessageWriter};
 use bevy::prelude::*;
 
-use crate::asset_viewer::resources::{AssetKind, InspectorBuffer, SelfWriteSuppressor, ViewerState};
+use crate::asset_viewer::resources::{
+    AssetKind, InspectorBuffer, SelfWriteSuppressor, ViewerState,
+};
 use crate::asset_viewer::watcher::{batch_paths, classify_path, AssetWatcher};
 use crate::magic::resources::SpellDefinitions;
 use crate::world::object_definitions::OverworldObjectDefinitions;

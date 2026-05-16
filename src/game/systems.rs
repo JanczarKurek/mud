@@ -546,7 +546,7 @@ pub fn process_game_commands(
                     "process_game_commands saw a rotate command — check system ordering"
                 );
             }
-            GameCommand::InteractWithObject { .. } => {
+            GameCommand::InteractWithObject { .. } | GameCommand::ApplyToolInteraction { .. } => {
                 // Drained by `process_interact_commands` in `CommandIntercept`.
                 bevy::log::warn!(
                     "process_game_commands saw an interact command — check system ordering"
@@ -708,6 +708,13 @@ fn handle_give_item(
         // "Open" action shows up.
         if let Some(capacity) = definition.container_capacity {
             stack.contained_slots = Some(vec![None; capacity]);
+        }
+        // Charged items spawn fully-charged. Infinite items never carry a
+        // `charges_remaining` key (decoded as ∞ by the use/tooltip paths).
+        if let Some(max_charges) = definition.max_charges {
+            if !definition.infinite_uses {
+                stack.set_charges_remaining(max_charges);
+            }
         }
         inventory.backpack_slots[empty_index] = Some(stack);
         current_weight += per_unit_weight * grant as f32;
@@ -1331,15 +1338,22 @@ fn handle_use_item(
                 player_position,
             );
         }
-        consume_item_reference(
+        let outcome = consume_or_decrement_charge(
             source,
             &mut inventory_state,
             container_query,
             object_query,
+            object_registry,
+            definitions,
             commands,
         );
         chat_log_state.push_line(format!("[Player]: \"{}\"", spell.incantation));
-        chat_log_state.push_narrator(format!("Cast {}.", spell.name));
+        chat_log_state.push_narrator(charge_narrator_line(
+            &spell.name,
+            &view.type_id,
+            definitions,
+            outcome,
+        ));
         return;
     }
 
@@ -1357,11 +1371,13 @@ fn handle_use_item(
                 recipe_id: recipe_id.clone(),
             },
         );
-        consume_item_reference(
+        consume_or_decrement_charge(
             source,
             &mut inventory_state,
             container_query,
             object_query,
+            object_registry,
+            definitions,
             commands,
         );
         return;
@@ -1406,11 +1422,13 @@ fn handle_use_item(
         }
     }
 
-    consume_item_reference(
+    consume_or_decrement_charge(
         source,
         &mut inventory_state,
         container_query,
         object_query,
+        object_registry,
+        definitions,
         commands,
     );
     chat_log_state.push_narrator(use_text(definition, &source_name));
@@ -1476,8 +1494,8 @@ fn handle_use_item_on(
         UseTarget::Object(target_object_id) => {
             let Ok((
                 _,
-                _,
-                inventory_state,
+                identity,
+                mut inventory_state,
                 mut chat_log_state,
                 player_space_resident,
                 player_position,
@@ -1488,6 +1506,7 @@ fn handle_use_item_on(
             else {
                 return;
             };
+            let acting_player_id = identity.id;
             let Some(source_view) = item_reference_view(
                 source,
                 &inventory_state,
@@ -1534,6 +1553,43 @@ fn handle_use_item_on(
             let target_name = object_registry
                 .display_name(target_object_id, definitions, spell_definitions)
                 .unwrap_or_else(|| target_object_id.to_string());
+
+            // Gather flow: if the target carries an interaction whose tool_gate
+            // names the source item's type, consume a charge and re-queue the
+            // interaction via `ApplyToolInteraction` (drained next frame by
+            // `process_interact_commands`). The same handler runs skill_gate +
+            // transition + grants + respawn + side_effects, skipping the
+            // tool_gate check since we already matched on it here.
+            if let Some(verb) = find_tool_gate_verb_on_target(
+                &source_view.type_id,
+                target_object_id,
+                object_registry,
+                definitions,
+            ) {
+                consume_or_decrement_charge(
+                    source,
+                    &mut inventory_state,
+                    container_query,
+                    object_query,
+                    object_registry,
+                    definitions,
+                    commands,
+                );
+                pending_commands.push_for_player(
+                    acting_player_id,
+                    crate::game::commands::GameCommand::ApplyToolInteraction {
+                        target_object_id,
+                        verb,
+                    },
+                );
+                chat_log_state.push_narrator(use_on_text(
+                    source_definition,
+                    &source_name,
+                    &target_name,
+                ));
+                return;
+            }
+
             chat_log_state.push_narrator(use_on_text(
                 source_definition,
                 &source_name,
@@ -1541,6 +1597,39 @@ fn handle_use_item_on(
             ));
         }
     }
+}
+
+/// Walk the target object's interactions looking for one whose `tool_gate`
+/// names `source_type_id`. Returns the matching verb on success. The interaction's
+/// `from`-state filter must match the target's current state (empty `from` = any).
+fn find_tool_gate_verb_on_target(
+    source_type_id: &str,
+    target_object_id: u64,
+    object_registry: &ObjectRegistry,
+    definitions: &OverworldObjectDefinitions,
+) -> Option<String> {
+    let target_type_id = object_registry.type_id(target_object_id)?;
+    let target_def = definitions.get(target_type_id)?;
+    let current_state = object_registry
+        .properties(target_object_id)
+        .and_then(|p| p.get("state").cloned())
+        .or_else(|| target_def.initial_state.clone());
+    for interaction in &target_def.interactions {
+        let Some(gate) = &interaction.tool_gate else {
+            continue;
+        };
+        if gate.required_type_id != source_type_id {
+            continue;
+        }
+        if !interaction.from.is_empty() {
+            match &current_state {
+                Some(state) if interaction.from.iter().any(|s| s == state) => {}
+                _ => continue,
+            }
+        }
+        return Some(interaction.verb.clone());
+    }
+    None
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1709,11 +1798,13 @@ fn handle_cast_spell_at(
         );
     }
 
-    consume_item_reference(
+    consume_or_decrement_charge(
         source,
         &mut inventory_state,
         container_query,
         object_query,
+        object_registry,
+        definitions,
         commands,
     );
     chat_log_state.push_line(format!("[Player]: \"{}\"", spell.incantation));
@@ -2523,7 +2614,23 @@ fn handle_admin_spawn(
         return;
     }
 
-    let object_id = object_registry.allocate_runtime_id(type_id.to_owned());
+    // Seed `charges_remaining` for charged-but-not-infinite items so the
+    // freshly-spawned wand is at full charges. Skipped for infinite items so
+    // the tooltip path correctly renders "∞".
+    let mut initial_properties = ObjectProperties::new();
+    if let Some(max_charges) = definition.max_charges {
+        if !definition.infinite_uses {
+            initial_properties.insert(
+                crate::player::components::CHARGES_KEY.to_owned(),
+                max_charges.to_string(),
+            );
+        }
+    }
+    let object_id = if initial_properties.is_empty() {
+        object_registry.allocate_runtime_id(type_id.to_owned())
+    } else {
+        object_registry.allocate_runtime_id_with_properties(type_id.to_owned(), initial_properties)
+    };
     spawn_overworld_object(
         commands,
         definitions,
@@ -2907,6 +3014,14 @@ fn place_stack_in_option_slot(
         }
         Some(existing) => {
             if stack.type_id != existing.type_id {
+                return false;
+            }
+            // Per-instance properties (charges_remaining, templated spell_id,
+            // future fillable fields) must match exactly for a merge. Without
+            // this guard, two wands at different charge levels would silently
+            // collapse into a single stack, and same-type but
+            // differently-templated scrolls would clobber each other.
+            if stack.properties != existing.properties {
                 return false;
             }
             let max_stack = definitions
@@ -3328,6 +3443,177 @@ fn consume_item_reference(
     }
 }
 
+/// Outcome of a `consume_or_decrement_charge` call. The call sites use this to
+/// drive chat-line wording — they don't otherwise need to know which branch ran.
+#[derive(Clone, Copy, Debug)]
+enum ChargeOutcome {
+    /// Item was destroyed (legacy single-use OR last charge spent).
+    Consumed,
+    /// Item survived; this many charges remain.
+    Decremented(u32),
+    /// `infinite_uses` — item is never consumed, no charge state.
+    Unlimited,
+}
+
+/// Set `properties["charges_remaining"]` on whatever the item reference points
+/// at. Handles all four `ItemSlotRef` variants plus `WorldObject`.
+fn write_charges_at(
+    item_reference: ItemReference,
+    inventory_state: &mut InventoryState,
+    container_query: &mut Query<&mut Container>,
+    object_query: &Query<
+        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
+        Without<Player>,
+    >,
+    object_registry: &mut ObjectRegistry,
+    new_charges: u32,
+) {
+    let value = new_charges.to_string();
+    match item_reference {
+        ItemReference::WorldObject(object_id) => {
+            if let Some(props) = object_registry.properties_mut(object_id) {
+                props.insert(crate::player::components::CHARGES_KEY.to_string(), value);
+            }
+        }
+        ItemReference::Slot(slot_ref) => match slot_ref {
+            ItemSlotRef::Backpack(slot_index) => {
+                if let Some(Some(stack)) = inventory_state.backpack_slots.get_mut(slot_index) {
+                    stack.set_charges_remaining(new_charges);
+                }
+            }
+            ItemSlotRef::Equipment(slot) => {
+                for (eq_slot, item) in inventory_state.equipment_slots.iter_mut() {
+                    if *eq_slot == slot {
+                        if let Some(item) = item.as_mut() {
+                            item.properties.insert(
+                                crate::player::components::CHARGES_KEY.to_string(),
+                                value.clone(),
+                            );
+                        }
+                        break;
+                    }
+                }
+            }
+            ItemSlotRef::Container {
+                object_id,
+                slot_index,
+            } => {
+                if let Some(entity) = find_container_entity(object_id, object_query) {
+                    if let Ok(mut container) = container_query.get_mut(entity) {
+                        if let Some(Some(stack)) = container.slots.get_mut(slot_index) {
+                            stack.set_charges_remaining(new_charges);
+                        }
+                    }
+                }
+            }
+            ItemSlotRef::PouchInBackpack {
+                backpack_slot,
+                sub_slot,
+            } => {
+                if let Some(parent) = inventory_state
+                    .backpack_slots
+                    .get_mut(backpack_slot)
+                    .and_then(|slot| slot.as_mut())
+                {
+                    if let Some(inner) = parent.contained_slots.as_mut() {
+                        if let Some(Some(stack)) = inner.get_mut(sub_slot) {
+                            stack.set_charges_remaining(new_charges);
+                        }
+                    }
+                }
+            }
+        },
+    }
+}
+
+/// Apply one "use" to an item with potential charge accounting. Returns:
+/// - `Unlimited` for `infinite_uses` items (no state change, no consumption).
+/// - `Decremented(n)` when the item carried `max_charges`, had > 1 charge, and
+///   was written back with `charges_remaining = n`.
+/// - `Consumed` when the item was destroyed (last charge spent OR legacy single
+///   consume on items without `max_charges`).
+///
+/// Mana / eligibility checks must happen BEFORE this call so a failed cast
+/// never burns a charge.
+#[allow(clippy::too_many_arguments)]
+fn consume_or_decrement_charge(
+    item_reference: ItemReference,
+    inventory_state: &mut InventoryState,
+    container_query: &mut Query<&mut Container>,
+    object_query: &Query<
+        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
+        Without<Player>,
+    >,
+    object_registry: &mut ObjectRegistry,
+    definitions: &OverworldObjectDefinitions,
+    commands: &mut Commands,
+) -> ChargeOutcome {
+    let view = item_reference_view(
+        item_reference,
+        inventory_state,
+        container_query,
+        object_query,
+        object_registry,
+    );
+    let Some(view) = view else {
+        consume_item_reference(
+            item_reference,
+            inventory_state,
+            container_query,
+            object_query,
+            commands,
+        );
+        return ChargeOutcome::Consumed;
+    };
+    let Some(definition) = definitions.get(&view.type_id) else {
+        consume_item_reference(
+            item_reference,
+            inventory_state,
+            container_query,
+            object_query,
+            commands,
+        );
+        return ChargeOutcome::Consumed;
+    };
+
+    if definition.infinite_uses {
+        return ChargeOutcome::Unlimited;
+    }
+
+    if let Some(max_charges) = definition.max_charges {
+        // Legacy stacks (pre-`max_charges`) may have no `charges_remaining`
+        // key — treat that as a fully-charged item so existing items don't
+        // become single-use after the patch.
+        let current = view
+            .properties
+            .get(crate::player::components::CHARGES_KEY)
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(max_charges);
+        if current > 1 {
+            let remaining = current - 1;
+            write_charges_at(
+                item_reference,
+                inventory_state,
+                container_query,
+                object_query,
+                object_registry,
+                remaining,
+            );
+            return ChargeOutcome::Decremented(remaining);
+        }
+        // Either 0 or 1 charge left → destroy.
+    }
+
+    consume_item_reference(
+        item_reference,
+        inventory_state,
+        container_query,
+        object_query,
+        commands,
+    );
+    ChargeOutcome::Consumed
+}
+
 fn find_container_entity(
     object_id: u64,
     object_query: &Query<
@@ -3417,6 +3703,45 @@ fn object_description_for_type(
     if definition.block > 0 {
         text.push_str(&format!("\nBlock: {}", definition.block));
     }
+    // Casting items get one structured line covering what they cast, mana
+    // cost, and remaining uses. Reads naturally as
+    //   "Casts Spark Bolt for 12 MP (27/30 uses left)"
+    // or, for infinite-use casters,
+    //   "Casts Light for 4 MP (∞)"
+    let resolved_spell = ObjectRegistry::resolved_spell_id_for_type(
+        type_id,
+        Some(properties),
+        definitions,
+        spell_definitions,
+    )
+    .and_then(|id| spell_definitions.get(&id).cloned());
+    let charge_suffix: Option<String> = if definition.infinite_uses {
+        Some("(∞)".to_owned())
+    } else if let Some(max_charges) = definition.max_charges {
+        let remaining = properties
+            .get(crate::player::components::CHARGES_KEY)
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(max_charges);
+        Some(format!("({remaining}/{max_charges} uses left)"))
+    } else {
+        None
+    };
+    if let Some(spell) = resolved_spell {
+        let mana_part = if spell.mana_cost.fract() == 0.0 {
+            format!("{} MP", spell.mana_cost as u32)
+        } else {
+            format!("{:.1} MP", spell.mana_cost)
+        };
+        let line = match &charge_suffix {
+            Some(suffix) => format!("\nCasts {} for {} {}", spell.name, mana_part, suffix),
+            None => format!("\nCasts {} for {}", spell.name, mana_part),
+        };
+        text.push_str(&line);
+    } else if let Some(suffix) = charge_suffix {
+        // No spell attached (e.g. a charged consumable that only restores
+        // health), but the uses line is still useful.
+        text.push_str(&format!("\nUses: {}", suffix.trim_matches(|c| c == '(' || c == ')')));
+    }
     Some(text)
 }
 
@@ -3444,6 +3769,30 @@ fn use_on_text(
     random_text(&definition.use_on_texts)
         .replace("{target}", target_name)
         .replace("{item}", item_name)
+}
+
+fn charge_narrator_line(
+    spell_name: &str,
+    type_id: &str,
+    definitions: &OverworldObjectDefinitions,
+    outcome: ChargeOutcome,
+) -> String {
+    match outcome {
+        ChargeOutcome::Unlimited => format!("Cast {}.", spell_name),
+        ChargeOutcome::Decremented(remaining) => {
+            format!("Cast {}. ({} charges remaining)", spell_name, remaining)
+        }
+        ChargeOutcome::Consumed => {
+            let was_charged = definitions
+                .get(type_id)
+                .is_some_and(|d| d.max_charges.is_some());
+            if was_charged {
+                format!("Cast {}. The item is spent.", spell_name)
+            } else {
+                format!("Cast {}.", spell_name)
+            }
+        }
+    }
 }
 
 fn random_text(texts: &[String]) -> String {
@@ -4106,6 +4455,66 @@ mod tests {
             TilePosition::ground(10, 10),
             "player should be blocked by a non-climbable wall"
         );
+    }
+
+    /// `place_stack_in_option_slot` must refuse to merge two stacks of the same
+    /// type if their per-instance `properties` differ. Without this guard, two
+    /// wands with different `charges_remaining` would collapse into one slot.
+    #[test]
+    fn stack_merge_refuses_when_properties_differ() {
+        use crate::player::components::{InventoryStack, CHARGES_KEY};
+        use crate::world::map_layout::ObjectProperties;
+        use crate::world::object_definitions::OverworldObjectDefinitions;
+
+        // Use a real, normally-stackable consumable. Apples have
+        // max_stack_size 100 via the consumable base, so the guard is the
+        // only thing that can prevent the merge.
+        let definitions = OverworldObjectDefinitions::load_from_disk();
+        assert!(
+            definitions
+                .get("apple")
+                .is_some_and(|d| d.max_stack_size > 1),
+            "expected apple to be a stackable consumable for this test"
+        );
+
+        let mut existing_props = ObjectProperties::new();
+        existing_props.insert("imaginary_marker".to_owned(), "left".to_owned());
+        let mut slot: Option<InventoryStack> =
+            Some(InventoryStack::item("apple", existing_props, 1));
+
+        let mut incoming_props = ObjectProperties::new();
+        incoming_props.insert("imaginary_marker".to_owned(), "right".to_owned());
+        let incoming = InventoryStack::item("apple", incoming_props, 1);
+
+        let merged = place_stack_in_option_slot(&mut slot, incoming, &definitions);
+        assert!(
+            !merged,
+            "place_stack_in_option_slot must refuse to merge stacks whose properties differ"
+        );
+        let existing = slot.as_ref().expect("slot still has the original stack");
+        assert_eq!(
+            existing.quantity, 1,
+            "original stack quantity must not change on a refused merge"
+        );
+        assert_eq!(
+            existing
+                .properties
+                .get("imaginary_marker")
+                .map(String::as_str),
+            Some("left"),
+            "original property must not be overwritten"
+        );
+        // And the inverse: same properties → merge succeeds.
+        let mut shared_props = ObjectProperties::new();
+        shared_props.insert("imaginary_marker".to_owned(), "left".to_owned());
+        let same = InventoryStack::item("apple", shared_props, 2);
+        let merged_same = place_stack_in_option_slot(&mut slot, same, &definitions);
+        assert!(
+            merged_same,
+            "stacks with identical properties must still merge"
+        );
+        assert_eq!(slot.as_ref().unwrap().quantity, 3);
+        let _ = CHARGES_KEY; // keep the import alive even if charges aren't used in this test
     }
 }
 

@@ -83,6 +83,12 @@ pub struct InventoryStack {
     pub contained_slots: Option<Vec<Option<InventoryStack>>>,
 }
 
+/// Key under `ObjectProperties` (string-keyed map) where a per-instance
+/// `charges_remaining: u32` value lives for items whose definition declares
+/// `max_charges`. Stored as a stringified decimal because `ObjectProperties` is
+/// `HashMap<String, String>` (already serialised, replicated, and persisted).
+pub const CHARGES_KEY: &str = "charges_remaining";
+
 impl InventoryStack {
     /// Construct a non-container stack with empty `contained_slots`. Use this
     /// at every site that doesn't specifically intend to populate pouch
@@ -94,6 +100,21 @@ impl InventoryStack {
             quantity,
             contained_slots: None,
         }
+    }
+
+    /// Read this stack's `charges_remaining` property, parsing it as `u32`.
+    /// Returns `None` when the key is missing or unparseable — callers should
+    /// fall back to the definition's `max_charges` for that case (legacy stacks
+    /// spawned before the field was authored).
+    pub fn charges_remaining(&self) -> Option<u32> {
+        self.properties
+            .get(CHARGES_KEY)
+            .and_then(|s| s.parse().ok())
+    }
+
+    pub fn set_charges_remaining(&mut self, charges: u32) {
+        self.properties
+            .insert(CHARGES_KEY.to_string(), charges.to_string());
     }
 }
 
@@ -615,5 +636,35 @@ impl Default for RegenBuffs {
 impl RegenBuffs {
     pub fn is_active(&self) -> bool {
         self.remaining_seconds > 0.0 && self.multiplier > 1.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn charges_remaining_round_trips_through_properties() {
+        let mut stack = InventoryStack::item("wand_of_sparks", ObjectProperties::new(), 1);
+        assert_eq!(stack.charges_remaining(), None);
+
+        stack.set_charges_remaining(30);
+        assert_eq!(stack.charges_remaining(), Some(30));
+        assert_eq!(
+            stack.properties.get(CHARGES_KEY).map(String::as_str),
+            Some("30")
+        );
+
+        stack.set_charges_remaining(0);
+        assert_eq!(stack.charges_remaining(), Some(0));
+    }
+
+    #[test]
+    fn charges_remaining_returns_none_for_unparseable_value() {
+        let mut stack = InventoryStack::item("wand_of_sparks", ObjectProperties::new(), 1);
+        stack
+            .properties
+            .insert(CHARGES_KEY.to_string(), "garbage".to_string());
+        assert_eq!(stack.charges_remaining(), None);
     }
 }

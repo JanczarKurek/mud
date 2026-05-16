@@ -147,7 +147,11 @@ pub fn setup_native_custom_cursor(
 ) {
     commands
         .entity(*window_entity)
-        .insert(cursor_icon_for_mode(CursorMode::Default, &asset_server));
+        .insert(cursor_icon_for_state(
+            CursorMode::Default,
+            None,
+            &asset_server,
+        ));
 }
 
 pub fn sync_native_custom_cursor(
@@ -163,15 +167,44 @@ pub fn sync_native_custom_cursor(
         return;
     };
 
-    *cursor_icon = cursor_icon_for_mode(cursor_state.mode, &asset_server);
+    *cursor_icon = cursor_icon_for_state(
+        cursor_state.mode,
+        cursor_state.use_on_sprite.as_deref(),
+        &asset_server,
+    );
 }
 
-fn cursor_icon_for_mode(cursor_mode: CursorMode, asset_server: &AssetServer) -> CursorIcon {
-    let asset_path = match cursor_mode {
-        CursorMode::Default => "cursors/default_cursor.png",
-        CursorMode::UseOn => "cursors/use_on_cursor.png",
-        CursorMode::SpellTarget => "cursors/spell_target_cursor.png",
-        CursorMode::AttackTarget => "cursors/attack_cursor.png",
+/// Pick the sprite to show while the player is "Use On"-targeting with the
+/// item identified by `source_type_id`. Returns `None` to mean "default
+/// use_on_cursor.png". Resolution order: authored `use_on_cursor` on the
+/// definition → gather sprite when the item is referenced by any tool_gate →
+/// fall through.
+fn resolve_use_on_sprite(
+    source_type_id: &str,
+    definitions: &OverworldObjectDefinitions,
+) -> Option<String> {
+    let definition = definitions.get(source_type_id)?;
+    if let Some(custom) = definition.use_on_cursor.as_ref() {
+        return Some(custom.clone());
+    }
+    if definitions.is_gathering_tool(source_type_id) {
+        return Some("cursors/gather_cursor.png".to_owned());
+    }
+    None
+}
+
+fn cursor_icon_for_state(
+    cursor_mode: CursorMode,
+    use_on_sprite_override: Option<&str>,
+    asset_server: &AssetServer,
+) -> CursorIcon {
+    let asset_path: String = match cursor_mode {
+        CursorMode::Default => "cursors/default_cursor.png".to_owned(),
+        CursorMode::UseOn => use_on_sprite_override
+            .map(str::to_owned)
+            .unwrap_or_else(|| "cursors/use_on_cursor.png".to_owned()),
+        CursorMode::SpellTarget => "cursors/spell_target_cursor.png".to_owned(),
+        CursorMode::AttackTarget => "cursors/attack_cursor.png".to_owned(),
     };
 
     CursorIcon::Custom(CustomCursor::Image(CustomCursorImage {
@@ -1429,23 +1462,29 @@ pub fn handle_context_menu_actions(
 
     if is_cursor_over_button(cursor_position, &menu_queries.p4()) {
         if let Some(target) = context_menu_state.target {
-            let usable = match target {
+            let usable_and_type_id: Option<String> = match target {
                 ContextMenuTarget::World(object_id) => {
-                    object_is_usable(object_id, &object_registry, &definitions)
+                    if object_is_usable(object_id, &object_registry, &definitions) {
+                        object_registry.type_id(object_id).map(str::to_owned)
+                    } else {
+                        None
+                    }
                 }
                 ContextMenuTarget::Slot(slot_kind) => {
-                    stack_in_slot_kind(&client_state, &docked_panel_state, slot_kind)
-                        .map(|stack| {
+                    stack_in_slot_kind(&client_state, &docked_panel_state, slot_kind).and_then(
+                        |stack| {
                             definitions
                                 .get(&stack.type_id)
-                                .is_some_and(|d| d.is_usable())
-                        })
-                        .unwrap_or(false)
+                                .filter(|d| d.is_usable())
+                                .map(|_| stack.type_id.clone())
+                        },
+                    )
                 }
             };
-            if usable {
+            if let Some(type_id) = usable_and_type_id {
                 use_on_state.source = Some(target);
                 cursor_state.mode = CursorMode::UseOn;
+                cursor_state.use_on_sprite = resolve_use_on_sprite(&type_id, &definitions);
             }
         }
         context_menu_state.hide();
@@ -1666,7 +1705,7 @@ pub fn handle_use_on_targeting(
     if keyboard_input.just_pressed(KeyCode::Escape) || mouse_input.just_pressed(MouseButton::Right)
     {
         use_on_state.source = None;
-        cursor_state.mode = CursorMode::Default;
+        cursor_state.reset_to_default();
         return;
     }
 
@@ -1695,7 +1734,7 @@ pub fn handle_use_on_targeting(
             target: UseTarget::Player,
         });
         use_on_state.source = None;
-        cursor_state.mode = CursorMode::Default;
+        cursor_state.reset_to_default();
         return;
     }
 
@@ -1712,7 +1751,7 @@ pub fn handle_use_on_targeting(
             target: UseTarget::Object(object.object_id),
         });
         use_on_state.source = None;
-        cursor_state.mode = CursorMode::Default;
+        cursor_state.reset_to_default();
         return;
     }
 }
@@ -1740,7 +1779,7 @@ pub fn handle_spell_targeting(
     {
         spell_targeting_state.source = None;
         spell_targeting_state.spell_id = None;
-        cursor_state.mode = CursorMode::Default;
+        cursor_state.reset_to_default();
         return;
     }
 
@@ -1780,7 +1819,7 @@ pub fn handle_spell_targeting(
 
     spell_targeting_state.source = None;
     spell_targeting_state.spell_id = None;
-    cursor_state.mode = CursorMode::Default;
+    cursor_state.reset_to_default();
 }
 
 pub fn handle_attack_targeting(
@@ -1799,7 +1838,7 @@ pub fn handle_attack_targeting(
 
     if keyboard_input.just_pressed(KeyCode::Escape) || mouse_input.just_pressed(MouseButton::Right)
     {
-        cursor_state.mode = CursorMode::Default;
+        cursor_state.reset_to_default();
         return;
     }
 
@@ -1838,7 +1877,7 @@ pub fn handle_attack_targeting(
         target_object_id: Some(target_object_id),
     });
 
-    cursor_state.mode = CursorMode::Default;
+    cursor_state.reset_to_default();
 }
 
 pub fn handle_context_menu_opening(
@@ -1910,14 +1949,14 @@ pub fn handle_context_menu_opening(
     if spell_targeting_state.source.is_some() {
         spell_targeting_state.source = None;
         spell_targeting_state.spell_id = None;
-        cursor_state.mode = CursorMode::Default;
+        cursor_state.reset_to_default();
         context_menu_state.hide();
         return;
     }
 
     if use_on_state.source.is_some() {
         use_on_state.source = None;
-        cursor_state.mode = CursorMode::Default;
+        cursor_state.reset_to_default();
         context_menu_state.hide();
         return;
     }
@@ -3549,7 +3588,12 @@ fn applicable_interaction(
                 Some(crate::world::object_definitions::DcSource::FromLockPick)
                     | Some(crate::world::object_definitions::DcSource::FromLockForce)
             );
-        state_matches && !is_lock_verb
+        // Tool-gated interactions (gathering nodes) are invoked via the
+        // player's item context menu — right-click the pickaxe, then "Use On"
+        // the ore node. Hide the verb here so the node's context menu doesn't
+        // also offer a "Mine" button that would require an equipped tool.
+        let is_tool_gated = i.tool_gate.is_some();
+        state_matches && !is_lock_verb && !is_tool_gated
     })?;
     let label = interaction.label.clone().unwrap_or_else(|| {
         let mut chars = interaction.verb.chars();
@@ -3664,7 +3708,7 @@ fn can_use_on(
     object_id: u64,
     object_registry: &ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
-    spell_definitions: &SpellDefinitions,
+    _spell_definitions: &SpellDefinitions,
 ) -> bool {
     let Some(type_id) = object_registry.type_id(object_id) else {
         return false;
@@ -3673,10 +3717,12 @@ fn can_use_on(
         return false;
     };
 
+    // Any usable item can target — gathering tools, untargeted spell scrolls,
+    // healing items used on other players, etc. The server resolves what the
+    // action actually does; the menu just opens the picker. Items carrying a
+    // *targeted* spell route through `CursorMode::SpellTarget` separately at
+    // click time (see `handle_context_menu_clicks`).
     definition.is_usable()
-        && object_registry
-            .resolved_spell_id(object_id, definitions, spell_definitions)
-            .is_none()
 }
 
 fn context_target_to_item_reference(

@@ -20,7 +20,7 @@ interactions:
     to: depleted
     tool_gate:
       required_type_id: fishing_rod
-      fail_message: "You need a fishing rod equipped to fish here."
+      fail_message: "You need a fishing rod to fish here."
     skill_gate:
       skill: Survival
       dc: !fixed 8

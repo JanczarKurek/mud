@@ -68,8 +68,15 @@ pub fn process_interact_commands(
     let mut remaining = Vec::with_capacity(drained.len());
 
     for queued in drained {
-        let (object_id, verb) = match queued.command {
-            GameCommand::InteractWithObject { object_id, verb } => (object_id, verb),
+        // `bypass_tool_gate` is set for `ApplyToolInteraction` — those entries
+        // come from `handle_use_item_on` after it has already verified the tool
+        // was in the player's inventory and consumed a charge on the source.
+        let (object_id, verb, bypass_tool_gate) = match queued.command {
+            GameCommand::InteractWithObject { object_id, verb } => (object_id, verb, false),
+            GameCommand::ApplyToolInteraction {
+                target_object_id,
+                verb,
+            } => (target_object_id, verb, true),
             GameCommand::AdminSetObjectState { object_id, state } => {
                 apply_state_transition(
                     object_id,
@@ -139,11 +146,16 @@ pub fn process_interact_commands(
 
         // Resolve any tool / skill / key gates *before* committing to the
         // transition. Tool gate runs first so a player without the right
-        // equipment never burns a skill roll.
-        if let Some(gate) = &interaction.tool_gate {
-            if !inventory_has_tool(inventory, &gate.required_type_id) {
-                chat_log.push_narrator(tool_gate_failure_message(gate, &definitions));
-                continue;
+        // equipment never burns a skill roll. `bypass_tool_gate` short-circuits
+        // this when the command came from `handle_use_item_on` — that path
+        // matched the tool against the gate's `required_type_id` itself and
+        // already paid the charge cost on the source item.
+        if !bypass_tool_gate {
+            if let Some(gate) = &interaction.tool_gate {
+                if !inventory_has_tool(inventory, &gate.required_type_id) {
+                    chat_log.push_narrator(tool_gate_failure_message(gate, &definitions));
+                    continue;
+                }
             }
         }
 
@@ -1064,6 +1076,125 @@ mod tests {
         assert!(
             has_timer,
             "expected RespawnTimer to be attached after harvest"
+        );
+    }
+
+    fn give_to_backpack(app: &mut App, player: Entity, type_id: &str) {
+        let mut entity_mut = app.world_mut().entity_mut(player);
+        let mut inv = entity_mut.get_mut::<Inventory>().unwrap();
+        inv.backpack_slots[0] = Some(InventoryStack::item(
+            type_id.to_owned(),
+            ObjectProperties::new(),
+            1,
+        ));
+    }
+
+    /// Gathering via "Use On": pickaxe in backpack (NOT equipped), target an
+    /// ore_node, and after a few ticks the node depletes and iron_ore lands in
+    /// inventory. Exercises the new `UseItemOn` → `ApplyToolInteraction` path.
+    #[test]
+    fn gather_via_use_item_on_with_backpack_pickaxe() {
+        use crate::game::commands::{ItemReference, ItemSlotRef, UseTarget};
+
+        let mut app = setup_app();
+        let player = spawn_test_player(&mut app, Class::Fighter, 0, 0, 10, 10);
+        {
+            let mut entity_mut = app.world_mut().entity_mut(player);
+            let mut sheet = entity_mut.get_mut::<SkillSheet>().unwrap();
+            sheet.set_rank(Skill::Survival, 4);
+        }
+        give_to_backpack(&mut app, player, "pickaxe");
+        let (_, node_id) = spawn_resource_node(&mut app, "ore_node", 11, 10);
+        app.update();
+
+        let mut attempts = 0;
+        let succeeded = loop {
+            attempts += 1;
+            app.world_mut()
+                .resource_mut::<PendingGameCommands>()
+                .push(GameCommand::UseItemOn {
+                    source: ItemReference::Slot(ItemSlotRef::Backpack(0)),
+                    target: UseTarget::Object(node_id),
+                });
+            // Two ticks: handle_use_item_on (frame N) queues ApplyToolInteraction;
+            // process_interact_commands picks it up on frame N+1.
+            app.update();
+            app.update();
+            if current_state(&mut app, node_id) == "depleted" {
+                break true;
+            }
+            if attempts >= 20 {
+                break false;
+            }
+        };
+        assert!(
+            succeeded,
+            "ore_node never depleted via UseItemOn across {attempts} attempts"
+        );
+
+        let inventory = app
+            .world()
+            .entity(player)
+            .get::<Inventory>()
+            .unwrap()
+            .clone();
+        let ore_count: u32 = inventory
+            .backpack_slots
+            .iter()
+            .flatten()
+            .filter(|stack| stack.type_id == "iron_ore")
+            .map(|stack| stack.quantity)
+            .sum();
+        assert!(
+            (1..=2).contains(&ore_count),
+            "expected 1-2 iron_ore in inventory after Use-On mining, got {ore_count}"
+        );
+    }
+
+    /// Pickaxe carries `infinite_uses: true`; using it on a node many times
+    /// must not decrement its quantity.
+    #[test]
+    fn infinite_use_pickaxe_not_consumed_on_use_on() {
+        use crate::game::commands::{ItemReference, ItemSlotRef, UseTarget};
+
+        let mut app = setup_app();
+        let player = spawn_test_player(&mut app, Class::Fighter, 0, 0, 10, 10);
+        {
+            let mut entity_mut = app.world_mut().entity_mut(player);
+            let mut sheet = entity_mut.get_mut::<SkillSheet>().unwrap();
+            sheet.set_rank(Skill::Survival, 4);
+        }
+        give_to_backpack(&mut app, player, "pickaxe");
+        let (_, node_id) = spawn_resource_node(&mut app, "ore_node", 11, 10);
+        app.update();
+
+        for _ in 0..5 {
+            app.world_mut()
+                .resource_mut::<PendingGameCommands>()
+                .push(GameCommand::UseItemOn {
+                    source: ItemReference::Slot(ItemSlotRef::Backpack(0)),
+                    target: UseTarget::Object(node_id),
+                });
+            app.update();
+            app.update();
+        }
+
+        let inventory = app
+            .world()
+            .entity(player)
+            .get::<Inventory>()
+            .unwrap()
+            .clone();
+        let pickaxe_qty: u32 = inventory
+            .backpack_slots
+            .iter()
+            .flatten()
+            .filter(|stack| stack.type_id == "pickaxe")
+            .map(|stack| stack.quantity)
+            .sum();
+        assert_eq!(
+            pickaxe_qty, 1,
+            "pickaxe with infinite_uses must remain in inventory after repeated UseItemOn"
         );
     }
 }

@@ -839,11 +839,7 @@ fn spawn_conflict_banner(parent: &mut ChildSpawnerCommands) {
         });
 }
 
-fn spawn_conflict_button<C: Component>(
-    parent: &mut ChildSpawnerCommands,
-    label: &str,
-    marker: C,
-) {
+fn spawn_conflict_button<C: Component>(parent: &mut ChildSpawnerCommands, label: &str, marker: C) {
     parent
         .spawn((
             Button,

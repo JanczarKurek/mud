@@ -1,9 +1,10 @@
 extends: equipment
 name: Pickaxe
 weight: 2.5
-description: A heavy iron-headed pickaxe. Equip it to mine ore from rocky outcrops.
+description: A heavy iron-headed pickaxe. Use it on rocky outcrops to mine ore.
 equipment_slot: weapon
 damage: "1d4+strength"
+infinite_uses: true
 render:
   z_index: 0.26
   debug_color: [120, 120, 130]

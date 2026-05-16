@@ -1,0 +1,13 @@
+extends: pickup
+name: Wand of Sparks
+weight: 0.6
+description: A slender wand humming with stored lightning. Each use crackles forth a Spark Bolt.
+spell_id: spark_bolt
+max_charges: 30
+max_stack_size: 1
+fillable_properties:
+  - charges_remaining
+render:
+  debug_color: [220, 200, 90]
+  debug_size: 0.45
+  sprite_path: overworld_objects/wand_of_sparks/sprite.png

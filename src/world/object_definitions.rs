@@ -41,6 +41,23 @@ pub struct OverworldObjectDefinition {
     pub use_on_texts: Vec<String>,
     #[serde(default)]
     pub spell_id: Option<String>,
+    /// When `Some(N)`, this item starts with N charges. Charges are tracked
+    /// per-stack in `InventoryStack::properties["charges_remaining"]`. On use,
+    /// one charge is consumed; the item is destroyed when charges reach 0.
+    /// When `None`, behaviour is the legacy single-consume-on-use (scrolls).
+    #[serde(default)]
+    pub max_charges: Option<u32>,
+    /// When `true`, this item is never consumed on use. Overrides `max_charges`.
+    /// Used for permanent spellcasting items and gathering tools.
+    #[serde(default)]
+    pub infinite_uses: bool,
+    /// Optional cursor sprite (path under `assets/`) shown while the player is
+    /// targeting with this item via "Use On". `None` → auto-derived: gathering
+    /// tools get `cursors/gather_cursor.png`, everything else gets the default
+    /// `cursors/use_on_cursor.png`. Targeted spells take a different `CursorMode`
+    /// entirely and ignore this field.
+    #[serde(default)]
+    pub use_on_cursor: Option<String>,
     #[serde(default)]
     pub container_capacity: Option<usize>,
     /// When this object is itself a container, can it hold other items that are
@@ -804,6 +821,16 @@ impl OverworldObjectDefinition {
             || self.use_effects.regen_duration_seconds > 0.0
             || self.spell_id.is_some()
             || self.learns_recipe.is_some()
+            || self.max_charges.is_some()
+            || self.infinite_uses
+    }
+
+    /// True when the item has a notion of remaining uses tied to its definition —
+    /// either a finite charge budget or unlimited uses. Distinct from `is_usable`
+    /// because a scroll with `spell_id` but no `max_charges` is usable but has
+    /// no charge accounting.
+    pub fn has_charges(&self) -> bool {
+        self.infinite_uses || self.max_charges.is_some()
     }
 
     /// Sprite path for `state`, falling back to the base `render.sprite_path`
@@ -890,6 +917,10 @@ pub struct OverworldObjectDefinitions {
     /// time so editors can ask "does this object extend `npc`?" without
     /// re-reading YAML.
     extends_chain: HashMap<String, Vec<String>>,
+    /// Type ids that appear as `tool_gate.required_type_id` on any interaction
+    /// anywhere in the catalogue. Precomputed at load time so the UI can pick
+    /// a gather-flavoured cursor sprite for these items in O(1).
+    tool_type_ids: std::collections::HashSet<String>,
 }
 
 impl OverworldObjectDefinitions {
@@ -989,9 +1020,12 @@ impl OverworldObjectDefinitions {
             definitions.insert(definition_id, definition);
         }
 
+        let tool_type_ids = compute_tool_type_ids(&definitions);
+
         Self {
             definitions,
             extends_chain,
+            tool_type_ids,
         }
     }
 
@@ -1013,13 +1047,36 @@ impl OverworldObjectDefinitions {
         self.definitions.keys().map(String::as_str)
     }
 
+    /// True when this type id appears as a `tool_gate.required_type_id` on any
+    /// interaction. Drives the gather-flavoured cursor sprite when the player
+    /// enters "Use On" targeting with this item.
+    pub fn is_gathering_tool(&self, type_id: &str) -> bool {
+        self.tool_type_ids.contains(type_id)
+    }
+
     #[cfg(test)]
     pub fn new_for_test(definitions: HashMap<String, OverworldObjectDefinition>) -> Self {
+        let tool_type_ids = compute_tool_type_ids(&definitions);
         Self {
             definitions,
             extends_chain: HashMap::new(),
+            tool_type_ids,
         }
     }
+}
+
+fn compute_tool_type_ids(
+    definitions: &HashMap<String, OverworldObjectDefinition>,
+) -> std::collections::HashSet<String> {
+    let mut ids = std::collections::HashSet::new();
+    for def in definitions.values() {
+        for interaction in &def.interactions {
+            if let Some(gate) = &interaction.tool_gate {
+                ids.insert(gate.required_type_id.clone());
+            }
+        }
+    }
+    ids
 }
 
 fn load_base_values() -> HashMap<String, Value> {

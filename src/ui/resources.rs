@@ -629,6 +629,20 @@ impl CursorMode {}
 #[derive(Resource, Default)]
 pub struct CursorState {
     pub mode: CursorMode,
+    /// When `mode == UseOn`, optionally overrides the default
+    /// `cursors/use_on_cursor.png` sprite for the duration of the targeting
+    /// session. Computed at entry-time from the source item — gathering tools
+    /// use `cursors/gather_cursor.png`, items with an authored `use_on_cursor`
+    /// definition field use that, everything else falls back to the default.
+    /// Cleared together with the mode via `reset_to_default`.
+    pub use_on_sprite: Option<String>,
+}
+
+impl CursorState {
+    pub fn reset_to_default(&mut self) {
+        self.mode = CursorMode::Default;
+        self.use_on_sprite = None;
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

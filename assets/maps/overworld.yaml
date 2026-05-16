@@ -1311,6 +1311,19 @@ objects:
     y: 40
   - x: 22
     y: 44
+# --- Usable-item demos near the spawn point (35, 25) ---
+# Two pickups to exercise the charged-item system: the rune is a 5-charge
+# consumable (untargeted self-heal); the wand carries 30 charges of a targeted
+# spell (Spark Bolt). Pick them up, right-click them in the inventory, and the
+# context menu offers "Use On" (with a gather/spell cursor as appropriate).
+- type: rune_of_lesser_heal
+  placement:
+    x: 36
+    y: 25
+- type: wand_of_sparks
+  placement:
+    x: 34
+    y: 25
 - type: silver_ring
   placement:
   - x: 38

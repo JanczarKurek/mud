@@ -1,9 +1,10 @@
 extends: equipment
 name: Herb Knife
 weight: 0.5
-description: A small curved blade for snipping stems. Equip it to harvest herb patches.
+description: A small curved blade for snipping stems. Use it on herb patches to harvest.
 equipment_slot: weapon
 damage: "1d3+strength"
+infinite_uses: true
 attack_profile:
   kind: melee
   damage_type: cut

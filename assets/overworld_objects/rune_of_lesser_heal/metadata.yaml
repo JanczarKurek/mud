@@ -1,0 +1,13 @@
+extends: pickup
+name: Rune of Lesser Heal
+weight: 0.2
+description: A clay shard etched with a healing glyph. Each use channels Lesser Heal on the bearer.
+spell_id: lesser_heal
+max_charges: 5
+max_stack_size: 1
+fillable_properties:
+  - charges_remaining
+render:
+  debug_color: [220, 120, 110]
+  debug_size: 0.40
+  sprite_path: overworld_objects/rune_of_lesser_heal/sprite.png

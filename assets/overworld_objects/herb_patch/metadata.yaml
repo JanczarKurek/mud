@@ -20,7 +20,7 @@ interactions:
     to: depleted
     tool_gate:
       required_type_id: herb_knife
-      fail_message: "You need a herb knife equipped to harvest these."
+      fail_message: "You need a herb knife to harvest these."
     skill_gate:
       skill: Survival
       dc: !fixed 6
