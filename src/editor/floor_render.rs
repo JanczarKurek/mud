@@ -180,5 +180,5 @@ pub fn cleanup_editor_floor_cells(
         commands.entity(entity).despawn();
     }
     editor_render_state.built_for = None;
-    ingame_render_state.built_for = None;
+    ingame_render_state.built_for.clear();
 }

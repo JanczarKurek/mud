@@ -406,18 +406,20 @@ pub fn compute_events_for_peer(
     };
     let _ = local_player_object_id;
 
-    // Push the floor map *before* CurrentSpaceChanged so the renderer sees the
-    // grid populated by the time the space switch triggers a rebuild on the
-    // next frame.
-    if let Some(server_floor_map) = floor_maps.get(local_space_id, TilePosition::GROUND_FLOOR) {
-        match previous
-            .floor_maps
-            .get(&(local_space_id, TilePosition::GROUND_FLOOR))
-        {
+    // Push every floor map *before* CurrentSpaceChanged so the renderer sees
+    // each (space, z) grid populated by the time the space switch triggers a
+    // rebuild on the next frame. Replicates every z that exists in `FloorMaps`
+    // for the local space — Tibia-style multi-floor rendering needs upper
+    // floors to reach the client.
+    for (space_id_iter, z, server_floor_map) in floor_maps.iter() {
+        if space_id_iter != local_space_id {
+            continue;
+        }
+        match previous.floor_maps.get(&(local_space_id, z)) {
             None => {
                 events.push(GameEvent::FloorMapReplaced {
                     space_id: local_space_id,
-                    z: TilePosition::GROUND_FLOOR,
+                    z,
                     width: server_floor_map.width,
                     height: server_floor_map.height,
                     tiles: server_floor_map.tiles.clone(),
@@ -429,7 +431,7 @@ pub fn compute_events_for_peer(
             {
                 events.push(GameEvent::FloorMapReplaced {
                     space_id: local_space_id,
-                    z: TilePosition::GROUND_FLOOR,
+                    z,
                     width: server_floor_map.width,
                     height: server_floor_map.height,
                     tiles: server_floor_map.tiles.clone(),
@@ -442,7 +444,7 @@ pub fn compute_events_for_peer(
                         if prev.tiles[idx] != server_floor_map.tiles[idx] {
                             events.push(GameEvent::FloorTileSet {
                                 space_id: local_space_id,
-                                z: TilePosition::GROUND_FLOOR,
+                                z,
                                 x,
                                 y,
                                 floor_type: server_floor_map.tiles[idx].clone(),

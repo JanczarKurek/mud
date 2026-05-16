@@ -12,7 +12,7 @@ use crate::player::components::{AttributeSet, BaseStats, DerivedStats, VitalStat
 use crate::world::components::{
     ClientProjectedWorldObject, ClientRemotePlayerVisual, CombatHealthBar, DisplayedVitalStats,
     Facing, HealthBarDisplayPolicy, OverworldObject, SpaceId, SpacePosition, SpaceResident,
-    TilePosition, ViewPosition, WorldVisual,
+    StackOffset, TilePosition, ViewPosition, WorldVisual,
 };
 use crate::world::direction::Direction;
 use crate::world::floor_map::FloorMaps;
@@ -486,7 +486,7 @@ pub fn spawn_client_projected_world_object(
         sprite_for_definition_state_count(asset_server, definition, world_config, state, quantity);
     let visual = world_visual_for_definition(definition, world_config.tile_size);
     let sprite_height = visual.sprite_height;
-    let uses_y_sort = visual.y_sort;
+    let bottom_anchored = bottom_anchor_for(&definition.render);
     let mut entity_commands = commands.spawn((
         ClientProjectedWorldObject {
             object_id,
@@ -497,12 +497,13 @@ pub fn spawn_client_projected_world_object(
             tile: position.tile_position,
         },
         visual,
+        StackOffset::default(),
         DisplayedVitalStats::default(),
         Facing(definition.render.default_facing.unwrap_or_default()),
         sprite,
         Transform::from_xyz(0.0, 0.0, definition.render.z_index),
     ));
-    if uses_y_sort && !definition.render.rotation_by_facing {
+    if bottom_anchored {
         entity_commands.insert(bevy::sprite::Anchor::BOTTOM_CENTER);
     }
     let entity = entity_commands.id();
@@ -533,7 +534,6 @@ pub fn spawn_client_remote_player(
     sprite.color = Color::srgba(0.82, 0.92, 1.0, 0.8);
     let visual = world_visual_for_definition(definition, world_config.tile_size);
     let sprite_height = visual.sprite_height;
-    let uses_y_sort = visual.y_sort;
 
     let mut entity_commands = commands.spawn((
         ClientRemotePlayerVisual {
@@ -550,7 +550,7 @@ pub fn spawn_client_remote_player(
         sprite,
         Transform::from_xyz(0.0, 0.0, definition.render.z_index),
     ));
-    if uses_y_sort && !definition.render.rotation_by_facing {
+    if bottom_anchor_for(&definition.render) {
         entity_commands.insert(bevy::sprite::Anchor::BOTTOM_CENTER);
     }
     let entity = entity_commands.id();
@@ -560,6 +560,18 @@ pub fn spawn_client_remote_player(
     });
     attach_combat_health_bar(commands, entity, world_config.tile_size, sprite_height);
     entity
+}
+
+/// Sprites are bottom-anchored when their footprint sits on a tile and they
+/// may rise above it. That includes y-sorted characters (NPCs, players) and
+/// any object with a `display_height` (walls, chests). Sprites that rotate
+/// with facing keep the default center anchor so rotation pivots around the
+/// sprite center.
+pub fn bottom_anchor_for(render: &crate::world::object_definitions::RenderMetadata) -> bool {
+    if render.rotation_by_facing {
+        return false;
+    }
+    render.y_sort || render.display_height > 0.0
 }
 
 pub fn world_visual_for_definition(
@@ -572,6 +584,9 @@ pub fn world_visual_for_definition(
         y_sort: definition.render.y_sort,
         sprite_height: sprite_size.y,
         rotation_by_facing: definition.render.rotation_by_facing,
+        display_height: definition.render.display_height,
+        stack_order: definition.render.stack_order,
+        hide_when_inside_facing: definition.render.hide_when_inside_facing,
     }
 }
 

@@ -321,7 +321,10 @@ pub fn inventory_has_tool(inventory: &Inventory, required_type_id: &str) -> bool
         .is_some_and(|item| item.type_id == required_type_id)
 }
 
-fn tool_gate_failure_message(gate: &ToolGateDef, definitions: &OverworldObjectDefinitions) -> String {
+fn tool_gate_failure_message(
+    gate: &ToolGateDef,
+    definitions: &OverworldObjectDefinitions,
+) -> String {
     if let Some(msg) = &gate.fail_message {
         return msg.clone();
     }
@@ -1054,9 +1057,7 @@ mod tests {
         );
 
         // RespawnTimer should be attached to the node.
-        let mut timer_q = app
-            .world_mut()
-            .query::<(&OverworldObject, &RespawnTimer)>();
+        let mut timer_q = app.world_mut().query::<(&OverworldObject, &RespawnTimer)>();
         let has_timer = timer_q
             .iter(app.world())
             .any(|(object, _)| object.object_id == node_id);

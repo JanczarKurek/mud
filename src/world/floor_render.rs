@@ -11,7 +11,9 @@ use crate::world::floor_definitions::{
     TransitionPairKey,
 };
 use crate::world::floor_map::FloorMap;
-use crate::world::systems::flat_floor_z;
+use crate::world::floors::{IndoorTileMap, VisibleFloorRange};
+use crate::world::lighting::srgb_u8_to_linear;
+use crate::world::systems::{flat_floor_z, floor_screen_offset};
 use crate::world::WorldConfig;
 
 /// Maps a 4-corner bitmask (0..=15) to the linear atlas index of that
@@ -56,9 +58,12 @@ pub struct FloorTilesetAtlases {
     pub transition_images: HashMap<TransitionPairKey, Handle<Image>>,
 }
 
+/// Per-(space, z) hash of the floor grid last rendered. Each visible floor is
+/// rebuilt independently so climbing or descending only invalidates one band's
+/// cells, not every floor in the space.
 #[derive(Resource, Default, Clone, Debug)]
 pub struct FloorRenderState {
-    pub built_for: Option<(SpaceId, i32, u64)>,
+    pub built_for: HashMap<(SpaceId, i32), u64>,
 }
 
 /// Defaulted on both server and client plugins to keep `apply_*` system
@@ -138,39 +143,81 @@ pub fn build_floor_render_cells(
     floor_defs: Res<FloorTilesetDefinitions>,
     mut atlases: ResMut<FloorTilesetAtlases>,
     world_config: Res<WorldConfig>,
+    visible_floors: Res<VisibleFloorRange>,
     mut render_state: ResMut<FloorRenderState>,
-    existing: Query<Entity, With<FloorRenderCell>>,
+    existing: Query<(Entity, &FloorRenderCell)>,
 ) {
     let _t = crate::diagnostics::SystemTimer::new("build_floor_render_cells", 1.0);
     let Some(space) = client_state.current_space.as_ref() else {
         return;
     };
-    let key = (space.space_id, 0);
-    let Some(grid) = client_state.floor_maps.get(&key) else {
-        return;
-    };
-    let hash = quick_hash(&grid.tiles);
-    if render_state.built_for == Some((space.space_id, 0, hash)) {
-        return;
+    let current_space_id = space.space_id;
+
+    // Sweep stale entries: anything for a different space, or for a z outside
+    // the visible range. Without this, dead floors leak across space switches
+    // and across the player's vertical movement.
+    let z_min = visible_floors.lowest_visible.max(0);
+    let z_max = visible_floors.highest_visible;
+    let stale: Vec<(SpaceId, i32)> = render_state
+        .built_for
+        .keys()
+        .copied()
+        .filter(|(sid, z)| *sid != current_space_id || *z < z_min || *z > z_max)
+        .collect();
+    if !stale.is_empty() {
+        for key in &stale {
+            render_state.built_for.remove(key);
+        }
+        for (entity, cell) in &existing {
+            if stale
+                .iter()
+                .any(|(sid, z)| *sid == cell.space_id && *z == cell.z)
+            {
+                commands.entity(entity).despawn();
+            }
+        }
     }
 
-    for entity in &existing {
-        commands.entity(entity).despawn();
+    for z in z_min..=z_max {
+        let key = (current_space_id, z);
+        let Some(grid) = client_state.floor_maps.get(&key) else {
+            // Floor doesn't exist at this z — make sure no cells linger.
+            if render_state.built_for.remove(&key).is_some() {
+                for (entity, cell) in &existing {
+                    if cell.space_id == current_space_id && cell.z == z {
+                        commands.entity(entity).despawn();
+                    }
+                }
+            }
+            continue;
+        };
+        let hash = quick_hash(&grid.tiles);
+        if render_state.built_for.get(&key) == Some(&hash) {
+            continue;
+        }
+
+        // Despawn only the cells we're about to rebuild — leave other floors
+        // untouched so vertical movement doesn't churn the entire space.
+        for (entity, cell) in &existing {
+            if cell.space_id == current_space_id && cell.z == z {
+                commands.entity(entity).despawn();
+            }
+        }
+
+        rebuild_floor_render_cells_for_grid(
+            &mut commands,
+            &asset_server,
+            &mut texture_atlas_layouts,
+            &mut atlases,
+            &floor_defs,
+            &world_config,
+            current_space_id,
+            z,
+            grid,
+        );
+
+        render_state.built_for.insert(key, hash);
     }
-
-    rebuild_floor_render_cells_for_grid(
-        &mut commands,
-        &asset_server,
-        &mut texture_atlas_layouts,
-        &mut atlases,
-        &floor_defs,
-        &world_config,
-        space.space_id,
-        0,
-        grid,
-    );
-
-    render_state.built_for = Some((space.space_id, 0, hash));
 }
 
 /// Spawns one set of `FloorRenderCell`s covering every corner of `grid`. The
@@ -575,32 +622,69 @@ pub fn consume_floor_render_dirty(_dirty: ResMut<FloorRenderDirty>) {}
 pub fn sync_floor_render_transforms(
     client_state: Res<ClientGameState>,
     world_config: Res<WorldConfig>,
-    mut query: Query<(&FloorRenderCell, &mut Transform)>,
+    visible_floors: Res<VisibleFloorRange>,
+    indoor: Res<IndoorTileMap>,
+    mut query: Query<(&FloorRenderCell, &mut Transform, &mut Sprite)>,
 ) {
     let _t = crate::diagnostics::SystemTimer::new("sync_floor_render_transforms", 1.0);
     let Some(player_position) = client_state.player_position else {
         return;
     };
+    let player_floor = visible_floors.player_floor;
+
+    // Indoor ambient color used as per-cell tint for floor tiles whose corner
+    // is inside an enclosed area. Mirrors the per-sprite tint in
+    // `sync_tile_transforms` so the floor shades alongside the walls and
+    // objects that share the indoor region.
+    let indoor_tint_rgb = client_state
+        .current_space
+        .as_ref()
+        .map(|s| srgb_u8_to_linear(s.lighting.indoor_ambient))
+        .unwrap_or([1.0, 1.0, 1.0]);
+
     // Absolute world coords: x and y depend only on the cell's tile-grid
-    // position, never on player_position or scroll. The camera follows the
-    // player (`crate::world::camera::camera_follow`), so screen-relative
-    // positioning falls out of `sprite_world - camera_world`.
-    //
-    // Result: when the player is standing still or scrolling within the same
-    // space, none of these 4k+ Transforms get marked changed, and Bevy's
-    // `propagate_parent_transforms` skips them.
-    for (cell, mut transform) in &mut query {
+    // position plus a Tibia-style up-left offset per floor away from the
+    // player. The camera follows the player (`world::camera::camera_follow`),
+    // so screen-relative positioning falls out of `sprite_world - camera_world`.
+    for (cell, mut transform, mut sprite) in &mut query {
         let visible = cell.space_id == player_position.space_id;
         let z = if !visible {
             -10_000.0
         } else {
             flat_floor_z(cell.priority_z, cell.z)
         };
-        let dx = (cell.rx as f32 - 0.5 + cell.local_offset.x) * world_config.tile_size;
-        let dy = (cell.ry as f32 - 0.5 + cell.local_offset.y) * world_config.tile_size;
+        let floor_offset = floor_screen_offset(cell.z, player_floor, world_config.tile_size);
+        let dx =
+            (cell.rx as f32 - 0.5 + cell.local_offset.x) * world_config.tile_size + floor_offset.x;
+        let dy =
+            (cell.ry as f32 - 0.5 + cell.local_offset.y) * world_config.tile_size + floor_offset.y;
         let new_translation = Vec3::new(dx, dy, z);
         if transform.translation != new_translation {
             transform.translation = new_translation;
+        }
+
+        // A corner cell straddles 4 surrounding world tiles; if any of them is
+        // indoor we tint the whole cell. This is mildly conservative at the
+        // building's edge corners (one quadrant of a corner cell might sit
+        // outside the wall), but that quadrant is occluded by the wall sprite
+        // visually anyway, so the slight over-tint is invisible in practice.
+        let is_indoor = visible
+            && [
+                (cell.rx - 1, cell.ry - 1),
+                (cell.rx, cell.ry - 1),
+                (cell.rx - 1, cell.ry),
+                (cell.rx, cell.ry),
+            ]
+            .iter()
+            .any(|(tx, ty)| indoor.contains(cell.space_id, *tx, *ty, cell.z));
+        let rgb = if is_indoor {
+            indoor_tint_rgb
+        } else {
+            [1.0, 1.0, 1.0]
+        };
+        let new_color = Color::linear_rgba(rgb[0], rgb[1], rgb[2], sprite.color.alpha());
+        if sprite.color != new_color {
+            sprite.color = new_color;
         }
     }
 }

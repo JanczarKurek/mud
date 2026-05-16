@@ -873,6 +873,29 @@ The `text` value supports three count placeholders in addition to the normal `{p
 - Use this for single-sprite props (signposts, arrows, beds) that have no per-direction animation frames
 - Rotated sprites use center anchoring — when this flag is `true`, the bottom-center y-sort shift is skipped so the sprite sits square on the tile after rotation. Design sprites for this flag as square tiles
 
+### `display_height`
+- Type: float (in tiles)
+- Optional: yes
+- Default: `0.0`
+- Meaning: visual height of the object, used for Tibia-style vertical stacking when multiple tall objects share a tile (e.g. a chest atop a barrel) and to gate auto-climb together with `walkable_surface`. Independent of the sprite's pixel size — `display_height` governs *logical* stacking math, while `sprite_height_tiles` governs how big the art is drawn
+- Typical values: wall `1.0`, barrel `0.5`, chest `0.4`, low rock `0.3`, ground items `0.0`
+- Combined with `walkable_surface: true`, this lets the player auto-step up by one z when walking into the object — they snap onto its top and snap back down on stepping off
+- Objects with `display_height > 0` are rendered bottom-anchored (sprite footprint sits on the tile, art rises upward), unless `rotation_by_facing` is set — rotated sprites stay center-anchored
+
+### `hide_when_inside_facing`
+- Type: string (`north`, `south`, `east`, `west`) or omitted
+- Optional: yes
+- Default: omitted (no fade)
+- Meaning: marks this object as a building wall that should fade to a faint silhouette when the player is inside an enclosed area (the tile directly above the player has `occludes_floor_above: true`). Only `south` and `east` are honoured — these are the camera-facing walls that would otherwise obstruct the player view
+- The wall remains technically present (it still blocks movement); only its sprite alpha is reduced
+
+### `stack_order`
+- Type: integer
+- Optional: yes
+- Default: `0`
+- Meaning: tiebreaker when multiple `display_height > 0` objects share a tile. Lower values render at the bottom of the stack, higher values on top. When two objects share the same `stack_order`, the authoritative `object_id` (server-allocated) breaks the tie
+- Suggested values: barrel `10`, chest `20`, wall `50`
+
 ### `animation`
 - Type: mapping or `null`
 - Optional: yes

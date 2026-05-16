@@ -42,7 +42,9 @@ use crate::world::floor_render::{
     build_floor_render_cells, consume_floor_render_dirty, sync_floor_render_transforms,
     FloorRenderDirty, FloorRenderState, FloorTilesetAtlases,
 };
-use crate::world::floors::{recompute_visible_floors, VisibleFloorRange};
+use crate::world::floors::{
+    recompute_indoor_tile_map, recompute_visible_floors, IndoorTileMap, VisibleFloorRange,
+};
 use crate::world::lighting::{advance_world_clock, sync_object_light_components, WorldClock};
 use crate::world::map_layout::SpaceDefinitions;
 use crate::world::object_definitions::OverworldObjectDefinitions;
@@ -52,9 +54,9 @@ use crate::world::resources::{
 };
 use crate::world::setup::{initialize_runtime_spaces, WorldStartupSet};
 use crate::world::systems::{
-    cleanup_empty_ephemeral_spaces, sync_authoritative_world_object_position_view,
-    sync_client_world_projection, sync_combat_health_bars, sync_player_z,
-    sync_remote_player_projection, sync_tile_transforms,
+    cleanup_empty_ephemeral_spaces, compute_stack_offsets,
+    sync_authoritative_world_object_position_view, sync_client_world_projection,
+    sync_combat_health_bars, sync_player_z, sync_remote_player_projection, sync_tile_transforms,
 };
 use crate::world::vfx::VfxDefinitions;
 
@@ -140,6 +142,7 @@ impl Plugin for WorldClientPlugin {
             .insert_resource(ClientRemotePlayerProjectionState::default())
             .insert_resource(ViewScrollOffset::default())
             .insert_resource(VisibleFloorRange::default())
+            .insert_resource(IndoorTileMap::default())
             .add_plugins(bevy::sprite_render::Material2dPlugin::<
                 DarknessOverlayMaterial,
             >::default())
@@ -153,23 +156,40 @@ impl Plugin for WorldClientPlugin {
             .add_systems(
                 Update,
                 (
-                    sync_client_world_projection.after(apply_game_events_to_client_state),
-                    sync_remote_player_projection.after(apply_game_events_to_client_state),
-                    sync_authoritative_world_object_position_view
-                        .after(apply_game_events_to_client_state)
-                        .before(sync_tile_transforms),
-                    recompute_visible_floors
-                        .after(apply_game_events_to_client_state)
-                        .before(sync_tile_transforms),
-                    sync_tile_transforms.after(detect_player_movement),
-                    sync_player_z,
-                    sync_combat_health_bars,
-                    build_floor_render_cells.after(apply_game_events_to_client_state),
-                    consume_floor_render_dirty
-                        .after(apply_game_events_to_client_state)
-                        .after(build_floor_render_cells),
-                    sync_floor_render_transforms.after(detect_player_movement),
-                    // Animation systems
+                    (
+                        sync_client_world_projection.after(apply_game_events_to_client_state),
+                        sync_remote_player_projection.after(apply_game_events_to_client_state),
+                        sync_authoritative_world_object_position_view
+                            .after(apply_game_events_to_client_state)
+                            .before(sync_tile_transforms),
+                        recompute_visible_floors
+                            .after(apply_game_events_to_client_state)
+                            .before(sync_tile_transforms),
+                        // Build the indoor-tile lookup once per frame so the
+                        // tint consumers (sync_tile_transforms,
+                        // sync_floor_render_transforms) get O(1) per-tile
+                        // lookups instead of O(world_objects) per call.
+                        recompute_indoor_tile_map
+                            .after(apply_game_events_to_client_state)
+                            .before(sync_tile_transforms)
+                            .before(sync_floor_render_transforms),
+                        compute_stack_offsets
+                            .after(sync_client_world_projection)
+                            .after(sync_remote_player_projection)
+                            .after(sync_authoritative_world_object_position_view)
+                            .before(sync_tile_transforms),
+                        sync_tile_transforms.after(detect_player_movement),
+                        sync_player_z,
+                        sync_combat_health_bars,
+                        build_floor_render_cells
+                            .after(apply_game_events_to_client_state)
+                            .after(recompute_visible_floors),
+                        consume_floor_render_dirty
+                            .after(apply_game_events_to_client_state)
+                            .after(build_floor_render_cells),
+                        sync_floor_render_transforms.after(detect_player_movement),
+                    ),
+                    // Animation + camera systems
                     attach_animated_sprite.after(sync_client_world_projection),
                     advance_animation_timers,
                     detect_player_movement.after(apply_game_events_to_client_state),

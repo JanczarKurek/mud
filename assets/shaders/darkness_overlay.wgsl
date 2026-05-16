@@ -73,15 +73,16 @@ fn is_indoor(world_xy: vec2<f32>) -> bool {
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let world_xy = in.world_position.xy;
 
-    var base_color: vec3<f32>;
-    var base_alpha: f32;
+    // Indoor pixels are tinted per-sprite (on the floor cell + back-wall
+    // sprites themselves) so the tint sorts correctly against camera-facing
+    // walls. The overlay only handles the genuinely-global outdoor case
+    // (day/night ambient + light cutouts on outdoor sprites).
     if (is_indoor(world_xy)) {
-        base_color = u.indoor.rgb;
-        base_alpha = u.indoor.a;
-    } else {
-        base_color = u.outdoor.rgb;
-        base_alpha = u.outdoor.a;
+        return vec4<f32>(0.0, 0.0, 0.0, 0.0);
     }
+
+    let base_color = u.outdoor.rgb;
+    let base_alpha = u.outdoor.a;
 
     var alpha = base_alpha;
     let num_lights = u32(u.counts.x);

@@ -460,7 +460,8 @@ pub fn render_paste_ghost(
         let mut sprite =
             crate::world::setup::sprite_for_definition(&asset_server, def, &world_config);
         sprite.color = sprite.color.with_alpha(0.6);
-        let anchor_y_offset = if def.render.y_sort {
+        let bottom_anchored = crate::world::setup::bottom_anchor_for(&def.render);
+        let anchor_y_offset = if bottom_anchored {
             -effective * 0.5
         } else {
             0.0
@@ -468,7 +469,7 @@ pub fn render_paste_ghost(
         let cx = (tile.x as f32 + fo.dx as f32 - editor_camera.center.x) * effective;
         let cy = (tile.y as f32 + fo.dy as f32 - editor_camera.center.y) * effective;
         let z_base = if def.render.y_sort {
-            crate::world::systems::y_sort_z(tile.y + fo.dy, fo.z)
+            crate::world::systems::y_sort_z(tile.y + fo.dy, fo.z, 0)
         } else {
             crate::world::systems::flat_floor_z(def.render.z_index, fo.z)
         };
@@ -479,7 +480,7 @@ pub fn render_paste_ghost(
             Transform::from_xyz(cx, cy + anchor_y_offset, z)
                 .with_scale(Vec3::splat(editor_camera.zoom_level)),
         ));
-        if def.render.y_sort {
+        if bottom_anchored {
             entity.insert(bevy::sprite::Anchor::BOTTOM_CENTER);
         }
     }

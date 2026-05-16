@@ -85,10 +85,6 @@ pub struct OverworldObjectDefinition {
     /// (items, scenery, doors) can omit it; spawn paths default to 1.
     #[serde(default)]
     pub level: Option<u32>,
-    /// When present, walking onto this object's tile shifts the player's floor
-    /// by `delta` (±1 for stairs_up / stairs_down, etc.).
-    #[serde(default)]
-    pub floor_transition: Option<FloorTransitionDef>,
     /// Yarn node name a player reaches when talking to this object. Empty =
     /// not talkable.
     #[serde(default)]
@@ -303,12 +299,6 @@ pub enum InteractionSideEffect {
     /// `container_capacity` to make a stateful chest both "openable" and
     /// "viewable".
     OpenContainerPanel,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
-pub struct FloorTransitionDef {
-    pub delta: i32,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -697,6 +687,23 @@ pub struct RenderMetadata {
     /// and stair tiles opt in. The ground floor is always walkable.
     #[serde(default)]
     pub walkable_surface: bool,
+    /// Visual height of this object in tiles (wall=1.0, chest~0.4, barrel~0.5,
+    /// low_rock~0.3, ground item=0.0). Drives vertical stacking when multiple
+    /// objects share a tile, and gates auto-climb together with
+    /// `walkable_surface`. Pure visual — collision still governed by
+    /// `colliding`/state colliding flags.
+    #[serde(default)]
+    pub display_height: f32,
+    /// Which building-wall side this object represents, for the
+    /// hide-when-inside rule. Only `South` and `East` are honoured (the
+    /// camera-facing sides). `None` = not a wall.
+    #[serde(default)]
+    pub hide_when_inside_facing: Option<Direction>,
+    /// Tiebreaker for stack ordering when several `display_height > 0` objects
+    /// share `(space, x, y, z)`. Suggested values: barrel=10, chest=20. When
+    /// equal, the authoritative `object_id` breaks the tie.
+    #[serde(default)]
+    pub stack_order: i32,
 }
 
 impl RenderMetadata {

@@ -29,7 +29,8 @@ use crate::world::object_definitions::{OverworldObjectDefinition, OverworldObjec
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::resources::{RuntimeSpace, SpaceManager};
 use crate::world::setup::{
-    instantiate_space, spawn_overworld_object, sprite_for_definition, world_visual_for_definition,
+    bottom_anchor_for, instantiate_space, spawn_overworld_object, sprite_for_definition,
+    world_visual_for_definition,
 };
 use crate::world::WorldConfig;
 
@@ -64,7 +65,8 @@ fn insert_editor_visuals(
     let effective_size = world_config.tile_size * camera.zoom_level;
     let sprite = sprite_for_definition(asset_server, def, world_config);
     let visual = world_visual_for_definition(def, world_config.tile_size);
-    let anchor_y_offset = if def.render.y_sort {
+    let bottom_anchored = bottom_anchor_for(&def.render);
+    let anchor_y_offset = if bottom_anchored {
         -effective_size * 0.5
     } else {
         0.0
@@ -76,7 +78,7 @@ fn insert_editor_visuals(
         visual,
         Transform::from_xyz(x, y, def.render.z_index).with_scale(Vec3::splat(camera.zoom_level)),
     ));
-    if def.render.y_sort {
+    if bottom_anchored {
         entity_commands.try_insert(bevy::sprite::Anchor::BOTTOM_CENTER);
     }
 }
@@ -271,11 +273,13 @@ pub fn sync_tile_transforms_editor(
         let z = if !is_active {
             -10_000.0
         } else if world_visual.y_sort {
-            crate::world::systems::y_sort_z(tile_position.y, tile_position.z)
+            crate::world::systems::y_sort_z(tile_position.y, tile_position.z, 0)
         } else {
             crate::world::systems::flat_floor_z(world_visual.z_index, tile_position.z)
         };
-        let anchor_y_offset = if world_visual.y_sort {
+        let bottom_anchored = (world_visual.y_sort || world_visual.display_height > 0.0)
+            && !world_visual.rotation_by_facing;
+        let anchor_y_offset = if bottom_anchored {
             -effective_size * 0.5
         } else {
             0.0
@@ -464,7 +468,8 @@ pub fn update_editor_cursor_ghost(
             };
             let mut sprite = sprite_for_definition(&asset_server, def, &world_config);
             sprite.color = sprite.color.with_alpha(0.5);
-            let anchor_y_offset = if def.render.y_sort {
+            let bottom_anchored = bottom_anchor_for(&def.render);
+            let anchor_y_offset = if bottom_anchored {
                 -effective * 0.5
             } else {
                 0.0
@@ -473,7 +478,7 @@ pub fn update_editor_cursor_ghost(
             // always visible. Y-sort objects use a dynamic z-band, so add to
             // the same band; flat objects use their static z_index.
             let z_base = if def.render.y_sort {
-                crate::world::systems::y_sort_z(tile.y, tile.z)
+                crate::world::systems::y_sort_z(tile.y, tile.z, 0)
             } else {
                 crate::world::systems::flat_floor_z(def.render.z_index, tile.z)
             };
@@ -484,7 +489,7 @@ pub fn update_editor_cursor_ghost(
                 Transform::from_xyz(tile_center.x, tile_center.y + anchor_y_offset, z)
                     .with_scale(Vec3::splat(editor_camera.zoom_level)),
             ));
-            if def.render.y_sort {
+            if bottom_anchored {
                 entity.insert(bevy::sprite::Anchor::BOTTOM_CENTER);
             }
         }
@@ -2056,6 +2061,9 @@ pub fn sync_portal_overlays(
                 y_sort: false,
                 sprite_height: 0.0,
                 rotation_by_facing: false,
+                display_height: 0.0,
+                stack_order: 0,
+                hide_when_inside_facing: None,
             },
             Sprite {
                 color: Color::srgba(0.2, 0.6, 1.0, 0.55),

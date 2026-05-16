@@ -802,17 +802,8 @@ fn handle_move_player(
     encumbered: bool,
     commands: &mut Commands,
 ) {
-    let Ok((
-        _,
-        _,
-        _,
-        mut chat_log_state,
-        mut space_resident,
-        mut tile_position,
-        mut movement_cooldown,
-        _,
-        _,
-    )) = player_query.get_mut(player_entity)
+    let Ok((_, _, _, _, mut space_resident, mut tile_position, mut movement_cooldown, _, _)) =
+        player_query.get_mut(player_entity)
     else {
         return;
     };
@@ -825,21 +816,21 @@ fn handle_move_player(
         return;
     };
 
-    let target_position = TilePosition::new(
+    let target_xy = (
         (tile_position.x + delta.x).clamp(0, runtime_space.width - 1),
         (tile_position.y + delta.y).clamp(0, runtime_space.height - 1),
-        tile_position.z,
     );
 
-    if !is_walkable_tile(
-        target_position,
+    let Some(target_position) = resolve_step_with_climb(
+        target_xy,
+        tile_position.z,
         space_resident.space_id,
         collider_positions,
         object_query,
         definitions,
-    ) {
+    ) else {
         return;
-    }
+    };
 
     *tile_position = target_position;
     let mut cooldown_scale = if encumbered { 2.0 } else { 1.0 };
@@ -853,38 +844,6 @@ fn handle_move_player(
 
     if let Some(direction) = Direction::from_delta(delta.x, delta.y) {
         commands.entity(player_entity).insert(Facing(direction));
-    }
-
-    // Stair transition: if the tile the player just stepped onto carries a
-    // `floor_transition`, bump z by its delta (unless the destination is blocked).
-    let stairs_delta = object_query
-        .iter()
-        .filter(|(_, resident, tile, _)| {
-            resident.space_id == space_resident.space_id && **tile == target_position
-        })
-        .find_map(|(_, _, _, object)| {
-            definitions
-                .get(&object.definition_id)
-                .and_then(|def| def.floor_transition.as_ref())
-                .map(|transition| transition.delta)
-        });
-    if let Some(delta_z) = stairs_delta {
-        let stair_destination = TilePosition::new(
-            target_position.x,
-            target_position.y,
-            target_position.z + delta_z,
-        );
-        if is_walkable_tile(
-            stair_destination,
-            space_resident.space_id,
-            collider_positions,
-            object_query,
-            definitions,
-        ) {
-            *tile_position = stair_destination;
-        } else {
-            chat_log_state.push_narrator("The way is blocked.");
-        }
     }
 
     let Some(space_definition) = authored_spaces.get(&runtime_space.authored_id) else {
@@ -3432,10 +3391,15 @@ fn chebyshev_distance_tiles(a: TilePosition, b: TilePosition) -> i32 {
 /// Central walkability check for player moves (and, later, teleport targets).
 ///
 /// Ground floor is walkable anywhere a collider isn't present. Upper floors
-/// (`z != 0`) require at least one object at the target tile whose definition
-/// has `walkable_surface: true` — floor planks and stairs opt in. This makes
-/// upper floors "built from positive-space tiles" rather than infinite planes,
-/// so players can't walk past the edge of an authored building.
+/// (`z != 0`) require either:
+///   - a flat walkable object AT the target tile (planks, stair landings —
+///     `walkable_surface: true`, `display_height == 0`), or
+///   - a tall walkable object on the tile BELOW the target whose top reaches
+///     up to this z (barrels, chests, low rocks — `walkable_surface: true`
+///     AND `display_height > 0`). This is the auto-climb surface.
+/// This makes upper floors "built from positive-space tiles" rather than
+/// infinite planes, so players can't walk past the edge of an authored
+/// building unless they fall.
 fn is_walkable_tile(
     target: TilePosition,
     space_id: crate::world::components::SpaceId,
@@ -3457,14 +3421,117 @@ fn is_walkable_tile(
         return true;
     }
 
-    object_query
+    let flat_walkable_here = object_query
         .iter()
         .filter(|(_, resident, tile, _)| resident.space_id == space_id && **tile == target)
         .any(|(_, _, _, object)| {
             definitions
                 .get(&object.definition_id)
-                .is_some_and(|def| def.render.walkable_surface)
+                .is_some_and(|def| def.render.walkable_surface && def.render.display_height == 0.0)
+        });
+    if flat_walkable_here {
+        return true;
+    }
+
+    let climbable_below = TilePosition::new(target.x, target.y, target.z - 1);
+    object_query
+        .iter()
+        .filter(|(_, resident, tile, _)| resident.space_id == space_id && **tile == climbable_below)
+        .any(|(_, _, _, object)| {
+            definitions
+                .get(&object.definition_id)
+                .is_some_and(|def| def.render.walkable_surface && def.render.display_height > 0.0)
         })
+}
+
+/// Tibia-style step resolver: when the player tries to step onto
+/// `(target_xy, current_z)`, work out where they actually land.
+///
+/// - If that tile is walkable as-is, use it.
+/// - If it is blocked by a collider AND the tile one floor above is walkable
+///   (some object there has `walkable_surface: true`), auto-climb +1 z.
+/// - If the tile is unsupported (no collider but no walkable surface either,
+///   i.e. you walked off a plank) AND `current_z > 0` AND the tile one floor
+///   below is walkable, drop -1 z.
+/// - Otherwise return `None`: the move is blocked.
+fn resolve_step_with_climb(
+    target_xy: (i32, i32),
+    current_z: i32,
+    space_id: crate::world::components::SpaceId,
+    collider_positions: &[TilePosition],
+    object_query: &Query<
+        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
+        Without<Player>,
+    >,
+    definitions: &OverworldObjectDefinitions,
+) -> Option<TilePosition> {
+    let (x, y) = target_xy;
+    let here = TilePosition::new(x, y, current_z);
+    if is_walkable_tile(
+        here,
+        space_id,
+        collider_positions,
+        object_query,
+        definitions,
+    ) {
+        return Some(here);
+    }
+
+    let blocked_by_collider = collider_positions.iter().any(|p| *p == here);
+
+    if blocked_by_collider {
+        // Climb-up rules (Tibia-style stairs of stacked steps):
+        //   - The tile being walked INTO must have a `walkable_surface` object
+        //     with `display_height > 0` — i.e. an actual step / barrel / chest
+        //     whose top we can stand on. Walls (no walkable_surface) reject.
+        //   - The target z+1 must be open: no collider, AND no flat walkable
+        //     (plank/ground) directly above. A flat walkable above is a
+        //     ceiling — you'd bonk your head, so the climb is refused.
+        //
+        // This lets authors carve a proper staircase by placing steps on the
+        // lower floor and *omitting* the plank tiles directly above each
+        // step. Players climb up through the holes; they fall back down
+        // through the same holes when walking off the rooftop.
+        let above = TilePosition::new(x, y, current_z + 1);
+        let blocked_above = collider_positions.iter().any(|p| *p == above);
+        let ceiling_above = object_query
+            .iter()
+            .filter(|(_, resident, tile, _)| resident.space_id == space_id && **tile == above)
+            .any(|(_, _, _, object)| {
+                definitions.get(&object.definition_id).is_some_and(|def| {
+                    def.render.walkable_surface && def.render.display_height == 0.0
+                })
+            });
+        let step_below = object_query
+            .iter()
+            .filter(|(_, resident, tile, _)| resident.space_id == space_id && **tile == here)
+            .any(|(_, _, _, object)| {
+                definitions.get(&object.definition_id).is_some_and(|def| {
+                    def.render.walkable_surface && def.render.display_height > 0.0
+                })
+            });
+        if step_below && !blocked_above && !ceiling_above {
+            return Some(above);
+        }
+        return None;
+    }
+
+    // Not blocked by a collider AND not walkable → unsupported. Drop down if
+    // there's solid ground one z below.
+    if current_z > 0 {
+        let below = TilePosition::new(x, y, current_z - 1);
+        if is_walkable_tile(
+            below,
+            space_id,
+            collider_positions,
+            object_query,
+            definitions,
+        ) {
+            return Some(below);
+        }
+    }
+
+    None
 }
 
 #[cfg(test)]
@@ -3798,49 +3865,7 @@ mod tests {
     }
 
     #[test]
-    fn stairs_transition_teleports_player_up_one_floor() {
-        let mut app = setup_server_app();
-        let player = spawn_player(&mut app, 1, 10, 10);
-
-        let stairs_id = app
-            .world_mut()
-            .resource_mut::<ObjectRegistry>()
-            .allocate_runtime_id("stairs_up");
-        spawn_world_object(
-            &mut app,
-            "stairs_up",
-            stairs_id,
-            TilePosition::ground(11, 10),
-        );
-        // Upper-floor walkability rule: the destination of the stair transition
-        // needs a walkable-surface object underneath.
-        let plank_id = app
-            .world_mut()
-            .resource_mut::<ObjectRegistry>()
-            .allocate_runtime_id("floor_plank");
-        spawn_world_object(
-            &mut app,
-            "floor_plank",
-            plank_id,
-            TilePosition::new(11, 10, 1),
-        );
-
-        app.world_mut()
-            .resource_mut::<PendingGameCommands>()
-            .push_for_player(
-                crate::player::components::PlayerId(1),
-                GameCommand::MovePlayer {
-                    delta: MoveDelta { x: 1, y: 0 },
-                },
-            );
-        app.update();
-
-        let tile = *app.world().get::<TilePosition>(player).unwrap();
-        assert_eq!(tile, TilePosition::new(11, 10, 1));
-    }
-
-    #[test]
-    fn upper_floor_walk_requires_walkable_surface() {
+    fn upper_floor_walk_requires_walkable_surface_or_drops_down() {
         let mut app = setup_server_app();
         // Player already on floor 1 standing on a plank; no plank to the east.
         let player = spawn_player(&mut app, 1, 10, 10);
@@ -3859,7 +3884,9 @@ mod tests {
             TilePosition::new(10, 10, 1),
         );
 
-        // Attempt to walk east into "empty air" on floor 1.
+        // Walk east into "empty air" on floor 1 — Tibia-style, the player
+        // drops to the ground floor (z=0) underneath rather than being
+        // blocked.
         app.world_mut()
             .resource_mut::<PendingGameCommands>()
             .push_for_player(
@@ -3873,26 +3900,67 @@ mod tests {
         let tile = *app.world().get::<TilePosition>(player).unwrap();
         assert_eq!(
             tile,
-            TilePosition::new(10, 10, 1),
-            "player should not walk off the edge of the plank"
+            TilePosition::new(11, 10, 0),
+            "player should drop off the plank to the ground floor"
         );
+    }
 
-        // Add a plank to the east and retry — now the move should succeed.
-        let plank_east_id = app
+    #[test]
+    fn auto_climb_steps_player_up_onto_walkable_top() {
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+
+        // A barrel directly east of the player. Barrel is colliding and has
+        // walkable_surface (top is walkable). Walking east should snap the
+        // player to (11, 10, 1) — atop the barrel.
+        let barrel_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("barrel");
+        spawn_world_object(&mut app, "barrel", barrel_id, TilePosition::ground(11, 10));
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                crate::player::components::PlayerId(1),
+                GameCommand::MovePlayer {
+                    delta: MoveDelta { x: 1, y: 0 },
+                },
+            );
+        app.update();
+
+        let tile = *app.world().get::<TilePosition>(player).unwrap();
+        assert_eq!(
+            tile,
+            TilePosition::new(11, 10, 1),
+            "player should auto-climb onto the barrel"
+        );
+    }
+
+    #[test]
+    fn auto_climb_blocked_when_ceiling_above() {
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+
+        // Barrel east of the player → would normally auto-climb. But there's
+        // a floor plank directly above the barrel (at z+1) acting as a
+        // ceiling, so the climb must be refused — the player would bonk.
+        let barrel_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("barrel");
+        spawn_world_object(&mut app, "barrel", barrel_id, TilePosition::ground(11, 10));
+        let plank_id = app
             .world_mut()
             .resource_mut::<ObjectRegistry>()
             .allocate_runtime_id("floor_plank");
         spawn_world_object(
             &mut app,
             "floor_plank",
-            plank_east_id,
+            plank_id,
             TilePosition::new(11, 10, 1),
         );
 
-        // Clear the movement cooldown so the next step fires immediately.
-        app.world_mut()
-            .entity_mut(player)
-            .insert(MovementCooldown::default());
         app.world_mut()
             .resource_mut::<PendingGameCommands>()
             .push_for_player(
@@ -3904,31 +3972,25 @@ mod tests {
         app.update();
 
         let tile = *app.world().get::<TilePosition>(player).unwrap();
-        assert_eq!(tile, TilePosition::new(11, 10, 1));
+        assert_eq!(
+            tile,
+            TilePosition::ground(10, 10),
+            "ceiling above the barrel should block the climb"
+        );
     }
 
     #[test]
-    fn stairs_blocked_destination_prevents_transition() {
+    fn auto_climb_blocked_when_no_walkable_top() {
         let mut app = setup_server_app();
         let player = spawn_player(&mut app, 1, 10, 10);
 
-        let stairs_id = app
-            .world_mut()
-            .resource_mut::<ObjectRegistry>()
-            .allocate_runtime_id("stairs_up");
-        spawn_world_object(
-            &mut app,
-            "stairs_up",
-            stairs_id,
-            TilePosition::ground(11, 10),
-        );
-
-        // Wall at the destination floor blocks the transition.
+        // A wall directly east. Walls collide and have NO walkable_surface,
+        // so the move should be blocked outright (no climb, no drop).
         let wall_id = app
             .world_mut()
             .resource_mut::<ObjectRegistry>()
             .allocate_runtime_id("wall");
-        spawn_world_object(&mut app, "wall", wall_id, TilePosition::new(11, 10, 1));
+        spawn_world_object(&mut app, "wall", wall_id, TilePosition::ground(11, 10));
 
         app.world_mut()
             .resource_mut::<PendingGameCommands>()
@@ -3941,16 +4003,10 @@ mod tests {
         app.update();
 
         let tile = *app.world().get::<TilePosition>(player).unwrap();
-        assert_eq!(tile, TilePosition::ground(11, 10));
-        let chat_log = app.world().get::<ChatLog>(player).unwrap();
-        assert!(
-            chat_log
-                .lines
-                .last()
-                .map(|line| line.contains("blocked"))
-                .unwrap_or(false),
-            "expected 'blocked' narrator line; got {:?}",
-            chat_log.lines
+        assert_eq!(
+            tile,
+            TilePosition::ground(10, 10),
+            "player should be blocked by a non-climbable wall"
         );
     }
 }

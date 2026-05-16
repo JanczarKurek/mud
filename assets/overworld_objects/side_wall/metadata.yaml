@@ -1,0 +1,14 @@
+extends: obstacle
+name: Side Wall
+description: A solid wall running north-south, viewed from its east face.
+render:
+  z_index: 0.3
+  debug_color: [120, 114, 103]
+  debug_size: 1.0
+  sprite_path: overworld_objects/side_wall/sprite.png
+  sprite_width_tiles: 1.0
+  sprite_height_tiles: 2.0
+  occludes_floor_above: true
+  display_height: 1.0
+  hide_when_inside_facing: east
+  stack_order: 50

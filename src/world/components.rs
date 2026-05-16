@@ -97,7 +97,22 @@ pub struct WorldVisual {
     pub y_sort: bool,
     pub sprite_height: f32,
     pub rotation_by_facing: bool,
+    /// Visual height in tiles, mirrored from `RenderMetadata.display_height`.
+    pub display_height: f32,
+    /// Sort key for stacking objects on the same tile, mirrored from
+    /// `RenderMetadata.stack_order`.
+    pub stack_order: i32,
+    /// Which building wall this represents — `South`/`East` get faded when
+    /// the player is inside an enclosed area. Mirrored from
+    /// `RenderMetadata.hide_when_inside_facing`.
+    pub hide_when_inside_facing: Option<Direction>,
 }
+
+/// Pixel y-offset applied to a sprite when it sits atop other tall objects on
+/// the same tile. Presentation-only — populated by `compute_stack_offsets`
+/// from `WorldVisual.display_height` of every other entity sharing the tile.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct StackOffset(pub f32);
 
 #[derive(Component)]
 pub struct CombatHealthBar {
