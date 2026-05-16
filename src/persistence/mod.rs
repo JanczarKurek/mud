@@ -1183,7 +1183,6 @@ mod tests {
             magnitude: 4.0,
             remaining_seconds: 123.0,
             secondary_magnitude: None,
-            tick_accumulator: 0.0,
         });
         let dump = PlayerStateDump {
             player_id: PlayerId(1),

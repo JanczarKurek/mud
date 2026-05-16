@@ -1089,22 +1089,27 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
 }
 
 /// Returns `true` when the `current` set of magical effects differs from
-/// `prev` enough to warrant emitting `PlayerEffectsChanged`. Membership,
-/// magnitude (epsilon), and remaining-seconds-at-integer-resolution all count.
+/// `prev` enough to warrant emitting `PlayerEffectsChanged`. Compared
+/// element-wise (order is stable on the server: `apply` pushes to the end,
+/// `tick_magic_effects` uses `retain` which preserves order), so multiple
+/// entries of the same kind are distinguished correctly. Membership,
+/// magnitude (epsilon), remaining-seconds at integer resolution, and the
+/// optional `secondary_magnitude` (for Chill) all count.
 fn effects_diff(prev: &[ClientActiveEffect], current: &[ClientActiveEffect]) -> bool {
     if prev.len() != current.len() {
         return true;
     }
-    for next in current {
-        match prev.iter().find(|p| p.kind == next.kind) {
-            None => return true,
-            Some(p) => {
-                if (p.magnitude - next.magnitude).abs() > f32::EPSILON
-                    || p.remaining_seconds.floor() != next.remaining_seconds.floor()
-                {
-                    return true;
-                }
-            }
+    for (p, c) in prev.iter().zip(current.iter()) {
+        if p.kind != c.kind
+            || (p.magnitude - c.magnitude).abs() > f32::EPSILON
+            || p.remaining_seconds.floor() != c.remaining_seconds.floor()
+        {
+            return true;
+        }
+        match (p.secondary_magnitude, c.secondary_magnitude) {
+            (None, None) => {}
+            (Some(a), Some(b)) if (a - b).abs() <= f32::EPSILON => {}
+            _ => return true,
         }
     }
     false

@@ -30,14 +30,21 @@ pub fn sync_player_glimmer_light(
         return;
     };
 
-    let glimmer = client_state
+    // L2 aggregate over all active Glimmer entries on the local player, so
+    // re-casts and multi-caster stacks brighten the halo sublinearly. Mirror
+    // of `MagicEffects::glimmer_radius`, but operating on the client-side
+    // projected vector (`ClientActiveEffect`).
+    let sum_sq: f32 = client_state
         .active_effects
         .iter()
-        .find(|e| e.kind == EffectKind::Glimmer && e.remaining_seconds > 0.0);
-
-    let (radius, intensity) = match glimmer {
-        Some(effect) => (effect.magnitude.max(BASELINE_RADIUS), 1.0),
-        None => (BASELINE_RADIUS, BASELINE_INTENSITY),
+        .filter(|e| e.kind == EffectKind::Glimmer && e.remaining_seconds > 0.0)
+        .map(|e| e.magnitude * e.magnitude)
+        .sum();
+    let aggregate_radius = sum_sq.sqrt();
+    let (radius, intensity) = if aggregate_radius > 0.0 {
+        (aggregate_radius.max(BASELINE_RADIUS), 1.0)
+    } else {
+        (BASELINE_RADIUS, BASELINE_INTENSITY)
     };
 
     if (light.radius - radius).abs() > 1e-3 || (light.intensity - intensity).abs() > 1e-3 {
