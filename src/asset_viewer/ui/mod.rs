@@ -3,7 +3,9 @@ pub mod palette;
 
 use bevy::prelude::*;
 
-use crate::asset_viewer::systems::{ClipButtonContainer, TopBarTitle, ViewerSaveButton};
+use crate::asset_viewer::systems::{
+    ClipButtonContainer, TopBarTitle, ViewerReloadButton, ViewerSaveButton,
+};
 use crate::asset_viewer::ui::inspector::spawn_inspector_panel;
 use crate::asset_viewer::ui::palette::spawn_palette_panel;
 use crate::magic::resources::SpellDefinitions;
@@ -58,6 +60,31 @@ pub fn spawn_viewer_hud(
                             ..default()
                         },
                         TextColor(Color::srgb(0.96, 0.84, 0.62)),
+                    ));
+                });
+
+                // Reload button (force full rescan)
+                bar.spawn((
+                    Button,
+                    ViewerReloadButton,
+                    Node {
+                        padding: UiRect::axes(Val::Px(12.0), Val::Px(5.0)),
+                        border: UiRect::all(Val::Px(1.0)),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.10, 0.07, 0.06, 0.70)),
+                    BorderColor::all(Color::srgb(0.22, 0.16, 0.12)),
+                ))
+                .with_children(|btn| {
+                    btn.spawn((
+                        Text::new("Reload"),
+                        TextFont {
+                            font_size: 12.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.88, 0.84, 0.78)),
                     ));
                 });
 

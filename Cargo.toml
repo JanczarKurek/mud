@@ -35,6 +35,10 @@ libsqlite3-sys = { version = "0.28", features = ["bundled"] }
 argon2 = "0.5"
 rand_core = { version = "0.6", features = ["std"] }
 
+# Filesystem watching for asset_viewer hot reload. Pulls in `notify` and
+# batches/coalesces filesystem events out of the box.
+notify-debouncer-full = "0.3"
+
 # TLS
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-pemfile = "2"
@@ -42,12 +46,16 @@ webpki-roots = "0.26"
 rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"], optional = true }
 
 [features]
-default = ["dynamic_linking"]
+default = ["dynamic_linking", "viewer-hot-reload"]
 # Bevy's hot-reload-friendly dynamic linking. Great for `cargo run` iteration
 # (cuts incremental link times from seconds to ~0); must be OFF for release
 # builds, otherwise the binary needs `libbevy_dylib.so` next to it at runtime.
 # Drop with `cargo build --release --no-default-features`.
 dynamic_linking = ["bevy/dynamic_linking"]
+# Enables Bevy's `file_watcher` for the asset_viewer binary so spritesheet PNGs
+# hot-reload when edited externally. Dev-only — drop with
+# `--no-default-features` for release builds.
+viewer-hot-reload = ["bevy/file_watcher"]
 gen-schemas = ["schemars"]
 dev-self-signed = ["rcgen"]
 # Build with `--features profiling` to capture a per-system Chrome trace at

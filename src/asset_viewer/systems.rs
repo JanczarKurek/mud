@@ -1,9 +1,13 @@
 #![allow(clippy::type_complexity)]
+use bevy::ecs::message::MessageWriter;
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 
-use crate::asset_viewer::resources::{AssetKind, InspectorBuffer, PreviewState, ViewerState};
+use crate::asset_viewer::reload::{AssetReloadRequest, ReloadKind};
+use crate::asset_viewer::resources::{
+    AssetKind, InspectorBuffer, PreviewState, SelfWriteSuppressor, ViewerState,
+};
 use crate::world::animation::AnimatedSprite;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 
@@ -30,15 +34,24 @@ pub fn update_preview(
     object_defs: Res<OverworldObjectDefinitions>,
     mut preview_state: ResMut<PreviewState>,
     mut inspector_buffer: ResMut<InspectorBuffer>,
-    mut last_selection: Local<(Option<String>, AssetKind)>,
+    mut last_selection: Local<(Option<String>, AssetKind, u32)>,
 ) {
     if !viewer_state.is_changed() {
         return;
     }
-    let current = (viewer_state.selected_id.clone(), viewer_state.selected_kind);
+    let current = (
+        viewer_state.selected_id.clone(),
+        viewer_state.selected_kind,
+        viewer_state.reload_counter,
+    );
     if *last_selection == current {
         return;
     }
+    // Distinguish "user changed selection" from "assets reloaded under us".
+    // On a pure reload bump, the inspector buffer was already refreshed by
+    // refresh_inspector_on_reload (with conflict handling); we must not
+    // overwrite it here.
+    let selection_changed = last_selection.0 != current.0 || last_selection.1 != current.1;
     *last_selection = current;
 
     if let Some(entity) = preview_state.preview_entity.take() {
@@ -47,13 +60,17 @@ pub fn update_preview(
     preview_state.current_clip = None;
 
     let Some(id) = &viewer_state.selected_id else {
-        *inspector_buffer = InspectorBuffer::default();
+        if selection_changed {
+            *inspector_buffer = InspectorBuffer::default();
+        }
         return;
     };
 
-    match viewer_state.selected_kind {
-        AssetKind::Object => inspector_buffer.load_object(id),
-        AssetKind::Spell => inspector_buffer.load_spell(id),
+    if selection_changed {
+        match viewer_state.selected_kind {
+            AssetKind::Object => inspector_buffer.load_object(id),
+            AssetKind::Spell => inspector_buffer.load_spell(id),
+        }
     }
 
     if viewer_state.selected_kind == AssetKind::Object {
@@ -464,6 +481,9 @@ pub fn sync_inspector_panel(
 
     commands.entity(body_entity).despawn_related::<Children>();
     commands.entity(body_entity).with_children(|parent| {
+        if buffer.conflict {
+            spawn_conflict_banner(parent);
+        }
         for (i, field) in buffer.fields.iter().enumerate() {
             let is_editing = buffer.editing_index == Some(i);
             let value_display = if is_editing {
@@ -580,11 +600,23 @@ pub fn handle_inspector_row_click(
 pub fn handle_save_button(
     buttons: Query<&Interaction, (Changed<Interaction>, With<ViewerSaveButton>)>,
     mut buffer: ResMut<InspectorBuffer>,
+    mut suppressor: ResMut<SelfWriteSuppressor>,
+    mut reload: MessageWriter<AssetReloadRequest>,
 ) {
     for interaction in &buttons {
         if *interaction == Interaction::Pressed {
+            let kind = buffer.kind;
             match buffer.save() {
-                Ok(()) => bevy::log::info!("Asset saved successfully"),
+                Ok(written_path) => {
+                    bevy::log::info!("Asset saved to {}", written_path.display());
+                    suppressor.expect(written_path);
+                    reload.write(AssetReloadRequest {
+                        kind: match kind {
+                            AssetKind::Object => ReloadKind::Objects,
+                            AssetKind::Spell => ReloadKind::Spells,
+                        },
+                    });
+                }
                 Err(e) => bevy::log::error!("Save failed: {}", e),
             }
         }
@@ -759,6 +791,125 @@ pub fn sync_top_bar_title(
     }
 }
 
+// ── Conflict banner ───────────────────────────────────────────────────────────
+
+fn spawn_conflict_banner(parent: &mut ChildSpawnerCommands) {
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                padding: UiRect::axes(Val::Px(8.0), Val::Px(6.0)),
+                row_gap: Val::Px(5.0),
+                border: UiRect::bottom(Val::Px(1.0)),
+                flex_shrink: 0.0,
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.32, 0.10, 0.04, 0.92)),
+            BorderColor::all(Color::srgb(0.90, 0.45, 0.20)),
+        ))
+        .with_children(|banner| {
+            banner.spawn((
+                Text::new("External change — your edits aren't saved"),
+                TextFont {
+                    font_size: 11.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(1.0, 0.88, 0.62)),
+            ));
+
+            banner
+                .spawn((Node {
+                    flex_direction: FlexDirection::Row,
+                    column_gap: Val::Px(6.0),
+                    ..default()
+                },))
+                .with_children(|row| {
+                    spawn_conflict_button::<InspectorConflictReloadButton>(
+                        row,
+                        "Reload from disk",
+                        InspectorConflictReloadButton,
+                    );
+                    spawn_conflict_button::<InspectorConflictKeepButton>(
+                        row,
+                        "Keep my edits",
+                        InspectorConflictKeepButton,
+                    );
+                });
+        });
+}
+
+fn spawn_conflict_button<C: Component>(
+    parent: &mut ChildSpawnerCommands,
+    label: &str,
+    marker: C,
+) {
+    parent
+        .spawn((
+            Button,
+            marker,
+            Node {
+                padding: UiRect::axes(Val::Px(10.0), Val::Px(4.0)),
+                border: UiRect::all(Val::Px(1.0)),
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.18, 0.08, 0.05, 0.92)),
+            BorderColor::all(Color::srgb(0.60, 0.32, 0.18)),
+        ))
+        .with_children(|btn| {
+            btn.spawn((
+                Text::new(label),
+                TextFont {
+                    font_size: 11.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.96, 0.88, 0.72)),
+            ));
+        });
+}
+
+pub fn handle_conflict_reload(
+    buttons: Query<&Interaction, (Changed<Interaction>, With<InspectorConflictReloadButton>)>,
+    mut buffer: ResMut<InspectorBuffer>,
+) {
+    for interaction in &buttons {
+        if *interaction == Interaction::Pressed {
+            let Some(id) = buffer.asset_id.clone() else {
+                continue;
+            };
+            match buffer.kind {
+                AssetKind::Object => buffer.load_object(&id),
+                AssetKind::Spell => buffer.load_spell(&id),
+            }
+        }
+    }
+}
+
+pub fn handle_conflict_keep(
+    buttons: Query<&Interaction, (Changed<Interaction>, With<InspectorConflictKeepButton>)>,
+    mut buffer: ResMut<InspectorBuffer>,
+) {
+    for interaction in &buttons {
+        if *interaction == Interaction::Pressed {
+            buffer.conflict = false;
+        }
+    }
+}
+
+pub fn handle_reload_button(
+    buttons: Query<&Interaction, (Changed<Interaction>, With<ViewerReloadButton>)>,
+    mut reload: MessageWriter<AssetReloadRequest>,
+) {
+    for interaction in &buttons {
+        if *interaction == Interaction::Pressed {
+            reload.write(AssetReloadRequest {
+                kind: ReloadKind::All,
+            });
+        }
+    }
+}
+
 // ── Components (markers used by systems above) ────────────────────────────────
 
 #[derive(Component, Clone)]
@@ -789,6 +940,15 @@ pub struct InspectorRow {
 
 #[derive(Component)]
 pub struct ViewerSaveButton;
+
+#[derive(Component)]
+pub struct ViewerReloadButton;
+
+#[derive(Component)]
+pub struct InspectorConflictReloadButton;
+
+#[derive(Component)]
+pub struct InspectorConflictKeepButton;
 
 #[derive(Component)]
 pub struct ClipButtonContainer;
