@@ -643,6 +643,25 @@ The `text` value supports three count placeholders in addition to the normal `{p
 - Meaning: for weapons and NPCs, how this entity attacks in melee or ranged combat
 - Fields:
   - `kind`: `melee` or `ranged`
+  - `hit_vfx` (optional): VFX definition id played on the target on a hit. Falls back to `"blood_splash"`.
+  - `damage_type` (optional): one of `blunt`, `cut`, `pierce`, `fire`, `frost`, `earth`, `lightning`, `poison`, `acid`, `death`, `holy`, `arcane`. Defaults to `blunt` for melee and `pierce` for ranged. Shown in the combat log (e.g. `[Goblin hit Hero for 4 cut damage]`); no resistance math is applied yet.
+  - `on_hit_effects` (optional): list of `MagicEffects` entries probabilistically applied to the target after a landed hit. Each entry is rolled independently. Fields per entry:
+    - `kind`: any `EffectKind` (`burning`, `chill`, `poisoned`, `paralyze`, `slow`, `sleep`, `drunk`, etc.)
+    - `magnitude`: float (effect-specific — for DOTs this is damage per second tick)
+    - `seconds`: float duration
+    - `chance` (optional, default `1.0`): probability in `[0, 1]` of applying this entry on a successful hit
+    - `secondary_magnitude` (optional): second parameter used by some effects (e.g. `chill`'s slow multiplier)
+    Example: a fire weapon that has a 35% chance to set the target on fire for 6 seconds:
+    ```yaml
+    attack_profile:
+      kind: melee
+      damage_type: fire
+      on_hit_effects:
+        - kind: burning
+          chance: 0.35
+          magnitude: 2.0
+          seconds: 6.0
+    ```
 
 ### `base_range_tiles`
 - Type: integer
@@ -1322,6 +1341,12 @@ Top-level fields:
 - Default: `0.0`
 - Meaning: instant damage dealt to the target
 
+### `damage_type`
+- Type: one of `blunt`, `cut`, `pierce`, `fire`, `frost`, `earth`, `lightning`, `poison`, `acid`, `death`, `holy`, `arcane`
+- Optional: yes
+- Default: `arcane` (only relevant when `damage > 0`)
+- Meaning: damage type tag for the spell's damage. Shown in the cast log (e.g. `Cast Frost Lance on Goblin (frost damage).`); no resistance math is applied yet. Heal/buff spells with `damage: 0.0` can omit this field.
+
 ### `restore_health`
 - Type: float
 - Optional: yes
@@ -1339,9 +1364,12 @@ Top-level fields:
 - Optional: yes
 - Default: empty list
 - Meaning: timed magical effects applied to the caster. Each entry is `{ kind,
-  magnitude, seconds }`. Effects are upserted on the caster's `MagicEffects`
-  component — re-applying refreshes duration and keeps the stronger magnitude
-  (smaller magnitude for `haste` since lower = faster).
+  magnitude, seconds, secondary_magnitude? }`. Most kinds upsert on the
+  caster's `MagicEffects` — re-applying refreshes duration and keeps the
+  stronger magnitude (smaller magnitude for `haste` since lower = faster).
+  The stacking kinds (`paralyze`, `chill`, `burning`, `poisoned`, `drunk`)
+  always append a new independent entry instead. `secondary_magnitude` is
+  optional and only consulted by `chill` (slow multiplier).
 
 ### `buffs_target`
 - Type: array of `EffectSpec`
@@ -1391,6 +1419,11 @@ Top-level fields:
 | `bless` | flat to-hit bonus | Same Phase B status as `shield`. |
 | `slow` | step-interval multiplier (e.g. `2.0`) | Higher = slower. Target-only. |
 | `sleep` | unused (`0.0` ok) | Presence skips the NPC's AI tick; cleared on incoming damage. |
+| `paralyze` | unused (`0.0` ok) | Blocks movement and spellcasting. Unlike `sleep`, damage does **not** clear it — only the timer expires it. Stacks. |
+| `chill` | DOT (frost damage) per tick (`1s` cadence) | Pairs with `secondary_magnitude` to also slow NPC movement (multiplier, e.g. `1.5`). Both halves are optional — omit `secondary_magnitude` for pure DOT. Stacks. |
+| `burning` | DOT (fire damage) per tick (`1s` cadence) | Stacks. |
+| `poisoned` | DOT (poison damage) per tick (`1s` cadence) | Stacks. |
+| `drunk` | deviation probability in `[0, 1]` | Each player move command has this chance to fumble ±45° to an adjacent direction (and pay a small cooldown penalty). NPCs ignore Drunk for now. Stacks (probabilities combine via the complement rule). |
 
 Example (utility spell with a self-buff):
 

@@ -1023,6 +1023,11 @@ fn effect_label(kind: crate::magic::resources::EffectKind) -> &'static str {
         EffectKind::Bless => "Bless",
         EffectKind::Slow => "Slow",
         EffectKind::Sleep => "Sleep",
+        EffectKind::Paralyze => "Paralyzed",
+        EffectKind::Chill => "Chilled",
+        EffectKind::Burning => "Burning",
+        EffectKind::Poisoned => "Poisoned",
+        EffectKind::Drunk => "Drunk",
     }
 }
 

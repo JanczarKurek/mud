@@ -1,0 +1,15 @@
+name: Frost Bolt
+incantation: Gelida Sagitta
+mana_cost: 18.0
+targeting: targeted
+range_tiles: 5
+class_access: [Wizard]
+min_caster_level: 4
+effects:
+  damage: 4.0
+  damage_type: frost
+  buffs_target:
+    - kind: chill
+      magnitude: 1.5
+      secondary_magnitude: 1.5
+      seconds: 8.0

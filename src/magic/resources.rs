@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::assets::discover_yaml_assets;
+use crate::combat::damage_type::DamageType;
 use crate::player::classes::Class;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -33,6 +34,10 @@ pub struct SpellDefinition {
 pub struct SpellEffects {
     #[serde(default)]
     pub damage: f32,
+    /// Damage type for `damage > 0` spells. Defaults to `Arcane` when omitted
+    /// — see `effective_damage_type`.
+    #[serde(default)]
+    pub damage_type: Option<DamageType>,
     #[serde(default)]
     pub restore_health: f32,
     #[serde(default)]
@@ -61,12 +66,24 @@ pub struct SpellEffects {
     pub vfx_on_target_hit: Option<String>,
 }
 
+impl SpellEffects {
+    /// Resolve the damage type, defaulting to `Arcane` when unspecified.
+    /// Only meaningful for `damage > 0` spells.
+    pub fn effective_damage_type(&self) -> DamageType {
+        self.damage_type.unwrap_or(DamageType::Arcane)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct EffectSpec {
     pub kind: EffectKind,
     pub magnitude: f32,
     pub seconds: f32,
+    /// Optional second parameter. Currently only `Chill` reads it, as the
+    /// slow multiplier paired with the DOT magnitude.
+    #[serde(default)]
+    pub secondary_magnitude: Option<f32>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -95,8 +112,24 @@ pub enum EffectKind {
     /// (e.g. 2.0 doubles the interval = half speed).
     Slow,
     /// Target NPC is asleep — its AI tick is skipped. Magnitude unused
-    /// (presence is what matters).
+    /// (presence is what matters). Cleared on damage by `resolve_battle_turn`.
     Sleep,
+    /// Target cannot move or cast spells. Magnitude unused. Unlike Sleep,
+    /// damage does *not* clear Paralyze — it only expires on its timer.
+    Paralyze,
+    /// DOT (cold damage) plus slow movement. Magnitude = damage per tick
+    /// (1s cadence); `secondary_magnitude` = NPC step interval multiplier
+    /// (Some(2.0) doubles the interval). When omitted, the slow component is
+    /// a no-op and Chill behaves as pure cold DOT.
+    Chill,
+    /// DOT (fire damage). Magnitude = damage per tick (1s cadence).
+    Burning,
+    /// DOT (poison damage). Magnitude = damage per tick (1s cadence).
+    Poisoned,
+    /// Player's movement commands are randomly rotated by ±45° to an adjacent
+    /// direction. Magnitude = deviation probability in `[0, 1]` (e.g. 0.3 =
+    /// 30% chance to fumble each step). NPCs ignore Drunk for now.
+    Drunk,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
@@ -173,6 +206,7 @@ class_access: [Wizard]
 min_caster_level: 3
 effects:
   damage: 7.0
+  damage_type: frost
   buffs_target:
     - kind: slow
       magnitude: 2.0
@@ -184,6 +218,24 @@ effects:
         assert_eq!(spell.effects.buffs_target.len(), 1);
         assert_eq!(spell.effects.buffs_target[0].kind, EffectKind::Slow);
         assert_eq!(spell.effects.buffs_target[0].magnitude, 2.0);
+        assert_eq!(spell.effects.damage_type, Some(DamageType::Frost));
+        assert_eq!(spell.effects.effective_damage_type(), DamageType::Frost);
+    }
+
+    #[test]
+    fn effects_without_damage_type_default_to_arcane() {
+        let yaml = r#"
+name: Spark Bolt
+incantation: Exori Vis
+mana_cost: 12.0
+targeting: targeted
+range_tiles: 5
+effects:
+  damage: 18.0
+"#;
+        let spell: SpellDefinition = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(spell.effects.damage_type, None);
+        assert_eq!(spell.effects.effective_damage_type(), DamageType::Arcane);
     }
 
     #[test]
@@ -208,6 +260,11 @@ effects:
             "restore",
             "bless",
             "swiftness",
+            "immolation",
+            "frost_bolt",
+            "venom",
+            "paralysis",
+            "befuddle",
         ] {
             assert!(
                 ids.contains(&new_id),

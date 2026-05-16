@@ -3357,3 +3357,23 @@ spawn_groups:
       max_y: 49
     detect_distance_tiles: 5
     disengage_distance_tiles: 8
+- id: fire_elemental_glade
+  template: fire_elemental
+  max_count: 2
+  respawn_mean_seconds: 120.0
+  area:
+    bounds:
+      min_x: 28
+      min_y: 5
+      max_x: 40
+      max_y: 14
+  behavior:
+    kind: roam_and_chase
+    step_interval_seconds: 1.1
+    bounds:
+      min_x: 28
+      min_y: 5
+      max_x: 40
+      max_y: 14
+    detect_distance_tiles: 6
+    disengage_distance_tiles: 10

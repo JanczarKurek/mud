@@ -298,6 +298,7 @@ pub fn compute_events_for_peer(
                             kind: effect.kind,
                             magnitude: effect.magnitude,
                             remaining_seconds: effect.remaining_seconds,
+                            secondary_magnitude: effect.secondary_magnitude,
                         })
                         .collect()
                 })

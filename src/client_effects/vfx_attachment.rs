@@ -130,6 +130,13 @@ fn definition_id_for_effect(kind: EffectKind) -> Option<&'static str> {
         EffectKind::Bless => "bless_aura",
         EffectKind::Slow => "slow_drag",
         EffectKind::Sleep => "sleep_zs",
+        // No bespoke sprite assets authored yet for these — the HUD label
+        // still shows the active effect; visual aura comes in a follow-up.
+        EffectKind::Paralyze
+        | EffectKind::Chill
+        | EffectKind::Burning
+        | EffectKind::Poisoned
+        | EffectKind::Drunk => return None,
     })
 }
 

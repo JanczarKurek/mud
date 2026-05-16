@@ -812,13 +812,31 @@ fn handle_move_player(
         return;
     }
 
+    // Paralyze blocks movement entirely. Drunk fumbles the direction.
+    let (effective_delta, drunk_cooldown_penalty) =
+        if let Ok(effects) = player_magic_effects.get(player_entity) {
+            if effects.is_paralyzed() {
+                return;
+            }
+            let deviation = effects.drunk_deviation_probability();
+            match deviation {
+                Some(probability) if drunk_should_deviate(player_entity, probability) => (
+                    rotate_delta(delta, drunk_rotation_sign(player_entity)),
+                    true,
+                ),
+                _ => (delta, false),
+            }
+        } else {
+            (delta, false)
+        };
+
     let Some(runtime_space) = space_manager.get(space_resident.space_id).cloned() else {
         return;
     };
 
     let target_xy = (
-        (tile_position.x + delta.x).clamp(0, runtime_space.width - 1),
-        (tile_position.y + delta.y).clamp(0, runtime_space.height - 1),
+        (tile_position.x + effective_delta.x).clamp(0, runtime_space.width - 1),
+        (tile_position.y + effective_delta.y).clamp(0, runtime_space.height - 1),
     );
 
     let Some(target_position) = resolve_step_with_climb(
@@ -837,12 +855,16 @@ fn handle_move_player(
     if let Ok(effects) = player_magic_effects.get(player_entity) {
         cooldown_scale *= effects.haste_multiplier();
     }
-    if delta.x != 0 && delta.y != 0 {
+    if effective_delta.x != 0 && effective_delta.y != 0 {
         cooldown_scale *= std::f32::consts::SQRT_2;
+    }
+    if drunk_cooldown_penalty {
+        // A fumbled drunken step takes a beat to recover from.
+        cooldown_scale *= 1.25;
     }
     movement_cooldown.remaining_seconds = movement_cooldown.step_interval_seconds * cooldown_scale;
 
-    if let Some(direction) = Direction::from_delta(delta.x, delta.y) {
+    if let Some(direction) = Direction::from_delta(effective_delta.x, effective_delta.y) {
         commands.entity(player_entity).insert(Facing(direction));
     }
 
@@ -866,6 +888,63 @@ fn handle_move_player(
 
     space_resident.space_id = destination_space_id;
     *tile_position = portal.destination_tile.to_tile_position();
+}
+
+/// Sample a deterministic boolean for drunken fumbling. The nanosecond +
+/// entity-index salt mirrors `combat::systems::roll_defense` — good enough
+/// for "occasional" without bringing in a real RNG resource.
+fn drunk_should_deviate(player_entity: Entity, probability: f32) -> bool {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.subsec_nanos() as u64)
+        .unwrap_or(0);
+    let salt = (player_entity.to_bits()).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    let mixed = nanos.wrapping_add(salt);
+    let roll = (mixed % 1_000_000) as f32 / 1_000_000.0;
+    roll < probability.clamp(0.0, 1.0)
+}
+
+/// Returns `+1` or `-1` deterministically — which way to rotate a drunken
+/// step. Mirror of `drunk_should_deviate` so successive calls within the
+/// same step are stable.
+fn drunk_rotation_sign(player_entity: Entity) -> i32 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.subsec_nanos() as u64)
+        .unwrap_or(0);
+    let salt = (player_entity.to_bits()).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    if nanos.wrapping_add(salt) & 1 == 0 {
+        1
+    } else {
+        -1
+    }
+}
+
+/// Rotate a `MoveDelta` 45° clockwise (sign = +1) or counter-clockwise
+/// (sign = -1). All 8 compass directions stay on the compass after rotation.
+fn rotate_delta(delta: MoveDelta, sign: i32) -> MoveDelta {
+    // Map (dx, dy) to angle index 0..8 around the compass, then ±1 step.
+    const COMPASS: [(i32, i32); 8] = [
+        (0, 1),   // N
+        (1, 1),   // NE
+        (1, 0),   // E
+        (1, -1),  // SE
+        (0, -1),  // S
+        (-1, -1), // SW
+        (-1, 0),  // W
+        (-1, 1),  // NW
+    ];
+    let Some(index) = COMPASS
+        .iter()
+        .position(|&(x, y)| x == delta.x.signum() && y == delta.y.signum())
+    else {
+        return delta;
+    };
+    let rotated = (index as i32 + sign).rem_euclid(8) as usize;
+    let (dx, dy) = COMPASS[rotated];
+    MoveDelta { x: dx, y: dy }
 }
 
 fn handle_set_combat_target(
@@ -1556,6 +1635,16 @@ fn handle_cast_spell_at(
         return;
     }
 
+    // Paralyzed casters can't form the incantation. Cheaper to read effects
+    // through the dedicated query than to thread a separate parameter.
+    if let Ok(effects) = player_magic_effects_query.get(player_entity) {
+        if effects.is_paralyzed() {
+            chat_log_state
+                .push_narrator(format!("You're paralyzed and can't cast {}.", spell.name));
+            return;
+        }
+    }
+
     if player_vitals.mana < spell.mana_cost {
         chat_log_state.push_narrator(format!("Not enough mana to cast {}.", spell.name));
         return;
@@ -1628,7 +1717,16 @@ fn handle_cast_spell_at(
         commands,
     );
     chat_log_state.push_line(format!("[Player]: \"{}\"", spell.incantation));
-    chat_log_state.push_narrator(format!("Cast {} on {}.", spell.name, target_name));
+    if spell.effects.damage > 0.0 {
+        chat_log_state.push_narrator(format!(
+            "Cast {} on {} ({} damage).",
+            spell.name,
+            target_name,
+            spell.effects.effective_damage_type().display_name()
+        ));
+    } else {
+        chat_log_state.push_narrator(format!("Cast {} on {}.", spell.name, target_name));
+    }
 
     if target_died {
         if let Some(loot_table) = definitions

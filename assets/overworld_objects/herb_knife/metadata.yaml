@@ -4,6 +4,9 @@ weight: 0.5
 description: A small curved blade for snipping stems. Equip it to harvest herb patches.
 equipment_slot: weapon
 damage: "1d3+strength"
+attack_profile:
+  kind: melee
+  damage_type: cut
 render:
   z_index: 0.26
   debug_color: [180, 180, 200]

@@ -7,3 +7,4 @@ class_access: [Wizard]
 min_caster_level: 1
 effects:
   damage: 18.0
+  damage_type: lightning

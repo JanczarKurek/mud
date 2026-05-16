@@ -1,0 +1,51 @@
+extends: npc
+name: Fire Elemental
+description: A swirling vortex of living flame with a molten core. Heat rises from it in shimmering waves.
+level: 6
+loot:
+  corpse_despawn_seconds: 45
+  drops:
+    - type_id: copper_coin
+      quantity: "uniform(2, 5)"
+      probability: 1.0
+stats:
+  strength: 12
+  agility: 13
+  constitution: 12
+  willpower: 14
+  charisma: 6
+  focus: 10
+attack_profile:
+  kind: melee
+  damage_type: fire
+  on_hit_effects:
+    - kind: burning
+      chance: 0.35
+      magnitude: 2.0
+      seconds: 6.0
+damage: "1d8+strength/3"
+hp: "2d10+50+constitution*4"
+render:
+  debug_color: [232, 96, 32]
+  debug_size: 1.15
+  sprite_path: overworld_objects/fire_elemental/sprite.png
+  y_sort: true
+  animation:
+    sheet_path: overworld_objects/fire_elemental/sheet.png
+    frame_width: 64
+    frame_height: 80
+    sheet_columns: 4
+    sheet_rows: 2
+    clips:
+      idle:
+        row: 0
+        start_col: 0
+        frame_count: 4
+        fps: 4.0
+        looping: true
+      walk:
+        row: 1
+        start_col: 0
+        frame_count: 4
+        fps: 8.0
+        looping: true

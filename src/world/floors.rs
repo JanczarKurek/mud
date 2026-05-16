@@ -78,12 +78,8 @@ pub fn recompute_indoor_tile_map(
             continue;
         }
         let tile = object.tile_position;
-        map.tiles.insert((
-            object.position.space_id,
-            tile.x,
-            tile.y,
-            tile.z - 1,
-        ));
+        map.tiles
+            .insert((object.position.space_id, tile.x, tile.y, tile.z - 1));
     }
 }
 
@@ -188,7 +184,14 @@ mod tests {
     fn no_facing_tints_when_own_tile_is_indoor() {
         let indoor = indoor_55();
         assert!(should_apply_indoor_tint(&indoor, SpaceId(1), 5, 5, 0, None));
-        assert!(!should_apply_indoor_tint(&indoor, SpaceId(1), 6, 5, 0, None));
+        assert!(!should_apply_indoor_tint(
+            &indoor,
+            SpaceId(1),
+            6,
+            5,
+            0,
+            None
+        ));
     }
 
     #[test]
@@ -280,8 +283,7 @@ render:
   debug_size: 1.0
   occludes_floor_above: true
 "#;
-        let def: OverworldObjectDefinition =
-            serde_yaml::from_str(yaml).expect("definition parses");
+        let def: OverworldObjectDefinition = serde_yaml::from_str(yaml).expect("definition parses");
         let mut defs_map = HashMap::new();
         defs_map.insert("roof".to_string(), def);
         let defs = OverworldObjectDefinitions::new_for_test(defs_map);

@@ -1,0 +1,12 @@
+name: Paralysis
+incantation: Stasis
+mana_cost: 22.0
+targeting: targeted
+range_tiles: 4
+class_access: [Wizard]
+min_caster_level: 6
+effects:
+  buffs_target:
+    - kind: paralyze
+      magnitude: 0.0
+      seconds: 5.0

@@ -3,6 +3,9 @@ name: Bronze Sword
 weight: 2.0
 description: A simple bronze sword with a broad beginner blade.
 equipment_slot: weapon
+attack_profile:
+  kind: melee
+  damage_type: cut
 render:
   debug_color: [176, 118, 58]
   debug_size: 0.55

@@ -12,6 +12,8 @@ use serde::Serialize;
 use serde_yaml::{Mapping, Value};
 
 use crate::assets::AssetResolver;
+use crate::combat::damage_type::DamageType;
+use crate::magic::resources::EffectKind;
 use crate::world::direction::Direction;
 
 #[allow(dead_code)]
@@ -317,6 +319,35 @@ pub struct AttackProfileDef {
     /// in `VfxDefinitions`; falls back to `"blood_splash"` when omitted.
     #[serde(default)]
     pub hit_vfx: Option<String>,
+    /// What kind of damage this weapon deals. When omitted, defaults to
+    /// `Blunt` for melee and `Pierce` for ranged (resolved in
+    /// `attack_profile_for_definition`).
+    #[serde(default)]
+    pub damage_type: Option<DamageType>,
+    /// Magic effects rolled probabilistically every time this attack lands.
+    /// Each entry is rolled independently. Combat reads these straight off the
+    /// definition (see `resolve_battle_turn`) rather than mirroring them onto
+    /// the `AttackProfile` runtime component, since the latter is `Copy`.
+    #[serde(default)]
+    pub on_hit_effects: Vec<OnHitEffectDef>,
+}
+
+/// A timed `MagicEffects` entry that an attacker rolls for on every landed
+/// hit. `chance` is in `[0, 1]`; a `1.0` chance always applies.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct OnHitEffectDef {
+    pub kind: EffectKind,
+    pub magnitude: f32,
+    pub seconds: f32,
+    #[serde(default = "default_on_hit_chance")]
+    pub chance: f32,
+    #[serde(default)]
+    pub secondary_magnitude: Option<f32>,
+}
+
+fn default_on_hit_chance() -> f32 {
+    1.0
 }
 
 /// Quantity roll for a loot drop: either a fixed count or a uniform random range.

@@ -701,13 +701,19 @@ pub fn attack_profile_for_definition(
         .map(WeaponDamage)
         .unwrap_or_default();
     let profile = match definition.attack_profile.as_ref() {
-        Some(def) => match def.kind {
-            AttackProfileKindDef::Melee => AttackProfile::melee(),
-            AttackProfileKindDef::Ranged => {
-                let range = definition.base_range_tiles.unwrap_or(4).max(1);
-                AttackProfile::ranged(range)
+        Some(def) => {
+            let damage_type = def.damage_type.unwrap_or(match def.kind {
+                AttackProfileKindDef::Melee => crate::combat::damage_type::DamageType::Blunt,
+                AttackProfileKindDef::Ranged => crate::combat::damage_type::DamageType::Pierce,
+            });
+            match def.kind {
+                AttackProfileKindDef::Melee => AttackProfile::melee_with(damage_type),
+                AttackProfileKindDef::Ranged => {
+                    let range = definition.base_range_tiles.unwrap_or(4).max(1);
+                    AttackProfile::ranged_with(range, damage_type)
+                }
             }
-        },
+        }
         None => AttackProfile::melee(),
     };
     (profile, damage)
@@ -748,6 +754,37 @@ mod tests {
         };
         let base = npc_base_stats_from_modifiers(&stats);
         assert_eq!(base.attributes, AttributeSet::new(18, 5, 16, 7, 4, 7));
+    }
+
+    #[test]
+    fn attack_profile_defaults_to_blunt_for_melee_and_pierce_for_ranged() {
+        use crate::combat::components::AttackKind;
+        use crate::combat::damage_type::DamageType;
+
+        let render_block = "render:\n  z_index: 1.0\n  debug_color: [0, 0, 0]\n  debug_size: 1.0\n";
+
+        let yaml_melee = format!(
+            "name: TestSword\ndescription: A test blade\ncolliding: false\nmovable: true\nstorable: true\ndamage: \"1d6\"\nattack_profile:\n  kind: melee\n{render_block}"
+        );
+        let def_melee: OverworldObjectDefinition = serde_yaml::from_str(&yaml_melee).unwrap();
+        let (profile, _) = attack_profile_for_definition(Some(&def_melee));
+        assert_eq!(profile.kind, AttackKind::Melee);
+        assert_eq!(profile.damage_type, DamageType::Blunt);
+
+        let yaml_ranged = format!(
+            "name: TestBow\ndescription: A test bow\ncolliding: false\nmovable: true\nstorable: true\ndamage: \"1d6\"\nbase_range_tiles: 5\nattack_profile:\n  kind: ranged\n{render_block}"
+        );
+        let def_ranged: OverworldObjectDefinition = serde_yaml::from_str(&yaml_ranged).unwrap();
+        let (profile, _) = attack_profile_for_definition(Some(&def_ranged));
+        assert!(matches!(profile.kind, AttackKind::Ranged { .. }));
+        assert_eq!(profile.damage_type, DamageType::Pierce);
+
+        let yaml_cut = format!(
+            "name: TestSaber\ndescription: A test saber\ncolliding: false\nmovable: true\nstorable: true\ndamage: \"1d8\"\nattack_profile:\n  kind: melee\n  damage_type: cut\n{render_block}"
+        );
+        let def_cut: OverworldObjectDefinition = serde_yaml::from_str(&yaml_cut).unwrap();
+        let (profile, _) = attack_profile_for_definition(Some(&def_cut));
+        assert_eq!(profile.damage_type, DamageType::Cut);
     }
 
     #[test]

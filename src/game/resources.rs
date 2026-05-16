@@ -213,6 +213,10 @@ pub struct ClientActiveEffect {
     pub kind: crate::magic::resources::EffectKind,
     pub magnitude: f32,
     pub remaining_seconds: f32,
+    /// Per-kind second parameter (only `Chill` uses it today). `None` for
+    /// kinds that don't use a secondary magnitude.
+    #[serde(default)]
+    pub secondary_magnitude: Option<f32>,
 }
 
 /// Replicated snapshot of the local player's carry weight. The HUD renders

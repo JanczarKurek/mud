@@ -1182,6 +1182,8 @@ mod tests {
             kind: EffectKind::Glimmer,
             magnitude: 4.0,
             remaining_seconds: 123.0,
+            secondary_magnitude: None,
+            tick_accumulator: 0.0,
         });
         let dump = PlayerStateDump {
             player_id: PlayerId(1),
@@ -1211,8 +1213,15 @@ mod tests {
         assert_eq!(restored.magic_effects, effects);
 
         // Legacy player rows without `magic_effects` deserialize to empty.
-        let legacy_json = json
-            .replace(",\"magic_effects\":{\"active\":[{\"kind\":\"glimmer\",\"magnitude\":4.0,\"remaining_seconds\":123.0}]}", "");
+        // Strip the field from the JSON object regardless of how its inner
+        // shape evolves (new ActiveEffect fields can extend the substring).
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .remove("magic_effects")
+            .expect("dump should serialize magic_effects");
+        let legacy_json = serde_json::to_string(&value).unwrap();
         assert!(!legacy_json.contains("magic_effects"));
         let legacy: PlayerStateDump = serde_json::from_str(&legacy_json).unwrap();
         assert!(legacy.magic_effects.is_empty());

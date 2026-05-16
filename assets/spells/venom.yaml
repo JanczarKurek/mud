@@ -1,0 +1,12 @@
+name: Venom
+incantation: Toxica Vena
+mana_cost: 14.0
+targeting: targeted
+range_tiles: 4
+class_access: [Wizard]
+min_caster_level: 3
+effects:
+  buffs_target:
+    - kind: poisoned
+      magnitude: 2.0
+      seconds: 12.0

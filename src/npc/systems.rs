@@ -101,9 +101,11 @@ pub fn update_roaming_npcs(
 
         let slow_multiplier = magic_effects.map_or(1.0, |e| e.npc_step_multiplier());
 
-        // Sleeping NPC: skip the AI tick entirely. Combat re-engages immediately
-        // on damage via the wake-on-damage path in `resolve_battle_turn`.
-        if magic_effects.is_some_and(|effects| effects.is_asleep()) {
+        // Sleeping or paralyzed NPC: skip the AI tick entirely. Sleep wakes
+        // on damage via `resolve_battle_turn`; Paralyze only expires on its
+        // own timer. The NPC keeps any existing CombatTarget so it re-engages
+        // the moment the CC drops.
+        if magic_effects.is_some_and(|effects| effects.is_asleep() || effects.is_paralyzed()) {
             timer.remaining_seconds =
                 sample_step_interval(behavior, &mut random_state) * slow_multiplier;
             continue;

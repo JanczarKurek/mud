@@ -2,9 +2,10 @@ use bevy::prelude::*;
 
 use crate::combat::components::{AttackKind, AttackProfile, CombatLeash, CombatTarget};
 use crate::combat::damage_expr::DamageExpr;
+use crate::combat::damage_type::DamageType;
 use crate::combat::resources::BattleTurnTimer;
 use crate::game::resources::{GameUiEvent, PendingGameUiEvents, VfxAnchor};
-use crate::magic::resources::SpellDefinitions;
+use crate::magic::resources::{EffectSpec, SpellDefinitions};
 use crate::npc::components::Npc;
 use crate::player::components::{
     AmmoConsumption, AttributeSet, ChatLog, DefenseStats, DerivedStats, Inventory, Player,
@@ -29,6 +30,7 @@ struct CombatantSnapshot {
     definition_id: String,
     attributes: AttributeSet,
     damage_expr: DamageExpr,
+    damage_type: DamageType,
     health: f32,
     is_player: bool,
     player_id: Option<u64>,
@@ -57,6 +59,27 @@ fn roll_defense(max: i32, salt: u64) -> i32 {
         .unwrap_or(0);
     let mixed = nanos.wrapping_add(salt.wrapping_mul(0x9E37_79B9_7F4A_7C15));
     (mixed % (max as u64 + 1)) as i32
+}
+
+/// Return `true` with probability `chance` (clamped to `[0, 1]`). Reuses the
+/// nanosecond+salt jitter pattern from `roll_defense` — good enough for
+/// triggers that aren't security-sensitive.
+fn roll_chance(chance: f32, salt: u64) -> bool {
+    let p = chance.clamp(0.0, 1.0);
+    if p <= 0.0 {
+        return false;
+    }
+    if p >= 1.0 {
+        return true;
+    }
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.subsec_nanos() as u64)
+        .unwrap_or(0);
+    let mixed = nanos.wrapping_add(salt.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+    let roll = (mixed % 1_000_000) as f32 / 1_000_000.0;
+    roll < p
 }
 
 pub fn clear_invalid_combat_targets(
@@ -191,6 +214,7 @@ pub fn resolve_battle_turn(
                     definition_id: overworld_object.definition_id.clone(),
                     attributes: derived_stats.attributes,
                     damage_expr,
+                    damage_type: attack_profile.damage_type,
                     health: vital_stats.health,
                     is_player,
                     player_id,
@@ -297,10 +321,46 @@ pub fn resolve_battle_turn(
         broadcast_chat_line(
             &mut chat_log_query,
             format!(
-                "[{} hit {} for {damage} damage]",
-                attacker.name, target.name
+                "[{} hit {} for {damage} {} damage]",
+                attacker.name,
+                target.name,
+                attacker.damage_type.display_name()
             ),
         );
+
+        // Roll the attacker's on-hit effects. Each entry is rolled
+        // independently; effects only apply when the target carries a
+        // `MagicEffects` component (every player/NPC does).
+        if let Some(on_hit_effects) = definitions
+            .get(&attacker.definition_id)
+            .and_then(|def| def.attack_profile.as_ref())
+            .map(|profile| profile.on_hit_effects.as_slice())
+        {
+            if !on_hit_effects.is_empty() {
+                if let Some(effects) = target_magic.as_mut() {
+                    for (i, on_hit) in on_hit_effects.iter().enumerate() {
+                        let salt = attacker.object_id.wrapping_add((i as u64) << 16);
+                        if !roll_chance(on_hit.chance, salt) {
+                            continue;
+                        }
+                        effects.apply(EffectSpec {
+                            kind: on_hit.kind,
+                            magnitude: on_hit.magnitude,
+                            seconds: on_hit.seconds,
+                            secondary_magnitude: on_hit.secondary_magnitude,
+                        });
+                        broadcast_chat_line(
+                            &mut chat_log_query,
+                            format!(
+                                "[{} is afflicted by {}]",
+                                target.name,
+                                effect_kind_display_name(on_hit.kind)
+                            ),
+                        );
+                    }
+                }
+            }
+        }
 
         if target_vitals.health > 0.0 {
             continue;
@@ -380,6 +440,23 @@ fn ranged_sprite_id(
         }
     }
     Some("arrow".to_owned())
+}
+
+fn effect_kind_display_name(kind: crate::magic::resources::EffectKind) -> &'static str {
+    use crate::magic::resources::EffectKind;
+    match kind {
+        EffectKind::Glimmer => "Glimmer",
+        EffectKind::Haste => "Haste",
+        EffectKind::Shield => "Shield",
+        EffectKind::Bless => "Bless",
+        EffectKind::Slow => "Slow",
+        EffectKind::Sleep => "Sleep",
+        EffectKind::Paralyze => "Paralysis",
+        EffectKind::Chill => "Chill",
+        EffectKind::Burning => "Burning",
+        EffectKind::Poisoned => "Poison",
+        EffectKind::Drunk => "Drunkenness",
+    }
 }
 
 fn broadcast_chat_line(chat_log_query: &mut Query<&mut ChatLog, With<Player>>, message: String) {

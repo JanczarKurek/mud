@@ -1,0 +1,12 @@
+name: Befuddle
+incantation: Confusio
+mana_cost: 10.0
+targeting: targeted
+range_tiles: 4
+class_access: [Wizard]
+min_caster_level: 2
+effects:
+  buffs_target:
+    - kind: drunk
+      magnitude: 0.4
+      seconds: 12.0

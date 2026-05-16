@@ -16,6 +16,9 @@ stats:
   charisma: 4
   focus: 7
 damage: "1d4+strength/5"
+attack_profile:
+  kind: melee
+  damage_type: cut
 hp: "1d6+25+constitution*3"
 render:
   debug_color:

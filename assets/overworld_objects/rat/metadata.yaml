@@ -10,6 +10,9 @@ stats:
   charisma: 2
   focus: 5
 damage: "1d3+agility/5"
+attack_profile:
+  kind: melee
+  damage_type: pierce
 hp: "1d4+10+constitution*2"
 render:
   debug_color: [130, 105, 80]
