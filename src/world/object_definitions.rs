@@ -209,6 +209,36 @@ pub struct ObjectInteractionDef {
     /// `lock_id` key; the handler also re-checks at apply time.
     #[serde(default)]
     pub key_gate: Option<KeyGateDef>,
+    /// Optional tool-required gate. Looks for the named item type in the
+    /// player's `EquipmentSlot::Weapon`. Used for gathering interactions
+    /// where the harvest requires a specific tool (pickaxe, fishing rod,
+    /// herb knife).
+    #[serde(default)]
+    pub tool_gate: Option<ToolGateDef>,
+    /// Items to grant the acting player on a successful transition.
+    /// Reuses the same `LootDropDef` shape as corpse loot — each entry rolls
+    /// quantity + probability independently.
+    #[serde(default)]
+    pub grants_items: Vec<LootDropDef>,
+    /// When set, after this transition fires a `RespawnTimer` is attached to
+    /// the object that will revert it to the first entry in `from` after the
+    /// given delay. Drives gatherable respawn (mined ore returns after N
+    /// seconds, etc.).
+    #[serde(default)]
+    pub respawn_seconds: Option<f32>,
+}
+
+/// Required-tool gate authored on an interaction. The player must have an
+/// item of the matching type equipped in `EquipmentSlot::Weapon` for the
+/// verb to fire.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct ToolGateDef {
+    /// Definition id of the required equipped item (e.g. `"pickaxe"`).
+    pub required_type_id: String,
+    /// Narrator line shown on rejection. Defaults to a generic prompt.
+    #[serde(default)]
+    pub fail_message: Option<String>,
 }
 
 /// Skill-check description authored on an interaction.
@@ -1330,6 +1360,53 @@ interactions:
             .expect("open interaction parsed");
         assert!(open.skill_gate.is_none());
         assert!(open.key_gate.is_none());
+    }
+
+    #[test]
+    fn gatherable_interaction_round_trips() {
+        let yaml = r#"
+name: Fishing Spot
+description: ""
+colliding: false
+movable: false
+storable: false
+render:
+  z_index: 0.0
+  debug_color: [0, 0, 0]
+  debug_size: 1.0
+states:
+  available: {}
+  depleted: {}
+initial_state: available
+interactions:
+  - verb: fish
+    from: [available]
+    to: depleted
+    tool_gate:
+      required_type_id: fishing_rod
+      fail_message: "You need a fishing rod equipped to fish here."
+    skill_gate:
+      skill: Survival
+      dc: !fixed 8
+    grants_items:
+      - type_id: raw_fish
+        quantity: "uniform(1, 2)"
+        probability: 1.0
+    respawn_seconds: 180.0
+"#;
+        let def = parse_def(yaml);
+        let fish = def
+            .interaction_for("fish", Some("available"))
+            .expect("fish interaction parsed");
+        let tool = fish.tool_gate.as_ref().expect("tool_gate parsed");
+        assert_eq!(tool.required_type_id, "fishing_rod");
+        assert!(tool.fail_message.is_some());
+        let gate = fish.skill_gate.as_ref().expect("skill_gate parsed");
+        assert_eq!(gate.skill, crate::player::skills::Skill::Survival);
+        assert!(matches!(gate.dc, DcSource::Fixed(8)));
+        assert_eq!(fish.grants_items.len(), 1);
+        assert_eq!(fish.grants_items[0].type_id, "raw_fish");
+        assert_eq!(fish.respawn_seconds, Some(180.0));
     }
 
     #[test]

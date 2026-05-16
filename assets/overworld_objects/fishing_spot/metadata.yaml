@@ -1,0 +1,31 @@
+extends: static_world
+name: Fishing Spot
+description: Ripples on the water's surface betray a school of fish below.
+colliding: false
+render:
+  z_index: 0.18
+  debug_color: [110, 180, 230]
+  debug_size: 0.70
+  sprite_path: overworld_objects/fishing_spot/sprite.png
+states:
+  available:
+    colliding: false
+  depleted:
+    colliding: false
+initial_state: available
+interactions:
+  - verb: fish
+    label: Fish
+    from: [available]
+    to: depleted
+    tool_gate:
+      required_type_id: fishing_rod
+      fail_message: "You need a fishing rod equipped to fish here."
+    skill_gate:
+      skill: Survival
+      dc: !fixed 8
+    grants_items:
+      - type_id: raw_fish
+        quantity: "uniform(1, 2)"
+        probability: 1.0
+    respawn_seconds: 180.0

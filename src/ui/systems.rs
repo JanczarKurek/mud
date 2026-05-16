@@ -3531,11 +3531,19 @@ fn applicable_interaction(
     let current_state = object.state.as_deref();
     // Skip lock-gated verbs here so they don't shadow non-lock interactions
     // (e.g. "Open" from a locked door's closed state). The lock buttons are
-    // surfaced via `lock_verb_visibility` instead.
+    // surfaced via `lock_verb_visibility` instead. A "lock verb" is one
+    // whose gate reads from the object's `lock` block — gather/skill-checked
+    // interactions with a fixed DC (e.g. fishing's `Survival` check) are NOT
+    // lock verbs and should appear on the regular Interact button.
     let interaction = definition.interactions.iter().find(|i| {
         let state_matches =
             i.from.is_empty() || current_state.is_some_and(|cs| i.from.iter().any(|s| s == cs));
-        let is_lock_verb = i.skill_gate.is_some() || i.key_gate.is_some();
+        let is_lock_verb = i.key_gate.is_some()
+            || matches!(
+                i.skill_gate.as_ref().map(|g| g.dc),
+                Some(crate::world::object_definitions::DcSource::FromLockPick)
+                    | Some(crate::world::object_definitions::DcSource::FromLockForce)
+            );
         state_matches && !is_lock_verb
     })?;
     let label = interaction.label.clone().unwrap_or_else(|| {

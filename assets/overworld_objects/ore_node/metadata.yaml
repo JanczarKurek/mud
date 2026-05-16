@@ -1,0 +1,31 @@
+extends: static_world
+name: Ore Node
+description: A rocky outcrop streaked with iron-rich veins.
+colliding: true
+render:
+  z_index: 0.28
+  debug_color: [130, 110, 95]
+  debug_size: 0.80
+  sprite_path: overworld_objects/ore_node/sprite.png
+states:
+  available:
+    colliding: true
+  depleted:
+    colliding: true
+initial_state: available
+interactions:
+  - verb: mine
+    label: Mine
+    from: [available]
+    to: depleted
+    tool_gate:
+      required_type_id: pickaxe
+      fail_message: "You need a pickaxe equipped to mine ore."
+    skill_gate:
+      skill: Survival
+      dc: !fixed 10
+    grants_items:
+      - type_id: iron_ore
+        quantity: "uniform(1, 2)"
+        probability: 1.0
+    respawn_seconds: 240.0

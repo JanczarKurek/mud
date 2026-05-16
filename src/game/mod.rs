@@ -26,7 +26,9 @@ use crate::game::systems::{
 use crate::game::trade::{cleanup_invalid_trades, process_trade_commands, ActiveTrades};
 use crate::npc::systems::update_roaming_npcs;
 use crate::player::systems::move_player_on_grid;
-use crate::world::interactions::{process_interact_commands, sync_container_visual_state};
+use crate::world::interactions::{
+    process_interact_commands, sync_container_visual_state, tick_respawn_timers,
+};
 
 pub struct GameServerPlugin;
 
@@ -102,6 +104,12 @@ impl Plugin for GameServerPlugin {
             .add_systems(
                 Update,
                 sync_container_visual_state
+                    .after(process_game_commands)
+                    .run_if(simulation_active),
+            )
+            .add_systems(
+                Update,
+                tick_respawn_timers
                     .after(process_game_commands)
                     .run_if(simulation_active),
             )

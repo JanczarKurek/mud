@@ -1,0 +1,14 @@
+extends: pickup
+name: Green Herb
+weight: 0.05
+max_stack_size: 50
+description:
+  - text: A sprig of fragrant green herb.
+    stack_size: [1, 1]
+  - text: "A bundle of {count_written} green herbs."
+    stack_size: [2, ~]
+render:
+  z_index: 0.22
+  debug_color: [80, 180, 80]
+  debug_size: 0.40
+  sprite_path: overworld_objects/green_herb/sprite.png

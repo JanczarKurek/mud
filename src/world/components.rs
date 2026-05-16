@@ -144,3 +144,13 @@ pub struct Storable;
 pub struct Container {
     pub slots: Vec<Option<InventoryStack>>,
 }
+
+/// Schedules an automatic state revert on a stateful object. Attached to an
+/// entity by `process_interact_commands` when its triggering interaction
+/// declares `respawn_seconds`. Ticked by `tick_respawn_timers`; on expiry the
+/// object transitions to `restore_state` and the component is removed.
+#[derive(Component, Clone, Debug)]
+pub struct RespawnTimer {
+    pub remaining_seconds: f32,
+    pub restore_state: String,
+}

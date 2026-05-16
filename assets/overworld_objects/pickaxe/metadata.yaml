@@ -1,0 +1,11 @@
+extends: equipment
+name: Pickaxe
+weight: 2.5
+description: A heavy iron-headed pickaxe. Equip it to mine ore from rocky outcrops.
+equipment_slot: weapon
+damage: "1d4+strength"
+render:
+  z_index: 0.26
+  debug_color: [120, 120, 130]
+  debug_size: 0.60
+  sprite_path: overworld_objects/pickaxe/sprite.png

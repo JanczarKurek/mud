@@ -1,0 +1,31 @@
+extends: static_world
+name: Herb Patch
+description: A lush cluster of wild herbs growing along the path.
+colliding: false
+render:
+  z_index: 0.22
+  debug_color: [60, 160, 90]
+  debug_size: 0.55
+  sprite_path: overworld_objects/herb_patch/sprite.png
+states:
+  available:
+    colliding: false
+  depleted:
+    colliding: false
+initial_state: available
+interactions:
+  - verb: pick
+    label: Pick
+    from: [available]
+    to: depleted
+    tool_gate:
+      required_type_id: herb_knife
+      fail_message: "You need a herb knife equipped to harvest these."
+    skill_gate:
+      skill: Survival
+      dc: !fixed 6
+    grants_items:
+      - type_id: green_herb
+        quantity: "uniform(1, 3)"
+        probability: 1.0
+    respawn_seconds: 180.0

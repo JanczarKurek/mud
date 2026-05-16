@@ -1,0 +1,10 @@
+extends: equipment
+name: Fishing Rod
+weight: 1.5
+description: A slender rod with a length of waxed line. Equip it to fish from the water's edge.
+equipment_slot: weapon
+render:
+  z_index: 0.26
+  debug_color: [150, 110, 70]
+  debug_size: 0.55
+  sprite_path: overworld_objects/fishing_rod/sprite.png

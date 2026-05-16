@@ -1,0 +1,14 @@
+extends: pickup
+name: Raw Fish
+weight: 0.4
+max_stack_size: 20
+description:
+  - text: A slippery fresh-caught fish.
+    stack_size: [1, 1]
+  - text: "A pile of {count_written} raw fish."
+    stack_size: [2, ~]
+render:
+  z_index: 0.24
+  debug_color: [120, 170, 200]
+  debug_size: 0.45
+  sprite_path: overworld_objects/raw_fish/sprite.png

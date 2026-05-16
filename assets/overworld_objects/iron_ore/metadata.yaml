@@ -1,0 +1,14 @@
+extends: pickup
+name: Iron Ore
+weight: 1.2
+max_stack_size: 20
+description:
+  - text: A chunk of rough iron ore, flecked with rust-coloured streaks.
+    stack_size: [1, 1]
+  - text: "A pile of {count_written} chunks of iron ore."
+    stack_size: [2, ~]
+render:
+  z_index: 0.24
+  debug_color: [110, 90, 80]
+  debug_size: 0.50
+  sprite_path: overworld_objects/iron_ore/sprite.png

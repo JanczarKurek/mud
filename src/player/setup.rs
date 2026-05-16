@@ -60,6 +60,22 @@ pub fn seed_starter_inventory(inventory: &mut Inventory) {
             ));
         }
     }
+    // Seed the gathering toolkit so a new player can immediately try fishing,
+    // herb-picking, and mining without first earning coin. Tools live in the
+    // backpack; the player swaps one into the weapon slot to use it.
+    for tool_id in ["fishing_rod", "pickaxe", "herb_knife"] {
+        if let Some(slot) = inventory
+            .backpack_slots
+            .iter_mut()
+            .find(|slot| slot.is_none())
+        {
+            *slot = Some(InventoryStack::item(
+                tool_id.to_owned(),
+                ObjectProperties::new(),
+                1,
+            ));
+        }
+    }
 }
 
 pub fn spawn_embedded_player_authoritative(

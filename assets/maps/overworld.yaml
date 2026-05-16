@@ -3094,6 +3094,51 @@ objects:
       max_y: 49
     detect_distance_tiles: 4
     disengage_distance_tiles: 6
+# --- Gathering resources scattered across the map (fishing / herbs / mining) ---
+# Each node respawns ~3 minutes after being harvested. Tools required:
+# fishing_rod, herb_knife, pickaxe (all sold by the villager shopkeeper).
+- type: fishing_spot
+  placement:
+  - x: 8
+    y: 30
+  - x: 14
+    y: 30
+  - x: 20
+    y: 30
+  - x: 4
+    y: 35
+  - x: 4
+    y: 41
+  - x: 24
+    y: 38
+- type: herb_patch
+  placement:
+  - x: 27
+    y: 27
+  - x: 37
+    y: 33
+  - x: 44
+    y: 38
+  - x: 29
+    y: 36
+  - x: 60
+    y: 36
+  - x: 66
+    y: 25
+- type: ore_node
+  placement:
+  - x: 52
+    y: 30
+  - x: 49
+    y: 33
+  - x: 61
+    y: 35
+  - x: 66
+    y: 35
+  - x: 55
+    y: 43
+  - x: 63
+    y: 44
 spawn_groups:
 - id: south_rats
   template: rat

@@ -13,6 +13,26 @@ shopkeeper:
     - type_id: leather_armor
       price_copper: 1200         # 5 gold
       stock: 1
+    # Crafting tools — also serve as the buy-price reference for gathering drops.
+    - type_id: fishing_rod
+      price_copper: 120
+      stock: infinite
+    - type_id: pickaxe
+      price_copper: 200
+      stock: infinite
+    - type_id: herb_knife
+      price_copper: 60
+      stock: infinite
+    # Gathering drops — listed so the villager will buy them from the player.
+    - type_id: raw_fish
+      price_copper: 8
+      stock: infinite
+    - type_id: green_herb
+      price_copper: 12
+      stock: infinite
+    - type_id: iron_ore
+      price_copper: 20
+      stock: infinite
 render:
   sprite_path: overworld_objects/player/sprite.png
   rotation_by_facing: true
