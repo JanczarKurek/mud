@@ -16,7 +16,7 @@ mod widget;
 
 pub use systems::{
     terminal_blink_cursor, terminal_has_focus, terminal_input, terminal_not_focused,
-    terminal_pin_scroll, terminal_sync_buffer, terminal_sync_input_line,
+    terminal_pin_scroll, terminal_sync_buffer, terminal_sync_input_line, terminal_wheel_input,
 };
 pub use textedit::{
     spawn_text_edit, spawn_text_edit_with, text_edit_blink_caret, text_edit_input, text_edit_sync,
@@ -40,7 +40,7 @@ impl Plugin for TerminalWidgetPlugin {
             .init_resource::<TerminalTheme>()
             .add_message::<TerminalSubmit>()
             .add_message::<TerminalCompletionRequest>()
-            .add_systems(PreUpdate, terminal_input)
+            .add_systems(PreUpdate, (terminal_input, terminal_wheel_input))
             .add_systems(
                 Update,
                 (
@@ -49,7 +49,10 @@ impl Plugin for TerminalWidgetPlugin {
                     terminal_blink_cursor,
                 ),
             )
-            .add_systems(PostUpdate, terminal_pin_scroll);
+            .add_systems(
+                PostUpdate,
+                terminal_pin_scroll.after(bevy::ui::UiSystems::PostLayout),
+            );
     }
 }
 

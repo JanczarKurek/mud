@@ -5,7 +5,8 @@ use bevy::input::keyboard::{Key, KeyCode, KeyboardInput};
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use bevy::time::Time;
-use bevy::ui::{ComputedNode, ScrollPosition};
+use bevy::ui::{ComputedNode, ScrollPosition, UiGlobalTransform};
+use bevy::window::PrimaryWindow;
 
 use crate::widget::{
     LineStyle, Terminal, TerminalContent, TerminalCursor, TerminalFocus, TerminalInputAfter,
@@ -42,13 +43,14 @@ fn ancestor_is(
     false
 }
 
-/// Reads keyboard + mouse-wheel events and routes them to the terminal
-/// whose `focus_id` matches `TerminalFocus::focused`. Runs in `PreUpdate`.
+/// Reads keyboard events and routes them to the terminal whose `focus_id`
+/// matches `TerminalFocus::focused`. Mouse-wheel scrolling lives in
+/// [`terminal_wheel_input`], which routes by cursor hover instead of focus
+/// so users can scroll unfocused transcripts. Runs in `PreUpdate`.
 #[allow(clippy::too_many_arguments)]
 pub fn terminal_input(
     mut focus: ResMut<TerminalFocus>,
     mut key_events: MessageReader<KeyboardInput>,
-    mut wheel_events: MessageReader<MouseWheel>,
     mut submit_events: bevy::ecs::message::MessageWriter<TerminalSubmit>,
     mut completion_events: bevy::ecs::message::MessageWriter<TerminalCompletionRequest>,
     mut terminals: Query<(Entity, &TerminalRoot, &mut Terminal)>,
@@ -62,7 +64,6 @@ pub fn terminal_input(
     let Some(focused_id) = focus.focused else {
         // Drain so we don't accumulate events while no terminal is focused.
         key_events.read().for_each(|_| {});
-        wheel_events.read().for_each(|_| {});
         return;
     };
 
@@ -81,31 +82,6 @@ pub fn terminal_input(
     let viewport_entity = viewport_entities
         .iter()
         .find(|e| ancestor_is(*e, root_entity, &parents, 6));
-
-    // Mouse wheel scrolling.
-    let wheel_total: f32 = wheel_events
-        .read()
-        .map(|e| {
-            let scale = if matches!(e.unit, MouseScrollUnit::Line) {
-                21.0
-            } else {
-                1.0
-            };
-            -e.y * scale
-        })
-        .sum();
-    if wheel_total.abs() > 0.0 {
-        if let Some(vp) = viewport_entity {
-            if let Ok((computed, mut scroll)) = scroll_query.get_mut(vp) {
-                let max = (computed.content_size().y - computed.size().y).max(0.0)
-                    * computed.inverse_scale_factor();
-                scroll.y = (scroll.y + wheel_total).clamp(0.0, max);
-                if max > 0.0 && (max - scroll.y) > 1.0 {
-                    terminal.auto_pin_bottom = false;
-                }
-            }
-        }
-    }
 
     for event in key_events.read() {
         if !event.state.is_pressed() {
@@ -229,6 +205,81 @@ pub fn terminal_input(
                 }
             }
         }
+    }
+}
+
+/// Routes mouse-wheel events to whichever terminal viewport the cursor is
+/// hovering over, regardless of keyboard focus. Lets users scroll an
+/// unfocused chat transcript or the python console without first claiming
+/// focus. Runs in `PreUpdate` alongside [`terminal_input`].
+pub fn terminal_wheel_input(
+    mut wheel_events: MessageReader<MouseWheel>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    mut viewports: Query<
+        (
+            Entity,
+            &ComputedNode,
+            &UiGlobalTransform,
+            &mut ScrollPosition,
+        ),
+        With<TerminalViewport>,
+    >,
+    mut terminals: Query<&mut Terminal>,
+    parents: Query<&ChildOf>,
+) {
+    let wheel_total: f32 = wheel_events
+        .read()
+        .map(|e| {
+            let scale = if matches!(e.unit, MouseScrollUnit::Line) {
+                21.0
+            } else {
+                1.0
+            };
+            -e.y * scale
+        })
+        .sum();
+    if wheel_total.abs() <= f32::EPSILON {
+        return;
+    }
+    let Ok(window) = window_query.single() else {
+        return;
+    };
+    let Some(cursor) = window.cursor_position() else {
+        return;
+    };
+
+    let mut hit: Option<(Entity, f32, f32)> = None;
+    for (vp_entity, computed, transform, mut scroll) in &mut viewports {
+        let inv = computed.inverse_scale_factor();
+        let physical = if inv > 0.0 { cursor / inv } else { cursor };
+        if !computed.contains_point(*transform, physical) {
+            continue;
+        }
+        let max = (computed.content_size().y - computed.size().y).max(0.0) * inv;
+        scroll.y = (scroll.y + wheel_total).clamp(0.0, max);
+        hit = Some((vp_entity, scroll.y, max));
+        break;
+    }
+    let Some((vp_entity, scroll_y, max)) = hit else {
+        return;
+    };
+
+    // Walk parents from the viewport to find the owning `Terminal` so we
+    // can clear `auto_pin_bottom` when the user scrolls away from the
+    // bottom (mirrors what `terminal_input` used to do for the focused
+    // terminal).
+    let mut current = vp_entity;
+    for _ in 0..6 {
+        if let Ok(mut terminal) = terminals.get_mut(current) {
+            if max > 0.0 && (max - scroll_y) > 1.0 {
+                terminal.auto_pin_bottom = false;
+            }
+            break;
+        }
+        let Ok(parent) = parents.get(current) else {
+            break;
+        };
+        current = parent.0;
     }
 }
 

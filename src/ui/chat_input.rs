@@ -1,12 +1,17 @@
 use bevy::ecs::message::MessageReader;
 use bevy::input::keyboard::{KeyCode, KeyboardInput};
+use bevy::input::mouse::MouseButton;
+use bevy::input::ButtonInput;
 use bevy::prelude::*;
+use bevy::ui::UiGlobalTransform;
+use bevy::window::PrimaryWindow;
 use bevy_terminal::{Terminal, TerminalFocus, TerminalSubmit};
 
 use crate::game::commands::GameCommand;
 use crate::game::resources::PendingGameCommands;
 use crate::player::components::{Player, PlayerIdentity};
-use crate::ui::components::ChatTerminal;
+use crate::ui::components::{ChatPanel, ChatTerminal, PythonConsolePanel};
+use crate::ui::trade::point_in_ui_node;
 use crate::ui::CHAT_TERMINAL_FOCUS_ID;
 
 /// Focus / unfocus the chat input terminal on `T` (open) and `Escape`
@@ -61,6 +66,54 @@ pub fn handle_chat_submissions(
         match caller {
             Some(id) => pending_commands.push_for_player(id, command),
             None => pending_commands.push(command),
+        }
+    }
+}
+
+/// Left-click on the chat terminal focuses it (mirroring the `T` toggle);
+/// left-click outside the chat while focused unfocuses and clears the input
+/// (mirroring `Escape`). Skips entirely when the Python console panel is
+/// open, since it overlays the chat surface and owns clicks in that area.
+pub fn handle_chat_click_focus(
+    mouse_input: Res<ButtonInput<MouseButton>>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    chat_root: Query<(&ComputedNode, &UiGlobalTransform), With<ChatTerminal>>,
+    chat_panel_vis: Query<&InheritedVisibility, With<ChatPanel>>,
+    console_panel: Query<&Node, With<PythonConsolePanel>>,
+    mut focus: ResMut<TerminalFocus>,
+    mut chat_terminal: Query<&mut Terminal, With<ChatTerminal>>,
+) {
+    if !mouse_input.just_pressed(MouseButton::Left) {
+        return;
+    }
+    if let Ok(visibility) = chat_panel_vis.single() {
+        if !visibility.get() {
+            return;
+        }
+    }
+    if let Ok(node) = console_panel.single() {
+        if node.display != Display::None {
+            return;
+        }
+    }
+    let Ok(window) = window_query.single() else {
+        return;
+    };
+    let Some(cursor) = window.cursor_position() else {
+        return;
+    };
+    let Ok((computed, transform)) = chat_root.single() else {
+        return;
+    };
+
+    if point_in_ui_node(cursor, computed, transform) {
+        if focus.focused != Some(CHAT_TERMINAL_FOCUS_ID) {
+            focus.focused = Some(CHAT_TERMINAL_FOCUS_ID);
+        }
+    } else if focus.focused == Some(CHAT_TERMINAL_FOCUS_ID) {
+        focus.focused = None;
+        if let Ok(mut terminal) = chat_terminal.single_mut() {
+            terminal.set_input(String::new());
         }
     }
 }

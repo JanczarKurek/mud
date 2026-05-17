@@ -40,7 +40,7 @@ pub const LOG_TITLE_FOCUS_ID: TerminalFocusId = TerminalFocusId(4);
 
 use crate::app::state::ClientAppState;
 use crate::ui::backpack_panel::BackpackPanel;
-use crate::ui::chat_input::{handle_chat_submissions, toggle_chat_focus};
+use crate::ui::chat_input::{handle_chat_click_focus, handle_chat_submissions, toggle_chat_focus};
 use crate::ui::container_panel::ContainerPanel;
 use crate::ui::current_target_panel::CurrentTargetPanel;
 use crate::ui::dialog::{
@@ -399,8 +399,10 @@ impl Plugin for UiPlugin {
         )
         .add_systems(
             PreUpdate,
-            toggle_chat_focus
-                .before(bevy_terminal::terminal_input)
+            (
+                toggle_chat_focus.before(bevy_terminal::terminal_input),
+                handle_chat_click_focus,
+            )
                 .run_if(in_state(ClientAppState::InGame)),
         )
         .add_systems(
