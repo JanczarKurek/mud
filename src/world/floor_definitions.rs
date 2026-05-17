@@ -38,6 +38,37 @@ pub struct FloorTilesetDefinition {
     /// `4*i..=4*i+3`. Bitmasks omitted from the map have a single variant.
     #[serde(default)]
     pub variants: HashMap<u8, Vec<u32>>,
+    /// Optional sparse ripple animation. When present, a Poisson-scheduled
+    /// system spawns transient overlay sprites on random visible cells of
+    /// this floor type (see `floor_animation.rs`). The floor itself still
+    /// renders statically through the variants system.
+    #[serde(default)]
+    pub ripple: Option<FloorRippleDef>,
+}
+
+/// A short, non-looping animation played on top of a random water (or other
+/// floor-type) cell every `~1 / (rate_per_tile_per_second × visible_tile_count)`
+/// seconds. The sheet is a horizontal strip of `frame_count` cells laid out
+/// left-to-right.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct FloorRippleDef {
+    pub sheet_path: String,
+    pub frame_width: u32,
+    pub frame_height: u32,
+    pub frame_count: u32,
+    pub fps: f32,
+    /// Mean Poisson rate per visible cell of this floor type. The scheduler
+    /// uses Poisson superposition: total rate = this × visible count.
+    pub rate_per_tile_per_second: f32,
+    /// Z bump above the floor cell so the ripple draws on top of the water
+    /// sprite but below objects/players.
+    #[serde(default = "default_ripple_z_offset")]
+    pub z_offset: f32,
+}
+
+fn default_ripple_z_offset() -> f32 {
+    0.00001
 }
 
 const fn default_tile_size_px() -> u32 {
@@ -195,6 +226,28 @@ impl FloorTilesetDefinitions {
                         "Floor tileset '{}': variant {} has a zero weight",
                         def.id,
                         mask
+                    );
+                }
+                if let Some(ripple) = &def.ripple {
+                    assert!(
+                        ripple.frame_count > 0,
+                        "Floor tileset '{}': ripple.frame_count must be > 0",
+                        def.id
+                    );
+                    assert!(
+                        ripple.frame_width > 0 && ripple.frame_height > 0,
+                        "Floor tileset '{}': ripple frame dimensions must be > 0",
+                        def.id
+                    );
+                    assert!(
+                        ripple.fps > 0.0,
+                        "Floor tileset '{}': ripple.fps must be > 0",
+                        def.id
+                    );
+                    assert!(
+                        ripple.rate_per_tile_per_second >= 0.0,
+                        "Floor tileset '{}': ripple.rate_per_tile_per_second must be >= 0",
+                        def.id
                     );
                 }
                 info!(
@@ -417,6 +470,7 @@ mod tests {
             occludes_floor_above: false,
             walkable_surface: true,
             variants: HashMap::new(),
+            ripple: None,
         }
     }
 

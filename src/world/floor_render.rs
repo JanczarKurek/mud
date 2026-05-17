@@ -729,6 +729,7 @@ mod tests {
             occludes_floor_above: false,
             walkable_surface: true,
             variants: HashMap::new(),
+            ripple: None,
         }
     }
 

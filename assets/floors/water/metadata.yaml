@@ -1,0 +1,36 @@
+id: water
+name: Water
+priority: 5
+tile_size_px: 16
+# atlas_path: floors/water/tileset.png   # drop in a 16x16 tileset to enable real art
+debug_color: [41, 97, 189]
+variants:
+  1: [1]
+  2: [1]
+  3: [1]
+  4: [1]
+  5: [1]
+  6: [1]
+  7: [1]
+  8: [1]
+  9: [1]
+  10: [1]
+  11: [1]
+  12: [1]
+  13: [1]
+  14: [1]
+  15: [1]
+# Sparse Poisson-driven ripple animation. Uncomment once `ripple.png` (a
+# horizontal strip of 16x16 frames) has been authored under this directory.
+# The Bevy system spawns one transient overlay sprite on a random visible
+# water tile every ~1/(rate_per_tile_per_second × visible_water_tile_count)
+# seconds, plays the strip non-looping, then despawns. See
+# `src/world/floor_animation.rs`.
+# ripple:
+#   sheet_path: floors/water/ripple.png
+#   frame_width: 16
+#   frame_height: 16
+#   frame_count: 4
+#   fps: 8
+#   rate_per_tile_per_second: 0.02
+#   z_offset: 0.0005

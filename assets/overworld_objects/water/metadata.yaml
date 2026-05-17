@@ -6,3 +6,16 @@ render:
   debug_color: [41, 97, 189]
   debug_size: 1.0
   sprite_path: overworld_objects/water/sprite.png
+  animation:
+    sheet_path: overworld_objects/water/sheet.png
+    frame_width: 48
+    frame_height: 48
+    sheet_columns: 4
+    sheet_rows: 1
+    clips:
+      idle:
+        row: 0
+        start_col: 0
+        frame_count: 4
+        fps: 4.0
+        looping: true

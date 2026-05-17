@@ -5,6 +5,7 @@ pub mod components;
 pub mod darkness;
 pub mod direction;
 pub mod dungeon_gen;
+pub mod floor_animation;
 pub mod floor_definitions;
 pub mod floor_map;
 pub mod floor_render;
@@ -35,6 +36,10 @@ use crate::world::attached::sync_attached_object_visuals;
 use crate::world::camera::camera_follow;
 use crate::world::darkness::{
     setup_darkness_overlay, update_darkness_overlay, DarknessOverlayMaterial,
+};
+use crate::world::floor_animation::{
+    despawn_finished_ripples, sync_ripple_overlay_transforms, tick_floor_ripple_scheduler,
+    FloorRippleAtlases, FloorRippleScheduler,
 };
 use crate::world::floor_definitions::FloorTilesetDefinitions;
 use crate::world::floor_map::FloorMaps;
@@ -138,6 +143,8 @@ impl Plugin for WorldClientPlugin {
             .insert_resource(FloorTilesetAtlases::default())
             .insert_resource(FloorRenderState::default())
             .insert_resource(FloorRenderDirty::default())
+            .insert_resource(FloorRippleAtlases::default())
+            .insert_resource(FloorRippleScheduler::default())
             .insert_resource(ClientWorldProjectionState::default())
             .insert_resource(ClientRemotePlayerProjectionState::default())
             .insert_resource(ViewScrollOffset::default())
@@ -207,6 +214,14 @@ impl Plugin for WorldClientPlugin {
                         .after(sync_tile_transforms)
                         .after(sync_player_z)
                         .after(camera_follow),
+                    // Sparse Poisson-driven floor ripples (e.g. water).
+                    (
+                        tick_floor_ripple_scheduler
+                            .after(apply_game_events_to_client_state)
+                            .after(recompute_visible_floors),
+                        sync_ripple_overlay_transforms.after(detect_player_movement),
+                        despawn_finished_ripples.after(advance_animation_timers),
+                    ),
                 )
                     .run_if(in_state(ClientAppState::InGame)),
             )

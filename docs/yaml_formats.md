@@ -1563,6 +1563,43 @@ Top-level fields:
 - For each authored mask, supply one weight per variant (the loader requires `1..=15` keys, non-empty weight lists, and all weights `> 0`). Higher weights make a variant more likely; the renderer samples deterministically based on tile coordinates so the picture is stable across saves.
 - Bitmasks omitted from this map fall back to a single variant (weight `[1]`).
 
+### `ripple`
+- Type: mapping or omitted
+- Optional: yes
+- Default: omitted (no overlay animation)
+- Meaning: configures a sparse Poisson-scheduled overlay animation. When set, a client-side scheduler picks a random visible tile of this floor type every `Δt ~ Exp(λ_total)` and spawns a single transient sprite that plays the strip non-looping, then despawns. Under Poisson superposition `λ_total = rate_per_tile_per_second × visible_tile_count`, so larger ponds naturally produce proportionally more events with no per-map tuning. Used for water ripples — anything that wants occasional motion without paying for a per-tile timer. Implemented in `src/world/floor_animation.rs`.
+
+`ripple` sub-fields:
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `sheet_path` | string | yes | Bevy asset path (relative to `assets/`) to a horizontal strip of `frame_count` cells. |
+| `frame_width` | positive integer | yes | Pixel width of one frame in the strip. |
+| `frame_height` | positive integer | yes | Pixel height of one frame in the strip. |
+| `frame_count` | positive integer | yes | Number of frames in the strip; played left-to-right, once. |
+| `fps` | positive float | yes | Frames per second; total animation duration is `frame_count / fps`. |
+| `rate_per_tile_per_second` | non-negative float | yes | Mean Poisson rate per visible tile of this floor type. `0.02` works well for water (one event every few seconds across a modest pond). |
+| `z_offset` | float | no (default `0.00001`) | Z bump above the floor cell so the ripple draws on top of the floor sprite but below objects/players. |
+
+Example (water with a 4-frame ripple strip):
+
+```yaml
+id: water
+name: Water
+priority: 5
+tile_size_px: 16
+atlas_path: floors/water/tileset.png
+debug_color: [41, 97, 189]
+ripple:
+  sheet_path: floors/water/ripple.png
+  frame_width: 16
+  frame_height: 16
+  frame_count: 4
+  fps: 8
+  rate_per_tile_per_second: 0.02
+  z_offset: 0.0005
+```
+
 Example (`assets/floors/grass/metadata.yaml`):
 
 ```yaml

@@ -778,6 +778,9 @@ floors:
       y: 17
     - x: 10
       y: 17
+  water:
+    rects:
+    - { x: 40, y: 30, w: 5, h: 3 }
 objects:
 - type: apple
   placement:
