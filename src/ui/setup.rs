@@ -3,12 +3,13 @@ use bevy::ui::widget::NodeImageMode;
 use bevy_terminal::{spawn_terminal, LineStyle, TerminalConfig, TerminalInputConfig, TerminalLine};
 
 use crate::ui::components::{
-    BackpackPanelContent, BackpackPanelUndockButton, BackpackSlotRow, CarryWeightLabel,
-    ChatTerminal, ContainerPanelContent, ContainerPanelUndockButton, ContainerSlotButton,
-    ContainerSlotImage, ContextMenuAttackButton, ContextMenuForceLockButton,
-    ContextMenuInspectButton, ContextMenuInteractButton, ContextMenuOfferToTradeButton,
-    ContextMenuOpenButton, ContextMenuPickLockButton, ContextMenuRoot,
-    ContextMenuTakePartialButton, ContextMenuTalkButton, ContextMenuTradeButton,
+    BackpackPanelContent, BackpackPanelUndockButton, BackpackSlotRow, BottomHudColumn,
+    BottomPanelHideButton, CarryWeightLabel, ChatAreaContainer, ChatPanel, ChatTerminal,
+    ContainerPanelContent,
+    ContainerPanelUndockButton, ContainerSlotButton, ContainerSlotImage, ContextMenuAttackButton,
+    ContextMenuForceLockButton, ContextMenuInspectButton, ContextMenuInteractButton,
+    ContextMenuOfferToTradeButton, ContextMenuOpenButton, ContextMenuPickLockButton,
+    ContextMenuRoot, ContextMenuTakePartialButton, ContextMenuTalkButton, ContextMenuTradeButton,
     ContextMenuUseButton, ContextMenuUseKeyButton, ContextMenuUseOnButton,
     CurrentCombatTargetLabel, CurrentTargetPanelContent, CurrentTargetPanelUndockButton,
     DockedPanelBody, DockedPanelCanvas, DockedPanelCloseButton, DockedPanelDragHandle,
@@ -139,40 +140,68 @@ pub fn spawn_hud(
     spawn_character_sheet_button(&mut commands, &asset_server);
     crate::ui::time_of_day_button::spawn_time_of_day_button(&mut commands, &asset_server);
 
-    let bottom_bar = commands
+    // Bottom HUD column: anchored to the screen bottom and stops short of
+    // the 272-px right sidebar. Vertical flex stack — quickbar sits on top
+    // and the chat/console panel sits beneath. The column is content-sized
+    // so hiding the chat lets the quickbar drop flush with the screen edge.
+    let bottom_column = commands
         .spawn((
             Node {
-                width: percent(100.0),
-                height: px(360.0),
                 position_type: PositionType::Absolute,
                 bottom: px(0.0),
                 left: px(0.0),
+                right: px(272.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: px(8.0),
                 padding: UiRect::all(px(14.0)),
                 ..default()
             },
+            BottomHudColumn,
             BackgroundColor(Color::NONE),
             HudRoot,
         ))
         .id();
 
+    commands.entity(bottom_column).with_children(|column| {
+        crate::ui::quickbar::spawn_quickbar(column, &theme, &palette);
+    });
+
+    let chat_area = commands
+        .spawn((
+            Node {
+                width: percent(100.0),
+                height: px(260.0),
+                flex_direction: FlexDirection::Column,
+                position_type: PositionType::Relative,
+                ..default()
+            },
+            ChatAreaContainer,
+            BackgroundColor(Color::NONE),
+            ChildOf(bottom_column),
+        ))
+        .id();
+
     // Chat panel: a read-only terminal widget wrapped in the existing
-    // chat surface for label + padding.
+    // chat surface for label + padding. Fills the full width of the
+    // bottom column when visible.
     let chat_panel = commands
         .spawn((
             Node {
-                width: percent(30.0),
+                width: percent(100.0),
                 height: percent(100.0),
                 flex_direction: FlexDirection::Column,
                 row_gap: px(10.0),
                 padding: UiRect::all(px(12.0)),
                 ..default()
             },
+            ChatPanel,
             BackgroundColor(palette.surface_chat),
-            ChildOf(bottom_bar),
+            ChildOf(chat_area),
         ))
         .id();
+    let theme_for_chat_header = theme.clone();
     commands.entity(chat_panel).with_children(|panel| {
-        spawn_panel_label(panel, "Chat", &palette);
+        spawn_chat_header(panel, &theme_for_chat_header, &palette);
     });
     let chat_terminal = spawn_terminal(
         &mut commands,
@@ -203,22 +232,24 @@ pub fn spawn_hud(
     commands.entity(chat_panel).add_children(&[chat_terminal]);
 
     // Python console: read-write terminal hidden until backtick toggles it
-    // visible. The wrapping panel matches the chat panel's styling so the
-    // two share visual treatment.
+    // visible. Same width as the chat panel — replaces it when open.
     let console_panel = commands
         .spawn((
             Node {
-                width: percent(58.0),
+                width: percent(100.0),
                 height: percent(100.0),
                 flex_direction: FlexDirection::Column,
                 row_gap: px(10.0),
                 padding: UiRect::all(px(12.0)),
                 display: Display::None,
+                position_type: PositionType::Absolute,
+                top: px(0.0),
+                left: px(0.0),
                 ..default()
             },
             PythonConsolePanel,
             BackgroundColor(palette.surface_chat),
-            ChildOf(bottom_bar),
+            ChildOf(chat_area),
         ))
         .id();
     commands.entity(console_panel).with_children(|panel| {
@@ -1181,6 +1212,38 @@ fn spawn_panel_label(parent: &mut ChildSpawnerCommands, label: &str, palette: &P
         },
         TextColor(palette.text_primary),
     ));
+}
+
+/// Chat-panel header row: label on the left, close-X on the right. The
+/// close button is `BottomPanelHideButton`-tagged so the visibility-toggle
+/// system can pick up the click.
+fn spawn_chat_header(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+) {
+    parent
+        .spawn((
+            Node {
+                width: percent(100.0),
+                flex_direction: FlexDirection::Row,
+                justify_content: JustifyContent::SpaceBetween,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            BackgroundColor(Color::NONE),
+        ))
+        .with_children(|row| {
+            row.spawn((
+                Text::new("Chat"),
+                TextFont {
+                    font_size: 18.0,
+                    ..default()
+                },
+                TextColor(palette.text_primary),
+            ));
+            spawn_themed_close_button(row, theme, BottomPanelHideButton);
+        });
 }
 
 fn spawn_vital_bar<T: Bundle>(

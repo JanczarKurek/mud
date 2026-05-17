@@ -22,13 +22,13 @@ use crate::ui::components::{
     DockedPanelDragHandle, DockedPanelResizeHandle, DockedPanelRoot, DockedPanelTitle,
     DragPreviewImage, DragPreviewLabel, DragPreviewQuantity, DragPreviewRoot, EquipmentSlotButton,
     EquipmentSlotImage, HealthFill, ItemSlotButton, ItemSlotImage, ItemSlotKind,
-    ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot, ManaFill, RightSidebarRoot,
-    TakePartialAmountLabel, TakePartialCancelButton, TakePartialConfirmButton,
+    ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot, ManaFill, QuickbarSlotMarker,
+    RightSidebarRoot, TakePartialAmountLabel, TakePartialCancelButton, TakePartialConfirmButton,
     TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot,
 };
 use crate::ui::resources::{
     ContextMenuState, ContextMenuTarget, CursorMode, CursorState, DockedPanelDragState,
-    DockedPanelKind, DockedPanelResizeState, DockedPanelState, DragSource, DragState,
+    DockedPanelKind, DockedPanelResizeState, DockedPanelState, DragSource, DragState, Quickbar,
     SpellTargetingState, TakePartialState, UseOnState,
 };
 use crate::world::components::TilePosition;
@@ -2572,6 +2572,17 @@ pub fn handle_movable_dragging(
     trade_popup_state: Res<crate::ui::resources::TradePopupState>,
     mut drag_state: ResMut<DragState>,
     mut pending_commands: ResMut<PendingGameCommands>,
+    mut quickbar: ResMut<Quickbar>,
+    quickbar_slot_query: Query<
+        (
+            &QuickbarSlotMarker,
+            &ComputedNode,
+            &UiGlobalTransform,
+            Option<&Visibility>,
+        ),
+        With<Button>,
+    >,
+    object_registry: Res<ObjectRegistry>,
     mut slot_queries: ParamSet<(
         Query<
             (
@@ -2695,6 +2706,28 @@ pub fn handle_movable_dragging(
     );
     if hovered_slot.is_none() {
         log_equipment_slot_bounds(cursor_position, &slot_queries.p0());
+    }
+
+    // Quickbar drop has priority over the inventory/world dispatch when the
+    // cursor is released over a quickbar slot. Always consume the drop so we
+    // don't accidentally fall through into "drop on floor below the bar".
+    if let Some(quickbar_index) = hovered_quickbar_slot(cursor_position, &quickbar_slot_query) {
+        let bound_type_id: Option<String> = match &drag_source {
+            Some(DragSource::UiSlot(slot_kind)) => match slot_kind {
+                ItemSlotKind::Backpack(_) | ItemSlotKind::Equipment(_) => {
+                    stack_in_slot_kind(&client_state, &docked_panel_state, *slot_kind)
+                        .map(|stack| stack.type_id)
+                }
+                _ => None,
+            },
+            Some(DragSource::World) => dragged_object_id
+                .and_then(|id| object_registry.type_id(id).map(str::to_owned)),
+            None => None,
+        };
+        if let Some(type_id) = bound_type_id {
+            quickbar.assign(quickbar_index, type_id);
+        }
+        return;
     }
 
     match drag_source {
@@ -3382,6 +3415,28 @@ fn hovered_slot_image_in_family<F: QueryFilter>(
             }
 
             point_in_ui_node(cursor_position, computed_node, global_transform).then_some(slot.kind)
+        })
+}
+
+fn hovered_quickbar_slot(
+    cursor_position: Vec2,
+    slot_query: &Query<
+        (
+            &QuickbarSlotMarker,
+            &ComputedNode,
+            &UiGlobalTransform,
+            Option<&Visibility>,
+        ),
+        With<Button>,
+    >,
+) -> Option<usize> {
+    slot_query
+        .iter()
+        .find_map(|(slot, computed_node, global_transform, visibility)| {
+            if visibility.is_some_and(|visibility| *visibility == Visibility::Hidden) {
+                return None;
+            }
+            point_in_ui_node(cursor_position, computed_node, global_transform).then_some(slot.0)
         })
 }
 

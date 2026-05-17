@@ -216,6 +216,55 @@ pub enum DragSource {
     UiSlot(ItemSlotKind),
 }
 
+/// Number of slots in the quick-use bar. Keys `1`–`9` map to indices `0..=8`;
+/// key `0` maps to index `9`. The keybinding system and the bar layout both
+/// read this constant — change here to add/remove slots together.
+pub const QUICKBAR_SLOT_COUNT: usize = 10;
+
+/// Client-only resource tracking the player's quick-use bar.
+///
+/// Each entry is the canonical `type_id` of an item that the slot binds to.
+/// On press, the keybinding system scans the player's inventory for the
+/// first matching stack — so slots survive backpack reshuffles without
+/// breaking. Drag-and-drop from a backpack/equipment slot writes the source
+/// stack's `type_id` here.
+///
+/// `dirty` is set whenever `slots` changes; the persistence system writes
+/// to disk and clears the flag.
+#[derive(Resource, Default, Clone, Debug)]
+pub struct Quickbar {
+    pub slots: [Option<String>; QUICKBAR_SLOT_COUNT],
+    pub dirty: bool,
+}
+
+/// Whether the chat / Python console area at the bottom of the screen is
+/// hidden. When `hidden`, the bottom column shrinks to just the quickbar
+/// and the quickbar sits flush with the screen bottom.
+#[derive(Resource, Default, Clone, Copy, Debug)]
+pub struct BottomPanelVisibility {
+    pub hidden: bool,
+}
+
+impl Quickbar {
+    pub fn assign(&mut self, slot_index: usize, type_id: String) {
+        if let Some(slot) = self.slots.get_mut(slot_index) {
+            if slot.as_deref() != Some(type_id.as_str()) {
+                *slot = Some(type_id);
+                self.dirty = true;
+            }
+        }
+    }
+
+    pub fn clear_slot(&mut self, slot_index: usize) {
+        if let Some(slot) = self.slots.get_mut(slot_index) {
+            if slot.is_some() {
+                *slot = None;
+                self.dirty = true;
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DockedPanelKind {
     Minimap,

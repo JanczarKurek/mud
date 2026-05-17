@@ -31,6 +31,7 @@ const ACCOUNTS_DB_FILE: &str = "accounts.db";
 const WORLD_SNAPSHOT_REL: &str = "saves/world-state.json";
 const CLIENT_ASSETS_SUBDIR: &str = "assets";
 const ADMIN_SOCKET_FILE: &str = "admin.sock";
+const QUICKBAR_SUBDIR: &str = "quickbar";
 
 /// Resolved data paths for a server-side role (embedded or headless server).
 #[derive(Clone, Debug)]
@@ -111,6 +112,19 @@ pub fn default_admin_socket_path(runtime: AppRuntime) -> Option<PathBuf> {
 /// Root directory of the cache tree (parent of client/).
 pub fn cache_root_dir() -> PathBuf {
     cache_root()
+}
+
+/// Client-side per-character quick-use bar JSON path for `runtime` and
+/// `player_id`. The quickbar is a pure presentation-side artifact — the
+/// server never sees it — so storage lives next to the role's other client
+/// data. `HeadlessServer` has no UI and returns `None`.
+pub fn quickbar_path(runtime: AppRuntime, player_id: u64) -> Option<PathBuf> {
+    let base = match runtime {
+        AppRuntime::EmbeddedClient => data_root().join(EMBEDDED_SUBDIR).join(QUICKBAR_SUBDIR),
+        AppRuntime::TcpClient => data_root().join(CLIENT_SUBDIR).join(QUICKBAR_SUBDIR),
+        AppRuntime::HeadlessServer => return None,
+    };
+    Some(base.join(format!("{player_id}.json")))
 }
 
 #[cfg(test)]

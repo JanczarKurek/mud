@@ -141,6 +141,28 @@ pub struct DockedPanelResizeHandle {
     pub panel_id: usize,
 }
 
+/// Root container of the bottom-center quick-use bar.
+#[derive(Component)]
+pub struct QuickbarRoot;
+
+/// Marker on each slot button inside the quick-use bar. Carries the slot
+/// index `0..QUICKBAR_SLOT_COUNT`. Drop-target detection and icon-refresh
+/// systems both query for this.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct QuickbarSlotMarker(pub usize);
+
+/// Marker on the icon `ImageNode` inside a quickbar slot. Sibling of
+/// `QuickbarSlotChargesLabel`. The refresh system updates the image and
+/// dims it when the bound item isn't present in inventory.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct QuickbarSlotIcon(pub usize);
+
+/// Marker on the small charge/quantity text overlay in the corner of a
+/// quickbar slot. Empty text when no item is bound or the item has no
+/// finite charges.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct QuickbarSlotChargesLabel(pub usize);
+
 #[derive(Component)]
 pub struct DragPreviewRoot;
 
@@ -161,6 +183,31 @@ pub struct ItemTooltipLabel;
 
 #[derive(Component)]
 pub struct PythonConsolePanel;
+
+/// Root node of the chat surface that wraps the read-only chat terminal.
+/// The sync system flips this node's `Display` based on
+/// `BottomPanelVisibility` and `PythonConsoleState`.
+#[derive(Component)]
+pub struct ChatPanel;
+
+/// Container parenting the quickbar and the chat/console area at the
+/// bottom of the screen. Anchored to `bottom: 0`; height tracks its
+/// content so hiding the chat slides the quickbar down to the screen edge.
+#[derive(Component)]
+pub struct BottomHudColumn;
+
+/// Wrapper around the chat panel and the Python console panel — they
+/// share a fixed-height slot inside `BottomHudColumn` and only one is
+/// visible at a time. When the user hides the bottom area, the visibility
+/// sync system flips this whole container to `Display::None` so the
+/// quickbar drops flush with the screen edge.
+#[derive(Component)]
+pub struct ChatAreaContainer;
+
+/// Marker on the "—" hide button rendered in the chat panel header.
+/// Click toggles `BottomPanelVisibility::hidden`.
+#[derive(Component)]
+pub struct BottomPanelHideButton;
 
 /// Marker on the terminal-widget root that hosts the Python console.
 #[derive(Component)]

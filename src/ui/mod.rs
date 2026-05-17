@@ -12,6 +12,7 @@ pub mod minimap;
 pub mod minimap_panel;
 pub mod mountable_panel;
 pub mod movable_window;
+pub mod quickbar;
 pub mod recipe_book;
 pub mod resources;
 pub mod retro_bar;
@@ -56,11 +57,17 @@ use crate::ui::minimap::{
 };
 use crate::ui::minimap_panel::MinimapPanel;
 use crate::ui::mountable_panel::{MountablePanelLifecycleSet, MountablePanelPlugin};
+use crate::ui::quickbar::{
+    handle_bottom_panel_hide_button, handle_bottom_panel_hide_key, handle_quickbar_keybinds,
+    handle_quickbar_right_click, load_quickbar_on_login, persist_quickbar,
+    sync_bottom_panels_visibility, sync_quickbar_visuals, unhide_on_console_open,
+    QuickbarLoadedFor,
+};
 use crate::ui::resources::{
-    ActiveDialogState, CharacterSheetState, ContextMenuState, CursorState, DockedPanelDragState,
-    DockedPanelResizeState, DockedPanelState, DragState, FullMapWindowState, HudMinimapSettings,
-    OpenMenuState, PendingMenuActions, SpellTargetingState, TakePartialState, TradePopupState,
-    UseOnState,
+    ActiveDialogState, BottomPanelVisibility, CharacterSheetState, ContextMenuState, CursorState,
+    DockedPanelDragState, DockedPanelResizeState, DockedPanelState, DragState, FullMapWindowState,
+    HudMinimapSettings, OpenMenuState, PendingMenuActions, Quickbar, SpellTargetingState,
+    TakePartialState, TradePopupState, UseOnState,
 };
 use crate::ui::setup::spawn_hud;
 use crate::ui::sprite_state::sync_object_state_visuals;
@@ -132,6 +139,9 @@ impl Plugin for UiPlugin {
         .insert_resource(TradePanelRenderState::default())
         .insert_resource(TradePopupState::default())
         .insert_resource(TimeOfDayPopupState::default())
+        .insert_resource(Quickbar::default())
+        .insert_resource(QuickbarLoadedFor::default())
+        .insert_resource(BottomPanelVisibility::default())
         .add_systems(
             OnEnter(ClientAppState::InGame),
             (spawn_hud, setup_native_custom_cursor),
@@ -368,6 +378,26 @@ impl Plugin for UiPlugin {
                 .run_if(in_state(ClientAppState::InGame)),
         )
         .add_systems(
+            Update,
+            (
+                load_quickbar_on_login,
+                sync_quickbar_visuals,
+                handle_quickbar_keybinds
+                    .before(crate::game::CommandIntercept)
+                    .run_if(bevy_terminal::terminal_not_focused),
+                handle_quickbar_right_click.before(handle_context_menu_opening),
+                persist_quickbar,
+                handle_bottom_panel_hide_button,
+                handle_bottom_panel_hide_key.run_if(bevy_terminal::terminal_not_focused),
+                unhide_on_console_open,
+                sync_bottom_panels_visibility
+                    .after(handle_bottom_panel_hide_button)
+                    .after(handle_bottom_panel_hide_key)
+                    .after(unhide_on_console_open),
+            )
+                .run_if(in_state(ClientAppState::InGame)),
+        )
+        .add_systems(
             PreUpdate,
             toggle_chat_focus
                 .before(bevy_terminal::terminal_input)
@@ -395,6 +425,9 @@ fn teardown_hud(
     mut character_sheet: ResMut<CharacterSheetState>,
     mut active_dialog: ResMut<ActiveDialogState>,
     mut trade_popup: ResMut<TradePopupState>,
+    mut quickbar: ResMut<Quickbar>,
+    mut quickbar_loaded: ResMut<QuickbarLoadedFor>,
+    mut bottom_visibility: ResMut<BottomPanelVisibility>,
 ) {
     for entity in &hud_roots {
         commands.entity(entity).despawn();
@@ -406,4 +439,7 @@ fn teardown_hud(
     character_sheet.open = false;
     *active_dialog = ActiveDialogState::default();
     *trade_popup = TradePopupState::default();
+    *quickbar = Quickbar::default();
+    *quickbar_loaded = QuickbarLoadedFor::default();
+    *bottom_visibility = BottomPanelVisibility::default();
 }

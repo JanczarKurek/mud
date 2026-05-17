@@ -37,7 +37,7 @@ use crate::scripting::ScriptingPlugin;
 use crate::ui::UiPlugin;
 use crate::world::{WorldClientPlugin, WorldServerPlugin};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, bevy::ecs::resource::Resource)]
 pub enum AppRuntime {
     EmbeddedClient,
     TcpClient,
@@ -83,6 +83,7 @@ pub struct ClientTlsArgs {
 
 impl Plugin for GameAppPlugin {
     fn build(&self, app: &mut App) {
+        app.insert_resource(self.runtime);
         // Install the process-wide XDG asset overlay root. Only TcpClient
         // consults it; other roles load bundled assets exclusively.
         let xdg_asset_root = match self.runtime {
