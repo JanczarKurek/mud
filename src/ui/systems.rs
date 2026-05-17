@@ -1546,6 +1546,21 @@ pub fn handle_context_menu_actions(
     }
 }
 
+/// Fallback dismiss: any LMB click that survives the button handlers above
+/// closes the context menu. Scheduled `.after` the button handlers and the
+/// trade/lock variants so a click on an actual menu button still runs its
+/// action first (those handlers hide the menu themselves, after which this
+/// is a no-op).
+pub fn close_context_menu_on_lmb(
+    mouse_input: Res<ButtonInput<MouseButton>>,
+    mut context_menu_state: ResMut<ContextMenuState>,
+) {
+    if !mouse_input.just_pressed(MouseButton::Left) || !context_menu_state.is_visible() {
+        return;
+    }
+    context_menu_state.hide();
+}
+
 /// Handler split out from `handle_context_menu_actions` so the lock-related
 /// verb buttons don't push the parent ParamSet over Bevy's 8-query cap.
 pub fn handle_context_menu_lock_actions(

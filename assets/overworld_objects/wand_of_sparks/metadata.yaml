@@ -9,5 +9,5 @@ fillable_properties:
   - charges_remaining
 render:
   debug_color: [220, 200, 90]
-  debug_size: 0.45
+  debug_size: 1.0
   sprite_path: overworld_objects/wand_of_sparks/sprite.png

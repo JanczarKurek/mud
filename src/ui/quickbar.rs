@@ -351,13 +351,21 @@ pub fn handle_quickbar_keybinds(
     }
 }
 
-/// Right-click on a quickbar slot clears the binding.
-pub fn handle_quickbar_right_click(
-    mouse_input: Res<ButtonInput<MouseButton>>,
+/// Mouse handling for quickbar slots:
+/// - **Right click** opens the standard inventory context menu for the
+///   bound item, so the slot behaves like the underlying inventory slot.
+/// - **Middle click** clears the binding.
+///
+/// Both events are consumed via `ButtonInput::clear_just_pressed` so they
+/// don't fall through to `handle_context_menu_opening` (which would otherwise
+/// open a world context menu for whatever tile the bar covers).
+#[allow(clippy::too_many_arguments)]
+pub fn handle_quickbar_clicks(
+    mut mouse_input: ResMut<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
-    context_menu_state: Res<ContextMenuState>,
     use_on_state: Res<UseOnState>,
     spell_targeting_state: Res<SpellTargetingState>,
+    cursor_state: Res<CursorState>,
     slot_query: Query<
         (
             &QuickbarSlotMarker,
@@ -368,13 +376,23 @@ pub fn handle_quickbar_right_click(
         With<Button>,
     >,
     mut quickbar: ResMut<Quickbar>,
+    mut context_menu_state: ResMut<ContextMenuState>,
+    client_state: Res<ClientGameState>,
+    definitions: Res<OverworldObjectDefinitions>,
+    spell_definitions: Res<SpellDefinitions>,
 ) {
-    if !mouse_input.just_pressed(MouseButton::Right) {
+    let right = mouse_input.just_pressed(MouseButton::Right);
+    let middle = mouse_input.just_pressed(MouseButton::Middle);
+    if !right && !middle {
         return;
     }
+    // Defer to the targeting / context-menu handlers when any of those
+    // modes are already active — an RMB in those states means "cancel",
+    // not "open quickbar menu".
     if context_menu_state.is_visible()
         || use_on_state.source.is_some()
         || spell_targeting_state.source.is_some()
+        || cursor_state.mode != CursorMode::Default
     {
         return;
     }
@@ -387,7 +405,53 @@ pub fn handle_quickbar_right_click(
     let Some(index) = hovered_quickbar_slot_idx(cursor_position, &slot_query) else {
         return;
     };
-    quickbar.clear_slot(index);
+
+    if middle {
+        quickbar.clear_slot(index);
+        mouse_input.clear_just_pressed(MouseButton::Middle);
+        return;
+    }
+
+    // Right click: consume the press so the world context-menu opener
+    // (which runs after this system) doesn't also fire, then open the
+    // standard inventory-slot context menu for the bound item. Bindings
+    // with no live stack (dimmed icon) just consume the click.
+    mouse_input.clear_just_pressed(MouseButton::Right);
+    let Some(type_id) = quickbar.slots.get(index).and_then(|s| s.as_deref()) else {
+        return;
+    };
+    let Some(slot_kind) = find_slot_kind_for_type(&client_state, type_id) else {
+        return;
+    };
+    let Some(stack) = find_stack_by_type(&client_state, type_id) else {
+        return;
+    };
+    let definition = definitions.get(type_id);
+    let can_use = definition.is_some_and(|d| d.is_usable());
+    let has_use_on = ObjectRegistry::resolved_spell_id_for_type(
+        type_id,
+        Some(&stack.properties),
+        &definitions,
+        &spell_definitions,
+    )
+    .is_some()
+        || can_use;
+    // Match `handle_context_menu_opening`: only Backpack-slot pouches show
+    // "Open" — equipment-slot pouches are intentionally skipped.
+    let can_open =
+        matches!(slot_kind, ItemSlotKind::Backpack(_)) && stack.contained_slots.is_some();
+    context_menu_state.show(
+        cursor_position,
+        ContextMenuTarget::Slot(slot_kind),
+        can_open,
+        can_use,
+        has_use_on,
+        false,
+        stack.quantity > 1,
+        false,
+        false,
+        None,
+    );
 }
 
 fn hovered_quickbar_slot_idx<F: QueryFilter>(

@@ -8,5 +8,5 @@ infinite_uses: true
 render:
   z_index: 0.26
   debug_color: [120, 120, 130]
-  debug_size: 0.60
+  debug_size: 1.0
   sprite_path: overworld_objects/pickaxe/sprite.png

@@ -58,8 +58,8 @@ use crate::ui::minimap::{
 use crate::ui::minimap_panel::MinimapPanel;
 use crate::ui::mountable_panel::{MountablePanelLifecycleSet, MountablePanelPlugin};
 use crate::ui::quickbar::{
-    handle_bottom_panel_hide_button, handle_bottom_panel_hide_key, handle_quickbar_keybinds,
-    handle_quickbar_right_click, load_quickbar_on_login, persist_quickbar,
+    handle_bottom_panel_hide_button, handle_bottom_panel_hide_key, handle_quickbar_clicks,
+    handle_quickbar_keybinds, load_quickbar_on_login, persist_quickbar,
     sync_bottom_panels_visibility, sync_quickbar_visuals, unhide_on_console_open,
     QuickbarLoadedFor,
 };
@@ -73,8 +73,8 @@ use crate::ui::setup::spawn_hud;
 use crate::ui::sprite_state::sync_object_state_visuals;
 use crate::ui::status_panel::StatusPanel;
 use crate::ui::systems::{
-    apply_game_ui_events, consume_death_summary_events, consume_level_up_toasts,
-    handle_attack_targeting, handle_character_sheet_button_click,
+    apply_game_ui_events, close_context_menu_on_lmb, consume_death_summary_events,
+    consume_level_up_toasts, handle_attack_targeting, handle_character_sheet_button_click,
     handle_character_sheet_close_click, handle_context_menu_actions,
     handle_context_menu_lock_actions, handle_context_menu_opening, handle_death_summary_dismiss,
     handle_docked_panel_close_buttons, handle_docked_panel_dragging, handle_docked_panel_resizing,
@@ -257,6 +257,14 @@ impl Plugin for UiPlugin {
         )
         .add_systems(
             Update,
+            close_context_menu_on_lmb
+                .after(handle_context_menu_actions)
+                .after(handle_context_menu_lock_actions)
+                .after(handle_trade_context_menu_actions)
+                .run_if(in_state(ClientAppState::InGame)),
+        )
+        .add_systems(
+            Update,
             handle_docked_panel_close_buttons.run_if(in_state(ClientAppState::InGame)),
         )
         .add_systems(
@@ -385,7 +393,7 @@ impl Plugin for UiPlugin {
                 handle_quickbar_keybinds
                     .before(crate::game::CommandIntercept)
                     .run_if(bevy_terminal::terminal_not_focused),
-                handle_quickbar_right_click.before(handle_context_menu_opening),
+                handle_quickbar_clicks.before(handle_context_menu_opening),
                 persist_quickbar,
                 handle_bottom_panel_hide_button,
                 handle_bottom_panel_hide_key.run_if(bevy_terminal::terminal_not_focused),
