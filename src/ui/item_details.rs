@@ -13,8 +13,8 @@ use bevy::window::PrimaryWindow;
 
 use crate::app::state::ClientAppState;
 use crate::game::resources::ClientGameState;
-use crate::magic::resources::SpellDefinitions;
-use crate::player::components::InventoryStack;
+use crate::magic::resources::{SpellDefinitions, SpellTargeting};
+use crate::player::components::{InventoryStack, CHARGES_KEY};
 use crate::ui::components::ItemSlotKind;
 use crate::ui::movable_window::{
     find_window_by_id, spawn_movable_window, spawn_movable_window_close_button, MovableWindow,
@@ -23,7 +23,7 @@ use crate::ui::movable_window::{
 };
 use crate::ui::resources::DockedPanelState;
 use crate::ui::theme::{Palette, UiThemeAssets};
-use crate::world::object_definitions::OverworldObjectDefinitions;
+use crate::world::object_definitions::{OverworldObjectDefinition, OverworldObjectDefinitions};
 use crate::world::object_registry::ObjectRegistry;
 
 const ITEM_DETAILS_SIZE: Vec2 = Vec2::new(320.0, 380.0);
@@ -195,7 +195,36 @@ fn populate_item_details(
 ) {
     let definition = definitions.get(&stack.type_id);
 
-    // Header: sprite + name.
+    spawn_header(
+        parent,
+        palette,
+        asset_server,
+        definitions,
+        spell_definitions,
+        stack,
+        definition,
+    );
+
+    if let Some(def) = definition {
+        spawn_properties_section(parent, palette, def, stack);
+        spawn_spell_section(parent, palette, def, spell_definitions);
+        spawn_stat_modifiers_section(parent, palette, def);
+        spawn_use_effects_section(parent, palette, def);
+        spawn_on_hit_effects_section(parent, palette, def);
+    }
+
+    spawn_description_section(parent, palette, definitions, spell_definitions, stack);
+}
+
+fn spawn_header(
+    parent: &mut ChildSpawnerCommands,
+    palette: &Palette,
+    asset_server: &AssetServer,
+    definitions: &OverworldObjectDefinitions,
+    spell_definitions: &SpellDefinitions,
+    stack: &InventoryStack,
+    definition: Option<&OverworldObjectDefinition>,
+) {
     parent
         .spawn((
             Node {
@@ -222,8 +251,6 @@ fn populate_item_details(
                     ImageNode::new(asset_server.load(path.to_owned())),
                 ));
             } else {
-                // Fallback swatch from the debug color so unparented items
-                // (e.g. assets still being authored) still have a visual.
                 let color = definition.map_or(Color::srgb(0.4, 0.4, 0.4), |def| def.debug_color());
                 header.spawn((
                     Node {
@@ -262,32 +289,283 @@ fn populate_item_details(
                 },
             ));
         });
+}
 
-    // Weight line.
-    if let Some(def) = definition {
-        if def.weight > 0.0 {
-            let line = if stack.quantity > 1 {
-                format!(
-                    "Weight: {:.2} kg (x{} = {:.2} kg)",
-                    def.weight,
-                    stack.quantity,
-                    def.weight * stack.quantity as f32
-                )
-            } else {
-                format!("Weight: {:.2} kg", def.weight)
-            };
-            parent.spawn((
-                Text::new(line),
-                TextFont {
-                    font_size: 13.0,
-                    ..default()
-                },
-                TextColor(palette.text_muted),
+fn spawn_properties_section(
+    parent: &mut ChildSpawnerCommands,
+    palette: &Palette,
+    def: &OverworldObjectDefinition,
+    stack: &InventoryStack,
+) {
+    let mut rows: Vec<(String, String)> = Vec::new();
+
+    if let Some(type_label) = classify_item(def) {
+        rows.push(("Type".to_owned(), type_label.to_owned()));
+    }
+    if let Some(slot) = def.equipment_slot {
+        rows.push(("Slot".to_owned(), slot.label().to_owned()));
+    }
+    if def.weight > 0.0 {
+        let value = if stack.quantity > 1 {
+            format!(
+                "{:.2} kg (×{} = {:.2} kg)",
+                def.weight,
+                stack.quantity,
+                def.weight * stack.quantity as f32
+            )
+        } else {
+            format!("{:.2} kg", def.weight)
+        };
+        rows.push(("Weight".to_owned(), value));
+    }
+    if let Some(damage) = def.damage.as_deref() {
+        rows.push(("Damage".to_owned(), damage.to_owned()));
+    }
+    if let Some(profile) = def.attack_profile.as_ref() {
+        let kind_label = match profile.kind {
+            crate::world::object_definitions::AttackProfileKindDef::Melee => "Melee",
+            crate::world::object_definitions::AttackProfileKindDef::Ranged => "Ranged",
+        };
+        rows.push(("Attack".to_owned(), kind_label.to_owned()));
+        if let Some(dmg_type) = profile.damage_type {
+            rows.push((
+                "Damage Type".to_owned(),
+                title_case(dmg_type.display_name()),
             ));
         }
     }
+    if let Some(range) = def.base_range_tiles {
+        rows.push(("Range".to_owned(), format!("{range} tiles")));
+    }
+    if let Some(ammo) = def.ammo_type.as_deref() {
+        rows.push(("Ammo".to_owned(), human_id(ammo)));
+    }
+    if def.armor > 0 {
+        rows.push(("Armor".to_owned(), format!("+{}", def.armor)));
+    }
+    if def.block > 0 {
+        rows.push(("Block".to_owned(), format!("+{}", def.block)));
+    }
+    if def.infinite_uses {
+        rows.push(("Charges".to_owned(), "Unlimited".to_owned()));
+    } else if let Some(max) = def.max_charges {
+        let current = stack
+            .properties
+            .get(CHARGES_KEY)
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(max);
+        rows.push(("Charges".to_owned(), format!("{current} / {max}")));
+    }
+    if def.max_stack_size > 1 {
+        rows.push((
+            "Stack".to_owned(),
+            format!("{} / {}", stack.quantity, def.max_stack_size),
+        ));
+    }
+    if let Some(cap) = def.container_capacity {
+        rows.push(("Capacity".to_owned(), format!("{cap} slots")));
+    }
 
-    // Description.
+    if rows.is_empty() {
+        return;
+    }
+    spawn_section_header(parent, palette, "Properties");
+    spawn_property_table(parent, palette, &rows);
+}
+
+fn spawn_spell_section(
+    parent: &mut ChildSpawnerCommands,
+    palette: &Palette,
+    def: &OverworldObjectDefinition,
+    spell_definitions: &SpellDefinitions,
+) {
+    let Some(spell_id) = def.spell_id.as_deref() else {
+        return;
+    };
+    let Some(spell) = spell_definitions.get(spell_id) else {
+        return;
+    };
+
+    spawn_section_header(parent, palette, "Spell");
+    let mut rows: Vec<(String, String)> = vec![("Name".to_owned(), spell.name.clone())];
+    let targeting = match spell.targeting {
+        SpellTargeting::Targeted => "Targeted",
+        SpellTargeting::Untargeted => "Self",
+    };
+    rows.push(("Targeting".to_owned(), targeting.to_owned()));
+    rows.push(("Mana Cost".to_owned(), format!("{:.0}", spell.mana_cost)));
+    if spell.targeting == SpellTargeting::Targeted && spell.range_tiles > 0 {
+        rows.push(("Range".to_owned(), format!("{} tiles", spell.range_tiles)));
+    }
+    if spell.min_caster_level > 1 {
+        rows.push((
+            "Min Level".to_owned(),
+            format!("{}", spell.min_caster_level),
+        ));
+    }
+    let effects = &spell.effects;
+    if effects.damage > 0.0 {
+        let dmg_type = effects.effective_damage_type();
+        rows.push((
+            "Damage".to_owned(),
+            format!("{:.0} {}", effects.damage, dmg_type.display_name()),
+        ));
+    }
+    if effects.restore_health > 0.0 {
+        rows.push((
+            "Restores HP".to_owned(),
+            format!("{:.0}", effects.restore_health),
+        ));
+    }
+    if effects.restore_mana > 0.0 {
+        rows.push((
+            "Restores MP".to_owned(),
+            format!("{:.0}", effects.restore_mana),
+        ));
+    }
+    spawn_property_table(parent, palette, &rows);
+
+    // Surface timed self-buffs and target-debuffs that the spell applies.
+    if !effects.buffs_self.is_empty() {
+        let lines: Vec<String> = effects
+            .buffs_self
+            .iter()
+            .map(|spec| {
+                format!(
+                    "  {:?} {:.1} for {:.0}s",
+                    spec.kind, spec.magnitude, spec.seconds
+                )
+            })
+            .collect();
+        spawn_indented_lines(parent, palette, "Buffs (self)", &lines);
+    }
+    if !effects.buffs_target.is_empty() {
+        let lines: Vec<String> = effects
+            .buffs_target
+            .iter()
+            .map(|spec| {
+                format!(
+                    "  {:?} {:.1} for {:.0}s",
+                    spec.kind, spec.magnitude, spec.seconds
+                )
+            })
+            .collect();
+        spawn_indented_lines(parent, palette, "Debuffs (target)", &lines);
+    }
+}
+
+fn spawn_stat_modifiers_section(
+    parent: &mut ChildSpawnerCommands,
+    palette: &Palette,
+    def: &OverworldObjectDefinition,
+) {
+    let stats = &def.stats;
+    let entries: Vec<(&str, i32)> = [
+        ("Strength", stats.strength),
+        ("Agility", stats.agility),
+        ("Constitution", stats.constitution),
+        ("Willpower", stats.willpower),
+        ("Charisma", stats.charisma),
+        ("Focus", stats.focus),
+        ("Max Health", stats.max_health),
+        ("Max Mana", stats.max_mana),
+        ("Storage Slots", stats.storage_slots),
+    ]
+    .into_iter()
+    .filter(|(_, v)| *v != 0)
+    .collect();
+    if entries.is_empty() {
+        return;
+    }
+    spawn_section_header(parent, palette, "Stat Modifiers");
+    for (label, value) in entries {
+        let sign = if value > 0 { "+" } else { "" };
+        let color = if value > 0 {
+            Color::srgb(0.55, 0.85, 0.45)
+        } else {
+            Color::srgb(0.95, 0.45, 0.40)
+        };
+        spawn_colored_property_row(
+            parent,
+            palette,
+            label,
+            &format!("{}{}", sign, value),
+            color,
+        );
+    }
+}
+
+fn spawn_use_effects_section(
+    parent: &mut ChildSpawnerCommands,
+    palette: &Palette,
+    def: &OverworldObjectDefinition,
+) {
+    let effects = &def.use_effects;
+    let mut rows: Vec<(String, String)> = Vec::new();
+    if effects.restore_health > 0.0 {
+        rows.push((
+            "Restores HP".to_owned(),
+            format!("{:.0}", effects.restore_health),
+        ));
+    }
+    if effects.restore_mana > 0.0 {
+        rows.push((
+            "Restores MP".to_owned(),
+            format!("{:.0}", effects.restore_mana),
+        ));
+    }
+    if effects.regen_duration_seconds > 0.0 && effects.regen_multiplier > 1.0 {
+        rows.push((
+            "Regen".to_owned(),
+            format!(
+                "×{:.1} for {:.0}s",
+                effects.regen_multiplier, effects.regen_duration_seconds
+            ),
+        ));
+    }
+    if rows.is_empty() {
+        return;
+    }
+    spawn_section_header(parent, palette, "On Use");
+    spawn_property_table(parent, palette, &rows);
+}
+
+fn spawn_on_hit_effects_section(
+    parent: &mut ChildSpawnerCommands,
+    palette: &Palette,
+    def: &OverworldObjectDefinition,
+) {
+    let Some(profile) = def.attack_profile.as_ref() else {
+        return;
+    };
+    if profile.on_hit_effects.is_empty() {
+        return;
+    }
+    spawn_section_header(parent, palette, "On Hit");
+    for effect in &profile.on_hit_effects {
+        let chance_pct = (effect.chance * 100.0).round() as i32;
+        let line = format!(
+            "  {}% {:?} {:.1} for {:.0}s",
+            chance_pct, effect.kind, effect.magnitude, effect.seconds
+        );
+        parent.spawn((
+            Text::new(line),
+            TextFont {
+                font_size: 12.0,
+                ..default()
+            },
+            TextColor(palette.text_value),
+        ));
+    }
+}
+
+fn spawn_description_section(
+    parent: &mut ChildSpawnerCommands,
+    palette: &Palette,
+    definitions: &OverworldObjectDefinitions,
+    spell_definitions: &SpellDefinitions,
+    stack: &InventoryStack,
+) {
     let description = ObjectRegistry::description_with_count_for_type(
         &stack.type_id,
         Some(&stack.properties),
@@ -296,89 +574,122 @@ fn populate_item_details(
         spell_definitions,
     )
     .unwrap_or_default();
-    if !description.trim().is_empty() {
+    let trimmed = description.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    spawn_section_header(parent, palette, "Description");
+    parent.spawn((
+        Text::new(trimmed.to_owned()),
+        TextFont {
+            font_size: 12.0,
+            ..default()
+        },
+        TextColor(palette.text_muted),
+        TextLayout::new(Justify::Left, LineBreak::WordBoundary),
+        Node {
+            width: percent(100.0),
+            ..default()
+        },
+    ));
+}
+
+/// Render a list of `(label, value)` pairs as a vertical stack of two-column
+/// rows. Label sits in a fixed-width column tinted muted-accent; value flows
+/// to the right tinted value-primary. Keeps the inspect popup scannable.
+fn spawn_property_table(
+    parent: &mut ChildSpawnerCommands,
+    palette: &Palette,
+    rows: &[(String, String)],
+) {
+    for (label, value) in rows {
+        spawn_property_row(parent, palette, label, value);
+    }
+}
+
+fn spawn_property_row(
+    parent: &mut ChildSpawnerCommands,
+    palette: &Palette,
+    label: &str,
+    value: &str,
+) {
+    spawn_colored_property_row(parent, palette, label, value, palette.text_value);
+}
+
+fn spawn_colored_property_row(
+    parent: &mut ChildSpawnerCommands,
+    palette: &Palette,
+    label: &str,
+    value: &str,
+    value_color: Color,
+) {
+    parent
+        .spawn((
+            Node {
+                width: percent(100.0),
+                column_gap: px(8.0),
+                align_items: AlignItems::FlexStart,
+                ..default()
+            },
+            BackgroundColor(Color::NONE),
+        ))
+        .with_children(|row| {
+            row.spawn((
+                Text::new(label.to_owned()),
+                TextFont {
+                    font_size: 12.0,
+                    ..default()
+                },
+                TextColor(palette.text_muted),
+                Node {
+                    width: px(108.0),
+                    flex_shrink: 0.0,
+                    ..default()
+                },
+            ));
+            row.spawn((
+                Text::new(value.to_owned()),
+                TextFont {
+                    font_size: 12.0,
+                    ..default()
+                },
+                TextColor(value_color),
+                TextLayout::new(Justify::Left, LineBreak::WordBoundary),
+                Node {
+                    flex_grow: 1.0,
+                    ..default()
+                },
+            ));
+        });
+}
+
+fn spawn_indented_lines(
+    parent: &mut ChildSpawnerCommands,
+    palette: &Palette,
+    label: &str,
+    lines: &[String],
+) {
+    parent.spawn((
+        Text::new(label.to_owned()),
+        TextFont {
+            font_size: 12.0,
+            ..default()
+        },
+        TextColor(palette.text_muted),
+        Node {
+            margin: UiRect::top(px(2.0)),
+            ..default()
+        },
+    ));
+    for line in lines {
         parent.spawn((
-            Text::new(description),
+            Text::new(line.to_owned()),
             TextFont {
-                font_size: 13.0,
+                font_size: 12.0,
                 ..default()
             },
             TextColor(palette.text_value),
-            TextLayout::new(Justify::Left, LineBreak::WordBoundary),
-            Node {
-                width: percent(100.0),
-                ..default()
-            },
         ));
-    }
-
-    // Stat modifiers (equipment).
-    if let Some(def) = definition {
-        let stats = &def.stats;
-        let entries: Vec<(&str, i32)> = [
-            ("Strength", stats.strength),
-            ("Agility", stats.agility),
-            ("Constitution", stats.constitution),
-            ("Willpower", stats.willpower),
-            ("Charisma", stats.charisma),
-            ("Focus", stats.focus),
-            ("Max Health", stats.max_health),
-            ("Max Mana", stats.max_mana),
-            ("Storage Slots", stats.storage_slots),
-        ]
-        .into_iter()
-        .filter(|(_, v)| *v != 0)
-        .collect();
-        if !entries.is_empty() {
-            spawn_section_header(parent, palette, "Stats");
-            for (label, value) in entries {
-                let sign = if value > 0 { "+" } else { "" };
-                let color = if value > 0 {
-                    Color::srgb(0.55, 0.85, 0.45)
-                } else {
-                    Color::srgb(0.95, 0.45, 0.40)
-                };
-                parent.spawn((
-                    Text::new(format!("  {}{} {}", sign, value, label)),
-                    TextFont {
-                        font_size: 13.0,
-                        ..default()
-                    },
-                    TextColor(color),
-                ));
-            }
-        }
-    }
-
-    // Use effects (consumables).
-    if let Some(def) = definition {
-        let effects = &def.use_effects;
-        let mut lines: Vec<String> = Vec::new();
-        if effects.restore_health > 0.0 {
-            lines.push(format!("Restores {:.0} health", effects.restore_health));
-        }
-        if effects.restore_mana > 0.0 {
-            lines.push(format!("Restores {:.0} mana", effects.restore_mana));
-        }
-        if effects.regen_duration_seconds > 0.0 && effects.regen_multiplier > 1.0 {
-            lines.push(format!(
-                "Regen x{:.1} for {:.0}s",
-                effects.regen_multiplier, effects.regen_duration_seconds
-            ));
-        }
-        if !lines.is_empty() {
-            spawn_section_header(parent, palette, "On use");
-            for line in lines {
-                parent.spawn((
-                    Text::new(format!("  {}", line)),
-                    TextFont {
-                        font_size: 13.0,
-                        ..default()
-                    },
-                    TextColor(palette.text_value),
-                ));
-            }
-        }
     }
 }
 
@@ -391,8 +702,59 @@ fn spawn_section_header(parent: &mut ChildSpawnerCommands, palette: &Palette, la
         },
         TextColor(palette.text_accent),
         Node {
-            margin: UiRect::top(px(4.0)),
+            margin: UiRect::top(px(6.0)),
             ..default()
         },
     ));
+}
+
+/// Classify the item into a short human label based on the definition fields.
+/// Designed to surface the most useful tag for the user — weapons are tagged
+/// "Weapon" even when they're technically equipment, scrolls vs wands branch on
+/// `max_charges`, etc.
+fn classify_item(def: &OverworldObjectDefinition) -> Option<&'static str> {
+    if def.attack_profile.is_some() {
+        return Some("Weapon");
+    }
+    if def.equipment_slot.is_some() {
+        return Some("Equipment");
+    }
+    if def.spell_id.is_some() {
+        return Some(if def.max_charges.is_some() || def.infinite_uses {
+            "Wand"
+        } else {
+            "Scroll"
+        });
+    }
+    if def.container_capacity.is_some() {
+        return Some("Container");
+    }
+    let ue = &def.use_effects;
+    if ue.restore_health > 0.0 || ue.restore_mana > 0.0 || ue.regen_duration_seconds > 0.0 {
+        return Some("Consumable");
+    }
+    if def.infinite_uses {
+        return Some("Tool");
+    }
+    if def.learns_recipe.is_some() {
+        return Some("Recipe Scroll");
+    }
+    None
+}
+
+fn title_case(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
+/// Convert a snake_case type_id into a readable label: "arrow" → "Arrow",
+/// "iron_ingot" → "Iron Ingot".
+fn human_id(s: &str) -> String {
+    s.split('_')
+        .map(title_case)
+        .collect::<Vec<_>>()
+        .join(" ")
 }
