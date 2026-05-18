@@ -648,6 +648,7 @@ pub fn handle_editor_left_click(
     let entity = spawn_overworld_object(
         &mut commands,
         &definitions,
+        &object_registry,
         object_id,
         type_id,
         None,
@@ -1815,6 +1816,7 @@ pub fn apply_modal_confirmed(
                     &mut floor_maps,
                     &def,
                     &object_definitions,
+                    &object_registry,
                     None,
                     def.permanence,
                 )
@@ -1959,6 +1961,7 @@ pub fn apply_modal_confirmed(
                 &mut floor_maps,
                 &def,
                 &object_definitions,
+                &object_registry,
                 None,
                 def.permanence,
             );

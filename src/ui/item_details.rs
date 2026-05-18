@@ -238,8 +238,9 @@ fn spawn_header(
         ))
         .with_children(|header| {
             let sprite_size = px(64.0);
-            let sprite_path =
-                definition.and_then(|def| def.sprite_path_for_state_count(None, stack.quantity));
+            let state = stack.properties.get("state").map(String::as_str);
+            let sprite_path = definition
+                .and_then(|def| def.sprite_path_for_state_count(state, stack.quantity));
             if let Some(path) = sprite_path {
                 header.spawn((
                     Node {

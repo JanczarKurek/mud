@@ -23,6 +23,7 @@ use crate::world::map_layout::{
 use crate::world::object_definitions::{
     AttackProfileKindDef, OverworldObjectDefinition, OverworldObjectDefinitions, StatModifiers,
 };
+use crate::world::object_registry::ObjectRegistry;
 use crate::world::resources::{PortalInstanceKey, RuntimeSpace, SpaceManager};
 use crate::world::WorldConfig;
 
@@ -35,6 +36,7 @@ pub fn initialize_runtime_spaces(
     mut commands: Commands,
     definitions: Res<SpaceDefinitions>,
     object_definitions: Res<OverworldObjectDefinitions>,
+    object_registry: Res<ObjectRegistry>,
     mut space_manager: ResMut<SpaceManager>,
     mut floor_maps: ResMut<FloorMaps>,
     snapshot_status: Option<Res<WorldSnapshotStatus>>,
@@ -54,6 +56,7 @@ pub fn initialize_runtime_spaces(
             &mut floor_maps,
             definition,
             &object_definitions,
+            &object_registry,
             None,
             definition.permanence,
         );
@@ -70,12 +73,14 @@ pub fn initialize_runtime_spaces(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn instantiate_space(
     commands: &mut Commands,
     space_manager: &mut SpaceManager,
     floor_maps: &mut FloorMaps,
     definition: &SpaceDefinition,
     definitions: &OverworldObjectDefinitions,
+    object_registry: &ObjectRegistry,
     instance_owner: Option<PortalInstanceKey>,
     permanence: SpacePermanence,
 ) -> SpaceId {
@@ -109,6 +114,7 @@ pub fn instantiate_space(
         spawn_overworld_object_instance(
             commands,
             definitions,
+            object_registry,
             definition,
             object,
             space_id,
@@ -119,10 +125,12 @@ pub fn instantiate_space(
     space_id
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn resolve_portal_destination_space(
     commands: &mut Commands,
     authored_spaces: &SpaceDefinitions,
     definitions: &OverworldObjectDefinitions,
+    object_registry: &ObjectRegistry,
     space_manager: &mut SpaceManager,
     floor_maps: &mut FloorMaps,
     source_space_id: SpaceId,
@@ -151,6 +159,7 @@ pub fn resolve_portal_destination_space(
         floor_maps,
         destination_definition,
         definitions,
+        object_registry,
         Some(instance_key),
         permanence,
     ))
@@ -159,6 +168,7 @@ pub fn resolve_portal_destination_space(
 pub fn spawn_overworld_object_instance(
     commands: &mut Commands,
     definitions: &OverworldObjectDefinitions,
+    object_registry: &ObjectRegistry,
     space: &SpaceDefinition,
     object: &ResolvedObject,
     space_id: SpaceId,
@@ -183,6 +193,7 @@ pub fn spawn_overworld_object_instance(
     let entity = spawn_overworld_object(
         commands,
         definitions,
+        object_registry,
         object.id,
         &object.type_id,
         container_contents,
@@ -396,12 +407,22 @@ pub fn attach_combat_health_bar(
 #[macro_export]
 macro_rules! apply_overworld_definition_components {
     ($entity:expr, $definition:expr, $container_contents:expr, $quantity:expr) => {{
+        $crate::apply_overworld_definition_components!(
+            $entity,
+            $definition,
+            $container_contents,
+            $quantity,
+            ::std::option::Option::<&str>::None
+        )
+    }};
+    ($entity:expr, $definition:expr, $container_contents:expr, $quantity:expr, $state_override:expr) => {{
         let __definition: &$crate::world::object_definitions::OverworldObjectDefinition =
             $definition;
         let __provided: Option<Vec<Option<$crate::player::components::InventoryStack>>> =
             $container_contents;
         let __quantity: Option<u32> = $quantity;
-        let __initial_state = __definition.initial_state.as_deref();
+        let __state_override: ::std::option::Option<&str> = $state_override;
+        let __initial_state = __state_override.or(__definition.initial_state.as_deref());
         if __definition.colliding_for_state(__initial_state) {
             $entity.insert($crate::world::components::Collider);
         }
@@ -450,9 +471,11 @@ macro_rules! apply_overworld_definition_components {
     }};
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_overworld_object(
     commands: &mut Commands,
     definitions: &OverworldObjectDefinitions,
+    object_registry: &ObjectRegistry,
     object_id: u64,
     definition_id: &str,
     container_contents: Option<Vec<Option<InventoryStack>>>,
@@ -465,6 +488,14 @@ pub fn spawn_overworld_object(
         .unwrap_or_else(|| panic!("Missing overworld object definition for id '{definition_id}'"));
 
     let initial_facing = Facing(definition.render.default_facing.unwrap_or_default());
+
+    // Honor any per-instance `state` already recorded in the registry (e.g. a
+    // bear trap that was picked up sprung and is now being re-spawned). Falls
+    // back to the definition's `initial_state` when no override is present.
+    let state_override = object_registry
+        .properties(object_id)
+        .and_then(|p| p.get("state"))
+        .map(String::as_str);
 
     let mut entity = commands.spawn((
         OverworldObject {
@@ -480,7 +511,13 @@ pub fn spawn_overworld_object(
         initial_facing,
     ));
 
-    apply_overworld_definition_components!(entity, definition, container_contents, quantity);
+    apply_overworld_definition_components!(
+        entity,
+        definition,
+        container_contents,
+        quantity,
+        state_override
+    );
 
     entity.id()
 }

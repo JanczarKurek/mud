@@ -66,6 +66,7 @@ pub fn spawn_corpse_for_player(
     let entity = spawn_overworld_object(
         commands,
         definitions,
+        registry,
         corpse_id,
         CORPSE_TYPE_ID,
         Some(slots),
@@ -104,6 +105,7 @@ pub fn spawn_corpse_for_npc(
     let entity = spawn_overworld_object(
         commands,
         definitions,
+        registry,
         corpse_id,
         &loot_table.corpse_type_id,
         Some(slots),

@@ -286,6 +286,7 @@ pub fn stamp_fragment(
         let entity = crate::world::setup::spawn_overworld_object(
             commands,
             object_definitions,
+            object_registry,
             new_id,
             &fo.type_id,
             None,

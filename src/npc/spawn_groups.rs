@@ -326,6 +326,7 @@ pub fn tick_spawn_groups(
             let entity = spawn_overworld_object_instance(
                 &mut commands,
                 &object_definitions,
+                &object_registry,
                 space_def,
                 &synthetic,
                 key.space_id,

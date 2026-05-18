@@ -2378,8 +2378,9 @@ pub fn sync_container_slot_images(
             continue;
         };
 
+        let state = stack.properties.get("state").map(String::as_str);
         let Some(sprite_path) = definition
-            .sprite_for_count(stack.quantity)
+            .sprite_path_for_state_count(state, stack.quantity)
             .map(str::to_owned)
         else {
             *visibility = Visibility::Hidden;
@@ -2470,7 +2471,8 @@ pub fn sync_equipment_slot_images(
             continue;
         };
 
-        let Some(sprite_path) = &definition.render.sprite_path else {
+        let state = item.properties.get("state").map(String::as_str);
+        let Some(sprite_path) = definition.sprite_path_for_state(state).map(str::to_owned) else {
             *visibility = Visibility::Hidden;
             continue;
         };
@@ -2952,9 +2954,10 @@ pub fn sync_drag_preview(
                     &spell_definitions,
                 )
                 .unwrap_or_else(|| stack.type_id.clone());
+                let state = stack.properties.get("state").map(String::as_str);
                 let sprite_path = definitions
                     .get(&stack.type_id)
-                    .and_then(|def| def.sprite_for_count(stack.quantity))
+                    .and_then(|def| def.sprite_path_for_state_count(state, stack.quantity))
                     .map(str::to_owned);
                 (name, sprite_path, stack.quantity)
             })

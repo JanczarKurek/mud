@@ -135,10 +135,16 @@ fn execute_op(
             tile,
             properties,
         } => {
-            let new_id = object_registry.allocate_runtime_id(type_id.clone());
+            let new_id = if properties.is_empty() {
+                object_registry.allocate_runtime_id(type_id.clone())
+            } else {
+                object_registry
+                    .allocate_runtime_id_with_properties(type_id.clone(), properties.clone())
+            };
             let entity = spawn_overworld_object(
                 commands,
                 definitions,
+                object_registry,
                 new_id,
                 &type_id,
                 None,
@@ -146,9 +152,6 @@ fn execute_op(
                 tile,
                 None,
             );
-            if !properties.is_empty() {
-                object_registry.set_properties(new_id, properties.clone());
-            }
             if let Some(def) = definitions.get(&type_id) {
                 insert_editor_visuals_pub(
                     &mut commands.entity(entity),

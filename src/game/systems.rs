@@ -288,6 +288,7 @@ pub fn process_game_commands(
                     &command_outputs.player_magic_effects,
                     &authored_spaces,
                     &definitions,
+                    &object_registry,
                     &mut space_authority.space_manager,
                     &mut space_authority.floor_maps,
                     encumbered,
@@ -839,6 +840,7 @@ fn handle_move_player(
     player_magic_effects: &Query<&mut crate::magic::effects::MagicEffects, With<Player>>,
     authored_spaces: &SpaceDefinitions,
     definitions: &OverworldObjectDefinitions,
+    object_registry: &ObjectRegistry,
     space_manager: &mut SpaceManager,
     floor_maps: &mut FloorMaps,
     encumbered: bool,
@@ -926,6 +928,7 @@ fn handle_move_player(
         commands,
         authored_spaces,
         definitions,
+        object_registry,
         space_manager,
         floor_maps,
         space_resident.space_id,
@@ -1944,6 +1947,7 @@ fn spawn_spell_object(
     let entity = crate::world::setup::spawn_overworld_object(
         commands,
         definitions,
+        object_registry,
         object_id,
         type_id,
         None,
@@ -2243,6 +2247,7 @@ fn handle_move_item(
                 spawn_overworld_object(
                     commands,
                     definitions,
+                    object_registry,
                     new_id,
                     &type_id,
                     stack.contained_slots.clone(),
@@ -2438,6 +2443,7 @@ fn handle_take_from_stack(
                     spawn_overworld_object(
                         commands,
                         definitions,
+                        object_registry,
                         new_id,
                         &src_type_id,
                         None,
@@ -2708,6 +2714,7 @@ fn handle_admin_spawn(
     spawn_overworld_object(
         commands,
         definitions,
+        object_registry,
         object_id,
         type_id,
         None,
