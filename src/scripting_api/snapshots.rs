@@ -49,6 +49,27 @@ pub struct PlayerView {
     pub z: i32,
     pub vitals: VitalsView,
     pub facing: String,
+    pub display_name: String,
+    pub class_label: String,
+    pub level: u32,
+    pub current_xp: u64,
+    pub xp_into_level: u64,
+    /// `None` once the player is at `LEVEL_CAP`.
+    pub xp_for_next: Option<u64>,
+    pub attributes: AttributeMap,
+    /// 10 entries in `Skill::ALL` order.
+    pub skill_ranks: Vec<(String, u8)>,
+    pub available_skill_points: u32,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct AttributeMap {
+    pub strength: i32,
+    pub agility: i32,
+    pub constitution: i32,
+    pub willpower: i32,
+    pub charisma: i32,
+    pub focus: i32,
 }
 
 #[derive(Clone, Debug)]
@@ -98,6 +119,31 @@ pub struct WorldSnapshot {
     /// Caller's `CharacterStash` entries at the time the snapshot was built.
     /// Quest hooks and admin verbs read from this via `world.stash_*`.
     pub caller_stash: HashMap<String, serde_json::Value>,
+}
+
+pub fn attribute_map_to_dict(attrs: &AttributeMap, vm: &VirtualMachine) -> PyObjectRef {
+    let dict = PyDict::new_ref(&vm.ctx);
+    dict.set_item("strength", attrs.strength.to_pyobject(vm), vm)
+        .ok();
+    dict.set_item("agility", attrs.agility.to_pyobject(vm), vm)
+        .ok();
+    dict.set_item("constitution", attrs.constitution.to_pyobject(vm), vm)
+        .ok();
+    dict.set_item("willpower", attrs.willpower.to_pyobject(vm), vm)
+        .ok();
+    dict.set_item("charisma", attrs.charisma.to_pyobject(vm), vm)
+        .ok();
+    dict.set_item("focus", attrs.focus.to_pyobject(vm), vm).ok();
+    dict.into()
+}
+
+pub fn skill_ranks_to_dict(ranks: &[(String, u8)], vm: &VirtualMachine) -> PyObjectRef {
+    let dict = PyDict::new_ref(&vm.ctx);
+    for (label, rank) in ranks {
+        dict.set_item(label.as_str(), (*rank as u32).to_pyobject(vm), vm)
+            .ok();
+    }
+    dict.into()
 }
 
 pub fn vitals_to_dict(vitals: &VitalsView, vm: &VirtualMachine) -> PyObjectRef {
@@ -168,6 +214,28 @@ pub fn player_to_dict(player: &PlayerView, vm: &VirtualMachine) -> PyObjectRef {
         .ok();
     dict.set_item("facing", player.facing.clone().to_pyobject(vm), vm)
         .ok();
+    dict.set_item("name", player.display_name.clone().to_pyobject(vm), vm)
+        .ok();
+    dict.set_item("class", player.class_label.clone().to_pyobject(vm), vm)
+        .ok();
+    dict.set_item("level", player.level.to_pyobject(vm), vm).ok();
+    dict.set_item("xp", player.current_xp.to_pyobject(vm), vm)
+        .ok();
+    let xp_for_next: PyObjectRef = match player.xp_for_next {
+        Some(n) => n.to_pyobject(vm),
+        None => vm.ctx.none(),
+    };
+    dict.set_item("xp_for_next", xp_for_next, vm).ok();
+    dict.set_item("attributes", attribute_map_to_dict(&player.attributes, vm), vm)
+        .ok();
+    dict.set_item("skills", skill_ranks_to_dict(&player.skill_ranks, vm), vm)
+        .ok();
+    dict.set_item(
+        "skill_points",
+        player.available_skill_points.to_pyobject(vm),
+        vm,
+    )
+    .ok();
     dict.into()
 }
 

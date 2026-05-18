@@ -260,6 +260,9 @@ fn poll_admin_sessions(
                             None => pending_commands.push(cmd),
                         }
                     }
+                    for (target, cmd) in result.targeted_commands {
+                        pending_commands.push_for_player(target, cmd);
+                    }
 
                     if let Some(new_caller) = result.attach {
                         session.caller = new_caller.map(PlayerId);

@@ -19,6 +19,7 @@ use std::sync::Arc;
 
 use crate::dialog::variable_storage::YarnValueDump;
 use crate::game::commands::GameCommand;
+use crate::player::components::PlayerId;
 
 pub mod bindings;
 pub mod build;
@@ -68,6 +69,20 @@ pub trait ApiContext: Send + Sync {
     /// Queue a `GameCommand` for the server to process next tick. Returns
     /// `Err` when the command isn't allowed in this context.
     fn queue_command(&self, command: GameCommand) -> Result<(), ApiError>;
+
+    /// Queue a command targeted at a specific player, regardless of who is
+    /// attached to this session. Admin-only — the `Player` Python class
+    /// routes its mutation methods through this so `Player(7).grant_xp(...)`
+    /// acts on player 7 even when no one is attached. Default impl rejects.
+    fn queue_command_for_player(
+        &self,
+        _target: PlayerId,
+        _command: GameCommand,
+    ) -> Result<(), ApiError> {
+        Err(ApiError::NotPermitted(
+            "targeted commands require an admin context",
+        ))
+    }
 
     /// Yarn-variable read for quest hooks. Default impl rejects with
     /// `NotPermitted`; the quest context overrides it.

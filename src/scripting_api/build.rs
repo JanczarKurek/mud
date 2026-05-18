@@ -17,9 +17,12 @@ use crate::crafting::CharacterStash;
 use crate::dialog::components::DialogNode;
 use crate::magic::resources::SpellDefinitions;
 use crate::npc::components::Npc;
-use crate::player::components::{Inventory, Player, PlayerId, PlayerIdentity, VitalStats};
+use crate::player::classes::Class;
+use crate::player::components::{BaseStats, Inventory, Player, PlayerId, PlayerIdentity, VitalStats};
+use crate::player::progression::Experience;
+use crate::player::skills::{Skill, SkillSheet};
 use crate::scripting_api::snapshots::{
-    FloorMapView, PlayerView, SpaceView, VitalsView, WorldObjectView, WorldSnapshot,
+    AttributeMap, FloorMapView, PlayerView, SpaceView, VitalsView, WorldObjectView, WorldSnapshot,
 };
 use crate::world::components::{
     Container, Facing, Movable, ObjectState, OverworldObject, Quantity, Rotatable, SpaceResident,
@@ -51,6 +54,10 @@ pub struct WorldSnapshotParams<'w, 's> {
             Option<&'static Facing>,
             &'static OverworldObject,
             Option<&'static CharacterStash>,
+            &'static Experience,
+            &'static SkillSheet,
+            &'static BaseStats,
+            &'static Class,
         ),
         With<Player>,
     >,
@@ -117,9 +124,22 @@ impl<'w, 's> WorldSnapshotParams<'w, 's> {
         let mut caller_inventory: HashMap<String, u32> = HashMap::new();
         let mut caller_stash: HashMap<String, serde_json::Value> = HashMap::new();
 
-        for (identity, resident, tile, vitals, inventory, facing, player_object, stash) in
-            self.player_query.iter()
+        for (
+            identity,
+            resident,
+            tile,
+            vitals,
+            inventory,
+            facing,
+            player_object,
+            stash,
+            experience,
+            skill_sheet,
+            base_stats,
+            class,
+        ) in self.player_query.iter()
         {
+            let attrs = &base_stats.attributes;
             let view = PlayerView {
                 player_id: identity.id.0,
                 object_id: Some(player_object.object_id),
@@ -134,6 +154,25 @@ impl<'w, 's> WorldSnapshotParams<'w, 's> {
                     max_mana: vitals.max_mana,
                 },
                 facing: format!("{:?}", facing.copied().unwrap_or_default().0),
+                display_name: identity.display_name.clone(),
+                class_label: class.label().to_owned(),
+                level: experience.level,
+                current_xp: experience.current_xp,
+                xp_into_level: experience.xp_into_level(),
+                xp_for_next: experience.xp_for_next(),
+                attributes: AttributeMap {
+                    strength: attrs.strength,
+                    agility: attrs.agility,
+                    constitution: attrs.constitution,
+                    willpower: attrs.willpower,
+                    charisma: attrs.charisma,
+                    focus: attrs.focus,
+                },
+                skill_ranks: Skill::ALL
+                    .iter()
+                    .map(|skill| (skill.label().to_owned(), skill_sheet.rank(*skill)))
+                    .collect(),
+                available_skill_points: skill_sheet.available_points,
             };
 
             let is_caller = match caller {

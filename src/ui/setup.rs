@@ -21,7 +21,8 @@ use crate::ui::components::{
     HudMinimapZoomOutButton, HudRoot, ItemSlotButton, ItemSlotImage, ItemSlotKind,
     ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot, MagicEffectsLabel, ManaFill,
     ManaLabel, MinimapCanvas, MinimapMode, MinimapPanelUndockButton, MinimapView,
-    PythonConsolePanel, PythonConsoleTerminal, RegenBuffLabel, RightSidebarRoot,
+    PythonConsolePanel, PythonConsoleRestartButton, PythonConsoleTerminal, RegenBuffLabel,
+    RightSidebarRoot,
     StatusPanelContent, StatusPanelUndockButton, TakePartialAmountLabel, TakePartialCancelButton,
     TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot,
     TradeButtonLabel, TradeColumn,
@@ -31,7 +32,9 @@ use crate::ui::minimap::{make_minimap_image, FULL_MAP_BODY_SIZE, HUD_MINIMAP_SIZ
 use crate::ui::movable_window::{spawn_themed_close_button, spawn_themed_icon_button};
 use crate::ui::resources::{DockedPanelState, FullMapWindowState, HudMinimapSettings};
 use crate::ui::retro_bar::{spawn_retro_bar, RetroBarStyle};
-use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton, ThemedPanel};
+use crate::ui::theme::widgets::{
+    idle_colors, spawn_themed_button, ButtonStyle, ThemedButton, ThemedPanel,
+};
 use crate::ui::theme::{Palette, UiThemeAssets};
 use crate::ui::{CHAT_TERMINAL_FOCUS_ID, PYTHON_CONSOLE_FOCUS_ID};
 use crate::world::object_definitions::EquipmentSlot;
@@ -253,7 +256,7 @@ pub fn spawn_hud(
         ))
         .id();
     commands.entity(console_panel).with_children(|panel| {
-        spawn_panel_label(panel, "Python Console", &palette);
+        spawn_python_console_header(panel, &theme, &palette);
     });
     let console_terminal = spawn_terminal(
         &mut commands,
@@ -1204,15 +1207,51 @@ fn spawn_docked_panel_with_extras(
         });
 }
 
-fn spawn_panel_label(parent: &mut ChildSpawnerCommands, label: &str, palette: &Palette) {
-    parent.spawn((
-        Text::new(label),
-        TextFont {
-            font_size: 18.0,
-            ..default()
-        },
-        TextColor(palette.text_primary),
-    ));
+/// Python-console panel header row: label on the left, a small "Restart"
+/// button on the right. The button is `PythonConsoleRestartButton`-tagged
+/// so `scripting::systems::handle_python_console_restart_button` can pick
+/// up the click and rebuild the embedded interpreter scope.
+fn spawn_python_console_header(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+) {
+    parent
+        .spawn((
+            Node {
+                width: percent(100.0),
+                flex_direction: FlexDirection::Row,
+                justify_content: JustifyContent::SpaceBetween,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            BackgroundColor(Color::NONE),
+        ))
+        .with_children(|row| {
+            row.spawn((
+                Text::new("Python Console"),
+                TextFont {
+                    font_size: 18.0,
+                    ..default()
+                },
+                TextColor(palette.text_primary),
+            ));
+            spawn_themed_button(
+                row,
+                theme,
+                palette,
+                ButtonStyle::Secondary,
+                Node {
+                    padding: UiRect::axes(px(10.0), px(3.0)),
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    ..default()
+                },
+                "Restart",
+                12.0,
+                PythonConsoleRestartButton,
+            );
+        });
 }
 
 /// Chat-panel header row: label on the left, close-X on the right. The

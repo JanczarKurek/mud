@@ -14,19 +14,31 @@ use rustpython_vm::scope::Scope;
 use rustpython_vm::Interpreter;
 
 use crate::game::commands::GameCommand;
+use crate::player::components::PlayerId;
 use crate::scripting_api::bindings::world_api;
 use crate::scripting_api::{install_ctx, ApiContext, ApiError, WorldSnapshot};
 
 /// Bootstrap shim — runs once when the VM is first created and after each
 /// explicit `world.reset()`. Aliases the legacy module name and rebinds
 /// `print` to route through `world.log` so output lands in the console.
+///
+/// Collection args are pretty-printed via `pprint.pformat` so a
+/// `print(world.objects())` becomes hundreds of short lines instead of one
+/// multi-kilobyte string — Bevy's text-layout pipeline is dramatically
+/// faster on short spans, and the output is readable in the bargain.
 const BOOTSTRAP_SCRIPT: &str = r#"
 import world
 import sys
+import pprint
 sys.modules['mud_api'] = world
 
+def _mud_format(arg):
+    if isinstance(arg, (list, tuple, dict, set, frozenset)):
+        return pprint.pformat(arg, width=120)
+    return str(arg)
+
 def _mud_print(*args, sep=" ", end=""):
-    world.log(sep.join(str(arg) for arg in args) + end)
+    world.log(sep.join(_mud_format(arg) for arg in args) + end)
 
 print = _mud_print
 "#;
@@ -34,6 +46,7 @@ print = _mud_print
 #[derive(Default)]
 struct AdminContextInner {
     commands: Vec<GameCommand>,
+    targeted_commands: Vec<(PlayerId, GameCommand)>,
     log_lines: Vec<String>,
     reset_pending: bool,
 }
@@ -76,6 +89,16 @@ impl ApiContext for AdminApiContext {
         Ok(())
     }
 
+    fn queue_command_for_player(
+        &self,
+        target: PlayerId,
+        command: GameCommand,
+    ) -> Result<(), ApiError> {
+        let mut inner = self.inner.lock().expect("admin api context poisoned");
+        inner.targeted_commands.push((target, command));
+        Ok(())
+    }
+
     fn reset_scope(&self) -> Result<(), ApiError> {
         let mut inner = self.inner.lock().expect("admin api context poisoned");
         inner.reset_pending = true;
@@ -88,6 +111,7 @@ impl ApiContext for AdminApiContext {
 pub struct PythonExecOutput {
     pub lines: Vec<(String, LineStyle)>,
     pub commands: Vec<GameCommand>,
+    pub targeted_commands: Vec<(PlayerId, GameCommand)>,
 }
 
 pub struct PythonConsoleHost {
@@ -141,10 +165,11 @@ impl PythonConsoleHost {
                 .push((format!("Python error: {error:?}"), LineStyle::Traceback));
         }
 
-        let (queued_commands, log_lines, reset_pending) = {
+        let (queued_commands, targeted_commands, log_lines, reset_pending) = {
             let mut inner = context.inner.lock().expect("admin api context poisoned");
             (
                 std::mem::take(&mut inner.commands),
+                std::mem::take(&mut inner.targeted_commands),
                 std::mem::take(&mut inner.log_lines),
                 std::mem::replace(&mut inner.reset_pending, false),
             )
@@ -155,15 +180,7 @@ impl PythonConsoleHost {
         }
 
         if reset_pending {
-            let new_scope = Self::build_scope(&self.interpreter);
-            // Replace the persistent scope. `ManuallyDrop` means we're
-            // responsible for not double-dropping; the old `Scope` is
-            // dropped here when `manual` falls out of scope, and the new
-            // one is wrapped in `ManuallyDrop` for the field.
-            unsafe {
-                ManuallyDrop::drop(&mut self.scope);
-                self.scope = ManuallyDrop::new(new_scope);
-            }
+            self.reset_scope();
             output.lines.push((
                 "[System] world.reset(): scope cleared.".to_owned(),
                 LineStyle::System,
@@ -171,7 +188,24 @@ impl PythonConsoleHost {
         }
 
         output.commands = queued_commands;
+        output.targeted_commands = targeted_commands;
         output
+    }
+
+    /// Drop the persistent scope and rebuild a fresh one. Same observable
+    /// behaviour as `world.reset()` from within the REPL — exposed as a
+    /// method so the UI "Restart" button can trigger it directly.
+    pub fn reset_scope(&mut self) {
+        let new_scope = Self::build_scope(&self.interpreter);
+        // ManuallyDrop bookkeeping: drop the old scope before overwriting
+        // the slot so we don't leak. Safe because nothing else holds a
+        // reference to the Scope (the VM keeps its own internal handles
+        // through globals/locals on the interpreter state, not via this
+        // ManuallyDrop wrapper).
+        unsafe {
+            ManuallyDrop::drop(&mut self.scope);
+            self.scope = ManuallyDrop::new(new_scope);
+        }
     }
 
     /// Return identifiers in the persistent scope whose name starts with

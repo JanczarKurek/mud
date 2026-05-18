@@ -10,7 +10,8 @@ use crate::app::state::ClientAppState;
 use crate::scripting::python::PythonConsoleHost;
 use crate::scripting::resources::PythonConsoleState;
 use crate::scripting::systems::{
-    handle_python_console_completion, handle_python_console_submissions, toggle_python_console,
+    handle_python_console_completion, handle_python_console_restart_button,
+    handle_python_console_submissions, toggle_python_console,
 };
 
 pub use crate::scripting::admin_host::{AdminExecResult, AdminReplHost, CompileOutcome};
@@ -39,6 +40,7 @@ impl Plugin for ScriptingPlugin {
                 (
                     handle_python_console_submissions,
                     handle_python_console_completion,
+                    handle_python_console_restart_button,
                 )
                     .run_if(in_state(ClientAppState::InGame)),
             );

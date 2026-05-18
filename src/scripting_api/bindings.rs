@@ -11,7 +11,14 @@
 use crate::game::commands::{
     GameCommand, ItemDestination, ItemReference, ItemSlotRef, RotationDirection,
 };
-use crate::scripting_api::snapshots::{object_to_dict, player_to_dict, space_to_dict};
+use crate::player::classes::Class;
+use crate::player::components::{AttributeKind, PlayerId};
+use crate::player::progression::LEVEL_CAP;
+use crate::player::skills::Skill;
+use crate::scripting_api::snapshots::{
+    attribute_map_to_dict, object_to_dict, skill_ranks_to_dict, space_to_dict, vitals_to_dict,
+    PlayerView,
+};
 use crate::scripting_api::{with_ctx, with_ctx_or};
 use crate::world::components::{SpaceId, TilePosition};
 use crate::world::floor_definitions::FloorTypeId;
@@ -21,13 +28,27 @@ world API cheat sheet — use help(world.<verb>) for details.
 
 Read:
   world.now()                            world.is_admin()
-  world.caller_player_id()               world.player()
-  world.players()                        world.spaces()
-  world.objects([space_id])              world.object(id)
-  world.object_types()                   world.spell_ids()
-  world.floor_tile(space_id, z, x, y)    world.player_has(type_id, count=1)
+  world.caller_player_id()               world.player()    -> Player | None
+  world.players()    -> list[Player]     world.find_player(id) -> Player | None
+  world.spaces()                         world.objects([space_id])
+  world.object(id)                       world.object_types()
+  world.spell_ids()                      world.floor_tile(space_id, z, x, y)
+  world.player_has(type_id, count=1)
 
-Write:
+Player objects (returned by world.player/players/find_player):
+  Read-only properties:
+    p.id, p.name, p.class_name, p.level, p.xp, p.xp_for_next
+    p.skill_points, p.skills, p.attributes, p.vitals
+    p.space_id, p.x, p.y, p.z, p.position, p.facing
+  Admin mutations (targeted at p regardless of attached caller):
+    p.grant_xp(n)                p.set_level(n)
+    p.grant_skill_points(n)      p.set_skill(name, rank)
+    p.set_attribute(name, val)   p.set_class(name)
+    p.full_heal()                p.set_vitals(health=None, mana=None)
+    p.teleport(x, y, z=0, space_id=None)
+    p.give(type_id, count=1)     p.take(type_id, count=1)
+
+Write (acts on attached caller):
   world.give(type_id, count=1)           world.take(type_id, count=1)
   world.spawn(type_id, x, y, z=0)        world.despawn(object_id)
   world.teleport(x, y, z=0, space_id=None)
@@ -71,7 +92,7 @@ pub mod world_api {
     use crate::dialog::variable_storage::YarnValueDump;
     use rustpython_vm::convert::ToPyObject;
     use rustpython_vm::function::FuncArgs;
-    use rustpython_vm::{PyObjectRef, PyResult, VirtualMachine};
+    use rustpython_vm::{pyclass, PyObjectRef, PyPayload, PyResult, VirtualMachine};
 
     // --- discovery / help -------------------------------------------------
 
@@ -175,10 +196,11 @@ pub mod world_api {
         })
     }
 
-    /// Snapshot dict for the current caller (`player_id`, `space_id`,
-    /// `x` / `y` / `z`, `vitals`, `facing`), or `None` if no player is
+    /// The current caller as a `Player` object, or `None` if no player is
     /// attached. In the headless admin REPL use `world.attach_player(id)`
-    /// first.
+    /// first. Properties (`p.level`, `p.skills`, ...) reflect the snapshot
+    /// taken at the start of this REPL input; values refresh on the next
+    /// prompt, not after a mutation inside the same expression.
     #[pyfunction]
     fn player(vm: &VirtualMachine) -> PyObjectRef {
         with_ctx_or(vm.ctx.none(), |ctx| {
@@ -188,14 +210,17 @@ pub mod world_api {
                 None => return vm.ctx.none(),
             };
             match snapshot.players.iter().find(|p| p.player_id == id) {
-                Some(p) => player_to_dict(p, vm),
+                Some(p) => PyPlayer {
+                    player_id: p.player_id,
+                }
+                .into_pyobject(vm),
                 None => vm.ctx.none(),
             }
         })
     }
 
-    /// Roster of players. In admin contexts: every connected player. In a
-    /// quest hook: just the caller (for safety / encapsulation).
+    /// Roster of `Player` objects. In admin contexts: every connected
+    /// player. In a quest hook: just the caller (for safety / encapsulation).
     #[pyfunction]
     fn players(vm: &VirtualMachine) -> PyObjectRef {
         with_ctx_or(vm.ctx.new_list(Vec::new()).into(), |ctx| {
@@ -211,8 +236,38 @@ pub mod world_api {
                         .filter(move |p| Some(p.player_id) == caller),
                 )
             };
-            let items = iter.map(|p| player_to_dict(p, vm)).collect();
+            let items = iter
+                .map(|p| {
+                    PyPlayer {
+                        player_id: p.player_id,
+                    }
+                    .into_pyobject(vm)
+                })
+                .collect();
             vm.ctx.new_list(items).into()
+        })
+    }
+
+    /// `find_player(id)` — look up a `Player` by id. Returns `None` when
+    /// no such player is connected. Useful for hitting a specific player
+    /// without bothering with `attach_player`:
+    /// `world.find_player(7).grant_xp(2000)`.
+    #[pyfunction]
+    fn find_player(player_id: i64, vm: &VirtualMachine) -> PyObjectRef {
+        if player_id < 0 {
+            return vm.ctx.none();
+        }
+        let target = player_id as u64;
+        with_ctx_or(vm.ctx.none(), |ctx| {
+            match ctx
+                .snapshot()
+                .players
+                .iter()
+                .find(|p| p.player_id == target)
+            {
+                Some(_) => PyPlayer { player_id: target }.into_pyobject(vm),
+                None => vm.ctx.none(),
+            }
         })
     }
 
@@ -807,6 +862,426 @@ pub mod world_api {
                     .into()
             },
         )
+    }
+
+    // --- Player class -----------------------------------------------------
+
+    /// `Player` — handle to a live player. Returned by `world.player()`,
+    /// `world.players()`, and `world.find_player(id)`.
+    ///
+    /// Read-only properties (`p.level`, `p.skills`, `p.attributes`,
+    /// `p.skill_points`, `p.name`, `p.class_name`, `p.vitals`, `p.position`,
+    /// ...) reflect the world snapshot built at the start of the current
+    /// REPL input. They do **not** refresh after a mutation inside the
+    /// same expression — for fresh reads, press Enter again. Subscript
+    /// access (`p["x"]`, `p["vitals"]`) is supported for back-compat with
+    /// the old dict-returning API.
+    ///
+    /// Mutation methods (`p.grant_xp`, `p.set_skill`, `p.full_heal`, ...)
+    /// queue commands targeted at this player's id, independent of the
+    /// session's attached caller — so `world.find_player(7).grant_xp(100)`
+    /// works without any `attach_player` setup.
+    #[pyattr]
+    #[pyclass(name = "Player")]
+    #[derive(Debug, PyPayload)]
+    pub struct PyPlayer {
+        pub player_id: u64,
+    }
+
+    #[pyclass]
+    impl PyPlayer {
+        // --- read-only getters ---
+
+        #[pygetset]
+        fn id(&self) -> u64 {
+            self.player_id
+        }
+
+        #[pygetset]
+        fn name(&self, vm: &VirtualMachine) -> PyResult<String> {
+            view(self.player_id, vm, |p| p.display_name.clone())
+        }
+
+        #[pygetset]
+        fn class_name(&self, vm: &VirtualMachine) -> PyResult<String> {
+            view(self.player_id, vm, |p| p.class_label.clone())
+        }
+
+        #[pygetset]
+        fn level(&self, vm: &VirtualMachine) -> PyResult<u32> {
+            view(self.player_id, vm, |p| p.level)
+        }
+
+        #[pygetset]
+        fn xp(&self, vm: &VirtualMachine) -> PyResult<u64> {
+            view(self.player_id, vm, |p| p.current_xp)
+        }
+
+        #[pygetset]
+        fn xp_for_next(&self, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
+            view(self.player_id, vm, |p| match p.xp_for_next {
+                Some(n) => n.to_pyobject(vm),
+                None => vm.ctx.none(),
+            })
+        }
+
+        #[pygetset]
+        fn skill_points(&self, vm: &VirtualMachine) -> PyResult<u32> {
+            view(self.player_id, vm, |p| p.available_skill_points)
+        }
+
+        #[pygetset]
+        fn skills(&self, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
+            view(self.player_id, vm, |p| skill_ranks_to_dict(&p.skill_ranks, vm))
+        }
+
+        #[pygetset]
+        fn attributes(&self, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
+            view(self.player_id, vm, |p| attribute_map_to_dict(&p.attributes, vm))
+        }
+
+        #[pygetset]
+        fn vitals(&self, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
+            view(self.player_id, vm, |p| vitals_to_dict(&p.vitals, vm))
+        }
+
+        #[pygetset]
+        fn space_id(&self, vm: &VirtualMachine) -> PyResult<u64> {
+            view(self.player_id, vm, |p| p.space_id)
+        }
+
+        #[pygetset]
+        fn x(&self, vm: &VirtualMachine) -> PyResult<i32> {
+            view(self.player_id, vm, |p| p.x)
+        }
+
+        #[pygetset]
+        fn y(&self, vm: &VirtualMachine) -> PyResult<i32> {
+            view(self.player_id, vm, |p| p.y)
+        }
+
+        #[pygetset]
+        fn z(&self, vm: &VirtualMachine) -> PyResult<i32> {
+            view(self.player_id, vm, |p| p.z)
+        }
+
+        #[pygetset]
+        fn position(&self, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
+            view(self.player_id, vm, |p| {
+                vm.ctx
+                    .new_tuple(vec![
+                        p.x.to_pyobject(vm),
+                        p.y.to_pyobject(vm),
+                        p.z.to_pyobject(vm),
+                    ])
+                    .into()
+            })
+        }
+
+        #[pygetset]
+        fn facing(&self, vm: &VirtualMachine) -> PyResult<String> {
+            view(self.player_id, vm, |p| p.facing.clone())
+        }
+
+        #[pygetset]
+        fn object_id(&self, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
+            view(self.player_id, vm, |p| match p.object_id {
+                Some(id) => id.to_pyobject(vm),
+                None => vm.ctx.none(),
+            })
+        }
+
+        // --- mutation methods (admin-only, targeted) ---
+
+        /// `grant_xp(amount)` — add raw XP, routed through the canonical
+        /// XP pipeline so level-ups fire normally (events, toasts, skill
+        /// points). `amount` must be non-negative.
+        #[pymethod]
+        fn grant_xp(&self, amount: i64, vm: &VirtualMachine) -> PyResult<()> {
+            if amount < 0 {
+                return Err(vm.new_value_error("grant_xp: amount must be >= 0".to_owned()));
+            }
+            queue_for(
+                self.player_id,
+                GameCommand::AdminGrantXp {
+                    amount: amount as u64,
+                },
+                vm,
+            )
+        }
+
+        /// `set_level(level)` — hard-set this player's level to a value in
+        /// 1..=LEVEL_CAP. Awards skill points for every level crossed
+        /// upward; downward changes do not refund anything.
+        #[pymethod]
+        fn set_level(&self, level: i64, vm: &VirtualMachine) -> PyResult<()> {
+            if level < 1 || (level as u32) > LEVEL_CAP {
+                return Err(vm.new_value_error(format!(
+                    "set_level: level must be in 1..={LEVEL_CAP}"
+                )));
+            }
+            queue_for(
+                self.player_id,
+                GameCommand::AdminSetLevel {
+                    level: level as u32,
+                },
+                vm,
+            )
+        }
+
+        /// `grant_skill_points(amount)` — increase the player's unspent
+        /// skill-point pool. `amount` must be non-negative.
+        #[pymethod]
+        fn grant_skill_points(&self, amount: i64, vm: &VirtualMachine) -> PyResult<()> {
+            if amount < 0 {
+                return Err(
+                    vm.new_value_error("grant_skill_points: amount must be >= 0".to_owned())
+                );
+            }
+            queue_for(
+                self.player_id,
+                GameCommand::AdminGrantSkillPoints {
+                    amount: amount as u32,
+                },
+                vm,
+            )
+        }
+
+        /// `set_skill(name, rank)` — overwrite a single skill's rank,
+        /// bypassing the class/level cap and point cost. `name` is the
+        /// canonical label, case-insensitive (`"Thievery"`, `"Stealth"`,
+        /// ...). `rank` is clamped to 0..=255.
+        #[pymethod]
+        fn set_skill(&self, name: String, rank: i64, vm: &VirtualMachine) -> PyResult<()> {
+            let skill = Skill::from_label(&name)
+                .ok_or_else(|| vm.new_value_error(format!("set_skill: unknown skill '{name}'")))?;
+            if !(0..=255).contains(&rank) {
+                return Err(vm.new_value_error("set_skill: rank must be in 0..=255".to_owned()));
+            }
+            queue_for(
+                self.player_id,
+                GameCommand::AdminSetSkillRank {
+                    skill,
+                    rank: rank as u8,
+                },
+                vm,
+            )
+        }
+
+        /// `set_attribute(name, value)` — overwrite a single attribute on
+        /// `BaseStats.attributes`. Bypasses point-buy validation; the
+        /// next frame's `refresh_derived_player_stats` reclamps derived
+        /// stats. `name` accepts full labels or short aliases
+        /// (`"agility"`/`"agi"`/`"dex"`, etc.).
+        #[pymethod]
+        fn set_attribute(&self, name: String, value: i64, vm: &VirtualMachine) -> PyResult<()> {
+            let kind = AttributeKind::from_label(&name).ok_or_else(|| {
+                vm.new_value_error(format!("set_attribute: unknown attribute '{name}'"))
+            })?;
+            if !(i32::MIN as i64..=i32::MAX as i64).contains(&value) {
+                return Err(vm.new_value_error("set_attribute: value out of i32 range".to_owned()));
+            }
+            queue_for(
+                self.player_id,
+                GameCommand::AdminSetAttribute {
+                    kind,
+                    value: value as i32,
+                },
+                vm,
+            )
+        }
+
+        /// `set_class(name)` — switch the player's class. Does not
+        /// redistribute skill ranks. `name` matches a `Class` label
+        /// case-insensitively (`"Fighter"`, `"Wizard"`, `"Cleric"`,
+        /// `"Vagabond"`).
+        #[pymethod]
+        fn set_class(&self, name: String, vm: &VirtualMachine) -> PyResult<()> {
+            let class = Class::from_label(&name)
+                .ok_or_else(|| vm.new_value_error(format!("set_class: unknown class '{name}'")))?;
+            queue_for(self.player_id, GameCommand::AdminSetClass { class }, vm)
+        }
+
+        /// `full_heal()` — restore health and mana to their respective
+        /// maxes.
+        #[pymethod]
+        fn full_heal(&self, vm: &VirtualMachine) -> PyResult<()> {
+            queue_for(self.player_id, GameCommand::AdminFullHeal, vm)
+        }
+
+        /// `set_vitals(health=None, mana=None)` — clamp this player's
+        /// health and/or mana directly. Each `None` leaves that vital
+        /// alone; raises `ValueError` when both are `None`.
+        #[pymethod]
+        fn set_vitals(&self, args: FuncArgs, vm: &VirtualMachine) -> PyResult<()> {
+            let health = args.args.first().and_then(coerce_optional_f32(vm));
+            let mana = args.args.get(1).and_then(coerce_optional_f32(vm));
+            if health.is_none() && mana.is_none() {
+                return Err(vm.new_value_error(
+                    "set_vitals: at least one of health/mana must be provided".to_owned(),
+                ));
+            }
+            queue_for(
+                self.player_id,
+                GameCommand::AdminSetVitals { health, mana },
+                vm,
+            )
+        }
+
+        /// `teleport(x, y, z=0, space_id=None)` — move the player to a
+        /// tile. Pass `space_id` to teleport across spaces.
+        #[pymethod]
+        fn teleport(&self, args: FuncArgs, vm: &VirtualMachine) -> PyResult<()> {
+            let x: i32 = args
+                .args
+                .first()
+                .and_then(|v| v.clone().try_into_value::<i64>(vm).ok())
+                .map(|n| n as i32)
+                .ok_or_else(|| vm.new_value_error("teleport: x is required".to_owned()))?;
+            let y: i32 = args
+                .args
+                .get(1)
+                .and_then(|v| v.clone().try_into_value::<i64>(vm).ok())
+                .map(|n| n as i32)
+                .ok_or_else(|| vm.new_value_error("teleport: y is required".to_owned()))?;
+            let z: i32 = args
+                .args
+                .get(2)
+                .and_then(|v| v.clone().try_into_value::<i64>(vm).ok())
+                .map(|n| n as i32)
+                .unwrap_or(0);
+            let space_id_opt: Option<u64> = args
+                .args
+                .get(3)
+                .and_then(|v| v.clone().try_into_value::<i64>(vm).ok())
+                .filter(|n| *n >= 0)
+                .map(|n| n as u64);
+            queue_for(
+                self.player_id,
+                GameCommand::AdminTeleport {
+                    space_id: space_id_opt.map(SpaceId),
+                    tile_position: TilePosition::new(x, y, z),
+                },
+                vm,
+            )
+        }
+
+        /// `give(type_id, count=1)` — give items to this player's
+        /// inventory.
+        #[pymethod]
+        fn give(&self, args: FuncArgs, vm: &VirtualMachine) -> PyResult<()> {
+            let (type_id, count) = parse_item_count(&args, 1, vm);
+            if type_id.is_empty() {
+                return Err(vm.new_value_error("give: type_id is required".to_owned()));
+            }
+            queue_for(self.player_id, GameCommand::GiveItem { type_id, count }, vm)
+        }
+
+        /// `take(type_id, count=1)` — remove items from this player's
+        /// inventory. No-op when the player has fewer than `count`.
+        #[pymethod]
+        fn take(&self, args: FuncArgs, vm: &VirtualMachine) -> PyResult<()> {
+            let (type_id, count) = parse_item_count(&args, 1, vm);
+            if type_id.is_empty() {
+                return Err(vm.new_value_error("take: type_id is required".to_owned()));
+            }
+            queue_for(self.player_id, GameCommand::TakeItem { type_id, count }, vm)
+        }
+
+        // --- dunders ---
+
+        #[pymethod(magic)]
+        fn repr(&self, vm: &VirtualMachine) -> PyResult<String> {
+            view(self.player_id, vm, |p| {
+                let xp = match p.xp_for_next {
+                    Some(n) => format!("{}/{} XP", p.xp_into_level, n),
+                    None => format!("{} XP (capped)", p.current_xp),
+                };
+                format!(
+                    "<Player id={} '{}' {} L{} {}, {} SP>",
+                    p.player_id,
+                    p.display_name,
+                    p.class_label,
+                    p.level,
+                    xp,
+                    p.available_skill_points,
+                )
+            })
+        }
+
+        /// Subscript access for back-compat with the old dict-returning
+        /// `world.player()` API. Supports keys: `id`, `object_id`,
+        /// `space_id`, `x`, `y`, `z`, `vitals`, `facing`, `name`, `class`,
+        /// `level`, `xp`, `xp_for_next`, `attributes`, `skills`,
+        /// `skill_points`.
+        #[pymethod(magic)]
+        fn getitem(&self, key: String, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
+            view(self.player_id, vm, |p| -> PyResult<PyObjectRef> {
+                match key.as_str() {
+                    "id" => Ok(p.player_id.to_pyobject(vm)),
+                    "object_id" => Ok(match p.object_id {
+                        Some(id) => id.to_pyobject(vm),
+                        None => vm.ctx.none(),
+                    }),
+                    "space_id" => Ok(p.space_id.to_pyobject(vm)),
+                    "x" => Ok(p.x.to_pyobject(vm)),
+                    "y" => Ok(p.y.to_pyobject(vm)),
+                    "z" => Ok(p.z.to_pyobject(vm)),
+                    "vitals" => Ok(vitals_to_dict(&p.vitals, vm)),
+                    "facing" => Ok(p.facing.clone().to_pyobject(vm)),
+                    "name" => Ok(p.display_name.clone().to_pyobject(vm)),
+                    "class" | "class_name" => Ok(p.class_label.clone().to_pyobject(vm)),
+                    "level" => Ok(p.level.to_pyobject(vm)),
+                    "xp" => Ok(p.current_xp.to_pyobject(vm)),
+                    "xp_for_next" => Ok(match p.xp_for_next {
+                        Some(n) => n.to_pyobject(vm),
+                        None => vm.ctx.none(),
+                    }),
+                    "attributes" => Ok(attribute_map_to_dict(&p.attributes, vm)),
+                    "skills" => Ok(skill_ranks_to_dict(&p.skill_ranks, vm)),
+                    "skill_points" => Ok(p.available_skill_points.to_pyobject(vm)),
+                    other => Err(vm.new_key_error(other.to_owned().to_pyobject(vm))),
+                }
+            })?
+        }
+    }
+
+    /// Look up `player_id`'s `PlayerView` in the current snapshot and run
+    /// `f` against it. Returns `LookupError` when the player is not in the
+    /// snapshot (typically: disconnected or never connected), or
+    /// `RuntimeError` when no API context is installed (programmer error).
+    fn view<R>(
+        player_id: u64,
+        vm: &VirtualMachine,
+        f: impl FnOnce(&PlayerView) -> R,
+    ) -> PyResult<R> {
+        let outcome = with_ctx(|ctx| {
+            ctx.snapshot()
+                .players
+                .iter()
+                .find(|p| p.player_id == player_id)
+                .map(f)
+                .ok_or_else(|| {
+                    vm.new_lookup_error(format!(
+                        "Player id={player_id} not found (disconnected?)"
+                    ))
+                })
+        });
+        match outcome {
+            Some(Ok(value)) => Ok(value),
+            Some(Err(err)) => Err(err),
+            None => Err(vm.new_runtime_error("Player: no API context installed".to_owned())),
+        }
+    }
+
+    /// Queue a command targeted explicitly at `player_id`, regardless of
+    /// the session's attached caller.
+    fn queue_for(player_id: u64, command: GameCommand, vm: &VirtualMachine) -> PyResult<()> {
+        match with_ctx(|ctx| ctx.queue_command_for_player(PlayerId(player_id), command)) {
+            Some(Ok(())) => Ok(()),
+            Some(Err(err)) => Err(vm.new_runtime_error(err.as_string())),
+            None => Err(vm.new_runtime_error("Player: no API context installed".to_owned())),
+        }
     }
 
     // --- helpers ----------------------------------------------------------

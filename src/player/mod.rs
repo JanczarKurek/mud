@@ -1,3 +1,4 @@
+pub mod admin_progression;
 pub mod classes;
 pub mod components;
 pub mod lifecycle;
@@ -13,6 +14,7 @@ use crate::app::state::{simulation_active, ClientAppState};
 use crate::player::lifecycle::{
     handle_player_deaths, handle_set_home_commands, PendingPlayerDeaths,
 };
+use crate::player::admin_progression::process_admin_progression_commands;
 use crate::player::progression::{apply_xp_grants, PendingXpGrants};
 use crate::player::regen::{tick_regen_buffs, tick_vital_regen};
 use crate::player::setup::spawn_player_visual;
@@ -56,6 +58,14 @@ impl Plugin for PlayerServerPlugin {
             .add_systems(
                 Update,
                 process_allocate_skill_commands
+                    .in_set(crate::game::CommandIntercept)
+                    .run_if(simulation_active),
+            )
+            // Admin progression mutations (grant XP, set level, etc.). Same
+            // CommandIntercept pattern.
+            .add_systems(
+                Update,
+                process_admin_progression_commands
                     .in_set(crate::game::CommandIntercept)
                     .run_if(simulation_active),
             )

@@ -18,6 +18,7 @@ use rustpython_vm::scope::Scope;
 use rustpython_vm::{Interpreter, PyRef};
 
 use crate::game::commands::GameCommand;
+use crate::player::components::PlayerId;
 use crate::scripting_api::bindings::world_api;
 use crate::scripting_api::{install_ctx, ApiContext, ApiError, WorldSnapshot};
 
@@ -71,6 +72,10 @@ print = _admin_print
 #[derive(Default)]
 struct AdminContextInner {
     commands: Vec<GameCommand>,
+    /// Commands explicitly aimed at a specific player (via `Player.x(...)`
+    /// methods). Routed through `PendingGameCommands::push_for_player` so
+    /// they reach the right `PlayerIdentity` regardless of session caller.
+    targeted_commands: Vec<(PlayerId, GameCommand)>,
     log_lines: Vec<String>,
     /// Set by `world.attach_player(id)` — the polling system reads this
     /// back after a call returns and stashes it on the session so future
@@ -118,6 +123,16 @@ impl ApiContext for AdminReplApiContext {
         Ok(())
     }
 
+    fn queue_command_for_player(
+        &self,
+        target: PlayerId,
+        command: GameCommand,
+    ) -> Result<(), ApiError> {
+        let mut inner = self.inner.lock().expect("admin repl ctx poisoned");
+        inner.targeted_commands.push((target, command));
+        Ok(())
+    }
+
     fn attach_player(&self, player_id: Option<u64>) -> Result<(), ApiError> {
         let mut inner = self.inner.lock().expect("admin repl ctx poisoned");
         inner.pending_attach = Some(player_id);
@@ -136,6 +151,9 @@ pub struct AdminExecResult {
     pub stdout: Vec<String>,
     pub error: Option<String>,
     pub queued_commands: Vec<GameCommand>,
+    /// Commands aimed at a specific player (from `Player.x(...)` methods),
+    /// to be routed via `PendingGameCommands::push_for_player`.
+    pub targeted_commands: Vec<(PlayerId, GameCommand)>,
     /// `Some(Some(id))` ⇒ session's caller becomes that player.
     /// `Some(None)`     ⇒ session's caller is cleared.
     /// `None`           ⇒ no change.
@@ -220,10 +238,11 @@ impl AdminReplHost {
             })
         });
 
-        let (queued_commands, log_lines, attach) = {
+        let (queued_commands, targeted_commands, log_lines, attach) = {
             let mut inner = context.inner.lock().expect("admin repl ctx poisoned");
             (
                 std::mem::take(&mut inner.commands),
+                std::mem::take(&mut inner.targeted_commands),
                 std::mem::take(&mut inner.log_lines),
                 inner.pending_attach.take(),
             )
@@ -233,6 +252,7 @@ impl AdminReplHost {
             stdout: log_lines,
             error,
             queued_commands,
+            targeted_commands,
             attach,
         }
     }
@@ -368,6 +388,142 @@ mod tests {
         let result = host.execute_compiled(code, snapshot, None);
         assert!(result.error.is_none(), "got error: {:?}", result.error);
         assert_eq!(result.attach, Some(Some(7)));
+    }
+
+    fn snapshot_with_one_player(id: u64, name: &str) -> WorldSnapshot {
+        use crate::scripting_api::snapshots::{
+            AttributeMap, PlayerView, VitalsView,
+        };
+        let mut snapshot = WorldSnapshot::default();
+        snapshot.players.push(PlayerView {
+            player_id: id,
+            object_id: Some(100 + id),
+            space_id: 1,
+            x: 5,
+            y: 7,
+            z: 0,
+            vitals: VitalsView {
+                health: 50.0,
+                max_health: 100.0,
+                mana: 10.0,
+                max_mana: 40.0,
+            },
+            facing: "South".to_owned(),
+            display_name: name.to_owned(),
+            class_label: "Fighter".to_owned(),
+            level: 1,
+            current_xp: 0,
+            xp_into_level: 0,
+            xp_for_next: Some(1000),
+            attributes: AttributeMap {
+                strength: 10,
+                agility: 12,
+                constitution: 11,
+                willpower: 10,
+                charisma: 10,
+                focus: 10,
+            },
+            skill_ranks: vec![
+                ("Athletics".to_owned(), 0),
+                ("Stealth".to_owned(), 0),
+                ("Perception".to_owned(), 0),
+                ("Lore".to_owned(), 0),
+                ("Spellcraft".to_owned(), 0),
+                ("Persuasion".to_owned(), 0),
+                ("Survival".to_owned(), 0),
+                ("Heal".to_owned(), 0),
+                ("Thievery".to_owned(), 0),
+                ("Concentration".to_owned(), 0),
+            ],
+            available_skill_points: 0,
+        });
+        snapshot
+    }
+
+    #[test]
+    fn player_object_repr_shows_progression_summary() {
+        let mut host = AdminReplHost::new();
+        let snapshot = snapshot_with_one_player(1, "Alice");
+        let code = match host.compile_or_incomplete("world.find_player(1)\n") {
+            CompileOutcome::Complete(c) => c,
+            other => panic!("compile failed: {:?}", other.label()),
+        };
+        let result = host.execute_compiled(code, snapshot, None);
+        assert!(result.error.is_none(), "got error: {:?}", result.error);
+        let joined: String = result.stdout.join("\n");
+        assert!(
+            joined.contains("Player") && joined.contains("Alice") && joined.contains("L1"),
+            "expected player repr; got {joined:?}"
+        );
+    }
+
+    #[test]
+    fn player_set_skill_queues_targeted_command() {
+        use crate::game::commands::GameCommand;
+        use crate::player::components::PlayerId;
+        use crate::player::skills::Skill;
+
+        let mut host = AdminReplHost::new();
+        let snapshot = snapshot_with_one_player(7, "Bob");
+        let code = match host
+            .compile_or_incomplete("world.find_player(7).set_skill('Thievery', 5)\n")
+        {
+            CompileOutcome::Complete(c) => c,
+            other => panic!("compile failed: {:?}", other.label()),
+        };
+        let result = host.execute_compiled(code, snapshot, None);
+        assert!(result.error.is_none(), "got error: {:?}", result.error);
+        assert_eq!(result.targeted_commands.len(), 1);
+        let (target, cmd) = &result.targeted_commands[0];
+        assert_eq!(*target, PlayerId(7));
+        match cmd {
+            GameCommand::AdminSetSkillRank { skill, rank } => {
+                assert_eq!(*skill, Skill::Thievery);
+                assert_eq!(*rank, 5);
+            }
+            other => panic!("expected AdminSetSkillRank, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn player_grant_xp_targets_via_id_not_caller() {
+        use crate::game::commands::GameCommand;
+        use crate::player::components::PlayerId;
+
+        let mut host = AdminReplHost::new();
+        let snapshot = snapshot_with_one_player(42, "Carol");
+        let code = match host.compile_or_incomplete("world.find_player(42).grant_xp(1500)\n") {
+            CompileOutcome::Complete(c) => c,
+            other => panic!("compile failed: {:?}", other.label()),
+        };
+        // No caller attached — proving the OO method targets the player
+        // regardless of attachment state.
+        let result = host.execute_compiled(code, snapshot, None);
+        assert!(result.error.is_none(), "got error: {:?}", result.error);
+        assert!(result.queued_commands.is_empty());
+        assert_eq!(result.targeted_commands.len(), 1);
+        let (target, cmd) = &result.targeted_commands[0];
+        assert_eq!(*target, PlayerId(42));
+        assert!(matches!(cmd, GameCommand::AdminGrantXp { amount: 1500 }));
+    }
+
+    #[test]
+    fn player_attributes_property_returns_dict() {
+        let mut host = AdminReplHost::new();
+        let snapshot = snapshot_with_one_player(1, "Dora");
+        let code = match host.compile_or_incomplete("world.find_player(1).attributes['agility']\n")
+        {
+            CompileOutcome::Complete(c) => c,
+            other => panic!("compile failed: {:?}", other.label()),
+        };
+        let result = host.execute_compiled(code, snapshot, None);
+        assert!(result.error.is_none(), "got error: {:?}", result.error);
+        // The displayhook prints `repr(12)` == "12".
+        assert!(
+            result.stdout.iter().any(|line| line == "12"),
+            "expected '12' (agility) in stdout; got {:?}",
+            result.stdout
+        );
     }
 
     #[test]

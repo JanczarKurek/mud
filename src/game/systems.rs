@@ -616,6 +616,20 @@ pub fn process_game_commands(
                     "process_game_commands saw an allocate-skill command — check system ordering"
                 );
             }
+            GameCommand::AdminGrantXp { .. }
+            | GameCommand::AdminSetLevel { .. }
+            | GameCommand::AdminGrantSkillPoints { .. }
+            | GameCommand::AdminSetSkillRank { .. }
+            | GameCommand::AdminSetAttribute { .. }
+            | GameCommand::AdminSetClass { .. }
+            | GameCommand::AdminFullHeal => {
+                // Drained by `process_admin_progression_commands`
+                // (PlayerServerPlugin) in `CommandIntercept` before this
+                // system runs.
+                bevy::log::warn!(
+                    "process_game_commands saw an admin-progression command — check system ordering"
+                );
+            }
         }
     }
 }

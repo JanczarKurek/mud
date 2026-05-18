@@ -10,7 +10,9 @@ use crate::player::components::{Player, PlayerIdentity};
 use crate::scripting::python::PythonConsoleHost;
 use crate::scripting::resources::PythonConsoleState;
 use crate::scripting_api::build::WorldSnapshotParams;
-use crate::ui::components::{PythonConsolePanel, PythonConsoleTerminal};
+use crate::ui::components::{
+    PythonConsolePanel, PythonConsoleRestartButton, PythonConsoleTerminal,
+};
 use crate::ui::PYTHON_CONSOLE_FOCUS_ID;
 
 /// Toggle the Python console on backtick. Lives outside the
@@ -93,6 +95,9 @@ pub fn handle_python_console_submissions(
                 None => pending_commands.push(cmd),
             }
         }
+        for (target, cmd) in output.targeted_commands {
+            pending_commands.push_for_player(target, cmd);
+        }
     }
 }
 
@@ -132,6 +137,26 @@ pub fn handle_python_console_completion(
                 }
             }
         }
+    }
+}
+
+/// Restart-button click handler. Rebuilds the embedded interpreter scope
+/// from scratch (same effect as running `world.reset()` from inside the
+/// REPL) and prints a one-line confirmation into the terminal buffer.
+pub fn handle_python_console_restart_button(
+    interactions: Query<&Interaction, (With<PythonConsoleRestartButton>, Changed<Interaction>)>,
+    mut host: NonSendMut<PythonConsoleHost>,
+    mut terminals: Query<&mut Terminal, With<PythonConsoleTerminal>>,
+) {
+    let pressed = interactions
+        .iter()
+        .any(|i| matches!(i, Interaction::Pressed));
+    if !pressed {
+        return;
+    }
+    host.reset_scope();
+    for mut terminal in &mut terminals {
+        terminal.push("[System] interpreter restarted.", LineStyle::System);
     }
 }
 

@@ -213,6 +213,12 @@ pub struct BottomPanelHideButton;
 #[derive(Component)]
 pub struct PythonConsoleTerminal;
 
+/// Marker on the "Restart" button in the Python console header. Click
+/// rebuilds the embedded interpreter scope from scratch (same effect as
+/// running `world.reset()` from inside the REPL).
+#[derive(Component)]
+pub struct PythonConsoleRestartButton;
+
 /// Marker on the terminal-widget root that hosts the read-only chat log.
 #[derive(Component)]
 pub struct ChatTerminal;

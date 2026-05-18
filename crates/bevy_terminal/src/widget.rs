@@ -299,6 +299,35 @@ impl TerminalInput {
     }
 }
 
+/// Per-line character cap. Bevy's text layout with `LineBreak::WordBoundary`
+/// gets expensive for multi-kilobyte single lines (a misbehaving `print`
+/// dropping a huge `repr(list)` used to drag the frame rate down for the
+/// rest of the session). Anything wider than this is broken into chunks so
+/// the renderer always sees short spans; the soft wrap visually still looks
+/// like one logical paragraph.
+const MAX_LINE_CHARS: usize = 240;
+
+fn chunk_line(line: &str, max_chars: usize) -> Vec<String> {
+    if line.chars().count() <= max_chars {
+        return vec![line.to_owned()];
+    }
+    let mut out = Vec::new();
+    let mut current = String::new();
+    let mut count = 0;
+    for ch in line.chars() {
+        current.push(ch);
+        count += 1;
+        if count >= max_chars {
+            out.push(std::mem::take(&mut current));
+            count = 0;
+        }
+    }
+    if !current.is_empty() {
+        out.push(current);
+    }
+    out
+}
+
 /// Main widget component. Mutating `buffer` (e.g. via [`Terminal::push`])
 /// bumps `revision`, which the sync system uses to trigger a re-render.
 #[derive(Component, Debug)]
@@ -320,8 +349,10 @@ impl Terminal {
     pub fn push(&mut self, text: impl Into<String>, style: LineStyle) {
         let text = text.into();
         for segment in text.split('\n') {
-            self.buffer
-                .push_back(TerminalLine::new(segment.to_owned(), style));
+            for chunk in chunk_line(segment, MAX_LINE_CHARS) {
+                self.buffer
+                    .push_back(TerminalLine::new(chunk, style));
+            }
         }
         while self.buffer.len() > self.capacity {
             self.buffer.pop_front();
@@ -586,6 +617,26 @@ mod tests {
             last_input_revision: 0,
             input_revision: 0,
         }
+    }
+
+    #[test]
+    fn push_chunks_lines_longer_than_max_chars() {
+        let mut t = Terminal {
+            buffer: VecDeque::new(),
+            capacity: 64,
+            input: TerminalInput::from_config(None),
+            focus_id: TerminalFocusId(0),
+            auto_pin_bottom: false,
+            revision: 0,
+            last_rendered_revision: 0,
+            last_input_revision: 0,
+            input_revision: 0,
+        };
+        let huge: String = "x".repeat(MAX_LINE_CHARS * 3 + 17);
+        t.push(huge, LineStyle::Stdout);
+        assert_eq!(t.buffer.len(), 4);
+        assert_eq!(t.buffer[0].text.chars().count(), MAX_LINE_CHARS);
+        assert_eq!(t.buffer[3].text.chars().count(), 17);
     }
 
     #[test]

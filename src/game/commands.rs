@@ -1,6 +1,9 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::player::classes::Class;
+use crate::player::components::AttributeKind;
+use crate::player::skills::Skill;
 use crate::world::components::{SpaceId, TilePosition};
 use crate::world::direction::Direction;
 use crate::world::floor_definitions::FloorTypeId;
@@ -341,7 +344,32 @@ pub enum GameCommand {
     /// when points run out). Drained by `process_allocate_skill_commands` in
     /// `CommandIntercept` before `process_game_commands` runs.
     AllocateSkillPoint {
-        skill: crate::player::skills::Skill,
+        skill: Skill,
         ranks: u8,
     },
+    /// Admin-only: grant raw XP. Pushed into `PendingXpGrants` so the canonical
+    /// `apply_xp_grants` pipeline picks it up — level-ups, skill-point grants,
+    /// and HUD toasts fire normally. Drained by
+    /// `process_admin_progression_commands` in `CommandIntercept`.
+    AdminGrantXp { amount: u64 },
+    /// Admin-only: hard-set the target player's level. Sets `current_xp` to
+    /// `xp_for_level(level)` and grants skill points for every level crossed
+    /// upward. Downward changes do not refund anything.
+    AdminSetLevel { level: u32 },
+    /// Admin-only: increase `SkillSheet.available_points` by `amount` without
+    /// requiring a level-up.
+    AdminGrantSkillPoints { amount: u32 },
+    /// Admin-only: overwrite a single skill's rank, bypassing the
+    /// class/level cap and point cost.
+    AdminSetSkillRank { skill: Skill, rank: u8 },
+    /// Admin-only: overwrite a single attribute on `BaseStats.attributes`.
+    /// Bypasses the [8,18] point-buy clamp; the next frame's
+    /// `refresh_derived_player_stats` recomputes `DerivedStats` and reclamps
+    /// `VitalStats` accordingly.
+    AdminSetAttribute { kind: AttributeKind, value: i32 },
+    /// Admin-only: switch the target's `Class`. Does not redistribute skill
+    /// ranks — the admin is expected to clean those up explicitly.
+    AdminSetClass { class: Class },
+    /// Admin-only: restore health and mana to their respective maxes.
+    AdminFullHeal,
 }

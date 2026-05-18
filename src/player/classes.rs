@@ -85,6 +85,15 @@ impl Class {
         Class::Cleric,
         Class::Vagabond,
     ];
+
+    /// Parse a `Class` from its `label()` form, case-insensitive. Used by the
+    /// admin REPL (`Player.set_class("Vagabond")`).
+    pub fn from_label(s: &str) -> Option<Class> {
+        Class::ALL
+            .iter()
+            .copied()
+            .find(|c| c.label().eq_ignore_ascii_case(s))
+    }
 }
 
 /// Per-class fixed data. `[tunable]` per `progression.md` §10.

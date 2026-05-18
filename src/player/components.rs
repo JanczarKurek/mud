@@ -385,6 +385,77 @@ pub fn validate_point_buy(attrs: &AttributeSet) -> Result<(), String> {
     Ok(())
 }
 
+/// Names of the six attributes on `AttributeSet`, used by string-keyed admin
+/// tooling (`Player.set_attribute("agility", 18)`) and by snapshot rendering.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum AttributeKind {
+    Strength,
+    Agility,
+    Constitution,
+    Willpower,
+    Charisma,
+    Focus,
+}
+
+impl AttributeKind {
+    pub const ALL: [AttributeKind; 6] = [
+        AttributeKind::Strength,
+        AttributeKind::Agility,
+        AttributeKind::Constitution,
+        AttributeKind::Willpower,
+        AttributeKind::Charisma,
+        AttributeKind::Focus,
+    ];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            AttributeKind::Strength => "strength",
+            AttributeKind::Agility => "agility",
+            AttributeKind::Constitution => "constitution",
+            AttributeKind::Willpower => "willpower",
+            AttributeKind::Charisma => "charisma",
+            AttributeKind::Focus => "focus",
+        }
+    }
+
+    /// Parse from full name or short alias (`str`/`agi`/`con`/`wil`/`cha`/`foc`).
+    /// Also accepts D&D-style synonyms (`dex` → agility, `wis` → willpower,
+    /// `int` → focus) so admins from a D&D background don't trip up.
+    pub fn from_label(s: &str) -> Option<AttributeKind> {
+        match s.to_ascii_lowercase().as_str() {
+            "strength" | "str" => Some(Self::Strength),
+            "agility" | "agi" | "dex" => Some(Self::Agility),
+            "constitution" | "con" => Some(Self::Constitution),
+            "willpower" | "wil" | "wis" => Some(Self::Willpower),
+            "charisma" | "cha" => Some(Self::Charisma),
+            "focus" | "foc" | "int" => Some(Self::Focus),
+            _ => None,
+        }
+    }
+
+    pub fn read(self, attrs: &AttributeSet) -> i32 {
+        match self {
+            Self::Strength => attrs.strength,
+            Self::Agility => attrs.agility,
+            Self::Constitution => attrs.constitution,
+            Self::Willpower => attrs.willpower,
+            Self::Charisma => attrs.charisma,
+            Self::Focus => attrs.focus,
+        }
+    }
+
+    pub fn write(self, attrs: &mut AttributeSet, value: i32) {
+        match self {
+            Self::Strength => attrs.strength = value,
+            Self::Agility => attrs.agility = value,
+            Self::Constitution => attrs.constitution = value,
+            Self::Willpower => attrs.willpower = value,
+            Self::Charisma => attrs.charisma = value,
+            Self::Focus => attrs.focus = value,
+        }
+    }
+}
+
 impl AttributeSet {
     pub const fn new(
         strength: i32,
