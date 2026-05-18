@@ -27,7 +27,7 @@ use crate::combat::damage_type::DamageType;
 use crate::magic::effects::MagicEffects;
 use crate::magic::resources::EffectSpec;
 use crate::npc::components::Npc;
-use crate::player::components::{AttributeSet, ChatLog, Player, PlayerIdentity};
+use crate::player::components::{AttributeSet, ChatLog, Player, PlayerId, PlayerIdentity};
 use crate::world::components::{
     ObjectState, OverworldObject, SpaceId, SpaceResident, TilePosition,
 };
@@ -41,6 +41,16 @@ use crate::world::object_registry::ObjectRegistry;
 /// authoring mistakes panic at world load, not at trap-spring time.
 #[derive(Component, Clone, Debug)]
 pub struct OnSteppedTriggers(pub Vec<StepTrigger>);
+
+/// Marks a transient hazard entity (firewall blaze, future player-armed trap)
+/// with the player who placed it. `process_step_triggers` and
+/// `process_continuous_step_triggers` read this off the colocated object and
+/// thread it through to `DamageSource::OwnedByPlayer` and to
+/// `MagicEffects::apply`'s caster field — so DoTs sourced from owned hazards
+/// also credit the placer for XP. Intentionally NOT persisted across world
+/// saves; hazards are short-lived enough that "ownerless on reload" is OK.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct HazardOwner(pub PlayerId);
 
 #[derive(Clone, Debug)]
 pub struct StepTrigger {
@@ -179,6 +189,7 @@ pub fn process_step_triggers(
                 &OverworldObject,
                 Option<&ObjectState>,
                 &OnSteppedTriggers,
+                Option<&HazardOwner>,
             ),
             Without<Player>,
         >,
@@ -212,6 +223,10 @@ pub fn process_step_triggers(
         effect_specs: Vec<EffectSpec>,
         // The last SetState encountered wins if multiple triggers request one.
         state_transition: Option<(u64, String)>,
+        // Player who placed the hazard, if any. When multiple owned hazards
+        // sit on the same tile, last-seen wins. None for world-placed hazards
+        // (lava, map traps) — those keep `DamageSource::Environment`.
+        hazard_owner: Option<PlayerId>,
     }
 
     let mut work: Vec<PendingWork> = Vec::new();
@@ -222,23 +237,31 @@ pub fn process_step_triggers(
             let mut effect_specs: Vec<EffectSpec> = Vec::new();
             let mut damage_amounts: Vec<f32> = Vec::new();
             let mut state_transition: Option<(u64, String)> = None;
+            let mut hazard_owner: Option<PlayerId> = None;
 
-            for (resident, tile, object, state_opt, triggers) in lookup.iter() {
+            for (resident, tile, object, state_opt, triggers, owner_opt) in lookup.iter() {
                 if resident.space_id != event.space_id || *tile != event.tile {
                     continue;
                 }
                 let current_state = state_opt.map(|s| s.0.as_str());
 
+                let mut matched_any = false;
                 for trigger in &triggers.0 {
                     if !trigger.state_matches(current_state) {
                         continue;
                     }
+                    matched_any = true;
                     trigger.gather_effects(
                         object.object_id,
                         &mut effect_specs,
                         &mut damage_amounts,
                         &mut state_transition,
                     );
+                }
+                if matched_any {
+                    if let Some(owner) = owner_opt {
+                        hazard_owner = Some(owner.0);
+                    }
                 }
             }
 
@@ -249,6 +272,7 @@ pub fn process_step_triggers(
                     damage_amounts,
                     effect_specs,
                     state_transition,
+                    hazard_owner,
                 });
             }
         }
@@ -258,14 +282,18 @@ pub fn process_step_triggers(
     for w in &work {
         if let Ok(mut effects) = stepper_effects.get_mut(w.stepper) {
             for spec in &w.effect_specs {
-                effects.apply(*spec, None);
+                effects.apply(*spec, w.hazard_owner);
             }
         }
+        let source = match w.hazard_owner {
+            Some(pid) => DamageSource::OwnedByPlayer(pid),
+            None => DamageSource::Environment,
+        };
         for amount in &w.damage_amounts {
             pending_damage.push(DamageEvent {
                 target: w.stepper,
                 amount: *amount,
-                source: DamageSource::Environment,
+                source,
                 damage_type: DamageType::Pierce,
                 vfx_override: None,
             });
@@ -343,6 +371,7 @@ pub fn process_continuous_step_triggers(
                 &OverworldObject,
                 Option<&ObjectState>,
                 &mut OnSteppedTriggers,
+                Option<&HazardOwner>,
             ),
             Without<Player>,
         >,
@@ -375,6 +404,7 @@ pub fn process_continuous_step_triggers(
         damage_amounts: Vec<f32>,
         effect_specs: Vec<EffectSpec>,
         state_transition: Option<(u64, String)>,
+        hazard_owner: Option<PlayerId>,
     }
 
     let mut work: Vec<TickWork> = Vec::new();
@@ -389,8 +419,11 @@ pub fn process_continuous_step_triggers(
     // Phase 1: advance accumulators and gather per-(stepper, tick) work.
     {
         let mut triggers_query = object_queries.p0();
-        for (resident, tile, object, state_opt, mut triggers) in triggers_query.iter_mut() {
+        for (resident, tile, object, state_opt, mut triggers, owner_opt) in
+            triggers_query.iter_mut()
+        {
             let current_state = state_opt.map(|s| s.0.clone());
+            let owner_id = owner_opt.map(|o| o.0);
             for trigger in &mut triggers.0 {
                 let Some(interval) = trigger.tick_seconds else {
                     continue;
@@ -433,6 +466,7 @@ pub fn process_continuous_step_triggers(
                             damage_amounts,
                             effect_specs,
                             state_transition,
+                            hazard_owner: owner_id,
                         });
                     }
                 }
@@ -447,14 +481,18 @@ pub fn process_continuous_step_triggers(
     for w in &work {
         if let Ok(mut effects) = stepper_effects.get_mut(w.stepper) {
             for spec in &w.effect_specs {
-                effects.apply(*spec, None);
+                effects.apply(*spec, w.hazard_owner);
             }
         }
+        let source = match w.hazard_owner {
+            Some(pid) => DamageSource::OwnedByPlayer(pid),
+            None => DamageSource::Environment,
+        };
         for amount in &w.damage_amounts {
             pending_damage.push(DamageEvent {
                 target: w.stepper,
                 amount: *amount,
-                source: DamageSource::Environment,
+                source,
                 damage_type: DamageType::Pierce,
                 vfx_override: None,
             });

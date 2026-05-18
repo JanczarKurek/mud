@@ -144,6 +144,16 @@ pub enum GameCommand {
         spell_id: String,
         target_object_id: u64,
     },
+    /// Tile-target cast. Used by `SpellTargeting::TargetedTile` spells
+    /// (firewall, fireball). The server validates that the spell exists,
+    /// is in range (`chebyshev_distance(caster_tile, target_tile)`), and
+    /// then resolves AoE damage / pattern-spawn effects centered on
+    /// `target_tile`.
+    CastSpellAtTile {
+        source: ItemReference,
+        spell_id: String,
+        target_tile: TilePosition,
+    },
     MoveItem {
         source: ItemReference,
         destination: ItemDestination,

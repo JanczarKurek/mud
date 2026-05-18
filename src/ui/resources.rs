@@ -682,6 +682,10 @@ pub enum CursorMode {
     Default,
     UseOn,
     SpellTarget,
+    /// Like `SpellTarget` but the click resolves to a *tile* rather than an
+    /// entity. Used for `SpellTargeting::TargetedTile` spells (firewall,
+    /// fireball) where the cast center is the floor itself.
+    SpellTargetTile,
     AttackTarget,
 }
 

@@ -126,6 +126,7 @@ pub fn toggle_cursor_mode(
             CursorMode::Default => CursorMode::UseOn,
             CursorMode::UseOn => CursorMode::Default,
             CursorMode::SpellTarget => CursorMode::SpellTarget,
+            CursorMode::SpellTargetTile => CursorMode::SpellTargetTile,
             CursorMode::AttackTarget => CursorMode::AttackTarget,
         };
     }
@@ -204,6 +205,7 @@ fn cursor_icon_for_state(
             .map(str::to_owned)
             .unwrap_or_else(|| "cursors/use_on_cursor.png".to_owned()),
         CursorMode::SpellTarget => "cursors/spell_target_cursor.png".to_owned(),
+        CursorMode::SpellTargetTile => "cursors/spell_target_cursor.png".to_owned(),
         CursorMode::AttackTarget => "cursors/attack_cursor.png".to_owned(),
     };
 
@@ -1456,12 +1458,22 @@ pub fn handle_context_menu_actions(
             };
             if let Some(spell_id) = spell_lookup {
                 if let Some(spell) = spell_definitions.get(&spell_id) {
-                    if spell.targeting == SpellTargeting::Targeted {
-                        spell_targeting_state.source = Some(target);
-                        spell_targeting_state.spell_id = Some(spell_id);
-                        cursor_state.mode = CursorMode::SpellTarget;
-                        context_menu_state.hide();
-                        return;
+                    match spell.targeting {
+                        SpellTargeting::Targeted => {
+                            spell_targeting_state.source = Some(target);
+                            spell_targeting_state.spell_id = Some(spell_id);
+                            cursor_state.mode = CursorMode::SpellTarget;
+                            context_menu_state.hide();
+                            return;
+                        }
+                        SpellTargeting::TargetedTile => {
+                            spell_targeting_state.source = Some(target);
+                            spell_targeting_state.spell_id = Some(spell_id);
+                            cursor_state.mode = CursorMode::SpellTargetTile;
+                            context_menu_state.hide();
+                            return;
+                        }
+                        SpellTargeting::Untargeted => {}
                     }
                 }
             }
@@ -1838,22 +1850,34 @@ pub fn handle_spell_targeting(
     };
     let target_tile = cursor_to_tile(window, cursor_position, &player_position, &world_config);
 
-    let selected_target = client_state
-        .world_objects
-        .values()
-        .find(|object| object.is_npc && object.tile_position == target_tile)
-        .map(|object| object.object_id);
+    let is_tile_target = cursor_state.mode == CursorMode::SpellTargetTile;
 
-    let Some(target_object_id) = selected_target else {
-        return;
-    };
+    if is_tile_target {
+        if let Some(source) = context_target_to_item_reference(source_target, &docked_panel_state) {
+            pending_commands.push(GameCommand::CastSpellAtTile {
+                source,
+                spell_id: spell_id.to_owned(),
+                target_tile,
+            });
+        }
+    } else {
+        let selected_target = client_state
+            .world_objects
+            .values()
+            .find(|object| object.is_npc && object.tile_position == target_tile)
+            .map(|object| object.object_id);
 
-    if let Some(source) = context_target_to_item_reference(source_target, &docked_panel_state) {
-        pending_commands.push(GameCommand::CastSpellAt {
-            source,
-            spell_id: spell_id.to_owned(),
-            target_object_id,
-        });
+        let Some(target_object_id) = selected_target else {
+            return;
+        };
+
+        if let Some(source) = context_target_to_item_reference(source_target, &docked_panel_state) {
+            pending_commands.push(GameCommand::CastSpellAt {
+                source,
+                spell_id: spell_id.to_owned(),
+                target_object_id,
+            });
+        }
     }
 
     spell_targeting_state.source = None;

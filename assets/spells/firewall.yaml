@@ -1,0 +1,13 @@
+name: Firewall
+incantation: Adori Flam Vita
+mana_cost: 28.0
+targeting: targeted_tile
+range_tiles: 5
+# class_access: [Wizard]
+# min_caster_level: 5
+effects:
+  spawns_object:
+    type_id: blazing_fire
+    lifetime_seconds: 10.0
+    pattern: perpendicular_line_3
+    attribute_to_caster: true

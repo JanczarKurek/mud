@@ -903,6 +903,13 @@ fn load_world_from_snapshot(
         // component itself is not persisted (triggers are pure config — the
         // accumulator phase is fine to reset). Without this, step triggers
         // silently no-op for every object after the first reload.
+        //
+        // Note: `HazardOwner` is also intentionally NOT persisted. Hazards
+        // that carry it (firewall blazes, future player-armed traps) have
+        // short TTLs, so on reload the few that survive lose their owner
+        // and revert to `DamageSource::Environment` semantics (no XP credit
+        // on kill). If long-lived owned hazards are ever added, add an
+        // `owner_player_id: Option<u64>` to `WorldObjectStateDump`.
         if let Some(definition) = object_definitions.get(&definition_id_for_lookup) {
             if !definition.on_stepped.is_empty() {
                 let triggers = crate::world::step_triggers::StepTrigger::from_def_list(

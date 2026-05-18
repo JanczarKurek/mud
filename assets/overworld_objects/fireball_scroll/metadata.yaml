@@ -1,0 +1,9 @@
+extends: pickup
+name: Fireball Scroll
+weight: 0.1
+description: A volatile scroll that detonates a roaring sphere of flame on a chosen tile.
+spell_id: fireball
+render:
+  debug_color: [232, 88, 36]
+  debug_size: 0.45
+  sprite_path: overworld_objects/scroll/sprite.png

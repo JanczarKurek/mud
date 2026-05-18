@@ -1,0 +1,14 @@
+name: Fireball
+incantation: Exori Flam Vis
+mana_cost: 22.0
+targeting: targeted_tile
+range_tiles: 6
+# class_access: [Wizard]
+# min_caster_level: 4
+effects:
+  damage: 14.0
+  damage_type: fire
+  aoe:
+    radius_tiles: 1
+    vfx_on_tile: fire_hit
+  vfx_on_target_hit: fire_hit

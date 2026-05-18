@@ -55,6 +55,10 @@ pub struct SpellEffects {
     /// Spawn a transient world object at the cast location.
     #[serde(default)]
     pub spawns_object: Option<SpawnObjectSpec>,
+    /// Deal `damage` to every entity within `aoe.radius_tiles` Chebyshev
+    /// distance of the target tile. Only meaningful for tile-target spells.
+    #[serde(default)]
+    pub aoe: Option<AoeSpec>,
     /// VFX definition id played on the caster at cast time. `None` falls back
     /// to `"cast_flash"` in the trigger code.
     #[serde(default)]
@@ -91,6 +95,41 @@ pub struct EffectSpec {
 pub struct SpawnObjectSpec {
     pub type_id: String,
     pub lifetime_seconds: f32,
+    /// How many tiles to spawn and where, relative to the cast target tile.
+    #[serde(default)]
+    pub pattern: SpawnPattern,
+    /// When true, every spawned object inherits a `HazardOwner(caster_id)`
+    /// component so damage and DoTs it produces credit the caster via
+    /// `DamageSource::OwnedByPlayer`.
+    #[serde(default)]
+    pub attribute_to_caster: bool,
+}
+
+/// Tile pattern for `SpawnObjectSpec`. `Single` is the default and matches
+/// pre-existing behavior (one entity at the target tile).
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum SpawnPattern {
+    #[default]
+    Single,
+    /// Three tiles in a straight line perpendicular to the caster→target
+    /// axis, centered on the target tile.
+    #[serde(rename = "perpendicular_line_3")]
+    PerpendicularLine3,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct AoeSpec {
+    /// Chebyshev radius around the target tile. `0` hits only the target tile.
+    pub radius_tiles: i32,
+    /// VFX definition id (under `assets/vfx/`) played once on **every** tile
+    /// in the AoE — not just on entities hit. Use for explosion-style spells
+    /// where the floor itself should flash. `None` skips the per-tile VFX
+    /// (only hit entities get `vfx_on_target_hit`).
+    #[serde(default)]
+    pub vfx_on_tile: Option<String>,
 }
 
 /// Kinds of timed magical effects tracked by `MagicEffects`.
@@ -136,7 +175,12 @@ pub enum EffectKind {
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SpellTargeting {
+    /// Player picks an entity. Range is checked against the entity's tile.
     Targeted,
+    /// Player picks a tile (entity optional). Used for AoE and patterned
+    /// summons like firewall.
+    TargetedTile,
+    /// No picker — casts on the caster's tile / self.
     Untargeted,
 }
 
@@ -265,6 +309,8 @@ effects:
             "venom",
             "paralysis",
             "befuddle",
+            "fireball",
+            "firewall",
         ] {
             assert!(
                 ids.contains(&new_id),
@@ -296,5 +342,49 @@ effects:
         let obj = spell.effects.spawns_object.as_ref().unwrap();
         assert_eq!(obj.type_id, "magic_light");
         assert_eq!(obj.lifetime_seconds, 1800.0);
+        assert_eq!(obj.pattern, SpawnPattern::Single);
+        assert!(!obj.attribute_to_caster);
+    }
+
+    #[test]
+    fn firewall_pattern_with_owner_attribution() {
+        let yaml = r#"
+name: Firewall
+incantation: Adori Flam
+mana_cost: 28.0
+targeting: targeted_tile
+range_tiles: 5
+effects:
+  spawns_object:
+    type_id: blazing_fire
+    lifetime_seconds: 10.0
+    pattern: perpendicular_line_3
+    attribute_to_caster: true
+"#;
+        let spell: SpellDefinition = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(spell.targeting, SpellTargeting::TargetedTile);
+        let obj = spell.effects.spawns_object.as_ref().unwrap();
+        assert_eq!(obj.pattern, SpawnPattern::PerpendicularLine3);
+        assert!(obj.attribute_to_caster);
+    }
+
+    #[test]
+    fn aoe_field_round_trip() {
+        let yaml = r#"
+name: Fireball
+incantation: Exori Flam
+mana_cost: 22.0
+targeting: targeted_tile
+range_tiles: 6
+effects:
+  damage: 14.0
+  damage_type: fire
+  aoe:
+    radius_tiles: 1
+"#;
+        let spell: SpellDefinition = serde_yaml::from_str(yaml).unwrap();
+        let aoe = spell.effects.aoe.as_ref().unwrap();
+        assert_eq!(aoe.radius_tiles, 1);
+        assert_eq!(spell.effects.effective_damage_type(), DamageType::Fire);
     }
 }

@@ -896,6 +896,10 @@ objects:
     - type: glimmer_scroll
     - type: bless_scroll
     - type: light_scroll
+    - type: fireball_scroll
+    - type: fireball_scroll
+    - type: firewall_scroll
+    - type: firewall_scroll
 # Phase-2 lock demo: a locked door blocking a side passage, with the key
 # stashed in a nearby unlocked chest. Open by either picking the lock
 # (Thievery), forcing it (Athletics), or using the matching iron key.
@@ -1335,6 +1339,15 @@ objects:
   placement:
     x: 34
     y: 25
+# --- AoE / pattern-summon test scrolls (near spawn for easy testing) ---
+- type: fireball_scroll
+  placement:
+    x: 33
+    y: 24
+- type: firewall_scroll
+  placement:
+    x: 33
+    y: 26
 - type: silver_ring
   placement:
   - x: 38

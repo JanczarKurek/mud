@@ -239,8 +239,8 @@ fn spawn_header(
         .with_children(|header| {
             let sprite_size = px(64.0);
             let state = stack.properties.get("state").map(String::as_str);
-            let sprite_path = definition
-                .and_then(|def| def.sprite_path_for_state_count(state, stack.quantity));
+            let sprite_path =
+                definition.and_then(|def| def.sprite_path_for_state_count(state, stack.quantity));
             if let Some(path) = sprite_path {
                 header.spawn((
                     Node {
@@ -391,11 +391,16 @@ fn spawn_spell_section(
     let mut rows: Vec<(String, String)> = vec![("Name".to_owned(), spell.name.clone())];
     let targeting = match spell.targeting {
         SpellTargeting::Targeted => "Targeted",
+        SpellTargeting::TargetedTile => "Tile-Target",
         SpellTargeting::Untargeted => "Self",
     };
     rows.push(("Targeting".to_owned(), targeting.to_owned()));
     rows.push(("Mana Cost".to_owned(), format!("{:.0}", spell.mana_cost)));
-    if spell.targeting == SpellTargeting::Targeted && spell.range_tiles > 0 {
+    if matches!(
+        spell.targeting,
+        SpellTargeting::Targeted | SpellTargeting::TargetedTile
+    ) && spell.range_tiles > 0
+    {
         rows.push(("Range".to_owned(), format!("{} tiles", spell.range_tiles)));
     }
     if spell.min_caster_level > 1 {

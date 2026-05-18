@@ -314,16 +314,21 @@ pub fn handle_quickbar_keybinds(
             &definitions,
             &spell_definitions,
         );
-        let is_targeted = resolved_spell
+        let targeting_mode = resolved_spell
             .as_deref()
             .and_then(|id| spell_definitions.get(id))
-            .map(|spell| spell.targeting == SpellTargeting::Targeted)
-            .unwrap_or(false);
+            .map(|spell| spell.targeting);
 
-        if is_targeted {
+        if matches!(
+            targeting_mode,
+            Some(SpellTargeting::Targeted | SpellTargeting::TargetedTile)
+        ) {
             spell_targeting_state.source = Some(target);
             spell_targeting_state.spell_id = resolved_spell;
-            cursor_state.mode = CursorMode::SpellTarget;
+            cursor_state.mode = match targeting_mode {
+                Some(SpellTargeting::TargetedTile) => CursorMode::SpellTargetTile,
+                _ => CursorMode::SpellTarget,
+            };
             cursor_state.use_on_sprite = None;
         } else if ctrl_held {
             use_on_state.source = Some(target);

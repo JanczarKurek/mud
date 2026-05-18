@@ -1444,14 +1444,19 @@ Top-level fields:
 - Type: string
 - Meaning: whether the spell needs a selected target
 - Valid values:
-  - `untargeted`
-  - `targeted`
+  - `untargeted` — casts on the caster's own tile / self.
+  - `targeted` — player picks an *entity*; range is checked against the
+    entity's tile. Used by single-target spells (`spark_bolt`, `frost_lance`).
+  - `targeted_tile` — player picks a *tile* (entity optional); range is
+    checked against the caster's own tile. Used by AoE spells and
+    pattern-summon spells (`fireball`, `firewall`).
 
 ### `range_tiles`
 - Type: integer
 - Optional: yes
 - Default: `0`
-- Meaning: maximum Chebyshev distance for targeted spells
+- Meaning: maximum Chebyshev distance for `targeted` and `targeted_tile`
+  spells.
 
 ### `class_access`
 - Type: array of class enum values (`Fighter`, `Wizard`, `Cleric`, `Vagabond`)
@@ -1529,12 +1534,37 @@ Top-level fields:
   apply. Drives Cleric "Restore" clearing `slow` / `sleep`.
 
 ### `spawns_object`
-- Type: mapping `{ type_id: string, lifetime_seconds: float }`
+- Type: mapping `{ type_id: string, lifetime_seconds: float, pattern?: enum, attribute_to_caster?: bool }`
 - Optional: yes
-- Meaning: spawn a transient world object at the cast location (caster's tile
-  for untargeted spells, target tile for targeted). The spawned entity carries
-  a `Ttl` (generic time-to-live) and despawns when it elapses. The referenced
-  `type_id` must exist in `assets/overworld_objects/`.
+- Meaning: spawn one or more transient world objects at the cast location
+  (caster's tile for `untargeted`, target tile for `targeted` / `targeted_tile`).
+  Every spawned entity carries a `Ttl` (generic time-to-live) and despawns when
+  it elapses. The referenced `type_id` must exist in `assets/overworld_objects/`.
+- `pattern` (optional, default `single`):
+  - `single`: spawn one entity at the center tile (legacy behavior).
+  - `perpendicular_line_3`: spawn three entities in a straight line
+    perpendicular to the caster→target axis, centered on the target tile.
+    Tiebreakers: caster directly N/S of target → E↔W wall; caster directly
+    E/W → N↔S wall; diagonal → cross-diagonal wall.
+- `attribute_to_caster` (optional, default `false`): when `true`, every
+  spawned entity gets a `HazardOwner(caster_id)` component so any damage or
+  DoT it produces via `on_stepped` credits the caster via
+  `DamageSource::OwnedByPlayer` (XP flows back to the placer on kill). Leave
+  `false` for non-hazard summons (e.g. `magic_light`).
+
+### `aoe`
+- Type: mapping `{ radius_tiles: int, vfx_on_tile?: string }`
+- Optional: yes
+- Meaning: only meaningful for `targeted_tile` spells. After the regular
+  spell effects resolve, the spell's `damage` value is dealt as a one-shot
+  hit to every entity (NPC or player) within `radius_tiles` Chebyshev
+  distance of the target tile. The caster is **not** excluded — friendly
+  fire is on. `buffs_target` debuffs also fan out to every NPC in radius.
+- `vfx_on_tile` (optional): VFX definition id played once on **every** tile
+  in the AoE square, regardless of whether an entity occupies it. Use for
+  explosion-style spells where the floor itself should flash (e.g.
+  `fire_hit` for fireball). Distinct from `vfx_on_target_hit`, which only
+  plays on entities that actually take damage.
 
 ### `vfx_on_cast`
 - Type: string

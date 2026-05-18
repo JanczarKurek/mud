@@ -419,6 +419,30 @@ pub fn process_game_commands(
                     &mut commands,
                 );
             }
+            GameCommand::CastSpellAtTile {
+                source,
+                spell_id,
+                target_tile,
+            } => {
+                handle_cast_spell_at_tile(
+                    player_entity,
+                    source,
+                    &spell_id,
+                    target_tile,
+                    &mut container_query,
+                    &object_query,
+                    &mut player_queries.p2(),
+                    &mut command_outputs.npc_magic_effects,
+                    &mut command_outputs.player_magic_effects,
+                    &command_outputs.player_class_level,
+                    &mut object_registry,
+                    &definitions,
+                    &spell_definitions,
+                    &mut command_outputs.ui_events,
+                    &mut command_outputs.pending_damage,
+                    &mut commands,
+                );
+            }
             GameCommand::MoveItem {
                 source,
                 destination,
@@ -1403,6 +1427,8 @@ fn handle_use_item(
                 spawn_spec,
                 player_space_id,
                 player_position,
+                player_position,
+                acting_player_id,
             );
         }
         let outcome = consume_or_decrement_charge(
@@ -1864,7 +1890,9 @@ fn handle_cast_spell_at(
             object_registry,
             spawn_spec,
             player_space_resident.space_id,
+            caster_tile,
             target_position,
+            caster_id,
         );
     }
 
@@ -1893,6 +1921,239 @@ fn handle_cast_spell_at(
     // intentionally don't despawn or spawn the corpse here so all damage
     // sources go through the same death pipeline.
     let _ = target_position;
+}
+
+/// Tile-target cast path. Used by `SpellTargeting::TargetedTile` spells —
+/// fireball (AoE damage) and firewall (pattern-spawn of `blazing_fire`).
+/// Mirrors `handle_cast_spell_at` on validation, mana, paralyze, and scroll
+/// consumption. The center is a *tile*, not an entity, so range is checked
+/// against the caster's own tile.
+#[allow(clippy::too_many_arguments)]
+fn handle_cast_spell_at_tile(
+    player_entity: Entity,
+    source: ItemReference,
+    spell_id: &str,
+    target_tile: TilePosition,
+    container_query: &mut Query<&mut Container>,
+    object_query: &Query<
+        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
+        Without<Player>,
+    >,
+    player_query: &mut Query<
+        (
+            Entity,
+            &PlayerIdentity,
+            &mut InventoryState,
+            &mut ChatLogState,
+            &mut SpaceResident,
+            &mut TilePosition,
+            &mut MovementCooldown,
+            &mut VitalStats,
+            Option<&CombatTarget>,
+        ),
+        With<Player>,
+    >,
+    npc_magic_effects_query: &mut Query<
+        &mut crate::magic::effects::MagicEffects,
+        (With<Npc>, Without<Player>),
+    >,
+    player_magic_effects_query: &mut Query<&mut crate::magic::effects::MagicEffects, With<Player>>,
+    player_class_level: &Query<
+        (
+            Option<&crate::player::classes::Class>,
+            Option<&crate::player::progression::Experience>,
+        ),
+        With<Player>,
+    >,
+    object_registry: &mut ObjectRegistry,
+    definitions: &OverworldObjectDefinitions,
+    spell_definitions: &SpellDefinitions,
+    ui_events: &mut PendingGameUiEvents,
+    pending_damage: &mut PendingDamageEvents,
+    commands: &mut Commands,
+) {
+    let Some(spell) = spell_definitions.get(spell_id) else {
+        return;
+    };
+
+    // Snapshot all player positions before taking a mutable borrow on the
+    // caster. Used to fan out AoE damage onto other players (and the caster
+    // themselves — friendly fire is intentional).
+    let player_snapshot: Vec<(Entity, crate::world::components::SpaceId, TilePosition)> =
+        player_query
+            .iter()
+            .map(|(e, _, _, _, r, t, _, _, _)| (e, r.space_id, *t))
+            .collect();
+
+    let Ok((
+        _,
+        caster_identity,
+        mut inventory_state,
+        mut chat_log_state,
+        player_space_resident,
+        player_position,
+        _,
+        mut player_vitals,
+        _,
+    )) = player_query.get_mut(player_entity)
+    else {
+        return;
+    };
+    let caster_id = caster_identity.id;
+    let caster_space_id = player_space_resident.space_id;
+    let caster_tile = *player_position;
+
+    if chebyshev_distance_tiles(caster_tile, target_tile) > spell.range_tiles.max(1) {
+        chat_log_state.push_narrator(format!("{} is out of range.", spell.name));
+        return;
+    }
+
+    let is_scroll = true;
+    let (class, level) = player_class_level
+        .get(player_entity)
+        .map(|(c, e)| (c.copied(), e.map_or(1, |exp| exp.level)))
+        .unwrap_or((None, 1));
+    if let Err(reason) = check_caster_eligibility(spell, is_scroll, class, level) {
+        chat_log_state.push_narrator(reason);
+        return;
+    }
+
+    if let Ok(effects) = player_magic_effects_query.get(player_entity) {
+        if effects.is_paralyzed() {
+            chat_log_state
+                .push_narrator(format!("You're paralyzed and can't cast {}.", spell.name));
+            return;
+        }
+    }
+
+    if player_vitals.mana < spell.mana_cost {
+        chat_log_state.push_narrator(format!("Not enough mana to cast {}.", spell.name));
+        return;
+    }
+    player_vitals.mana = (player_vitals.mana - spell.mana_cost).max(0.0);
+
+    let cast_vfx_id = spell
+        .effects
+        .vfx_on_cast
+        .clone()
+        .unwrap_or_else(|| "cast_flash".to_owned());
+    ui_events.push_broadcast(GameUiEvent::VfxSpawn {
+        definition_id: cast_vfx_id,
+        anchor: VfxAnchor::tile(caster_space_id, caster_tile),
+    });
+
+    // AoE damage fan-out. Damage goes through PendingDamageEvents and is
+    // resolved by `apply_pending_damage`; entities without VitalStats are
+    // silently ignored, so it's fine that `object_query` also contains
+    // furniture and scenery.
+    if let Some(aoe) = spell.effects.aoe.as_ref() {
+        let radius = aoe.radius_tiles.max(0);
+        let damage = spell.effects.damage;
+        let damage_type = spell.effects.effective_damage_type();
+        let vfx_override = spell.effects.vfx_on_target_hit.clone();
+
+        // Per-tile VFX: spawn the configured animation on every tile in the
+        // AoE — including tiles with no entity on them. Lets explosion spells
+        // visibly cover their footprint, not just their victims.
+        if let Some(tile_vfx_id) = aoe.vfx_on_tile.as_ref() {
+            for dy in -radius..=radius {
+                for dx in -radius..=radius {
+                    let tile = TilePosition::new(
+                        target_tile.x + dx,
+                        target_tile.y + dy,
+                        target_tile.z,
+                    );
+                    ui_events.push_broadcast(GameUiEvent::VfxSpawn {
+                        definition_id: tile_vfx_id.clone(),
+                        anchor: VfxAnchor::tile(caster_space_id, tile),
+                    });
+                }
+            }
+        }
+
+        if damage > 0.0 {
+            for (entity, resident, tile, _) in object_query.iter() {
+                if resident.space_id != caster_space_id {
+                    continue;
+                }
+                if chebyshev_distance_tiles(*tile, target_tile) > radius {
+                    continue;
+                }
+                pending_damage.push(DamageEvent {
+                    target: entity,
+                    amount: damage,
+                    source: DamageSource::Player(caster_id),
+                    damage_type,
+                    vfx_override: vfx_override.clone(),
+                });
+            }
+            for (entity, space_id, tile) in &player_snapshot {
+                if *space_id != caster_space_id {
+                    continue;
+                }
+                if chebyshev_distance_tiles(*tile, target_tile) > radius {
+                    continue;
+                }
+                pending_damage.push(DamageEvent {
+                    target: *entity,
+                    amount: damage,
+                    source: DamageSource::Player(caster_id),
+                    damage_type,
+                    vfx_override: vfx_override.clone(),
+                });
+            }
+        }
+
+        // Buffs/debuffs fan out to NPCs in radius. Players are skipped —
+        // matches the existing rule that `buffs_target` only goes on NPCs.
+        if !spell.effects.buffs_target.is_empty() {
+            for (entity, resident, tile, _) in object_query.iter() {
+                if resident.space_id != caster_space_id {
+                    continue;
+                }
+                if chebyshev_distance_tiles(*tile, target_tile) > radius {
+                    continue;
+                }
+                apply_buffs_target(
+                    entity,
+                    &spell.effects.buffs_target,
+                    Some(caster_id),
+                    npc_magic_effects_query,
+                    commands,
+                );
+            }
+        }
+    }
+
+    if let Some(spawn_spec) = spell.effects.spawns_object.as_ref() {
+        spawn_spell_object(
+            commands,
+            definitions,
+            object_registry,
+            spawn_spec,
+            caster_space_id,
+            caster_tile,
+            target_tile,
+            caster_id,
+        );
+    }
+
+    if let Ok(mut effects) = player_magic_effects_query.get_mut(player_entity) {
+        apply_spell_self_effects(spell, caster_id, &mut effects);
+    }
+
+    consume_or_decrement_charge(
+        source,
+        &mut inventory_state,
+        container_query,
+        object_query,
+        object_registry,
+        definitions,
+        commands,
+    );
+
+    chat_log_state.push_line(format!("[Player]: \"{}\"", spell.incantation));
+    chat_log_state.push_narrator(format!("Cast {}.", spell.name));
 }
 
 /// Returns `Ok(())` when the caster is permitted to cast `spell` from the
@@ -1928,36 +2189,84 @@ fn check_caster_eligibility(
     Ok(())
 }
 
-/// Spawn the transient world object declared by a spell's `spawns_object`
-/// effect (currently only `magic_light`). Attaches a `Ttl` so the object
-/// auto-cleans up after `lifetime_seconds`.
+/// Spawn the transient world object(s) declared by a spell's `spawns_object`
+/// effect. `SpawnPattern::Single` spawns one tile at `target_tile`;
+/// `SpawnPattern::PerpendicularLine3` spawns three tiles in a straight line
+/// perpendicular to the caster→target axis, centered on `target_tile`. Each
+/// spawned entity gets a `Ttl` for auto-cleanup; if
+/// `spawn_spec.attribute_to_caster` is set, each also gets a `HazardOwner`
+/// so step-trigger damage credits the caster for XP.
 fn spawn_spell_object(
     commands: &mut Commands,
     definitions: &OverworldObjectDefinitions,
     object_registry: &mut ObjectRegistry,
     spawn_spec: &crate::magic::resources::SpawnObjectSpec,
     space_id: crate::world::components::SpaceId,
-    tile_position: TilePosition,
+    caster_tile: TilePosition,
+    target_tile: TilePosition,
+    caster_id: PlayerId,
 ) {
     let type_id = spawn_spec.type_id.as_str();
     if definitions.get(type_id).is_none() {
         return;
     }
-    let object_id = object_registry.allocate_runtime_id(type_id);
-    let entity = crate::world::setup::spawn_overworld_object(
-        commands,
-        definitions,
-        object_registry,
-        object_id,
-        type_id,
-        None,
-        space_id,
-        tile_position,
-        None,
-    );
-    commands.entity(entity).insert(crate::world::ttl::Ttl {
-        remaining_seconds: spawn_spec.lifetime_seconds.max(1.0),
-    });
+
+    let tiles: Vec<TilePosition> = match spawn_spec.pattern {
+        crate::magic::resources::SpawnPattern::Single => vec![target_tile],
+        crate::magic::resources::SpawnPattern::PerpendicularLine3 => {
+            let offsets = perpendicular_line_offsets(caster_tile, target_tile);
+            vec![
+                target_tile,
+                TilePosition::new(
+                    target_tile.x + offsets[0].0,
+                    target_tile.y + offsets[0].1,
+                    target_tile.z,
+                ),
+                TilePosition::new(
+                    target_tile.x + offsets[1].0,
+                    target_tile.y + offsets[1].1,
+                    target_tile.z,
+                ),
+            ]
+        }
+    };
+
+    for tile in tiles {
+        let object_id = object_registry.allocate_runtime_id(type_id);
+        let entity = crate::world::setup::spawn_overworld_object(
+            commands,
+            definitions,
+            object_registry,
+            object_id,
+            type_id,
+            None,
+            space_id,
+            tile,
+            None,
+        );
+        let mut entity_cmds = commands.entity(entity);
+        entity_cmds.insert(crate::world::ttl::Ttl {
+            remaining_seconds: spawn_spec.lifetime_seconds.max(1.0),
+        });
+        if spawn_spec.attribute_to_caster {
+            entity_cmds.insert(crate::world::step_triggers::HazardOwner(caster_id));
+        }
+    }
+}
+
+/// Two tile-offsets that, together with the cast target tile, form a
+/// 3-tile line perpendicular to the caster→target axis. Tiebreakers:
+/// caster directly N/S of target → E↔W wall; caster directly E/W →
+/// N↔S wall; diagonal → cross-diagonal wall; caster sitting on target
+/// → fall back to E↔W.
+fn perpendicular_line_offsets(caster: TilePosition, target: TilePosition) -> [(i32, i32); 2] {
+    let dx = (target.x - caster.x).signum();
+    let dy = (target.y - caster.y).signum();
+    match (dx, dy) {
+        (0, 0) | (0, _) => [(-1, 0), (1, 0)],
+        (_, 0) => [(0, -1), (0, 1)],
+        _ => [(-dy, dx), (dy, -dx)],
+    }
 }
 
 /// Inserts (or merges) `MagicEffects` on an NPC target. Lazily attaches the
