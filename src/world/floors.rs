@@ -307,6 +307,7 @@ render:
                 facing: Direction::default(),
                 state: None,
                 is_shopkeeper: false,
+                is_hidden: false,
             },
         );
 

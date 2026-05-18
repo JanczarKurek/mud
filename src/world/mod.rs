@@ -11,6 +11,7 @@ pub mod floor_map;
 pub mod floor_render;
 pub mod floors;
 pub mod hidden;
+pub mod hide_action;
 pub mod interactions;
 pub mod lighting;
 pub mod loot;

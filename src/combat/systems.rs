@@ -132,7 +132,10 @@ pub fn resolve_battle_turn(
             Option<&Inventory>,
             Option<&DefenseStats>,
         )>,
-        Query<(&VitalStats, Option<&mut crate::magic::effects::MagicEffects>)>,
+        Query<(
+            &VitalStats,
+            Option<&mut crate::magic::effects::MagicEffects>,
+        )>,
         Query<&mut Inventory, With<Player>>,
     )>,
     definitions: Res<OverworldObjectDefinitions>,

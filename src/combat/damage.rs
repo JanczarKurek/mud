@@ -192,10 +192,7 @@ pub fn apply_pending_damage(
             commands.entity(event.target).despawn();
             broadcast_chat_line(&mut chat_log_query, format!("[{target_name} dies]"));
         } else if is_player_target {
-            broadcast_chat_line(
-                &mut chat_log_query,
-                format!("[{target_name} is defeated]"),
-            );
+            broadcast_chat_line(&mut chat_log_query, format!("[{target_name} is defeated]"));
             pending_player_deaths.deaths.push(PendingPlayerDeath {
                 entity: event.target,
                 space_id,

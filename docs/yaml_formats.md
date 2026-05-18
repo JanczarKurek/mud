@@ -1299,6 +1299,29 @@ Hidden + `on_stepped` is the canonical "trap" combination: see
 `on_stepped`) is a "secret stash" — passive perception is the only way to spot
 it.
 
+### Player-hideable items (`can_hide`)
+
+When `can_hide:` is present, the right-click menu surfaces a **Hide** action
+for the object whenever the actor has at least 1 rank of Stealth and the
+object is not already hidden. Triggering it runs a Stealth check (DC 10, the
+object's `sneakiness` as a situational bonus). On success, the object gains
+the `Hidden` component with `dc = check_total / 2` and the placer is seeded
+into `detected_by` so they continue to see it. On failure, a narrator line is
+emitted and the object stays visible.
+
+```yaml
+can_hide:
+  sneakiness: 2
+```
+
+- `sneakiness` — integer modifier added to the placer's Stealth check total.
+  Higher = inherently easier to conceal (small, drab, camouflaged). May be
+  negative for bulky items. Defaults to `0` when omitted.
+
+The halving of `check_total` keeps DCs from running into unreachable territory
+at high levels — see `world::hide_action::HIDE_THRESHOLD_DC` for the threshold
+constant and `world::hide_action::process_hide_commands` for the apply path.
+
 ### NPC Loot Tables
 
 NPCs (objects that `extends: npc`) may include an optional `loot` section. When the NPC dies it spawns a corpse container at its tile. The corpse holds any rolled loot and disappears after `corpse_despawn_seconds`.

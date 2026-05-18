@@ -1304,7 +1304,7 @@ mod tests {
         for player_y in [9, 10, 11] {
             let mut app = App::new();
             app.add_plugins(MinimalPlugins);
-        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+            app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
 
             spawn_player(&mut app, 1, TilePosition::ground(5, player_y));
             let archer = spawn_archer(&mut app, TilePosition::ground(5, 5), 6);
@@ -1719,7 +1719,7 @@ mod tests {
         ] {
             let mut app = App::new();
             app.add_plugins(MinimalPlugins);
-        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+            app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
             spawn_player(&mut app, 1, player_position);
             let npc = spawn_melee(&mut app, start);
 
@@ -1756,7 +1756,7 @@ mod tests {
         ] {
             let mut app = App::new();
             app.add_plugins(MinimalPlugins);
-        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+            app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
             spawn_player(&mut app, 1, player_position);
             let npc = spawn_melee(&mut app, TilePosition::ground(5, 5));
 

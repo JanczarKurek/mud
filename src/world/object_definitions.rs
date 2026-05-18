@@ -167,6 +167,13 @@ pub struct OverworldObjectDefinition {
     /// component, persisted in the world snapshot.
     #[serde(default)]
     pub hidden: Option<HiddenDef>,
+    /// When present, players can invoke the `Hide` context-menu action on
+    /// this object. The action runs a Stealth check (DC 10, `sneakiness` as
+    /// situational bonus). On success, the object gains the `Hidden`
+    /// component with `dc = check_total / 2`, and the placer is seeded into
+    /// `detected_by` so they keep seeing it.
+    #[serde(default)]
+    pub can_hide: Option<CanHideDef>,
 }
 
 /// Authoring block for the `Hidden` trait on an `OverworldObjectDefinition`.
@@ -174,6 +181,17 @@ pub struct OverworldObjectDefinition {
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct HiddenDef {
     pub dc: u32,
+}
+
+/// Authoring block for the player-driven Hide action.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct CanHideDef {
+    /// Flat bonus added to the placer's Stealth check total. Higher = item
+    /// is inherently easier to conceal (small, camouflaged, etc.). May be
+    /// negative for bulky items.
+    #[serde(default)]
+    pub sneakiness: i32,
 }
 
 /// Per-state override of the rendering / collider knobs on

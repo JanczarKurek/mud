@@ -113,12 +113,7 @@ pub fn passive_perception_tick(
         With<Player>,
     >,
     mut hidden_query: Query<
-        (
-            &SpaceResident,
-            &TilePosition,
-            &OverworldObject,
-            &mut Hidden,
-        ),
+        (&SpaceResident, &TilePosition, &OverworldObject, &mut Hidden),
         Without<Player>,
     >,
     definitions: Res<OverworldObjectDefinitions>,
@@ -144,7 +139,13 @@ pub fn passive_perception_tick(
             if !hidden.is_eligible_for_check(identity.id, now) {
                 continue;
             }
-            let result = skill_check(sheet, &base.attributes, Skill::Perception, hidden.dc as i32, 0);
+            let result = skill_check(
+                sheet,
+                &base.attributes,
+                Skill::Perception,
+                hidden.dc as i32,
+                0,
+            );
             hidden.schedule_next_check(identity.id, now, PERCEPTION_COOLDOWN);
             if result.success && hidden.reveal_to(identity.id) {
                 let name = definition

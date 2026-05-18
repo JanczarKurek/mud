@@ -106,6 +106,16 @@ pub enum GameCommand {
         object_id: u64,
         verb: String,
     },
+    /// Player-invoked Hide on a nearby world object whose definition has a
+    /// `can_hide:` block. Server runs a Stealth check (DC 10, the item's
+    /// `sneakiness` as situational bonus). On success, inserts the `Hidden`
+    /// component with `dc = total/2` and seeds the placer into `detected_by`
+    /// so they keep seeing the object. On failure, emits a narrator line
+    /// and leaves the object visible. Drained by `process_hide_commands`
+    /// in `CommandIntercept`.
+    HideObject {
+        object_id: u64,
+    },
     /// Server-internal command pushed by `handle_use_item_on` when a tool was
     /// used on a target with a matching `tool_gate` interaction. Runs the same
     /// interaction pipeline as `InteractWithObject` (skill_gate, state

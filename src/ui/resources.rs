@@ -39,6 +39,10 @@ pub struct ContextMenuState {
     /// True when the hovered object has a `use_key` interaction available
     /// from its current state and the actor's inventory contains a matching key.
     pub can_use_key: bool,
+    /// True when the hovered object's definition declares `can_hide:`, the
+    /// object is not already hidden, and the actor has at least 1 rank of
+    /// Stealth. Drives the "Hide" right-click action.
+    pub can_hide: bool,
 }
 
 impl ContextMenuState {
@@ -72,6 +76,7 @@ impl ContextMenuState {
         self.can_pick_lock = false;
         self.can_force_lock = false;
         self.can_use_key = false;
+        self.can_hide = false;
     }
 
     /// Set the three lock-related verb flags. Called by the context-menu
@@ -82,6 +87,12 @@ impl ContextMenuState {
         self.can_pick_lock = can_pick_lock;
         self.can_force_lock = can_force_lock;
         self.can_use_key = can_use_key;
+    }
+
+    /// Set the hide-verb flag. Mirrors `set_lock_verbs` for the same reason:
+    /// keeps existing `show` call-sites unchanged.
+    pub fn set_can_hide(&mut self, can_hide: bool) {
+        self.can_hide = can_hide;
     }
 
     pub fn hide(&mut self) {
@@ -97,6 +108,7 @@ impl ContextMenuState {
         self.can_pick_lock = false;
         self.can_force_lock = false;
         self.can_use_key = false;
+        self.can_hide = false;
     }
 
     pub fn is_visible(&self) -> bool {

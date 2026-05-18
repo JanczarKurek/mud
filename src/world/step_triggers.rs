@@ -27,12 +27,12 @@ use crate::magic::effects::MagicEffects;
 use crate::magic::resources::EffectSpec;
 use crate::npc::components::Npc;
 use crate::player::components::{AttributeSet, ChatLog, Player, PlayerIdentity};
-use crate::world::components::{ObjectState, OverworldObject, SpaceId, SpaceResident, TilePosition};
+use crate::world::components::{
+    ObjectState, OverworldObject, SpaceId, SpaceResident, TilePosition,
+};
 use crate::world::hidden::Hidden;
 use crate::world::interactions::apply_state_transition;
-use crate::world::object_definitions::{
-    OverworldObjectDefinitions, StepEffectDef, StepTriggerDef,
-};
+use crate::world::object_definitions::{OverworldObjectDefinitions, StepEffectDef, StepTriggerDef};
 use crate::world::object_registry::ObjectRegistry;
 
 /// Spawn-time component carrying the parsed triggers from
@@ -109,8 +109,7 @@ impl StepTrigger {
     /// `from` filter. Empty filter = always matches (works for stateless
     /// objects too).
     pub fn state_matches(&self, current_state: Option<&str>) -> bool {
-        self.from.is_empty()
-            || current_state.is_some_and(|cs| self.from.iter().any(|s| s == cs))
+        self.from.is_empty() || current_state.is_some_and(|cs| self.from.iter().any(|s| s == cs))
     }
 
     /// Collect this trigger's declared effects into the per-stepper
@@ -196,12 +195,7 @@ pub fn process_step_triggers(
     mut stepper_effects: Query<&mut MagicEffects>,
     stepper_identity_query: Query<&PlayerIdentity, With<Player>>,
     mut hidden_query: Query<
-        (
-            &SpaceResident,
-            &TilePosition,
-            &OverworldObject,
-            &mut Hidden,
-        ),
+        (&SpaceResident, &TilePosition, &OverworldObject, &mut Hidden),
         (Without<Player>, With<OnSteppedTriggers>),
     >,
     mut chat_log_query: Query<&mut ChatLog, With<Player>>,
@@ -247,9 +241,7 @@ pub fn process_step_triggers(
                 }
             }
 
-            if !effect_specs.is_empty()
-                || !damage_amounts.is_empty()
-                || state_transition.is_some()
+            if !effect_specs.is_empty() || !damage_amounts.is_empty() || state_transition.is_some()
             {
                 work.push(PendingWork {
                     stepper: event.entity,
@@ -362,10 +354,7 @@ pub fn process_continuous_step_triggers(
             Without<Player>,
         >,
     )>,
-    on_tile_query: Query<
-        (Entity, &SpaceResident, &TilePosition),
-        Or<(With<Player>, With<Npc>)>,
-    >,
+    on_tile_query: Query<(Entity, &SpaceResident, &TilePosition), Or<(With<Player>, With<Npc>)>>,
     mut stepper_effects: Query<&mut MagicEffects>,
 ) {
     let dt = time.delta_secs();
@@ -515,10 +504,7 @@ mod tests {
         assert_eq!(triggers[0].from, vec!["armed".to_owned()]);
         assert_eq!(triggers[0].effects.len(), 3);
         assert!(matches!(triggers[0].effects[0], StepEffect::ApplyDamage(_)));
-        assert!(matches!(
-            triggers[0].effects[1],
-            StepEffect::ApplyEffect(_)
-        ));
+        assert!(matches!(triggers[0].effects[1], StepEffect::ApplyEffect(_)));
         match &triggers[0].effects[2] {
             StepEffect::SetState(s) => assert_eq!(s, "sprung"),
             _ => panic!("expected SetState"),

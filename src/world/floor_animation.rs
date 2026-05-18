@@ -217,20 +217,14 @@ pub fn tick_floor_ripple_scheduler(
     let sprite = Sprite {
         image,
         custom_size: Some(Vec2::splat(world_config.tile_size)),
-        texture_atlas: Some(TextureAtlas {
-            layout,
-            index: 0,
-        }),
+        texture_atlas: Some(TextureAtlas { layout, index: 0 }),
         ..default()
     };
 
     // Initial transform — `sync_ripple_overlay_transforms` refreshes each
     // frame so camera scroll / player-floor changes keep the ripple anchored.
-    let floor_offset = floor_screen_offset(
-        floor_z,
-        visible_floors.player_floor,
-        world_config.tile_size,
-    );
+    let floor_offset =
+        floor_screen_offset(floor_z, visible_floors.player_floor, world_config.tile_size);
     let dx = tile_x as f32 * world_config.tile_size + floor_offset.x;
     let dy = tile_y as f32 * world_config.tile_size + floor_offset.y;
     let z = flat_floor_z(ripple.z_offset, floor_z);
@@ -320,9 +314,7 @@ mod tests {
         let mut seed = 0xDEAD_BEEF_CAFE_F00D;
         let rate = 4.0f32;
         let n = 5_000;
-        let total: f32 = (0..n)
-            .map(|_| sample_inter_arrival(&mut seed, rate))
-            .sum();
+        let total: f32 = (0..n).map(|_| sample_inter_arrival(&mut seed, rate)).sum();
         let mean = total / n as f32;
         let expected = 1.0 / rate;
         assert!(

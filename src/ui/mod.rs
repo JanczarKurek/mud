@@ -83,8 +83,9 @@ use crate::ui::systems::{
     manage_character_sheet_overlay, manage_open_containers, print_right_sidebar_layout_debug,
     setup_native_custom_cursor, sync_carry_weight_label, sync_chat_log, sync_container_slot_images,
     sync_context_menu_attack_button, sync_context_menu_force_lock_button,
-    sync_context_menu_interact_button, sync_context_menu_offer_to_trade_button,
-    sync_context_menu_open_button, sync_context_menu_pick_lock_button, sync_context_menu_root,
+    sync_context_menu_hide_button, sync_context_menu_interact_button,
+    sync_context_menu_offer_to_trade_button, sync_context_menu_open_button,
+    sync_context_menu_pick_lock_button, sync_context_menu_root,
     sync_context_menu_take_partial_button, sync_context_menu_talk_button,
     sync_context_menu_trade_button, sync_context_menu_use_button, sync_context_menu_use_key_button,
     sync_context_menu_use_on_button, sync_current_combat_target, sync_docked_panel_layout,
@@ -248,6 +249,7 @@ impl Plugin for UiPlugin {
                 sync_context_menu_pick_lock_button,
                 sync_context_menu_force_lock_button,
                 sync_context_menu_use_key_button,
+                sync_context_menu_hide_button,
             )
                 .run_if(in_state(ClientAppState::InGame)),
         )

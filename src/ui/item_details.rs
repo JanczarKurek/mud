@@ -485,13 +485,7 @@ fn spawn_stat_modifiers_section(
         } else {
             Color::srgb(0.95, 0.45, 0.40)
         };
-        spawn_colored_property_row(
-            parent,
-            palette,
-            label,
-            &format!("{}{}", sign, value),
-            color,
-        );
+        spawn_colored_property_row(parent, palette, label, &format!("{}{}", sign, value), color);
     }
 }
 
@@ -753,8 +747,5 @@ fn title_case(s: &str) -> String {
 /// Convert a snake_case type_id into a readable label: "arrow" → "Arrow",
 /// "iron_ingot" → "Iron Ingot".
 fn human_id(s: &str) -> String {
-    s.split('_')
-        .map(title_case)
-        .collect::<Vec<_>>()
-        .join(" ")
+    s.split('_').map(title_case).collect::<Vec<_>>().join(" ")
 }

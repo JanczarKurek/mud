@@ -256,6 +256,14 @@ pub struct ClientWorldObjectState {
     /// `InitiateTrade { Shopkeeper(_) }` command path.
     #[serde(default)]
     pub is_shopkeeper: bool,
+    /// True when this object currently carries the server-side `Hidden`
+    /// component. The local player only sees the object at all when they
+    /// are in `Hidden.detected_by` (the projection filters otherwise), so
+    /// this flag tells the UI "you can see it because it's been hidden /
+    /// you've spotted it" — used to suppress the "Hide" action on objects
+    /// that are already hidden.
+    #[serde(default)]
+    pub is_hidden: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

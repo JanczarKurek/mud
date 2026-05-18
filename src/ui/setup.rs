@@ -5,11 +5,11 @@ use bevy_terminal::{spawn_terminal, LineStyle, TerminalConfig, TerminalInputConf
 use crate::ui::components::{
     BackpackPanelContent, BackpackPanelUndockButton, BackpackSlotRow, BottomHudColumn,
     BottomPanelHideButton, CarryWeightLabel, ChatAreaContainer, ChatPanel, ChatTerminal,
-    ContainerPanelContent,
-    ContainerPanelUndockButton, ContainerSlotButton, ContainerSlotImage, ContextMenuAttackButton,
-    ContextMenuForceLockButton, ContextMenuInspectButton, ContextMenuInteractButton,
-    ContextMenuOfferToTradeButton, ContextMenuOpenButton, ContextMenuPickLockButton,
-    ContextMenuRoot, ContextMenuTakePartialButton, ContextMenuTalkButton, ContextMenuTradeButton,
+    ContainerPanelContent, ContainerPanelUndockButton, ContainerSlotButton, ContainerSlotImage,
+    ContextMenuAttackButton, ContextMenuForceLockButton, ContextMenuHideButton,
+    ContextMenuInspectButton, ContextMenuInteractButton, ContextMenuOfferToTradeButton,
+    ContextMenuOpenButton, ContextMenuPickLockButton, ContextMenuRoot,
+    ContextMenuTakePartialButton, ContextMenuTalkButton, ContextMenuTradeButton,
     ContextMenuUseButton, ContextMenuUseKeyButton, ContextMenuUseOnButton,
     CurrentCombatTargetLabel, CurrentTargetPanelContent, CurrentTargetPanelUndockButton,
     DockedPanelBody, DockedPanelCanvas, DockedPanelCloseButton, DockedPanelDragHandle,
@@ -467,6 +467,7 @@ pub fn spawn_hud(
                 ContextMenuForceLockButton,
             );
             spawn_context_button(menu, &theme, &palette, "Use Key", ContextMenuUseKeyButton);
+            spawn_context_button(menu, &theme, &palette, "Hide", ContextMenuHideButton);
         });
 
     spawn_take_partial_popup(&mut commands, &theme, &palette);
@@ -1217,11 +1218,7 @@ fn spawn_panel_label(parent: &mut ChildSpawnerCommands, label: &str, palette: &P
 /// Chat-panel header row: label on the left, close-X on the right. The
 /// close button is `BottomPanelHideButton`-tagged so the visibility-toggle
 /// system can pick up the click.
-fn spawn_chat_header(
-    parent: &mut ChildSpawnerCommands,
-    theme: &UiThemeAssets,
-    palette: &Palette,
-) {
+fn spawn_chat_header(parent: &mut ChildSpawnerCommands, theme: &UiThemeAssets, palette: &Palette) {
     parent
         .spawn((
             Node {

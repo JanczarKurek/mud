@@ -17,6 +17,8 @@ states:
 initial_state: armed
 hidden:
   dc: 15
+can_hide:
+  sneakiness: 2
 on_stepped:
   - from: [armed]
     effects:

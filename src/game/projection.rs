@@ -547,6 +547,7 @@ pub fn compute_events_for_peer(
             facing: facing.copied().unwrap_or_default().0,
             state: state.map(|s| s.0.clone()),
             is_shopkeeper: has_shopkeeper,
+            is_hidden: hidden.is_some(),
         };
 
         if previous.world_objects.get(&object.object_id) != Some(&projected_object) {

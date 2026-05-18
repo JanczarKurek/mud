@@ -76,11 +76,7 @@ pub struct QuickbarLoadedFor {
 /// Spawn the quickbar as a child of `parent`. The caller controls position;
 /// `spawn_hud` parents it to the `BottomHudColumn` so the bar slides down
 /// with the chat area when it's hidden.
-pub fn spawn_quickbar(
-    parent: &mut ChildSpawnerCommands,
-    theme: &UiThemeAssets,
-    palette: &Palette,
-) {
+pub fn spawn_quickbar(parent: &mut ChildSpawnerCommands, theme: &UiThemeAssets, palette: &Palette) {
     let (slot_bg, slot_border, _) = idle_colors(palette, ButtonStyle::Slot, false);
 
     parent
@@ -109,14 +105,7 @@ pub fn spawn_quickbar(
             ))
             .with_children(|bar| {
                 for index in 0..QUICKBAR_SLOT_COUNT {
-                    spawn_quickbar_slot(
-                        bar,
-                        theme,
-                        palette,
-                        index,
-                        slot_bg,
-                        slot_border,
-                    );
+                    spawn_quickbar_slot(bar, theme, palette, index, slot_bg, slot_border);
                 }
             });
         });
@@ -562,7 +551,12 @@ fn read_quickbar_file(path: &PathBuf) -> [Option<String>; QUICKBAR_SLOT_COUNT] {
         return Default::default();
     };
     let mut out: [Option<String>; QUICKBAR_SLOT_COUNT] = Default::default();
-    for (i, slot) in parsed.slots.into_iter().take(QUICKBAR_SLOT_COUNT).enumerate() {
+    for (i, slot) in parsed
+        .slots
+        .into_iter()
+        .take(QUICKBAR_SLOT_COUNT)
+        .enumerate()
+    {
         out[i] = slot;
     }
     out
@@ -597,10 +591,7 @@ fn find_stack_by_type(client_state: &ClientGameState, type_id: &str) -> Option<I
 
 /// Find which slot currently holds an item of `type_id`. Backpack slots are
 /// scanned first, then equipment slots — same order as `find_stack_by_type`.
-fn find_slot_kind_for_type(
-    client_state: &ClientGameState,
-    type_id: &str,
-) -> Option<ItemSlotKind> {
+fn find_slot_kind_for_type(client_state: &ClientGameState, type_id: &str) -> Option<ItemSlotKind> {
     for (index, slot) in client_state.inventory.backpack_slots.iter().enumerate() {
         if let Some(stack) = slot {
             if stack.type_id == type_id {
@@ -754,8 +745,11 @@ mod tests {
     #[test]
     fn type_id_resolves_to_backpack_slot_first() {
         let mut inventory = Inventory::default();
-        inventory.backpack_slots[3] =
-            Some(InventoryStack::item("health_potion", ObjectProperties::new(), 1));
+        inventory.backpack_slots[3] = Some(InventoryStack::item(
+            "health_potion",
+            ObjectProperties::new(),
+            1,
+        ));
         inventory.equipment_slots[0] = (
             EquipmentSlot::Weapon,
             Some(EquippedItem::new("health_potion")),
@@ -768,8 +762,10 @@ mod tests {
     #[test]
     fn type_id_falls_back_to_equipment() {
         let mut inventory = Inventory::default();
-        inventory.equipment_slots[0] =
-            (EquipmentSlot::Weapon, Some(EquippedItem::new("wand_of_sparks")));
+        inventory.equipment_slots[0] = (
+            EquipmentSlot::Weapon,
+            Some(EquippedItem::new("wand_of_sparks")),
+        );
         let state = state_with_inventory(inventory);
         let slot = find_slot_kind_for_type(&state, "wand_of_sparks").unwrap();
         assert_eq!(slot, ItemSlotKind::Equipment(EquipmentSlot::Weapon));

@@ -567,6 +567,12 @@ pub fn process_game_commands(
                     "process_game_commands saw an interact command — check system ordering"
                 );
             }
+            GameCommand::HideObject { .. } => {
+                // Drained by `process_hide_commands` in `CommandIntercept`.
+                bevy::log::warn!(
+                    "process_game_commands saw a hide command — check system ordering"
+                );
+            }
             GameCommand::InitiateTrade { .. }
             | GameCommand::OfferTradeItem { .. }
             | GameCommand::WithdrawTradeItem { .. }
@@ -1799,8 +1805,7 @@ fn handle_cast_spell_at(
     });
 
     let target_name = {
-        let Ok((mut target_vitals, target_object)) = npc_vitals_query.get_mut(target_entity)
-        else {
+        let Ok((mut target_vitals, target_object)) = npc_vitals_query.get_mut(target_entity) else {
             return;
         };
         let name = object_registry
@@ -3830,7 +3835,10 @@ fn object_description_for_type(
     } else if let Some(suffix) = charge_suffix {
         // No spell attached (e.g. a charged consumable that only restores
         // health), but the uses line is still useful.
-        text.push_str(&format!("\nUses: {}", suffix.trim_matches(|c| c == '(' || c == ')')));
+        text.push_str(&format!(
+            "\nUses: {}",
+            suffix.trim_matches(|c| c == '(' || c == ')')
+        ));
     }
     Some(text)
 }

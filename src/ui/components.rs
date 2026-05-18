@@ -274,6 +274,12 @@ pub struct ContextMenuForceLockButton;
 #[derive(Component)]
 pub struct ContextMenuUseKeyButton;
 
+/// Hide button — visible when the hovered object's definition declares
+/// `can_hide:`, the object is not already hidden, and the actor has at
+/// least 1 rank of Stealth.
+#[derive(Component)]
+pub struct ContextMenuHideButton;
+
 #[derive(Component)]
 pub struct DialogPanelRoot;
 

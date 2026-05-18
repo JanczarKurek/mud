@@ -1233,6 +1233,20 @@ pub fn sync_context_menu_use_key_button(
     };
 }
 
+pub fn sync_context_menu_hide_button(
+    context_menu_state: Res<ContextMenuState>,
+    mut button_query: Query<&mut Node, With<crate::ui::components::ContextMenuHideButton>>,
+) {
+    let Ok(mut node) = button_query.single_mut() else {
+        return;
+    };
+    node.display = if context_menu_state.can_hide {
+        Display::Flex
+    } else {
+        Display::None
+    };
+}
+
 pub fn sync_context_menu_talk_button(
     context_menu_state: Res<ContextMenuState>,
     mut button_query: Query<&mut Node, With<crate::ui::components::ContextMenuTalkButton>>,
@@ -1581,6 +1595,10 @@ pub fn handle_context_menu_lock_actions(
             (&ComputedNode, &UiGlobalTransform),
             With<crate::ui::components::ContextMenuUseKeyButton>,
         >,
+        Query<
+            (&ComputedNode, &UiGlobalTransform),
+            With<crate::ui::components::ContextMenuHideButton>,
+        >,
     )>,
 ) {
     if !mouse_input.just_pressed(MouseButton::Left) || !context_menu_state.is_visible() {
@@ -1618,6 +1636,12 @@ pub fn handle_context_menu_lock_actions(
             object_id,
             verb: verb.to_owned(),
         });
+        context_menu_state.hide();
+        return;
+    }
+
+    if context_menu_state.can_hide && is_cursor_over_button(cursor_position, &menu_queries.p3()) {
+        pending_commands.push(GameCommand::HideObject { object_id });
         context_menu_state.hide();
     }
 }
@@ -2113,6 +2137,11 @@ pub fn handle_context_menu_opening(
         if near {
             let (pick, force, key) = lock_verb_visibility(object, &definitions, &client_state);
             context_menu_state.set_lock_verbs(pick, force, key);
+            context_menu_state.set_can_hide(hide_verb_visibility(
+                object,
+                &definitions,
+                &client_state,
+            ));
         }
         info!(
             "context_open_world_success object_id={} has_container={} can_use={} can_attack={} near={}",
@@ -2735,8 +2764,9 @@ pub fn handle_movable_dragging(
                 }
                 _ => None,
             },
-            Some(DragSource::World) => dragged_object_id
-                .and_then(|id| object_registry.type_id(id).map(str::to_owned)),
+            Some(DragSource::World) => {
+                dragged_object_id.and_then(|id| object_registry.type_id(id).map(str::to_owned))
+            }
             None => None,
         };
         if let Some(type_id) = bound_type_id {
@@ -3724,6 +3754,27 @@ fn lock_verb_visibility(
         }
     }
     (can_pick_lock, can_force_lock, can_use_key)
+}
+
+/// Whether the right-click "Hide" entry should appear. Mirrors the
+/// server-side gates in `world::hide_action::process_hide_commands`: the
+/// object's definition must declare `can_hide:`, the object must not already
+/// be hidden, and the actor needs at least 1 rank of Stealth.
+fn hide_verb_visibility(
+    object: &crate::game::resources::ClientWorldObjectState,
+    definitions: &OverworldObjectDefinitions,
+    client_state: &ClientGameState,
+) -> bool {
+    let Some(definition) = definitions.get(&object.definition_id) else {
+        return false;
+    };
+    if definition.can_hide.is_none() {
+        return false;
+    }
+    if object.is_hidden {
+        return false;
+    }
+    client_state.skill_ranks[crate::player::skills::Skill::Stealth.index()] >= 1
 }
 
 /// Walk the projected local inventory for an item whose definition has a
