@@ -281,6 +281,50 @@ impl Plugin for WorldClientPlugin {
                 )
                     .run_if(in_state(ClientAppState::InGame)),
             );
+
+        // `TtlPlugin` ticks down both server-authoritative TTL entities (corpses,
+        // spell summons) and presentation-only client-spawned VFX. EmbeddedClient
+        // already gets it from `WorldServerPlugin`; TcpClient (which has no
+        // server-side plugins) needs it here so hit/effect sprites despawn after
+        // their animation ends instead of lingering forever.
+        if !app.is_plugin_added::<crate::world::ttl::TtlPlugin>() {
+            app.add_plugins(crate::world::ttl::TtlPlugin);
+        }
+
+        // Mirror authoritative (object_id → definition_id) mappings from the
+        // replicated `ClientGameState.world_objects` into the local
+        // `ObjectRegistry`. Without this, every UI lookup that goes through
+        // `object_registry.type_id(server_runtime_id)` (container titles,
+        // context-menu probes, drag previews, `object_is_usable`, …) returns
+        // whatever the client's *authored* registry happens to have at that
+        // numeric slot — which can collide with a totally different type and
+        // produce "goblin corpse → Wall" / "spark wand → flower" style
+        // mislabels. EmbeddedClient mode is unaffected (the server mutates the
+        // shared registry directly), so guard on `simulation_active` and only
+        // refresh when the projection changes.
+        app.add_systems(
+            Update,
+            mirror_client_world_objects_into_registry
+                .after(apply_game_events_to_client_state)
+                .run_if(in_state(ClientAppState::InGame)),
+        );
+    }
+}
+
+fn mirror_client_world_objects_into_registry(
+    client_state: Res<crate::game::resources::ClientGameState>,
+    mut object_registry: ResMut<ObjectRegistry>,
+) {
+    if !client_state.is_changed() {
+        return;
+    }
+    for (object_id, state) in &client_state.world_objects {
+        let needs_update = object_registry
+            .type_id(*object_id)
+            .is_none_or(|existing| existing != state.definition_id);
+        if needs_update {
+            object_registry.register_existing(*object_id, state.definition_id.clone());
+        }
     }
 }
 

@@ -77,11 +77,21 @@ pub struct DiscoveredYamlAsset {
 /// Scans `subdir` across all asset roots (bundled then XDG overrides) for flat
 /// `.yaml` files and returns them as discovered assets keyed by file stem.
 ///
-/// Later entries shadow earlier ones when callers insert into a HashMap, giving
-/// XDG overrides precedence. `kind` is used only in panic messages.
+/// Deduplicated by `id`: each file stem appears at most once in the output. When
+/// the same id is present in both bundled and XDG locations, the XDG entry wins
+/// (last-write-overrides semantics, matching the documented override intent).
+///
+/// Sorted alphabetically by `id` so callers that allocate ids based on iteration
+/// order (notably `SpaceDefinitions::load_from_disk`) produce identical results
+/// across processes and across runs — `fs::read_dir` itself is not order-stable,
+/// and TcpClient + HeadlessServer used to disagree on authored object ids,
+/// which corrupted every wire-level `object_id` → `type_id` lookup on the client.
+///
+/// `kind` is used only in panic messages.
 pub fn discover_yaml_assets(subdir: &str, kind: &str) -> Vec<DiscoveredYamlAsset> {
     let resolver = AssetResolver::new();
-    let mut out = Vec::new();
+    let mut by_id: std::collections::BTreeMap<String, DiscoveredYamlAsset> =
+        std::collections::BTreeMap::new();
 
     for scan_dir in resolver.scan_dirs(subdir) {
         info!("loading {kind} from {}", scan_dir.display());
@@ -111,9 +121,11 @@ pub fn discover_yaml_assets(subdir: &str, kind: &str) -> Vec<DiscoveredYamlAsset
                 panic!("Failed to read {kind} {}: {error}", path.display())
             });
 
-            out.push(DiscoveredYamlAsset { id, path, contents });
+            // XDG entries come after bundled in `scan_dirs`, so this insert
+            // (last-write-wins) gives XDG overrides precedence.
+            by_id.insert(id.clone(), DiscoveredYamlAsset { id, path, contents });
         }
     }
 
-    out
+    by_id.into_values().collect()
 }

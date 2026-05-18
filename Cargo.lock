@@ -4341,6 +4341,7 @@ dependencies = [
  "bevy_terminal",
  "bevy_yarnspinner",
  "dirs",
+ "libc",
  "libsqlite3-sys",
  "notify-debouncer-full 0.3.2",
  "rand_core 0.6.4",

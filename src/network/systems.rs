@@ -1143,15 +1143,41 @@ pub fn write_message<S: Write>(
     };
     bytes.push(b'\n');
 
-    match stream.write_all(&bytes) {
-        Ok(()) => true,
-        Err(error) if error.kind() == ErrorKind::WouldBlock => false,
-        Err(error) => {
-            warn!("TCP write failed: {error}");
-            *disconnected = true;
-            false
+    // Non-blocking sockets can return `WouldBlock` mid-write once the kernel
+    // TCP send buffer fills (typically 64–256 KB on macOS). `Write::write_all`
+    // bubbles that up as `Err` *after* having already pushed some prefix of the
+    // payload, with no way to tell how much made it through — so the next
+    // `write_message` call concatenates onto a half-written message and the
+    // stream becomes garbled. The bootstrap `Events` batch (full FloorMaps +
+    // every WorldObjectUpserted) routinely lands in the high hundreds of KB,
+    // which is far over the send-buffer cap and triggered this exact bug.
+    //
+    // Loop manually, yielding briefly on `WouldBlock` so the kernel can drain
+    // the buffer. Stays on a single message, never interleaves. The bootstrap
+    // is one-shot at peer connect; subsequent per-tick deltas fit in one
+    // syscall, so the brief blocking only happens at login.
+    let mut remaining = &bytes[..];
+    while !remaining.is_empty() {
+        match stream.write(remaining) {
+            Ok(0) => {
+                *disconnected = true;
+                return false;
+            }
+            Ok(n) => {
+                remaining = &remaining[n..];
+            }
+            Err(ref err) if err.kind() == ErrorKind::Interrupted => {}
+            Err(ref err) if err.kind() == ErrorKind::WouldBlock => {
+                std::thread::sleep(std::time::Duration::from_micros(100));
+            }
+            Err(error) => {
+                warn!("TCP write failed: {error}");
+                *disconnected = true;
+                return false;
+            }
         }
     }
+    true
 }
 
 #[cfg(test)]
@@ -1162,7 +1188,7 @@ mod tests {
     use super::*;
     use crate::combat::components::{AttackProfile, CombatLeash};
     use crate::game::GameServerPlugin;
-    use crate::magic::MagicPlugin;
+    use crate::magic::MagicServerPlugin;
     use crate::npc::NpcPlugin;
     use crate::player::components::{
         BaseStats, ChatLog, DefenseStats, DerivedStats, Inventory, MovementCooldown, Player,
@@ -1181,7 +1207,7 @@ mod tests {
             WorldServerPlugin,
             NpcPlugin,
             PlayerServerPlugin,
-            MagicPlugin,
+            MagicServerPlugin,
         ));
         app.update();
         app

@@ -27,6 +27,7 @@ pub fn sync_client_world_projection(
     definitions: Res<OverworldObjectDefinitions>,
     mut world_config: ResMut<WorldConfig>,
     mut projection_state: ResMut<ClientWorldProjectionState>,
+    mut last_had_space: Local<bool>,
     mut projected_query: Query<(
         Entity,
         &ClientProjectedWorldObject,
@@ -38,12 +39,28 @@ pub fn sync_client_world_projection(
 ) {
     let _t = crate::diagnostics::SystemTimer::new("sync_client_world_projection", 1.0);
     let Some(current_space) = client_state.current_space.as_ref() else {
-        info!(
-            "sync_client_world_projection: current_space is None, skipping (world_objects={})",
-            client_state.world_objects.len()
-        );
+        // Log only on the transition Some→None (or on the first frame, when
+        // `*last_had_space` defaults to false). Otherwise this fires every
+        // tick the client sits without an authoritative space — most often
+        // the brief pre-bootstrap window after entering `InGame`.
+        if *last_had_space {
+            info!(
+                "sync_client_world_projection: current_space cleared (world_objects={})",
+                client_state.world_objects.len()
+            );
+            *last_had_space = false;
+        }
         return;
     };
+    if !*last_had_space {
+        info!(
+            "sync_client_world_projection: current_space set to {} ({}) — projecting {} world objects",
+            current_space.space_id.0,
+            current_space.authored_id,
+            client_state.world_objects.len()
+        );
+        *last_had_space = true;
+    }
 
     if world_config.current_space_id != current_space.space_id
         || world_config.map_width != current_space.width

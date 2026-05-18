@@ -23,6 +23,7 @@ schemars = { version = "0.8", optional = true }
 sha2 = "0.10"
 dirs = "5"
 base64 = "0.22"
+libc = "0.2"
 
 # Account persistence — version matched to rustpython-stdlib's libsqlite3-sys
 # (links="sqlite3" can only appear once in the dep graph).

@@ -984,7 +984,7 @@ mod tests {
     use super::*;
     use crate::combat::CombatPlugin;
     use crate::game::GameServerPlugin;
-    use crate::magic::MagicPlugin;
+    use crate::magic::MagicServerPlugin;
     use crate::network::resources::TcpServerState;
     use crate::npc::NpcPlugin;
     use crate::player::setup::spawn_player_authoritative;
@@ -1006,7 +1006,7 @@ mod tests {
             NpcPlugin,
             PlayerServerPlugin,
             CombatPlugin,
-            MagicPlugin,
+            MagicServerPlugin,
             QuestPlugin::default(),
             PersistenceServerPlugin {
                 save_path: save_path.to_path_buf(),

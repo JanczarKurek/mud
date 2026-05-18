@@ -4099,7 +4099,7 @@ mod tests {
     };
     use crate::game::resources::ClientGameState;
     use crate::game::GameServerPlugin;
-    use crate::magic::MagicPlugin;
+    use crate::magic::MagicServerPlugin;
     use crate::player::components::{
         BaseStats, ChatLog, DefenseStats, DerivedStats, Inventory, MovementCooldown, Player,
         PlayerId, PlayerIdentity, VitalStats, WeaponDamage,
@@ -4116,7 +4116,7 @@ mod tests {
             GameServerPlugin,
             WorldServerPlugin,
             PlayerServerPlugin,
-            MagicPlugin,
+            MagicServerPlugin,
         ));
         app.update();
         app

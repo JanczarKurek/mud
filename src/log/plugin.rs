@@ -25,6 +25,13 @@ pub struct LogClientPlugin;
 
 impl Plugin for LogClientPlugin {
     fn build(&self, app: &mut App) {
+        // TerminalWidgetPlugin provides `TerminalFocus` (shared across the chat
+        // input, log-panel editors, and Python console) so it has to be present
+        // in every client runtime — not just EmbeddedClient where the Python
+        // console is wired up.
+        if !app.is_plugin_added::<bevy_terminal::TerminalWidgetPlugin>() {
+            app.add_plugins(bevy_terminal::TerminalWidgetPlugin);
+        }
         app.add_plugins(bevy_terminal::TextEditPlugin);
         crate::ui::log_panel::register(app);
     }

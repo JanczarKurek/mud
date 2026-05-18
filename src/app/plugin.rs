@@ -24,7 +24,7 @@ use crate::dialog::DialogServerPlugin;
 use crate::editor::EditorPlugin;
 use crate::game::{GameClientPlugin, GameServerPlugin};
 use crate::log::{LogClientPlugin, LogServerPlugin};
-use crate::magic::MagicPlugin;
+use crate::magic::{MagicClientPlugin, MagicServerPlugin};
 use crate::network::resources::TcpClientTlsConfig;
 use crate::network::transport::{build_client_tls_config, load_server_tls_config};
 use crate::network::{TcpClientPlugin, TcpServerPlugin};
@@ -157,7 +157,8 @@ impl Plugin for GameAppPlugin {
                     NpcPlugin,
                     PlayerServerPlugin,
                     CombatPlugin,
-                    MagicPlugin,
+                    MagicServerPlugin,
+                    MagicClientPlugin,
                     CraftingServerPlugin,
                     LogServerPlugin,
                     PersistenceServerPlugin { save_path },
@@ -225,16 +226,29 @@ impl Plugin for GameAppPlugin {
                 ))
                 .init_state::<ClientAppState>()
                 .add_systems(Startup, setup_camera)
+                .add_systems(
+                    OnEnter(ClientAppState::InGame),
+                    crate::player::setup::spawn_projected_local_player
+                        .before(crate::player::setup::spawn_player_visual),
+                )
+                .add_systems(
+                    OnExit(ClientAppState::InGame),
+                    crate::player::setup::despawn_projected_local_player,
+                )
                 .add_plugins((
                     GameClientPlugin,
                     WorldClientPlugin,
                     PlayerClientPlugin,
-                    MagicPlugin,
+                    MagicClientPlugin,
                     CraftingClientPlugin,
                     LogClientPlugin,
                     UiPlugin,
                     ClientEffectsPlugin,
-                    ScriptingPlugin,
+                    // `ScriptingPlugin` (the in-process Python console) needs
+                    // authoritative world resources (`SpaceManager`, `FloorMaps`,
+                    // `WorldClock`) that only `WorldServerPlugin` inserts, so it
+                    // can't run in TcpClient mode. Admins can use the server's
+                    // `--admin-socket` REPL instead.
                     DiagnosticsPlugin,
                     TcpClientPlugin {
                         server_addr: self
@@ -273,7 +287,7 @@ impl Plugin for GameAppPlugin {
                     NpcPlugin,
                     PlayerServerPlugin,
                     CombatPlugin,
-                    MagicPlugin,
+                    MagicServerPlugin,
                     CraftingServerPlugin,
                     LogServerPlugin,
                     TerminalCtrlCHandlerPlugin,

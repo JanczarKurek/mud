@@ -653,7 +653,7 @@ mod tests {
     use crate::combat::components::{AttackProfile, CombatLeash};
     use crate::game::resources::PendingGameCommands;
     use crate::game::GameServerPlugin;
-    use crate::magic::MagicPlugin;
+    use crate::magic::MagicServerPlugin;
     use crate::player::components::{
         BaseStats, DefenseStats, DerivedStats, EquippedItem, Inventory, InventoryStack,
         MovementCooldown, VitalStats, WeaponDamage,
@@ -673,7 +673,7 @@ mod tests {
             GameServerPlugin,
             WorldServerPlugin,
             PlayerServerPlugin,
-            MagicPlugin,
+            MagicServerPlugin,
         ));
         app.update();
         app

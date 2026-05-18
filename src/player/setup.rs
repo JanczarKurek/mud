@@ -78,6 +78,55 @@ pub fn seed_starter_inventory(inventory: &mut Inventory) {
     }
 }
 
+/// Spawn the **projected** local-player entity for TcpClient mode. The
+/// authoritative player lives on the server; the client only carries a
+/// view-side stand-in so `spawn_player_visual` has a `Player` entity to attach
+/// the sprite/health bar/light to, and `sync_projected_player_from_client_state`
+/// has a target to write `ViewPosition` / `DisplayedVitalStats` / `Facing` into
+/// from `ClientGameState`.
+///
+/// No `PlayerIdentity` (that's the marker `sync_authoritative_player_display`
+/// uses to identify embedded-mode entities and skip the projected branch).
+/// No `SpaceResident` / `TilePosition` either — those are server-authoritative
+/// per the EmbeddedClient Invariant in `CLAUDE.md`. The inert `VitalStats` is
+/// only here because a few server-side queries elsewhere filter on it; the
+/// values are never read on the client.
+pub fn spawn_projected_local_player(
+    mut commands: Commands,
+    world_config: Res<WorldConfig>,
+    existing: Query<Entity, With<Player>>,
+) {
+    if existing.iter().next().is_some() {
+        // Either we re-entered InGame without despawning, or another system
+        // already spawned the entity. Either way, don't duplicate.
+        return;
+    }
+    commands.spawn((
+        Player,
+        ViewPosition {
+            space_id: world_config.current_space_id,
+            tile: TilePosition::ground(0, 0),
+        },
+        DisplayedVitalStats::default(),
+        Facing::default(),
+        VitalStats::full(1.0, 0.0),
+    ));
+}
+
+/// Despawn the projected local-player entity (and any sprite/visual it ended
+/// up carrying) when exiting `InGame`. Without this, logging out and back in
+/// leaves a stale entity that the next `spawn_projected_local_player` then
+/// short-circuits on, leaving the new session pointing at the previous run's
+/// view state.
+pub fn despawn_projected_local_player(
+    mut commands: Commands,
+    query: Query<Entity, (With<Player>, Without<PlayerIdentity>)>,
+) {
+    for entity in &query {
+        commands.entity(entity).despawn();
+    }
+}
+
 pub fn spawn_embedded_player_authoritative(
     mut commands: Commands,
     world_config: Res<WorldConfig>,

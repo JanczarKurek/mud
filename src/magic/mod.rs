@@ -9,9 +9,12 @@ use crate::magic::effects::{tick_dot_effects, tick_magic_effects};
 use crate::magic::glimmer::sync_player_glimmer_light;
 use crate::magic::resources::SpellDefinitions;
 
-pub struct MagicPlugin;
+/// Server-side magic systems: tick effect durations, accumulate DoT damage.
+/// `tick_dot_effects` writes to `PendingDamageEvents`, which is only inserted
+/// by `GameServerPlugin` — so this plugin must NOT be added in TcpClient mode.
+pub struct MagicServerPlugin;
 
-impl Plugin for MagicPlugin {
+impl Plugin for MagicServerPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(SpellDefinitions::load_from_disk())
             .add_systems(
@@ -19,10 +22,20 @@ impl Plugin for MagicPlugin {
                 (tick_magic_effects, tick_dot_effects)
                     .chain()
                     .run_if(simulation_active),
-            )
-            // Client-side presentation: runs unconditionally so the buff
-            // override is visible in both EmbeddedClient (where the player
-            // entity carries `Player`) and TcpClient mode.
+            );
+    }
+}
+
+/// Client-side magic presentation: SpellDefinitions for UI lookups and the
+/// Glimmer halo override.
+pub struct MagicClientPlugin;
+
+impl Plugin for MagicClientPlugin {
+    fn build(&self, app: &mut App) {
+        app.insert_resource(SpellDefinitions::load_from_disk())
+            // Runs unconditionally so the buff override is visible in both
+            // EmbeddedClient (where the player entity carries `Player`) and
+            // TcpClient mode.
             .add_systems(Update, sync_player_glimmer_light);
     }
 }
