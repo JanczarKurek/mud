@@ -26,8 +26,9 @@ use crate::combat::damage_expr::DamageExpr;
 use crate::magic::effects::MagicEffects;
 use crate::magic::resources::EffectSpec;
 use crate::npc::components::Npc;
-use crate::player::components::{AttributeSet, Player};
+use crate::player::components::{AttributeSet, ChatLog, Player, PlayerIdentity};
 use crate::world::components::{ObjectState, OverworldObject, SpaceId, SpaceResident, TilePosition};
+use crate::world::hidden::Hidden;
 use crate::world::interactions::apply_state_transition;
 use crate::world::object_definitions::{
     OverworldObjectDefinitions, StepEffectDef, StepTriggerDef,
@@ -193,6 +194,17 @@ pub fn process_step_triggers(
         >,
     )>,
     mut stepper_effects: Query<&mut MagicEffects>,
+    stepper_identity_query: Query<&PlayerIdentity, With<Player>>,
+    mut hidden_query: Query<
+        (
+            &SpaceResident,
+            &TilePosition,
+            &OverworldObject,
+            &mut Hidden,
+        ),
+        (Without<Player>, With<OnSteppedTriggers>),
+    >,
+    mut chat_log_query: Query<&mut ChatLog, With<Player>>,
 ) {
     let events = std::mem::take(&mut pending_steps.events);
     if events.is_empty() {
@@ -267,17 +279,46 @@ pub fn process_step_triggers(
 
     // Phase 3: state transitions (separate query shape, matched to the
     // existing `apply_state_transition` helper).
-    let mut state_query = object_queries.p1();
-    for w in &work {
-        if let Some((object_id, new_state)) = &w.state_transition {
-            apply_state_transition(
-                *object_id,
-                new_state,
-                &definitions,
-                &mut object_registry,
-                &mut commands,
-                &mut state_query,
-            );
+    {
+        let mut state_query = object_queries.p1();
+        for w in &work {
+            if let Some((object_id, new_state)) = &w.state_transition {
+                apply_state_transition(
+                    *object_id,
+                    new_state,
+                    &definitions,
+                    &mut object_registry,
+                    &mut commands,
+                    &mut state_query,
+                );
+            }
+        }
+    }
+
+    // Phase 4: hidden auto-reveal. A player stepping on a tile holding a
+    // hidden trap (Hidden + OnSteppedTriggers) spots that specific object —
+    // even if the trigger's state filter rejects the current state, since the
+    // player's foot has now touched it. NPC steppers and bare-hidden objects
+    // (no OnSteppedTriggers) are skipped; the latter go through
+    // `passive_perception_tick` instead.
+    for event in &events {
+        let Ok(stepper_identity) = stepper_identity_query.get(event.entity) else {
+            continue;
+        };
+        let stepper_id = stepper_identity.id;
+        for (resident, tile, object, mut hidden) in hidden_query.iter_mut() {
+            if resident.space_id != event.space_id || *tile != event.tile {
+                continue;
+            }
+            if hidden.reveal_to(stepper_id) {
+                if let Ok(mut chat_log) = chat_log_query.get_mut(event.entity) {
+                    let name = definitions
+                        .get(&object.definition_id)
+                        .map(|def| def.name.to_lowercase())
+                        .unwrap_or_else(|| object.definition_id.clone());
+                    chat_log.push_narrator(format!("You spot a {name}!"));
+                }
+            }
         }
     }
 }

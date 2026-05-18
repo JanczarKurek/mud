@@ -10,6 +10,7 @@ pub mod floor_definitions;
 pub mod floor_map;
 pub mod floor_render;
 pub mod floors;
+pub mod hidden;
 pub mod interactions;
 pub mod lighting;
 pub mod loot;
@@ -129,6 +130,17 @@ impl Plugin for WorldServerPlugin {
             process_continuous_step_triggers
                 .after(process_step_triggers)
                 .before(crate::combat::damage::apply_pending_damage)
+                .run_if(crate::app::state::simulation_active),
+        )
+        .add_systems(
+            Update,
+            // Per-(player, hidden-object) Perception rolls. Runs after step
+            // triggers (so an auto-reveal lands first) and before event
+            // collection so any reveal that fires this frame appears to the
+            // client in the same tick.
+            crate::world::hidden::passive_perception_tick
+                .after(process_continuous_step_triggers)
+                .before(crate::game::projection::collect_game_events_from_authority)
                 .run_if(crate::app::state::simulation_active),
         )
         .add_systems(Update, cleanup_empty_ephemeral_spaces)

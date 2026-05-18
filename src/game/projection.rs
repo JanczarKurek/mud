@@ -97,6 +97,7 @@ pub type ProjectionWorldObjectQuery<'w, 's> = Query<
         Option<&'static Facing>,
         Option<&'static ObjectState>,
         Has<Shopkeeper>,
+        Option<&'static crate::world::hidden::Hidden>,
     ),
     Without<Player>,
 >;
@@ -511,10 +512,19 @@ pub fn compute_events_for_peer(
         facing,
         state,
         has_shopkeeper,
+        hidden,
     ) in world_object_query.iter()
     {
         if space_resident.space_id != local_space_id {
             continue;
+        }
+        // Hidden trait: filter objects the local player hasn't spotted. The
+        // diff loop below handles WorldObjectRemoved for objects that
+        // previously appeared (e.g. across a transient detection state).
+        if let Some(h) = hidden {
+            if !h.is_detected_by(local_player_id) {
+                continue;
+            }
         }
         current_world_object_ids.push(object.object_id);
         let projected_object = ClientWorldObjectState {

@@ -294,6 +294,13 @@ pub struct WorldObjectStateDump {
     /// default to South on load.
     #[serde(default)]
     pub facing: Option<crate::world::direction::Direction>,
+    /// Players who have spotted this hidden object, persisted across restarts
+    /// so a re-logged player keeps their detection state. Empty (or absent for
+    /// v10 saves) means nobody has spotted it yet — detection re-rolls from
+    /// scratch on next encounter. Only meaningful for objects whose definition
+    /// declares `hidden:`; the runtime component is only attached then.
+    #[serde(default)]
+    pub hidden_detected_by: Vec<PlayerId>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -319,6 +326,7 @@ pub struct NpcStateDump {
     pub magic_effects: MagicEffects,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn save_world_on_app_exit(
     mut app_exit_reader: MessageReader<AppExit>,
     app_state: Option<Res<State<crate::app::state::ClientAppState>>>,
@@ -345,6 +353,7 @@ fn save_world_on_app_exit(
             Option<&crate::world::components::Quantity>,
             Option<&Ttl>,
             Option<&crate::world::components::Facing>,
+            Option<&crate::world::hidden::Hidden>,
         ),
         Without<Player>,
     >,
@@ -375,7 +384,7 @@ fn save_world_on_app_exit(
     }
 
     let mut entity_to_object_id = std::collections::HashMap::new();
-    for (entity, object, _, _, _, _, _, _, _, _, _, _, _, _) in world_object_query.iter() {
+    for (entity, object, _, _, _, _, _, _, _, _, _, _, _, _, _) in world_object_query.iter() {
         entity_to_object_id.insert(entity, object.object_id);
     }
 
@@ -429,6 +438,7 @@ fn save_world_on_app_exit(
                 quantity,
                 ttl,
                 facing,
+                hidden,
             )| WorldObjectStateDump {
                 object_id: object.object_id,
                 definition_id: object.definition_id.clone(),
@@ -446,6 +456,13 @@ fn save_world_on_app_exit(
                 quantity: quantity.map(|q| q.0).filter(|&q| q > 1),
                 remaining_ttl: ttl.map(|t| t.remaining_seconds),
                 facing: facing.map(|f| f.0),
+                hidden_detected_by: hidden
+                    .map(|h| {
+                        let mut ids: Vec<PlayerId> = h.detected_by.iter().copied().collect();
+                        ids.sort_by_key(|id| id.0);
+                        ids
+                    })
+                    .unwrap_or_default(),
                 npc: is_npc.then(|| {
                     let (
                         base_stats,
@@ -504,7 +521,7 @@ fn save_world_on_app_exit(
     });
 
     let dump = WorldStateDump {
-        format_version: 10,
+        format_version: 11,
         spaces,
         saved_at_unix_seconds: SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -886,6 +903,17 @@ fn load_world_from_snapshot(
                 );
                 entity.insert(crate::world::step_triggers::OnSteppedTriggers(triggers));
             }
+            // Re-derive `Hidden` from the definition; restore per-player
+            // detection state from the snapshot. Loading a v10 (pre-hidden)
+            // save defaults `hidden_detected_by` to empty via `serde(default)`,
+            // so detection effectively resets — by design.
+            if let Some(hidden_def) = definition.hidden.as_ref() {
+                let mut hidden = crate::world::hidden::Hidden::new(hidden_def.dc);
+                for pid in &object.hidden_detected_by {
+                    hidden.detected_by.insert(*pid);
+                }
+                entity.insert(hidden);
+            }
         }
 
         let entity_id = entity.id();
@@ -1020,7 +1048,7 @@ mod tests {
             serde_json::from_str::<WorldStateDump>(&std::fs::read_to_string(&save_path).unwrap())
                 .unwrap();
 
-        assert_eq!(dump.format_version, 10);
+        assert_eq!(dump.format_version, 11);
         assert!(!dump.spaces.is_empty());
         // Players don't appear in the world snapshot at all (they live in the
         // accounts DB) and the object registry is no longer persisted, so the
@@ -1079,6 +1107,7 @@ mod tests {
                 quantity: None,
                 remaining_ttl: None,
                 facing: None,
+                hidden_detected_by: Vec::new(),
             }],
             floor_maps: vec![],
             spawn_groups: vec![],
@@ -1257,6 +1286,7 @@ mod tests {
             quantity: None,
             remaining_ttl: Some(600.0),
             facing: None,
+            hidden_detected_by: Vec::new(),
         };
         let json = serde_json::to_string(&lantern).unwrap();
         let restored: WorldObjectStateDump = serde_json::from_str(&json).unwrap();
@@ -1353,6 +1383,7 @@ mod tests {
                 quantity: None,
                 remaining_ttl: None,
                 facing: None,
+                hidden_detected_by: Vec::new(),
             }],
             floor_maps: vec![],
             spawn_groups: vec![],

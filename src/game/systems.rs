@@ -15,7 +15,7 @@ use crate::magic::resources::{SpellDefinition, SpellDefinitions};
 use crate::npc::components::Npc;
 use crate::player::components::{
     stack_weight, DerivedStats, Encumbered, EquippedItem, InventoryStack, MaxCarryWeight,
-    MovementCooldown, Player, PlayerIdentity, VitalStats,
+    MovementCooldown, Player, PlayerId, PlayerIdentity, VitalStats,
 };
 use crate::world::components::{
     Collider, Container, Facing, Movable, OverworldObject, Quantity, Rotatable, SpaceResident,
@@ -73,6 +73,11 @@ pub struct CommandOutputs<'w, 's> {
         ),
         With<Player>,
     >,
+    /// Read-only view of `Hidden` on world objects, used by inspect/move
+    /// handlers to silently reject lookups against objects the acting player
+    /// hasn't detected yet. Bundled here to keep `process_game_commands`
+    /// under Bevy's parameter cap.
+    pub hidden_query: Query<'w, 's, &'static crate::world::hidden::Hidden, Without<Player>>,
 }
 
 /// Bundle of resources needed together when a command may cause space
@@ -346,6 +351,7 @@ pub fn process_game_commands(
                     &object_registry,
                     &definitions,
                     &spell_definitions,
+                    &command_outputs.hidden_query,
                 );
             }
             GameCommand::UseItem { source } => {
@@ -435,6 +441,7 @@ pub fn process_game_commands(
                     &definitions,
                     &world_config,
                     &command_outputs.player_carry,
+                    &command_outputs.hidden_query,
                     &mut commands,
                 );
             }
@@ -463,6 +470,7 @@ pub fn process_game_commands(
                     &definitions,
                     &world_config,
                     &command_outputs.player_carry,
+                    &command_outputs.hidden_query,
                     &mut commands,
                 );
             }
@@ -1076,6 +1084,7 @@ fn handle_open_container(
     ui_events.push(player_identity.id, GameUiEvent::OpenContainer { object_id });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_inspect(
     player_entity: Entity,
     target: InspectTarget,
@@ -1103,7 +1112,12 @@ fn handle_inspect(
     object_registry: &ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
+    hidden_query: &Query<&crate::world::hidden::Hidden, Without<Player>>,
 ) {
+    let local_player_id = match player_query.get(player_entity) {
+        Ok((_, identity, _, _, _, _, _, _, _)) => identity.id,
+        Err(_) => return,
+    };
     // Resolve (type_id, properties, count) and, for world targets, the object's tile.
     let result: Option<(String, ObjectProperties, u32, Option<TilePosition>)> = {
         let Ok((_, _, inventory_state, _, _, _, _, _, _)) = player_query.get(player_entity) else {
@@ -1113,7 +1127,9 @@ fn handle_inspect(
             InspectTarget::Object(id) => {
                 let entry = object_query
                     .iter()
-                    .find(|(_, _, _, obj)| obj.object_id == id)
+                    .find(|(e, _, _, obj)| {
+                        obj.object_id == id && is_visible_to(*e, local_player_id, hidden_query)
+                    })
                     .map(|(e, _, tile, obj)| (e, *tile, obj.definition_id.clone()));
                 let count = entry
                     .as_ref()
@@ -1987,12 +2003,17 @@ fn handle_move_item(
     definitions: &OverworldObjectDefinitions,
     world_config: &WorldConfig,
     max_carry_query: &Query<&MaxCarryWeight, With<Player>>,
+    hidden_query: &Query<&crate::world::hidden::Hidden, Without<Player>>,
     commands: &mut Commands,
 ) {
     let max_carry = max_carry_query
         .get(player_entity)
         .copied()
         .unwrap_or_default();
+    let local_player_id = match player_query.get(player_entity) {
+        Ok((_, identity, _, _, _, _, _, _, _)) => identity.id,
+        Err(_) => return,
+    };
     let Ok((
         _,
         _,
@@ -2014,6 +2035,8 @@ fn handle_move_item(
                 object_id,
                 space_resident.space_id,
                 movable_query,
+                local_player_id,
+                hidden_query,
             ) else {
                 return;
             };
@@ -2053,9 +2076,13 @@ fn handle_move_item(
             commands.entity(entity).despawn();
         }
         (ItemReference::WorldObject(object_id), ItemDestination::WorldTile(target_tile)) => {
-            let Some((entity, origin)) =
-                find_movable_entity(object_id, space_resident.space_id, movable_query)
-            else {
+            let Some((entity, origin)) = find_movable_entity(
+                object_id,
+                space_resident.space_id,
+                movable_query,
+                local_player_id,
+                hidden_query,
+            ) else {
                 return;
             };
             // Attempt stack merge first (before the "occupied by movable" check that blocks it).
@@ -2250,12 +2277,17 @@ fn handle_take_from_stack(
     definitions: &OverworldObjectDefinitions,
     world_config: &WorldConfig,
     max_carry_query: &Query<&MaxCarryWeight, With<Player>>,
+    hidden_query: &Query<&crate::world::hidden::Hidden, Without<Player>>,
     commands: &mut Commands,
 ) {
     let max_carry = max_carry_query
         .get(player_entity)
         .copied()
         .unwrap_or_default();
+    let local_player_id = match player_query.get(player_entity) {
+        Ok((_, identity, _, _, _, _, _, _, _)) => identity.id,
+        Err(_) => return,
+    };
     let Ok((
         _,
         _,
@@ -2417,6 +2449,8 @@ fn handle_take_from_stack(
                 object_id,
                 space_resident.space_id,
                 movable_query,
+                local_player_id,
+                hidden_query,
             ) else {
                 return;
             };
@@ -2858,12 +2892,16 @@ fn find_movable_entity(
         (Entity, &SpaceResident, &TilePosition, &OverworldObject),
         (With<Movable>, Without<Player>),
     >,
+    player_id: PlayerId,
+    hidden_query: &Query<&crate::world::hidden::Hidden, Without<Player>>,
 ) -> Option<(Entity, TilePosition)> {
     movable_query
         .iter()
         .find_map(|(entity, resident, tile_position, object)| {
-            (resident.space_id == space_id && object.object_id == object_id)
-                .then_some((entity, *tile_position))
+            (resident.space_id == space_id
+                && object.object_id == object_id
+                && is_visible_to(entity, player_id, hidden_query))
+            .then_some((entity, *tile_position))
         })
 }
 
@@ -2874,13 +2912,32 @@ fn find_movable_entity_with_definition(
         (Entity, &SpaceResident, &TilePosition, &OverworldObject),
         (With<Movable>, Without<Player>),
     >,
+    player_id: PlayerId,
+    hidden_query: &Query<&crate::world::hidden::Hidden, Without<Player>>,
 ) -> Option<(Entity, TilePosition, String)> {
     movable_query
         .iter()
         .find_map(|(entity, resident, tile_position, object)| {
-            (resident.space_id == space_id && object.object_id == object_id)
-                .then(|| (entity, *tile_position, object.definition_id.clone()))
+            (resident.space_id == space_id
+                && object.object_id == object_id
+                && is_visible_to(entity, player_id, hidden_query))
+            .then(|| (entity, *tile_position, object.definition_id.clone()))
         })
+}
+
+/// Server-side visibility gate: returns false when the entity is hidden from
+/// the given player. Entities without `Hidden` are always visible. Mirrors the
+/// projection-layer filter so hand-crafted object_ids (admin REPL, scripted
+/// clients) can't bypass the player's per-object detection state.
+fn is_visible_to(
+    entity: Entity,
+    player_id: PlayerId,
+    hidden_query: &Query<&crate::world::hidden::Hidden, Without<Player>>,
+) -> bool {
+    match hidden_query.get(entity) {
+        Ok(h) => h.is_detected_by(player_id),
+        Err(_) => true,
+    }
 }
 
 /// Resolve any kind of item reference (world object id or slot ref) to a

@@ -437,6 +437,9 @@ macro_rules! apply_overworld_definition_components {
                 );
             $entity.insert($crate::world::step_triggers::OnSteppedTriggers(__triggers));
         }
+        if let Some(__hidden_def) = __definition.hidden.as_ref() {
+            $entity.insert($crate::world::hidden::Hidden::new(__hidden_def.dc));
+        }
     }};
 }
 

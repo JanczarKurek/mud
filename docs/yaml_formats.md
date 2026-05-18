@@ -1267,6 +1267,38 @@ A trap that snaps shut combines all three: see
 state changes (e.g. a permanent patch of fire) uses just `apply_effect` — see
 `assets/overworld_objects/blazing_fire/metadata.yaml`.
 
+### Hidden trait
+
+When `hidden:` is present, the object spawns with a server-side `Hidden`
+component and never appears in any player's `world_objects` until that player
+detects it. Detection is per-player and **sticky** — once spotted, the object
+stays visible to that player across reloads (the `detected_by` set is
+persisted in the world snapshot).
+
+```yaml
+hidden:
+  dc: 15
+```
+
+- `dc` — Perception DC the player must roll against. Higher = harder to spot.
+
+Reveal happens two ways:
+
+- **Passive perception** — the moment a player comes within `inspect_range - 1`
+  Chebyshev tiles of the object (per-object, defaults to 2 tiles when the
+  definition omits `inspect_range`), the server rolls a `Skill::Perception`
+  check against `dc`. After any roll, that (player, object) pair gets a 5-second
+  cooldown before the next attempt. On success, a narrator line `"You spot a
+  {name}!"` is pushed to the player's chat log and the object naturally pops
+  into view on the next projection tick.
+- **Auto-reveal on step** — if the object also declares `on_stepped:`, the
+  player's foot reveals it on touch, regardless of the trigger's state filter.
+
+Hidden + `on_stepped` is the canonical "trap" combination: see
+`assets/overworld_objects/bear_trap/metadata.yaml`. Hidden alone (no
+`on_stepped`) is a "secret stash" — passive perception is the only way to spot
+it.
+
 ### NPC Loot Tables
 
 NPCs (objects that `extends: npc`) may include an optional `loot` section. When the NPC dies it spawns a corpse container at its tile. The corpse holds any rolled loot and disappears after `corpse_despawn_seconds`.

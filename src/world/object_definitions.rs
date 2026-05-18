@@ -161,6 +161,19 @@ pub struct OverworldObjectDefinition {
     /// `key_gate` verb path to find an inventory key for a locked target.
     #[serde(default)]
     pub lock_id: Option<u32>,
+    /// When present, this object spawns with the `Hidden` component — players
+    /// must pass a Perception check (or step on the tile) to see it. `dc` is
+    /// the Perception DC; per-player detection state lives on the runtime
+    /// component, persisted in the world snapshot.
+    #[serde(default)]
+    pub hidden: Option<HiddenDef>,
+}
+
+/// Authoring block for the `Hidden` trait on an `OverworldObjectDefinition`.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct HiddenDef {
+    pub dc: u32,
 }
 
 /// Per-state override of the rendering / collider knobs on
@@ -1611,6 +1624,43 @@ on_stepped:
             StepEffectDef::SetState { state } => assert_eq!(state, "sprung"),
             other => panic!("unexpected third effect: {other:?}"),
         }
+    }
+
+    #[test]
+    fn hidden_field_round_trips() {
+        let yaml = r#"
+name: Snare
+description: ""
+colliding: false
+movable: false
+storable: false
+render:
+  z_index: 0.0
+  debug_color: [0, 0, 0]
+  debug_size: 1.0
+hidden:
+  dc: 15
+"#;
+        let def = parse_def(yaml);
+        let hidden = def.hidden.expect("hidden block parsed");
+        assert_eq!(hidden.dc, 15);
+    }
+
+    #[test]
+    fn hidden_absent_defaults_to_none() {
+        let yaml = r#"
+name: Plain Floor Item
+description: ""
+colliding: false
+movable: false
+storable: false
+render:
+  z_index: 0.0
+  debug_color: [0, 0, 0]
+  debug_size: 1.0
+"#;
+        let def = parse_def(yaml);
+        assert!(def.hidden.is_none());
     }
 
     #[test]
