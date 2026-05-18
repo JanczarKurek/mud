@@ -20,6 +20,7 @@
 
 use bevy::prelude::*;
 
+use crate::combat::damage_type::DamageType;
 use crate::game::resources::{GameUiEvent, PendingGameUiEvents, VfxAnchor};
 use crate::magic::resources::SpellDefinitions;
 use crate::npc::components::Npc;
@@ -63,6 +64,10 @@ pub struct DamageEvent {
     pub target: Entity,
     pub amount: f32,
     pub source: DamageSource,
+    pub damage_type: DamageType,
+    /// Optional override for the hit VFX. When `None`, the drainer falls back
+    /// to `damage_type.default_hit_vfx_id()`.
+    pub vfx_override: Option<String>,
 }
 
 #[derive(Resource, Default)]
@@ -136,6 +141,17 @@ pub fn apply_pending_damage(
         target_vitals.health = (target_vitals.health - event.amount).max(0.0);
 
         if target_vitals.health > 0.0 {
+            // Survivor: emit the damage-type-keyed hit VFX. Death plays
+            // `death_poof` below instead, so we don't stack two effects on
+            // the killing blow.
+            let vfx_id = event
+                .vfx_override
+                .clone()
+                .unwrap_or_else(|| event.damage_type.default_hit_vfx_id().to_owned());
+            ui_events.push_broadcast(GameUiEvent::VfxSpawn {
+                definition_id: vfx_id,
+                anchor: VfxAnchor::follow(target_object.object_id),
+            });
             continue;
         }
 

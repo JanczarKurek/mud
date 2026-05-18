@@ -351,25 +351,39 @@ pub enum GameCommand {
     /// `apply_xp_grants` pipeline picks it up — level-ups, skill-point grants,
     /// and HUD toasts fire normally. Drained by
     /// `process_admin_progression_commands` in `CommandIntercept`.
-    AdminGrantXp { amount: u64 },
+    AdminGrantXp {
+        amount: u64,
+    },
     /// Admin-only: hard-set the target player's level. Sets `current_xp` to
     /// `xp_for_level(level)` and grants skill points for every level crossed
     /// upward. Downward changes do not refund anything.
-    AdminSetLevel { level: u32 },
+    AdminSetLevel {
+        level: u32,
+    },
     /// Admin-only: increase `SkillSheet.available_points` by `amount` without
     /// requiring a level-up.
-    AdminGrantSkillPoints { amount: u32 },
+    AdminGrantSkillPoints {
+        amount: u32,
+    },
     /// Admin-only: overwrite a single skill's rank, bypassing the
     /// class/level cap and point cost.
-    AdminSetSkillRank { skill: Skill, rank: u8 },
+    AdminSetSkillRank {
+        skill: Skill,
+        rank: u8,
+    },
     /// Admin-only: overwrite a single attribute on `BaseStats.attributes`.
     /// Bypasses the [8,18] point-buy clamp; the next frame's
     /// `refresh_derived_player_stats` recomputes `DerivedStats` and reclamps
     /// `VitalStats` accordingly.
-    AdminSetAttribute { kind: AttributeKind, value: i32 },
+    AdminSetAttribute {
+        kind: AttributeKind,
+        value: i32,
+    },
     /// Admin-only: switch the target's `Class`. Does not redistribute skill
     /// ranks — the admin is expected to clean those up explicitly.
-    AdminSetClass { class: Class },
+    AdminSetClass {
+        class: Class,
+    },
     /// Admin-only: restore health and mana to their respective maxes.
     AdminFullHeal,
 }

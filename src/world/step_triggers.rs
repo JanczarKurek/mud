@@ -23,6 +23,7 @@ use bevy::prelude::*;
 
 use crate::combat::damage::{DamageEvent, DamageSource, PendingDamageEvents};
 use crate::combat::damage_expr::DamageExpr;
+use crate::combat::damage_type::DamageType;
 use crate::magic::effects::MagicEffects;
 use crate::magic::resources::EffectSpec;
 use crate::npc::components::Npc;
@@ -265,6 +266,8 @@ pub fn process_step_triggers(
                 target: w.stepper,
                 amount: *amount,
                 source: DamageSource::Environment,
+                damage_type: DamageType::Pierce,
+                vfx_override: None,
             });
         }
     }
@@ -452,6 +455,8 @@ pub fn process_continuous_step_triggers(
                 target: w.stepper,
                 amount: *amount,
                 source: DamageSource::Environment,
+                damage_type: DamageType::Pierce,
+                vfx_override: None,
             });
         }
     }

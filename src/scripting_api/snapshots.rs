@@ -218,7 +218,8 @@ pub fn player_to_dict(player: &PlayerView, vm: &VirtualMachine) -> PyObjectRef {
         .ok();
     dict.set_item("class", player.class_label.clone().to_pyobject(vm), vm)
         .ok();
-    dict.set_item("level", player.level.to_pyobject(vm), vm).ok();
+    dict.set_item("level", player.level.to_pyobject(vm), vm)
+        .ok();
     dict.set_item("xp", player.current_xp.to_pyobject(vm), vm)
         .ok();
     let xp_for_next: PyObjectRef = match player.xp_for_next {
@@ -226,8 +227,12 @@ pub fn player_to_dict(player: &PlayerView, vm: &VirtualMachine) -> PyObjectRef {
         None => vm.ctx.none(),
     };
     dict.set_item("xp_for_next", xp_for_next, vm).ok();
-    dict.set_item("attributes", attribute_map_to_dict(&player.attributes, vm), vm)
-        .ok();
+    dict.set_item(
+        "attributes",
+        attribute_map_to_dict(&player.attributes, vm),
+        vm,
+    )
+    .ok();
     dict.set_item("skills", skill_ranks_to_dict(&player.skill_ranks, vm), vm)
         .ok();
     dict.set_item(

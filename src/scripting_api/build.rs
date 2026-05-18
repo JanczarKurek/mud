@@ -18,7 +18,9 @@ use crate::dialog::components::DialogNode;
 use crate::magic::resources::SpellDefinitions;
 use crate::npc::components::Npc;
 use crate::player::classes::Class;
-use crate::player::components::{BaseStats, Inventory, Player, PlayerId, PlayerIdentity, VitalStats};
+use crate::player::components::{
+    BaseStats, Inventory, Player, PlayerId, PlayerIdentity, VitalStats,
+};
 use crate::player::progression::Experience;
 use crate::player::skills::{Skill, SkillSheet};
 use crate::scripting_api::snapshots::{

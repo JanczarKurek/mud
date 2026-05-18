@@ -932,12 +932,16 @@ pub mod world_api {
 
         #[pygetset]
         fn skills(&self, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
-            view(self.player_id, vm, |p| skill_ranks_to_dict(&p.skill_ranks, vm))
+            view(self.player_id, vm, |p| {
+                skill_ranks_to_dict(&p.skill_ranks, vm)
+            })
         }
 
         #[pygetset]
         fn attributes(&self, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
-            view(self.player_id, vm, |p| attribute_map_to_dict(&p.attributes, vm))
+            view(self.player_id, vm, |p| {
+                attribute_map_to_dict(&p.attributes, vm)
+            })
         }
 
         #[pygetset]
@@ -1016,9 +1020,9 @@ pub mod world_api {
         #[pymethod]
         fn set_level(&self, level: i64, vm: &VirtualMachine) -> PyResult<()> {
             if level < 1 || (level as u32) > LEVEL_CAP {
-                return Err(vm.new_value_error(format!(
-                    "set_level: level must be in 1..={LEVEL_CAP}"
-                )));
+                return Err(
+                    vm.new_value_error(format!("set_level: level must be in 1..={LEVEL_CAP}"))
+                );
             }
             queue_for(
                 self.player_id,
@@ -1262,9 +1266,7 @@ pub mod world_api {
                 .find(|p| p.player_id == player_id)
                 .map(f)
                 .ok_or_else(|| {
-                    vm.new_lookup_error(format!(
-                        "Player id={player_id} not found (disconnected?)"
-                    ))
+                    vm.new_lookup_error(format!("Player id={player_id} not found (disconnected?)"))
                 })
         });
         match outcome {

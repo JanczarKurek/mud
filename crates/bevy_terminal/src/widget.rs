@@ -350,8 +350,7 @@ impl Terminal {
         let text = text.into();
         for segment in text.split('\n') {
             for chunk in chunk_line(segment, MAX_LINE_CHARS) {
-                self.buffer
-                    .push_back(TerminalLine::new(chunk, style));
+                self.buffer.push_back(TerminalLine::new(chunk, style));
             }
         }
         while self.buffer.len() > self.capacity {

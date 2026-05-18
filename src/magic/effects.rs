@@ -315,6 +315,7 @@ pub fn tick_dot_effects(
                 Some(player_id) => DamageSource::OwnedByPlayer(player_id),
                 None => DamageSource::Environment,
             };
+            let damage_type = dot_damage_type(kind).unwrap_or(DamageType::Arcane);
             let acc = accumulator_for_kind(&mut effects.kind_tick_accumulators, kind);
             *acc += dt;
             while *acc >= DOT_TICK_INTERVAL_SECONDS {
@@ -323,6 +324,8 @@ pub fn tick_dot_effects(
                     target: entity,
                     amount: dps,
                     source,
+                    damage_type,
+                    vfx_override: None,
                 });
             }
         }

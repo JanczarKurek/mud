@@ -1385,6 +1385,8 @@ fn handle_use_item(
                 target: player_entity,
                 amount: spell.effects.damage,
                 source: DamageSource::Player(acting_player_id),
+                damage_type: spell.effects.effective_damage_type(),
+                vfx_override: spell.effects.vfx_on_target_hit.clone(),
             });
         }
         if let Ok(mut effects) = magic_effects_query.get_mut(player_entity) {
@@ -1833,18 +1835,10 @@ fn handle_cast_spell_at(
             target: target_entity,
             amount: spell.effects.damage,
             source: DamageSource::Player(caster_id),
+            damage_type: spell.effects.effective_damage_type(),
+            vfx_override: spell.effects.vfx_on_target_hit.clone(),
         });
     }
-
-    let impact_vfx_id = spell
-        .effects
-        .vfx_on_target_hit
-        .clone()
-        .unwrap_or_else(|| "hit_flash".to_owned());
-    ui_events.push_broadcast(GameUiEvent::VfxSpawn {
-        definition_id: impact_vfx_id,
-        anchor: VfxAnchor::follow(target_object_id),
-    });
 
     if !spell.effects.buffs_target.is_empty() {
         apply_buffs_target(

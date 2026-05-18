@@ -22,10 +22,9 @@ use crate::ui::components::{
     ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot, MagicEffectsLabel, ManaFill,
     ManaLabel, MinimapCanvas, MinimapMode, MinimapPanelUndockButton, MinimapView,
     PythonConsolePanel, PythonConsoleRestartButton, PythonConsoleTerminal, RegenBuffLabel,
-    RightSidebarRoot,
-    StatusPanelContent, StatusPanelUndockButton, TakePartialAmountLabel, TakePartialCancelButton,
-    TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot,
-    TradeButtonLabel, TradeColumn,
+    RightSidebarRoot, StatusPanelContent, StatusPanelUndockButton, TakePartialAmountLabel,
+    TakePartialCancelButton, TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton,
+    TakePartialPopupRoot, TradeButtonLabel, TradeColumn,
 };
 use crate::ui::menu_bar::{spawn_menu_bar, MENU_BAR_HEIGHT};
 use crate::ui::minimap::{make_minimap_image, FULL_MAP_BODY_SIZE, HUD_MINIMAP_SIZE};

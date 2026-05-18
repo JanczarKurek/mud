@@ -11,10 +11,10 @@ pub mod systems;
 use bevy::prelude::*;
 
 use crate::app::state::{simulation_active, ClientAppState};
+use crate::player::admin_progression::process_admin_progression_commands;
 use crate::player::lifecycle::{
     handle_player_deaths, handle_set_home_commands, PendingPlayerDeaths,
 };
-use crate::player::admin_progression::process_admin_progression_commands;
 use crate::player::progression::{apply_xp_grants, PendingXpGrants};
 use crate::player::regen::{tick_regen_buffs, tick_vital_regen};
 use crate::player::setup::spawn_player_visual;

@@ -1,0 +1,14 @@
+animation:
+  sheet_path: vfx/pierce_hit/sheet.png
+  frame_width: 48
+  frame_height: 48
+  sheet_columns: 6
+  sheet_rows: 1
+  clips:
+    play:
+      row: 0
+      start_col: 0
+      frame_count: 6
+      fps: 18.0
+      looping: false
+duration_seconds: 0.36

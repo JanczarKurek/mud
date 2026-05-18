@@ -391,9 +391,7 @@ mod tests {
     }
 
     fn snapshot_with_one_player(id: u64, name: &str) -> WorldSnapshot {
-        use crate::scripting_api::snapshots::{
-            AttributeMap, PlayerView, VitalsView,
-        };
+        use crate::scripting_api::snapshots::{AttributeMap, PlayerView, VitalsView};
         let mut snapshot = WorldSnapshot::default();
         snapshot.players.push(PlayerView {
             player_id: id,
@@ -465,12 +463,11 @@ mod tests {
 
         let mut host = AdminReplHost::new();
         let snapshot = snapshot_with_one_player(7, "Bob");
-        let code = match host
-            .compile_or_incomplete("world.find_player(7).set_skill('Thievery', 5)\n")
-        {
-            CompileOutcome::Complete(c) => c,
-            other => panic!("compile failed: {:?}", other.label()),
-        };
+        let code =
+            match host.compile_or_incomplete("world.find_player(7).set_skill('Thievery', 5)\n") {
+                CompileOutcome::Complete(c) => c,
+                other => panic!("compile failed: {:?}", other.label()),
+            };
         let result = host.execute_compiled(code, snapshot, None);
         assert!(result.error.is_none(), "got error: {:?}", result.error);
         assert_eq!(result.targeted_commands.len(), 1);

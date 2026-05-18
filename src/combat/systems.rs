@@ -5,7 +5,7 @@ use crate::combat::damage::{DamageEvent, DamageSource, PendingDamageEvents};
 use crate::combat::damage_expr::DamageExpr;
 use crate::combat::damage_type::DamageType;
 use crate::combat::resources::BattleTurnTimer;
-use crate::game::resources::{GameUiEvent, PendingGameUiEvents, VfxAnchor};
+use crate::game::resources::{GameUiEvent, PendingGameUiEvents};
 use crate::magic::resources::{EffectSpec, SpellDefinitions};
 use crate::player::components::{
     AmmoConsumption, AttributeSet, ChatLog, DefenseStats, DerivedStats, Inventory, Player,
@@ -294,20 +294,16 @@ pub fn resolve_battle_turn(
                 entity: attacker.entity,
             }
         };
+        let vfx_override = definitions
+            .get(&attacker.definition_id)
+            .and_then(|def| def.attack_profile.as_ref())
+            .and_then(|profile| profile.hit_vfx.clone());
         pending_damage.push(DamageEvent {
             target: target_entity,
             amount: damage as f32,
             source: damage_source,
-        });
-
-        let hit_vfx_id = definitions
-            .get(&attacker.definition_id)
-            .and_then(|def| def.attack_profile.as_ref())
-            .and_then(|profile| profile.hit_vfx.clone())
-            .unwrap_or_else(|| "blood_splash".to_owned());
-        ui_events.push_broadcast(GameUiEvent::VfxSpawn {
-            definition_id: hit_vfx_id,
-            anchor: VfxAnchor::follow(target.object_id),
+            damage_type: attacker.damage_type,
+            vfx_override,
         });
 
         // Damage wakes a sleeping target (and clears any pending Sleep

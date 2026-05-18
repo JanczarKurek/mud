@@ -22,7 +22,9 @@ use crate::game::resources::{
 };
 use crate::player::classes::Class;
 use crate::player::components::{BaseStats, ChatLog, Player, PlayerIdentity, VitalStats};
-use crate::player::progression::{xp_for_level, Experience, PendingXpGrant, PendingXpGrants, LEVEL_CAP};
+use crate::player::progression::{
+    xp_for_level, Experience, PendingXpGrant, PendingXpGrants, LEVEL_CAP,
+};
 use crate::player::skills::{grant_level_up_skill_points, SkillSheet};
 
 #[allow(clippy::too_many_arguments)]
@@ -86,7 +88,9 @@ pub fn process_admin_progression_commands(
                     }
                     if target_level > old_level {
                         for crossed in (old_level + 1)..=target_level {
-                            events.events.push(GameEvent::LevelUp { new_level: crossed });
+                            events
+                                .events
+                                .push(GameEvent::LevelUp { new_level: crossed });
                             ui_events.push(
                                 identity.id,
                                 GameUiEvent::LevelUpToast { new_level: crossed },
@@ -116,11 +120,8 @@ pub fn process_admin_progression_commands(
                         continue;
                     }
                     sheet.available_points = sheet.available_points.saturating_add(amount);
-                    events
-                        .events
-                        .push(GameEvent::SkillPointsGranted { amount });
-                    ui_events
-                        .push(identity.id, GameUiEvent::SkillPointsToast { amount });
+                    events.events.push(GameEvent::SkillPointsGranted { amount });
+                    ui_events.push(identity.id, GameUiEvent::SkillPointsToast { amount });
                     chat.push_narrator(format!("[Admin] Granted {amount} skill points."));
                     break;
                 }
@@ -141,10 +142,7 @@ pub fn process_admin_progression_commands(
                         new_rank: rank,
                         remaining_points: sheet.available_points,
                     });
-                    chat.push_narrator(format!(
-                        "[Admin] {} rank set to {rank}.",
-                        skill.label()
-                    ));
+                    chat.push_narrator(format!("[Admin] {} rank set to {rank}.", skill.label()));
                     break;
                 }
             }
