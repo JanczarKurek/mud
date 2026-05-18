@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::combat::components::CombatTarget;
+use crate::combat::damage::{DamageEvent, DamageSource, PendingDamageEvents};
 use crate::game::commands::{
     GameCommand, InspectTarget, ItemDestination, ItemReference, ItemSlotRef, MoveDelta, UseTarget,
 };
@@ -22,7 +23,6 @@ use crate::world::components::{
 };
 use crate::world::direction::Direction;
 use crate::world::floor_map::FloorMaps;
-use crate::world::loot::spawn_corpse_for_npc;
 use crate::world::map_layout::{ObjectProperties, SpaceDefinitions};
 use crate::world::object_definitions::{
     AttackProfileKindDef, EquipmentSlot, OverworldObjectDefinition, OverworldObjectDefinitions,
@@ -42,6 +42,7 @@ use bevy::ecs::system::SystemParam;
 #[derive(SystemParam)]
 pub struct CommandOutputs<'w, 's> {
     pub ui_events: ResMut<'w, PendingGameUiEvents>,
+    pub pending_damage: ResMut<'w, PendingDamageEvents>,
     pub container_viewers: ResMut<'w, ContainerViewers>,
     pub player_regen_buffs:
         Query<'w, 's, &'static mut crate::player::components::RegenBuffs, With<Player>>,
@@ -360,6 +361,7 @@ pub fn process_game_commands(
                     &spell_definitions,
                     &mut command_outputs.ui_events,
                     &mut pending_commands,
+                    &mut command_outputs.pending_damage,
                     &mut commands,
                 );
             }
@@ -379,6 +381,7 @@ pub fn process_game_commands(
                     &spell_definitions,
                     &mut command_outputs.ui_events,
                     &mut pending_commands,
+                    &mut command_outputs.pending_damage,
                     &mut commands,
                 );
             }
@@ -403,6 +406,7 @@ pub fn process_game_commands(
                     &definitions,
                     &spell_definitions,
                     &mut command_outputs.ui_events,
+                    &mut command_outputs.pending_damage,
                     &mut commands,
                 );
             }
@@ -1235,6 +1239,7 @@ fn handle_use_item(
     spell_definitions: &SpellDefinitions,
     ui_events: &mut PendingGameUiEvents,
     pending_commands: &mut PendingGameCommands,
+    pending_damage: &mut PendingDamageEvents,
     commands: &mut Commands,
 ) {
     let Ok((
@@ -1324,9 +1329,16 @@ fn handle_use_item(
             definition_id: cast_vfx_id,
             anchor: VfxAnchor::tile(player_space_id, player_position),
         });
-        apply_spell_effects(spell, &mut vital_stats);
+        apply_spell_restore(spell, &mut vital_stats);
+        if spell.effects.damage > 0.0 {
+            pending_damage.push(DamageEvent {
+                target: player_entity,
+                amount: spell.effects.damage,
+                source: DamageSource::Player(acting_player_id),
+            });
+        }
         if let Ok(mut effects) = magic_effects_query.get_mut(player_entity) {
-            apply_spell_self_effects(spell, &mut effects);
+            apply_spell_self_effects(spell, acting_player_id, &mut effects);
         }
         if let Some(spawn_spec) = spell.effects.spawns_object.as_ref() {
             spawn_spell_object(
@@ -1472,6 +1484,7 @@ fn handle_use_item_on(
     spell_definitions: &SpellDefinitions,
     ui_events: &mut PendingGameUiEvents,
     pending_commands: &mut PendingGameCommands,
+    pending_damage: &mut PendingDamageEvents,
     commands: &mut Commands,
 ) {
     match target {
@@ -1489,6 +1502,7 @@ fn handle_use_item_on(
             spell_definitions,
             ui_events,
             pending_commands,
+            pending_damage,
             commands,
         ),
         UseTarget::Object(target_object_id) => {
@@ -1674,6 +1688,7 @@ fn handle_cast_spell_at(
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
     ui_events: &mut PendingGameUiEvents,
+    pending_damage: &mut PendingDamageEvents,
     commands: &mut Commands,
 ) {
     let Some(spell) = spell_definitions.get(spell_id) else {
@@ -1681,7 +1696,7 @@ fn handle_cast_spell_at(
     };
     let Ok((
         _,
-        _,
+        caster_identity,
         mut inventory_state,
         mut chat_log_state,
         player_space_resident,
@@ -1693,6 +1708,7 @@ fn handle_cast_spell_at(
     else {
         return;
     };
+    let caster_id = caster_identity.id;
 
     let Some((target_entity, target_position)) = find_object_entity(
         target_object_id,
@@ -1752,17 +1768,24 @@ fn handle_cast_spell_at(
         anchor: VfxAnchor::tile(caster_space_id, caster_tile),
     });
 
-    let (target_died, target_name, target_definition_id) = {
-        let Ok((mut target_vitals, target_object)) = npc_vitals_query.get_mut(target_entity) else {
+    let target_name = {
+        let Ok((mut target_vitals, target_object)) = npc_vitals_query.get_mut(target_entity)
+        else {
             return;
         };
         let name = object_registry
             .display_name(target_object.object_id, definitions, spell_definitions)
             .unwrap_or_else(|| target_object.definition_id.clone());
-        let definition_id = target_object.definition_id.clone();
-        apply_spell_effects(spell, &mut target_vitals);
-        (target_vitals.health <= 0.0, name, definition_id)
+        apply_spell_restore(spell, &mut target_vitals);
+        name
     };
+    if spell.effects.damage > 0.0 {
+        pending_damage.push(DamageEvent {
+            target: target_entity,
+            amount: spell.effects.damage,
+            source: DamageSource::Player(caster_id),
+        });
+    }
 
     let impact_vfx_id = spell
         .effects
@@ -1774,17 +1797,18 @@ fn handle_cast_spell_at(
         anchor: VfxAnchor::follow(target_object_id),
     });
 
-    if !spell.effects.buffs_target.is_empty() && !target_died {
+    if !spell.effects.buffs_target.is_empty() {
         apply_buffs_target(
             target_entity,
             &spell.effects.buffs_target,
+            Some(caster_id),
             npc_magic_effects_query,
             commands,
         );
     }
 
     if let Ok(mut effects) = player_magic_effects_query.get_mut(player_entity) {
-        apply_spell_self_effects(spell, &mut effects);
+        apply_spell_self_effects(spell, caster_id, &mut effects);
     }
 
     if let Some(spawn_spec) = spell.effects.spawns_object.as_ref() {
@@ -1819,23 +1843,10 @@ fn handle_cast_spell_at(
         chat_log_state.push_narrator(format!("Cast {} on {}.", spell.name, target_name));
     }
 
-    if target_died {
-        if let Some(loot_table) = definitions
-            .get(&target_definition_id)
-            .and_then(|def| def.loot_table.as_ref())
-        {
-            spawn_corpse_for_npc(
-                commands,
-                definitions,
-                object_registry,
-                loot_table,
-                player_space_resident.space_id,
-                target_position,
-            );
-        }
-        commands.entity(target_entity).despawn();
-        chat_log_state.push_line(format!("[{target_name} dies]"));
-    }
+    // Death is detected and handled by `apply_pending_damage`; we
+    // intentionally don't despawn or spawn the corpse here so all damage
+    // sources go through the same death pipeline.
+    let _ = target_position;
 }
 
 /// Returns `Ok(())` when the caster is permitted to cast `spell` from the
@@ -1903,10 +1914,12 @@ fn spawn_spell_object(
 }
 
 /// Inserts (or merges) `MagicEffects` on an NPC target. Lazily attaches the
-/// component if missing.
+/// component if missing. `caster` is the player who applied the buff — it
+/// drives XP attribution if the buff/debuff is a DoT.
 fn apply_buffs_target(
     target_entity: Entity,
     specs: &[crate::magic::resources::EffectSpec],
+    caster: Option<crate::player::components::PlayerId>,
     npc_magic_effects_query: &mut Query<
         &mut crate::magic::effects::MagicEffects,
         (With<Npc>, Without<Player>),
@@ -1915,12 +1928,12 @@ fn apply_buffs_target(
 ) {
     if let Ok(mut effects) = npc_magic_effects_query.get_mut(target_entity) {
         for spec in specs {
-            effects.apply(*spec);
+            effects.apply(*spec, caster);
         }
     } else {
         let mut new_effects = crate::magic::effects::MagicEffects::default();
         for spec in specs {
-            new_effects.apply(*spec);
+            new_effects.apply(*spec, caster);
         }
         commands.entity(target_entity).insert(new_effects);
     }
@@ -3803,9 +3816,9 @@ fn random_text(texts: &[String]) -> String {
     texts[nanos % texts.len()].clone()
 }
 
-fn apply_spell_effects(spell: &SpellDefinition, vital_stats: &mut VitalStats) {
-    vital_stats.health =
-        (vital_stats.health - spell.effects.damage).clamp(0.0, vital_stats.max_health);
+/// Apply only the healing/mana-restore parts of a spell. Damage flows through
+/// `PendingDamageEvents` so attribution + death handling happen in one place.
+fn apply_spell_restore(spell: &SpellDefinition, vital_stats: &mut VitalStats) {
     vital_stats.health =
         (vital_stats.health + spell.effects.restore_health).clamp(0.0, vital_stats.max_health);
     vital_stats.mana =
@@ -3818,10 +3831,11 @@ fn apply_spell_effects(spell: &SpellDefinition, vital_stats: &mut VitalStats) {
 /// component.
 fn apply_spell_self_effects(
     spell: &SpellDefinition,
+    caster_id: crate::player::components::PlayerId,
     caster_effects: &mut crate::magic::effects::MagicEffects,
 ) {
     for spec in &spell.effects.buffs_self {
-        caster_effects.apply(*spec);
+        caster_effects.apply(*spec, Some(caster_id));
     }
     for kind in &spell.effects.clears_self {
         caster_effects.clear(*kind);

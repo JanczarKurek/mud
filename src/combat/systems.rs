@@ -1,20 +1,17 @@
 use bevy::prelude::*;
 
 use crate::combat::components::{AttackKind, AttackProfile, CombatLeash, CombatTarget};
+use crate::combat::damage::{DamageEvent, DamageSource, PendingDamageEvents};
 use crate::combat::damage_expr::DamageExpr;
 use crate::combat::damage_type::DamageType;
 use crate::combat::resources::BattleTurnTimer;
 use crate::game::resources::{GameUiEvent, PendingGameUiEvents, VfxAnchor};
 use crate::magic::resources::{EffectSpec, SpellDefinitions};
-use crate::npc::components::Npc;
 use crate::player::components::{
     AmmoConsumption, AttributeSet, ChatLog, DefenseStats, DerivedStats, Inventory, Player,
     PlayerId, PlayerIdentity, VitalStats, WeaponDamage,
 };
-use crate::player::lifecycle::{PendingPlayerDeath, PendingPlayerDeaths};
-use crate::player::progression::{xp_grant_for_kill, Experience, PendingXpGrant, PendingXpGrants};
 use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
-use crate::world::loot::spawn_corpse_for_npc;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
 
@@ -35,7 +32,6 @@ struct CombatantSnapshot {
     is_player: bool,
     player_id: Option<u64>,
     ranged_projectile_sprite: Option<String>,
-    level: Option<u32>,
     armor: i32,
     block: i32,
 }
@@ -134,26 +130,17 @@ pub fn resolve_battle_turn(
             Option<&WeaponDamage>,
             Option<&PlayerIdentity>,
             Option<&Inventory>,
-            Option<&Experience>,
             Option<&DefenseStats>,
         )>,
-        Query<(
-            &mut VitalStats,
-            Option<&Player>,
-            Option<&Npc>,
-            Option<&mut crate::magic::effects::MagicEffects>,
-        )>,
+        Query<(&VitalStats, Option<&mut crate::magic::effects::MagicEffects>)>,
         Query<&mut Inventory, With<Player>>,
     )>,
     definitions: Res<OverworldObjectDefinitions>,
-    mut object_registry: ResMut<ObjectRegistry>,
+    object_registry: Res<ObjectRegistry>,
     spell_definitions: Res<SpellDefinitions>,
     mut chat_log_query: Query<&mut ChatLog, With<Player>>,
     mut ui_events: ResMut<PendingGameUiEvents>,
-    mut quest_events: ResMut<crate::quest::events::PendingQuestEvents>,
-    mut pending_player_deaths: ResMut<PendingPlayerDeaths>,
-    mut pending_xp_grants: ResMut<PendingXpGrants>,
-    mut commands: Commands,
+    mut pending_damage: ResMut<PendingDamageEvents>,
 ) {
     battle_turn_timer.remaining_seconds -= time.delta_secs();
     if battle_turn_timer.remaining_seconds > 0.0 {
@@ -180,7 +167,6 @@ pub fn resolve_battle_turn(
                 weapon_damage,
                 player_identity,
                 inventory,
-                experience,
                 defense_stats,
             )| {
                 let damage_expr = weapon_damage
@@ -219,7 +205,6 @@ pub fn resolve_battle_turn(
                     is_player,
                     player_id,
                     ranged_projectile_sprite,
-                    level: experience.map(|e| e.level),
                     armor: defense_stats.map(|d| d.armor).unwrap_or(0),
                     block: defense_stats.map(|d| d.block).unwrap_or(0),
                 }
@@ -291,9 +276,7 @@ pub fn resolve_battle_turn(
         }
 
         let mut target_query = combat_queries.p1();
-        let Ok((mut target_vitals, is_player, is_npc, mut target_magic)) =
-            target_query.get_mut(target_entity)
-        else {
+        let Ok((target_vitals, mut target_magic)) = target_query.get_mut(target_entity) else {
             continue;
         };
 
@@ -301,7 +284,18 @@ pub fn resolve_battle_turn(
             continue;
         }
 
-        target_vitals.health = (target_vitals.health - damage as f32).max(0.0);
+        let damage_source = if attacker.is_player {
+            DamageSource::Player(PlayerId(attacker.player_id.unwrap_or(0)))
+        } else {
+            DamageSource::Npc {
+                entity: attacker.entity,
+            }
+        };
+        pending_damage.push(DamageEvent {
+            target: target_entity,
+            amount: damage as f32,
+            source: damage_source,
+        });
 
         let hit_vfx_id = definitions
             .get(&attacker.definition_id)
@@ -315,6 +309,8 @@ pub fn resolve_battle_turn(
 
         // Damage wakes a sleeping target (and clears any pending Sleep
         // entry). NPCs keep their CombatTarget so they re-engage immediately.
+        // Done here (before on-hit rolls re-apply Sleep) to preserve the
+        // existing semantic where a Sleep on-hit can re-sleep the target.
         if let Some(effects) = target_magic.as_mut() {
             effects.clear(crate::magic::resources::EffectKind::Sleep);
         }
@@ -343,12 +339,20 @@ pub fn resolve_battle_turn(
                         if !roll_chance(on_hit.chance, salt) {
                             continue;
                         }
-                        effects.apply(EffectSpec {
-                            kind: on_hit.kind,
-                            magnitude: on_hit.magnitude,
-                            seconds: on_hit.seconds,
-                            secondary_magnitude: on_hit.secondary_magnitude,
-                        });
+                        let caster = if attacker.is_player {
+                            attacker.player_id.map(PlayerId)
+                        } else {
+                            None
+                        };
+                        effects.apply(
+                            EffectSpec {
+                                kind: on_hit.kind,
+                                magnitude: on_hit.magnitude,
+                                seconds: on_hit.seconds,
+                                secondary_magnitude: on_hit.secondary_magnitude,
+                            },
+                            caster,
+                        );
                         broadcast_chat_line(
                             &mut chat_log_query,
                             format!(
@@ -360,67 +364,6 @@ pub fn resolve_battle_turn(
                     }
                 }
             }
-        }
-
-        if target_vitals.health > 0.0 {
-            continue;
-        }
-
-        if is_npc.is_some() {
-            if let Some(loot_table) = definitions
-                .get(&target.definition_id)
-                .and_then(|def| def.loot_table.as_ref())
-            {
-                spawn_corpse_for_npc(
-                    &mut commands,
-                    &definitions,
-                    &mut object_registry,
-                    loot_table,
-                    target.space_id,
-                    target.position,
-                );
-            }
-            quest_events
-                .events
-                .push(crate::quest::events::QuestEvent::ObjectKilled {
-                    type_id: target.definition_id.clone(),
-                    killer_player_id: attacker.player_id,
-                });
-
-            if attacker.is_player {
-                if let Some(killer_player_id) = attacker.player_id {
-                    let amount = xp_grant_for_kill(target.level.unwrap_or(1));
-                    pending_xp_grants.grants.push(PendingXpGrant {
-                        player_id: PlayerId(killer_player_id),
-                        amount,
-                    });
-                    broadcast_chat_line(
-                        &mut chat_log_query,
-                        format!("[{} gained {} XP]", attacker.name, amount),
-                    );
-                }
-            }
-
-            ui_events.push_broadcast(GameUiEvent::VfxSpawn {
-                definition_id: "death_poof".to_owned(),
-                anchor: VfxAnchor::tile(target.space_id, target.position),
-            });
-            commands.entity(target_entity).despawn();
-            broadcast_chat_line(&mut chat_log_query, format!("[{} dies]", target.name));
-            continue;
-        }
-
-        if is_player.is_some() {
-            broadcast_chat_line(
-                &mut chat_log_query,
-                format!("[{} is defeated]", target.name),
-            );
-            pending_player_deaths.deaths.push(PendingPlayerDeath {
-                entity: target_entity,
-                space_id: target.space_id,
-                tile_position: target.position,
-                name: target.name.clone(),
-            });
         }
     }
 }

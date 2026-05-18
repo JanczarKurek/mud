@@ -11,6 +11,7 @@ pub mod trade;
 use bevy::prelude::*;
 
 use crate::app::state::simulation_active;
+use crate::combat::damage::PendingDamageEvents;
 use crate::combat::systems::resolve_battle_turn;
 use crate::game::chat::process_say_commands;
 use crate::game::projection::{
@@ -45,6 +46,7 @@ impl Plugin for GameServerPlugin {
         app.insert_resource(PendingGameCommands::default())
             .insert_resource(PendingGameEvents::default())
             .insert_resource(PendingGameUiEvents::default())
+            .insert_resource(PendingDamageEvents::default())
             .insert_resource(ClientGameState::default())
             .insert_resource(ContainerViewers::default())
             .insert_resource(ActiveTrades::default())

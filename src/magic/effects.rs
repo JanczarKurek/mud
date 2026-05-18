@@ -30,10 +30,11 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::combat::damage::{DamageEvent, DamageSource, PendingDamageEvents};
 use crate::combat::damage_type::DamageType;
 use crate::magic::resources::{EffectKind, EffectSpec};
 use crate::npc::components::Npc;
-use crate::player::components::{Player, VitalStats};
+use crate::player::components::{Player, PlayerId, VitalStats};
 
 /// Active timed magical effects on a single entity.
 #[derive(Component, Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -56,6 +57,11 @@ pub struct ActiveEffect {
     /// `None` for all other kinds.
     #[serde(default)]
     pub secondary_magnitude: Option<f32>,
+    /// Player who applied this effect, used for XP attribution when a DoT
+    /// tick delivers the killing blow. `None` means no player attribution
+    /// (NPC-applied effects, environmental sources).
+    #[serde(default)]
+    pub caster: Option<PlayerId>,
 }
 
 /// Boolean-CC duration multiplier per existing active stack of the same kind.
@@ -72,7 +78,11 @@ impl MagicEffects {
     /// For boolean CC kinds the incoming `seconds` is first scaled by
     /// `CC_DR_FACTOR^N` where `N` is the number of currently active entries
     /// of the same kind, providing diminishing returns on chain-stuns.
-    pub fn apply(&mut self, spec: EffectSpec) {
+    ///
+    /// `caster` is the player who applied this effect (used for XP
+    /// attribution when a DoT tick from this entry delivers a killing blow).
+    /// Pass `None` for NPC-applied effects and environmental sources.
+    pub fn apply(&mut self, spec: EffectSpec, caster: Option<PlayerId>) {
         if spec.seconds <= 0.0 {
             return;
         }
@@ -89,6 +99,7 @@ impl MagicEffects {
             magnitude: spec.magnitude,
             remaining_seconds: seconds,
             secondary_magnitude: spec.secondary_magnitude,
+            caster,
         });
     }
 
@@ -263,22 +274,28 @@ pub fn tick_magic_effects(time: Res<Time>, mut query: Query<&mut MagicEffects>) 
 
 /// Apply DoT damage from active Burning / Chill / Poisoned effects. For each
 /// DoT kind with any active entries on the target, advance a shared per-kind
-/// tick accumulator; on every full `DOT_TICK_INTERVAL_SECONDS` worth, subtract
-/// the L2-aggregated magnitude from `VitalStats::health`. Server-side only;
-/// gated by `simulation_active`.
+/// tick accumulator; on every full `DOT_TICK_INTERVAL_SECONDS` worth, push a
+/// `DamageEvent` carrying the L2-aggregated magnitude of damage. Attribution
+/// uses the most-recently-applied entry's `caster` of that kind (last-cast
+/// wins for the kill credit); entries with no caster fall back to
+/// `DamageSource::Environment`. Server-side only; gated by `simulation_active`.
 pub fn tick_dot_effects(
     time: Res<Time>,
     mut query: Query<
-        (&mut MagicEffects, &mut VitalStats),
+        (Entity, &mut MagicEffects, &VitalStats),
         bevy::ecs::query::Or<(With<Player>, With<Npc>)>,
     >,
+    mut pending_damage: ResMut<PendingDamageEvents>,
 ) {
     let dt = time.delta_secs();
     if dt <= 0.0 {
         return;
     }
-    for (mut effects, mut vitals) in query.iter_mut() {
+    for (entity, mut effects, vitals) in query.iter_mut() {
         if effects.active.is_empty() {
+            continue;
+        }
+        if vitals.health <= 0.0 {
             continue;
         }
         for kind in DOT_KINDS {
@@ -286,14 +303,27 @@ pub fn tick_dot_effects(
             if dps <= 0.0 {
                 continue;
             }
+            // Most-recent (last-pushed) active entry of this kind owns the
+            // attribution. Matches the "last hit wins" rule for direct hits.
+            let caster = effects
+                .active
+                .iter()
+                .rev()
+                .find(|e| e.kind == kind)
+                .and_then(|e| e.caster);
+            let source = match caster {
+                Some(player_id) => DamageSource::OwnedByPlayer(player_id),
+                None => DamageSource::Environment,
+            };
             let acc = accumulator_for_kind(&mut effects.kind_tick_accumulators, kind);
             *acc += dt;
             while *acc >= DOT_TICK_INTERVAL_SECONDS {
                 *acc -= DOT_TICK_INTERVAL_SECONDS;
-                if vitals.health <= 0.0 {
-                    break;
-                }
-                vitals.health = (vitals.health - dps).max(0.0);
+                pending_damage.push(DamageEvent {
+                    target: entity,
+                    amount: dps,
+                    source,
+                });
             }
         }
     }
@@ -329,7 +359,7 @@ mod tests {
     #[test]
     fn apply_inserts_new_effect() {
         let mut effects = MagicEffects::default();
-        effects.apply(spec(EffectKind::Glimmer, 4.0, 600.0));
+        effects.apply(spec(EffectKind::Glimmer, 4.0, 600.0), None);
         assert_eq!(effects.active.len(), 1);
         assert_eq!(effects.find(EffectKind::Glimmer).unwrap().magnitude, 4.0);
     }
@@ -337,11 +367,11 @@ mod tests {
     #[test]
     fn clear_removes_kind_and_accumulator() {
         let mut effects = MagicEffects::default();
-        effects.apply(spec(EffectKind::Sleep, 1.0, 10.0));
-        effects.apply(spec(EffectKind::Slow, 2.0, 5.0));
+        effects.apply(spec(EffectKind::Sleep, 1.0, 10.0), None);
+        effects.apply(spec(EffectKind::Slow, 2.0, 5.0), None);
         // Seed a Burning entry + force its accumulator to exist by faking a
         // tick path (we use `apply` then a direct seed).
-        effects.apply(spec(EffectKind::Burning, 3.0, 10.0));
+        effects.apply(spec(EffectKind::Burning, 3.0, 10.0), None);
         accumulator_for_kind(&mut effects.kind_tick_accumulators, EffectKind::Burning);
         effects.clear(EffectKind::Sleep);
         effects.clear(EffectKind::Burning);
@@ -370,20 +400,20 @@ mod tests {
     #[test]
     fn shield_and_bless_aggregate_via_l2() {
         let mut effects = MagicEffects::default();
-        effects.apply(spec(EffectKind::Shield, 3.0, 60.0));
-        effects.apply(spec(EffectKind::Shield, 4.0, 60.0));
+        effects.apply(spec(EffectKind::Shield, 3.0, 60.0), None);
+        effects.apply(spec(EffectKind::Shield, 4.0, 60.0), None);
         // √(9 + 16) = 5 → truncates to 5
         assert_eq!(effects.bonus_ac(), 5);
-        effects.apply(spec(EffectKind::Bless, 3.0, 60.0));
-        effects.apply(spec(EffectKind::Bless, 4.0, 60.0));
+        effects.apply(spec(EffectKind::Bless, 3.0, 60.0), None);
+        effects.apply(spec(EffectKind::Bless, 4.0, 60.0), None);
         assert_eq!(effects.to_hit_bonus(), 5);
     }
 
     #[test]
     fn glimmer_aggregates_via_l2() {
         let mut effects = MagicEffects::default();
-        effects.apply(spec(EffectKind::Glimmer, 4.0, 600.0));
-        effects.apply(spec(EffectKind::Glimmer, 3.0, 300.0));
+        effects.apply(spec(EffectKind::Glimmer, 4.0, 600.0), None);
+        effects.apply(spec(EffectKind::Glimmer, 3.0, 300.0), None);
         // √(16 + 9) = 5
         assert!((effects.glimmer_radius() - 5.0).abs() < 1e-5);
     }
@@ -391,8 +421,8 @@ mod tests {
     #[test]
     fn dot_recast_same_spell_amplifies_by_sqrt2() {
         let mut effects = MagicEffects::default();
-        effects.apply(spec(EffectKind::Burning, 10.0, 10.0));
-        effects.apply(spec(EffectKind::Burning, 10.0, 10.0));
+        effects.apply(spec(EffectKind::Burning, 10.0, 10.0), None);
+        effects.apply(spec(EffectKind::Burning, 10.0, 10.0), None);
         let dps = effects.l2_magnitude(EffectKind::Burning);
         assert!(
             (dps - (200.0f32).sqrt()).abs() < 1e-4,
@@ -403,8 +433,8 @@ mod tests {
     #[test]
     fn dot_strong_short_plus_weak_long_is_subadditive() {
         let mut effects = MagicEffects::default();
-        effects.apply(spec(EffectKind::Burning, 10.0, 1.0));
-        effects.apply(spec(EffectKind::Burning, 1.0, 10.0));
+        effects.apply(spec(EffectKind::Burning, 10.0, 1.0), None);
+        effects.apply(spec(EffectKind::Burning, 1.0, 10.0), None);
         let dps = effects.l2_magnitude(EffectKind::Burning);
         // √(100 + 1) ≈ 10.05 — far less than 11 (naive additive).
         assert!(
@@ -416,8 +446,8 @@ mod tests {
     #[test]
     fn dot_per_entry_durations_are_independent() {
         let mut effects = MagicEffects::default();
-        effects.apply(spec(EffectKind::Burning, 5.0, 2.0));
-        effects.apply(spec(EffectKind::Burning, 5.0, 10.0));
+        effects.apply(spec(EffectKind::Burning, 5.0, 2.0), None);
+        effects.apply(spec(EffectKind::Burning, 5.0, 10.0), None);
         // Hand-roll the duration-tick to avoid wiring up a Bevy world here.
         for effect in effects.active.iter_mut() {
             effect.remaining_seconds -= 3.0;
@@ -430,12 +460,12 @@ mod tests {
     #[test]
     fn aggregator_is_commutative_in_apply_order() {
         let mut a = MagicEffects::default();
-        a.apply(spec(EffectKind::Burning, 3.0, 10.0));
-        a.apply(spec(EffectKind::Burning, 7.0, 5.0));
+        a.apply(spec(EffectKind::Burning, 3.0, 10.0), None);
+        a.apply(spec(EffectKind::Burning, 7.0, 5.0), None);
 
         let mut b = MagicEffects::default();
-        b.apply(spec(EffectKind::Burning, 7.0, 5.0));
-        b.apply(spec(EffectKind::Burning, 3.0, 10.0));
+        b.apply(spec(EffectKind::Burning, 7.0, 5.0), None);
+        b.apply(spec(EffectKind::Burning, 3.0, 10.0), None);
 
         assert!(
             (a.l2_magnitude(EffectKind::Burning) - b.l2_magnitude(EffectKind::Burning)).abs()
@@ -447,7 +477,7 @@ mod tests {
     fn drunk_complement_saturates_below_one() {
         let mut effects = MagicEffects::default();
         for _ in 0..3 {
-            effects.apply(spec(EffectKind::Drunk, 0.5, 10.0));
+            effects.apply(spec(EffectKind::Drunk, 0.5, 10.0), None);
         }
         // 1 - 0.5^3 = 0.875
         let p = effects.drunk_deviation_probability().unwrap();
@@ -455,7 +485,7 @@ mod tests {
         // Adding more Drunks pushes toward 1 and saturates there (the
         // clamp guarantees we never exceed 1).
         for _ in 0..10 {
-            effects.apply(spec(EffectKind::Drunk, 0.9, 10.0));
+            effects.apply(spec(EffectKind::Drunk, 0.9, 10.0), None);
         }
         let p2 = effects.drunk_deviation_probability().unwrap();
         assert!(p2 <= 1.0 && p2 > 0.999, "got {p2}");
@@ -464,16 +494,16 @@ mod tests {
     #[test]
     fn slow_product_stacks_multiplicatively() {
         let mut effects = MagicEffects::default();
-        effects.apply(spec(EffectKind::Slow, 2.0, 10.0));
-        effects.apply(spec(EffectKind::Slow, 2.0, 10.0));
+        effects.apply(spec(EffectKind::Slow, 2.0, 10.0), None);
+        effects.apply(spec(EffectKind::Slow, 2.0, 10.0), None);
         assert!((effects.npc_step_multiplier() - 4.0).abs() < 1e-5);
     }
 
     #[test]
     fn haste_product_stacks_multiplicatively() {
         let mut effects = MagicEffects::default();
-        effects.apply(spec(EffectKind::Haste, 0.7, 60.0));
-        effects.apply(spec(EffectKind::Haste, 0.7, 60.0));
+        effects.apply(spec(EffectKind::Haste, 0.7, 60.0), None);
+        effects.apply(spec(EffectKind::Haste, 0.7, 60.0), None);
         // 0.49, well above the 0.05 floor.
         assert!((effects.haste_multiplier() - 0.49).abs() < 1e-5);
     }
@@ -482,7 +512,7 @@ mod tests {
     fn sleep_dr_halves_each_recast() {
         let mut effects = MagicEffects::default();
         for _ in 0..4 {
-            effects.apply(spec(EffectKind::Sleep, 10.0, 10.0));
+            effects.apply(spec(EffectKind::Sleep, 10.0, 10.0), None);
         }
         let durations: Vec<f32> = effects
             .active
@@ -501,7 +531,7 @@ mod tests {
     fn paralyze_helper_reports_active() {
         let mut effects = MagicEffects::default();
         assert!(!effects.is_paralyzed());
-        effects.apply(spec(EffectKind::Paralyze, 0.0, 5.0));
+        effects.apply(spec(EffectKind::Paralyze, 0.0, 5.0), None);
         assert!(effects.is_paralyzed());
     }
 
@@ -511,13 +541,13 @@ mod tests {
         // No Slow, no Chill → 1.0
         assert_eq!(effects.npc_step_multiplier(), 1.0);
         // Pure DoT Chill (no secondary) → still 1.0
-        effects.apply(spec(EffectKind::Chill, 2.0, 10.0));
+        effects.apply(spec(EffectKind::Chill, 2.0, 10.0), None);
         assert_eq!(effects.npc_step_multiplier(), 1.0);
         // Add a Chill with a slow component
-        effects.apply(spec_with_secondary(EffectKind::Chill, 2.0, 1.5, 10.0));
+        effects.apply(spec_with_secondary(EffectKind::Chill, 2.0, 1.5, 10.0), None);
         assert!((effects.npc_step_multiplier() - 1.5).abs() < 1e-5);
         // Layer Slow on top → multiplies
-        effects.apply(spec(EffectKind::Slow, 2.0, 10.0));
+        effects.apply(spec(EffectKind::Slow, 2.0, 10.0), None);
         assert!((effects.npc_step_multiplier() - 3.0).abs() < 1e-5);
     }
 
@@ -544,14 +574,14 @@ mod tests {
         let mut health = 100.0f32;
 
         // First entry arrives at t=0.
-        effects.apply(spec(EffectKind::Burning, 3.0, 10.0));
+        effects.apply(spec(EffectKind::Burning, 3.0, 10.0), None);
         // Advance 0.4s — no tick yet.
         let dps = effects.l2_magnitude(EffectKind::Burning);
         *accumulator_for_kind(&mut effects.kind_tick_accumulators, EffectKind::Burning) += 0.4;
         let _ = dps;
 
         // Second entry arrives at t=0.4.
-        effects.apply(spec(EffectKind::Burning, 4.0, 10.0));
+        effects.apply(spec(EffectKind::Burning, 4.0, 10.0), None);
 
         // Advance another 0.6s → t=1.0, accumulator hits the tick threshold.
         let dps = effects.l2_magnitude(EffectKind::Burning);
@@ -571,8 +601,8 @@ mod tests {
     #[test]
     fn applying_zero_or_negative_seconds_is_a_noop() {
         let mut effects = MagicEffects::default();
-        effects.apply(spec(EffectKind::Burning, 5.0, 0.0));
-        effects.apply(spec(EffectKind::Sleep, 0.0, 0.0));
+        effects.apply(spec(EffectKind::Burning, 5.0, 0.0), None);
+        effects.apply(spec(EffectKind::Sleep, 0.0, 0.0), None);
         assert!(effects.active.is_empty());
     }
 }
