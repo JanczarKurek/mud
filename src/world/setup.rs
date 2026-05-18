@@ -429,6 +429,14 @@ macro_rules! apply_overworld_definition_components {
                 __dialog_node.clone(),
             ));
         }
+        if !__definition.on_stepped.is_empty() {
+            let __triggers =
+                $crate::world::step_triggers::StepTrigger::from_def_list(
+                    &__definition.on_stepped,
+                    &__definition.name,
+                );
+            $entity.insert($crate::world::step_triggers::OnSteppedTriggers(__triggers));
+        }
     }};
 }
 

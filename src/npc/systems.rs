@@ -54,6 +54,7 @@ pub fn update_roaming_npcs(
         ),
         (With<Npc>, Without<Player>),
     >,
+    mut pending_steps: ResMut<crate::world::step_triggers::PendingStepEvents>,
     mut commands: Commands,
 ) {
     let elapsed = time.elapsed_secs();
@@ -174,6 +175,11 @@ pub fn update_roaming_npcs(
         if let Some(new_position) = outcome.move_to {
             let old_position = *tile_position;
             *tile_position = new_position;
+            pending_steps.push(crate::world::step_triggers::StepEvent {
+                entity,
+                space_id: resident.space_id,
+                tile: new_position,
+            });
             if let Some(direction) = Direction::from_delta(
                 new_position.x - old_position.x,
                 new_position.y - old_position.y,
@@ -1238,6 +1244,7 @@ mod tests {
     fn hostile_npc_targets_the_nearest_player() {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
+        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
 
         spawn_player(&mut app, 1, TilePosition::ground(5, 5));
         let near_player = spawn_player(&mut app, 2, TilePosition::ground(2, 2));
@@ -1256,6 +1263,7 @@ mod tests {
     fn archer_retreats_when_player_too_close() {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
+        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
 
         spawn_player(&mut app, 1, TilePosition::ground(5, 6));
         let archer = spawn_archer(&mut app, TilePosition::ground(5, 5), 6);
@@ -1275,6 +1283,7 @@ mod tests {
         // With range=6, preferred = (6-1).max(2) = 5. Tolerance 1.
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
+        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
 
         spawn_player(&mut app, 1, TilePosition::ground(5, 10));
         let archer = spawn_archer(&mut app, TilePosition::ground(5, 5), 6);
@@ -1295,6 +1304,7 @@ mod tests {
         for player_y in [9, 10, 11] {
             let mut app = App::new();
             app.add_plugins(MinimalPlugins);
+        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
 
             spawn_player(&mut app, 1, TilePosition::ground(5, player_y));
             let archer = spawn_archer(&mut app, TilePosition::ground(5, 5), 6);
@@ -1315,6 +1325,7 @@ mod tests {
         // preferred = 5, tolerance 1 → archer chases at distance > 6.
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
+        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
 
         spawn_player(&mut app, 1, TilePosition::ground(5, 12));
         let archer = spawn_archer(&mut app, TilePosition::ground(5, 5), 6);
@@ -1336,6 +1347,7 @@ mod tests {
         // the archer may strafe to a tile that maintains current distance.
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
+        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
 
         spawn_player(&mut app, 1, TilePosition::ground(5, 6));
         let archer = spawn_archer(&mut app, TilePosition::ground(5, 5), 6);
@@ -1365,6 +1377,7 @@ mod tests {
     fn melee_npc_closes_to_adjacent() {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
+        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
 
         spawn_player(&mut app, 1, TilePosition::ground(5, 8));
         let npc = spawn_melee(&mut app, TilePosition::ground(5, 5));
@@ -1384,6 +1397,7 @@ mod tests {
     fn npc_does_not_chase_player_on_different_floor() {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
+        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
 
         spawn_player(&mut app, 1, TilePosition::new(5, 6, 1));
         let npc = spawn_melee(&mut app, TilePosition::ground(5, 5));
@@ -1401,6 +1415,7 @@ mod tests {
     fn idle_pause_skips_step() {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
+        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
 
         let npc = app
             .world_mut()
@@ -1447,6 +1462,7 @@ mod tests {
         // moving in the same direction.
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
+        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
 
         let npc = app
             .world_mut()
@@ -1493,6 +1509,7 @@ mod tests {
     fn los_blocks_aggro_through_wall() {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
+        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
 
         spawn_player(&mut app, 1, TilePosition::ground(5, 8));
         let npc = app
@@ -1556,6 +1573,7 @@ mod tests {
     fn los_allows_aggro_with_clear_line() {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
+        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
 
         spawn_player(&mut app, 1, TilePosition::ground(5, 8));
         let npc = app
@@ -1606,6 +1624,7 @@ mod tests {
         // other player closer; loyalty should keep the original target.
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
+        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
 
         let first = spawn_player(&mut app, 1, TilePosition::ground(7, 5));
         let _second = spawn_player(&mut app, 2, TilePosition::ground(5, 7));
@@ -1650,6 +1669,7 @@ mod tests {
         // must find a path around.
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
+        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
 
         spawn_player(&mut app, 1, TilePosition::ground(8, 5));
         let npc = spawn_melee(&mut app, TilePosition::ground(5, 5));
@@ -1699,6 +1719,7 @@ mod tests {
         ] {
             let mut app = App::new();
             app.add_plugins(MinimalPlugins);
+        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
             spawn_player(&mut app, 1, player_position);
             let npc = spawn_melee(&mut app, start);
 
@@ -1735,6 +1756,7 @@ mod tests {
         ] {
             let mut app = App::new();
             app.add_plugins(MinimalPlugins);
+        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
             spawn_player(&mut app, 1, player_position);
             let npc = spawn_melee(&mut app, TilePosition::ground(5, 5));
 
@@ -1756,6 +1778,7 @@ mod tests {
         // last_seen, then drops back to Wander on expiry.
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
+        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
 
         // No player nearby — only the alert memory.
         let npc = app

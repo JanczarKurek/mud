@@ -874,6 +874,20 @@ fn load_world_from_snapshot(
             ));
         }
 
+        // Re-derive `OnSteppedTriggers` from the definition on load. The
+        // component itself is not persisted (triggers are pure config — the
+        // accumulator phase is fine to reset). Without this, step triggers
+        // silently no-op for every object after the first reload.
+        if let Some(definition) = object_definitions.get(&definition_id_for_lookup) {
+            if !definition.on_stepped.is_empty() {
+                let triggers = crate::world::step_triggers::StepTrigger::from_def_list(
+                    &definition.on_stepped,
+                    &definition.name,
+                );
+                entity.insert(crate::world::step_triggers::OnSteppedTriggers(triggers));
+            }
+        }
+
         let entity_id = entity.id();
         object_entities.insert(save_local_id, entity_id);
     }

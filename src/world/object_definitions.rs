@@ -122,6 +122,13 @@ pub struct OverworldObjectDefinition {
     /// `to`-state, and any `side_effects` to run after the transition lands.
     #[serde(default)]
     pub interactions: Vec<ObjectInteractionDef>,
+    /// Passive triggers that fire when an entity (player or NPC) steps onto a
+    /// tile containing this object. Each trigger can apply status effects,
+    /// deal damage, and/or transition the object's `ObjectState`. Run in
+    /// declared order so `apply_damage` lands before `set_state` when a trap
+    /// snaps. Empty = no trigger (default).
+    #[serde(default)]
+    pub on_stepped: Vec<StepTriggerDef>,
     /// Property keys whose values are authored object ids. Resolved to runtime
     /// u64s (as decimal strings) during map load — see
     /// `SpaceDefinition::resolve_objects`. Used for cross-object wiring such
@@ -302,6 +309,50 @@ pub struct LockDef {
     pub lock_id: u32,
     pub pick_dc: i32,
     pub force_dc: i32,
+}
+
+/// One passive `on_stepped` trigger authored on an object. Fires when an
+/// entity moves onto a tile containing this object and the current
+/// `ObjectState` matches the `from` filter (or the filter is empty).
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct StepTriggerDef {
+    /// Allowed source states. Empty = fire regardless of state (or for
+    /// stateless objects).
+    #[serde(default)]
+    pub from: Vec<String>,
+    /// If set, in addition to firing on entry, this trigger also fires every
+    /// `tick_seconds` while an entity remains colocated with the object and
+    /// the `from` filter still matches. `None` = legacy one-shot-on-entry.
+    #[serde(default)]
+    pub tick_seconds: Option<f32>,
+    /// Ordered list of effects to apply. Damage runs before any state
+    /// transition that the same trigger also requests.
+    pub effects: Vec<StepEffectDef>,
+}
+
+/// One effect within an `on_stepped` trigger.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub enum StepEffectDef {
+    /// Apply a timed `MagicEffects` entry (Burning, Chill, Slow, …) to the
+    /// stepper. Same parameter shape as a spell's `EffectSpec`. The trap is
+    /// the caster (`caster = None` → no XP attribution if the DoT delivers
+    /// the killing blow).
+    ApplyEffect {
+        effect: EffectKind,
+        magnitude: f32,
+        seconds: f32,
+        #[serde(default)]
+        secondary_magnitude: Option<f32>,
+    },
+    /// Deal a `DamageExpr` roll to the stepper as `DamageSource::Environment`.
+    ApplyDamage { amount: String },
+    /// Transition this object's `ObjectState` to `state`. The definition
+    /// must declare matching `states:` + (usually) a re-arm `interactions:`
+    /// verb to recover.
+    SetState { state: String },
 }
 
 /// Side-effect to run after an interaction transitions an object's state.
@@ -1502,6 +1553,81 @@ interactions:
         assert_eq!(fish.grants_items.len(), 1);
         assert_eq!(fish.grants_items[0].type_id, "raw_fish");
         assert_eq!(fish.respawn_seconds, Some(180.0));
+    }
+
+    #[test]
+    fn on_stepped_triggers_round_trip() {
+        let yaml = r#"
+name: Bear Trap
+description: ""
+colliding: false
+movable: false
+storable: false
+render:
+  z_index: 0.2
+  debug_color: [120, 120, 120]
+  debug_size: 0.8
+states:
+  armed: {}
+  sprung: {}
+initial_state: armed
+on_stepped:
+  - from: [armed]
+    effects:
+      - kind: apply_damage
+        amount: "2d6+4"
+      - kind: apply_effect
+        effect: chill
+        magnitude: 1.0
+        seconds: 4.0
+        secondary_magnitude: 2.0
+      - kind: set_state
+        state: sprung
+"#;
+        let def = parse_def(yaml);
+        assert_eq!(def.on_stepped.len(), 1);
+        let trigger = &def.on_stepped[0];
+        assert_eq!(trigger.from, vec!["armed".to_owned()]);
+        assert_eq!(trigger.effects.len(), 3);
+        match &trigger.effects[0] {
+            StepEffectDef::ApplyDamage { amount } => assert_eq!(amount, "2d6+4"),
+            other => panic!("unexpected first effect: {other:?}"),
+        }
+        match &trigger.effects[1] {
+            StepEffectDef::ApplyEffect {
+                effect,
+                magnitude,
+                seconds,
+                secondary_magnitude,
+            } => {
+                assert_eq!(*effect, EffectKind::Chill);
+                assert_eq!(*magnitude, 1.0);
+                assert_eq!(*seconds, 4.0);
+                assert_eq!(*secondary_magnitude, Some(2.0));
+            }
+            other => panic!("unexpected second effect: {other:?}"),
+        }
+        match &trigger.effects[2] {
+            StepEffectDef::SetState { state } => assert_eq!(state, "sprung"),
+            other => panic!("unexpected third effect: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn on_stepped_defaults_to_empty() {
+        let yaml = r#"
+name: Plain Floor Item
+description: ""
+colliding: false
+movable: false
+storable: false
+render:
+  z_index: 0.0
+  debug_color: [0, 0, 0]
+  debug_size: 1.0
+"#;
+        let def = parse_def(yaml);
+        assert!(def.on_stepped.is_empty());
     }
 
     #[test]

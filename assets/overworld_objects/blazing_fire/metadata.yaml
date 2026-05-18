@@ -1,0 +1,29 @@
+extends: static_world
+name: Blazing Fire
+description: A patch of flame licking at the ground. Stepping through it will burn you.
+light: { color: [255, 140, 60], radius: 4.0, intensity: 1.0 }
+render:
+  z_index: 0.22
+  debug_color: [240, 110, 30]
+  debug_size: 0.85
+  sprite_path: overworld_objects/blazing_fire/sheet.png
+  animation:
+    sheet_path: overworld_objects/blazing_fire/sheet.png
+    frame_width: 48
+    frame_height: 48
+    sheet_columns: 4
+    sheet_rows: 1
+    clips:
+      idle:
+        row: 0
+        start_col: 0
+        frame_count: 4
+        fps: 8.0
+        looping: true
+on_stepped:
+  - tick_seconds: 1.0
+    effects:
+      - kind: apply_effect
+        effect: burning
+        magnitude: 4.0
+        seconds: 2.0

@@ -412,7 +412,7 @@ fn skill_success_message(skill: Skill, verb: &str, total: i32, dc: i32) -> Strin
 /// cascades. Updates the `ObjectState` component, mirrors the value into the
 /// registry's properties bag, and toggles `Collider` to match the new state's
 /// `colliding` override.
-fn apply_state_transition(
+pub(crate) fn apply_state_transition(
     object_id: u64,
     new_state: &str,
     definitions: &OverworldObjectDefinitions,

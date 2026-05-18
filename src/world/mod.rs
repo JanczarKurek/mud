@@ -18,6 +18,7 @@ pub mod object_definitions;
 pub mod object_registry;
 pub mod resources;
 pub mod setup;
+pub mod step_triggers;
 pub mod systems;
 pub mod ttl;
 pub mod vfx;
@@ -58,6 +59,9 @@ use crate::world::resources::{
     ClientRemotePlayerProjectionState, ClientWorldProjectionState, SpaceManager, ViewScrollOffset,
 };
 use crate::world::setup::{initialize_runtime_spaces, WorldStartupSet};
+use crate::world::step_triggers::{
+    process_continuous_step_triggers, process_step_triggers, PendingStepEvents,
+};
 use crate::world::systems::{
     cleanup_empty_ephemeral_spaces, compute_stack_offsets,
     sync_authoritative_world_object_position_view, sync_client_world_projection,
@@ -97,6 +101,7 @@ impl Plugin for WorldServerPlugin {
         .insert_resource(object_definitions)
         .insert_resource(VfxDefinitions::load_from_disk())
         .insert_resource(FloorTilesetDefinitions::load_from_disk())
+        .insert_resource(PendingStepEvents::default())
         .add_systems(
             Startup,
             initialize_runtime_spaces.in_set(WorldStartupSet::InitializeRuntimeSpaces),
@@ -104,6 +109,27 @@ impl Plugin for WorldServerPlugin {
         .add_systems(
             Update,
             advance_world_clock.run_if(crate::app::state::simulation_active),
+        )
+        .add_systems(
+            Update,
+            // Drain the step-event queue after every movement site has pushed
+            // and before damage events are resolved, so trap damage lands in
+            // the same frame as the step that triggered it.
+            process_step_triggers
+                .after(crate::game::systems::process_game_commands)
+                .after(crate::npc::systems::update_roaming_npcs)
+                .before(crate::combat::damage::apply_pending_damage)
+                .run_if(crate::app::state::simulation_active),
+        )
+        .add_systems(
+            Update,
+            // The "while standing on" half of the step-trigger pipeline.
+            // Ordered after the one-shot path so an entry hit always lands
+            // before the very next periodic tick on the same frame.
+            process_continuous_step_triggers
+                .after(process_step_triggers)
+                .before(crate::combat::damage::apply_pending_damage)
+                .run_if(crate::app::state::simulation_active),
         )
         .add_systems(Update, cleanup_empty_ephemeral_spaces)
         .add_plugins(crate::world::ttl::TtlPlugin);

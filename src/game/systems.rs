@@ -43,6 +43,7 @@ use bevy::ecs::system::SystemParam;
 pub struct CommandOutputs<'w, 's> {
     pub ui_events: ResMut<'w, PendingGameUiEvents>,
     pub pending_damage: ResMut<'w, PendingDamageEvents>,
+    pub pending_steps: ResMut<'w, crate::world::step_triggers::PendingStepEvents>,
     pub container_viewers: ResMut<'w, ContainerViewers>,
     pub player_regen_buffs:
         Query<'w, 's, &'static mut crate::player::components::RegenBuffs, With<Player>>,
@@ -286,6 +287,7 @@ pub fn process_game_commands(
                     &mut space_authority.floor_maps,
                     encumbered,
                     &mut commands,
+                    &mut command_outputs.pending_steps,
                 );
             }
             GameCommand::SetCombatTarget { target_object_id } => {
@@ -508,6 +510,7 @@ pub fn process_game_commands(
                     tile_position,
                     &space_authority.space_manager,
                     &mut player_queries.p2(),
+                    &mut command_outputs.pending_steps,
                 );
             }
             GameCommand::AdminDespawn { object_id } => {
@@ -812,6 +815,7 @@ fn handle_move_player(
     floor_maps: &mut FloorMaps,
     encumbered: bool,
     commands: &mut Commands,
+    pending_steps: &mut crate::world::step_triggers::PendingStepEvents,
 ) {
     let Ok((_, _, _, _, mut space_resident, mut tile_position, mut movement_cooldown, _, _)) =
         player_query.get_mut(player_entity)
@@ -862,6 +866,11 @@ fn handle_move_player(
     };
 
     *tile_position = target_position;
+    pending_steps.push(crate::world::step_triggers::StepEvent {
+        entity: player_entity,
+        space_id: space_resident.space_id,
+        tile: target_position,
+    });
     let mut cooldown_scale = if encumbered { 2.0 } else { 1.0 };
     if let Ok(effects) = player_magic_effects.get(player_entity) {
         cooldown_scale *= effects.haste_multiplier();
@@ -899,6 +908,11 @@ fn handle_move_player(
 
     space_resident.space_id = destination_space_id;
     *tile_position = portal.destination_tile.to_tile_position();
+    pending_steps.push(crate::world::step_triggers::StepEvent {
+        entity: player_entity,
+        space_id: destination_space_id,
+        tile: *tile_position,
+    });
 }
 
 /// Sample a deterministic boolean for drunken fumbling. The nanosecond +
@@ -2679,6 +2693,7 @@ fn handle_admin_teleport(
         ),
         With<Player>,
     >,
+    pending_steps: &mut crate::world::step_triggers::PendingStepEvents,
 ) {
     let Ok((_, _, _, mut chat_log_state, mut space_resident, mut tile_position, _, _, _)) =
         player_query.get_mut(player_entity)
@@ -2704,6 +2719,11 @@ fn handle_admin_teleport(
 
     space_resident.space_id = resolved_space_id;
     *tile_position = target_tile;
+    pending_steps.push(crate::world::step_triggers::StepEvent {
+        entity: player_entity,
+        space_id: resolved_space_id,
+        tile: target_tile,
+    });
     chat_log_state.push_narrator(format!(
         "Teleported to ({}, {}, z={}) in space {}.",
         target_tile.x, target_tile.y, target_tile.z, resolved_space_id.0

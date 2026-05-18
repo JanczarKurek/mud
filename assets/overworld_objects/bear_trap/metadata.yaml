@@ -1,0 +1,38 @@
+extends: static_world
+name: Bear Trap
+description: A heavy iron trap with serrated jaws. Armed traps wait for a footfall; sprung ones must be re-armed before they bite again.
+movable: true
+colliding: false
+storable: true
+render:
+  z_index: 0.18
+  debug_color: [110, 100, 95]
+  debug_size: 0.7
+  sprite_path: overworld_objects/bear_trap/armed.png
+states:
+  armed:
+    sprite_path: overworld_objects/bear_trap/armed.png
+  sprung:
+    sprite_path: overworld_objects/bear_trap/sprung.png
+initial_state: armed
+on_stepped:
+  - from: [armed]
+    effects:
+      - kind: apply_damage
+        amount: "2d6+4"
+      - kind: apply_effect
+        effect: chill
+        magnitude: 1.0
+        seconds: 4.0
+        secondary_magnitude: 2.0
+      - kind: set_state
+        state: sprung
+interactions:
+  - verb: rearm
+    label: Re-arm
+    from: [sprung]
+    to: armed
+  - verb: disarm
+    label: Disarm
+    from: [armed]
+    to: sprung

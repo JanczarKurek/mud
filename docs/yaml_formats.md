@@ -1189,6 +1189,84 @@ Lever wired to a door (map YAML):
 
 Chests get their `open` / `closed` visual purely from the *container-panel viewer count* — no `interactions:` block needed; just declare both `closed` and `open` states alongside `container_capacity`.
 
+### Passive `on_stepped` triggers
+
+A separate, **player-initiated-NOT-required** trigger pathway. Whenever an
+entity (player or NPC) moves onto a tile holding an object with `on_stepped:`,
+the listed effects fire automatically. Use this for environmental hazards —
+fires that burn, traps that snap, slime puddles that slow.
+
+```yaml
+on_stepped:
+  - from: [armed]                # optional; empty/absent = matches any state
+    tick_seconds: 1.0            # optional; if set, the trigger ALSO re-fires
+                                 # every N seconds while an entity remains on
+                                 # the tile and the from-filter still matches.
+    effects:
+      - kind: apply_damage
+        amount: "2d6+4"
+      - kind: apply_effect
+        effect: chill
+        magnitude: 1.0
+        seconds: 4.0
+        secondary_magnitude: 2.0
+      - kind: set_state
+        state: sprung
+```
+
+Each entry is one trigger. Multiple triggers are evaluated in order; effects
+inside a trigger run in declared order, so an `apply_damage` lands before any
+`set_state` in the same trigger (you take the bite *then* the trap snaps).
+
+#### Trigger fields
+
+- `from` — list of `ObjectState` names this trigger fires in. Empty or absent
+  = fires regardless of state (works on stateless objects too).
+- `tick_seconds` *(optional)* — if set, the trigger fires on entry **and**
+  every `tick_seconds` thereafter while an entity remains on the tile and the
+  `from` filter still matches. Each tick re-runs the listed effects — so
+  `apply_effect` stacks (a new `ActiveEffect` entry per tick), `apply_damage`
+  rolls fresh damage, and `set_state` is idempotent once the state has
+  flipped (after which the `from` filter naturally short-circuits further
+  ticks on the same object). Omit for legacy one-shot-on-entry behavior. Use
+  this for *zone hazards* — fire patches, acid pools, healing fountains —
+  where damage should escalate while standing still and taper after leaving.
+- `effects` — required list of effect entries.
+
+#### Effect kinds
+
+Tag each effect with `kind:`.
+
+- `kind: apply_effect` — append a timed `MagicEffects` entry on the stepper
+  (player or NPC; entities without `MagicEffects` are silently skipped). Same
+  shape as a spell's `EffectSpec`:
+  - `effect`  — `EffectKind` (`burning`, `chill`, `poisoned`, `slow`,
+    `paralyze`, `sleep`, `bless`, `shield`, `haste`, `glimmer`, `drunk`)
+  - `magnitude` — float
+  - `seconds`  — float (≤ 0 is silently ignored)
+  - `secondary_magnitude` — optional float (only read by `chill`)
+
+  The stepping trap is the caster (`None` internally), so no XP is granted if
+  a resulting DoT delivers a killing blow.
+
+- `kind: apply_damage` — roll a `DamageExpr` and queue it through the normal
+  damage pipeline as `DamageSource::Environment` (no XP credit). `amount`
+  follows the same grammar as weapon `damage`: `<NdM>[+stat[*k|/k]][+bonus]`.
+  Environmental traps have no attacker stats, so stat terms always evaluate to
+  zero — keep it dice + bonus (e.g. `"2d6+4"`, `"1d10"`, `"15"`).
+
+- `kind: set_state` — transition this object's `ObjectState` to `state`. The
+  definition should declare matching `states:` (with per-state collider/sprite
+  overrides) and usually a recovery `interactions:` verb (e.g. `rearm`). The
+  transition cascade is the same one used by the player-driven interactions
+  pipeline, so collider toggles, sprite swaps, and registry persistence all
+  happen automatically.
+
+A trap that snaps shut combines all three: see
+`assets/overworld_objects/bear_trap/metadata.yaml`. A reusable hazard with no
+state changes (e.g. a permanent patch of fire) uses just `apply_effect` — see
+`assets/overworld_objects/blazing_fire/metadata.yaml`.
+
 ### NPC Loot Tables
 
 NPCs (objects that `extends: npc`) may include an optional `loot` section. When the NPC dies it spawns a corpse container at its tile. The corpse holds any rolled loot and disappears after `corpse_despawn_seconds`.

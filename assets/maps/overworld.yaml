@@ -880,6 +880,12 @@ objects:
     - type: silver_coin
     - type: gold_coin
     - type: herb_pouch
+- id: blazing_fire
+  type: blazing_fire
+  placement: { x: 15, y: 15 }
+- id: bear_trap
+  type: bear_trap
+  placement: { x: 11, y: 11 }
 - id: spell_chest
   type: iron_chest
   placement: { x: 22, y: 10}
