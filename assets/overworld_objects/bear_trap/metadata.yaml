@@ -15,8 +15,6 @@ states:
   sprung:
     sprite_path: overworld_objects/bear_trap/sprung.png
 initial_state: armed
-hidden:
-  dc: 15
 can_hide:
   sneakiness: 2
 on_stepped:

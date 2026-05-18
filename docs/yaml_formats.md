@@ -1269,52 +1269,61 @@ state changes (e.g. a permanent patch of fire) uses just `apply_effect` — see
 
 ### Hidden trait
 
-When `hidden:` is present, the object spawns with a server-side `Hidden`
-component and never appears in any player's `world_objects` until that player
-detects it. Detection is per-player and **sticky** — once spotted, the object
-stays visible to that player across reloads (the `detected_by` set is
-persisted in the world snapshot).
+Hiddenness is **per-instance**, not per-type. To author a specific placed
+object as hidden, set a `hidden_dc` entry in that instance's `properties:`
+block in the map YAML:
 
 ```yaml
-hidden:
-  dc: 15
+- id: bear_trap
+  type: bear_trap
+  placement: { x: 11, y: 11 }
+  properties:
+    hidden_dc: "15"
 ```
 
-- `dc` — Perception DC the player must roll against. Higher = harder to spot.
+- `hidden_dc` — Perception DC the player must roll against. Higher = harder to
+  spot. The value is a stringly-typed property (same convention as `state:`).
+
+An object loaded with `hidden_dc` spawns with a server-side `Hidden` component
+and never appears in any player's `world_objects` until that player detects
+it. Detection is per-player and **sticky** — once spotted, the object stays
+visible to that player across reloads (the `detected_by` set is persisted in
+the world snapshot, as is the runtime DC).
 
 Reveal happens two ways:
 
 - **Passive perception** — the moment a player comes within `inspect_range - 1`
   Chebyshev tiles of the object (per-object, defaults to 2 tiles when the
   definition omits `inspect_range`), the server rolls a `Skill::Perception`
-  check against `dc`. After any roll, that (player, object) pair gets a 5-second
-  cooldown before the next attempt. On success, a narrator line `"You spot a
-  {name}!"` is pushed to the player's chat log and the object naturally pops
-  into view on the next projection tick.
+  check against the object's DC. After any roll, that (player, object) pair
+  gets a 5-second cooldown before the next attempt. On success, a narrator
+  line `"You spot a {name}!"` is pushed to the player's chat log and the
+  object naturally pops into view on the next projection tick.
 - **Auto-reveal on step** — if the object also declares `on_stepped:`, the
   player's foot reveals it on touch, regardless of the trigger's state filter.
 
-Hidden + `on_stepped` is the canonical "trap" combination: see
-`assets/overworld_objects/bear_trap/metadata.yaml`. Hidden alone (no
-`on_stepped`) is a "secret stash" — passive perception is the only way to spot
-it.
+`hidden_dc` + `on_stepped` is the canonical "authored trap" combination — see
+the bear trap at `assets/maps/overworld.yaml`. `hidden_dc` alone (no
+`on_stepped`) is a "secret stash" — passive perception is the only way to
+spot it. Objects dropped or placed by players are never automatically hidden;
+use the player-driven Hide action below.
 
 ### Player-hideable items (`can_hide`)
 
-When `can_hide:` is present, the right-click menu surfaces a **Hide** action
-for the object whenever the actor has at least 1 rank of Stealth and the
-object is not already hidden. Triggering it runs a Stealth check (DC 10, the
-object's `sneakiness` as a situational bonus). On success, the object gains
-the `Hidden` component with `dc = check_total / 2` and the placer is seeded
-into `detected_by` so they continue to see it. On failure, a narrator line is
-emitted and the object stays visible.
+When `can_hide:` is present on the type definition, the right-click menu
+surfaces a **Hide** action for the object whenever the actor has at least 1
+rank of Thievery and the object is not already hidden. Triggering it runs a
+Thievery check (DC 10, the object's `sneakiness` as a situational bonus). On
+success, the object gains the `Hidden` component with `dc = check_total / 2`
+and the placer is seeded into `detected_by` so they continue to see it. On
+failure, a narrator line is emitted and the object stays visible.
 
 ```yaml
 can_hide:
   sneakiness: 2
 ```
 
-- `sneakiness` — integer modifier added to the placer's Stealth check total.
+- `sneakiness` — integer modifier added to the placer's Thievery check total.
   Higher = inherently easier to conceal (small, drab, camouflaged). May be
   negative for bulky items. Defaults to `0` when omitted.
 

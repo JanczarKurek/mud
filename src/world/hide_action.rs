@@ -2,7 +2,7 @@
 //! definition. Drained from `PendingGameCommands` in `CommandIntercept`,
 //! alongside `process_interact_commands`.
 //!
-//! On a successful Stealth check (DC 10 + the item's `sneakiness` as
+//! On a successful Thievery check (DC 10 + the item's `sneakiness` as
 //! situational bonus) the object gains the `Hidden` component with
 //! `dc = check_total / 2`, and the placer is seeded into `detected_by` so
 //! they keep seeing it. The projection's per-peer filter
@@ -22,7 +22,7 @@ use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
 use crate::world::hidden::Hidden;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 
-/// Baseline DC the Stealth check must beat for a Hide attempt to take effect.
+/// Baseline DC the Thievery check must beat for a Hide attempt to take effect.
 /// Below this, the action fails and a narrator line is emitted.
 pub const HIDE_THRESHOLD_DC: i32 = 10;
 
@@ -116,7 +116,7 @@ pub fn process_hide_commands(
             continue;
         }
 
-        if skill_sheet.rank(Skill::Stealth) == 0 {
+        if skill_sheet.rank(Skill::Thievery) == 0 {
             chat_log.push_narrator("You don't know the first thing about hiding.");
             continue;
         }
@@ -124,14 +124,14 @@ pub fn process_hide_commands(
         let result = skill_check(
             skill_sheet,
             &base_stats.attributes,
-            Skill::Stealth,
+            Skill::Thievery,
             HIDE_THRESHOLD_DC,
             can_hide.sneakiness,
         );
         let name = definition.name.to_lowercase();
         if !result.success {
             chat_log.push_narrator(format!(
-                "You fail to hide the {name}. (Stealth {} vs DC {HIDE_THRESHOLD_DC})",
+                "You fail to hide the {name}. (Thievery {} vs DC {HIDE_THRESHOLD_DC})",
                 result.total
             ));
             continue;
@@ -147,7 +147,7 @@ pub fn process_hide_commands(
         });
 
         chat_log.push_narrator(format!(
-            "You hide the {name}. (Stealth {}, DC to spot {dc})",
+            "You hide the {name}. (Thievery {}, DC to spot {dc})",
             result.total
         ));
     }
@@ -200,12 +200,12 @@ render:
         space: SpaceId,
         player_tile: TilePosition,
         object_tile: TilePosition,
-        stealth_ranks: u8,
+        thievery_ranks: u8,
         already_hidden: bool,
     ) -> (PlayerId, u64, Entity) {
         let player_id = PlayerId(7);
         let mut sheet = SkillSheet::default();
-        sheet.set_rank(Skill::Stealth, stealth_ranks);
+        sheet.set_rank(Skill::Thievery, thievery_ranks);
         app.world_mut().spawn((
             Player,
             PlayerIdentity::new(player_id),
@@ -261,7 +261,7 @@ render:
     }
 
     #[test]
-    fn hide_with_zero_stealth_ranks_fails() {
+    fn hide_with_zero_thievery_ranks_fails() {
         let mut app = build_app(fixture_definitions(true));
         let (player_id, object_id, entity) = spawn_player_and_object(
             &mut app,

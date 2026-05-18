@@ -3759,7 +3759,7 @@ fn lock_verb_visibility(
 /// Whether the right-click "Hide" entry should appear. Mirrors the
 /// server-side gates in `world::hide_action::process_hide_commands`: the
 /// object's definition must declare `can_hide:`, the object must not already
-/// be hidden, and the actor needs at least 1 rank of Stealth.
+/// be hidden, and the actor needs at least 1 rank of Thievery.
 fn hide_verb_visibility(
     object: &crate::game::resources::ClientWorldObjectState,
     definitions: &OverworldObjectDefinitions,
@@ -3774,7 +3774,7 @@ fn hide_verb_visibility(
     if object.is_hidden {
         return false;
     }
-    client_state.skill_ranks[crate::player::skills::Skill::Stealth.index()] >= 1
+    client_state.skill_ranks[crate::player::skills::Skill::Thievery.index()] >= 1
 }
 
 /// Walk the projected local inventory for an item whose definition has a

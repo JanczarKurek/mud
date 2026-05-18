@@ -297,10 +297,17 @@ pub struct WorldObjectStateDump {
     /// Players who have spotted this hidden object, persisted across restarts
     /// so a re-logged player keeps their detection state. Empty (or absent for
     /// v10 saves) means nobody has spotted it yet — detection re-rolls from
-    /// scratch on next encounter. Only meaningful for objects whose definition
-    /// declares `hidden:`; the runtime component is only attached then.
+    /// scratch on next encounter. Only meaningful when `hidden_dc` is set; the
+    /// runtime `Hidden` component is only attached then.
     #[serde(default)]
     pub hidden_detected_by: Vec<PlayerId>,
+    /// Runtime Perception DC carried by this object's `Hidden` component.
+    /// `Some(dc)` ⇒ the object was hidden at save time (either authored as
+    /// `hidden_dc` in the map YAML, or hidden at runtime via the player Hide
+    /// action). `None` ⇒ the object was visible. Older snapshots without this
+    /// field default to `None` via `serde(default)`.
+    #[serde(default)]
+    pub hidden_dc: Option<u32>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -463,6 +470,7 @@ fn save_world_on_app_exit(
                         ids
                     })
                     .unwrap_or_default(),
+                hidden_dc: hidden.map(|h| h.dc),
                 npc: is_npc.then(|| {
                     let (
                         base_stats,
@@ -521,7 +529,7 @@ fn save_world_on_app_exit(
     });
 
     let dump = WorldStateDump {
-        format_version: 11,
+        format_version: 12,
         spaces,
         saved_at_unix_seconds: SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -903,17 +911,20 @@ fn load_world_from_snapshot(
                 );
                 entity.insert(crate::world::step_triggers::OnSteppedTriggers(triggers));
             }
-            // Re-derive `Hidden` from the definition; restore per-player
-            // detection state from the snapshot. Loading a v10 (pre-hidden)
-            // save defaults `hidden_detected_by` to empty via `serde(default)`,
-            // so detection effectively resets — by design.
-            if let Some(hidden_def) = definition.hidden.as_ref() {
-                let mut hidden = crate::world::hidden::Hidden::new(hidden_def.dc);
-                for pid in &object.hidden_detected_by {
-                    hidden.detected_by.insert(*pid);
-                }
-                entity.insert(hidden);
+        }
+
+        // Restore `Hidden` from the snapshot's per-instance dc + detected_by.
+        // The DC may be either authored (via the map's `hidden_dc` property)
+        // or runtime-chosen (via the player Hide action). Loading a v11
+        // snapshot defaults `hidden_dc` to `None`, so any pre-existing hidden
+        // state on player-placed objects is lost — by design, since the
+        // pre-v12 model only persisted the static type-level DC.
+        if let Some(dc) = object.hidden_dc {
+            let mut hidden = crate::world::hidden::Hidden::new(dc);
+            for pid in &object.hidden_detected_by {
+                hidden.detected_by.insert(*pid);
             }
+            entity.insert(hidden);
         }
 
         let entity_id = entity.id();
@@ -1048,7 +1059,7 @@ mod tests {
             serde_json::from_str::<WorldStateDump>(&std::fs::read_to_string(&save_path).unwrap())
                 .unwrap();
 
-        assert_eq!(dump.format_version, 11);
+        assert_eq!(dump.format_version, 12);
         assert!(!dump.spaces.is_empty());
         // Players don't appear in the world snapshot at all (they live in the
         // accounts DB) and the object registry is no longer persisted, so the
@@ -1108,6 +1119,7 @@ mod tests {
                 remaining_ttl: None,
                 facing: None,
                 hidden_detected_by: Vec::new(),
+                hidden_dc: None,
             }],
             floor_maps: vec![],
             spawn_groups: vec![],
@@ -1287,6 +1299,7 @@ mod tests {
             remaining_ttl: Some(600.0),
             facing: None,
             hidden_detected_by: Vec::new(),
+            hidden_dc: None,
         };
         let json = serde_json::to_string(&lantern).unwrap();
         let restored: WorldObjectStateDump = serde_json::from_str(&json).unwrap();
@@ -1384,6 +1397,7 @@ mod tests {
                 remaining_ttl: None,
                 facing: None,
                 hidden_detected_by: Vec::new(),
+                hidden_dc: None,
             }],
             floor_maps: vec![],
             spawn_groups: vec![],

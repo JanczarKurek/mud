@@ -886,6 +886,8 @@ objects:
 - id: bear_trap
   type: bear_trap
   placement: { x: 11, y: 11 }
+  properties:
+    hidden_dc: "15"
 - id: spell_chest
   type: iron_chest
   placement: { x: 22, y: 10}

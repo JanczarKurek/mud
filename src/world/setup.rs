@@ -222,6 +222,17 @@ pub fn spawn_overworld_object_instance(
         }
     }
 
+    // Per-instance `hidden_dc` override: a map author tags a specific placed
+    // object as starting hidden (e.g. a buried trap) by setting this property.
+    // Player-driven drops never carry this property, so they never auto-hide.
+    if let Some(dc_str) = object.properties.get("hidden_dc") {
+        if let Ok(dc) = dc_str.parse::<u32>() {
+            commands
+                .entity(entity)
+                .insert(crate::world::hidden::Hidden::new(dc));
+        }
+    }
+
     if let Some(behavior) = &object.behavior {
         let definition = definitions.get(&object.type_id);
         let base_stats = npc_base_stats_from_definition(definition);
@@ -435,9 +446,6 @@ macro_rules! apply_overworld_definition_components {
                 &__definition.name,
             );
             $entity.insert($crate::world::step_triggers::OnSteppedTriggers(__triggers));
-        }
-        if let Some(__hidden_def) = __definition.hidden.as_ref() {
-            $entity.insert($crate::world::hidden::Hidden::new(__hidden_def.dc));
         }
     }};
 }
