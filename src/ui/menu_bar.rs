@@ -2,7 +2,7 @@ use bevy::app::AppExit;
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, UiGlobalTransform};
 
-use crate::app::state::ClientAppState;
+use crate::app::state::{ClientAppState, LocalSelectedCharacter};
 use crate::game::resources::ClientGameState;
 use crate::network::resources::{PendingPlayerSave, PendingPlayerSaves, TcpClientConnection};
 use crate::player::components::{Player, PlayerIdentity};
@@ -324,6 +324,7 @@ fn do_logout(
         }
     }
     commands.insert_resource(ClientGameState::default());
+    commands.insert_resource(LocalSelectedCharacter::default());
     next_state.set(ClientAppState::TitleScreen);
 }
 

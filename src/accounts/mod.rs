@@ -47,6 +47,7 @@ impl Plugin for AccountsServerPlugin {
         app.insert_resource(AccountDbPath(Some(self.db_path.clone())))
             .insert_resource(AutosaveConfig::default())
             .insert_resource(AutosaveTimer::default())
+            .insert_resource(PendingPlayerSaves::default())
             .add_systems(Update, autosave_all_players)
             .add_systems(
                 Last,

@@ -96,6 +96,9 @@ pub fn spawn_embedded_player_authoritative(
     }
 
     if player_query.iter().next().is_some() {
+        warn!(
+            "spawn_embedded_player_authoritative: existing Player entity present on InGame entry — cleanup leak?"
+        );
         return;
     }
 
@@ -336,6 +339,14 @@ pub fn spawn_player_visual(
     world_config: Res<WorldConfig>,
     player_query: Query<Entity, (With<Player>, Without<Sprite>)>,
 ) {
+    let entity = match player_query.single() {
+        Ok(entity) => entity,
+        Err(_) => {
+            warn!("spawn_player_visual: no Player entity without Sprite — skipping");
+            return;
+        }
+    };
+
     let definition = definitions
         .get("player")
         .unwrap_or_else(|| panic!("Missing overworld object definition for id 'player'"));
@@ -350,25 +361,6 @@ pub fn spawn_player_visual(
         Sprite::from_color(definition.debug_color(), size)
     };
     sprite.image_mode = SpriteImageMode::Auto;
-
-    let entity = match player_query.single() {
-        Ok(entity) => entity,
-        Err(_) => {
-            let spawn_tile =
-                TilePosition::ground(world_config.map_width / 2, world_config.map_height / 2);
-            commands
-                .spawn((
-                    Player,
-                    VitalStats::full(1.0, 0.0),
-                    ViewPosition {
-                        space_id: world_config.current_space_id,
-                        tile: spawn_tile,
-                    },
-                    Facing::default(),
-                ))
-                .id()
-        }
-    };
 
     let visual =
         crate::world::setup::world_visual_for_definition(definition, world_config.tile_size);
