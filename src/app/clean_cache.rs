@@ -1,11 +1,15 @@
 //! `paths` and `clean-cache` subcommands shared by `mud2` and `server` binaries.
 //!
-//! Dispatched from `main()` before the Bevy `App` is constructed. Prints
-//! resolved paths, optionally deletes cache/data. No Bevy dependency.
+//! Parsed by clap (definitions live below as `Command` / `CleanCacheArgs`,
+//! flattened into the per-binary parsers in `crate::app::cli`). The binary
+//! `main()` calls `run(cmd, invoker)` when a subcommand was matched, before
+//! constructing the Bevy `App`. No Bevy dependency.
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+
+use clap::{Args, Subcommand};
 
 use crate::app::paths::{
     cache_root_dir, client_paths, data_root_dir, embedded_paths, server_paths,
@@ -22,15 +26,39 @@ pub enum Invoker {
     Server,
 }
 
-/// Parse and dispatch a subcommand from `args`. Returns:
-/// - `None` if `args[0]` is not one of our subcommands (caller proceeds with normal startup).
-/// - `Some(code)` if we handled a subcommand and the process should exit with `code`.
-pub fn dispatch(args: &[String], invoker: Invoker) -> Option<ExitCode> {
-    let first = args.first()?.as_str();
-    match first {
-        "paths" => Some(print_paths(invoker)),
-        "clean-cache" => Some(run_clean_cache(&args[1..], invoker)),
-        _ => None,
+/// Subcommand surface shared by both binaries. Both `Mud2Cli` and `ServerCli`
+/// embed this via `#[command(subcommand)]`; per-invoker semantics for
+/// `clean-cache` live in `run` below.
+#[derive(Subcommand, Debug)]
+pub enum Command {
+    /// Print resolved data and cache paths.
+    Paths,
+    /// Wipe cached/local data. Default behaviour depends on the binary —
+    /// `mud2` wipes the client asset cache; `server` is a no-op without
+    /// `--all --yes`.
+    #[command(name = "clean-cache")]
+    CleanCache(CleanCacheArgs),
+}
+
+#[derive(Args, Debug, Default)]
+pub struct CleanCacheArgs {
+    /// Also wipe persistent data (accounts.db, world snapshots).
+    #[arg(long)]
+    pub all: bool,
+    /// Skip interactive confirmation (required with --all).
+    #[arg(long, short = 'y')]
+    pub yes: bool,
+    /// Print what would be removed without touching the filesystem.
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+/// Dispatch a parsed subcommand. Returns the exit code the binary should
+/// return without constructing a Bevy app.
+pub fn run(cmd: Command, invoker: Invoker) -> ExitCode {
+    match cmd {
+        Command::Paths => print_paths(invoker),
+        Command::CleanCache(args) => run_clean_cache(args, invoker),
     }
 }
 
@@ -78,37 +106,7 @@ fn print_paths(invoker: Invoker) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-#[derive(Default)]
-struct CleanArgs {
-    all: bool,
-    yes: bool,
-    dry_run: bool,
-}
-
-fn parse_clean_args(args: &[String]) -> Result<CleanArgs, String> {
-    let mut out = CleanArgs::default();
-    for arg in args {
-        match arg.as_str() {
-            "--all" => out.all = true,
-            "--yes" | "-y" => out.yes = true,
-            "--dry-run" => out.dry_run = true,
-            other => return Err(format!("unknown argument for clean-cache: {other}")),
-        }
-    }
-    Ok(out)
-}
-
-fn run_clean_cache(args: &[String], invoker: Invoker) -> ExitCode {
-    let parsed = match parse_clean_args(args) {
-        Ok(v) => v,
-        Err(msg) => {
-            eprintln!("{msg}");
-            eprintln!();
-            eprintln!("usage: clean-cache [--all] [--yes] [--dry-run]");
-            return ExitCode::from(2);
-        }
-    };
-
+fn run_clean_cache(parsed: CleanCacheArgs, invoker: Invoker) -> ExitCode {
     let mut targets: Vec<PathBuf> = Vec::new();
     let client_cache_root = cache_root_dir().join("client");
     let embedded_dir = data_root_dir().join("embedded");
@@ -210,29 +208,48 @@ fn remove_path(path: &Path) -> io::Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::cli::Mud2Cli;
+    use clap::Parser;
 
     #[test]
-    fn parse_clean_args_accepts_flags() {
-        let args = [
-            "--all".to_string(),
-            "--yes".to_string(),
-            "--dry-run".to_string(),
-        ];
-        let parsed = parse_clean_args(&args).unwrap();
-        assert!(parsed.all);
-        assert!(parsed.yes);
-        assert!(parsed.dry_run);
+    fn clean_cache_subcommand_accepts_flags() {
+        let cli = Mud2Cli::try_parse_from(["mud2", "clean-cache", "--all", "--yes", "--dry-run"])
+            .expect("parse");
+        let Some(Command::CleanCache(args)) = cli.command else {
+            panic!("expected CleanCache subcommand, got {:?}", cli.command);
+        };
+        assert!(args.all);
+        assert!(args.yes);
+        assert!(args.dry_run);
     }
 
     #[test]
-    fn parse_clean_args_rejects_unknown() {
-        let args = ["--nope".to_string()];
-        assert!(parse_clean_args(&args).is_err());
+    fn clean_cache_short_yes_works() {
+        let cli = Mud2Cli::try_parse_from(["mud2", "clean-cache", "-y"]).expect("parse");
+        let Some(Command::CleanCache(args)) = cli.command else {
+            panic!("expected CleanCache subcommand");
+        };
+        assert!(args.yes);
+        assert!(!args.all);
+        assert!(!args.dry_run);
     }
 
     #[test]
-    fn dispatch_returns_none_for_non_subcommand() {
-        let args = ["--connect".to_string(), "127.0.0.1:7000".to_string()];
-        assert!(dispatch(&args, Invoker::Mud2).is_none());
+    fn clean_cache_rejects_unknown_flag() {
+        let result = Mud2Cli::try_parse_from(["mud2", "clean-cache", "--nope"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn paths_subcommand_parses() {
+        let cli = Mud2Cli::try_parse_from(["mud2", "paths"]).expect("parse");
+        assert!(matches!(cli.command, Some(Command::Paths)));
+    }
+
+    #[test]
+    fn non_subcommand_args_parse_without_subcommand() {
+        let cli = Mud2Cli::try_parse_from(["mud2", "--connect", "127.0.0.1:7000"]).expect("parse");
+        assert!(cli.command.is_none());
+        assert_eq!(cli.connect.as_deref(), Some("127.0.0.1:7000"));
     }
 }

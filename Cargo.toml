@@ -24,6 +24,10 @@ sha2 = "0.10"
 dirs = "5"
 base64 = "0.22"
 libc = "0.2"
+# CLI parsing for `mud2` and `server` binaries. `derive` for the parser
+# attribute macros, `env` so `#[arg(env = "...")]` can read fallback values
+# from the environment (preserves the pre-clap MUD2_* fallback behavior).
+clap = { version = "4.5", features = ["derive", "env"] }
 
 # Account persistence — version matched to rustpython-stdlib's libsqlite3-sys
 # (links="sqlite3" can only appear once in the dep graph).
