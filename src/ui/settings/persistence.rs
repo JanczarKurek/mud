@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::app::paths::client_settings_path;
 use crate::app::plugin::AppRuntime;
 
+use super::display::{DisplaySettings, WindowModeSetting};
 use super::model::{Action, Bindings, Keybindings, MovementBindings};
 
 /// On-disk schema. `#[serde(default)]` everywhere so older/newer files with
@@ -21,6 +22,42 @@ use super::model::{Action, Bindings, Keybindings, MovementBindings};
 struct SettingsFile {
     #[serde(default)]
     controls: ControlsFile,
+    #[serde(default)]
+    display: DisplayFile,
+}
+
+/// `#[serde(default = …)]` on each field handles a *partial* `display` block
+/// (some keys missing). The hand-written `Default` handles the *whole block*
+/// missing — `#[derive(Default)]` would ignore the serde attrs and yield
+/// `ui_scale: 0.0`, which collapses the entire UI. Keep both in sync with
+/// `DisplaySettings::default()`.
+#[derive(Serialize, Deserialize)]
+struct DisplayFile {
+    #[serde(default)]
+    window_mode: WindowModeSetting,
+    #[serde(default = "default_true")]
+    vsync: bool,
+    #[serde(default = "default_ui_scale")]
+    ui_scale: f32,
+}
+
+impl Default for DisplayFile {
+    fn default() -> Self {
+        let d = DisplaySettings::default();
+        Self {
+            window_mode: d.window_mode,
+            vsync: d.vsync,
+            ui_scale: d.ui_scale,
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_ui_scale() -> f32 {
+    1.0
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -49,6 +86,7 @@ pub struct SettingsLoaded(pub bool);
 pub fn load_settings(
     runtime: Res<AppRuntime>,
     mut keybindings: ResMut<Keybindings>,
+    mut display: ResMut<DisplaySettings>,
     mut loaded: ResMut<SettingsLoaded>,
 ) {
     if loaded.0 {
@@ -78,15 +116,34 @@ pub fn load_settings(
         file.controls.movement,
     );
     keybindings.dirty = false;
+
+    // Mutating through `ResMut` flags the resource changed, so
+    // `apply_display_settings` picks the persisted values up on the first
+    // frame even though `dirty` stays false (nothing to re-write yet).
+    display.window_mode = file.display.window_mode;
+    display.vsync = file.display.vsync;
+    // A zero / NaN / wildly-off scale collapses the whole UI — never trust
+    // the file blindly (it may be hand-edited or from an older buggy build).
+    display.ui_scale = if file.display.ui_scale.is_finite() {
+        file.display.ui_scale.clamp(0.5, 3.0)
+    } else {
+        1.0
+    };
+    display.dirty = false;
 }
 
 /// `Last`: write when `dirty`. Same shape as `persist_quickbar`.
-pub fn persist_settings(runtime: Res<AppRuntime>, mut keybindings: ResMut<Keybindings>) {
-    if !keybindings.dirty {
+pub fn persist_settings(
+    runtime: Res<AppRuntime>,
+    mut keybindings: ResMut<Keybindings>,
+    mut display: ResMut<DisplaySettings>,
+) {
+    if !keybindings.dirty && !display.dirty {
         return;
     }
     let Some(path) = client_settings_path(*runtime) else {
         keybindings.dirty = false;
+        display.dirty = false;
         return;
     };
 
@@ -98,6 +155,11 @@ pub fn persist_settings(runtime: Res<AppRuntime>, mut keybindings: ResMut<Keybin
                 .map(|(action, binding)| ActionBinding { action, binding })
                 .collect(),
             movement: Some(keybindings.movement.clone()),
+        },
+        display: DisplayFile {
+            window_mode: display.window_mode,
+            vsync: display.vsync,
+            ui_scale: display.ui_scale,
         },
     };
 
@@ -113,6 +175,7 @@ pub fn persist_settings(runtime: Res<AppRuntime>, mut keybindings: ResMut<Keybin
         Err(err) => warn!("failed to serialize settings: {err}"),
     }
     keybindings.dirty = false;
+    display.dirty = false;
 }
 
 #[cfg(test)]
@@ -136,6 +199,7 @@ mod tests {
                     .collect(),
                 movement: Some(kb.movement.clone()),
             },
+            display: DisplayFile::default(),
         };
         let json = serde_json::to_string_pretty(&file).unwrap();
         let parsed: SettingsFile = serde_json::from_str(&json).unwrap();
@@ -153,6 +217,31 @@ mod tests {
             restored.bindings(Action::SetHome).primary,
             Some(Binding::plain(KeyCode::KeyZ))
         );
+    }
+
+    #[test]
+    fn settings_file_without_display_block_is_sane() {
+        // The exact shape the pre-Display Settings commit wrote: a
+        // controls-only file. Regression for the `ui_scale: 0.0` UI collapse.
+        let json = r#"{"controls":{"bindings":[],"movement":null}}"#;
+        let parsed: SettingsFile = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.display.ui_scale, 1.0);
+        assert!(parsed.display.vsync);
+        assert_eq!(parsed.display.window_mode, WindowModeSetting::Windowed);
+    }
+
+    #[test]
+    fn partial_display_block_fills_missing_fields() {
+        // Only window_mode present → vsync/ui_scale fall back to sane serde
+        // defaults, not 0.
+        let json = r#"{"display":{"window_mode":"BorderlessFullscreen"}}"#;
+        let parsed: SettingsFile = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            parsed.display.window_mode,
+            WindowModeSetting::BorderlessFullscreen
+        );
+        assert!(parsed.display.vsync);
+        assert_eq!(parsed.display.ui_scale, 1.0);
     }
 
     #[test]

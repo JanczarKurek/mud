@@ -2,6 +2,7 @@
 //! configurable controls. See `model.rs` for the keybinding taxonomy and the
 //! approved plan for the design rationale.
 
+pub mod display;
 pub mod keycode_serde;
 pub mod model;
 pub mod persistence;
@@ -9,15 +10,18 @@ pub mod ui;
 
 use bevy::prelude::*;
 
+pub use display::DisplaySettings;
 pub use model::{Action, Keybindings};
 pub use ui::SettingsUiState;
 
+use display::apply_display_settings;
 use persistence::{load_settings, persist_settings, SettingsLoaded};
 use ui::{
-    capture_keybind, handle_binding_row_clicks, handle_settings_close_button,
-    handle_settings_reset_button, handle_settings_scroll, is_capturing, is_open,
-    spawn_settings_overlay, swallow_input_while_settings_open, sync_binding_row_labels,
-    sync_settings_overlay_visibility, SettingsCaptureSet,
+    capture_keybind, handle_binding_row_clicks, handle_option_row_clicks,
+    handle_settings_close_button, handle_settings_reset_button, handle_settings_scroll,
+    handle_tab_clicks, is_capturing, is_open, spawn_settings_overlay,
+    swallow_input_while_settings_open, sync_binding_row_labels, sync_option_row_labels,
+    sync_section_visibility, sync_settings_overlay_visibility, SettingsCaptureSet,
 };
 
 pub struct SettingsPlugin;
@@ -25,6 +29,7 @@ pub struct SettingsPlugin;
 impl Plugin for SettingsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Keybindings>()
+            .init_resource::<DisplaySettings>()
             .init_resource::<SettingsUiState>()
             .init_resource::<SettingsLoaded>()
             .add_systems(Startup, (load_settings, spawn_settings_overlay))
@@ -51,6 +56,11 @@ impl Plugin for SettingsPlugin {
                     handle_settings_close_button,
                     handle_settings_reset_button,
                     handle_settings_scroll,
+                    handle_tab_clicks,
+                    sync_section_visibility,
+                    sync_option_row_labels,
+                    handle_option_row_clicks,
+                    apply_display_settings,
                 ),
             )
             .add_systems(Last, persist_settings);

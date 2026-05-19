@@ -14,15 +14,29 @@ use bevy::window::PrimaryWindow;
 use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton};
 use crate::ui::theme::{Palette, UiThemeAssets};
 
+use super::display::{DisplayOption, DisplaySettings};
 use super::keycode_serde::is_modifier_key;
 use super::model::{all_actions, Action, Binding, Keybindings, Modifiers, MovementDir};
 
-/// Which section of the settings modal is shown. Only `Controls` exists
-/// today; the tab bar is array-driven so adding more is one line.
+/// Which section of the settings modal is shown. The tab bar is array-driven
+/// off [`SettingsSection::ALL`] so adding a section is one enum variant plus
+/// its rows.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SettingsSection {
     #[default]
     Controls,
+    Display,
+}
+
+impl SettingsSection {
+    const ALL: [SettingsSection; 2] = [Self::Controls, Self::Display];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Controls => "Controls",
+            Self::Display => "Display",
+        }
+    }
 }
 
 /// What the next captured keypress should rebind.
@@ -61,6 +75,26 @@ pub struct SettingsOverlayRoot;
 
 #[derive(Component)]
 pub struct SettingsScrollList;
+
+/// A clickable tab in the section bar, plus its text child (recolored on
+/// selection).
+#[derive(Component, Clone, Copy)]
+pub struct SettingsTabButton(SettingsSection);
+
+#[derive(Component, Clone, Copy)]
+pub struct SettingsTabLabel(SettingsSection);
+
+/// Wraps every row of one section so visibility is a single `Node.display`
+/// toggle per section rather than per row.
+#[derive(Component, Clone, Copy)]
+pub struct SectionContent(SettingsSection);
+
+/// A Display-section row whose button cycles one [`DisplayOption`].
+#[derive(Component, Clone, Copy)]
+pub struct OptionRowButton(DisplayOption);
+
+#[derive(Component, Clone, Copy)]
+pub struct OptionRowLabel(DisplayOption);
 
 #[derive(Component, Clone, Copy)]
 pub struct BindingRowButton {
@@ -142,7 +176,7 @@ pub fn spawn_settings_overlay(
                     TextColor(palette.text_primary),
                 ));
 
-                // Section tab bar (Controls only for now).
+                // Section tab bar, driven off `SettingsSection::ALL`.
                 panel
                     .spawn((Node {
                         flex_direction: FlexDirection::Row,
@@ -150,7 +184,9 @@ pub fn spawn_settings_overlay(
                         ..default()
                     },))
                     .with_children(|tabs| {
-                        spawn_tab(tabs, &palette, "Controls", true);
+                        for section in SettingsSection::ALL {
+                            spawn_tab(tabs, &palette, section);
+                        }
                     });
 
                 // Scrollable list of rows — flex_grow so it eats the panel's
@@ -172,32 +208,64 @@ pub fn spawn_settings_overlay(
                         BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.25)),
                     ))
                     .with_children(|list| {
-                        spawn_section_header(list, &palette, "Movement");
-                        for dir in MovementDir::ALL {
-                            spawn_row(
-                                list,
-                                &theme,
-                                &palette,
-                                dir.label(),
-                                CaptureTarget::Movement(dir),
-                                btn_bg,
-                                btn_border,
-                                btn_text,
-                            );
-                        }
-                        spawn_section_header(list, &palette, "Actions");
-                        for action in all_actions() {
-                            spawn_row(
-                                list,
-                                &theme,
-                                &palette,
-                                &action.label(),
-                                CaptureTarget::Action(action),
-                                btn_bg,
-                                btn_border,
-                                btn_text,
-                            );
-                        }
+                        // Controls section (shown by default).
+                        list.spawn((
+                            SectionContent(SettingsSection::Controls),
+                            Node {
+                                width: percent(100.0),
+                                flex_direction: FlexDirection::Column,
+                                row_gap: px(4.0),
+                                ..default()
+                            },
+                        ))
+                        .with_children(|sec| {
+                            spawn_section_header(sec, &palette, "Movement");
+                            for dir in MovementDir::ALL {
+                                spawn_row(
+                                    sec,
+                                    &theme,
+                                    &palette,
+                                    dir.label(),
+                                    CaptureTarget::Movement(dir),
+                                    btn_bg,
+                                    btn_border,
+                                    btn_text,
+                                );
+                            }
+                            spawn_section_header(sec, &palette, "Actions");
+                            for action in all_actions() {
+                                spawn_row(
+                                    sec,
+                                    &theme,
+                                    &palette,
+                                    &action.label(),
+                                    CaptureTarget::Action(action),
+                                    btn_bg,
+                                    btn_border,
+                                    btn_text,
+                                );
+                            }
+                        });
+
+                        // Display section (hidden until its tab is selected).
+                        list.spawn((
+                            SectionContent(SettingsSection::Display),
+                            Node {
+                                width: percent(100.0),
+                                flex_direction: FlexDirection::Column,
+                                row_gap: px(4.0),
+                                display: Display::None,
+                                ..default()
+                            },
+                        ))
+                        .with_children(|sec| {
+                            spawn_section_header(sec, &palette, "Display");
+                            for opt in DisplayOption::ALL {
+                                spawn_option_row(
+                                    sec, &theme, &palette, opt, btn_bg, btn_border, btn_text,
+                                );
+                            }
+                        });
                     });
 
                 // Sticky footer (outside the scroll area).
@@ -230,7 +298,8 @@ pub fn spawn_settings_overlay(
         });
 }
 
-fn spawn_tab(parent: &mut ChildSpawnerCommands, palette: &Palette, label: &str, selected: bool) {
+fn spawn_tab(parent: &mut ChildSpawnerCommands, palette: &Palette, section: SettingsSection) {
+    let selected = section == SettingsSection::default();
     let (bg, border, text) = idle_colors(palette, ButtonStyle::Ghost, selected);
     parent
         .spawn((
@@ -239,6 +308,7 @@ fn spawn_tab(parent: &mut ChildSpawnerCommands, palette: &Palette, label: &str, 
                 style: ButtonStyle::Ghost,
                 selected,
             },
+            SettingsTabButton(section),
             Node {
                 padding: UiRect::axes(px(14.0), px(6.0)),
                 border: UiRect::all(px(1.0)),
@@ -249,13 +319,79 @@ fn spawn_tab(parent: &mut ChildSpawnerCommands, palette: &Palette, label: &str, 
         ))
         .with_children(|tab| {
             tab.spawn((
-                Text::new(label),
+                SettingsTabLabel(section),
+                Text::new(section.label()),
                 TextFont {
                     font_size: 16.0,
                     ..default()
                 },
                 TextColor(text),
             ));
+        });
+}
+
+#[allow(clippy::too_many_arguments)]
+fn spawn_option_row(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+    opt: DisplayOption,
+    btn_bg: Color,
+    btn_border: Color,
+    btn_text: Color,
+) {
+    parent
+        .spawn((Node {
+            width: percent(100.0),
+            flex_direction: FlexDirection::Row,
+            justify_content: JustifyContent::SpaceBetween,
+            align_items: AlignItems::Center,
+            column_gap: px(12.0),
+            padding: UiRect::axes(px(8.0), px(4.0)),
+            ..default()
+        },))
+        .with_children(|row| {
+            row.spawn((
+                Text::new(opt.label()),
+                TextFont {
+                    font_size: 15.0,
+                    ..default()
+                },
+                TextColor(palette.text_primary),
+                Node {
+                    flex_grow: 1.0,
+                    ..default()
+                },
+            ));
+            row.spawn((
+                Button,
+                ThemedButton::new(ButtonStyle::Secondary),
+                OptionRowButton(opt),
+                Node {
+                    width: px(190.0),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    padding: UiRect::axes(px(10.0), px(6.0)),
+                    border: UiRect::all(px(1.0)),
+                    ..default()
+                },
+                ImageNode::new(theme.button_frame.clone())
+                    .with_mode(theme.button_image_mode())
+                    .with_color(btn_bg),
+                BackgroundColor(Color::NONE),
+                BorderColor::all(btn_border),
+            ))
+            .with_children(|button| {
+                button.spawn((
+                    OptionRowLabel(opt),
+                    Text::new(""),
+                    TextFont {
+                        font_size: 14.0,
+                        ..default()
+                    },
+                    TextColor(btn_text),
+                ));
+            });
         });
 }
 
@@ -519,6 +655,86 @@ pub fn handle_settings_reset_button(
             keybindings.reset_to_defaults();
             state.capturing = None;
             state.note = None;
+        }
+    }
+}
+
+/// Click a tab → switch the visible section.
+pub fn handle_tab_clicks(
+    mut state: ResMut<SettingsUiState>,
+    buttons: Query<(&Interaction, &SettingsTabButton), Changed<Interaction>>,
+) {
+    for (interaction, tab) in &buttons {
+        if *interaction == Interaction::Pressed && state.section != tab.0 {
+            state.section = tab.0;
+            state.capturing = None;
+        }
+    }
+}
+
+/// Mirror `state.section` onto section visibility and the tab bar's selected
+/// styling. Tabs carry no `ImageNode`, so the global themed-button recolor
+/// skips them — selection is repainted here instead.
+pub fn sync_section_visibility(
+    state: Res<SettingsUiState>,
+    palette: Res<Palette>,
+    mut sections: Query<(&SectionContent, &mut Node)>,
+    mut tabs: Query<(
+        &SettingsTabButton,
+        &mut ThemedButton,
+        &mut BackgroundColor,
+        &mut BorderColor,
+    )>,
+    mut tab_labels: Query<(&SettingsTabLabel, &mut TextColor)>,
+) {
+    if !state.is_changed() {
+        return;
+    }
+    for (sec, mut node) in &mut sections {
+        let want = if sec.0 == state.section {
+            Display::Flex
+        } else {
+            Display::None
+        };
+        if node.display != want {
+            node.display = want;
+        }
+    }
+    for (tab, mut themed, mut bg, mut border) in &mut tabs {
+        let selected = tab.0 == state.section;
+        themed.selected = selected;
+        let (b, bd, _t) = idle_colors(&palette, ButtonStyle::Ghost, selected);
+        *bg = BackgroundColor(b);
+        *border = BorderColor::all(bd);
+    }
+    for (label, mut color) in &mut tab_labels {
+        let selected = label.0 == state.section;
+        let (_b, _bd, t) = idle_colors(&palette, ButtonStyle::Ghost, selected);
+        *color = TextColor(t);
+    }
+}
+
+/// Repaint each Display-section row button with its option's current value.
+pub fn sync_option_row_labels(
+    display: Res<DisplaySettings>,
+    mut labels: Query<(&OptionRowLabel, &mut Text)>,
+) {
+    for (label, mut text) in &mut labels {
+        let desired = label.0.value_label(&display);
+        if text.0 != desired {
+            text.0 = desired;
+        }
+    }
+}
+
+/// Click a Display row → advance that option to its next value.
+pub fn handle_option_row_clicks(
+    mut display: ResMut<DisplaySettings>,
+    buttons: Query<(&Interaction, &OptionRowButton), Changed<Interaction>>,
+) {
+    for (interaction, button) in &buttons {
+        if *interaction == Interaction::Pressed {
+            button.0.cycle(&mut display);
         }
     }
 }
