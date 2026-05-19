@@ -1,4 +1,5 @@
 pub mod backpack_panel;
+pub mod character_sheet;
 pub mod chat_input;
 pub mod components;
 pub mod container_panel;
@@ -64,24 +65,23 @@ use crate::ui::quickbar::{
     QuickbarLoadedFor,
 };
 use crate::ui::resources::{
-    ActiveDialogState, BottomPanelVisibility, CharacterSheetState, ContextMenuState, CursorState,
-    DockedPanelDragState, DockedPanelResizeState, DockedPanelState, DragState, FullMapWindowState,
-    HudMinimapSettings, OpenMenuState, PendingMenuActions, Quickbar, SpellTargetingState,
-    TakePartialState, TradePopupState, UseOnState,
+    ActiveDialogState, BottomPanelVisibility, ContextMenuState, CursorState, DockedPanelDragState,
+    DockedPanelResizeState, DockedPanelState, DragState, FullMapWindowState, HudMinimapSettings,
+    OpenMenuState, PendingMenuActions, Quickbar, SpellTargetingState, TakePartialState,
+    TradePopupState, UseOnState,
 };
 use crate::ui::setup::spawn_hud;
 use crate::ui::sprite_state::sync_object_state_visuals;
 use crate::ui::status_panel::StatusPanel;
 use crate::ui::systems::{
     apply_game_ui_events, close_context_menu_on_lmb, consume_death_summary_events,
-    consume_level_up_toasts, handle_attack_targeting, handle_character_sheet_button_click,
-    handle_character_sheet_close_click, handle_context_menu_actions,
+    consume_level_up_toasts, handle_attack_targeting, handle_context_menu_actions,
     handle_context_menu_lock_actions, handle_context_menu_opening, handle_death_summary_dismiss,
     handle_docked_panel_close_buttons, handle_docked_panel_dragging, handle_docked_panel_resizing,
     handle_docked_panel_scrolling, handle_movable_dragging, handle_spell_targeting,
     handle_take_partial_buttons, handle_trade_context_menu_actions, handle_use_on_targeting,
-    manage_character_sheet_overlay, manage_open_containers, print_right_sidebar_layout_debug,
-    setup_native_custom_cursor, sync_carry_weight_label, sync_chat_log, sync_container_slot_images,
+    manage_open_containers, print_right_sidebar_layout_debug, setup_native_custom_cursor,
+    sync_carry_weight_label, sync_chat_log, sync_container_slot_images,
     sync_context_menu_attack_button, sync_context_menu_force_lock_button,
     sync_context_menu_hide_button, sync_context_menu_interact_button,
     sync_context_menu_offer_to_trade_button, sync_context_menu_open_button,
@@ -136,7 +136,6 @@ impl Plugin for UiPlugin {
         .insert_resource(PendingMenuActions::default())
         .insert_resource(ActiveDialogState::default())
         .insert_resource(DialogPanelRenderState::default())
-        .insert_resource(CharacterSheetState::default())
         .insert_resource(TradePanelRenderState::default())
         .insert_resource(TradePopupState::default())
         .insert_resource(TimeOfDayPopupState::default())
@@ -191,15 +190,6 @@ impl Plugin for UiPlugin {
         .add_systems(
             Update,
             (consume_death_summary_events, handle_death_summary_dismiss)
-                .run_if(in_state(ClientAppState::InGame)),
-        )
-        .add_systems(
-            Update,
-            (
-                handle_character_sheet_button_click,
-                handle_character_sheet_close_click,
-                manage_character_sheet_overlay,
-            )
                 .run_if(in_state(ClientAppState::InGame)),
         )
         .add_systems(
@@ -421,6 +411,8 @@ impl Plugin for UiPlugin {
                 .before(crate::game::CommandIntercept)
                 .run_if(in_state(ClientAppState::InGame)),
         );
+
+        crate::ui::character_sheet::register(app);
     }
 }
 
@@ -434,7 +426,6 @@ fn teardown_hud(
     mut full_map: ResMut<FullMapWindowState>,
     mut open_menu: ResMut<OpenMenuState>,
     mut pending_actions: ResMut<PendingMenuActions>,
-    mut character_sheet: ResMut<CharacterSheetState>,
     mut active_dialog: ResMut<ActiveDialogState>,
     mut trade_popup: ResMut<TradePopupState>,
     mut quickbar: ResMut<Quickbar>,
@@ -448,7 +439,6 @@ fn teardown_hud(
     full_map.open = false;
     open_menu.open_id = None;
     pending_actions.actions.clear();
-    character_sheet.open = false;
     *active_dialog = ActiveDialogState::default();
     *trade_popup = TradePopupState::default();
     *quickbar = Quickbar::default();

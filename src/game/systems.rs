@@ -2058,11 +2058,8 @@ fn handle_cast_spell_at_tile(
         if let Some(tile_vfx_id) = aoe.vfx_on_tile.as_ref() {
             for dy in -radius..=radius {
                 for dx in -radius..=radius {
-                    let tile = TilePosition::new(
-                        target_tile.x + dx,
-                        target_tile.y + dy,
-                        target_tile.z,
-                    );
+                    let tile =
+                        TilePosition::new(target_tile.x + dx, target_tile.y + dy, target_tile.z);
                     ui_events.push_broadcast(GameUiEvent::VfxSpawn {
                         definition_id: tile_vfx_id.clone(),
                         anchor: VfxAnchor::tile(caster_space_id, tile),

@@ -815,14 +815,6 @@ pub struct PendingMenuActions {
     pub actions: Vec<MenuAction>,
 }
 
-/// Whether the Character sheet modal is currently open. Toggled by the HUD
-/// player-sprite button; consumed by `manage_character_sheet_overlay` to
-/// spawn/despawn the modal.
-#[derive(Resource, Default)]
-pub struct CharacterSheetState {
-    pub open: bool,
-}
-
 /// Floating-popup state for the trade window. The window itself is a
 /// `MovableWindow` — it's spawned dynamically when `session_id` becomes
 /// `Some` and despawned when it returns to `None`. Position/size live on

@@ -1,8 +1,8 @@
 //! Skills panel: a `MovableWindow` that lists all 10 skills with current
 //! rank, max rank, and a `+` button per row, plus the unspent skill-point
-//! counter. Mirrors the `recipe_book` panel's lifecycle exactly — spawned by
-//! the `KeyK` shortcut (or by the `OpenSkillsPanel` UI event); closing is
-//! owned by the title-bar X.
+//! counter. Mirrors the `recipe_book` panel's lifecycle exactly — toggled by
+//! the `KeyK` shortcut (press to open, press again to close) or force-opened
+//! by the `OpenSkillsPanel` UI event; the title-bar X also closes it.
 
 use bevy::prelude::*;
 
@@ -41,7 +41,7 @@ pub enum SkillsPanelSystemSet {
 pub fn register(app: &mut App) {
     app.add_systems(
         Update,
-        open_skills_panel_on_keybind
+        toggle_skills_panel_on_keybind
             .run_if(in_state(ClientAppState::InGame))
             .run_if(simulation_active)
             .run_if(bevy_terminal::terminal_not_focused)
@@ -61,7 +61,9 @@ pub fn register(app: &mut App) {
     );
 }
 
-fn open_skills_panel_on_keybind(
+/// `KeyK` toggles the skills panel — opens if closed, closes if open. The
+/// title-bar X still closes it too.
+fn toggle_skills_panel_on_keybind(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut commands: Commands,
     theme: Option<Res<UiThemeAssets>>,
@@ -71,7 +73,8 @@ fn open_skills_panel_on_keybind(
     if !keyboard.just_pressed(KeyCode::KeyK) {
         return;
     }
-    if find_window_by_id(&windows, MovableWindowId::SkillsPanel).is_some() {
+    if let Some(existing) = find_window_by_id(&windows, MovableWindowId::SkillsPanel) {
+        commands.entity(existing).despawn();
         return;
     }
     let Some(theme) = theme.as_deref() else {

@@ -1,8 +1,7 @@
 //! Recipe-book panel: a `MovableWindow` that lists every learned recipe
-//! with input availability indicators and a Craft button per row. Spawned
-//! on `KeyC` press (one-shot — once open, the only way to close it is the
-//! standard X button), or via the `OpenRecipeBook` UI event when a future
-//! right-click → Craft path is wired in.
+//! with input availability indicators and a Craft button per row. Toggled
+//! by `KeyR` (press to open, press again to close), or force-opened with a
+//! station filter via the `OpenRecipeBook` UI event (right-click → Craft).
 
 use std::collections::HashMap;
 
@@ -50,7 +49,7 @@ pub enum RecipeBookSystemSet {
 pub fn register(app: &mut App) {
     app.add_systems(
         Update,
-        open_recipe_book_on_keybind
+        toggle_recipe_book_on_keybind
             .run_if(in_state(ClientAppState::InGame))
             .run_if(simulation_active)
             .run_if(bevy_terminal::terminal_not_focused)
@@ -70,22 +69,22 @@ pub fn register(app: &mut App) {
     );
 }
 
-/// `KeyC` opens the recipe book if no instance is already open. Pressing
-/// `KeyC` while the window is open is a no-op — closing is owned by the
-/// standard X button on the window's title bar. (Editor clipboard copy
-/// uses the same key but only in MapEditor mode, where
-/// `simulation_active` is false, so they don't collide.)
-fn open_recipe_book_on_keybind(
+/// `KeyR` toggles the recipe book — opens if closed, closes if open. The
+/// title-bar X still closes it too. (The only other `KeyR` consumer is the
+/// floor-viewer dev mode, which runs outside `InGame`, so they don't
+/// collide.)
+fn toggle_recipe_book_on_keybind(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut commands: Commands,
     theme: Option<Res<UiThemeAssets>>,
     palette: Option<Res<Palette>>,
     windows: Query<(Entity, &MovableWindow)>,
 ) {
-    if !keyboard.just_pressed(KeyCode::KeyC) {
+    if !keyboard.just_pressed(KeyCode::KeyR) {
         return;
     }
-    if find_window_by_id(&windows, MovableWindowId::RecipeBook).is_some() {
+    if let Some(existing) = find_window_by_id(&windows, MovableWindowId::RecipeBook) {
+        commands.entity(existing).despawn();
         return;
     }
     let Some(theme) = theme.as_deref() else {

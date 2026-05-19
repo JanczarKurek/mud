@@ -66,18 +66,9 @@ pub struct DeathSummaryOverlay;
 pub struct DeathSummaryDismissButton;
 
 /// Floating HUD button (player-sprite icon) that toggles the Character
-/// sheet modal. Sits in the top-right corner under the menu bar.
+/// sheet window. Sits in the top-right corner under the menu bar.
 #[derive(Component)]
 pub struct CharacterSheetButton;
-
-/// Root of the Character sheet fullscreen modal. Single instance —
-/// spawned/despawned in response to `CharacterSheetState.open`.
-#[derive(Component)]
-pub struct CharacterSheetOverlay;
-
-/// Close-button marker inside the Character sheet modal.
-#[derive(Component)]
-pub struct CharacterSheetCloseButton;
 
 #[derive(Component)]
 pub struct ItemSlotButton {

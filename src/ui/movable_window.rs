@@ -60,6 +60,11 @@ pub enum MovableWindowId {
     /// Per-character Log window (quests + notes). Singleton, toggled by
     /// `KeyL`. Same lifecycle pattern as `RecipeBook` — close button only.
     Log,
+    /// Character sheet (singleton). Toggled by `KeyC` or the HUD portrait
+    /// button (either trigger opens *and* closes it). Shows class/level/XP,
+    /// vitals, attributes with modifiers, and active status effects.
+    /// Lifecycle mirrors `RecipeBook` — close-X owned.
+    CharacterSheet,
     /// Skills panel (singleton). Toggled by `KeyK`. Lists all 10 skills with
     /// current rank, max rank, and a `+` button per row, plus the unspent
     /// skill-point counter. Lifecycle mirrors `RecipeBook` — close button only.
