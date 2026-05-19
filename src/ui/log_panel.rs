@@ -168,12 +168,16 @@ pub fn register(app: &mut App) {
 /// `KeyL` toggles the log panel — opens if closed, closes if open.
 fn toggle_log_panel_on_keybind(
     keyboard: Res<ButtonInput<KeyCode>>,
+    keybindings: Res<crate::ui::settings::Keybindings>,
     mut commands: Commands,
     theme: Option<Res<UiThemeAssets>>,
     palette: Option<Res<Palette>>,
     windows: Query<(Entity, &MovableWindow)>,
 ) {
-    if !keyboard.just_pressed(KeyCode::KeyL) {
+    if !keybindings.just_pressed(
+        crate::ui::settings::model::Action::ToggleLogWindow,
+        &keyboard,
+    ) {
         return;
     }
     toggle_log_window(

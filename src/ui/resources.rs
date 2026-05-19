@@ -801,6 +801,7 @@ pub enum MenuAction {
     ToggleEquipment,
     ToggleMinimap,
     ToggleLog,
+    OpenSettings,
     Logout,
     Quit,
 }

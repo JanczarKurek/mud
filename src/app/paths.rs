@@ -32,6 +32,8 @@ const WORLD_SNAPSHOT_REL: &str = "saves/world-state.json";
 const CLIENT_ASSETS_SUBDIR: &str = "assets";
 const ADMIN_SOCKET_FILE: &str = "admin.sock";
 const QUICKBAR_SUBDIR: &str = "quickbar";
+const CONFIG_SUBDIR: &str = "config";
+const SETTINGS_FILE: &str = "settings.json";
 
 /// Resolved data paths for a server-side role (embedded or headless server).
 #[derive(Clone, Debug)]
@@ -127,6 +129,19 @@ pub fn quickbar_path(runtime: AppRuntime, player_id: u64) -> Option<PathBuf> {
     Some(base.join(format!("{player_id}.json")))
 }
 
+/// Global client-side settings (keybindings, …). Unlike the quickbar this
+/// is **not** per-character: it's a single client-wide JSON file. The server
+/// never sees it, so it lives next to the role's other client data.
+/// `HeadlessServer` has no UI and returns `None`.
+pub fn client_settings_path(runtime: AppRuntime) -> Option<PathBuf> {
+    let base = match runtime {
+        AppRuntime::EmbeddedClient => data_root().join(EMBEDDED_SUBDIR).join(CONFIG_SUBDIR),
+        AppRuntime::TcpClient => data_root().join(CLIENT_SUBDIR).join(CONFIG_SUBDIR),
+        AppRuntime::HeadlessServer => return None,
+    };
+    Some(base.join(SETTINGS_FILE))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -146,6 +161,18 @@ mod tests {
         let c = client_paths();
         assert!(c.asset_cache_dir.starts_with(cache_root_dir()));
         assert!(c.asset_cache_dir.ends_with(CLIENT_ASSETS_SUBDIR));
+    }
+
+    #[test]
+    fn client_settings_path_is_client_only_and_disjoint() {
+        assert!(client_settings_path(AppRuntime::HeadlessServer).is_none());
+        let e = client_settings_path(AppRuntime::EmbeddedClient).unwrap();
+        let c = client_settings_path(AppRuntime::TcpClient).unwrap();
+        assert_ne!(e, c);
+        assert!(e.ends_with("config/settings.json"));
+        assert!(c.ends_with("config/settings.json"));
+        assert!(e.to_string_lossy().contains(EMBEDDED_SUBDIR));
+        assert!(c.to_string_lossy().contains(CLIENT_SUBDIR));
     }
 
     #[test]

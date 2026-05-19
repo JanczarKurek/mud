@@ -20,15 +20,17 @@ use crate::ui::PYTHON_CONSOLE_FOCUS_ID;
 /// open *and* close the console. Escape closes when focused.
 pub fn toggle_python_console(
     mut key_events: MessageReader<KeyboardInput>,
+    keybindings: Res<crate::ui::settings::Keybindings>,
     mut console_state: ResMut<PythonConsoleState>,
     mut focus: ResMut<TerminalFocus>,
     mut panel_query: Query<&mut Node, With<PythonConsolePanel>>,
 ) {
+    let toggle_key = keybindings.console_toggle_key();
     for event in key_events.read() {
         if !event.state.is_pressed() {
             continue;
         }
-        let want_toggle = matches!(event.key_code, KeyCode::Backquote);
+        let want_toggle = Some(event.key_code) == toggle_key;
         let want_close = matches!(event.key_code, KeyCode::Escape) && console_state.is_open;
         if !want_toggle && !want_close {
             continue;

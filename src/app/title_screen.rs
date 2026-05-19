@@ -122,6 +122,7 @@ enum TitleAction {
     Connect,
     ToggleRegister,
     OpenMapEditor,
+    OpenSettings,
     OpenAbout,
     Exit,
 }
@@ -453,6 +454,13 @@ fn spawn_title_screen(
                                                 actions,
                                                 &theme,
                                                 &palette,
+                                                "Settings",
+                                                TitleAction::OpenSettings,
+                                            );
+                                            spawn_action_button(
+                                                actions,
+                                                &theme,
+                                                &palette,
                                                 "About",
                                                 TitleAction::OpenAbout,
                                             );
@@ -535,6 +543,7 @@ fn handle_title_screen_buttons(
     mut tcp_config: Option<ResMut<TcpClientConfig>>,
     mut pending_auth: Option<ResMut<PendingAuthRequest>>,
     mut exit_messages: MessageWriter<AppExit>,
+    mut settings_ui: ResMut<crate::ui::settings::SettingsUiState>,
     server_buttons: Query<(&Interaction, &TitleServerButton), (Changed<Interaction>, With<Button>)>,
     action_buttons: Query<(&Interaction, &TitleActionButton), (Changed<Interaction>, With<Button>)>,
 ) {
@@ -592,6 +601,9 @@ fn handle_title_screen_buttons(
             }
             TitleAction::OpenMapEditor => {
                 next_state.set(ClientAppState::MapEditor);
+            }
+            TitleAction::OpenSettings => {
+                settings_ui.toggle();
             }
             TitleAction::OpenAbout => {
                 next_state.set(ClientAppState::About);

@@ -106,6 +106,7 @@ pub fn apply_game_ui_events(
 
 pub fn toggle_cursor_mode(
     keyboard_input: Res<ButtonInput<KeyCode>>,
+    keybindings: Res<crate::ui::settings::Keybindings>,
     console_state: Option<Res<PythonConsoleState>>,
     use_on_state: Res<UseOnState>,
     spell_targeting_state: Res<SpellTargetingState>,
@@ -121,7 +122,8 @@ pub fn toggle_cursor_mode(
         return;
     }
 
-    if keyboard_input.just_pressed(KeyCode::KeyU) {
+    use crate::ui::settings::model::Action;
+    if keybindings.just_pressed(Action::CursorUseOnToggle, &keyboard_input) {
         cursor_state.mode = match cursor_state.mode {
             CursorMode::Default => CursorMode::UseOn,
             CursorMode::UseOn => CursorMode::Default,
@@ -131,9 +133,7 @@ pub fn toggle_cursor_mode(
         };
     }
 
-    let ctrl_held = keyboard_input.pressed(KeyCode::ControlLeft)
-        || keyboard_input.pressed(KeyCode::ControlRight);
-    if ctrl_held && keyboard_input.just_pressed(KeyCode::KeyA) {
+    if keybindings.just_pressed(Action::CursorAttackToggle, &keyboard_input) {
         cursor_state.mode = match cursor_state.mode {
             CursorMode::AttackTarget => CursorMode::Default,
             _ => CursorMode::AttackTarget,

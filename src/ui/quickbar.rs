@@ -43,21 +43,6 @@ const ICON_SIZE_PX: f32 = 32.0;
 /// still visually distinct from a held item.
 const DIMMED_TINT: Color = Color::srgba(1.0, 1.0, 1.0, 0.55);
 
-/// Digit `KeyCode`s in slot order: key `1` → slot 0 … key `9` → slot 8,
-/// key `0` → slot 9.
-const DIGIT_KEYS: [KeyCode; QUICKBAR_SLOT_COUNT] = [
-    KeyCode::Digit1,
-    KeyCode::Digit2,
-    KeyCode::Digit3,
-    KeyCode::Digit4,
-    KeyCode::Digit5,
-    KeyCode::Digit6,
-    KeyCode::Digit7,
-    KeyCode::Digit8,
-    KeyCode::Digit9,
-    KeyCode::Digit0,
-];
-
 /// On-disk format. Versioned via `serde(default)` on `slots` so older files
 /// missing or extra entries don't break.
 #[derive(Deserialize, Serialize, Default)]
@@ -267,6 +252,7 @@ pub fn sync_quickbar_visuals(
 #[allow(clippy::too_many_arguments)]
 pub fn handle_quickbar_keybinds(
     keyboard_input: Res<ButtonInput<KeyCode>>,
+    keybindings: Res<crate::ui::settings::Keybindings>,
     console_state: Option<Res<PythonConsoleState>>,
     context_menu_state: Res<ContextMenuState>,
     definitions: Res<OverworldObjectDefinitions>,
@@ -291,8 +277,11 @@ pub fn handle_quickbar_keybinds(
     let ctrl_held = keyboard_input.pressed(KeyCode::ControlLeft)
         || keyboard_input.pressed(KeyCode::ControlRight);
 
-    for (slot_index, key) in DIGIT_KEYS.iter().enumerate() {
-        if !keyboard_input.just_pressed(*key) {
+    for slot_index in 0..QUICKBAR_SLOT_COUNT {
+        let Some(key) = keybindings.quickbar_key(slot_index as u8) else {
+            continue;
+        };
+        if !keyboard_input.just_pressed(key) {
             continue;
         }
         let Some(type_id) = quickbar.slots.get(slot_index).and_then(|s| s.as_deref()) else {
@@ -640,13 +629,17 @@ pub fn handle_bottom_panel_hide_button(
 
 pub fn handle_bottom_panel_hide_key(
     keyboard_input: Res<ButtonInput<KeyCode>>,
+    keybindings: Res<crate::ui::settings::Keybindings>,
     console_state: Option<Res<PythonConsoleState>>,
     mut visibility: ResMut<BottomPanelVisibility>,
 ) {
     if console_state.as_ref().is_some_and(|s| s.is_open) {
         return;
     }
-    if keyboard_input.just_pressed(KeyCode::F1) {
+    if keybindings.just_pressed(
+        crate::ui::settings::model::Action::ToggleBottomPanel,
+        &keyboard_input,
+    ) {
         visibility.hidden = !visibility.hidden;
     }
 }

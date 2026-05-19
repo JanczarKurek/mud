@@ -424,19 +424,22 @@ pub fn handle_minimap_zoom_buttons(
 
 pub fn handle_minimap_keybinds(
     keys: Res<ButtonInput<KeyCode>>,
+    keybindings: Res<crate::ui::settings::Keybindings>,
     mut full_map_state: ResMut<FullMapWindowState>,
 ) {
-    if keys.just_pressed(KeyCode::KeyM) {
+    use crate::ui::settings::model::Action;
+    if keybindings.just_pressed(Action::ToggleFullMap, &keys) {
         full_map_state.open = !full_map_state.open;
     }
+    // Escape-to-close stays hardcoded (universal dismiss convention).
     if full_map_state.open && keys.just_pressed(KeyCode::Escape) {
         full_map_state.open = false;
     }
     if full_map_state.open {
-        if keys.just_pressed(KeyCode::Equal) || keys.just_pressed(KeyCode::NumpadAdd) {
+        if keybindings.just_pressed(Action::FullMapZoomIn, &keys) {
             full_map_state.zoom = full_map_state.zoom.zoom_in();
         }
-        if keys.just_pressed(KeyCode::Minus) || keys.just_pressed(KeyCode::NumpadSubtract) {
+        if keybindings.just_pressed(Action::FullMapZoomOut, &keys) {
             full_map_state.zoom = full_map_state.zoom.zoom_out();
         }
     }

@@ -21,25 +21,26 @@ use crate::ui::CHAT_TERMINAL_FOCUS_ID;
 /// `t` into the freshly-focused input row.
 pub fn toggle_chat_focus(
     mut key_events: MessageReader<KeyboardInput>,
+    keybindings: Res<crate::ui::settings::Keybindings>,
     mut focus: ResMut<TerminalFocus>,
     mut chat_terminal: Query<&mut Terminal, With<ChatTerminal>>,
 ) {
+    // Chat focus reacts to a bare keypress (no modifiers) from the event
+    // stream, so we compare the resolved bound key directly.
+    let focus_key = keybindings.chat_focus_key();
     for event in key_events.read() {
         if !event.state.is_pressed() {
             continue;
         }
-        match event.key_code {
-            KeyCode::KeyT if focus.focused.is_none() => {
-                focus.focused = Some(CHAT_TERMINAL_FOCUS_ID);
-                focus.absorbed_key = Some(KeyCode::KeyT);
+        if event.key_code == KeyCode::Escape && focus.focused == Some(CHAT_TERMINAL_FOCUS_ID) {
+            // Escape-to-unfocus stays hardcoded (universal dismiss).
+            focus.focused = None;
+            if let Ok(mut terminal) = chat_terminal.single_mut() {
+                terminal.set_input(String::new());
             }
-            KeyCode::Escape if focus.focused == Some(CHAT_TERMINAL_FOCUS_ID) => {
-                focus.focused = None;
-                if let Ok(mut terminal) = chat_terminal.single_mut() {
-                    terminal.set_input(String::new());
-                }
-            }
-            _ => {}
+        } else if Some(event.key_code) == focus_key && focus.focused.is_none() {
+            focus.focused = Some(CHAT_TERMINAL_FOCUS_ID);
+            focus.absorbed_key = Some(event.key_code);
         }
     }
 }

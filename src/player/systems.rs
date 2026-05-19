@@ -12,6 +12,7 @@ use crate::player::components::{
 };
 use crate::player::progression::Experience;
 use crate::scripting::resources::PythonConsoleState;
+use crate::ui::settings::model::{Action, Keybindings, MovementBindings, MovementDir};
 use crate::world::components::{
     DisplayedVitalStats, Facing, SpaceResident, TilePosition, ViewPosition,
 };
@@ -202,6 +203,7 @@ pub fn refresh_derived_player_stats(
 
 pub fn move_player_on_grid(
     keyboard_input: Res<ButtonInput<KeyCode>>,
+    keybindings: Res<Keybindings>,
     console_state: Option<Res<PythonConsoleState>>,
     mut pending_commands: ResMut<PendingGameCommands>,
 ) {
@@ -209,7 +211,7 @@ pub fn move_player_on_grid(
         return;
     }
 
-    let Some(delta) = movement_direction(&keyboard_input) else {
+    let Some(delta) = movement_direction(&keyboard_input, &keybindings.movement) else {
         return;
     };
 
@@ -222,22 +224,17 @@ pub fn move_player_on_grid(
 /// hijacked.
 pub fn set_home_on_keypress(
     keyboard_input: Res<ButtonInput<KeyCode>>,
+    keybindings: Res<Keybindings>,
     console_state: Option<Res<PythonConsoleState>>,
     mut pending_commands: ResMut<PendingGameCommands>,
 ) {
     if console_state.as_ref().is_some_and(|state| state.is_open) {
         return;
     }
-    let modifier_held = keyboard_input.pressed(KeyCode::ControlLeft)
-        || keyboard_input.pressed(KeyCode::ControlRight)
-        || keyboard_input.pressed(KeyCode::AltLeft)
-        || keyboard_input.pressed(KeyCode::AltRight)
-        || keyboard_input.pressed(KeyCode::ShiftLeft)
-        || keyboard_input.pressed(KeyCode::ShiftRight);
-    if modifier_held {
-        return;
-    }
-    if keyboard_input.just_pressed(KeyCode::KeyH) {
+    // The default binding carries no modifiers, and `just_pressed` enforces
+    // exact modifier state — so a held Ctrl/Alt/Shift still suppresses this
+    // exactly as the old explicit modifier guard did.
+    if keybindings.just_pressed(Action::SetHome, &keyboard_input) {
         pending_commands.push(GameCommand::SetHome);
     }
 }
@@ -248,6 +245,7 @@ pub fn set_home_on_keypress(
 /// frames. Silent no-op if no rotatable object is adjacent.
 pub fn rotate_nearby_object_on_shortcut(
     keyboard_input: Res<ButtonInput<KeyCode>>,
+    keybindings: Res<Keybindings>,
     console_state: Option<Res<PythonConsoleState>>,
     client_state: Res<ClientGameState>,
     mut pending_commands: ResMut<PendingGameCommands>,
@@ -256,15 +254,9 @@ pub fn rotate_nearby_object_on_shortcut(
         return;
     }
 
-    let ctrl_held = keyboard_input.pressed(KeyCode::ControlLeft)
-        || keyboard_input.pressed(KeyCode::ControlRight);
-    if !ctrl_held {
-        return;
-    }
-
-    let rotation = if keyboard_input.just_pressed(KeyCode::KeyQ) {
+    let rotation = if keybindings.just_pressed(Action::RotateCcw, &keyboard_input) {
         RotationDirection::CounterClockwise
-    } else if keyboard_input.just_pressed(KeyCode::KeyE) {
+    } else if keybindings.just_pressed(Action::RotateCw, &keyboard_input) {
         RotationDirection::Clockwise
     } else {
         return;
@@ -380,53 +372,46 @@ pub fn sync_projected_player_from_client_state(
     }
 }
 
-fn movement_direction(keyboard_input: &ButtonInput<KeyCode>) -> Option<MoveDelta> {
+fn movement_direction(
+    keyboard_input: &ButtonInput<KeyCode>,
+    movement: &MovementBindings,
+) -> Option<MoveDelta> {
     if keyboard_input.pressed(KeyCode::ControlLeft) || keyboard_input.pressed(KeyCode::ControlRight)
     {
         return None;
     }
 
+    // Same accumulate-and-clamp algorithm as before (opposite keys cancel,
+    // diagonals add both axes); only the key source moved into the
+    // remappable `MovementBindings`.
     let mut x = 0i32;
     let mut y = 0i32;
 
-    if keyboard_input.pressed(KeyCode::ArrowUp) || keyboard_input.pressed(KeyCode::KeyW) {
+    if movement.any_pressed(MovementDir::Up, keyboard_input) {
         y += 1;
     }
-    if keyboard_input.pressed(KeyCode::ArrowDown) || keyboard_input.pressed(KeyCode::KeyS) {
+    if movement.any_pressed(MovementDir::Down, keyboard_input) {
         y -= 1;
     }
-    if keyboard_input.pressed(KeyCode::ArrowRight) || keyboard_input.pressed(KeyCode::KeyD) {
+    if movement.any_pressed(MovementDir::Right, keyboard_input) {
         x += 1;
     }
-    if keyboard_input.pressed(KeyCode::ArrowLeft) || keyboard_input.pressed(KeyCode::KeyA) {
+    if movement.any_pressed(MovementDir::Left, keyboard_input) {
         x -= 1;
     }
-
-    if keyboard_input.pressed(KeyCode::Numpad8) {
-        y += 1;
-    }
-    if keyboard_input.pressed(KeyCode::Numpad2) {
-        y -= 1;
-    }
-    if keyboard_input.pressed(KeyCode::Numpad6) {
-        x += 1;
-    }
-    if keyboard_input.pressed(KeyCode::Numpad4) {
-        x -= 1;
-    }
-    if keyboard_input.pressed(KeyCode::Numpad9) {
+    if movement.any_pressed(MovementDir::UpRight, keyboard_input) {
         x += 1;
         y += 1;
     }
-    if keyboard_input.pressed(KeyCode::Numpad7) {
+    if movement.any_pressed(MovementDir::UpLeft, keyboard_input) {
         x -= 1;
         y += 1;
     }
-    if keyboard_input.pressed(KeyCode::Numpad3) {
+    if movement.any_pressed(MovementDir::DownRight, keyboard_input) {
         x += 1;
         y -= 1;
     }
-    if keyboard_input.pressed(KeyCode::Numpad1) {
+    if movement.any_pressed(MovementDir::DownLeft, keyboard_input) {
         x -= 1;
         y -= 1;
     }

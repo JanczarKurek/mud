@@ -65,12 +65,16 @@ pub fn register(app: &mut App) {
 /// title-bar X still closes it too.
 fn toggle_skills_panel_on_keybind(
     keyboard: Res<ButtonInput<KeyCode>>,
+    keybindings: Res<crate::ui::settings::Keybindings>,
     mut commands: Commands,
     theme: Option<Res<UiThemeAssets>>,
     palette: Option<Res<Palette>>,
     windows: Query<(Entity, &MovableWindow)>,
 ) {
-    if !keyboard.just_pressed(KeyCode::KeyK) {
+    if !keybindings.just_pressed(
+        crate::ui::settings::model::Action::ToggleSkillsPanel,
+        &keyboard,
+    ) {
         return;
     }
     if let Some(existing) = find_window_by_id(&windows, MovableWindowId::SkillsPanel) {

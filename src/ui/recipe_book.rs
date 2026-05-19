@@ -75,12 +75,16 @@ pub fn register(app: &mut App) {
 /// collide.)
 fn toggle_recipe_book_on_keybind(
     keyboard: Res<ButtonInput<KeyCode>>,
+    keybindings: Res<crate::ui::settings::Keybindings>,
     mut commands: Commands,
     theme: Option<Res<UiThemeAssets>>,
     palette: Option<Res<Palette>>,
     windows: Query<(Entity, &MovableWindow)>,
 ) {
-    if !keyboard.just_pressed(KeyCode::KeyR) {
+    if !keybindings.just_pressed(
+        crate::ui::settings::model::Action::ToggleRecipeBook,
+        &keyboard,
+    ) {
         return;
     }
     if let Some(existing) = find_window_by_id(&windows, MovableWindowId::RecipeBook) {

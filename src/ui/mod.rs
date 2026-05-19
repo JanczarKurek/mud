@@ -17,6 +17,7 @@ pub mod quickbar;
 pub mod recipe_book;
 pub mod resources;
 pub mod retro_bar;
+pub mod settings;
 pub mod setup;
 pub mod skills_panel;
 pub mod sprite_state;
@@ -120,6 +121,7 @@ impl Plugin for UiPlugin {
             MountablePanelPlugin::<CurrentTargetPanel>::default(),
             MountablePanelPlugin::<MinimapPanel>::default(),
             MountablePanelPlugin::<ContainerPanel>::default(),
+            crate::ui::settings::SettingsPlugin,
         ))
         .insert_resource(ContextMenuState::default())
         .insert_resource(DockedPanelState::default())

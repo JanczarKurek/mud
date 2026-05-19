@@ -27,7 +27,11 @@ const MENU_DEFINITIONS: &[MenuDefinition] = &[
     MenuDefinition {
         id: MenuBarId::File,
         label: "File",
-        entries: &[("Logout", MenuAction::Logout), ("Quit", MenuAction::Quit)],
+        entries: &[
+            ("Settings", MenuAction::OpenSettings),
+            ("Logout", MenuAction::Logout),
+            ("Quit", MenuAction::Quit),
+        ],
     },
     MenuDefinition {
         id: MenuBarId::View,
@@ -256,6 +260,7 @@ pub fn apply_menu_actions(
     theme: Option<Res<UiThemeAssets>>,
     palette: Option<Res<Palette>>,
     movable_windows: Query<(Entity, &crate::ui::movable_window::MovableWindow)>,
+    mut settings_ui: ResMut<crate::ui::settings::SettingsUiState>,
 ) {
     for action in pending.actions.drain(..) {
         match action {
@@ -281,6 +286,9 @@ pub fn apply_menu_actions(
                     palette.as_deref(),
                     &movable_windows,
                 );
+            }
+            MenuAction::OpenSettings => {
+                settings_ui.toggle();
             }
             MenuAction::Logout => {
                 do_logout(
