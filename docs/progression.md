@@ -31,7 +31,7 @@ The six attributes already exist (`src/player/components.rs:234-282` — `Attrib
 |---|---|---|
 | Strength (STR) | STR | Melee to-hit, melee damage, Athletics, carry capacity |
 | Agility (AGI) | DEX | Ranged to-hit, AC (dex-mod), Reflex saves, Stealth, Thievery |
-| Constitution (CON) | CON | Max HP, Fortitude saves, Concentration |
+| Constitution (CON) | CON | Max HP, Fortitude saves, Endurance |
 | Willpower (WIL) | WIS | Max mana (caster classes), Will saves, Perception, Heal, Survival |
 | Charisma (CHA) | CHA | Persuasion, NPC reactions, divine spell DC (placeholder) |
 | Focus (FOC) | INT | Skill points per level, Lore, Spellcraft, arcane spell DC (placeholder) |
@@ -62,7 +62,7 @@ Front-line martial. Soaks hits, hits hard, doesn't cast.
 | BAB progression | Full (`+1 / level`) |
 | Saves | **Fort** good, Ref poor, Will poor |
 | Skill points / level | 2 + FOC mod (min 1) |
-| Class skills | Athletics, Perception, Concentration, Survival |
+| Class skills | Athletics, Endurance, Perception, Survival |
 | Casting | None (mana stays at level-0 base) |
 | Starting feature | **Weapon Focus**: +1 to melee to-hit at level 1; +1 again at level 5 and every 5 thereafter `[tunable]` |
 
@@ -76,7 +76,7 @@ Arcane caster. Fragile, mana-rich, scales hard.
 | BAB progression | Half (`+1 / 2 levels`) |
 | Saves | Fort poor, Ref poor, **Will** good |
 | Skill points / level | 2 + FOC mod (min 1) |
-| Class skills | Spellcraft, Lore, Concentration, Heal |
+| Class skills | Spellcraft, Lore, Stealth, Endurance |
 | Casting | Arcane (FOC-keyed); see §6 |
 | Starting feature | **Spellbook**: starts knowing 2 cantrips + 1 first-level arcane spell; learns one new spell per level on level-up `[tunable]` |
 
@@ -90,7 +90,7 @@ Divine caster. Mid martial, full healer/support.
 | BAB progression | Three-quarter (`+3 / 4 levels`, see §7.4) |
 | Saves | **Fort** good, Ref poor, **Will** good |
 | Skill points / level | 2 + FOC mod (min 1) |
-| Class skills | Heal, Lore, Persuasion, Concentration, Spellcraft, Perception |
+| Class skills | Heal, Lore, Persuasion, Spellcraft, Perception, Survival |
 | Casting | Divine (WIL-keyed); see §6 |
 | Starting feature | **Domain**: pick one (e.g. War / Healing / Trickery — actual roster TBD). Grants a thematic class spell per level `[tunable]` |
 
@@ -168,20 +168,22 @@ A level-up is **never declined or deferred** — it applies immediately when the
 
 ## 5. Skills
 
-Ten skills total. Each is keyed to one attribute:
+Ten skills total. Combat power is class/BAB-driven (§3, §7), so **skills are purely
+utility** — each skill exists to make a non-combat decision matter and has exactly one
+concrete, server-hookable mechanic. Each is keyed to one attribute:
 
 | Skill | Attr | What it does in mud2.0 |
 |---|---|---|
-| Athletics | STR | Climbing tiles flagged as climbable; jumping over gaps; swimming in water tiles; breaking down doors (bonus to "force" verb). |
-| Stealth | AGI | Reduces NPC `HostileBehavior` detection radius for the local player. Opposed by target's Perception. |
-| Perception | WIL | Detect hidden objects/NPCs; detect traps; reveal hidden tile contents. Opposed by Stealth. |
-| Lore | FOC | Identify unknown items; recognize NPCs/monsters (reveals their stats panel); historical/world knowledge checks in dialog. |
-| Spellcraft | FOC | Identify unknown spell scrolls; reduce Concentration DC for casting under pressure; learn spells from scrolls (Wizard). |
-| Persuasion | CHA | Diplomacy / Bluff / Intimidate consolidated. Affects merchant prices and Yarn dialog branches. |
-| Survival | WIL | Track NPCs across tiles; foraging from terrain; reduces hunger/thirst tick rate (when those land). |
-| Heal | WIL | First-aid skill check restores a small amount of HP outside combat; bonus to potion efficacy. |
-| Thievery | AGI | Pick locks (when locks land); disarm traps; sleight-of-hand against NPC inventories. |
-| Concentration | CON | Cast spells without losing the spell when interrupted (taking damage during cast). |
+| Athletics | STR | Climb/jump/swim tiles flagged for it; force locks/doors (`force_dc`); escape immobilizing effects (paralyze/snare) faster; reposition/flee check to break or close distance. |
+| Endurance | CON | *(renamed from Concentration)* Faster out-of-combat HP/mana regen (multiplier on `src/player/regen.rs`); shorter rest downtime; resists hazard-tile and hunger/thirst attrition. The front-line martial's payoff: less downtime between fights. |
+| Perception | WIL | Detect hidden objects/NPCs and traps before they trigger; ambush warning; reveal hidden tile contents. Opposed by Stealth. |
+| Stealth | AGI | Reduces NPC `HostileBehavior` detection radius for the local player; enables sneaking past and setting up the Vagabond **Backstab** class feature (Stealth enables the opening; the bonus damage stays class-driven). Opposed by Perception. |
+| Thievery | AGI | Pick locks (`pick_dc`); disarm traps; pickpocket / sleight-of-hand against NPC inventories; hide objects. |
+| Survival | WIL | Forage food/water from terrain; track NPC trails across tiles; safe passage through wilderness hazards. (Field/exploration — distinct from Endurance's body recovery.) |
+| Spellcraft | FOC | Magic *utility*, **not** spell damage: identify and learn spells from scrolls (feeds the Wizard Spellbook feature), identify magical auras/effects, scroll/enchant crafting. |
+| Heal | WIL | First-aid **bandage** action restores HP out of combat; **cure status** (poison/disease) skill check; multiplies potion/bandage potency. |
+| Lore | FOC | Identify unknown items (reveal stat/value panel); recognize NPCs/monsters (reveal their panel + weaknesses); appraisal sets the best base price (distinct from Persuasion's live haggle); lore dialog gates. |
+| Persuasion | CHA | Diplomacy / Bluff / Intimidate consolidated. Affects merchant prices (`src/game/trade.rs`), Yarn dialog branches, talking hostile NPCs down, and intimidating weaker NPCs to flee. |
 
 ### 5.1 Ranks, points, and caps
 
@@ -208,10 +210,28 @@ vs a target DC. Common DCs `[tunable]`:
 
 | Class | Class skills |
 |---|---|
-| Fighter | Athletics, Perception, Concentration, Survival |
-| Wizard | Spellcraft, Lore, Concentration, Heal |
-| Cleric | Heal, Lore, Persuasion, Concentration, Spellcraft, Perception |
+| Fighter | Athletics, Endurance, Perception, Survival |
+| Wizard | Spellcraft, Lore, Stealth, Endurance |
+| Cleric | Heal, Lore, Persuasion, Spellcraft, Perception, Survival |
 | Vagabond | Stealth, Thievery, Perception, Persuasion, Athletics, Survival, Lore |
+
+### 5.3 Implementation deltas (doc leads the code)
+
+This redesign is design-only; the code has not been changed yet. For the future
+implementation effort:
+
+- **Rename** the `Skill::Concentration` enum variant to `Skill::Endurance`. The
+  `[u8; 10]` skill-rank layout and index are **unchanged** (pure rename), so
+  `GameEvent`s, projection, save data, and the skills UI need only the identifier
+  rename — no array resize, no migration.
+- Six skills currently have **no mechanic in code** (Endurance, Perception beyond
+  hidden-object spotting, Stealth, Survival, Spellcraft, Heal, Lore). §5 now pins
+  exactly one server-hookable mechanic per skill — implement them in an impact-ordered
+  phased pass (suggested first: Endurance regen multiplier in `src/player/regen.rs`
+  and Heal's first-aid action, since they benefit the most under-served classes).
+- `PLAN.md` Phase 6 §C marks "Skills shipped"; it now needs a one-line follow-up that
+  the *mechanics* are pending per the redesigned §5 (keeps `PLAN.md` ↔
+  `docs/progression.md` consistent, per CLAUDE.md).
 
 ---
 
@@ -248,11 +268,13 @@ Where `base_mana` is the existing `DerivedStats::from_base` mana value. Class fa
 
 Spell access is per-class. A spell's `class_access:` lists every class that can cast it. Wizard spell list and Cleric spell list overlap intentionally (e.g. "Light" is on both). Damage-dealing arcane spells default to Wizard-only; healing/buff/divine-flavored spells default to Cleric-only.
 
-### 6.3 Casting under pressure (Spellcraft)
+### 6.3 Casting under pressure (deferred)
 
-When a caster takes damage *while* a spell is mid-cast (future cast-time work), they roll Concentration: `d20 + Concentration ranks + CON mod` vs DC `10 + damage_taken`. Failure consumes the mana and produces no effect. Spellcraft applies as a flat -2 to that DC for spells the caster knows well (placeholder rule).
-
-For now (Phase E), all casts are instant — Concentration is plumbed but uncontested until cast times exist.
+There is **no Concentration skill** (the skills redesign removed it — see §5). Resisting
+cast interruption is combat math, and combat stays class/BAB-driven, so if cast times
+ever land the interrupt check is an attribute/class-feature roll (`d20 + CON mod` vs
+DC `10 + damage_taken`, failure consumes mana for no effect), **not** a skill check and
+not modified by Spellcraft. For now all casts are instant, so this is fully deferred.
 
 ---
 
@@ -438,7 +460,7 @@ Single-source list of every `[tunable]` referenced above. When a number lives he
 | Slot drop chance on death | 10% per equipment slot | §8 rule 3 |
 | Fighter Weapon Focus bump | +1 at L1, L5, L10, L15, L20 | §3.1 |
 | Vagabond Backstab dice | +1d6 / 4 levels | §3.4 |
-| Concentration DC modifier | -2 for known spells (Spellcraft) | §6.3 |
+| Cast-interrupt DC (deferred) | `10 + damage_taken`, CON-keyed | §6.3 |
 
 ---
 

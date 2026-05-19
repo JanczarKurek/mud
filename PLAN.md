@@ -100,7 +100,10 @@ Implementation lands in phases A–E (detail in `docs/progression.md` §9):
    lockpicking + force-door (`src/world/interactions.rs`), Persuasion-driven
    vendor pricing (`src/game/trade.rs`), and a Yarn `<<skill_check>>`
    custom command (`src/dialog/systems.rs`). See
-   `docs/skills_locks_social_plan.md`.
+   `docs/skills_locks_social_plan.md`. **Follow-up:** the skill _set_ was
+   redesigned (Concentration→Endurance, per-class lists rebalanced so Fighter
+   has live utility skills); the new per-skill mechanics are still pending —
+   see `docs/progression.md` §5 / §5.3.
 4. **Phase D — Death penalty**: ✅ shipped. `drain_inventory_with_drop_chance`
    (backpack always drops, per-slot equipment roll), XP-zero rule, and
    `DeathSummary` recap overlay.

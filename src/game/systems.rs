@@ -2468,22 +2468,15 @@ fn handle_move_item(
                 );
                 return;
             }
-            if !place_stack_in_slot_ref(
+            move_or_swap_between_slots(
                 &mut inventory_state,
                 container_query,
                 object_query,
                 stack,
+                slot_ref,
                 destination_ref,
                 definitions,
-            ) {
-                restore_stack_to_slot_ref(
-                    &mut inventory_state,
-                    container_query,
-                    object_query,
-                    slot_ref,
-                    stack_for_restore,
-                );
-            }
+            );
         }
         (ItemReference::Slot(slot_ref), ItemDestination::WorldTile(target_tile)) => {
             let Some(stack) = take_item_from_slot_ref(
@@ -3646,6 +3639,124 @@ fn restore_stack_to_slot_ref(
     }
 }
 
+/// Move `src` into `destination_ref`, swapping with whatever already
+/// occupies it instead of rejecting the move. `src` must already have been
+/// removed from `slot_ref` by the caller.
+///
+/// Behavior:
+/// - Destination empty / a compatible same-type stack → plain place or
+///   merge (unchanged from the pre-swap behavior).
+/// - Destination occupied by an incompatible item → swap: the displaced
+///   item is returned to `slot_ref`.
+/// - Swap not possible because either item is invalid for the other slot
+///   (e.g. a potion onto the weapon slot) → silently roll back so both
+///   slots end exactly as they started; no item is created or destroyed.
+fn move_or_swap_between_slots(
+    inventory_state: &mut InventoryState,
+    container_query: &mut Query<&mut Container>,
+    object_query: &Query<
+        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
+        Without<Player>,
+    >,
+    src: InventoryStack,
+    slot_ref: ItemSlotRef,
+    destination_ref: ItemSlotRef,
+    definitions: &OverworldObjectDefinitions,
+) {
+    // Fast path: empty destination or a mergeable same-type stack. This is
+    // the exact pre-swap behavior. Clone so `src` survives a rollback.
+    if place_stack_in_slot_ref(
+        inventory_state,
+        container_query,
+        object_query,
+        src.clone(),
+        destination_ref,
+        definitions,
+    ) {
+        return;
+    }
+
+    // Placement failed. If the destination is empty the failure is a
+    // genuine rejection (non-storable, wrong equip type, bad index) — keep
+    // the old behavior and restore the source untouched.
+    let Some(dst) = take_item_from_slot_ref(
+        inventory_state,
+        container_query,
+        object_query,
+        destination_ref,
+    ) else {
+        restore_stack_to_slot_ref(
+            inventory_state,
+            container_query,
+            object_query,
+            slot_ref,
+            src,
+        );
+        return;
+    };
+
+    // Destination was occupied: attempt the swap. First put `src` where
+    // `dst` was. A failure here means `src` is invalid for that slot; the
+    // destination is currently empty, so restore both and bail silently.
+    if !place_stack_in_slot_ref(
+        inventory_state,
+        container_query,
+        object_query,
+        src.clone(),
+        destination_ref,
+        definitions,
+    ) {
+        restore_stack_to_slot_ref(
+            inventory_state,
+            container_query,
+            object_query,
+            destination_ref,
+            dst,
+        );
+        restore_stack_to_slot_ref(
+            inventory_state,
+            container_query,
+            object_query,
+            slot_ref,
+            src,
+        );
+        return;
+    }
+
+    // Then put the displaced `dst` into the now-empty source slot. If that
+    // fails (e.g. `dst` is not a valid equipment type for `slot_ref`), undo
+    // the `src` placement and restore both to their original slots.
+    if !place_stack_in_slot_ref(
+        inventory_state,
+        container_query,
+        object_query,
+        dst.clone(),
+        slot_ref,
+        definitions,
+    ) {
+        let _ = take_item_from_slot_ref(
+            inventory_state,
+            container_query,
+            object_query,
+            destination_ref,
+        );
+        restore_stack_to_slot_ref(
+            inventory_state,
+            container_query,
+            object_query,
+            slot_ref,
+            src,
+        );
+        restore_stack_to_slot_ref(
+            inventory_state,
+            container_query,
+            object_query,
+            destination_ref,
+            dst,
+        );
+    }
+}
+
 fn consume_one_from_slot_ref(
     inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
@@ -4729,6 +4840,159 @@ mod tests {
         assert!(!object_query
             .iter(app.world())
             .any(|object| object.object_id == apple_id));
+    }
+
+    #[test]
+    fn drop_onto_occupied_equipment_slot_swaps_items() {
+        use crate::player::components::EquippedItem;
+        use crate::world::object_definitions::EquipmentSlot;
+
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+
+        {
+            let mut inv = app.world_mut().get_mut::<Inventory>(player).unwrap();
+            inv.backpack_slots[0] = Some(InventoryStack::item(
+                "bronze_sword".to_owned(),
+                ObjectProperties::new(),
+                1,
+            ));
+            inv.restore_equipment_item(
+                EquipmentSlot::Weapon,
+                EquippedItem {
+                    type_id: "herb_knife".to_owned(),
+                    properties: ObjectProperties::new(),
+                },
+            );
+        }
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                crate::player::components::PlayerId(1),
+                GameCommand::MoveItem {
+                    source: ItemReference::Slot(ItemSlotRef::Backpack(0)),
+                    destination: ItemDestination::Slot(ItemSlotRef::Equipment(
+                        EquipmentSlot::Weapon,
+                    )),
+                },
+            );
+        app.update();
+
+        let inv = app.world().get::<Inventory>(player).unwrap();
+        assert_eq!(
+            inv.equipment_item(EquipmentSlot::Weapon)
+                .map(|i| &i.type_id),
+            Some(&"bronze_sword".to_owned()),
+            "the dragged weapon should now occupy the slot",
+        );
+        assert_eq!(
+            inv.backpack_slots[0],
+            Some(InventoryStack::item(
+                "herb_knife".to_owned(),
+                ObjectProperties::new(),
+                1,
+            )),
+            "the displaced weapon should land in the source slot",
+        );
+    }
+
+    #[test]
+    fn invalid_swap_leaves_both_slots_unchanged() {
+        use crate::player::components::EquippedItem;
+        use crate::world::object_definitions::EquipmentSlot;
+
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+
+        {
+            let mut inv = app.world_mut().get_mut::<Inventory>(player).unwrap();
+            inv.backpack_slots[0] = Some(InventoryStack::item(
+                "apple".to_owned(),
+                ObjectProperties::new(),
+                1,
+            ));
+            inv.restore_equipment_item(
+                EquipmentSlot::Weapon,
+                EquippedItem {
+                    type_id: "herb_knife".to_owned(),
+                    properties: ObjectProperties::new(),
+                },
+            );
+        }
+
+        // An apple is not a valid weapon: the swap must roll back so both
+        // slots end exactly as they started, with nothing lost.
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                crate::player::components::PlayerId(1),
+                GameCommand::MoveItem {
+                    source: ItemReference::Slot(ItemSlotRef::Backpack(0)),
+                    destination: ItemDestination::Slot(ItemSlotRef::Equipment(
+                        EquipmentSlot::Weapon,
+                    )),
+                },
+            );
+        app.update();
+
+        let inv = app.world().get::<Inventory>(player).unwrap();
+        assert_eq!(
+            inv.backpack_slots[0],
+            Some(InventoryStack::item(
+                "apple".to_owned(),
+                ObjectProperties::new(),
+                1,
+            )),
+        );
+        assert_eq!(
+            inv.equipment_item(EquipmentSlot::Weapon)
+                .map(|i| &i.type_id),
+            Some(&"herb_knife".to_owned()),
+        );
+    }
+
+    #[test]
+    fn same_type_stack_merge_still_succeeds() {
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+
+        {
+            let mut inv = app.world_mut().get_mut::<Inventory>(player).unwrap();
+            inv.backpack_slots[0] = Some(InventoryStack::item(
+                "gold_coin".to_owned(),
+                ObjectProperties::new(),
+                10,
+            ));
+            inv.backpack_slots[1] = Some(InventoryStack::item(
+                "gold_coin".to_owned(),
+                ObjectProperties::new(),
+                5,
+            ));
+        }
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                crate::player::components::PlayerId(1),
+                GameCommand::MoveItem {
+                    source: ItemReference::Slot(ItemSlotRef::Backpack(1)),
+                    destination: ItemDestination::Slot(ItemSlotRef::Backpack(0)),
+                },
+            );
+        app.update();
+
+        let inv = app.world().get::<Inventory>(player).unwrap();
+        assert_eq!(
+            inv.backpack_slots[0],
+            Some(InventoryStack::item(
+                "gold_coin".to_owned(),
+                ObjectProperties::new(),
+                15,
+            )),
+            "same-type stacks must still merge rather than swap",
+        );
+        assert_eq!(inv.backpack_slots[1], None);
     }
 
     #[test]
