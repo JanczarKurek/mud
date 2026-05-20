@@ -17,7 +17,10 @@ use crate::player::lifecycle::{
 };
 use crate::player::progression::{apply_xp_grants, PendingXpGrants};
 use crate::player::regen::{tick_regen_buffs, tick_vital_regen};
-use crate::player::setup::spawn_player_visual;
+use crate::player::setup::{
+    apply_player_appearance, propagate_player_animation_to_layers, spawn_player_recolor_layers,
+    spawn_player_visual,
+};
 use crate::player::skills::process_allocate_skill_commands;
 use crate::player::systems::{
     move_player_on_grid, refresh_derived_player_stats, rotate_nearby_object_on_shortcut,
@@ -90,6 +93,12 @@ impl Plugin for PlayerClientPlugin {
                     sync_authoritative_player_display,
                     sync_authoritative_player_position_view,
                     sync_projected_player_from_client_state,
+                    spawn_player_recolor_layers
+                        .after(crate::world::animation::attach_animated_sprite),
+                    propagate_player_animation_to_layers
+                        .after(crate::world::animation::trigger_movement_animation)
+                        .after(crate::world::animation::return_to_idle_animation),
+                    apply_player_appearance.after(spawn_player_recolor_layers),
                 )
                     .run_if(in_state(ClientAppState::InGame)),
             )

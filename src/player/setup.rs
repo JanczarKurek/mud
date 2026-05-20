@@ -6,9 +6,9 @@ use crate::magic::effects::MagicEffects;
 use crate::persistence::{PlayerStateDump, WorldSnapshotStatus};
 use crate::player::classes::Class;
 use crate::player::components::{
-    BaseStats, ChatLog, DefenseStats, DerivedStats, EquippedItem, Inventory, InventoryStack,
-    MovementCooldown, Player, PlayerId, PlayerIdentity, RegenBuffs, RegenTickers, VitalStats,
-    WeaponDamage,
+    AppearanceRegion, BaseStats, ChatLog, DefenseStats, DerivedStats, EquippedItem, Inventory,
+    InventoryStack, MovementCooldown, Player, PlayerAppearance, PlayerId, PlayerIdentity,
+    RegenBuffs, RegenTickers, SpriteLayer, VitalStats, WeaponDamage,
 };
 use crate::player::progression::Experience;
 use crate::player::skills::SkillSheet;
@@ -313,6 +313,7 @@ pub fn spawn_player_from_dump(
                 dump.experience,
                 dump.class,
                 dump.skill_sheet,
+                dump.appearance,
             ),
         ))
         .id();
@@ -376,6 +377,7 @@ pub fn spawn_player_authoritative_in_space(
                 Experience::default(),
                 Class::default(),
                 SkillSheet::default(),
+                PlayerAppearance::default(),
             ),
         ))
         .id()
@@ -446,4 +448,160 @@ pub fn spawn_player_visual(
     }
 
     attach_combat_health_bar(&mut commands, entity, world_config.tile_size, sprite_height);
+}
+
+/// Marker inserted on the player entity once its recolor sprite layers have
+/// been spawned. Gates `spawn_player_recolor_layers` from running twice.
+#[derive(Component)]
+pub struct PlayerLayersInitialized;
+
+/// Spawns one child entity per `recolor_layers` entry on the player definition
+/// after the player's animated sprite + atlas have been set up by
+/// `attach_animated_sprite`. Each child shares the parent's `TextureAtlasLayout`
+/// handle so frame indices line up automatically; the per-region tint is
+/// applied separately by `apply_player_appearance`.
+pub fn spawn_player_recolor_layers(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    definitions: Res<OverworldObjectDefinitions>,
+    player_query: Query<
+        (
+            Entity,
+            &Sprite,
+            &crate::world::animation::AnimatedSprite,
+            &PlayerAppearance,
+        ),
+        (With<Player>, Without<PlayerLayersInitialized>),
+    >,
+) {
+    let Ok((entity, sprite, animated, appearance)) = player_query.single() else {
+        return;
+    };
+    let Some(atlas) = sprite.texture_atlas.as_ref() else {
+        return;
+    };
+    let Some(definition) = definitions.get("player") else {
+        return;
+    };
+    if definition.render.recolor_layers.is_empty() {
+        commands.entity(entity).insert(PlayerLayersInitialized);
+        return;
+    }
+
+    // Match the base sprite's `custom_size` exactly. `attach_animated_sprite`
+    // sizes the base to the animation sheet's frame_width/frame_height, which
+    // is asymmetric (e.g. 32×48). Using `sprite_pixel_size` here would fall
+    // back to a square (tile_size * debug_size), stretching the layer wider
+    // than the base and clipping the base sprite's hands behind the wider
+    // torso layer.
+    let size = sprite.custom_size.unwrap_or_else(|| {
+        Vec2::new(
+            definition
+                .render
+                .animation
+                .as_ref()
+                .map(|a| a.frame_width as f32)
+                .unwrap_or(0.0),
+            definition
+                .render
+                .animation
+                .as_ref()
+                .map(|a| a.frame_height as f32)
+                .unwrap_or(0.0),
+        )
+    });
+    let uses_y_sort = definition.render.y_sort;
+    let layout_handle = atlas.layout.clone();
+
+    for (idx, layer) in definition.render.recolor_layers.iter().enumerate() {
+        let region = match layer.key.as_str() {
+            "skin" => AppearanceRegion::Skin,
+            "hair" => AppearanceRegion::Hair,
+            "torso" => AppearanceRegion::Torso,
+            "trousers" => AppearanceRegion::Trousers,
+            other => {
+                warn!("unknown recolor layer key '{other}' on player definition — skipping");
+                continue;
+            }
+        };
+
+        let layer_color = match appearance.color_for(region) {
+            Some(rgb) => rgb.to_bevy(),
+            None => Color::WHITE,
+        };
+
+        let layer_sprite = Sprite {
+            image: asset_server.load(&layer.sheet_path),
+            custom_size: Some(size),
+            texture_atlas: Some(TextureAtlas {
+                layout: layout_handle.clone(),
+                index: atlas.index,
+            }),
+            color: layer_color,
+            image_mode: SpriteImageMode::Auto,
+            ..default()
+        };
+
+        // Stack each layer slightly above the previous one (and above the
+        // base sprite) so they composite in declaration order. The base
+        // sprite sits at z = render.z_index; we keep layers strictly above
+        // it but below the next integer z step.
+        let z_offset = 0.01 * (idx as f32 + 1.0);
+
+        let mut layer_entity = commands.spawn((
+            layer_sprite,
+            animated.clone(),
+            SpriteLayer { region },
+            Transform::from_xyz(0.0, 0.0, z_offset),
+            Visibility::Inherited,
+        ));
+        if uses_y_sort {
+            layer_entity.insert(bevy::sprite::Anchor::BOTTOM_CENTER);
+        }
+        let layer_id = layer_entity.id();
+        commands.entity(entity).add_child(layer_id);
+    }
+
+    commands.entity(entity).insert(PlayerLayersInitialized);
+}
+
+/// Copies the parent player's `AnimatedSprite` clip state onto each child
+/// recolor layer so the layers stay frame-locked with the base sprite when
+/// the player switches between `idle` and `walk` clips.
+pub fn propagate_player_animation_to_layers(
+    player_q: Query<
+        (&Children, &crate::world::animation::AnimatedSprite),
+        (With<Player>, Changed<crate::world::animation::AnimatedSprite>),
+    >,
+    mut layer_q: Query<
+        &mut crate::world::animation::AnimatedSprite,
+        (With<SpriteLayer>, Without<Player>),
+    >,
+) {
+    for (children, parent_anim) in &player_q {
+        for child in children.iter() {
+            if let Ok(mut child_anim) = layer_q.get_mut(child) {
+                *child_anim = parent_anim.clone();
+            }
+        }
+    }
+}
+
+/// Applies the player's `PlayerAppearance` colors to each child recolor
+/// layer's `Sprite::color`. Fires on initial appearance insert + any future
+/// mutation (e.g. a barber NPC in a follow-up).
+pub fn apply_player_appearance(
+    player_q: Query<(&Children, &PlayerAppearance), Changed<PlayerAppearance>>,
+    mut layer_q: Query<(&SpriteLayer, &mut Sprite)>,
+) {
+    for (children, appearance) in &player_q {
+        for child in children.iter() {
+            if let Ok((layer, mut sprite)) = layer_q.get_mut(child) {
+                sprite.color = match appearance.color_for(layer.region) {
+                    Some(rgb) => rgb.to_bevy(),
+                    None => Color::WHITE,
+                };
+            }
+        }
+    }
 }

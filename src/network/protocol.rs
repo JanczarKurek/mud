@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::game::commands::GameCommand;
 use crate::game::resources::{GameEvent, GameUiEvent};
 use crate::player::classes::Class;
-use crate::player::components::AttributeSet;
+use crate::player::components::{AttributeSet, PlayerAppearance};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AssetEntry {
@@ -37,6 +37,8 @@ pub enum ClientMessage {
         name: String,
         class: Class,
         attributes: AttributeSet,
+        #[serde(default)]
+        appearance: PlayerAppearance,
     },
     /// Post-auth, pre-character: pick a character to play. Server spawns the
     /// player entity, sends `ServerMessage::CharacterSelected`, then begins

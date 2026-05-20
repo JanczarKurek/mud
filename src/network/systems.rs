@@ -330,12 +330,14 @@ pub fn poll_tcp_server_messages(
                     name,
                     class,
                     attributes,
+                    appearance,
                 }) => {
                     handle_create_character(
                         peer,
                         &name,
                         class,
                         attributes,
+                        appearance,
                         db.as_deref(),
                         &mut disconnected,
                     );
@@ -529,6 +531,7 @@ fn handle_create_character(
     name: &str,
     class: crate::player::classes::Class,
     attributes: crate::player::components::AttributeSet,
+    appearance: crate::player::components::PlayerAppearance,
     db: Option<&AccountDbHandle>,
     disconnected: &mut bool,
 ) {
@@ -553,7 +556,7 @@ fn handle_create_character(
 
     let result = {
         let mut guard = db.lock();
-        guard.create_character(account_id, name, class, attributes)
+        guard.create_character(account_id, name, class, attributes, appearance)
     };
 
     match result {

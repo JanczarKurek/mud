@@ -65,6 +65,102 @@ impl PlayerIdentity {
     }
 }
 
+/// Which body region a recolor sprite layer belongs to. The `Skin` layer is
+/// the untintable base; the other three carry per-character colors selected
+/// at character creation.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub enum AppearanceRegion {
+    #[default]
+    Skin,
+    Hair,
+    Torso,
+    Trousers,
+}
+
+/// 8-bit RGB color stored in `PlayerStateDump` (json) and sent over the wire.
+/// We don't serialize Bevy's `Color` directly because its representation has
+/// shifted across versions; this is stable.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+pub struct RgbColor {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+}
+
+impl RgbColor {
+    pub const fn new(r: u8, g: u8, b: u8) -> Self {
+        Self { r, g, b }
+    }
+
+    pub fn to_bevy(self) -> Color {
+        Color::srgb_u8(self.r, self.g, self.b)
+    }
+
+    /// HSV → RGB with fixed saturation/value used by the character-creation
+    /// hue slider. Hue is in degrees, wrapped into [0, 360).
+    pub fn from_hue(hue_degrees: f32) -> Self {
+        const S: f32 = 0.65;
+        const V: f32 = 0.85;
+        let h = hue_degrees.rem_euclid(360.0) / 60.0;
+        let c = V * S;
+        let x = c * (1.0 - (h.rem_euclid(2.0) - 1.0).abs());
+        let m = V - c;
+        let (r, g, b) = match h as u32 {
+            0 => (c, x, 0.0),
+            1 => (x, c, 0.0),
+            2 => (0.0, c, x),
+            3 => (0.0, x, c),
+            4 => (x, 0.0, c),
+            _ => (c, 0.0, x),
+        };
+        Self {
+            r: ((r + m) * 255.0).round().clamp(0.0, 255.0) as u8,
+            g: ((g + m) * 255.0).round().clamp(0.0, 255.0) as u8,
+            b: ((b + m) * 255.0).round().clamp(0.0, 255.0) as u8,
+        }
+    }
+}
+
+/// Per-character appearance: the resolved RGB color for each tintable region.
+/// Persisted inside `PlayerStateDump.appearance` (so it lives in the per-
+/// character `state_json` blob and survives across logins). New characters
+/// without saved data default to brown hair / blue shirt / grey trousers.
+#[derive(Component, Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+pub struct PlayerAppearance {
+    pub hair: RgbColor,
+    pub torso: RgbColor,
+    pub trousers: RgbColor,
+}
+
+impl Default for PlayerAppearance {
+    fn default() -> Self {
+        Self {
+            hair: RgbColor::new(115, 75, 40),
+            torso: RgbColor::new(70, 110, 180),
+            trousers: RgbColor::new(95, 95, 110),
+        }
+    }
+}
+
+impl PlayerAppearance {
+    pub fn color_for(&self, region: AppearanceRegion) -> Option<RgbColor> {
+        match region {
+            AppearanceRegion::Skin => None,
+            AppearanceRegion::Hair => Some(self.hair),
+            AppearanceRegion::Torso => Some(self.torso),
+            AppearanceRegion::Trousers => Some(self.trousers),
+        }
+    }
+}
+
+/// Marker on each child entity of a player that carries one recolor layer's
+/// sprite. The base/skin layer is also tagged so the apply-appearance system
+/// can iterate uniformly; its tint just stays `Color::WHITE`.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct SpriteLayer {
+    pub region: AppearanceRegion,
+}
+
 /// A self-describing stack of identical items. Carries the canonical type
 /// (matching a directory under `assets/overworld_objects/`) plus any
 /// per-instance `properties` (e.g. a scroll's `spell_id`). Notably *no* runtime

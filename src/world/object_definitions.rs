@@ -832,6 +832,24 @@ pub struct RenderMetadata {
     /// equal, the authoritative `object_id` breaks the tie.
     #[serde(default)]
     pub stack_order: i32,
+    /// Optional per-region sprite layers stacked on top of the base sprite at
+    /// spawn time. Each layer reuses the base `animation:` frame grid (same
+    /// dimensions and clip layout) and receives a per-character tint via
+    /// `Sprite::color`. Generic mechanism — currently used by the player
+    /// definition for hair / torso / trousers customization.
+    #[serde(default)]
+    pub recolor_layers: Vec<RecolorLayerDef>,
+}
+
+/// One optional sprite layer stacked on top of an object's base sprite. `key`
+/// names the region (`"skin"`, `"hair"`, `"torso"`, `"trousers"`). The layer
+/// PNG must share the same dimensions as the parent's animation sheet so
+/// frame indices stay in lockstep.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct RecolorLayerDef {
+    pub key: String,
+    pub sheet_path: String,
 }
 
 impl RenderMetadata {

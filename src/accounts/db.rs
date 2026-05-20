@@ -288,6 +288,7 @@ impl AccountDb {
         name: &str,
         class: Class,
         attributes: AttributeSet,
+        appearance: crate::player::components::PlayerAppearance,
     ) -> Result<i64, AuthError> {
         let normalized = validate_character_name(name)?;
         validate_point_buy(&attributes).map_err(AuthError::PointBuyInvalid)?;
@@ -311,8 +312,8 @@ impl AccountDb {
         };
 
         // Seed an initial state_json so the next SelectCharacter has a dump
-        // to restore (with the chosen class + attributes).
-        let dump = build_initial_dump(character_id, class, attributes);
+        // to restore (with the chosen class + attributes + appearance).
+        let dump = build_initial_dump(character_id, class, attributes, appearance);
         if let Ok(json) = serde_json::to_string(&dump) {
             self.conn.execute(
                 "UPDATE characters SET state_json = ?1, updated_at = ?2 WHERE character_id = ?3",
@@ -431,6 +432,7 @@ fn build_initial_dump(
     character_id: i64,
     class: Class,
     attributes: AttributeSet,
+    appearance: crate::player::components::PlayerAppearance,
 ) -> PlayerStateDump {
     use crate::combat::components::{AttackProfile, CombatLeash};
     use crate::magic::effects::MagicEffects;
@@ -470,6 +472,7 @@ fn build_initial_dump(
         magic_effects: MagicEffects::default(),
         stash: Default::default(),
         skill_sheet: Default::default(),
+        appearance,
     }
 }
 
@@ -623,10 +626,10 @@ mod tests {
         let account = db.create_account("carol", "hunter2!").unwrap();
         let attrs = balanced_attrs();
         let c1 = db
-            .create_character(account, "Hero", Class::Fighter, attrs)
+            .create_character(account, "Hero", Class::Fighter, attrs, Default::default())
             .unwrap();
         let c2 = db
-            .create_character(account, "Mage", Class::Wizard, attrs)
+            .create_character(account, "Mage", Class::Wizard, attrs, Default::default())
             .unwrap();
         assert!(c1 > 0 && c2 > 0 && c1 != c2);
 
@@ -644,16 +647,16 @@ mod tests {
         let a = db.create_account("dave", "hunter2!").unwrap();
         let b = db.create_account("eve", "hunter2!").unwrap();
         let attrs = balanced_attrs();
-        db.create_character(a, "Shared", Class::Fighter, attrs)
+        db.create_character(a, "Shared", Class::Fighter, attrs, Default::default())
             .unwrap();
         // Same account: rejected.
         assert!(matches!(
-            db.create_character(a, "Shared", Class::Wizard, attrs),
+            db.create_character(a, "Shared", Class::Wizard, attrs, Default::default()),
             Err(AuthError::CharacterNameTaken)
         ));
         // Different account: also rejected (names are globally unique).
         assert!(matches!(
-            db.create_character(b, "shared", Class::Wizard, attrs),
+            db.create_character(b, "shared", Class::Wizard, attrs, Default::default()),
             Err(AuthError::CharacterNameTaken)
         ));
     }
@@ -665,7 +668,7 @@ mod tests {
         // All 10s = 0 spent, budget is 12 — must fail.
         let attrs = AttributeSet::new(10, 10, 10, 10, 10, 10);
         assert!(matches!(
-            db.create_character(a, "Cheater", Class::Fighter, attrs),
+            db.create_character(a, "Cheater", Class::Fighter, attrs, Default::default()),
             Err(AuthError::PointBuyInvalid(_))
         ));
     }
@@ -676,11 +679,11 @@ mod tests {
         let a = db.create_account("greg", "hunter2!").unwrap();
         let attrs = balanced_attrs();
         assert!(matches!(
-            db.create_character(a, "", Class::Fighter, attrs),
+            db.create_character(a, "", Class::Fighter, attrs, Default::default()),
             Err(AuthError::CharacterNameInvalid(_))
         ));
         assert!(matches!(
-            db.create_character(a, "ab", Class::Fighter, attrs),
+            db.create_character(a, "ab", Class::Fighter, attrs, Default::default()),
             Err(AuthError::CharacterNameInvalid(_))
         ));
     }
@@ -697,7 +700,7 @@ mod tests {
         let account = db.create_account("hank", "hunter2!").unwrap();
         let attrs = balanced_attrs();
         let cid = db
-            .create_character(account, "Roundtrip", Class::Fighter, attrs)
+            .create_character(account, "Roundtrip", Class::Fighter, attrs, Default::default())
             .unwrap();
         // create_character seeds an initial dump, so load_character succeeds.
         let initial = db.load_character(cid).unwrap().unwrap();
@@ -725,6 +728,7 @@ mod tests {
             magic_effects: Default::default(),
             stash: Default::default(),
             skill_sheet: Default::default(),
+            appearance: Default::default(),
         };
         db.save_character(cid, &dump).unwrap();
 
@@ -739,7 +743,7 @@ mod tests {
         let a = db.create_account("ivy", "hunter2!").unwrap();
         let attrs = balanced_attrs();
         let cid = db
-            .create_character(a, "Doomed", Class::Wizard, attrs)
+            .create_character(a, "Doomed", Class::Wizard, attrs, Default::default())
             .unwrap();
         assert_eq!(db.list_characters(a).unwrap().len(), 1);
         db.delete_character(a, cid).unwrap();

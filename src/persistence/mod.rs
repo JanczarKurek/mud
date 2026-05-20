@@ -217,6 +217,11 @@ pub struct PlayerStateDump {
     /// sheet (no ranks, no banked points).
     #[serde(default)]
     pub skill_sheet: crate::player::skills::SkillSheet,
+    /// Per-character sprite recolor selection (hair / torso / trousers).
+    /// `#[serde(default)]` so rows written before character customization
+    /// existed fall back to the `PlayerAppearance::default()` palette.
+    #[serde(default)]
+    pub appearance: crate::player::components::PlayerAppearance,
 }
 
 /// Build a `PlayerStateDump` from the components of a single player entity.
@@ -241,6 +246,7 @@ pub fn build_player_state_dump(
     magic_effects: &MagicEffects,
     stash: &crate::crafting::CharacterStash,
     skill_sheet: &crate::player::skills::SkillSheet,
+    appearance: crate::player::components::PlayerAppearance,
 ) -> PlayerStateDump {
     PlayerStateDump {
         player_id: identity.id,
@@ -262,6 +268,7 @@ pub fn build_player_state_dump(
         magic_effects: magic_effects.clone(),
         stash: stash.entries.clone(),
         skill_sheet: skill_sheet.clone(),
+        appearance,
     }
 }
 
@@ -1208,6 +1215,7 @@ mod tests {
             magic_effects: Default::default(),
             stash: Default::default(),
             skill_sheet: Default::default(),
+            appearance: Default::default(),
         };
         let json = serde_json::to_string(&dump_with_home).unwrap();
         // Confirm we didn't accidentally serialize Some(...).
@@ -1269,6 +1277,7 @@ mod tests {
             magic_effects: effects.clone(),
             skill_sheet: Default::default(),
             stash: Default::default(),
+            appearance: Default::default(),
         };
         let json = serde_json::to_string(&dump).unwrap();
         let restored: PlayerStateDump = serde_json::from_str(&json).unwrap();
@@ -1287,6 +1296,19 @@ mod tests {
         assert!(!legacy_json.contains("magic_effects"));
         let legacy: PlayerStateDump = serde_json::from_str(&legacy_json).unwrap();
         assert!(legacy.magic_effects.is_empty());
+
+        // Legacy player rows without `appearance` deserialize to the default
+        // palette — same back-compat path as the magic_effects case above.
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .remove("appearance")
+            .expect("dump should serialize appearance");
+        let legacy_json = serde_json::to_string(&value).unwrap();
+        assert!(!legacy_json.contains("\"appearance\""));
+        let legacy: PlayerStateDump = serde_json::from_str(&legacy_json).unwrap();
+        assert_eq!(legacy.appearance, crate::player::components::PlayerAppearance::default());
 
         // World object dump: a spell-summoned lantern with a remaining TTL
         // — same `remaining_ttl` field that corpses use.

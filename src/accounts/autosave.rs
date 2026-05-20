@@ -11,8 +11,8 @@ use crate::network::resources::PendingPlayerSaves;
 use crate::persistence::build_player_state_dump;
 use crate::player::classes::Class;
 use crate::player::components::{
-    BaseStats, ChatLog, DerivedStats, Inventory, MovementCooldown, Player, PlayerIdentity,
-    VitalStats,
+    BaseStats, ChatLog, DerivedStats, Inventory, MovementCooldown, Player, PlayerAppearance,
+    PlayerIdentity, VitalStats,
 };
 use crate::player::progression::Experience;
 use crate::player::skills::SkillSheet;
@@ -44,6 +44,7 @@ type PlayerStateQueryData<'a> = (
         Option<&'a MagicEffects>,
         Option<&'a CharacterStash>,
         Option<&'a SkillSheet>,
+        Option<&'a PlayerAppearance>,
     ),
 );
 
@@ -70,7 +71,7 @@ fn save_entity(
         combat_leash,
         facing,
         experience,
-        (class, magic_effects, stash, skill_sheet),
+        (class, magic_effects, stash, skill_sheet, appearance),
     ) = row;
 
     let empty_effects = MagicEffects::default();
@@ -98,6 +99,7 @@ fn save_entity(
         effects_ref,
         stash_ref,
         sheet_ref,
+        appearance.copied().unwrap_or_default(),
     );
 
     if let Some(stores) = var_stores {

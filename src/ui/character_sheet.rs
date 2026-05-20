@@ -306,21 +306,17 @@ fn rebuild_character_sheet_contents(
                 combat.attack_bonus.to_string()
             };
 
-            let mut rows: Vec<(String, String)> = vec![
+            let rows: [(String, String); 6] = [
                 ("Attack".to_owned(), attack_value),
                 ("To-hit".to_owned(), bonus_str),
                 ("Defense (DC)".to_owned(), combat.dodge_dc.to_string()),
-            ];
-            if combat.armor > 0 {
-                rows.push(("Armor".to_owned(), combat.armor.to_string()));
-            }
-            if combat.has_shield {
-                rows.push(("Block".to_owned(), combat.block.to_string()));
-                rows.push((
+                ("Armor".to_owned(), combat.armor.to_string()),
+                ("Block".to_owned(), combat.block.to_string()),
+                (
                     "Block Chance".to_owned(),
                     format!("{}%", combat.block_chance_pct),
-                ));
-            }
+                ),
+            ];
 
             for (label, value) in rows {
                 panel

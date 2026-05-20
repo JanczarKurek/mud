@@ -26,3 +26,10 @@ render:
         frame_count: 4
         fps: 8.0
         looping: true
+  recolor_layers:
+    - key: hair
+      sheet_path: overworld_objects/player/layers/hair.png
+    - key: torso
+      sheet_path: overworld_objects/player/layers/torso.png
+    - key: trousers
+      sheet_path: overworld_objects/player/layers/trousers.png

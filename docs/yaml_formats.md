@@ -1030,6 +1030,48 @@ Notes:
 - If the `walk` clip is omitted, the system falls back to `idle` during movement.
 - Smooth movement (viewport scroll for the player, per-entity offset for NPCs) is automatic when an entity has `animation` defined; no additional configuration is needed.
 
+### `recolor_layers` (optional)
+
+Per-region sprite layers stacked on top of the base sprite, each receiving an
+independent per-character tint. Currently used by the player definition for
+hair / torso / trousers customization at character creation. Each layer PNG
+must share the same dimensions and frame grid as the parent's `animation`
+sheet so frame indices stay locked together.
+
+```yaml
+render:
+  animation:
+    sheet_path: overworld_objects/player/sheet.png
+    frame_width: 32
+    frame_height: 48
+    sheet_columns: 4
+    sheet_rows: 2
+    clips: { ... }
+  recolor_layers:
+    - key: hair       # tinted from PlayerAppearance.hair
+      sheet_path: overworld_objects/player/layers/hair.png
+    - key: torso      # tinted from PlayerAppearance.torso
+      sheet_path: overworld_objects/player/layers/torso.png
+    - key: trousers   # tinted from PlayerAppearance.trousers
+      sheet_path: overworld_objects/player/layers/trousers.png
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `key` | string | yes | Region name. Recognized: `hair`, `torso`, `trousers` (`skin` is accepted but renders un-tinted; usually unnecessary since the base sheet already carries the skin pixels). Unknown keys are skipped with a warning. |
+| `sheet_path` | string | yes | Bevy asset path to the layer sheet. Same dimensions as `animation.sheet_path`. |
+
+Notes:
+- Layers are tinted via Bevy's `Sprite::color` (multiplicative). Author each
+  layer in a near-white neutral so the chosen RGB defines the visible color.
+- Layers are stacked in declaration order with small Z offsets above the base
+  sprite, so layer pixels overwrite the underlying base pixels in their
+  region. Layer pixels must cover the exact same coordinates as the base sheet's
+  region pixels — otherwise the original colors leak through the gaps.
+- Only the player definition currently has consumer code wired up. Other
+  objects may declare `recolor_layers` for forward-compat; nothing will spawn
+  them until a system opts in.
+
 Example:
 
 ```yaml
