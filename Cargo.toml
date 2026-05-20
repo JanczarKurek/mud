@@ -101,4 +101,6 @@ opt-level = 1
 strip = "symbols"
 lto = "thin"
 codegen-units = 1
-panic = "abort"
+# `panic = "abort"` would conflict with `bevy_dylib` (default `dynamic_linking`
+# feature), which must be built with unwinding. Leave panic at the default
+# `unwind` so `cargo build --release` works without `--no-default-features`.
