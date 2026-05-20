@@ -304,6 +304,8 @@ AC = 10 + AGI_mod + armor + shield + dodge
 - `shield` = flat from equipped shield slot.
 - `dodge` = situational; default 0.
 
+**Refinement (implemented):** The combat-depth batch split these channels — armor and shield no longer contribute to the to-hit DC. Instead the dodge DC is `10 + AGI_mod + sum(item.dodge_bonus)`, and `armor` mitigates damage *post-hit* (additive subtract, same as today's flow), while `shield`'s mitigation is *chance-gated* by a per-shield `block_chance` roll (default `block_chance + AGI_mod * 2`, clamped to `[0, 95]`). See `src/combat/systems.rs::resolve_battle_turn`.
+
 ### 7.3 Damage
 
 ```

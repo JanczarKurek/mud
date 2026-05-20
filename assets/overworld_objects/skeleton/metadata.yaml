@@ -14,6 +14,9 @@ attack_profile:
   kind: melee
   damage_type: cut
 hp: "1d8+30+constitution*3"
+armor: 1
+block: 2
+block_chance: 15
 render:
   debug_color: [218, 210, 185]
   debug_size: 0.88

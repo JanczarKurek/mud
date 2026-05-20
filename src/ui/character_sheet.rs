@@ -278,6 +278,96 @@ fn rebuild_character_sheet_contents(
                 margin: UiRect::top(Val::Px(6.0)),
                 ..default()
             },
+            Text::new("Combat"),
+            TextFont {
+                font_size: 16.0,
+                ..default()
+            },
+            TextColor(palette.text_accent),
+        ));
+
+        if let Some(combat) = client_state.combat_stats {
+            let kind_label = match combat.attack_kind {
+                crate::combat::components::AttackKind::Melee => "Melee".to_owned(),
+                crate::combat::components::AttackKind::Ranged { range_tiles } => {
+                    format!("Ranged {range_tiles}t")
+                }
+            };
+            let attack_value = format!(
+                "{}-{} {} ({})",
+                combat.damage_min,
+                combat.damage_max,
+                combat.damage_type.display_name(),
+                kind_label,
+            );
+            let bonus_str = if combat.attack_bonus >= 0 {
+                format!("+{}", combat.attack_bonus)
+            } else {
+                combat.attack_bonus.to_string()
+            };
+
+            let mut rows: Vec<(String, String)> = vec![
+                ("Attack".to_owned(), attack_value),
+                ("To-hit".to_owned(), bonus_str),
+                ("Defense (DC)".to_owned(), combat.dodge_dc.to_string()),
+            ];
+            if combat.armor > 0 {
+                rows.push(("Armor".to_owned(), combat.armor.to_string()));
+            }
+            if combat.has_shield {
+                rows.push(("Block".to_owned(), combat.block.to_string()));
+                rows.push((
+                    "Block Chance".to_owned(),
+                    format!("{}%", combat.block_chance_pct),
+                ));
+            }
+
+            for (label, value) in rows {
+                panel
+                    .spawn((
+                        Node {
+                            flex_direction: FlexDirection::Row,
+                            justify_content: JustifyContent::SpaceBetween,
+                            column_gap: Val::Px(8.0),
+                            ..default()
+                        },
+                        BackgroundColor(Color::NONE),
+                    ))
+                    .with_children(|row| {
+                        row.spawn((
+                            Text::new(label),
+                            TextFont {
+                                font_size: 14.0,
+                                ..default()
+                            },
+                            TextColor(palette.text_muted),
+                        ));
+                        row.spawn((
+                            Text::new(value),
+                            TextFont {
+                                font_size: 14.0,
+                                ..default()
+                            },
+                            TextColor(palette.text_primary),
+                        ));
+                    });
+            }
+        } else {
+            panel.spawn((
+                Text::new("(loading...)"),
+                TextFont {
+                    font_size: 13.0,
+                    ..default()
+                },
+                TextColor(palette.text_muted),
+            ));
+        }
+
+        panel.spawn((
+            Node {
+                margin: UiRect::top(Val::Px(6.0)),
+                ..default()
+            },
             Text::new("Status Effects"),
             TextFont {
                 font_size: 16.0,

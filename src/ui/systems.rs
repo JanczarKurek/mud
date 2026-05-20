@@ -100,6 +100,10 @@ pub fn apply_game_ui_events(
             other @ GameUiEvent::SkillPointsToast { .. } => {
                 pending_ui_events.events.push(other);
             }
+            // Combat-feedback signals: hook point for future floating-text /
+            // popup animation. The chat log already narrates these (see
+            // `resolve_battle_turn`), so silent-consume is fine for now.
+            GameUiEvent::AttackDodged { .. } | GameUiEvent::AttackBlocked { .. } => {}
         }
     }
 }

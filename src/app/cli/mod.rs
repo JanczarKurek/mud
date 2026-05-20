@@ -290,8 +290,8 @@ pub fn mud2_into_plugin(cli: Mud2Cli) -> GameAppPlugin {
             }
         });
 
-    let client_tls = (client_tls_enabled && matches!(runtime, AppRuntime::TcpClient))
-        .then_some(ClientTlsArgs {
+    let client_tls =
+        (client_tls_enabled && matches!(runtime, AppRuntime::TcpClient)).then_some(ClientTlsArgs {
             insecure: cli.insecure,
         });
 

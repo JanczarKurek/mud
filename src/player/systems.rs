@@ -66,6 +66,8 @@ pub fn refresh_derived_player_stats(
         let mut equipped_weapon_def_id: Option<String> = None;
         let mut armor_total: i32 = 0;
         let mut block_total: i32 = 0;
+        let mut dodge_total: i32 = 0;
+        let mut block_chance_total: i32 = 0;
 
         for (slot, equipped_item) in &inventory_state.equipment_slots {
             let Some(item) = equipped_item else {
@@ -86,6 +88,7 @@ pub fn refresh_derived_player_stats(
             max_health += definition.stats.max_health;
             max_mana += definition.stats.max_mana;
             storage_slots += definition.stats.storage_slots;
+            dodge_total += definition.dodge_bonus;
 
             match slot {
                 EquipmentSlot::Weapon => {
@@ -99,6 +102,7 @@ pub fn refresh_derived_player_stats(
                 }
                 EquipmentSlot::Shield => {
                     block_total += definition.block;
+                    block_chance_total += definition.block_chance;
                 }
                 _ => {}
             }
@@ -168,6 +172,8 @@ pub fn refresh_derived_player_stats(
         let next_defense = DefenseStats {
             armor: armor_total,
             block: block_total,
+            dodge_bonus: dodge_total,
+            block_chance: block_chance_total,
         };
         if *defense_stats != next_defense {
             *defense_stats = next_defense;

@@ -97,6 +97,17 @@ pub struct OverworldObjectDefinition {
     pub armor: i32,
     #[serde(default)]
     pub block: i32,
+    /// Flat bonus to the wearer's dodge DC when equipped (any slot). Combatants
+    /// also read this directly from their own definition (NPCs aren't running
+    /// an inventory loop). Default 0.
+    #[serde(default)]
+    pub dodge_bonus: i32,
+    /// Percentage chance (0-100) that a shield triggers its `block` mitigation
+    /// on an incoming hit. Only meaningful when this definition occupies the
+    /// Shield slot (for players) or, for NPCs, when the monster's definition
+    /// itself represents the defender's loadout. Default 0.
+    #[serde(default)]
+    pub block_chance: i32,
     #[serde(default)]
     pub hp: Option<String>,
     /// Creature level (HD per `docs/content_bible.md` §6). Drives XP awarded

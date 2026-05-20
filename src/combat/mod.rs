@@ -2,6 +2,7 @@ pub mod components;
 pub mod damage;
 pub mod damage_expr;
 pub mod damage_type;
+pub mod formulas;
 pub mod resources;
 pub mod systems;
 

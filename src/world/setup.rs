@@ -8,7 +8,9 @@ use crate::npc::components::{
 };
 use crate::persistence::WorldSnapshotStatus;
 use crate::player::components::InventoryStack;
-use crate::player::components::{AttributeSet, BaseStats, DerivedStats, VitalStats, WeaponDamage};
+use crate::player::components::{
+    AttributeSet, BaseStats, DefenseStats, DerivedStats, VitalStats, WeaponDamage,
+};
 use crate::world::components::{
     ClientProjectedWorldObject, ClientRemotePlayerVisual, CombatHealthBar, DisplayedVitalStats,
     Facing, HealthBarDisplayPolicy, OverworldObject, SpaceId, SpacePosition, SpaceResident,
@@ -256,6 +258,12 @@ pub fn spawn_overworld_object_instance(
         let max_mana = derived_stats.max_mana as f32;
         let (attack_profile, weapon_damage) = attack_profile_for_definition(definition);
         let level = definition.and_then(|d| d.level).unwrap_or(1);
+        let defense_stats = DefenseStats {
+            armor: definition.map(|d| d.armor).unwrap_or(0),
+            block: definition.map(|d| d.block).unwrap_or(0),
+            dodge_bonus: definition.map(|d| d.dodge_bonus).unwrap_or(0),
+            block_chance: definition.map(|d| d.block_chance).unwrap_or(0),
+        };
         {
             let mut entity_commands = commands.entity(entity);
             entity_commands.insert((
@@ -265,6 +273,7 @@ pub fn spawn_overworld_object_instance(
                 base_stats,
                 derived_stats,
                 VitalStats::full(max_health, max_mana),
+                defense_stats,
                 crate::player::progression::Experience::at_level(level),
             ));
 

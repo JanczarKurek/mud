@@ -4,6 +4,7 @@ weight: 1.0
 description: Worn boots made for roads, mud, and shallow marshes.
 equipment_slot: boots
 armor: 1
+dodge_bonus: 1
 render:
   debug_color: [96, 64, 38]
   debug_size: 0.55

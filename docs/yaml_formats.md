@@ -697,15 +697,30 @@ The `text` value supports three count placeholders in addition to the normal `{p
 - Type: integer
 - Optional: yes
 - Default: `0`
-- Meaning: damage reduction for items equipped in defensive slots (`armor`, `helmet`, `legs`, `boots`). The values are summed across all equipped pieces. On every incoming hit the defender rolls a uniform integer in `0..=armor_total` and subtracts it from the damage. Final damage is floored at `1`.
+- Meaning: damage reduction for items equipped in defensive slots (`armor`, `helmet`, `legs`, `boots`). Values are summed across all equipped pieces. On every incoming hit that lands, the defender rolls a uniform integer in `0..=armor_total` and subtracts it from the damage. Final damage is floored at `1`.
 - Only counted when worn in one of the four defensive slots above; setting `armor` on a weapon or ring has no effect.
+- **Also applies to NPCs**: an NPC's own `armor` field becomes its `DefenseStats.armor` at spawn.
 
 ### `block`
 - Type: integer
 - Optional: yes
 - Default: `0`
-- Meaning: damage reduction specific to the `shield` slot, rolled as a separate pre-armor pass. Defender rolls `0..=block` and subtracts before the armor roll. Combined with `armor` the order is: `damage = max(1, raw - block_roll - armor_roll)`.
-- Only counted when equipped in the `shield` slot.
+- Meaning: damage reduction specific to the `shield` slot. Block is now **chance-gated**: it only fires when the `block_chance` roll succeeds (see below). When it does, the defender rolls `0..=block` and subtracts before the armor roll. Combined with `armor` the post-hit order is: `damage = max(1, raw - block_roll - armor_roll)`.
+- Only counted when equipped in the `shield` slot (for players) or set on an NPC definition.
+
+### `block_chance`
+- Type: integer
+- Optional: yes
+- Default: `0`
+- Meaning: percentage chance (0-100) that a shield triggers its `block` mitigation on an incoming hit. Effective chance is `block_chance + AGI_mod * 2`, clamped to `[0, 95]`. Only meaningful in the `shield` slot for players or on an NPC's own definition.
+- Example: `block_chance: 25` on a wooden shield → a fighter with AGI 14 (+2 mod) gets a 29% block rate.
+
+### `dodge_bonus`
+- Type: integer
+- Optional: yes
+- Default: `0`
+- Meaning: flat bonus added to the wearer's dodge DC (the to-hit target attackers must beat). Counts on any equipment slot (boots, cloaks, rings, etc.), and stacks across pieces. Dodge DC = `10 + AGI_mod + sum(dodge_bonus)`.
+- Example: `dodge_bonus: 1` on a pair of traveler boots → +1 DC for whoever wears them.
 
 ### `use_effects`
 - Type: mapping

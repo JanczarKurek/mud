@@ -95,6 +95,20 @@ pub enum GameUiEvent {
     SkillPointsToast {
         amount: u32,
     },
+    /// An attack missed the target via the dodge mechanic. Pure presentation
+    /// signal — no state changed (attacker still consumed any ammo, target
+    /// still owes no damage).
+    AttackDodged {
+        attacker_object_id: u64,
+        target_object_id: u64,
+    },
+    /// An attack was partially mitigated by the target's shield. `amount` is
+    /// the absorbed damage (post-roll), useful for floating-text feedback.
+    AttackBlocked {
+        attacker_object_id: u64,
+        target_object_id: u64,
+        amount: i32,
+    },
 }
 
 /// Anchor for a `VfxSpawn` event. `Tile` parks the effect at a static world
@@ -229,6 +243,26 @@ pub struct ClientCarryWeight {
     pub soft_cap_kg: f32,
     pub hard_cap_kg: f32,
     pub encumbered: bool,
+}
+
+/// Snapshot of every fighting-related stat for the local player. The server
+/// derives all of these (formulas live in `src/combat/formulas.rs`) and ships
+/// the result over the wire so the character sheet UI never has to mirror the
+/// combat math. Fields that don't apply to the current loadout (no shield →
+/// no block) come through with the corresponding boolean / value zeroed so
+/// the UI can hide that row.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ClientCombatStats {
+    pub attack_kind: crate::combat::components::AttackKind,
+    pub damage_type: crate::combat::damage_type::DamageType,
+    pub damage_min: i32,
+    pub damage_max: i32,
+    pub attack_bonus: i32,
+    pub dodge_dc: i32,
+    pub armor: i32,
+    pub block: i32,
+    pub block_chance_pct: i32,
+    pub has_shield: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -410,6 +444,13 @@ pub enum GameEvent {
     PlayerAttributesChanged {
         attributes: AttributeSet,
     },
+    /// Replicates the local player's derived combat stats (to-hit, damage
+    /// range, dodge DC, armor, block). Drives the Character sheet's Combat
+    /// section; fired when any field of the projected `ClientCombatStats`
+    /// changes between projection ticks.
+    PlayerCombatStatsChanged {
+        stats: ClientCombatStats,
+    },
     /// Replicates the local player's currently active trade session
     /// (or `None` when the player has no active trade). Sole authority for
     /// the trade panel's contents — the projection diffs the snapshot and
@@ -575,6 +616,11 @@ pub struct ClientGameState {
     /// player. `None` until the first `PlayerAttributesChanged` event lands.
     #[serde(default)]
     pub attributes: Option<AttributeSet>,
+    /// Replicated combat stats for the local player. `None` until the first
+    /// `PlayerCombatStatsChanged` event lands. Drives the Combat section of
+    /// the Character sheet.
+    #[serde(default)]
+    pub combat_stats: Option<ClientCombatStats>,
     /// Snapshot of the local player's active trade, or `None`. Updated by
     /// `GameEvent::TradeStateChanged`; the trade panel reads from this.
     #[serde(default)]

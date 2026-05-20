@@ -18,6 +18,10 @@ impl Default for WeaponDamage {
 pub struct DefenseStats {
     pub armor: i32,
     pub block: i32,
+    pub dodge_bonus: i32,
+    /// Percentage 0-100. For players this comes from the equipped shield's
+    /// definition; for NPCs it comes from the creature's own definition.
+    pub block_chance: i32,
 }
 
 #[derive(Component)]

@@ -4,6 +4,7 @@ weight: 3.0
 description: A rough round shield reinforced with a metal boss.
 equipment_slot: shield
 block: 3
+block_chance: 25
 render:
   debug_color: [132, 90, 48]
   debug_size: 0.58

@@ -20,12 +20,12 @@ use bevy::ecs::query::QuerySingleError;
 use bevy::log::{debug, info};
 use bevy::prelude::*;
 
-use crate::combat::components::CombatTarget;
+use crate::combat::components::{AttackProfile, CombatTarget};
 use crate::dialog::components::DialogNode;
 use crate::game::resources::{
-    ChatLogState, ClientActiveEffect, ClientCarryWeight, ClientGameState, ClientRemotePlayerState,
-    ClientSpaceState, ClientVitalStats, ClientWorldObjectState, GameEvent, InventoryState,
-    PendingGameEvents, RegenBuffState,
+    ChatLogState, ClientActiveEffect, ClientCarryWeight, ClientCombatStats, ClientGameState,
+    ClientRemotePlayerState, ClientSpaceState, ClientVitalStats, ClientWorldObjectState, GameEvent,
+    InventoryState, PendingGameEvents, RegenBuffState,
 };
 use crate::game::shop::{Shopkeeper, StockMode, Stockpile};
 use crate::game::trade::{ActiveTrades, TradeParticipants, TradePartnerKind, WareView};
@@ -33,8 +33,8 @@ use crate::magic::effects::MagicEffects;
 use crate::npc::components::Npc;
 use crate::player::classes::Class;
 use crate::player::components::{
-    CurrentCarryWeight, DerivedStats, Encumbered, MaxCarryWeight, Player, PlayerId, PlayerIdentity,
-    RegenBuffs, VitalStats,
+    CurrentCarryWeight, DefenseStats, DerivedStats, Encumbered, MaxCarryWeight, Player, PlayerId,
+    PlayerIdentity, RegenBuffs, VitalStats, WeaponDamage,
 };
 use crate::player::progression::{Experience, ExperienceView};
 use crate::player::skills::SkillSheet;
@@ -73,7 +73,12 @@ pub type ProjectionPlayerQuery<'w, 's> = Query<
             Option<&'static crate::crafting::CharacterStash>,
             Option<&'static SkillSheet>,
         ),
-        Option<&'static MagicEffects>,
+        (
+            Option<&'static MagicEffects>,
+            &'static DefenseStats,
+            &'static WeaponDamage,
+            &'static AttackProfile,
+        ),
     ),
     With<Player>,
 >;
@@ -176,7 +181,7 @@ pub fn compute_events_for_peer(
         (max_carry, current_carry, is_encumbered),
         experience,
         (class, stash, skill_sheet),
-        magic_effects,
+        (magic_effects, defense_stats, weapon_damage, attack_profile),
     ) in player_query.iter()
     {
         let projected_facing = facing.copied().unwrap_or_default().0;
@@ -338,6 +343,52 @@ pub fn compute_events_for_peer(
             if previous.attributes != Some(projected_attributes) {
                 events.push(GameEvent::PlayerAttributesChanged {
                     attributes: projected_attributes,
+                });
+            }
+
+            // Combat stats. Server derives every displayed number so the UI
+            // never has to mirror combat math — see CLAUDE.md "EmbeddedClient
+            // Invariant". Formulas live in `crate::combat::formulas`.
+            let projected_combat_stats = {
+                let attrs = derived_stats.attributes;
+                let level = experience.map(|e| e.level).unwrap_or(1);
+                let (damage_min, damage_max) =
+                    crate::combat::formulas::weapon_damage_range(&weapon_damage.0, attrs);
+                let attack_bonus = crate::combat::formulas::attack_to_hit_bonus(
+                    attack_profile.kind,
+                    attrs,
+                    true,
+                    level,
+                );
+                let dodge_dc =
+                    crate::combat::formulas::dodge_dc(attrs.agility, defense_stats.dodge_bonus);
+                let has_shield = inventory
+                    .equipment_item(crate::world::object_definitions::EquipmentSlot::Shield)
+                    .is_some();
+                let block_chance_pct = if has_shield {
+                    crate::combat::formulas::effective_block_chance_pct(
+                        defense_stats.block_chance,
+                        attrs.agility,
+                    )
+                } else {
+                    0
+                };
+                ClientCombatStats {
+                    attack_kind: attack_profile.kind,
+                    damage_type: attack_profile.damage_type,
+                    damage_min,
+                    damage_max,
+                    attack_bonus,
+                    dodge_dc,
+                    armor: defense_stats.armor,
+                    block: if has_shield { defense_stats.block } else { 0 },
+                    block_chance_pct,
+                    has_shield,
+                }
+            };
+            if previous.combat_stats != Some(projected_combat_stats) {
+                events.push(GameEvent::PlayerCombatStatsChanged {
+                    stats: projected_combat_stats,
                 });
             }
 
@@ -859,6 +910,9 @@ pub fn apply_event_to_state(state: &mut ClientGameState, event: GameEvent) {
         GameEvent::PlayerAttributesChanged { attributes } => {
             state.attributes = Some(attributes);
         }
+        GameEvent::PlayerCombatStatsChanged { stats } => {
+            state.combat_stats = Some(stats);
+        }
         GameEvent::TradeStateChanged { state: new_state } => {
             state.current_trade = new_state;
         }
@@ -1043,6 +1097,20 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
                 attributes.willpower,
                 attributes.charisma,
                 attributes.focus
+            )
+        }
+        GameEvent::PlayerCombatStatsChanged { stats } => {
+            debug!(
+                "client combat stats: atk {}-{} {:?} to-hit {:+} DC {} armor {} block {} ({}%) shield={}",
+                stats.damage_min,
+                stats.damage_max,
+                stats.damage_type,
+                stats.attack_bonus,
+                stats.dodge_dc,
+                stats.armor,
+                stats.block,
+                stats.block_chance_pct,
+                stats.has_shield,
             )
         }
         GameEvent::TradeStateChanged { state } => match state {

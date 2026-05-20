@@ -147,6 +147,44 @@ impl DamageExpr {
         Ok(Self { dice, stats, bonus })
     }
 
+    /// Smallest possible damage roll for the given attributes (every die
+    /// shows 1, stat terms applied at floor).
+    pub fn min_damage(&self, attrs: &AttributeSet) -> i32 {
+        let dice_total = match self.dice {
+            Some((count, _)) => count as i32,
+            None => 0,
+        };
+        dice_total
+            .saturating_add(self.stat_total(attrs))
+            .saturating_add(self.bonus)
+    }
+
+    /// Largest possible damage roll for the given attributes (every die at
+    /// max face).
+    pub fn max_damage(&self, attrs: &AttributeSet) -> i32 {
+        let dice_total = match self.dice {
+            Some((count, sides)) => (count as i32).saturating_mul(sides as i32),
+            None => 0,
+        };
+        dice_total
+            .saturating_add(self.stat_total(attrs))
+            .saturating_add(self.bonus)
+    }
+
+    fn stat_total(&self, attrs: &AttributeSet) -> i32 {
+        self.stats
+            .iter()
+            .map(|term| {
+                let raw = term.kind.value_of(attrs).saturating_mul(term.multiplier);
+                if term.divisor == 0 {
+                    0
+                } else {
+                    raw / term.divisor
+                }
+            })
+            .sum()
+    }
+
     pub fn roll(&self, attrs: &AttributeSet) -> i32 {
         let dice_total = match self.dice {
             Some((count, sides)) if count > 0 && sides > 0 => {
@@ -158,20 +196,8 @@ impl DamageExpr {
             }
             _ => 0,
         };
-        let stat_total: i32 = self
-            .stats
-            .iter()
-            .map(|term| {
-                let raw = term.kind.value_of(attrs).saturating_mul(term.multiplier);
-                if term.divisor == 0 {
-                    0
-                } else {
-                    raw / term.divisor
-                }
-            })
-            .sum();
         dice_total
-            .saturating_add(stat_total)
+            .saturating_add(self.stat_total(attrs))
             .saturating_add(self.bonus)
     }
 }

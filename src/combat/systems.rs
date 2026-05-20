@@ -11,6 +11,7 @@ use crate::player::components::{
     AmmoConsumption, AttributeSet, ChatLog, DefenseStats, DerivedStats, Inventory, Player,
     PlayerId, PlayerIdentity, VitalStats, WeaponDamage,
 };
+use crate::player::progression::Experience;
 use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
@@ -34,12 +35,10 @@ struct CombatantSnapshot {
     ranged_projectile_sprite: Option<String>,
     armor: i32,
     block: i32,
-}
-
-/// Pure mitigation math. `block_roll` and `armor_roll` are pre-rolled values in
-/// `0..=defense_value`. Floor at 1 to preserve the no-zero-damage invariant.
-fn apply_defenses(raw: i32, block_roll: i32, armor_roll: i32) -> i32 {
-    (raw - block_roll - armor_roll).max(1)
+    dodge_bonus: i32,
+    block_chance_pct: i32,
+    has_shield: bool,
+    level: u32,
 }
 
 /// Roll a uniform integer in `0..=max`. Uses the same nanosecond+salt pattern
@@ -55,6 +54,35 @@ fn roll_defense(max: i32, salt: u64) -> i32 {
         .unwrap_or(0);
     let mixed = nanos.wrapping_add(salt.wrapping_mul(0x9E37_79B9_7F4A_7C15));
     (mixed % (max as u64 + 1)) as i32
+}
+
+/// Roll 1..=20 inclusive (a d20). Same nanosecond+salt jitter as
+/// `roll_defense` — sufficient for non-security-sensitive combat rolls.
+fn roll_d20(salt: u64) -> i32 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.subsec_nanos() as u64)
+        .unwrap_or(0);
+    let mixed = nanos.wrapping_add(salt.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+    ((mixed % 20) as i32) + 1
+}
+
+/// Returns the attack roll's total: `d20 + ability_mod + (NPC ? level : 0)`.
+/// Players currently use no BAB — see `docs/progression.md` §7.1 (BAB lands in
+/// a later progression batch).
+fn attack_roll_total(attacker: &CombatantSnapshot, salt: u64) -> i32 {
+    roll_d20(salt)
+        + crate::combat::formulas::attack_to_hit_bonus(
+            attacker.attack_profile.kind,
+            attacker.attributes,
+            attacker.is_player,
+            attacker.level,
+        )
+}
+
+fn dodge_dc(target: &CombatantSnapshot) -> i32 {
+    crate::combat::formulas::dodge_dc(target.attributes.agility, target.dodge_bonus)
 }
 
 /// Return `true` with probability `chance` (clamped to `[0, 1]`). Reuses the
@@ -131,6 +159,7 @@ pub fn resolve_battle_turn(
             Option<&PlayerIdentity>,
             Option<&Inventory>,
             Option<&DefenseStats>,
+            Option<&Experience>,
         )>,
         Query<(
             &VitalStats,
@@ -171,6 +200,7 @@ pub fn resolve_battle_turn(
                 player_identity,
                 inventory,
                 defense_stats,
+                experience,
             )| {
                 let damage_expr = weapon_damage
                     .map(|wd| wd.0.clone())
@@ -187,6 +217,26 @@ pub fn resolve_battle_turn(
                     &overworld_object.definition_id,
                     &definitions,
                 );
+                let armor = defense_stats.map(|d| d.armor).unwrap_or(0);
+                let block = defense_stats.map(|d| d.block).unwrap_or(0);
+                let block_chance_pct = defense_stats.map(|d| d.block_chance).unwrap_or(0);
+                let dodge_bonus = defense_stats.map(|d| d.dodge_bonus).unwrap_or(0);
+                // Players have a shield iff one is in the shield slot; NPCs
+                // are credited with one when their YAML provides any block
+                // value (mitigation amount or chance). Either is enough to
+                // gate the block roll uniformly.
+                let has_shield = if is_player {
+                    inventory
+                        .and_then(|inv| {
+                            inv.equipment_item(
+                                crate::world::object_definitions::EquipmentSlot::Shield,
+                            )
+                        })
+                        .is_some()
+                } else {
+                    block > 0 || block_chance_pct > 0
+                };
+                let level = experience.map(|e| e.level).unwrap_or(1);
                 CombatantSnapshot {
                     entity,
                     target: combat_target.map(|target| target.entity),
@@ -208,8 +258,12 @@ pub fn resolve_battle_turn(
                     is_player,
                     player_id,
                     ranged_projectile_sprite,
-                    armor: defense_stats.map(|d| d.armor).unwrap_or(0),
-                    block: defense_stats.map(|d| d.block).unwrap_or(0),
+                    armor,
+                    block,
+                    dodge_bonus,
+                    block_chance_pct,
+                    has_shield,
+                    level,
                 }
             },
         )
@@ -261,11 +315,6 @@ pub fn resolve_battle_turn(
             }
         }
 
-        let raw = attacker.damage_expr.roll(&attacker.attributes).max(1);
-        let block_roll = roll_defense(target.block, 0);
-        let armor_roll = roll_defense(target.armor, 1);
-        let damage = apply_defenses(raw, block_roll, armor_roll);
-
         if is_ranged {
             let sprite_id = attacker
                 .ranged_projectile_sprite
@@ -277,6 +326,55 @@ pub fn resolve_battle_turn(
                 sprite_definition_id: sprite_id,
             });
         }
+
+        // Stage 1: to-hit roll vs dodge DC. Misses spend ammo and play the
+        // projectile but deal no damage.
+        let attack_total = attack_roll_total(attacker, attacker.object_id);
+        let dc = dodge_dc(target);
+        if attack_total < dc {
+            ui_events.push_broadcast(GameUiEvent::AttackDodged {
+                attacker_object_id: attacker.object_id,
+                target_object_id: target.object_id,
+            });
+            broadcast_chat_line(
+                &mut chat_log_query,
+                format!("[{} dodges {}'s attack]", target.name, attacker.name),
+            );
+            continue;
+        }
+
+        // Stage 2: roll weapon damage as today.
+        let mut damage = attacker.damage_expr.roll(&attacker.attributes).max(1);
+
+        // Stage 3: block roll (only if defender wields a shield). Chance is
+        // shield's `block_chance` + AGI_mod * 2, clamped to [0, 95] so a hit
+        // is never fully unstoppable.
+        if target.has_shield {
+            let chance_pct = crate::combat::formulas::effective_block_chance_pct(
+                target.block_chance_pct,
+                target.attributes.agility,
+            );
+            let chance = chance_pct as f32 / 100.0;
+            // Salt with target object id so attacker/defender pairs roll
+            // independently from on-hit effect rolls.
+            if roll_chance(chance, target.object_id.wrapping_add(0xB10C_B10C)) {
+                let block_roll = roll_defense(target.block, 0);
+                damage = (damage - block_roll).max(1);
+                ui_events.push_broadcast(GameUiEvent::AttackBlocked {
+                    attacker_object_id: attacker.object_id,
+                    target_object_id: target.object_id,
+                    amount: block_roll,
+                });
+                broadcast_chat_line(
+                    &mut chat_log_query,
+                    format!("[{} blocks {block_roll} damage]", target.name),
+                );
+            }
+        }
+
+        // Stage 4: armor mitigation (unchanged — additive uniform roll).
+        let armor_roll = roll_defense(target.armor, 1);
+        let damage = (damage - armor_roll).max(1);
 
         let mut target_query = combat_queries.p1();
         let Ok((target_vitals, mut target_magic)) = target_query.get_mut(target_entity) else {
@@ -443,33 +541,52 @@ pub(crate) fn chebyshev_distance(a: &TilePosition, b: &TilePosition) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::combat::damage_type::DamageType;
 
-    #[test]
-    fn zero_defenses_passes_raw_through() {
-        assert_eq!(apply_defenses(5, 0, 0), 5);
-        assert_eq!(apply_defenses(100, 0, 0), 100);
-    }
-
-    #[test]
-    fn block_subtracts_from_raw() {
-        assert_eq!(apply_defenses(10, 3, 0), 7);
-    }
-
-    #[test]
-    fn armor_subtracts_from_raw() {
-        assert_eq!(apply_defenses(10, 0, 4), 6);
-    }
-
-    #[test]
-    fn block_and_armor_stack() {
-        assert_eq!(apply_defenses(10, 2, 3), 5);
-    }
-
-    #[test]
-    fn floor_holds_when_mitigation_exceeds_damage() {
-        assert_eq!(apply_defenses(2, 100, 0), 1);
-        assert_eq!(apply_defenses(2, 0, 100), 1);
-        assert_eq!(apply_defenses(1, 50, 50), 1);
+    fn snapshot(
+        strength: i32,
+        agility: i32,
+        level: u32,
+        is_player: bool,
+        armor: i32,
+        block: i32,
+        block_chance_pct: i32,
+        dodge_bonus: i32,
+        has_shield: bool,
+    ) -> CombatantSnapshot {
+        CombatantSnapshot {
+            entity: Entity::PLACEHOLDER,
+            target: None,
+            attack_profile: AttackProfile {
+                kind: AttackKind::Melee,
+                damage_type: DamageType::Blunt,
+            },
+            space_id: crate::world::components::SpaceId(0),
+            position: TilePosition { x: 0, y: 0, z: 0 },
+            object_id: 0,
+            name: "dummy".to_string(),
+            definition_id: "dummy".to_string(),
+            attributes: AttributeSet {
+                strength,
+                agility,
+                constitution: 10,
+                willpower: 10,
+                charisma: 10,
+                focus: 10,
+            },
+            damage_expr: DamageExpr::melee_default(),
+            damage_type: DamageType::Blunt,
+            health: 100.0,
+            is_player,
+            player_id: None,
+            ranged_projectile_sprite: None,
+            armor,
+            block,
+            dodge_bonus,
+            block_chance_pct,
+            has_shield,
+            level,
+        }
     }
 
     #[test]
@@ -483,6 +600,57 @@ mod tests {
         for salt in 0..10 {
             let r = roll_defense(5, salt);
             assert!((0..=5).contains(&r), "roll {r} out of 0..=5 (salt={salt})");
+        }
+    }
+
+    #[test]
+    fn roll_d20_within_range() {
+        for salt in 0..20 {
+            let r = roll_d20(salt);
+            assert!(
+                (1..=20).contains(&r),
+                "d20 roll {r} out of 1..=20 (salt={salt})"
+            );
+        }
+    }
+
+    #[test]
+    fn dodge_dc_uses_agi_mod_and_item_bonus() {
+        // AGI 14 → +2 mod; +3 dodge bonus from items → DC 15.
+        let target = snapshot(10, 14, 1, true, 0, 0, 0, 3, false);
+        assert_eq!(dodge_dc(&target), 15);
+    }
+
+    #[test]
+    fn dodge_dc_floors_at_10_minus_agi_penalty() {
+        // AGI 6 → -2 mod; no items → DC 8.
+        let target = snapshot(10, 6, 1, true, 0, 0, 0, 0, false);
+        assert_eq!(dodge_dc(&target), 8);
+    }
+
+    #[test]
+    fn attack_roll_total_player_skips_level_bonus() {
+        // Player STR 14 → +2 mod. Roll is d20 + 2, in [3, 22].
+        let attacker = snapshot(14, 10, 5, true, 0, 0, 0, 0, false);
+        for salt in 0..30 {
+            let total = attack_roll_total(&attacker, salt);
+            assert!(
+                (3..=22).contains(&total),
+                "player attack {total} out of [3,22] (salt={salt})"
+            );
+        }
+    }
+
+    #[test]
+    fn attack_roll_total_npc_adds_level() {
+        // NPC level 6, STR 12 → +1 mod. Roll is d20 + 1 + 6, in [8, 27].
+        let attacker = snapshot(12, 10, 6, false, 0, 0, 0, 0, false);
+        for salt in 0..30 {
+            let total = attack_roll_total(&attacker, salt);
+            assert!(
+                (8..=27).contains(&total),
+                "npc attack {total} out of [8,27] (salt={salt})"
+            );
         }
     }
 }

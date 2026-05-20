@@ -25,6 +25,7 @@ attack_profile:
       seconds: 6.0
 damage: "1d8+strength/3"
 hp: "2d10+50+constitution*4"
+armor: 2
 render:
   debug_color: [232, 96, 32]
   debug_size: 1.15
