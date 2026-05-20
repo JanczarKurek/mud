@@ -51,6 +51,11 @@ pub enum ClientMessage {
     DeleteCharacter {
         character_id: i64,
     },
+    /// Reply to `ServerMessage::Ping`. The client echoes the nonce verbatim so
+    /// the server can compute round-trip time against the matching send.
+    Pong {
+        nonce: u64,
+    },
 }
 
 /// Summary of a character shown on the Character Select screen.
@@ -96,5 +101,10 @@ pub enum ServerMessage {
     /// now "in game" — the asset manifest + gameplay event stream follow.
     CharacterSelected {
         character_id: i64,
+    },
+    /// Sent periodically by the server to authenticated peers to measure RTT.
+    /// The client must reply with `ClientMessage::Pong { nonce }`.
+    Ping {
+        nonce: u64,
     },
 }

@@ -571,7 +571,10 @@ pub fn spawn_player_recolor_layers(
 pub fn propagate_player_animation_to_layers(
     player_q: Query<
         (&Children, &crate::world::animation::AnimatedSprite),
-        (With<Player>, Changed<crate::world::animation::AnimatedSprite>),
+        (
+            With<Player>,
+            Changed<crate::world::animation::AnimatedSprite>,
+        ),
     >,
     mut layer_q: Query<
         &mut crate::world::animation::AnimatedSprite,

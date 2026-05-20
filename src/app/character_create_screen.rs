@@ -287,8 +287,7 @@ fn spawn_character_create_screen(
         None,
     );
     let preview_layout_handle = texture_atlas_layouts.add(preview_layout);
-    let preview_base_image: Handle<Image> =
-        asset_server.load("overworld_objects/player/sheet.png");
+    let preview_base_image: Handle<Image> = asset_server.load("overworld_objects/player/sheet.png");
     let preview_hair_image: Handle<Image> =
         asset_server.load("overworld_objects/player/layers/hair.png");
     let preview_torso_image: Handle<Image> =
@@ -499,14 +498,14 @@ fn spawn_character_create_screen(
                                     row_gap: px(6.0),
                                     ..default()
                                 },))
-                                .with_children(|hues| {
-                                    for (region, label) in HUE_ROWS {
-                                        let hue = state.hue_for(region);
-                                        spawn_hue_row(
-                                            hues, &theme, &palette, region, label, hue,
-                                        );
-                                    }
-                                });
+                                    .with_children(|hues| {
+                                        for (region, label) in HUE_ROWS {
+                                            let hue = state.hue_for(region);
+                                            spawn_hue_row(
+                                                hues, &theme, &palette, region, label, hue,
+                                            );
+                                        }
+                                    });
                                 spawn_appearance_preview(
                                     row,
                                     &palette,
@@ -774,38 +773,37 @@ fn spawn_appearance_preview(
             BorderColor::all(palette.border_accent),
         ))
         .with_children(|stack| {
-            let spawn_layer =
-                |stack: &mut ChildSpawnerCommands,
-                 image: Handle<Image>,
-                 marker: PreviewLayer,
-                 tint: Color| {
-                    stack.spawn((
-                        Node {
-                            position_type: PositionType::Absolute,
-                            width: percent(100.0),
-                            height: percent(100.0),
-                            top: px(0.0),
-                            left: px(0.0),
-                            ..default()
-                        },
-                        ImageNode {
-                            image,
-                            texture_atlas: Some(TextureAtlas {
-                                layout: layout_handle.clone(),
-                                index: 0,
-                            }),
-                            color: tint,
-                            ..default()
-                        },
-                        marker,
-                        PreviewAnimation {
-                            elapsed: 0.0,
-                            fps: PREVIEW_FPS,
-                            frame_count: PREVIEW_IDLE_FRAMES,
-                            base_index: 0,
-                        },
-                    ));
-                };
+            let spawn_layer = |stack: &mut ChildSpawnerCommands,
+                               image: Handle<Image>,
+                               marker: PreviewLayer,
+                               tint: Color| {
+                stack.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        width: percent(100.0),
+                        height: percent(100.0),
+                        top: px(0.0),
+                        left: px(0.0),
+                        ..default()
+                    },
+                    ImageNode {
+                        image,
+                        texture_atlas: Some(TextureAtlas {
+                            layout: layout_handle.clone(),
+                            index: 0,
+                        }),
+                        color: tint,
+                        ..default()
+                    },
+                    marker,
+                    PreviewAnimation {
+                        elapsed: 0.0,
+                        fps: PREVIEW_FPS,
+                        frame_count: PREVIEW_IDLE_FRAMES,
+                        base_index: 0,
+                    },
+                ));
+            };
 
             spawn_layer(stack, base_image, PreviewLayer(None), Color::WHITE);
             spawn_layer(

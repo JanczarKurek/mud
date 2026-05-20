@@ -700,7 +700,13 @@ mod tests {
         let account = db.create_account("hank", "hunter2!").unwrap();
         let attrs = balanced_attrs();
         let cid = db
-            .create_character(account, "Roundtrip", Class::Fighter, attrs, Default::default())
+            .create_character(
+                account,
+                "Roundtrip",
+                Class::Fighter,
+                attrs,
+                Default::default(),
+            )
             .unwrap();
         // create_character seeds an initial dump, so load_character succeeds.
         let initial = db.load_character(cid).unwrap().unwrap();

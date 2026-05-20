@@ -1,6 +1,7 @@
 use std::collections::HashMap;
-use std::net::TcpListener;
+use std::net::{SocketAddr, TcpListener};
 use std::sync::Arc;
+use std::time::Instant;
 
 use bevy::prelude::*;
 use rustls::{ClientConfig, ServerConfig};
@@ -59,6 +60,9 @@ pub enum PeerAuthState {
 pub struct TcpServerPeer {
     pub connection_id: ConnectionId,
     pub auth_state: PeerAuthState,
+    /// Remote socket address captured at accept time. Stays valid even after
+    /// the underlying stream is gone, so the disconnect log can still cite it.
+    pub remote_addr: Option<SocketAddr>,
     /// Some(_) iff `auth_state == Authed`.
     pub player_id: Option<PlayerId>,
     /// Some(_) iff `auth_state == Authed`.
@@ -72,6 +76,20 @@ pub struct TcpServerPeer {
     pub last_projection: Option<ClientGameState>,
     pub sync_complete: bool,
     pub manifest_sent: bool,
+    pub latency: PeerLatencyState,
+}
+
+/// Per-peer RTT tracking, populated by the Ping/Pong cycle. All fields are
+/// `None` until the first pong returns.
+#[derive(Default, Clone, Copy, Debug)]
+pub struct PeerLatencyState {
+    /// Nonce of the most recent outstanding ping. A pong carrying a different
+    /// nonce is silently dropped.
+    pub last_ping_nonce: Option<u64>,
+    pub last_ping_sent_at: Option<Instant>,
+    pub last_rtt_ms: Option<f64>,
+    /// Exponential moving average of recent RTTs (alpha = 0.2).
+    pub ema_rtt_ms: Option<f64>,
 }
 
 impl TcpServerPeer {
@@ -129,4 +147,42 @@ pub struct AssetSyncState {
     pub received_count: usize,
     pub total_needed: usize,
     pub log_messages: Vec<String>,
+}
+
+/// Drives `send_periodic_pings`. Cadence: every `interval_seconds`, the server
+/// emits a fresh `ServerMessage::Ping` to each authed peer. Mirrors
+/// `AutosaveTimer` (`src/accounts/autosave.rs`).
+#[derive(Resource)]
+pub struct PingTimer {
+    pub elapsed_since_ping: f64,
+    pub interval_seconds: f64,
+    /// Monotonic counter used as the next ping nonce. Wraps harmlessly.
+    pub next_nonce: u64,
+}
+
+impl Default for PingTimer {
+    fn default() -> Self {
+        Self {
+            elapsed_since_ping: 0.0,
+            interval_seconds: 5.0,
+            next_nonce: 1,
+        }
+    }
+}
+
+/// Drives `report_peer_latency`. Cadence: every `interval_seconds`, the server
+/// info-logs one line per connected peer with the last observed RTT + EMA.
+#[derive(Resource)]
+pub struct LatencyReportTimer {
+    pub elapsed_since_report: f64,
+    pub interval_seconds: f64,
+}
+
+impl Default for LatencyReportTimer {
+    fn default() -> Self {
+        Self {
+            elapsed_since_report: 0.0,
+            interval_seconds: 60.0,
+        }
+    }
 }

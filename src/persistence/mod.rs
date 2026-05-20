@@ -1308,7 +1308,10 @@ mod tests {
         let legacy_json = serde_json::to_string(&value).unwrap();
         assert!(!legacy_json.contains("\"appearance\""));
         let legacy: PlayerStateDump = serde_json::from_str(&legacy_json).unwrap();
-        assert_eq!(legacy.appearance, crate::player::components::PlayerAppearance::default());
+        assert_eq!(
+            legacy.appearance,
+            crate::player::components::PlayerAppearance::default()
+        );
 
         // World object dump: a spell-summoned lantern with a remaining TTL
         // — same `remaining_ttl` field that corpses use.

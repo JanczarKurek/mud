@@ -1,6 +1,7 @@
 use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
+use std::time::Instant;
 
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
@@ -14,8 +15,9 @@ use crate::game::resources::{ClientGameState, PendingGameCommands, PendingGameUi
 use crate::network::asset_sync::{build_server_manifest, hash_bytes};
 use crate::network::protocol::{ClientMessage, ServerMessage};
 use crate::network::resources::{
-    AssetSyncState, ConnectionId, PeerAuthState, PendingPlayerSaves, ServerAssetManifest,
-    TcpClientConfig, TcpClientConnection, TcpServerConfig, TcpServerPeer, TcpServerState,
+    AssetSyncState, ConnectionId, LatencyReportTimer, PeerAuthState, PeerLatencyState,
+    PendingPlayerSaves, PingTimer, ServerAssetManifest, TcpClientConfig, TcpClientConnection,
+    TcpServerConfig, TcpServerPeer, TcpServerState,
 };
 use crate::network::transport::{ClientTransport, ServerTransport};
 use crate::player::components::{Inventory, Player, PlayerId};
@@ -238,12 +240,16 @@ pub fn accept_tcp_client_connections(
                 let connection_id = ConnectionId(server_state.next_connection_id);
                 server_state.next_connection_id += 1;
 
-                info!("TCP client connected from {address} (awaiting auth)");
+                info!(
+                    "TCP client connected from {address} (peer {}, awaiting auth)",
+                    connection_id.0
+                );
                 server_state.peers.insert(
                     connection_id,
                     TcpServerPeer {
                         connection_id,
                         auth_state: PeerAuthState::AwaitingAuth,
+                        remote_addr: Some(address),
                         player_id: None,
                         player_entity: None,
                         stream: transport,
@@ -251,6 +257,7 @@ pub fn accept_tcp_client_connections(
                         last_projection: None,
                         sync_complete: false,
                         manifest_sent: false,
+                        latency: PeerLatencyState::default(),
                     },
                 );
             }
@@ -408,6 +415,9 @@ pub fn poll_tcp_server_messages(
                     info!("peer {} asset sync complete", peer.connection_id.0);
                     peer.sync_complete = true;
                 }
+                Ok(ClientMessage::Pong { nonce }) => {
+                    record_pong(peer, nonce);
+                }
                 Err(error) => warn!("failed to parse client message: {error}"),
             }
         }
@@ -466,10 +476,18 @@ fn handle_auth_attempt(
         }
     };
 
+    let addr = peer
+        .remote_addr
+        .map(|a| a.to_string())
+        .unwrap_or_else(|| "?".to_owned());
+
     let account_id = match auth_result {
         Ok(id) => id,
         Err(err) => {
-            info!("peer {} auth rejected: {err}", peer.connection_id.0);
+            info!(
+                "peer {} auth rejected for '{username}' from {addr}: {err}",
+                peer.connection_id.0
+            );
             let reason = reason_for_auth_error(&err);
             send_auth_failure(peer, &reason, disconnected);
             return;
@@ -477,8 +495,13 @@ fn handle_auth_attempt(
     };
 
     peer.auth_state = PeerAuthState::AwaitingCharacter { account_id };
+    let event = if is_register {
+        "registered + authenticated"
+    } else {
+        "authenticated"
+    };
     info!(
-        "peer {} authenticated as account {account_id} ({username}); awaiting character select",
+        "peer {} {event} as account {account_id} ({username}) from {addr}; awaiting character select",
         peer.connection_id.0
     );
     write_message(
@@ -957,6 +980,7 @@ pub fn poll_tcp_client_messages(
     };
 
     let mut disconnected = false;
+    let mut pongs_to_send: Vec<u64> = Vec::new();
     while let Some(line) = read_next_line(stream, &mut read_buffer, &mut disconnected) {
         match serde_json::from_str::<ServerMessage>(&line) {
             Ok(ServerMessage::Events(events)) => {
@@ -977,7 +1001,16 @@ pub fn poll_tcp_client_messages(
                 // CharacterCreate-state systems; reaching InGame means a
                 // character was already selected.
             }
+            Ok(ServerMessage::Ping { nonce }) => {
+                pongs_to_send.push(nonce);
+            }
             Err(error) => warn!("failed to parse server message: {error}"),
+        }
+    }
+    for nonce in pongs_to_send {
+        write_message(stream, &ClientMessage::Pong { nonce }, &mut disconnected);
+        if disconnected {
+            break;
         }
     }
 
@@ -1036,6 +1069,117 @@ pub fn ensure_tcp_client_connected(config: &TcpClientConfig, connection: &mut Tc
     connection.stream = Some(transport);
 }
 
+fn record_pong(peer: &mut TcpServerPeer, nonce: u64) {
+    // Match against the in-flight nonce; if the client echoed an older one
+    // (we already overwrote it with a fresher ping), silently drop. No loss
+    // accounting yet — just freshness.
+    if peer.latency.last_ping_nonce != Some(nonce) {
+        return;
+    }
+    let Some(sent_at) = peer.latency.last_ping_sent_at else {
+        return;
+    };
+    let rtt_ms = sent_at.elapsed().as_secs_f64() * 1000.0;
+    peer.latency.last_rtt_ms = Some(rtt_ms);
+    peer.latency.ema_rtt_ms = Some(match peer.latency.ema_rtt_ms {
+        Some(prev) => 0.8 * prev + 0.2 * rtt_ms,
+        None => rtt_ms,
+    });
+    peer.latency.last_ping_nonce = None;
+    peer.latency.last_ping_sent_at = None;
+}
+
+/// Periodic Ping emitter. Fires every `PingTimer::interval_seconds` (default
+/// 5s). Skips peers still in pre-auth states — we only ping live sessions.
+pub fn send_periodic_pings(
+    time: Res<Time>,
+    mut timer: ResMut<PingTimer>,
+    mut server_state: ResMut<TcpServerState>,
+    mut pending_saves: ResMut<PendingPlayerSaves>,
+    mut commands: Commands,
+) {
+    timer.elapsed_since_ping += time.delta_secs_f64();
+    if timer.elapsed_since_ping < timer.interval_seconds {
+        return;
+    }
+    timer.elapsed_since_ping = 0.0;
+
+    let connection_ids: Vec<ConnectionId> = server_state.peers.keys().copied().collect();
+    let mut disconnected_peers = Vec::new();
+    let now = Instant::now();
+
+    for connection_id in connection_ids {
+        let Some(peer) = server_state.peers.get_mut(&connection_id) else {
+            continue;
+        };
+        if !peer.is_authed() && !peer.is_awaiting_character() {
+            continue;
+        }
+        let nonce = timer.next_nonce;
+        timer.next_nonce = timer.next_nonce.wrapping_add(1);
+
+        let mut disconnected = false;
+        write_message(
+            &mut peer.stream,
+            &ServerMessage::Ping { nonce },
+            &mut disconnected,
+        );
+        if disconnected {
+            disconnected_peers.push(connection_id);
+            continue;
+        }
+        peer.latency.last_ping_nonce = Some(nonce);
+        peer.latency.last_ping_sent_at = Some(now);
+    }
+
+    for connection_id in disconnected_peers {
+        disconnect_peer(
+            &mut server_state,
+            connection_id,
+            &mut pending_saves,
+            &mut commands,
+        );
+    }
+}
+
+/// Periodic latency reporter. Fires every `LatencyReportTimer::interval_seconds`
+/// (default 60s). One info line per connected (post-auth) peer.
+pub fn report_peer_latency(
+    time: Res<Time>,
+    mut timer: ResMut<LatencyReportTimer>,
+    server_state: Res<TcpServerState>,
+) {
+    timer.elapsed_since_report += time.delta_secs_f64();
+    if timer.elapsed_since_report < timer.interval_seconds {
+        return;
+    }
+    timer.elapsed_since_report = 0.0;
+
+    for peer in server_state.peers.values() {
+        if !peer.is_authed() && !peer.is_awaiting_character() {
+            continue;
+        }
+        let account = peer
+            .account_id()
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| "?".to_owned());
+        let character = peer
+            .character_id()
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| "?".to_owned());
+        match (peer.latency.last_rtt_ms, peer.latency.ema_rtt_ms) {
+            (Some(last), Some(ema)) => info!(
+                "peer latency: conn={} account={account} char={character} rtt={last:.1}ms ema={ema:.1}ms",
+                peer.connection_id.0
+            ),
+            _ => info!(
+                "peer latency: conn={} account={account} char={character} rtt=pending",
+                peer.connection_id.0
+            ),
+        }
+    }
+}
+
 fn disconnect_peer(
     server_state: &mut TcpServerState,
     connection_id: ConnectionId,
@@ -1043,7 +1187,16 @@ fn disconnect_peer(
     commands: &mut Commands,
 ) {
     if let Some(peer) = server_state.peers.remove(&connection_id) {
-        info!("TCP client disconnected");
+        let addr = peer
+            .remote_addr
+            .map(|a| a.to_string())
+            .unwrap_or_else(|| "?".to_owned());
+        info!(
+            "peer {} disconnected: account={:?} character={:?} addr={addr}",
+            peer.connection_id.0,
+            peer.account_id(),
+            peer.character_id()
+        );
         if let (Some(character_id), Some(player_entity)) = (peer.character_id(), peer.player_entity)
         {
             // Defer the snapshot+despawn to `persist_disconnected_players` in

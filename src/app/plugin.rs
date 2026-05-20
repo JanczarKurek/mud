@@ -281,6 +281,14 @@ impl Plugin for GameAppPlugin {
                 app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(
                     Duration::from_secs_f64(1.0 / 60.0),
                 )))
+                .add_plugins(bevy::log::LogPlugin {
+                    // `MinimalPlugins` omits `LogPlugin`, so without this every
+                    // `info!`/`warn!`/`error!` call on the server is silently
+                    // dropped. `RUST_LOG` still overrides at process start.
+                    level: bevy::log::Level::INFO,
+                    filter: "wgpu=warn,naga=warn".to_owned(),
+                    ..default()
+                })
                 .add_plugins((
                     GameServerPlugin,
                     WorldServerPlugin,
