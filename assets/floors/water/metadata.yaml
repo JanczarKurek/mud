@@ -2,7 +2,7 @@ id: water
 name: Water
 priority: 5
 tile_size_px: 16
-# atlas_path: floors/water/tileset.png   # drop in a 16x16 tileset to enable real art
+atlas_path: floors/water/tileset.png   # drop in a 16x16 tileset to enable real art
 debug_color: [41, 97, 189]
 variants:
   1: [1]
@@ -26,11 +26,11 @@ variants:
 # water tile every ~1/(rate_per_tile_per_second × visible_water_tile_count)
 # seconds, plays the strip non-looping, then despawns. See
 # `src/world/floor_animation.rs`.
-# ripple:
-#   sheet_path: floors/water/ripple.png
-#   frame_width: 16
-#   frame_height: 16
-#   frame_count: 4
-#   fps: 8
-#   rate_per_tile_per_second: 0.02
-#   z_offset: 0.0005
+ripple:
+   sheet_path: floors/water/ripple.png
+   frame_width: 16
+   frame_height: 16
+   frame_count: 4
+   fps: 8
+   rate_per_tile_per_second: 0.02
+   z_offset: 0.0005
