@@ -15,21 +15,21 @@ use crate::ui::components::{
     DockedPanelBody, DockedPanelCanvas, DockedPanelCloseButton, DockedPanelDragHandle,
     DockedPanelResizeHandle, DockedPanelRoot, DockedPanelTitle, DragPreviewImage, DragPreviewLabel,
     DragPreviewQuantity, DragPreviewRoot, EquipmentPanelContent, EquipmentPanelUndockButton,
-    EquipmentSlotButton, EquipmentSlotImage, ExperienceFill, ExperienceLabel, FullMapBodyRoot,
-    FullMapCloseButton, FullMapWindowRoot, FullMapZoomInButton, FullMapZoomLabel,
-    FullMapZoomOutButton, HealthFill, HealthLabel, HudMinimapZoomInButton, HudMinimapZoomLabel,
-    HudMinimapZoomOutButton, HudRoot, ItemSlotButton, ItemSlotImage, ItemSlotKind,
-    ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot, MagicEffectsLabel, ManaFill,
-    ManaLabel, MinimapCanvas, MinimapMode, MinimapPanelUndockButton, MinimapView,
-    PythonConsolePanel, PythonConsoleRestartButton, PythonConsoleTerminal, RegenBuffLabel,
-    RightSidebarRoot, StatusPanelContent, StatusPanelUndockButton, TakePartialAmountLabel,
-    TakePartialCancelButton, TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton,
-    TakePartialPopupRoot, TradeButtonLabel, TradeColumn,
+    EquipmentSlotButton, EquipmentSlotImage, ExperienceFill, ExperienceLabel,
+    FloatingMinimapZoomInButton, FloatingMinimapZoomLabel, FloatingMinimapZoomOutButton,
+    HealthFill, HealthLabel, HudMinimapZoomInButton, HudMinimapZoomLabel, HudMinimapZoomOutButton,
+    HudRoot, ItemSlotButton, ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ItemTooltipLabel,
+    ItemTooltipRoot, MagicEffectsLabel, ManaFill, ManaLabel, MinimapCanvas, MinimapMode,
+    MinimapPanelUndockButton, MinimapView, PythonConsolePanel, PythonConsoleRestartButton,
+    PythonConsoleTerminal, RegenBuffLabel, RightSidebarRoot, StatusPanelContent,
+    StatusPanelUndockButton, TakePartialAmountLabel, TakePartialCancelButton,
+    TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot,
+    TradeButtonLabel, TradeColumn,
 };
 use crate::ui::menu_bar::{spawn_menu_bar, MENU_BAR_HEIGHT};
 use crate::ui::minimap::{make_minimap_image, FULL_MAP_BODY_SIZE, HUD_MINIMAP_SIZE};
 use crate::ui::movable_window::{spawn_themed_close_button, spawn_themed_icon_button};
-use crate::ui::resources::{DockedPanelState, FullMapWindowState, HudMinimapSettings};
+use crate::ui::resources::{DockedPanelState, HudMinimapSettings};
 use crate::ui::retro_bar::{spawn_retro_bar, RetroBarStyle};
 use crate::ui::theme::widgets::{
     idle_colors, spawn_themed_button, ButtonStyle, ThemedButton, ThemedPanel,
@@ -40,10 +40,8 @@ use crate::world::object_definitions::EquipmentSlot;
 
 pub fn spawn_hud(
     mut commands: Commands,
-    mut images: ResMut<Assets<Image>>,
     asset_server: Res<AssetServer>,
     hud_minimap_settings: Res<HudMinimapSettings>,
-    full_map_state: Res<FullMapWindowState>,
     theme: Res<UiThemeAssets>,
     palette: Res<Palette>,
 ) {
@@ -131,13 +129,6 @@ pub fn spawn_hud(
                 });
         });
 
-    spawn_full_map_window(
-        &mut commands,
-        &mut images,
-        full_map_state.zoom,
-        &theme,
-        &palette,
-    );
     spawn_menu_bar(&mut commands, &theme, &palette);
     spawn_character_sheet_button(&mut commands, &asset_server);
     crate::ui::time_of_day_button::spawn_time_of_day_button(&mut commands, &asset_server);
@@ -1600,45 +1591,45 @@ fn spawn_minimap_panel(
             spawn_themed_icon_button(title_extras, undock_image, MinimapPanelUndockButton);
         },
         move |body| {
-            spawn_minimap_panel_body_with_zoom(
+            spawn_minimap_panel_body_for_mode(
                 body,
                 &theme_clone,
                 &palette_clone,
                 &asset_server_clone,
+                BodyMode::Docked,
                 zoom,
             );
         },
     );
 }
 
-/// Body contents of the minimap panel — the rendered minimap image plus
-/// zoom +/− controls. Shared by the docked and floating variants. The
-/// floating spawn path uses the default zoom; `update_minimap_images`
-/// snaps the image to the user's saved `HudMinimapSettings.zoom` on the
-/// next frame.
-pub(crate) fn spawn_minimap_panel_body(
-    parent: &mut ChildSpawnerCommands,
-    theme: &UiThemeAssets,
-    palette: &Palette,
-    asset_server: &AssetServer,
-) {
-    spawn_minimap_panel_body_with_zoom(
-        parent,
-        theme,
-        palette,
-        asset_server,
-        crate::ui::resources::MinimapZoom::default(),
-    );
+/// Which presentation context the minimap body is being built for. The
+/// docked variant renders the small HUD-sized image with HUD zoom
+/// markers; the floating variant renders the larger image used by the
+/// pop-out window, with separate floating zoom markers/state.
+#[derive(Clone, Copy)]
+pub(crate) enum BodyMode {
+    Docked,
+    Floating,
 }
 
-fn spawn_minimap_panel_body_with_zoom(
+/// Body contents of the minimap panel — rendered minimap image plus
+/// zoom +/− controls. The docked spawn path calls this with
+/// `BodyMode::Docked`; `MountablePanel::spawn_body` (only invoked for
+/// floating spawns) calls it with `BodyMode::Floating`.
+pub(crate) fn spawn_minimap_panel_body_for_mode(
     parent: &mut ChildSpawnerCommands,
     theme: &UiThemeAssets,
     palette: &Palette,
     asset_server: &AssetServer,
+    body_mode: BodyMode,
     zoom: crate::ui::resources::MinimapZoom,
 ) {
     let image_handle = asset_server.add(make_minimap_image(zoom));
+    let (image_size, minimap_mode) = match body_mode {
+        BodyMode::Docked => (HUD_MINIMAP_SIZE, MinimapMode::HudSmall),
+        BodyMode::Floating => (FULL_MAP_BODY_SIZE, MinimapMode::FullscreenLarge),
+    };
     parent
         .spawn((Node {
             width: percent(100.0),
@@ -1650,17 +1641,15 @@ fn spawn_minimap_panel_body_with_zoom(
         .with_children(|container| {
             container.spawn((
                 Node {
-                    width: px(HUD_MINIMAP_SIZE),
-                    height: px(HUD_MINIMAP_SIZE),
+                    width: px(image_size),
+                    height: px(image_size),
                     position_type: PositionType::Relative,
                     overflow: Overflow::clip(),
                     ..default()
                 },
                 BackgroundColor(palette.surface_minimap_bg),
                 ImageNode::new(image_handle.clone()).with_mode(NodeImageMode::Stretch),
-                MinimapView {
-                    mode: MinimapMode::HudSmall,
-                },
+                MinimapView { mode: minimap_mode },
                 MinimapCanvas {
                     image_handle: image_handle.clone(),
                     last_zoom: Some(zoom),
@@ -1676,23 +1665,43 @@ fn spawn_minimap_panel_body_with_zoom(
                     column_gap: px(6.0),
                     ..default()
                 },))
-                .with_children(|row| {
-                    spawn_zoom_button(row, theme, palette, "-", HudMinimapZoomOutButton);
-                    row.spawn((
-                        Text::new(zoom.label()),
-                        HudMinimapZoomLabel,
-                        TextFont {
-                            font_size: 14.0,
-                            ..default()
-                        },
-                        TextColor(palette.text_primary),
-                        Node {
-                            min_width: px(64.0),
-                            justify_content: JustifyContent::Center,
-                            ..default()
-                        },
-                    ));
-                    spawn_zoom_button(row, theme, palette, "+", HudMinimapZoomInButton);
+                .with_children(|row| match body_mode {
+                    BodyMode::Docked => {
+                        spawn_zoom_button(row, theme, palette, "-", HudMinimapZoomOutButton);
+                        row.spawn((
+                            Text::new(zoom.label()),
+                            HudMinimapZoomLabel,
+                            TextFont {
+                                font_size: 14.0,
+                                ..default()
+                            },
+                            TextColor(palette.text_primary),
+                            Node {
+                                min_width: px(64.0),
+                                justify_content: JustifyContent::Center,
+                                ..default()
+                            },
+                        ));
+                        spawn_zoom_button(row, theme, palette, "+", HudMinimapZoomInButton);
+                    }
+                    BodyMode::Floating => {
+                        spawn_zoom_button(row, theme, palette, "-", FloatingMinimapZoomOutButton);
+                        row.spawn((
+                            Text::new(zoom.label()),
+                            FloatingMinimapZoomLabel,
+                            TextFont {
+                                font_size: 14.0,
+                                ..default()
+                            },
+                            TextColor(palette.text_primary),
+                            Node {
+                                min_width: px(64.0),
+                                justify_content: JustifyContent::Center,
+                                ..default()
+                            },
+                        ));
+                        spawn_zoom_button(row, theme, palette, "+", FloatingMinimapZoomInButton);
+                    }
                 });
         });
 }
@@ -1733,132 +1742,5 @@ fn spawn_zoom_button<T: Component>(
                 },
                 TextColor(text),
             ));
-        });
-}
-
-fn spawn_full_map_window(
-    commands: &mut Commands,
-    images: &mut Assets<Image>,
-    zoom: crate::ui::resources::MinimapZoom,
-    theme: &UiThemeAssets,
-    palette: &Palette,
-) {
-    let image_handle = images.add(make_minimap_image(zoom));
-    commands
-        .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                width: percent(100.0),
-                height: percent(100.0),
-                left: px(0.0),
-                top: px(0.0),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                display: Display::None,
-                ..default()
-            },
-            FullMapWindowRoot,
-            HudRoot,
-            GlobalZIndex(i32::MAX - 8),
-            BackgroundColor(palette.surface_overlay_dim),
-        ))
-        .with_children(|overlay| {
-            overlay
-                .spawn((
-                    ThemedPanel,
-                    Node {
-                        flex_direction: FlexDirection::Column,
-                        padding: UiRect::all(px(10.0)),
-                        row_gap: px(8.0),
-                        border: UiRect::all(px(1.0)),
-                        align_items: AlignItems::Center,
-                        ..default()
-                    },
-                    ImageNode::new(theme.panel_frame.clone())
-                        .with_mode(theme.panel_image_mode())
-                        .with_color(Color::WHITE),
-                    BackgroundColor(Color::NONE),
-                    BorderColor::all(palette.border_accent),
-                ))
-                .with_children(|window| {
-                    window
-                        .spawn((Node {
-                            flex_direction: FlexDirection::Row,
-                            align_items: AlignItems::Center,
-                            justify_content: JustifyContent::SpaceBetween,
-                            column_gap: px(12.0),
-                            width: px(FULL_MAP_BODY_SIZE),
-                            ..default()
-                        },))
-                        .with_children(|title_row| {
-                            title_row.spawn((
-                                Text::new("Full Map"),
-                                TextFont {
-                                    font_size: 18.0,
-                                    ..default()
-                                },
-                                TextColor(palette.text_primary),
-                            ));
-
-                            title_row
-                                .spawn((Node {
-                                    flex_direction: FlexDirection::Row,
-                                    align_items: AlignItems::Center,
-                                    column_gap: px(6.0),
-                                    ..default()
-                                },))
-                                .with_children(|controls| {
-                                    spawn_zoom_button(
-                                        controls,
-                                        theme,
-                                        palette,
-                                        "-",
-                                        FullMapZoomOutButton,
-                                    );
-                                    controls.spawn((
-                                        Text::new(zoom.label()),
-                                        FullMapZoomLabel,
-                                        TextFont {
-                                            font_size: 14.0,
-                                            ..default()
-                                        },
-                                        TextColor(palette.text_primary),
-                                        Node {
-                                            min_width: px(64.0),
-                                            justify_content: JustifyContent::Center,
-                                            ..default()
-                                        },
-                                    ));
-                                    spawn_zoom_button(
-                                        controls,
-                                        theme,
-                                        palette,
-                                        "+",
-                                        FullMapZoomInButton,
-                                    );
-                                    spawn_themed_close_button(controls, theme, FullMapCloseButton);
-                                });
-                        });
-
-                    window.spawn((
-                        Node {
-                            width: px(FULL_MAP_BODY_SIZE),
-                            height: px(FULL_MAP_BODY_SIZE),
-                            position_type: PositionType::Relative,
-                            overflow: Overflow::clip(),
-                            ..default()
-                        },
-                        BackgroundColor(palette.surface_minimap_bg),
-                        ImageNode::new(image_handle.clone()).with_mode(NodeImageMode::Stretch),
-                        FullMapBodyRoot,
-                        MinimapView {
-                            mode: MinimapMode::FullscreenLarge,
-                        },
-                        MinimapCanvas {
-                            image_handle: image_handle.clone(),
-                            last_zoom: Some(zoom),
-                        },
-                    ));
-                });
         });
 }

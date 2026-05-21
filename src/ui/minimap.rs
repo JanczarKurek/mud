@@ -7,11 +7,15 @@ use bevy::ui::UiGlobalTransform;
 
 use crate::game::resources::{ClientGameState, ClientWorldObjectState};
 use crate::ui::components::{
-    FullMapCloseButton, FullMapWindowRoot, FullMapZoomInButton, FullMapZoomLabel,
-    FullMapZoomOutButton, HudMinimapZoomInButton, HudMinimapZoomLabel, HudMinimapZoomOutButton,
-    MinimapCanvas, MinimapMode, MinimapOverlayDot, MinimapView,
+    FloatingMinimapZoomInButton, FloatingMinimapZoomLabel, FloatingMinimapZoomOutButton,
+    HudMinimapZoomInButton, HudMinimapZoomLabel, HudMinimapZoomOutButton, MinimapCanvas,
+    MinimapMode, MinimapOverlayDot, MinimapView,
 };
-use crate::ui::resources::{FullMapWindowState, HudMinimapSettings, MinimapZoom};
+use crate::ui::mountable_panel::PanelMountMode;
+use crate::ui::resources::{
+    DockedPanelState, FloatingMinimapPan, FloatingMinimapPanDrag, FloatingMinimapZoom,
+    HudMinimapSettings, MinimapPanelMode, MinimapZoom,
+};
 use crate::world::components::SpaceId;
 use crate::world::floor_definitions::FloorTilesetDefinitions;
 use crate::world::object_definitions::OverworldObjectDefinitions;
@@ -50,7 +54,8 @@ pub fn update_minimap_images(
     object_definitions: Res<OverworldObjectDefinitions>,
     floor_definitions: Res<FloorTilesetDefinitions>,
     hud_settings: Res<HudMinimapSettings>,
-    full_map_state: Res<FullMapWindowState>,
+    floating_zoom: Res<FloatingMinimapZoom>,
+    floating_pan: Res<FloatingMinimapPan>,
     mut images: ResMut<Assets<Image>>,
     mut views: Query<(
         Entity,
@@ -69,10 +74,19 @@ pub fn update_minimap_images(
     let player_tile = client_state.player_tile_position;
     let fill_color = fill_color_rgba(&client_state, &floor_definitions);
 
+    let pan_offset = IVec2::new(
+        floating_pan.offset_tiles.x.round() as i32,
+        floating_pan.offset_tiles.y.round() as i32,
+    );
+
     for (entity, view, mut canvas, mut image_node, computed, children) in views.iter_mut() {
         let zoom = match view.mode {
             MinimapMode::HudSmall => hud_settings.zoom,
-            MinimapMode::FullscreenLarge => full_map_state.zoom,
+            MinimapMode::FullscreenLarge => floating_zoom.0,
+        };
+        let view_pan = match view.mode {
+            MinimapMode::HudSmall => IVec2::ZERO,
+            MinimapMode::FullscreenLarge => pan_offset,
         };
 
         let zoom_changed = canvas.last_zoom != Some(zoom);
@@ -87,13 +101,15 @@ pub fn update_minimap_images(
         let span = zoom.tile_span();
 
         if let (Some(space_id), Some(tile)) = (player_space, player_tile) {
+            let center_x = tile.x + view_pan.x;
+            let center_y = tile.y + view_pan.y;
             if let Some(image) = images.get_mut(&canvas.image_handle) {
                 paint_tile_window(
                     image,
                     span,
                     space_id,
-                    tile.x,
-                    tile.y,
+                    center_x,
+                    center_y,
                     tile.z,
                     fill_color,
                     &client_state,
@@ -139,17 +155,27 @@ pub fn update_minimap_images(
             let player_dot_size = tile_ui.min(12.0).max(2.0);
             let other_dot_size = (tile_ui * 0.75).min(10.0).max(2.0);
 
+            let center_x = tile.x + view_pan.x;
+            let center_y = tile.y + view_pan.y;
+
             commands.entity(entity).with_children(|dots| {
-                spawn_dot(
-                    dots,
-                    tile_ui_x,
-                    tile_ui_y,
-                    half_span,
-                    0,
-                    0,
-                    Color::srgb(1.0, 1.0, 1.0),
-                    player_dot_size,
-                );
+                // Player position relative to view center (zero when not
+                // panned). Skipped when the player has been panned out of
+                // the visible window.
+                let player_dx = tile.x - center_x;
+                let player_dy = tile.y - center_y;
+                if player_dx.abs() <= half_span && player_dy.abs() <= half_span {
+                    spawn_dot(
+                        dots,
+                        tile_ui_x,
+                        tile_ui_y,
+                        half_span,
+                        player_dx,
+                        player_dy,
+                        Color::srgb(1.0, 1.0, 1.0),
+                        player_dot_size,
+                    );
+                }
 
                 for remote in client_state.remote_players.values() {
                     if remote.position.space_id != space_id {
@@ -158,8 +184,8 @@ pub fn update_minimap_images(
                     if remote.tile_position.z != tile.z {
                         continue;
                     }
-                    let dx = remote.tile_position.x - tile.x;
-                    let dy = remote.tile_position.y - tile.y;
+                    let dx = remote.tile_position.x - center_x;
+                    let dy = remote.tile_position.y - center_y;
                     if dx.abs() > half_span || dy.abs() > half_span {
                         continue;
                     }
@@ -185,8 +211,8 @@ pub fn update_minimap_images(
                     if !object.is_npc && !object.is_container {
                         continue;
                     }
-                    let dx = object.tile_position.x - tile.x;
-                    let dy = object.tile_position.y - tile.y;
+                    let dx = object.tile_position.x - center_x;
+                    let dy = object.tile_position.y - center_y;
                     if dx.abs() > half_span || dy.abs() > half_span {
                         continue;
                     }
@@ -386,41 +412,33 @@ fn spawn_dot(
     ));
 }
 
-pub fn sync_full_map_window_visibility(
-    full_map_state: Res<FullMapWindowState>,
-    mut roots: Query<&mut Node, With<FullMapWindowRoot>>,
-) {
-    for mut node in &mut roots {
-        node.display = if full_map_state.open {
-            Display::Flex
-        } else {
-            Display::None
-        };
-    }
-}
-
 pub fn sync_minimap_zoom_labels(
     hud_settings: Res<HudMinimapSettings>,
-    full_map_state: Res<FullMapWindowState>,
-    mut hud_labels: Query<&mut Text, (With<HudMinimapZoomLabel>, Without<FullMapZoomLabel>)>,
-    mut full_labels: Query<&mut Text, (With<FullMapZoomLabel>, Without<HudMinimapZoomLabel>)>,
+    floating_zoom: Res<FloatingMinimapZoom>,
+    mut hud_labels: Query<
+        &mut Text,
+        (With<HudMinimapZoomLabel>, Without<FloatingMinimapZoomLabel>),
+    >,
+    mut floating_labels: Query<
+        &mut Text,
+        (With<FloatingMinimapZoomLabel>, Without<HudMinimapZoomLabel>),
+    >,
 ) {
     for mut text in &mut hud_labels {
         text.0 = hud_settings.zoom.label().to_owned();
     }
-    for mut text in &mut full_labels {
-        text.0 = full_map_state.zoom.label().to_owned();
+    for mut text in &mut floating_labels {
+        text.0 = floating_zoom.0.label().to_owned();
     }
 }
 
 pub fn handle_minimap_zoom_buttons(
     mut hud_settings: ResMut<HudMinimapSettings>,
-    mut full_map_state: ResMut<FullMapWindowState>,
+    mut floating_zoom: ResMut<FloatingMinimapZoom>,
     hud_in: Query<&Interaction, (Changed<Interaction>, With<HudMinimapZoomInButton>)>,
     hud_out: Query<&Interaction, (Changed<Interaction>, With<HudMinimapZoomOutButton>)>,
-    full_in: Query<&Interaction, (Changed<Interaction>, With<FullMapZoomInButton>)>,
-    full_out: Query<&Interaction, (Changed<Interaction>, With<FullMapZoomOutButton>)>,
-    full_close: Query<&Interaction, (Changed<Interaction>, With<FullMapCloseButton>)>,
+    floating_in: Query<&Interaction, (Changed<Interaction>, With<FloatingMinimapZoomInButton>)>,
+    floating_out: Query<&Interaction, (Changed<Interaction>, With<FloatingMinimapZoomOutButton>)>,
 ) {
     for interaction in &hud_in {
         if *interaction == Interaction::Pressed {
@@ -432,42 +450,53 @@ pub fn handle_minimap_zoom_buttons(
             hud_settings.zoom = hud_settings.zoom.zoom_out();
         }
     }
-    for interaction in &full_in {
+    for interaction in &floating_in {
         if *interaction == Interaction::Pressed {
-            full_map_state.zoom = full_map_state.zoom.zoom_in();
+            floating_zoom.0 = floating_zoom.0.zoom_in();
         }
     }
-    for interaction in &full_out {
+    for interaction in &floating_out {
         if *interaction == Interaction::Pressed {
-            full_map_state.zoom = full_map_state.zoom.zoom_out();
-        }
-    }
-    for interaction in &full_close {
-        if *interaction == Interaction::Pressed {
-            full_map_state.open = false;
+            floating_zoom.0 = floating_zoom.0.zoom_out();
         }
     }
 }
 
+/// `M` toggles the minimap panel between docked and floating; `+`/`-`
+/// (`FullMapZoomIn/Out`) adjust the floating zoom while floating.
 pub fn handle_minimap_keybinds(
     keys: Res<ButtonInput<KeyCode>>,
     keybindings: Res<crate::ui::settings::Keybindings>,
-    mut full_map_state: ResMut<FullMapWindowState>,
+    mut panel_state: ResMut<DockedPanelState>,
+    mut modes: ResMut<MinimapPanelMode>,
+    mut floating_zoom: ResMut<FloatingMinimapZoom>,
 ) {
+    use crate::ui::minimap_panel::MinimapPanel;
+    use crate::ui::mountable_panel::MountablePanel;
     use crate::ui::settings::model::Action;
     if keybindings.just_pressed(Action::ToggleFullMap, &keys) {
-        full_map_state.open = !full_map_state.open;
+        // Ensure the panel is registered in the dock so toggling has
+        // something to act on. If the player previously closed it, push
+        // its docked definition back in.
+        let panel_id = MinimapPanel::panel_id_for(());
+        if !panel_state.is_open(panel_id) {
+            if let Some(def) = MinimapPanel::docked_definition(()) {
+                panel_state.panels.push(def);
+            }
+        }
+        modes.0 = match modes.0 {
+            PanelMountMode::Mounted => PanelMountMode::Floating {
+                last_position: MinimapPanel::floating_position(()),
+            },
+            PanelMountMode::Floating { .. } => PanelMountMode::Mounted,
+        };
     }
-    // Escape-to-close stays hardcoded (universal dismiss convention).
-    if full_map_state.open && keys.just_pressed(KeyCode::Escape) {
-        full_map_state.open = false;
-    }
-    if full_map_state.open {
+    if matches!(modes.0, PanelMountMode::Floating { .. }) {
         if keybindings.just_pressed(Action::FullMapZoomIn, &keys) {
-            full_map_state.zoom = full_map_state.zoom.zoom_in();
+            floating_zoom.0 = floating_zoom.0.zoom_in();
         }
         if keybindings.just_pressed(Action::FullMapZoomOut, &keys) {
-            full_map_state.zoom = full_map_state.zoom.zoom_out();
+            floating_zoom.0 = floating_zoom.0.zoom_out();
         }
     }
 }
@@ -475,7 +504,7 @@ pub fn handle_minimap_keybinds(
 pub fn handle_minimap_scroll_wheel(
     mut scroll_events: MessageReader<MouseWheel>,
     mut hud_settings: ResMut<HudMinimapSettings>,
-    mut full_map_state: ResMut<FullMapWindowState>,
+    mut floating_zoom: ResMut<FloatingMinimapZoom>,
     windows: Query<&Window>,
     hud_views: Query<(&MinimapView, &ComputedNode, &UiGlobalTransform)>,
 ) {
@@ -510,7 +539,7 @@ pub fn handle_minimap_scroll_wheel(
         }
         let state_zoom = match view.mode {
             MinimapMode::HudSmall => &mut hud_settings.zoom,
-            MinimapMode::FullscreenLarge => &mut full_map_state.zoom,
+            MinimapMode::FullscreenLarge => &mut floating_zoom.0,
         };
         if scroll_total > 0.0 {
             *state_zoom = state_zoom.zoom_in();
@@ -518,5 +547,116 @@ pub fn handle_minimap_scroll_wheel(
             *state_zoom = state_zoom.zoom_out();
         }
         return;
+    }
+}
+
+/// Click-drag inside the *floating* minimap pans the view away from the
+/// player. The pan offset accumulates in tile units and is consumed by
+/// `update_minimap_images` on the next frame. Resets to zero whenever
+/// the panel re-docks.
+pub fn handle_floating_minimap_pan(
+    mouse_input: Res<ButtonInput<MouseButton>>,
+    windows: Query<&Window>,
+    mut pan: ResMut<FloatingMinimapPan>,
+    views: Query<(
+        &MinimapView,
+        &MinimapCanvas,
+        &ComputedNode,
+        &UiGlobalTransform,
+    )>,
+    title_bars: Query<
+        (&ComputedNode, &UiGlobalTransform),
+        With<crate::ui::movable_window::MovableWindowTitleBar>,
+    >,
+    resize_handles: Query<
+        (&ComputedNode, &UiGlobalTransform),
+        With<crate::ui::movable_window::MovableWindowResizeHandle>,
+    >,
+) {
+    let Some(cursor) = windows
+        .iter()
+        .next()
+        .and_then(|window| window.cursor_position())
+    else {
+        pan.drag = None;
+        return;
+    };
+
+    if !mouse_input.pressed(MouseButton::Left) {
+        pan.drag = None;
+        return;
+    }
+
+    if mouse_input.just_pressed(MouseButton::Left) {
+        // Don't start a pan if the click landed on a title bar (window
+        // drag wins) or a resize handle (resize wins).
+        use crate::ui::movable_window::point_in_node;
+        let blocked = title_bars
+            .iter()
+            .any(|(node, t)| point_in_node(cursor, node, t))
+            || resize_handles
+                .iter()
+                .any(|(node, t)| point_in_node(cursor, node, t));
+        if !blocked {
+            for (view, _canvas, node, transform) in &views {
+                if !matches!(view.mode, MinimapMode::FullscreenLarge) {
+                    continue;
+                }
+                if point_in_node(cursor, node, transform) {
+                    pan.drag = Some(FloatingMinimapPanDrag {
+                        start_cursor: cursor,
+                        start_offset: pan.offset_tiles,
+                    });
+                    break;
+                }
+            }
+        }
+    }
+
+    let Some(drag) = pan.drag else { return };
+
+    // Use the current FullscreenLarge view to compute the
+    // pixels-per-tile ratio, so panning stays consistent even if the
+    // window is resized mid-drag. `node.size()` is in *physical* pixels;
+    // scale to logical pixels to match the cursor delta.
+    for (view, canvas, node, _transform) in &views {
+        if !matches!(view.mode, MinimapMode::FullscreenLarge) {
+            continue;
+        }
+        let inv = node.inverse_scale_factor();
+        let size_logical = node.size() * if inv > 0.0 { inv } else { 1.0 };
+        let zoom = canvas.last_zoom.unwrap_or_default();
+        let span = zoom.tile_span() as f32;
+        if size_logical.x <= 0.0 || size_logical.y <= 0.0 || span <= 0.0 {
+            return;
+        }
+        let tile_px_x = size_logical.x / span;
+        let tile_px_y = size_logical.y / span;
+        let delta = cursor - drag.start_cursor;
+        // Grab-and-pan convention: dragging the minimap right reveals
+        // what was off-screen to the west (lower x); dragging down
+        // reveals what was off-screen to the north (higher y). Game
+        // y-axis is positive-north, screen y is positive-down, hence
+        // the sign flip on x but not y.
+        pan.offset_tiles = Vec2::new(
+            drag.start_offset.x - delta.x / tile_px_x,
+            drag.start_offset.y + delta.y / tile_px_y,
+        );
+        return;
+    }
+}
+
+/// Reset the floating-minimap pan offset whenever the panel is not in
+/// floating mode. Keeps the docked HUD minimap centred on the player and
+/// makes re-undocking start from a fresh view.
+pub fn reset_floating_minimap_pan_when_mounted(
+    minimap_mode: Res<MinimapPanelMode>,
+    mut pan: ResMut<FloatingMinimapPan>,
+) {
+    if matches!(minimap_mode.0, PanelMountMode::Mounted) {
+        if pan.offset_tiles != Vec2::ZERO || pan.drag.is_some() {
+            pan.offset_tiles = Vec2::ZERO;
+            pan.drag = None;
+        }
     }
 }

@@ -54,8 +54,9 @@ use crate::ui::dialog::{
 use crate::ui::equipment_panel::EquipmentPanel;
 use crate::ui::menu_bar::{apply_menu_actions, handle_menu_bar_clicks, sync_menu_dropdowns};
 use crate::ui::minimap::{
-    handle_minimap_keybinds, handle_minimap_scroll_wheel, handle_minimap_zoom_buttons,
-    sync_full_map_window_visibility, sync_minimap_zoom_labels, update_minimap_images,
+    handle_floating_minimap_pan, handle_minimap_keybinds, handle_minimap_scroll_wheel,
+    handle_minimap_zoom_buttons, reset_floating_minimap_pan_when_mounted, sync_minimap_zoom_labels,
+    update_minimap_images,
 };
 use crate::ui::minimap_panel::MinimapPanel;
 use crate::ui::mountable_panel::{MountablePanelLifecycleSet, MountablePanelPlugin};
@@ -67,9 +68,9 @@ use crate::ui::quickbar::{
 };
 use crate::ui::resources::{
     ActiveDialogState, BottomPanelVisibility, ContextMenuState, CursorState, DockedPanelDragState,
-    DockedPanelResizeState, DockedPanelState, DragState, FullMapWindowState, HudMinimapSettings,
-    OpenMenuState, PendingMenuActions, Quickbar, SpellTargetingState, TakePartialState,
-    TradePopupState, UseOnState,
+    DockedPanelResizeState, DockedPanelState, DragState, FloatingMinimapPan, FloatingMinimapZoom,
+    HudMinimapSettings, OpenMenuState, PendingMenuActions, Quickbar, SpellTargetingState,
+    TakePartialState, TradePopupState, UseOnState,
 };
 use crate::ui::setup::spawn_hud;
 use crate::ui::sprite_state::sync_object_state_visuals;
@@ -133,7 +134,8 @@ impl Plugin for UiPlugin {
         .insert_resource(SpellTargetingState::default())
         .insert_resource(TakePartialState::default())
         .insert_resource(HudMinimapSettings::default())
-        .insert_resource(FullMapWindowState::default())
+        .insert_resource(FloatingMinimapZoom::default())
+        .insert_resource(FloatingMinimapPan::default())
         .insert_resource(OpenMenuState::default())
         .insert_resource(PendingMenuActions::default())
         .insert_resource(ActiveDialogState::default())
@@ -323,7 +325,8 @@ impl Plugin for UiPlugin {
             (
                 handle_minimap_scroll_wheel,
                 handle_minimap_zoom_buttons,
-                sync_full_map_window_visibility,
+                handle_floating_minimap_pan,
+                reset_floating_minimap_pan_when_mounted,
                 sync_minimap_zoom_labels,
                 // Run before the lifecycle's despawn so the dot-spawn
                 // commands queue before the canvas despawn — the
@@ -425,7 +428,8 @@ fn teardown_hud(
     mut commands: Commands,
     hud_roots: Query<Entity, With<crate::ui::components::HudRoot>>,
     mut docked: ResMut<DockedPanelState>,
-    mut full_map: ResMut<FullMapWindowState>,
+    mut floating_zoom: ResMut<FloatingMinimapZoom>,
+    mut floating_pan: ResMut<FloatingMinimapPan>,
     mut open_menu: ResMut<OpenMenuState>,
     mut pending_actions: ResMut<PendingMenuActions>,
     mut active_dialog: ResMut<ActiveDialogState>,
@@ -438,7 +442,8 @@ fn teardown_hud(
         commands.entity(entity).despawn();
     }
     *docked = DockedPanelState::default();
-    full_map.open = false;
+    *floating_zoom = FloatingMinimapZoom::default();
+    *floating_pan = FloatingMinimapPan::default();
     open_menu.open_id = None;
     pending_actions.actions.clear();
     *active_dialog = ActiveDialogState::default();

@@ -770,19 +770,33 @@ impl Default for HudMinimapSettings {
     }
 }
 
+/// Zoom level for the *floating* minimap (separate from the docked HUD
+/// minimap's zoom). Defaults to `Far` to preserve the prior full-map
+/// overlay's initial zoom.
 #[derive(Resource)]
-pub struct FullMapWindowState {
-    pub open: bool,
-    pub zoom: MinimapZoom,
+pub struct FloatingMinimapZoom(pub MinimapZoom);
+
+impl Default for FloatingMinimapZoom {
+    fn default() -> Self {
+        Self(MinimapZoom::Far)
+    }
 }
 
-impl Default for FullMapWindowState {
-    fn default() -> Self {
-        Self {
-            open: false,
-            zoom: MinimapZoom::Far,
-        }
-    }
+/// Pan state for the *floating* minimap. The view is normally centred
+/// on the player; click-and-drag inside the floating minimap body
+/// shifts that centre by `offset_tiles`, so the player can scout
+/// distant areas of the map. Reset to zero whenever the minimap
+/// re-docks.
+#[derive(Resource, Default)]
+pub struct FloatingMinimapPan {
+    pub offset_tiles: Vec2,
+    pub drag: Option<FloatingMinimapPanDrag>,
+}
+
+#[derive(Clone, Copy)]
+pub struct FloatingMinimapPanDrag {
+    pub start_cursor: Vec2,
+    pub start_offset: Vec2,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

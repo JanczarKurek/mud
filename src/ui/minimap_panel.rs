@@ -1,9 +1,10 @@
 //! [`MountablePanel`] impl for the Minimap panel.
 //!
-//! The body builder creates a fresh `Image` asset for each instance.
-//! `update_minimap_images` iterates over every `MinimapView` entity so
-//! the docked + floating instances render independently; zoom is
-//! shared via `HudMinimapSettings`.
+//! When docked, the body renders the small HUD minimap (`HudSmall` mode,
+//! 220×220) keyed off `HudMinimapSettings.zoom`. When floating, the body
+//! renders the larger pop-out minimap (`FullscreenLarge` mode, 520×520)
+//! keyed off `FloatingMinimapZoom`. The two views have independent zoom
+//! state; pressing `M` toggles the panel between the two modes.
 
 use bevy::prelude::*;
 
@@ -14,7 +15,7 @@ use crate::ui::components::{
 use crate::ui::mountable_panel::MountablePanel;
 use crate::ui::movable_window::MovableWindowId;
 use crate::ui::resources::{DockedPanel, DockedPanelKind, DockedPanelState, MinimapPanelMode};
-use crate::ui::setup::spawn_minimap_panel_body;
+use crate::ui::setup::{spawn_minimap_panel_body_for_mode, BodyMode};
 use crate::ui::theme::{Palette, UiThemeAssets};
 
 pub struct MinimapPanel;
@@ -31,7 +32,9 @@ impl MountablePanel for MinimapPanel {
         MovableWindowId::MinimapPanel
     }
     fn floating_size(_: ()) -> Vec2 {
-        Vec2::new(320.0, 360.0)
+        // Big enough to host the 520×520 minimap image plus title bar
+        // and zoom row; the user can resize from the corner.
+        Vec2::new(560.0, 620.0)
     }
     fn floating_position(_: ()) -> Vec2 {
         Vec2::new(500.0, 80.0)
@@ -66,6 +69,16 @@ impl MountablePanel for MinimapPanel {
         palette: &Palette,
         asset_server: &AssetServer,
     ) {
-        spawn_minimap_panel_body(parent, theme, palette, asset_server);
+        // `spawn_body` is only invoked by the floating-window lifecycle.
+        // `update_minimap_images` will re-snap the image to the saved
+        // `FloatingMinimapZoom` on the next frame.
+        spawn_minimap_panel_body_for_mode(
+            parent,
+            theme,
+            palette,
+            asset_server,
+            BodyMode::Floating,
+            crate::ui::resources::MinimapZoom::Far,
+        );
     }
 }

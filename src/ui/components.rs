@@ -657,22 +657,13 @@ pub struct HudMinimapZoomInButton;
 pub struct HudMinimapZoomOutButton;
 
 #[derive(Component)]
-pub struct FullMapWindowRoot;
+pub struct FloatingMinimapZoomLabel;
 
 #[derive(Component)]
-pub struct FullMapZoomLabel;
+pub struct FloatingMinimapZoomInButton;
 
 #[derive(Component)]
-pub struct FullMapZoomInButton;
-
-#[derive(Component)]
-pub struct FullMapZoomOutButton;
-
-#[derive(Component)]
-pub struct FullMapCloseButton;
-
-#[derive(Component)]
-pub struct FullMapBodyRoot;
+pub struct FloatingMinimapZoomOutButton;
 
 #[derive(Component)]
 pub struct MenuBarRoot;

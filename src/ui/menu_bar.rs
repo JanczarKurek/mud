@@ -9,8 +9,9 @@ use crate::player::components::{Player, PlayerIdentity};
 use crate::ui::components::{
     HudRoot, MenuBarItemButton, MenuBarRoot, MenuDropdownEntryButton, MenuDropdownRoot,
 };
+use crate::ui::mountable_panel::PanelMountMode;
 use crate::ui::resources::{
-    DockedPanelState, FullMapWindowState, MenuAction, MenuBarId, OpenMenuState, PendingMenuActions,
+    DockedPanelState, MenuAction, MenuBarId, MinimapPanelMode, OpenMenuState, PendingMenuActions,
 };
 use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton, ThemedPanel};
 use crate::ui::theme::{Palette, UiThemeAssets};
@@ -250,7 +251,7 @@ pub fn sync_menu_dropdowns(
 pub fn apply_menu_actions(
     mut commands: Commands,
     mut pending: ResMut<PendingMenuActions>,
-    mut full_map_state: ResMut<FullMapWindowState>,
+    mut minimap_mode: ResMut<MinimapPanelMode>,
     mut panel_state: ResMut<DockedPanelState>,
     mut app_exit: MessageWriter<AppExit>,
     mut next_state: ResMut<NextState<ClientAppState>>,
@@ -265,7 +266,23 @@ pub fn apply_menu_actions(
     for action in pending.actions.drain(..) {
         match action {
             MenuAction::ToggleFullMap => {
-                full_map_state.open = !full_map_state.open;
+                // Mirror the M-key handler: ensure the minimap panel is
+                // open in the dock, then toggle it between Mounted and
+                // Floating.
+                use crate::ui::minimap_panel::MinimapPanel;
+                use crate::ui::mountable_panel::MountablePanel;
+                let panel_id = MinimapPanel::panel_id_for(());
+                if !panel_state.is_open(panel_id) {
+                    if let Some(def) = MinimapPanel::docked_definition(()) {
+                        panel_state.panels.push(def);
+                    }
+                }
+                minimap_mode.0 = match minimap_mode.0 {
+                    PanelMountMode::Mounted => PanelMountMode::Floating {
+                        last_position: MinimapPanel::floating_position(()),
+                    },
+                    PanelMountMode::Floating { .. } => PanelMountMode::Mounted,
+                };
             }
             MenuAction::ToggleStatus => {
                 toggle_panel::<crate::ui::status_panel::StatusPanel>(&mut panel_state);
