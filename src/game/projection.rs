@@ -47,6 +47,20 @@ use crate::world::lighting::{WorldClock, WORLD_TIME_EPSILON, WORLD_TIME_HEARTBEA
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::resources::SpaceManager;
 
+/// Euclidean tile radius around the local player within which dynamic entities
+/// (remote players, containers, world objects) and per-tile floor edits are
+/// replicated. Same-floor only — entities on a different `z` are pruned. Larger
+/// than [`crate::game::discovery::DISCOVERY_RADIUS`] so entities exist on the
+/// client before they enter the visible fog disc; tweak here to widen/narrow
+/// what each client receives.
+pub const INTEREST_RADIUS: f32 = 30.0;
+
+fn in_interest_radius(local: TilePosition, other: TilePosition) -> bool {
+    let dx = (local.x - other.x) as f32;
+    let dy = (local.y - other.y) as f32;
+    return dx.abs() <= INTEREST_RADIUS && dy.abs() <= INTEREST_RADIUS
+}
+
 pub type ProjectionPlayerQuery<'w, 's> = Query<
     'w,
     's,
@@ -115,6 +129,7 @@ pub type ProjectionContainerQuery<'w, 's> = Query<
         &'static Container,
         &'static OverworldObject,
         &'static SpaceResident,
+        &'static TilePosition,
     ),
     Without<Player>,
 >;
@@ -164,8 +179,13 @@ pub fn compute_events_for_peer(
 
     let mut local_player_object_id: Option<u64> = None;
     let mut local_space_id: Option<SpaceId> = None;
+    let mut local_tile_position: Option<TilePosition> = None;
     let mut local_persuasion_ranks: u8 = 0;
     let mut seen_remote_player_ids: Vec<PlayerId> = Vec::new();
+    // Remote players are projected after the player loop ends so we know
+    // local_space_id / local_tile_position regardless of iteration order.
+    let mut deferred_remote_candidates: Vec<(SpaceResident, TilePosition, ClientRemotePlayerState)> =
+        Vec::new();
 
     for (
         identity,
@@ -196,6 +216,7 @@ pub fn compute_events_for_peer(
         if identity.id == local_player_id {
             local_player_object_id = Some(player_object.object_id);
             local_space_id = Some(space_resident.space_id);
+            local_tile_position = Some(*tile_position);
 
             if previous.local_player_id != Some(local_player_id)
                 || previous.local_player_object_id != Some(player_object.object_id)
@@ -452,17 +473,32 @@ pub fn compute_events_for_peer(
                 }
             }
         } else {
-            seen_remote_player_ids.push(identity.id);
+            // Defer projection until after the player loop so we know
+            // local_space_id / local_tile_position before applying the
+            // same-space + vicinity filter, regardless of iteration order.
             let position = SpacePosition::new(space_resident.space_id, *tile_position);
-            let projected = ClientRemotePlayerState {
-                player_id: identity.id,
-                object_id: player_object.object_id,
-                position,
-                tile_position: *tile_position,
-                vitals: projected_vitals,
-                facing: projected_facing,
-            };
-            if previous.remote_players.get(&identity.id) != Some(&projected) {
+            deferred_remote_candidates.push((
+                *space_resident,
+                *tile_position,
+                ClientRemotePlayerState {
+                    player_id: identity.id,
+                    object_id: player_object.object_id,
+                    position,
+                    tile_position: *tile_position,
+                    vitals: projected_vitals,
+                    facing: projected_facing,
+                },
+            ));
+        }
+    }
+
+    if let (Some(local_space), Some(local_tile)) = (local_space_id, local_tile_position) {
+        for (resident, tile, projected) in deferred_remote_candidates.drain(..) {
+            if resident.space_id != local_space || !in_interest_radius(local_tile, tile) {
+                continue;
+            }
+            seen_remote_player_ids.push(projected.player_id);
+            if previous.remote_players.get(&projected.player_id) != Some(&projected) {
                 events.push(GameEvent::RemotePlayerUpserted { player: projected });
             }
         }
@@ -479,6 +515,12 @@ pub fn compute_events_for_peer(
     let Some(local_space_id) = local_space_id else {
         return events;
     };
+    // local_tile_position is set in the same branch as local_space_id; if we
+    // have one we have the other. Unwrap here so all the downstream vicinity
+    // filters can read a plain TilePosition.
+    let local_tile = local_tile_position.expect(
+        "local_tile_position should be Some whenever local_space_id is Some (set together)",
+    );
     let _ = local_player_object_id;
 
     // Push every floor map *before* CurrentSpaceChanged so the renderer sees
@@ -513,10 +555,27 @@ pub fn compute_events_for_peer(
                 });
             }
             Some(prev) => {
-                for y in 0..server_floor_map.height {
-                    for x in 0..server_floor_map.width {
+                // Per-tile deltas are vicinity-filtered: only emit changes
+                // within INTEREST_RADIUS on the local player's floor. The
+                // FloorMapReplaced arms above ship the full grid at bootstrap
+                // / on resize, so distant tiles already populated on the
+                // client will be repaired on the first tick the player walks
+                // back into range (their per-peer baseline still has the old
+                // tile, so prev != current and the delta fires).
+                if local_tile.z != z {
+                    continue;
+                }
+                let r = INTEREST_RADIUS.ceil() as i32;
+                let x_min = (local_tile.x - r).max(0);
+                let x_max = (local_tile.x + r + 1).min(server_floor_map.width);
+                let y_min = (local_tile.y - r).max(0);
+                let y_max = (local_tile.y + r + 1).min(server_floor_map.height);
+                for y in y_min..y_max {
+                    for x in x_min..x_max {
                         let idx = (y * server_floor_map.width + x) as usize;
-                        if prev.tiles[idx] != server_floor_map.tiles[idx] {
+                        if prev.tiles[idx] != server_floor_map.tiles[idx]
+                            && in_interest_radius(local_tile, TilePosition::new(x, y, z))
+                        {
                             events.push(GameEvent::FloorTileSet {
                                 space_id: local_space_id,
                                 z,
@@ -548,8 +607,11 @@ pub fn compute_events_for_peer(
     }
 
     let mut current_container_ids = Vec::new();
-    for (container, object, resident) in container_query.iter() {
+    for (container, object, resident, tile_position) in container_query.iter() {
         if resident.space_id != local_space_id {
+            continue;
+        }
+        if !in_interest_radius(local_tile, *tile_position) {
             continue;
         }
         current_container_ids.push(object.object_id);
@@ -598,6 +660,9 @@ pub fn compute_events_for_peer(
             if !h.is_detected_by(local_player_id) {
                 continue;
             }
+        }
+        if !in_interest_radius(local_tile, *tile_position) {
+            continue;
         }
         current_world_object_ids.push(object.object_id);
         let projected_object = ClientWorldObjectState {

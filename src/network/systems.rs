@@ -1749,4 +1749,172 @@ mod tests {
             .count();
         assert_eq!(position_change_count, 1, "events: {move_events:?}");
     }
+
+    // Helper for the vicinity tests: run compute_events_for_peer for `player_id`
+    // against `baseline`, returning the diff vec. Builds the SystemState fresh
+    // each call so it can be invoked repeatedly across ECS mutations.
+    fn project_for(
+        app: &mut App,
+        player_id: u64,
+        baseline: &ClientGameState,
+    ) -> Vec<crate::game::resources::GameEvent> {
+        type PeerProjectionState<'w, 's> = SystemState<(
+            crate::game::projection::ProjectionPlayerQuery<'w, 's>,
+            crate::game::projection::ProjectionObjectQuery<'w, 's>,
+            crate::game::projection::ProjectionWorldObjectQuery<'w, 's>,
+            crate::game::projection::ProjectionContainerQuery<'w, 's>,
+            crate::game::projection::ProjectionStockpileQuery<'w, 's>,
+            Res<'w, crate::world::resources::SpaceManager>,
+            Res<'w, crate::world::floor_map::FloorMaps>,
+            Res<'w, crate::game::trade::ActiveTrades>,
+            Res<'w, crate::world::object_definitions::OverworldObjectDefinitions>,
+        )>;
+        let mut state: PeerProjectionState = SystemState::new(app.world_mut());
+        let (
+            player_query,
+            object_query,
+            world_object_query,
+            container_query,
+            stockpile_query,
+            space_manager,
+            floor_maps,
+            active_trades,
+            object_definitions,
+        ) = state.get(app.world_mut());
+        let world_clock = crate::world::lighting::WorldClock::default();
+        crate::game::projection::compute_events_for_peer(
+            PlayerId(player_id),
+            baseline,
+            &player_query,
+            &object_query,
+            &world_object_query,
+            &container_query,
+            &stockpile_query,
+            &space_manager,
+            &floor_maps,
+            &world_clock,
+            &active_trades,
+            &object_definitions,
+        )
+    }
+
+    fn fold_into(baseline: &mut ClientGameState, events: Vec<crate::game::resources::GameEvent>) {
+        for event in events {
+            crate::game::projection::apply_event_to_state(baseline, event);
+        }
+    }
+
+    #[test]
+    fn peer_projection_filters_remote_players_outside_interest_radius() {
+        let mut app = setup_server_app();
+        spawn_player(&mut app, 1, 10, 10);
+        spawn_player(&mut app, 2, 50, 50);
+
+        let events = project_for(&mut app, 1, &ClientGameState::default());
+        let mut projection = ClientGameState::default();
+        fold_into(&mut projection, events);
+
+        assert!(
+            projection.remote_players.is_empty(),
+            "expected far-away remote to be filtered, got: {:?}",
+            projection.remote_players
+        );
+    }
+
+    #[test]
+    fn peer_projection_emits_remove_when_remote_leaves_vicinity() {
+        use crate::game::resources::GameEvent;
+        let mut app = setup_server_app();
+        spawn_player(&mut app, 1, 10, 10);
+        let remote = spawn_player(&mut app, 2, 12, 10);
+
+        // Bootstrap: remote is within INTEREST_RADIUS, should appear.
+        let bootstrap = project_for(&mut app, 1, &ClientGameState::default());
+        let mut baseline = ClientGameState::default();
+        fold_into(&mut baseline, bootstrap);
+        assert!(
+            baseline.remote_players.contains_key(&PlayerId(2)),
+            "remote at distance 2 should appear in bootstrap: {:?}",
+            baseline.remote_players
+        );
+
+        // Walk the remote out of vicinity.
+        app.world_mut()
+            .entity_mut(remote)
+            .insert(crate::world::components::TilePosition::ground(80, 80));
+
+        let diff = project_for(&mut app, 1, &baseline);
+        let removed_count = diff
+            .iter()
+            .filter(|event| matches!(event, GameEvent::RemotePlayerRemoved { player_id } if *player_id == PlayerId(2)))
+            .count();
+        assert_eq!(
+            removed_count, 1,
+            "expected exactly one RemotePlayerRemoved for PlayerId(2), got events: {diff:?}"
+        );
+    }
+
+    #[test]
+    fn peer_projection_emits_upsert_when_remote_re_enters_vicinity() {
+        use crate::game::resources::GameEvent;
+        let mut app = setup_server_app();
+        spawn_player(&mut app, 1, 10, 10);
+        let remote = spawn_player(&mut app, 2, 80, 80);
+
+        // Bootstrap: remote is outside vicinity, so the baseline does not
+        // contain them.
+        let bootstrap = project_for(&mut app, 1, &ClientGameState::default());
+        let mut baseline = ClientGameState::default();
+        fold_into(&mut baseline, bootstrap);
+        assert!(
+            !baseline.remote_players.contains_key(&PlayerId(2)),
+            "remote should be absent from bootstrap when far away"
+        );
+
+        // Move the remote back into vicinity.
+        app.world_mut()
+            .entity_mut(remote)
+            .insert(crate::world::components::TilePosition::ground(12, 10));
+
+        let diff = project_for(&mut app, 1, &baseline);
+        let upsert_count = diff
+            .iter()
+            .filter(|event| matches!(event, GameEvent::RemotePlayerUpserted { player } if player.player_id == PlayerId(2)))
+            .count();
+        assert_eq!(
+            upsert_count, 1,
+            "expected one RemotePlayerUpserted for re-entering remote, got events: {diff:?}"
+        );
+    }
+
+    #[test]
+    fn peer_projection_filters_world_objects_outside_interest_radius() {
+        let mut app = setup_server_app();
+        spawn_player(&mut app, 1, 10, 10);
+        let near_id = spawn_container(&mut app, "barrel", 12, 10);
+        let far_id = spawn_container(&mut app, "barrel", 80, 80);
+
+        let events = project_for(&mut app, 1, &ClientGameState::default());
+        let mut projection = ClientGameState::default();
+        fold_into(&mut projection, events);
+
+        assert!(
+            projection.world_objects.contains_key(&near_id),
+            "near barrel should be in projection: {:?}",
+            projection.world_objects.keys().collect::<Vec<_>>()
+        );
+        assert!(
+            !projection.world_objects.contains_key(&far_id),
+            "far barrel must be vicinity-filtered out: {:?}",
+            projection.world_objects.keys().collect::<Vec<_>>()
+        );
+        assert!(
+            projection.container_slots.contains_key(&near_id),
+            "near barrel should have container slots replicated"
+        );
+        assert!(
+            !projection.container_slots.contains_key(&far_id),
+            "far barrel must have container slots filtered out"
+        );
+    }
 }
