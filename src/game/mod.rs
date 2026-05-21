@@ -1,6 +1,7 @@
 pub mod chat;
 pub mod commands;
 pub mod currency;
+pub mod discovery;
 pub mod helpers;
 pub mod projection;
 pub mod resources;
@@ -15,6 +16,9 @@ use crate::app::state::simulation_active;
 use crate::combat::damage::PendingDamageEvents;
 use crate::combat::systems::resolve_battle_turn;
 use crate::game::chat::process_say_commands;
+use crate::game::discovery::{
+    apply_pending_discovery, discover_around_players, PendingDiscoveryEvents,
+};
 use crate::game::projection::{
     apply_game_events_to_client_state, collect_game_events_from_authority,
 };
@@ -49,6 +53,7 @@ impl Plugin for GameServerPlugin {
             .insert_resource(PendingGameEvents::default())
             .insert_resource(PendingGameUiEvents::default())
             .insert_resource(PendingDamageEvents::default())
+            .insert_resource(PendingDiscoveryEvents::default())
             .insert_resource(ClientGameState::default())
             .insert_resource(ContainerViewers::default())
             .insert_resource(ActiveTrades::default())
@@ -124,6 +129,22 @@ impl Plugin for GameServerPlugin {
                     .after(process_game_commands)
                     .run_if(simulation_active),
             )
+            // Map discovery: publisher sweeps positions, single drainer
+            // mutates each player's `DiscoveredTiles`. Sequenced so the
+            // projection in the same tick already sees the new entries.
+            .add_systems(
+                Update,
+                (
+                    discover_around_players
+                        .after(process_game_commands)
+                        .after(update_roaming_npcs)
+                        .run_if(simulation_active),
+                    apply_pending_discovery
+                        .after(discover_around_players)
+                        .before(collect_game_events_from_authority)
+                        .run_if(simulation_active),
+                ),
+            )
             .add_systems(
                 Update,
                 collect_game_events_from_authority
@@ -131,6 +152,7 @@ impl Plugin for GameServerPlugin {
                     .after(sync_container_visual_state)
                     .after(update_roaming_npcs)
                     .after(resolve_battle_turn)
+                    .after(apply_pending_discovery)
                     .run_if(simulation_active)
                     // Embedded-only: in HeadlessServer mode there is no single
                     // local Player entity (0..N peers); per-peer replication is

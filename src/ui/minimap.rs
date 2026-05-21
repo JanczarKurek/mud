@@ -266,6 +266,8 @@ fn paint_tile_window(
         .map(|space| space.height)
         .unwrap_or(0);
 
+    let discovered = client_state.discovered_tiles.get(&space_id);
+
     let half = (span - 1) / 2;
 
     for row in 0..span_usize {
@@ -281,8 +283,10 @@ fn paint_tile_window(
                 || world_y >= space_height
             {
                 OUT_OF_BOUNDS_COLOR
-            } else {
+            } else if discovered.is_some_and(|set| set.contains(&(world_x, world_y, player_z))) {
                 fill
+            } else {
+                fog_color_for_tile(world_x, world_y)
             };
             let pixel_idx = (row * span_usize + col) * bpp;
             data[pixel_idx] = color[0];
@@ -302,6 +306,12 @@ fn paint_tile_window(
         if object.is_npc || object.is_movable || object.is_container {
             continue;
         }
+        // Don't reveal object positions on tiles the player hasn't seen.
+        if !discovered.is_some_and(|set| {
+            set.contains(&(object.tile_position.x, object.tile_position.y, player_z))
+        }) {
+            continue;
+        }
         let dx = object.tile_position.x - player_x;
         let dy = object.tile_position.y - player_y;
         if dx.abs() > half || dy.abs() > half {
@@ -317,6 +327,23 @@ fn paint_tile_window(
         data[pixel_idx + 1] = color[1];
         data[pixel_idx + 2] = color[2];
         data[pixel_idx + 3] = color[3];
+    }
+}
+
+/// Deterministic star pattern for undiscovered minimap cells. ~1/64 cells
+/// gets a bright pixel, the rest are deep-indigo background — same visual
+/// language as the main-view fog shader so the two views read as the same
+/// "unexplored" state.
+fn fog_color_for_tile(x: i32, y: i32) -> [u8; 4] {
+    let mut h: u32 = 0x9e3779b9;
+    h ^= (x as u32).wrapping_mul(0x85ebca6b);
+    h = h.rotate_left(13).wrapping_mul(0xc2b2ae35);
+    h ^= (y as u32).wrapping_mul(0x27d4eb2f);
+    h ^= h >> 16;
+    match h & 0x3F {
+        0 => [220, 220, 240, 255],
+        1..=2 => [120, 120, 150, 255],
+        _ => [8, 6, 14, 255],
     }
 }
 

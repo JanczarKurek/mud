@@ -11,8 +11,8 @@ use crate::network::resources::PendingPlayerSaves;
 use crate::persistence::build_player_state_dump;
 use crate::player::classes::Class;
 use crate::player::components::{
-    BaseStats, ChatLog, DerivedStats, Inventory, MovementCooldown, Player, PlayerAppearance,
-    PlayerIdentity, VitalStats,
+    BaseStats, ChatLog, DerivedStats, DiscoveredTiles, Inventory, MovementCooldown, Player,
+    PlayerAppearance, PlayerIdentity, VitalStats,
 };
 use crate::player::progression::Experience;
 use crate::player::skills::SkillSheet;
@@ -45,6 +45,7 @@ type PlayerStateQueryData<'a> = (
         Option<&'a CharacterStash>,
         Option<&'a SkillSheet>,
         Option<&'a PlayerAppearance>,
+        Option<&'a DiscoveredTiles>,
     ),
 );
 
@@ -71,7 +72,7 @@ fn save_entity(
         combat_leash,
         facing,
         experience,
-        (class, magic_effects, stash, skill_sheet, appearance),
+        (class, magic_effects, stash, skill_sheet, appearance, discovered_tiles),
     ) = row;
 
     let empty_effects = MagicEffects::default();
@@ -80,6 +81,8 @@ fn save_entity(
     let stash_ref = stash.unwrap_or(&empty_stash);
     let empty_sheet = SkillSheet::default();
     let sheet_ref = skill_sheet.unwrap_or(&empty_sheet);
+    let empty_discovered = DiscoveredTiles::default();
+    let discovered_ref = discovered_tiles.unwrap_or(&empty_discovered);
 
     let mut dump = build_player_state_dump(
         identity,
@@ -100,6 +103,7 @@ fn save_entity(
         stash_ref,
         sheet_ref,
         appearance.copied().unwrap_or_default(),
+        discovered_ref,
     );
 
     if let Some(stores) = var_stores {

@@ -6,9 +6,9 @@ use crate::magic::effects::MagicEffects;
 use crate::persistence::{PlayerStateDump, WorldSnapshotStatus};
 use crate::player::classes::Class;
 use crate::player::components::{
-    AppearanceRegion, BaseStats, ChatLog, DefenseStats, DerivedStats, EquippedItem, Inventory,
-    InventoryStack, MovementCooldown, Player, PlayerAppearance, PlayerId, PlayerIdentity,
-    RegenBuffs, RegenTickers, SpriteLayer, VitalStats, WeaponDamage,
+    AppearanceRegion, BaseStats, ChatLog, DefenseStats, DerivedStats, DiscoveredTiles,
+    EquippedItem, Inventory, InventoryStack, MovementCooldown, Player, PlayerAppearance, PlayerId,
+    PlayerIdentity, RegenBuffs, RegenTickers, SpriteLayer, VitalStats, WeaponDamage,
 };
 use crate::player::progression::Experience;
 use crate::player::skills::SkillSheet;
@@ -271,6 +271,13 @@ pub fn spawn_player_from_dump(
         entries: dump.stash,
     };
 
+    let mut discovered = DiscoveredTiles::default();
+    for (space, tiles) in dump.discovered_tiles {
+        discovered
+            .by_space
+            .insert(space, tiles.into_iter().collect());
+    }
+
     let entity = commands
         .spawn((
             Player,
@@ -314,6 +321,7 @@ pub fn spawn_player_from_dump(
                 dump.class,
                 dump.skill_sheet,
                 dump.appearance,
+                discovered,
             ),
         ))
         .id();
@@ -377,6 +385,7 @@ pub fn spawn_player_authoritative_in_space(
                 Experience::default(),
                 Class::default(),
                 SkillSheet::default(),
+                DiscoveredTiles::default(),
                 PlayerAppearance::default(),
             ),
         ))

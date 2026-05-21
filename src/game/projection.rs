@@ -33,8 +33,8 @@ use crate::magic::effects::MagicEffects;
 use crate::npc::components::Npc;
 use crate::player::classes::Class;
 use crate::player::components::{
-    CurrentCarryWeight, DefenseStats, DerivedStats, Encumbered, MaxCarryWeight, Player, PlayerId,
-    PlayerIdentity, RegenBuffs, VitalStats, WeaponDamage,
+    CurrentCarryWeight, DefenseStats, DerivedStats, DiscoveredTiles, Encumbered, MaxCarryWeight,
+    Player, PlayerId, PlayerIdentity, RegenBuffs, VitalStats, WeaponDamage,
 };
 use crate::player::progression::{Experience, ExperienceView};
 use crate::player::skills::SkillSheet;
@@ -78,6 +78,7 @@ pub type ProjectionPlayerQuery<'w, 's> = Query<
             &'static DefenseStats,
             &'static WeaponDamage,
             &'static AttackProfile,
+            Option<&'static DiscoveredTiles>,
         ),
     ),
     With<Player>,
@@ -181,7 +182,7 @@ pub fn compute_events_for_peer(
         (max_carry, current_carry, is_encumbered),
         experience,
         (class, stash, skill_sheet),
-        (magic_effects, defense_stats, weapon_damage, attack_profile),
+        (magic_effects, defense_stats, weapon_damage, attack_profile, discovered_tiles),
     ) in player_query.iter()
     {
         let projected_facing = facing.copied().unwrap_or_default().0;
@@ -428,6 +429,27 @@ pub fn compute_events_for_peer(
                     ranks: projected_ranks,
                     available_points: projected_points,
                 });
+            }
+
+            // Discovered tiles delta. Group new tiles per space and emit one
+            // event per space. `previous` is empty on bootstrap, so the first
+            // tick after login naturally ships the full saved set as deltas.
+            if let Some(authoritative) = discovered_tiles {
+                for (space_id, auth_set) in authoritative.by_space.iter() {
+                    let empty = std::collections::HashSet::new();
+                    let prev_set = previous.discovered_tiles.get(space_id).unwrap_or(&empty);
+                    let new_tiles: Vec<(i32, i32, i32)> = auth_set
+                        .iter()
+                        .filter(|t| !prev_set.contains(t))
+                        .copied()
+                        .collect();
+                    if !new_tiles.is_empty() {
+                        events.push(GameEvent::TilesDiscovered {
+                            space_id: *space_id,
+                            tiles: new_tiles,
+                        });
+                    }
+                }
             }
         } else {
             seen_remote_player_ids.push(identity.id);
@@ -947,6 +969,20 @@ pub fn apply_event_to_state(state: &mut ClientGameState, event: GameEvent) {
             state.skill_ranks[skill.index()] = new_rank;
             state.available_skill_points = remaining_points;
         }
+        GameEvent::DiscoveredTilesReplaced { tiles } => {
+            state.discovered_tiles.clear();
+            for (space_id, list) in tiles {
+                state
+                    .discovered_tiles
+                    .insert(space_id, list.into_iter().collect());
+            }
+        }
+        GameEvent::TilesDiscovered { space_id, tiles } => {
+            let set = state.discovered_tiles.entry(space_id).or_default();
+            for tile in tiles {
+                set.insert(tile);
+            }
+        }
     }
 }
 
@@ -1163,6 +1199,19 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
             skill.label(),
             new_rank,
             remaining_points
+        ),
+        GameEvent::DiscoveredTilesReplaced { tiles } => {
+            let total: usize = tiles.values().map(|v| v.len()).sum();
+            info!(
+                "client discovered tiles replaced: {} space(s), {} tile(s) total",
+                tiles.len(),
+                total
+            )
+        }
+        GameEvent::TilesDiscovered { space_id, tiles } => debug!(
+            "client tiles discovered: space {} +{} tile(s)",
+            space_id.0,
+            tiles.len()
         ),
     }
 }

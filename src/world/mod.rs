@@ -10,6 +10,7 @@ pub mod floor_definitions;
 pub mod floor_map;
 pub mod floor_render;
 pub mod floors;
+pub mod fog_render;
 pub mod hidden;
 pub mod hide_action;
 pub mod interactions;
@@ -53,6 +54,7 @@ use crate::world::floor_render::{
 use crate::world::floors::{
     recompute_indoor_tile_map, recompute_visible_floors, IndoorTileMap, VisibleFloorRange,
 };
+use crate::world::fog_render::{setup_fog_overlay, update_fog_overlay, FogOfWarMaterial};
 use crate::world::lighting::{advance_world_clock, sync_object_light_components, WorldClock};
 use crate::world::map_layout::SpaceDefinitions;
 use crate::world::object_definitions::OverworldObjectDefinitions;
@@ -192,11 +194,13 @@ impl Plugin for WorldClientPlugin {
             .add_plugins(bevy::sprite_render::Material2dPlugin::<
                 DarknessOverlayMaterial,
             >::default())
+            .add_plugins(bevy::sprite_render::Material2dPlugin::<FogOfWarMaterial>::default())
             .add_systems(
                 OnEnter(ClientAppState::InGame),
                 (
                     reload_client_definitions.before(crate::player::setup::spawn_player_visual),
                     setup_darkness_overlay,
+                    setup_fog_overlay,
                 ),
             )
             .add_systems(
@@ -277,6 +281,12 @@ impl Plugin for WorldClientPlugin {
                         .after(sync_tile_transforms)
                         .after(sync_player_z)
                         .after(recompute_visible_floors)
+                        .after(camera_follow),
+                    // Fog overlay: reads the replicated `discovered_tiles`
+                    // set from `ClientGameState` and packs the bitmask each
+                    // frame. Camera-follow keeps the quad over the viewport.
+                    update_fog_overlay
+                        .after(apply_game_events_to_client_state)
                         .after(camera_follow),
                 )
                     .run_if(in_state(ClientAppState::InGame)),

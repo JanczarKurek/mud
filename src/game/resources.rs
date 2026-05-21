@@ -504,6 +504,22 @@ pub enum GameEvent {
         new_rank: u8,
         remaining_points: u32,
     },
+    /// Baseline replication of the local player's full `DiscoveredTiles`
+    /// state. Sent on first projection / when the projection detects drift.
+    /// The fold overwrites `ClientGameState.discovered_tiles`. Tiles are
+    /// grouped by `SpaceId` so a multi-space discovery history travels in one
+    /// payload.
+    DiscoveredTilesReplaced {
+        tiles: HashMap<SpaceId, Vec<(i32, i32, i32)>>,
+    },
+    /// Delta event: the local player just revealed `tiles` in `space_id`.
+    /// Emitted by `compute_events_for_peer` when authoritative
+    /// `DiscoveredTiles` grew between projection ticks. Folded as a union
+    /// into `ClientGameState.discovered_tiles`.
+    TilesDiscovered {
+        space_id: SpaceId,
+        tiles: Vec<(i32, i32, i32)>,
+    },
 }
 
 #[derive(Resource, Default)]
@@ -644,4 +660,9 @@ pub struct ClientGameState {
     /// `SkillPointsGranted` (delta) and `SkillSheetChanged` (baseline).
     #[serde(default)]
     pub available_skill_points: u32,
+    /// Tiles the local player has ever seen, grouped by space. Drives the
+    /// fog-of-war overlay on the main view and the minimap. Folded from
+    /// `DiscoveredTilesReplaced` (baseline) and `TilesDiscovered` (delta).
+    #[serde(default)]
+    pub discovered_tiles: HashMap<SpaceId, HashSet<(i32, i32, i32)>>,
 }

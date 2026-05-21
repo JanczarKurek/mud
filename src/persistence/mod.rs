@@ -222,6 +222,14 @@ pub struct PlayerStateDump {
     /// existed fall back to the `PlayerAppearance::default()` palette.
     #[serde(default)]
     pub appearance: crate::player::components::PlayerAppearance,
+    /// Tiles the player has revealed, grouped by space and stored as sorted
+    /// `(x, y, z)` triples for stable JSON ordering. Rehydrated into the
+    /// player's `DiscoveredTiles` component on load and consumed by the
+    /// fog-of-war overlay. `#[serde(default)]` so rows written before this
+    /// field existed default to "nothing discovered".
+    #[serde(default)]
+    pub discovered_tiles:
+        std::collections::HashMap<crate::world::components::SpaceId, Vec<(i32, i32, i32)>>,
 }
 
 /// Build a `PlayerStateDump` from the components of a single player entity.
@@ -247,7 +255,17 @@ pub fn build_player_state_dump(
     stash: &crate::crafting::CharacterStash,
     skill_sheet: &crate::player::skills::SkillSheet,
     appearance: crate::player::components::PlayerAppearance,
+    discovered_tiles: &crate::player::components::DiscoveredTiles,
 ) -> PlayerStateDump {
+    let mut discovered: std::collections::HashMap<
+        crate::world::components::SpaceId,
+        Vec<(i32, i32, i32)>,
+    > = std::collections::HashMap::new();
+    for (space_id, set) in &discovered_tiles.by_space {
+        let mut tiles: Vec<(i32, i32, i32)> = set.iter().copied().collect();
+        tiles.sort_unstable();
+        discovered.insert(*space_id, tiles);
+    }
     PlayerStateDump {
         player_id: identity.id,
         space_id: Some(space_resident.space_id),
@@ -269,6 +287,7 @@ pub fn build_player_state_dump(
         stash: stash.entries.clone(),
         skill_sheet: skill_sheet.clone(),
         appearance,
+        discovered_tiles: discovered,
     }
 }
 
@@ -1216,6 +1235,7 @@ mod tests {
             stash: Default::default(),
             skill_sheet: Default::default(),
             appearance: Default::default(),
+            discovered_tiles: Default::default(),
         };
         let json = serde_json::to_string(&dump_with_home).unwrap();
         // Confirm we didn't accidentally serialize Some(...).
@@ -1278,6 +1298,7 @@ mod tests {
             skill_sheet: Default::default(),
             stash: Default::default(),
             appearance: Default::default(),
+            discovered_tiles: Default::default(),
         };
         let json = serde_json::to_string(&dump).unwrap();
         let restored: PlayerStateDump = serde_json::from_str(&json).unwrap();

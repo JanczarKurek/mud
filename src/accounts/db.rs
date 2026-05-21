@@ -473,6 +473,7 @@ fn build_initial_dump(
         stash: Default::default(),
         skill_sheet: Default::default(),
         appearance,
+        discovered_tiles: Default::default(),
     }
 }
 
@@ -735,6 +736,7 @@ mod tests {
             stash: Default::default(),
             skill_sheet: Default::default(),
             appearance: Default::default(),
+            discovered_tiles: Default::default(),
         };
         db.save_character(cid, &dump).unwrap();
 

@@ -1,7 +1,10 @@
+use std::collections::{HashMap, HashSet};
+
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::combat::damage_expr::DamageExpr;
+use crate::world::components::SpaceId;
 use crate::world::map_layout::ObjectProperties;
 use crate::world::object_definitions::{EquipmentSlot, OverworldObjectDefinitions};
 
@@ -807,6 +810,30 @@ impl Default for RegenBuffs {
 impl RegenBuffs {
     pub fn is_active(&self) -> bool {
         self.remaining_seconds > 0.0 && self.multiplier > 1.0
+    }
+}
+
+/// Per-player "have I seen this tile?" set. Server-authoritative; the
+/// discovery system (`crate::game::discovery`) is the sole writer. Replicated
+/// to the owning client via `GameEvent::DiscoveredTilesReplaced` and
+/// `TilesDiscovered`, where it lands in `ClientGameState.discovered_tiles`.
+/// Persisted across logins through `PlayerStateDump.discovered_tiles`.
+#[derive(Component, Clone, Debug, Default, PartialEq, Eq)]
+pub struct DiscoveredTiles {
+    pub by_space: HashMap<SpaceId, HashSet<(i32, i32, i32)>>,
+}
+
+impl DiscoveredTiles {
+    pub fn contains(&self, space_id: SpaceId, x: i32, y: i32, z: i32) -> bool {
+        self.by_space
+            .get(&space_id)
+            .is_some_and(|set| set.contains(&(x, y, z)))
+    }
+
+    /// Insert `(x, y, z)` into `space_id`'s set. Returns `true` if the tile
+    /// was newly inserted (i.e. previously undiscovered).
+    pub fn insert(&mut self, space_id: SpaceId, x: i32, y: i32, z: i32) -> bool {
+        self.by_space.entry(space_id).or_default().insert((x, y, z))
     }
 }
 
