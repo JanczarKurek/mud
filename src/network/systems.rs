@@ -16,8 +16,8 @@ use crate::network::asset_sync::{build_server_manifest, hash_bytes};
 use crate::network::protocol::{ClientMessage, ServerMessage};
 use crate::network::resources::{
     AssetSyncState, ConnectionId, LatencyReportTimer, PeerAuthState, PeerLatencyState,
-    PendingPlayerSaves, PingTimer, ServerAssetManifest, TcpClientConfig, TcpClientConnection,
-    TcpServerConfig, TcpServerPeer, TcpServerState,
+    PeerThroughputState, PendingPlayerSaves, PingTimer, ServerAssetManifest, TcpClientConfig,
+    TcpClientConnection, TcpServerConfig, TcpServerPeer, TcpServerState,
 };
 use crate::network::transport::{ClientTransport, ServerTransport};
 use crate::player::components::{Inventory, Player, PlayerId};
@@ -50,10 +50,11 @@ pub fn send_asset_manifest_to_new_peers(
             peer.connection_id.0
         );
         let mut disconnected = false;
-        write_message(
+        write_message_counted(
             &mut peer.stream,
             &ServerMessage::AssetManifest(manifest.0.clone()),
             &mut disconnected,
+            Some(&mut peer.throughput.bytes_out),
         );
         peer.manifest_sent = true;
     }
@@ -258,6 +259,10 @@ pub fn accept_tcp_client_connections(
                         sync_complete: false,
                         manifest_sent: false,
                         latency: PeerLatencyState::default(),
+                        throughput: PeerThroughputState {
+                            last_report_at: Some(Instant::now()),
+                            ..Default::default()
+                        },
                     },
                 );
             }
@@ -297,9 +302,12 @@ pub fn poll_tcp_server_messages(
         // resources via the shared `commands`).
         let mut disconnected = false;
         let mut incoming: Vec<String> = Vec::new();
-        while let Some(line) =
-            read_next_line(&mut peer.stream, &mut peer.read_buffer, &mut disconnected)
-        {
+        while let Some(line) = read_next_line_counted(
+            &mut peer.stream,
+            &mut peer.read_buffer,
+            &mut disconnected,
+            Some(&mut peer.throughput.bytes_in),
+        ) {
             incoming.push(line);
         }
 
@@ -389,13 +397,14 @@ pub fn poll_tcp_server_messages(
                             Ok(data) => {
                                 let encoded = BASE64.encode(&data);
                                 let mut disc = false;
-                                write_message(
+                                write_message_counted(
                                     &mut peer.stream,
                                     &ServerMessage::AssetData {
                                         path: path.clone(),
                                         data: encoded,
                                     },
                                     &mut disc,
+                                    Some(&mut peer.throughput.bytes_out),
                                 );
                                 if disc {
                                     disconnected = true;
@@ -504,13 +513,14 @@ fn handle_auth_attempt(
         "peer {} {event} as account {account_id} ({username}) from {addr}; awaiting character select",
         peer.connection_id.0
     );
-    write_message(
+    write_message_counted(
         &mut peer.stream,
         &ServerMessage::AuthResult {
             ok: true,
             reason: None,
         },
         disconnected,
+        Some(&mut peer.throughput.bytes_out),
     );
 }
 
@@ -540,10 +550,11 @@ fn handle_list_characters(
             level: s.level,
         })
         .collect();
-    write_message(
+    write_message_counted(
         &mut peer.stream,
         &ServerMessage::CharacterList(list),
         disconnected,
+        Some(&mut peer.throughput.bytes_out),
     );
 }
 
@@ -565,7 +576,7 @@ fn handle_create_character(
         return;
     }
     let Some(db) = db else {
-        write_message(
+        write_message_counted(
             &mut peer.stream,
             &ServerMessage::CharacterCreateResult {
                 ok: false,
@@ -573,6 +584,7 @@ fn handle_create_character(
                 reason: Some("server has no account database".to_owned()),
             },
             disconnected,
+            Some(&mut peer.throughput.bytes_out),
         );
         return;
     };
@@ -588,7 +600,7 @@ fn handle_create_character(
                 "peer {} created character {character_id} ({name}) for account {account_id}",
                 peer.connection_id.0
             );
-            write_message(
+            write_message_counted(
                 &mut peer.stream,
                 &ServerMessage::CharacterCreateResult {
                     ok: true,
@@ -596,6 +608,7 @@ fn handle_create_character(
                     reason: None,
                 },
                 disconnected,
+                Some(&mut peer.throughput.bytes_out),
             );
             handle_list_characters(peer, Some(db), disconnected);
         }
@@ -605,7 +618,7 @@ fn handle_create_character(
                 "peer {} character create rejected: {reason}",
                 peer.connection_id.0
             );
-            write_message(
+            write_message_counted(
                 &mut peer.stream,
                 &ServerMessage::CharacterCreateResult {
                     ok: false,
@@ -613,6 +626,7 @@ fn handle_create_character(
                     reason: Some(reason),
                 },
                 disconnected,
+                Some(&mut peer.throughput.bytes_out),
             );
         }
     }
@@ -791,21 +805,23 @@ fn handle_select_character(
         "peer {} selected character {character_id} (account {account_id})",
         peer.connection_id.0
     );
-    write_message(
+    write_message_counted(
         &mut peer.stream,
         &ServerMessage::CharacterSelected { character_id },
         disconnected,
+        Some(&mut peer.throughput.bytes_out),
     );
 }
 
 fn send_auth_failure(peer: &mut TcpServerPeer, reason: &str, disconnected: &mut bool) {
-    write_message(
+    write_message_counted(
         &mut peer.stream,
         &ServerMessage::AuthResult {
             ok: false,
             reason: Some(reason.to_owned()),
         },
         disconnected,
+        Some(&mut peer.throughput.bytes_out),
     );
 }
 
@@ -891,10 +907,11 @@ pub fn flush_server_messages(
                 world_clock.seconds_since_emit = 0.0;
             }
             if !events.is_empty() {
-                if !write_message(
+                if !write_message_counted(
                     &mut peer.stream,
                     &ServerMessage::Events(events.clone()),
                     &mut disconnected,
+                    Some(&mut peer.throughput.bytes_out),
                 ) {
                     warn!("failed to send events to TCP client");
                 } else {
@@ -910,10 +927,11 @@ pub fn flush_server_messages(
                 peer_ui_events.get(&player_id).cloned().unwrap_or_default();
             outgoing_ui_events.extend(broadcast_ui_events.iter().cloned());
             if !outgoing_ui_events.is_empty()
-                && !write_message(
+                && !write_message_counted(
                     &mut peer.stream,
                     &ServerMessage::UiEvents(outgoing_ui_events),
                     &mut disconnected,
+                    Some(&mut peer.throughput.bytes_out),
                 )
             {
                 warn!("failed to send UI events to TCP client");
@@ -1163,10 +1181,11 @@ pub fn send_periodic_pings(
         timer.next_nonce = timer.next_nonce.wrapping_add(1);
 
         let mut disconnected = false;
-        write_message(
+        write_message_counted(
             &mut peer.stream,
             &ServerMessage::Ping { nonce },
             &mut disconnected,
+            Some(&mut peer.throughput.bytes_out),
         );
         if disconnected {
             disconnected_peers.push(connection_id);
@@ -1187,11 +1206,12 @@ pub fn send_periodic_pings(
 }
 
 /// Periodic latency reporter. Fires every `LatencyReportTimer::interval_seconds`
-/// (default 60s). One info line per connected (post-auth) peer.
+/// (default 60s). One info line per connected (post-auth) peer with RTT
+/// and TCP throughput (plaintext bytes/sec since last report).
 pub fn report_peer_latency(
     time: Res<Time>,
     mut timer: ResMut<LatencyReportTimer>,
-    server_state: Res<TcpServerState>,
+    mut server_state: ResMut<TcpServerState>,
 ) {
     timer.elapsed_since_report += time.delta_secs_f64();
     if timer.elapsed_since_report < timer.interval_seconds {
@@ -1199,7 +1219,8 @@ pub fn report_peer_latency(
     }
     timer.elapsed_since_report = 0.0;
 
-    for peer in server_state.peers.values() {
+    let now = Instant::now();
+    for peer in server_state.peers.values_mut() {
         if !peer.is_authed() && !peer.is_awaiting_character() {
             continue;
         }
@@ -1211,16 +1232,41 @@ pub fn report_peer_latency(
             .character_id()
             .map(|id| id.to_string())
             .unwrap_or_else(|| "?".to_owned());
+
+        // Compute window throughput. `last_report_at` is seeded at accept
+        // time, so the first report after connect measures from connect-time
+        // (and will include the bootstrap asset manifest + initial state).
+        let prev = peer.throughput.last_report_at.unwrap_or(now);
+        let elapsed = now.duration_since(prev).as_secs_f64().max(1e-3);
+        let in_rate = peer.throughput.bytes_in as f64 / elapsed;
+        let out_rate = peer.throughput.bytes_out as f64 / elapsed;
+        peer.throughput.bytes_in = 0;
+        peer.throughput.bytes_out = 0;
+        peer.throughput.last_report_at = Some(now);
+        let bw_in = fmt_rate(in_rate);
+        let bw_out = fmt_rate(out_rate);
+
         match (peer.latency.last_rtt_ms, peer.latency.ema_rtt_ms) {
             (Some(last), Some(ema)) => info!(
-                "peer latency: conn={} account={account} char={character} rtt={last:.1}ms ema={ema:.1}ms",
+                "peer latency: conn={} account={account} char={character} rtt={last:.1}ms ema={ema:.1}ms in={bw_in} out={bw_out}",
                 peer.connection_id.0
             ),
             _ => info!(
-                "peer latency: conn={} account={account} char={character} rtt=pending",
+                "peer latency: conn={} account={account} char={character} rtt=pending in={bw_in} out={bw_out}",
                 peer.connection_id.0
             ),
         }
+    }
+}
+
+/// Human-readable bytes-per-second formatter for the per-peer latency log.
+fn fmt_rate(bytes_per_sec: f64) -> String {
+    if bytes_per_sec >= 1_048_576.0 {
+        format!("{:.1}MB/s", bytes_per_sec / 1_048_576.0)
+    } else if bytes_per_sec >= 1024.0 {
+        format!("{:.1}KB/s", bytes_per_sec / 1024.0)
+    } else {
+        format!("{:.0}B/s", bytes_per_sec)
     }
 }
 
@@ -1310,6 +1356,18 @@ pub fn read_next_line<S: Read>(
     buffer: &mut Vec<u8>,
     disconnected: &mut bool,
 ) -> Option<String> {
+    read_next_line_counted(stream, buffer, disconnected, None)
+}
+
+/// Same as `read_next_line`, but accumulates the bytes actually read into
+/// `bytes_in` (when `Some`). Used by the server's per-peer poll loop so
+/// `report_peer_latency` can publish per-peer throughput.
+pub fn read_next_line_counted<S: Read>(
+    stream: &mut S,
+    buffer: &mut Vec<u8>,
+    disconnected: &mut bool,
+    mut bytes_in: Option<&mut u64>,
+) -> Option<String> {
     let mut chunk = [0; 4096];
     loop {
         match stream.read(&mut chunk) {
@@ -1317,7 +1375,12 @@ pub fn read_next_line<S: Read>(
                 *disconnected = true;
                 break;
             }
-            Ok(count) => buffer.extend_from_slice(&chunk[..count]),
+            Ok(count) => {
+                buffer.extend_from_slice(&chunk[..count]);
+                if let Some(counter) = bytes_in.as_deref_mut() {
+                    *counter = counter.saturating_add(count as u64);
+                }
+            }
             Err(error) if error.kind() == ErrorKind::WouldBlock => break,
             Err(error) => {
                 warn!("TCP read failed: {error}");
@@ -1337,6 +1400,18 @@ pub fn write_message<S: Write>(
     stream: &mut S,
     message: &impl serde::Serialize,
     disconnected: &mut bool,
+) -> bool {
+    write_message_counted(stream, message, disconnected, None)
+}
+
+/// Same as `write_message`, but accumulates the bytes actually written into
+/// `bytes_out` (when `Some`). Used by the server's per-peer flush paths so
+/// `report_peer_latency` can publish per-peer throughput.
+pub fn write_message_counted<S: Write>(
+    stream: &mut S,
+    message: &impl serde::Serialize,
+    disconnected: &mut bool,
+    mut bytes_out: Option<&mut u64>,
 ) -> bool {
     let Ok(mut bytes) = serde_json::to_vec(message) else {
         return false;
@@ -1365,6 +1440,9 @@ pub fn write_message<S: Write>(
             }
             Ok(n) => {
                 remaining = &remaining[n..];
+                if let Some(counter) = bytes_out.as_deref_mut() {
+                    *counter = counter.saturating_add(n as u64);
+                }
             }
             Err(ref err) if err.kind() == ErrorKind::Interrupted => {}
             Err(ref err) if err.kind() == ErrorKind::WouldBlock => {

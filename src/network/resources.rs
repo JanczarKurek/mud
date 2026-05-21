@@ -86,6 +86,7 @@ pub struct TcpServerPeer {
     pub sync_complete: bool,
     pub manifest_sent: bool,
     pub latency: PeerLatencyState,
+    pub throughput: PeerThroughputState,
 }
 
 /// Per-peer RTT tracking, populated by the Ping/Pong cycle. All fields are
@@ -99,6 +100,18 @@ pub struct PeerLatencyState {
     pub last_rtt_ms: Option<f64>,
     /// Exponential moving average of recent RTTs (alpha = 0.2).
     pub ema_rtt_ms: Option<f64>,
+}
+
+/// Per-peer byte counters covering the plaintext bytes flowing through
+/// `ServerTransport::read` / `write` since the last report. `report_peer_latency`
+/// computes a rate, logs it alongside RTT, and resets the counters.
+#[derive(Default, Clone, Copy, Debug)]
+pub struct PeerThroughputState {
+    pub bytes_in: u64,
+    pub bytes_out: u64,
+    /// Wall-clock instant of the last reset. `None` until the first report;
+    /// the first report seeds it and emits zero rates.
+    pub last_report_at: Option<Instant>,
 }
 
 impl TcpServerPeer {
