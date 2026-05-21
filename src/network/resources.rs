@@ -35,6 +35,15 @@ pub struct TcpClientTlsConfig {
 pub struct TcpClientConnection {
     pub stream: Option<ClientTransport>,
     pub read_buffer: Vec<u8>,
+    /// Set to true after the first connect attempt (success or failure) so the
+    /// per-frame `ensure_tcp_client_connected` callers don't redial the server
+    /// every frame. Reset to `false` by the title screen when the user clicks
+    /// Connect again.
+    pub connect_attempted: bool,
+    /// Populated by `ensure_tcp_client_connected` when `TcpStream::connect_timeout`
+    /// or TLS setup fails. Drained by the auth screen to surface the failure
+    /// reason and bounce back to the title screen.
+    pub error_message: Option<String>,
 }
 
 #[derive(Resource)]

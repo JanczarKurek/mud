@@ -45,8 +45,9 @@ fn reset_send_flag(mut pending: ResMut<PendingAuthRequest>) {
 
 fn submit_pending_auth(
     mut pending: ResMut<PendingAuthRequest>,
-    config: Res<TcpClientConfig>,
+    mut config: ResMut<TcpClientConfig>,
     mut connection: ResMut<TcpClientConnection>,
+    mut next_state: ResMut<NextState<ClientAppState>>,
 ) {
     if pending.sent {
         return;
@@ -56,6 +57,18 @@ fn submit_pending_auth(
     // wired into any of the polling systems that would otherwise cover it;
     // drive it directly here.
     crate::network::systems::ensure_tcp_client_connected(&config, &mut connection);
+
+    // Connect-time failure (unreachable host, refused, TLS setup, ...): surface
+    // the reason on the title screen and bounce back. Without this the auth
+    // screen would sit forever waiting for a stream that will never appear.
+    if let Some(err) = connection.error_message.take() {
+        warn!("auth: connect failed: {err}");
+        pending.error_message = Some(err);
+        config.active = false;
+        connection.connect_attempted = false;
+        next_state.set(ClientAppState::TitleScreen);
+        return;
+    }
 
     // The stream may still be waking up on the first tick after Connect; wait
     // for it to be available.

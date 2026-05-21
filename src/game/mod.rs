@@ -10,6 +10,7 @@ pub mod trade;
 
 use bevy::prelude::*;
 
+use crate::app::plugin::AppRuntime;
 use crate::app::state::simulation_active;
 use crate::combat::damage::PendingDamageEvents;
 use crate::combat::systems::resolve_battle_turn;
@@ -130,7 +131,19 @@ impl Plugin for GameServerPlugin {
                     .after(sync_container_visual_state)
                     .after(update_roaming_npcs)
                     .after(resolve_battle_turn)
-                    .run_if(simulation_active),
+                    .run_if(simulation_active)
+                    // Embedded-only: in HeadlessServer mode there is no single
+                    // local Player entity (0..N peers); per-peer replication is
+                    // driven by `flush_server_messages` calling
+                    // `compute_events_for_peer` directly. Running this system
+                    // there warns "no Player entity found" every frame.
+                    // `Option<Res<_>>` so tests that build `GameServerPlugin`
+                    // without inserting `AppRuntime` still pass — they default
+                    // to running the system (the legacy behavior).
+                    .run_if(|runtime: Option<Res<AppRuntime>>| match runtime {
+                        Some(r) => matches!(*r, AppRuntime::EmbeddedClient),
+                        None => true,
+                    }),
             )
             // Unconditional — mirrors GameClientPlugin so that WorldClientPlugin's
             // .after(apply_game_events_to_client_state) ordering resolves identically

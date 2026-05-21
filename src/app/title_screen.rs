@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use crate::app::auth_screen::PendingAuthRequest;
 use crate::app::plugin::AppRuntime;
 use crate::app::state::ClientAppState;
-use crate::network::resources::TcpClientConfig;
+use crate::network::resources::{TcpClientConfig, TcpClientConnection};
 use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton, ThemedPanel};
 use crate::ui::theme::{Palette, UiThemeAssets};
 
@@ -541,6 +541,7 @@ fn handle_title_screen_buttons(
     mut title_state: ResMut<TitleScreenState>,
     mut next_state: ResMut<NextState<ClientAppState>>,
     mut tcp_config: Option<ResMut<TcpClientConfig>>,
+    mut tcp_connection: Option<ResMut<TcpClientConnection>>,
     mut pending_auth: Option<ResMut<PendingAuthRequest>>,
     mut exit_messages: MessageWriter<AppExit>,
     mut settings_ui: ResMut<crate::ui::settings::SettingsUiState>,
@@ -569,6 +570,13 @@ fn handle_title_screen_buttons(
                         tcp_config.server_addr = server_addr;
                     }
                     tcp_config.active = true;
+
+                    // Allow `ensure_tcp_client_connected` to attempt the dial
+                    // again; without this it sticks at the previous failure.
+                    if let Some(connection) = tcp_connection.as_mut() {
+                        connection.connect_attempted = false;
+                        connection.error_message = None;
+                    }
 
                     if let Some(pending) = pending_auth.as_mut() {
                         if title_state.username.trim().is_empty() {

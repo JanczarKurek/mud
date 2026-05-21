@@ -1,7 +1,7 @@
 use std::io::{ErrorKind, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
@@ -1032,11 +1032,51 @@ pub fn ensure_tcp_client_connected(config: &TcpClientConfig, connection: &mut Tc
         return;
     }
 
-    let Ok(stream) = TcpStream::connect(&config.server_addr) else {
+    // Don't redial every frame. The title screen resets this when the user
+    // clicks Connect again; until then a single attempt is enough — repeated
+    // failed `TcpStream::connect_timeout` calls would freeze the main loop in
+    // CONNECT_TIMEOUT-sized chunks on every Update tick.
+    if connection.connect_attempted {
         return;
+    }
+    connection.connect_attempted = true;
+
+    // Bounded resolve+connect. `TcpStream::connect` (the previous call here)
+    // uses the OS default timeout, which can sit at ~75s on macOS for a
+    // SYN-filtered host — blocking the main render thread the whole time.
+    const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+
+    let socket_addr = match config.server_addr.to_socket_addrs() {
+        Ok(mut iter) => match iter.next() {
+            Some(addr) => addr,
+            None => {
+                let msg = format!("no address resolved for {}", config.server_addr);
+                warn!("{msg}");
+                connection.error_message = Some(msg);
+                return;
+            }
+        },
+        Err(error) => {
+            let msg = format!("failed to resolve {}: {error}", config.server_addr);
+            warn!("{msg}");
+            connection.error_message = Some(msg);
+            return;
+        }
+    };
+
+    let stream = match TcpStream::connect_timeout(&socket_addr, CONNECT_TIMEOUT) {
+        Ok(stream) => stream,
+        Err(error) => {
+            let msg = format!("failed to connect to {}: {error}", config.server_addr);
+            warn!("{msg}");
+            connection.error_message = Some(msg);
+            return;
+        }
     };
     if let Err(error) = stream.set_nonblocking(true) {
-        warn!("failed to set TCP client stream nonblocking: {error}");
+        let msg = format!("failed to set TCP client stream nonblocking: {error}");
+        warn!("{msg}");
+        connection.error_message = Some(msg);
         return;
     }
 
@@ -1046,14 +1086,18 @@ pub fn ensure_tcp_client_connected(config: &TcpClientConfig, connection: &mut Tc
             {
                 Ok(name) => name,
                 Err(err) => {
-                    warn!("invalid TLS server_name {:?}: {err}", tls.server_name);
+                    let msg = format!("invalid TLS server_name {:?}: {err}", tls.server_name);
+                    warn!("{msg}");
+                    connection.error_message = Some(msg);
                     return;
                 }
             };
             match rustls::ClientConnection::new(tls.config.clone(), server_name) {
                 Ok(conn) => ClientTransport::Tls(Box::new(rustls::StreamOwned::new(conn, stream))),
                 Err(err) => {
-                    warn!("failed to create TLS client connection: {err}");
+                    let msg = format!("failed to create TLS client connection: {err}");
+                    warn!("{msg}");
+                    connection.error_message = Some(msg);
                     return;
                 }
             }
