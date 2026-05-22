@@ -24,6 +24,10 @@ base_range_tiles: 6
 ammo_type: arrow
 damage: "1d6+agility/2"
 hp: "1d8+30+constitution*3"
+npc_behavior:
+  step_interval_seconds: 1.0
+  detect_distance_tiles: 8
+  disengage_distance_tiles: 14
 render:
   debug_color: [112, 176, 92]
   debug_size: 0.92

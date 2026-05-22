@@ -206,10 +206,7 @@ impl Plugin for WorldClientPlugin {
             // Darkness overlay also lives in the map editor so authoring the
             // day/night curve is WYSIWYG. Fog is intentionally InGame-only —
             // the editor wants a clean view of the whole map.
-            .add_systems(
-                OnEnter(ClientAppState::MapEditor),
-                setup_darkness_overlay,
-            )
+            .add_systems(OnEnter(ClientAppState::MapEditor), setup_darkness_overlay)
             .add_systems(
                 Update,
                 (

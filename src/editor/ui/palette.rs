@@ -455,6 +455,8 @@ pub fn handle_palette_scrolling(
     let Some(cursor) = window.cursor_position() else {
         return;
     };
+    // ComputedNode geometry is in physical pixels; logical cursor → physical.
+    let cursor = cursor * window.scale_factor();
 
     for event in mouse_wheel.read() {
         let mut delta_y = -event.y;

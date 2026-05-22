@@ -455,6 +455,8 @@ pub fn handle_dialog_transcript_scrolling(
     let Some(cursor) = window.cursor_position() else {
         return;
     };
+    // ComputedNode geometry is in physical pixels; logical cursor → physical.
+    let cursor = cursor * window.scale_factor();
 
     for event in wheel_reader.read() {
         let mut delta_y = -event.y;

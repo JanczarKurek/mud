@@ -275,27 +275,13 @@ pub fn sync_spawn_groups_panel(
 
 fn behavior_summary(behavior: &MapBehavior) -> String {
     match behavior {
-        MapBehavior::Roam {
-            step_interval_seconds,
-            bounds,
-        } => format!(
-            "Roam  step={:.2}s  ({},{})-({},{})",
-            step_interval_seconds, bounds.min_x, bounds.min_y, bounds.max_x, bounds.max_y
+        MapBehavior::Roam { bounds } => format!(
+            "Roam  ({},{})-({},{})",
+            bounds.min_x, bounds.min_y, bounds.max_x, bounds.max_y
         ),
-        MapBehavior::RoamAndChase {
-            step_interval_seconds,
-            bounds,
-            detect_distance_tiles,
-            disengage_distance_tiles,
-        } => format!(
-            "Chase d={} dis={}  step={:.2}s  ({},{})-({},{})",
-            detect_distance_tiles,
-            disengage_distance_tiles,
-            step_interval_seconds,
-            bounds.min_x,
-            bounds.min_y,
-            bounds.max_x,
-            bounds.max_y
+        MapBehavior::RoamAndChase { bounds } => format!(
+            "Chase  ({},{})-({},{})",
+            bounds.min_x, bounds.min_y, bounds.max_x, bounds.max_y
         ),
     }
 }

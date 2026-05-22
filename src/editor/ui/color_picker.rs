@@ -190,7 +190,14 @@ mod tests {
 
     #[test]
     fn pure_colors_roundtrip() {
-        for rgb in [[255, 0, 0], [0, 255, 0], [0, 0, 255], [255, 255, 0], [255, 0, 255], [0, 255, 255]] {
+        for rgb in [
+            [255, 0, 0],
+            [0, 255, 0],
+            [0, 0, 255],
+            [255, 255, 0],
+            [255, 0, 255],
+            [0, 255, 255],
+        ] {
             let hsv = rgb_to_hsv(rgb);
             let back = hsv_to_rgb(hsv);
             assert!(

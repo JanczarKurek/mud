@@ -523,45 +523,24 @@ fn next_keyframe_field(current: LightingKeyframeField) -> LightingKeyframeField 
     CYCLE[(i + 1) % CYCLE.len()]
 }
 
-fn next_spawn_group_field(current: SpawnGroupField, behavior: BehaviorKind) -> SpawnGroupField {
+fn next_spawn_group_field(current: SpawnGroupField, _behavior: BehaviorKind) -> SpawnGroupField {
     use SpawnGroupField::*;
-    let cycle: &[SpawnGroupField] = if behavior == BehaviorKind::RoamAndChase {
-        &[
-            Id,
-            Template,
-            MaxCount,
-            RespawnMean,
-            AreaMinX,
-            AreaMinY,
-            AreaMaxX,
-            AreaMaxY,
-            StepInterval,
-            BhvMinX,
-            BhvMinY,
-            BhvMaxX,
-            BhvMaxY,
-            DetectDistance,
-            DisengageDistance,
-        ]
-    } else {
-        &[
-            Id,
-            Template,
-            MaxCount,
-            RespawnMean,
-            AreaMinX,
-            AreaMinY,
-            AreaMaxX,
-            AreaMaxY,
-            StepInterval,
-            BhvMinX,
-            BhvMinY,
-            BhvMaxX,
-            BhvMaxY,
-        ]
-    };
-    let i = cycle.iter().position(|&f| f == current).unwrap_or(0);
-    cycle[(i + 1) % cycle.len()]
+    const CYCLE: &[SpawnGroupField] = &[
+        Id,
+        Template,
+        MaxCount,
+        RespawnMean,
+        AreaMinX,
+        AreaMinY,
+        AreaMaxX,
+        AreaMaxY,
+        BhvMinX,
+        BhvMinY,
+        BhvMaxX,
+        BhvMaxY,
+    ];
+    let i = CYCLE.iter().position(|&f| f == current).unwrap_or(0);
+    CYCLE[(i + 1) % CYCLE.len()]
 }
 
 // ── Text field focus clicks ───────────────────────────────────────────────────
@@ -808,14 +787,6 @@ fn spawn_spawn_group_modal(
                         ],
                         |label, kind| (label, SpawnGroupBehaviorKindButton { kind }),
                     );
-                    text_row(
-                        card,
-                        &palette,
-                        "step_interval_seconds",
-                        &draft.step_interval_seconds,
-                        draft.focused_field == SpawnGroupField::StepInterval,
-                        SpawnGroupField::StepInterval,
-                    );
                     rect_row(
                         card,
                         &palette,
@@ -836,31 +807,6 @@ fn spawn_spawn_group_modal(
                         "Pick behavior bounds on map",
                         PickRectTarget::SpawnBehavior,
                     );
-                    if draft.behavior_kind == BehaviorKind::RoamAndChase {
-                        two_col(
-                            card,
-                            |left| {
-                                text_row(
-                                    left,
-                                    &palette,
-                                    "detect_distance_tiles",
-                                    &draft.detect_distance_tiles,
-                                    draft.focused_field == SpawnGroupField::DetectDistance,
-                                    SpawnGroupField::DetectDistance,
-                                );
-                            },
-                            |right| {
-                                text_row(
-                                    right,
-                                    &palette,
-                                    "disengage_distance_tiles",
-                                    &draft.disengage_distance_tiles,
-                                    draft.focused_field == SpawnGroupField::DisengageDistance,
-                                    SpawnGroupField::DisengageDistance,
-                                );
-                            },
-                        );
-                    }
 
                     // Buttons
                     card.spawn((Node {
@@ -1281,6 +1227,12 @@ pub fn apply_pick_rect_result_to_modal(
         PickRectTarget::InstanceBehavior => {
             // Belongs to the properties panel; put it back so its consumer
             // can grab it.
+            pick_result.pending = Some(picked);
+            return;
+        }
+        PickRectTarget::NewSpawnGroup => {
+            // Mobs panel's "+ Group" flow — handled by
+            // `apply_pick_rect_for_new_spawn_group`, not by the modal.
             pick_result.pending = Some(picked);
             return;
         }
@@ -1777,6 +1729,8 @@ pub fn handle_color_picker_sv_drag(
     let Some(cursor) = window.cursor_position() else {
         return;
     };
+    // ComputedNode geometry is in physical pixels; logical cursor → physical.
+    let cursor = cursor * window.scale_factor();
     for (interaction, computed, transform) in &pad_q {
         if !matches!(interaction, Interaction::Pressed | Interaction::Hovered) {
             continue;
@@ -1820,6 +1774,8 @@ pub fn handle_color_picker_hue_drag(
     let Some(cursor) = window.cursor_position() else {
         return;
     };
+    // ComputedNode geometry is in physical pixels; logical cursor → physical.
+    let cursor = cursor * window.scale_factor();
     for (interaction, computed, transform) in &strip_q {
         if !matches!(interaction, Interaction::Pressed | Interaction::Hovered) {
             continue;

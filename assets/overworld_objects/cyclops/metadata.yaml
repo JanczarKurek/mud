@@ -11,6 +11,10 @@ stats:
   focus: 7
 damage: "1d12+strength/2"
 hp: "2d20+80+constitution*6"
+npc_behavior:
+  step_interval_seconds: 1.4
+  detect_distance_tiles: 5
+  disengage_distance_tiles: 8
 render:
   debug_color: [110, 130, 75]
   debug_size: 1.4

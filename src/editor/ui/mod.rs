@@ -1,6 +1,7 @@
 #![allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub mod color_picker;
 pub mod lighting_panel;
+pub mod mobs_panel;
 pub mod modal;
 pub mod palette;
 pub mod panel_roots;
@@ -21,6 +22,7 @@ use crate::editor::systems::{
     open_save_as_impl,
 };
 use crate::editor::ui::lighting_panel::spawn_lighting_panel;
+use crate::editor::ui::mobs_panel::spawn_mobs_panel;
 use crate::editor::ui::palette::spawn_palette_panel;
 use crate::editor::ui::properties::spawn_properties_panel;
 use crate::editor::ui::spawn_groups_panel::spawn_spawn_groups_panel;
@@ -66,6 +68,8 @@ pub struct EditorSaveAsTemplateButton;
 pub struct EditorTemplatesToggleButton;
 #[derive(Component)]
 pub struct EditorSpawnGroupsToggleButton;
+#[derive(Component)]
+pub struct EditorMobsToggleButton;
 #[derive(Component)]
 pub struct EditorLightingToggleButton;
 #[derive(Component)]
@@ -144,6 +148,7 @@ pub fn spawn_editor_hud(
                 );
                 spawn_top_btn(bar, "Templates", EditorTemplatesToggleButton);
                 spawn_top_btn(bar, "Spawn Groups", EditorSpawnGroupsToggleButton);
+                spawn_top_btn(bar, "Mobs", EditorMobsToggleButton);
                 spawn_top_btn(bar, "Lighting", EditorLightingToggleButton);
 
                 // Spacer
@@ -199,6 +204,7 @@ pub fn spawn_editor_hud(
                     },));
                     spawn_templates_panel(row);
                     spawn_spawn_groups_panel(row);
+                    spawn_mobs_panel(row);
                     spawn_lighting_panel(row);
                     spawn_properties_panel(row);
                 });
@@ -302,6 +308,19 @@ pub fn sync_editor_top_bar(
             Without<EditorTemplatesToggleButton>,
         ),
     >,
+    mut mobs_btn: Query<
+        (&Interaction, &mut BackgroundColor, &mut BorderColor),
+        (
+            With<EditorMobsToggleButton>,
+            Without<EditorSaveButton>,
+            Without<EditorPortalToolButton>,
+            Without<EditorUndoButton>,
+            Without<EditorRedoButton>,
+            Without<EditorSelectToolButton>,
+            Without<EditorTemplatesToggleButton>,
+            Without<EditorSpawnGroupsToggleButton>,
+        ),
+    >,
     mut lighting_btn: Query<
         (&Interaction, &mut BackgroundColor, &mut BorderColor),
         (
@@ -313,6 +332,7 @@ pub fn sync_editor_top_bar(
             Without<EditorSelectToolButton>,
             Without<EditorTemplatesToggleButton>,
             Without<EditorSpawnGroupsToggleButton>,
+            Without<EditorMobsToggleButton>,
         ),
     >,
 ) {
@@ -328,6 +348,7 @@ pub fn sync_editor_top_bar(
     let is_select = editor_state.current_tool == EditorTool::Select;
     let is_templates = editor_state.templates_panel_visible;
     let is_spawn_groups = editor_state.spawn_groups_panel_visible;
+    let is_mobs = editor_state.mobs_panel_visible;
     let is_lighting = editor_state.lighting_panel_visible;
 
     for (interaction, mut bg, mut border) in &mut save_btn {
@@ -362,6 +383,11 @@ pub fn sync_editor_top_bar(
     }
     for (interaction, mut bg, mut border) in &mut spawn_groups_btn {
         let (b, br) = btn_colors(*interaction, is_spawn_groups);
+        bg.0 = b;
+        *border = BorderColor::all(br);
+    }
+    for (interaction, mut bg, mut border) in &mut mobs_btn {
+        let (b, br) = btn_colors(*interaction, is_mobs);
         bg.0 = b;
         *border = BorderColor::all(br);
     }
@@ -541,6 +567,17 @@ pub fn handle_spawn_groups_toggle_button_click(
     for interaction in &btn {
         if *interaction == Interaction::Pressed {
             editor_state.spawn_groups_panel_visible = !editor_state.spawn_groups_panel_visible;
+        }
+    }
+}
+
+pub fn handle_mobs_toggle_button_click(
+    btn: Query<&Interaction, (Changed<Interaction>, With<EditorMobsToggleButton>)>,
+    mut editor_state: ResMut<EditorState>,
+) {
+    for interaction in &btn {
+        if *interaction == Interaction::Pressed {
+            editor_state.mobs_panel_visible = !editor_state.mobs_panel_visible;
         }
     }
 }

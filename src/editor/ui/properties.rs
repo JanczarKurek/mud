@@ -67,19 +67,6 @@ pub enum BehaviorButtonKind {
 #[derive(Component)]
 pub struct BehaviorPickBoundsButton;
 
-#[derive(Component, Clone, Copy)]
-pub struct BehaviorNudgeButton {
-    pub field: BehaviorNudgeField,
-    pub delta: i32,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum BehaviorNudgeField {
-    StepIntervalTenths,
-    DetectDistance,
-    DisengageDistance,
-}
-
 #[derive(Component, Clone)]
 pub struct DialogSelectButton {
     pub dialog_id: Option<String>,
@@ -440,45 +427,6 @@ fn spawn_behavior_section(parent: &mut ChildSpawnerCommands, behavior: Option<&M
                     TextColor(Color::srgb(0.92, 0.86, 0.74)),
                 ));
             });
-
-            // Numeric nudge rows (visible when a behavior is set).
-            if let Some(b) = behavior {
-                let (step, detect, disengage) = match b {
-                    MapBehavior::Roam {
-                        step_interval_seconds,
-                        ..
-                    } => (*step_interval_seconds, None, None),
-                    MapBehavior::RoamAndChase {
-                        step_interval_seconds,
-                        detect_distance_tiles,
-                        disengage_distance_tiles,
-                        ..
-                    } => (
-                        *step_interval_seconds,
-                        Some(*detect_distance_tiles),
-                        Some(*disengage_distance_tiles),
-                    ),
-                };
-                nudge_row(
-                    sec,
-                    &format!("step {step:.2}s"),
-                    BehaviorNudgeField::StepIntervalTenths,
-                );
-                if let Some(d) = detect {
-                    nudge_row(
-                        sec,
-                        &format!("detect {d}t"),
-                        BehaviorNudgeField::DetectDistance,
-                    );
-                }
-                if let Some(d) = disengage {
-                    nudge_row(
-                        sec,
-                        &format!("dis. {d}t"),
-                        BehaviorNudgeField::DisengageDistance,
-                    );
-                }
-            }
         });
 }
 
@@ -507,82 +455,16 @@ fn behavior_button(parent: &mut ChildSpawnerCommands, label: &str, kind: Behavio
         });
 }
 
-fn nudge_row(parent: &mut ChildSpawnerCommands, label: &str, field: BehaviorNudgeField) {
-    parent
-        .spawn((Node {
-            width: Val::Percent(100.0),
-            flex_direction: FlexDirection::Row,
-            column_gap: Val::Px(4.0),
-            align_items: AlignItems::Center,
-            ..default()
-        },))
-        .with_children(|row| {
-            nudge_button(row, "−", BehaviorNudgeButton { field, delta: -1 });
-            row.spawn((
-                Text::new(label.to_owned()),
-                TextFont {
-                    font_size: 10.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(0.78, 0.74, 0.66)),
-                Node {
-                    flex_grow: 1.0,
-                    ..default()
-                },
-            ));
-            nudge_button(row, "+", BehaviorNudgeButton { field, delta: 1 });
-        });
-}
-
-fn nudge_button(parent: &mut ChildSpawnerCommands, label: &str, marker: BehaviorNudgeButton) {
-    parent
-        .spawn((
-            Button,
-            marker,
-            Node {
-                padding: UiRect::axes(Val::Px(6.0), Val::Px(2.0)),
-                border: UiRect::all(Val::Px(1.0)),
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.14, 0.10, 0.08, 0.95)),
-            BorderColor::all(Color::srgb(0.40, 0.30, 0.20)),
-        ))
-        .with_children(|b| {
-            b.spawn((
-                Text::new(label),
-                TextFont {
-                    font_size: 11.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(0.92, 0.86, 0.74)),
-            ));
-        });
-}
-
 fn behavior_summary(behavior: Option<&MapBehavior>) -> String {
     match behavior {
         None => "(no behavior)".to_owned(),
-        Some(MapBehavior::Roam {
-            step_interval_seconds,
-            bounds,
-        }) => format!(
-            "Roam {:.2}s ({},{})-({},{})",
-            step_interval_seconds, bounds.min_x, bounds.min_y, bounds.max_x, bounds.max_y
+        Some(MapBehavior::Roam { bounds }) => format!(
+            "Roam  ({},{})-({},{})",
+            bounds.min_x, bounds.min_y, bounds.max_x, bounds.max_y
         ),
-        Some(MapBehavior::RoamAndChase {
-            step_interval_seconds,
-            bounds,
-            detect_distance_tiles,
-            disengage_distance_tiles,
-        }) => format!(
-            "Chase d={} dis={} {:.2}s ({},{})-({},{})",
-            detect_distance_tiles,
-            disengage_distance_tiles,
-            step_interval_seconds,
-            bounds.min_x,
-            bounds.min_y,
-            bounds.max_x,
-            bounds.max_y
+        Some(MapBehavior::RoamAndChase { bounds }) => format!(
+            "Chase  ({},{})-({},{})",
+            bounds.min_x, bounds.min_y, bounds.max_x, bounds.max_y
         ),
     }
 }
@@ -744,17 +626,10 @@ pub fn handle_behavior_set_buttons(
             continue;
         }
         let before = object_registry.behavior(selected).cloned();
+        let bounds = existing_bounds(&before).unwrap_or(DEFAULT_BEHAVIOR_BOUNDS);
         let next = match btn.kind {
-            BehaviorButtonKind::Roam => Some(MapBehavior::Roam {
-                step_interval_seconds: 0.5,
-                bounds: existing_bounds(&before).unwrap_or(DEFAULT_BEHAVIOR_BOUNDS),
-            }),
-            BehaviorButtonKind::RoamAndChase => Some(MapBehavior::RoamAndChase {
-                step_interval_seconds: 0.5,
-                bounds: existing_bounds(&before).unwrap_or(DEFAULT_BEHAVIOR_BOUNDS),
-                detect_distance_tiles: existing_detect(&before).unwrap_or(4),
-                disengage_distance_tiles: existing_disengage(&before).unwrap_or(6),
-            }),
+            BehaviorButtonKind::Roam => Some(MapBehavior::Roam { bounds }),
+            BehaviorButtonKind::RoamAndChase => Some(MapBehavior::RoamAndChase { bounds }),
             BehaviorButtonKind::Clear => None,
         };
         object_registry.set_behavior(selected, next);
@@ -804,27 +679,9 @@ pub fn apply_pick_rect_to_instance_behavior(
     };
     let before = object_registry.behavior(selected).cloned();
     let next = Some(match before.clone() {
-        Some(MapBehavior::Roam {
-            step_interval_seconds,
-            ..
-        }) => MapBehavior::Roam {
-            step_interval_seconds,
-            bounds: picked.rect,
-        },
-        Some(MapBehavior::RoamAndChase {
-            step_interval_seconds,
-            detect_distance_tiles,
-            disengage_distance_tiles,
-            ..
-        }) => MapBehavior::RoamAndChase {
-            step_interval_seconds,
-            bounds: picked.rect,
-            detect_distance_tiles,
-            disengage_distance_tiles,
-        },
+        Some(existing) => existing.with_bounds(picked.rect),
         // No behavior yet: default to Roam at the picked rect.
         None => MapBehavior::Roam {
-            step_interval_seconds: 0.5,
             bounds: picked.rect,
         },
     });
@@ -835,91 +692,6 @@ pub fn apply_pick_rect_to_instance_behavior(
     });
     editor_state.dirty = true;
     pick_result.pending = None;
-}
-
-pub fn handle_behavior_nudge_buttons(
-    btns: Query<(&BehaviorNudgeButton, &Interaction), (Changed<Interaction>, With<Button>)>,
-    mut object_registry: ResMut<ObjectRegistry>,
-    mut undo_stack: ResMut<UndoStack>,
-    mut editor_state: ResMut<EditorState>,
-) {
-    let Some(selected) = editor_state.selected_object_id else {
-        return;
-    };
-    for (btn, interaction) in &btns {
-        if *interaction != Interaction::Pressed {
-            continue;
-        }
-        let Some(before) = object_registry.behavior(selected).cloned() else {
-            continue;
-        };
-        let next = match (before.clone(), btn.field) {
-            (
-                MapBehavior::Roam {
-                    step_interval_seconds,
-                    bounds,
-                },
-                BehaviorNudgeField::StepIntervalTenths,
-            ) => MapBehavior::Roam {
-                step_interval_seconds: ((step_interval_seconds * 10.0).round() as i32 + btn.delta)
-                    .max(1) as f32
-                    / 10.0,
-                bounds,
-            },
-            (
-                MapBehavior::RoamAndChase {
-                    step_interval_seconds,
-                    bounds,
-                    detect_distance_tiles,
-                    disengage_distance_tiles,
-                },
-                BehaviorNudgeField::StepIntervalTenths,
-            ) => MapBehavior::RoamAndChase {
-                step_interval_seconds: ((step_interval_seconds * 10.0).round() as i32 + btn.delta)
-                    .max(1) as f32
-                    / 10.0,
-                bounds,
-                detect_distance_tiles,
-                disengage_distance_tiles,
-            },
-            (
-                MapBehavior::RoamAndChase {
-                    step_interval_seconds,
-                    bounds,
-                    detect_distance_tiles,
-                    disengage_distance_tiles,
-                },
-                BehaviorNudgeField::DetectDistance,
-            ) => MapBehavior::RoamAndChase {
-                step_interval_seconds,
-                bounds,
-                detect_distance_tiles: (detect_distance_tiles + btn.delta).max(0),
-                disengage_distance_tiles,
-            },
-            (
-                MapBehavior::RoamAndChase {
-                    step_interval_seconds,
-                    bounds,
-                    detect_distance_tiles,
-                    disengage_distance_tiles,
-                },
-                BehaviorNudgeField::DisengageDistance,
-            ) => MapBehavior::RoamAndChase {
-                step_interval_seconds,
-                bounds,
-                detect_distance_tiles,
-                disengage_distance_tiles: (disengage_distance_tiles + btn.delta).max(0),
-            },
-            // detect/disengage nudges are no-ops for plain Roam.
-            (other, _) => other,
-        };
-        object_registry.set_behavior(selected, Some(next));
-        undo_stack.push_undo(UndoOp::SetBehavior {
-            object_id: selected,
-            before: Some(before),
-        });
-        editor_state.dirty = true;
-    }
 }
 
 pub fn handle_dialog_select_buttons(
@@ -960,28 +732,5 @@ pub fn handle_dialog_select_buttons(
 }
 
 fn existing_bounds(behavior: &Option<MapBehavior>) -> Option<TileRectangle> {
-    behavior.as_ref().map(|b| match b {
-        MapBehavior::Roam { bounds, .. } => *bounds,
-        MapBehavior::RoamAndChase { bounds, .. } => *bounds,
-    })
-}
-
-fn existing_detect(behavior: &Option<MapBehavior>) -> Option<i32> {
-    behavior.as_ref().and_then(|b| match b {
-        MapBehavior::RoamAndChase {
-            detect_distance_tiles,
-            ..
-        } => Some(*detect_distance_tiles),
-        _ => None,
-    })
-}
-
-fn existing_disengage(behavior: &Option<MapBehavior>) -> Option<i32> {
-    behavior.as_ref().and_then(|b| match b {
-        MapBehavior::RoamAndChase {
-            disengage_distance_tiles,
-            ..
-        } => Some(*disengage_distance_tiles),
-        _ => None,
-    })
+    behavior.as_ref().map(|b| b.bounds())
 }

@@ -58,9 +58,6 @@ objects:
     placement: { x: 10, y: 8 }
     behavior:
       kind: roam_and_chase
-      step_interval_seconds: 0.85
-      detect_distance_tiles: 5
-      disengage_distance_tiles: 7
       bounds:
         min_x: 8
         min_y: 5
@@ -70,9 +67,6 @@ objects:
     placement: { x: 22, y: 14 }
     behavior:
       kind: roam_and_chase
-      step_interval_seconds: 0.95
-      detect_distance_tiles: 5
-      disengage_distance_tiles: 8
       bounds:
         min_x: 15
         min_y: 11

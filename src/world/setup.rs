@@ -1,7 +1,6 @@
 use bevy::prelude::*;
 
 use crate::combat::components::{AttackProfile, CombatLeash};
-use crate::world::animation::{build_animated_sprite_components, AnimatedSprite};
 use crate::combat::damage_expr::DamageExpr;
 use crate::npc::components::{
     AiMemory, AiState, HostileBehavior, Npc, RoamBounds, RoamingBehavior, RoamingRandomState,
@@ -12,6 +11,7 @@ use crate::player::components::InventoryStack;
 use crate::player::components::{
     AttributeSet, BaseStats, DefenseStats, DerivedStats, VitalStats, WeaponDamage,
 };
+use crate::world::animation::{build_animated_sprite_components, AnimatedSprite};
 use crate::world::components::{
     ClientProjectedWorldObject, ClientRemotePlayerVisual, CombatHealthBar, DisplayedVitalStats,
     Facing, HealthBarDisplayPolicy, OverworldObject, SpaceId, SpacePosition, SpaceResident,
@@ -20,8 +20,7 @@ use crate::world::components::{
 use crate::world::direction::Direction;
 use crate::world::floor_map::FloorMaps;
 use crate::world::map_layout::{
-    MapBehavior, PortalDefinition, ResolvedObject, SpaceDefinition, SpaceDefinitions,
-    SpacePermanence,
+    PortalDefinition, ResolvedObject, SpaceDefinition, SpaceDefinitions, SpacePermanence,
 };
 use crate::world::object_definitions::{
     AttackProfileKindDef, OverworldObjectDefinition, OverworldObjectDefinitions, StatModifiers,
@@ -286,72 +285,56 @@ pub fn spawn_overworld_object_instance(
             let seed = object.id.wrapping_mul(1_103_515_245).wrapping_add(12_345);
             let jitter_frac = (seed % 1024) as f32 / 1024.0;
 
-            match behavior {
-                MapBehavior::Roam {
-                    step_interval_seconds,
-                    bounds,
-                } => {
-                    let step = (*step_interval_seconds).max(0.05);
-                    entity_commands.insert((
-                        RoamingBehavior {
-                            bounds: RoamBounds {
-                                min_x: bounds.min_x,
-                                min_y: bounds.min_y,
-                                max_x: bounds.max_x,
-                                max_y: bounds.max_y,
-                            },
-                            step_interval_seconds: step,
-                            step_interval_jitter_seconds: step * 0.3,
-                            idle_pause_chance: 0.3,
-                            momentum_bias: 0.6,
-                        },
-                        RoamingStepTimer {
-                            remaining_seconds: jitter_frac * step,
-                        },
-                        RoamingRandomState { seed },
-                        AiState::default(),
-                        AiMemory::default(),
-                    ));
-                }
-                MapBehavior::RoamAndChase {
-                    step_interval_seconds,
-                    bounds,
-                    detect_distance_tiles,
-                    disengage_distance_tiles,
-                } => {
-                    let step = (*step_interval_seconds).max(0.05);
-                    entity_commands.insert((
-                        RoamingBehavior {
-                            bounds: RoamBounds {
-                                min_x: bounds.min_x,
-                                min_y: bounds.min_y,
-                                max_x: bounds.max_x,
-                                max_y: bounds.max_y,
-                            },
-                            step_interval_seconds: step,
-                            step_interval_jitter_seconds: step * 0.3,
-                            idle_pause_chance: 0.3,
-                            momentum_bias: 0.6,
-                        },
-                        HostileBehavior {
-                            detect_distance_tiles: (*detect_distance_tiles).max(1),
-                            disengage_distance_tiles: (*disengage_distance_tiles)
-                                .max(*detect_distance_tiles),
-                            alert_duration_seconds: 4.0,
-                            requires_line_of_sight: true,
-                        },
-                        CombatLeash {
-                            max_distance_tiles: (*disengage_distance_tiles)
-                                .max(*detect_distance_tiles),
-                        },
-                        RoamingStepTimer {
-                            remaining_seconds: jitter_frac * step,
-                        },
-                        RoamingRandomState { seed },
-                        AiState::default(),
-                        AiMemory::default(),
-                    ));
-                }
+            let bounds = behavior.bounds();
+            let hostile = behavior.hostile();
+            let Some(npc_defaults) = definition.and_then(|d| d.npc_behavior.as_ref()) else {
+                warn!(
+                    "spawn for '{}' has a MapBehavior but the template has no \
+                     `npc_behavior:` block — skipping behavior attachment",
+                    object.type_id
+                );
+                return entity;
+            };
+            let step = npc_defaults.step_interval_seconds.max(0.05);
+            let jitter = if npc_defaults.step_interval_jitter_seconds > 0.0 {
+                npc_defaults.step_interval_jitter_seconds
+            } else {
+                step * 0.3
+            };
+            entity_commands.insert((
+                RoamingBehavior {
+                    bounds: RoamBounds {
+                        min_x: bounds.min_x,
+                        min_y: bounds.min_y,
+                        max_x: bounds.max_x,
+                        max_y: bounds.max_y,
+                    },
+                    step_interval_seconds: step,
+                    step_interval_jitter_seconds: jitter,
+                    idle_pause_chance: npc_defaults.idle_pause_chance,
+                    momentum_bias: npc_defaults.momentum_bias,
+                },
+                RoamingStepTimer {
+                    remaining_seconds: jitter_frac * step,
+                },
+                RoamingRandomState { seed },
+                AiState::default(),
+                AiMemory::default(),
+            ));
+            if hostile {
+                let detect = npc_defaults.detect_distance_tiles.max(1);
+                let disengage = npc_defaults.disengage_distance_tiles.max(detect);
+                entity_commands.insert((
+                    HostileBehavior {
+                        detect_distance_tiles: detect,
+                        disengage_distance_tiles: disengage,
+                        alert_duration_seconds: npc_defaults.alert_duration_seconds,
+                        requires_line_of_sight: npc_defaults.requires_line_of_sight,
+                    },
+                    CombatLeash {
+                        max_distance_tiles: disengage,
+                    },
+                ));
             }
         }
     }

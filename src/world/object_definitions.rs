@@ -179,6 +179,50 @@ pub struct OverworldObjectDefinition {
     /// `detected_by` so they keep seeing it.
     #[serde(default)]
     pub can_hide: Option<CanHideDef>,
+    /// Intrinsic NPC behavior knobs (speed, detection, etc.). Presence of this
+    /// block also marks a template as a mob — the editor's Mobs palette and
+    /// the spawn factory both treat `Some(_)` as the "this is an NPC" signal.
+    #[serde(default)]
+    pub npc_behavior: Option<NpcBehaviorDefaults>,
+}
+
+/// Intrinsic per-mob behavior values copied onto each spawned NPC's
+/// `RoamingBehavior` / `HostileBehavior` components. Roam bounds and the
+/// hostile toggle remain spawner-level (see `SpawnGroupDef`); everything else
+/// is sourced from here so authors don't have to re-type the same numbers in
+/// every map.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct NpcBehaviorDefaults {
+    pub step_interval_seconds: f32,
+    #[serde(default)]
+    pub step_interval_jitter_seconds: f32,
+    #[serde(default = "default_idle_pause_chance")]
+    pub idle_pause_chance: f32,
+    #[serde(default = "default_momentum_bias")]
+    pub momentum_bias: f32,
+    pub detect_distance_tiles: i32,
+    pub disengage_distance_tiles: i32,
+    #[serde(default = "default_alert_duration_seconds")]
+    pub alert_duration_seconds: f32,
+    #[serde(default = "default_requires_line_of_sight")]
+    pub requires_line_of_sight: bool,
+}
+
+fn default_idle_pause_chance() -> f32 {
+    0.3
+}
+
+fn default_momentum_bias() -> f32 {
+    0.6
+}
+
+fn default_alert_duration_seconds() -> f32 {
+    4.0
+}
+
+fn default_requires_line_of_sight() -> bool {
+    true
 }
 
 /// Authoring block for the player-driven Hide action.

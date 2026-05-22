@@ -365,7 +365,6 @@ mod tests {
                 tiles: None,
             },
             behavior: MapBehavior::Roam {
-                step_interval_seconds: 0.5,
                 bounds: TileRectangle {
                     min_x: 0,
                     min_y: 0,

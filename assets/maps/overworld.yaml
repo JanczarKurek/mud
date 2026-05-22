@@ -3421,7 +3421,6 @@ spawn_groups:
       max_y: 47
   behavior:
     kind: roam
-    step_interval_seconds: 0.5
     bounds:
       min_x: 7
       min_y: 31
@@ -3439,14 +3438,11 @@ spawn_groups:
       max_y: 13
   behavior:
     kind: roam_and_chase
-    step_interval_seconds: 0.9
     bounds:
       min_x: 44
       min_y: 5
       max_x: 52
       max_y: 13
-    detect_distance_tiles: 5
-    disengage_distance_tiles: 8
 - id: east_goblin_camp
   template: goblin
   max_count: 2
@@ -3459,14 +3455,11 @@ spawn_groups:
       max_y: 34
   behavior:
     kind: roam_and_chase
-    step_interval_seconds: 0.9
     bounds:
       min_x: 47
       min_y: 26
       max_x: 60
       max_y: 34
-    detect_distance_tiles: 5
-    disengage_distance_tiles: 8
 - id: south_goblin_outpost
   template: goblin
   max_count: 1
@@ -3479,14 +3472,11 @@ spawn_groups:
       max_y: 49
   behavior:
     kind: roam_and_chase
-    step_interval_seconds: 1.0
     bounds:
       min_x: 50
       min_y: 43
       max_x: 58
       max_y: 49
-    detect_distance_tiles: 5
-    disengage_distance_tiles: 8
 - id: archer_goblin_post
   template: archer_goblin
   max_count: 1
@@ -3499,14 +3489,11 @@ spawn_groups:
       max_y: 16
   behavior:
     kind: roam_and_chase
-    step_interval_seconds: 1.0
     bounds:
       min_x: 54
       min_y: 8
       max_x: 62
       max_y: 16
-    detect_distance_tiles: 8
-    disengage_distance_tiles: 14
 - id: cyclops_lair
   template: cyclops
   max_count: 1
@@ -3519,14 +3506,11 @@ spawn_groups:
       max_y: 49
   behavior:
     kind: roam_and_chase
-    step_interval_seconds: 1.4
     bounds:
       min_x: 50
       min_y: 42
       max_x: 62
       max_y: 49
-    detect_distance_tiles: 5
-    disengage_distance_tiles: 8
 - id: fire_elemental_glade
   template: fire_elemental
   max_count: 2
@@ -3539,11 +3523,8 @@ spawn_groups:
       max_y: 14
   behavior:
     kind: roam_and_chase
-    step_interval_seconds: 1.1
     bounds:
       min_x: 28
       min_y: 5
       max_x: 40
       max_y: 14
-    detect_distance_tiles: 6
-    disengage_distance_tiles: 10

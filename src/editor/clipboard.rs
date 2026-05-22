@@ -530,7 +530,7 @@ pub fn render_paste_ghost(
     let Some(cursor) = window.cursor_position() else {
         return;
     };
-    if panel_roots.cursor_over(cursor) {
+    if panel_roots.cursor_over(cursor, window.scale_factor()) {
         return;
     }
     let tile = cursor_tile(cursor, window, &world_config, &editor_camera);
@@ -674,7 +674,7 @@ pub fn handle_editor_paste_click(
     let Some(cursor) = window.cursor_position() else {
         return;
     };
-    if panel_roots.cursor_over(cursor) {
+    if panel_roots.cursor_over(cursor, window.scale_factor()) {
         return;
     }
     let tile = cursor_tile(cursor, window, &world_config, &editor_camera);
@@ -779,15 +779,12 @@ mod tests {
                 type_id: "goblin".to_owned(),
                 properties: std::collections::HashMap::new(),
                 behavior: Some(MapBehavior::RoamAndChase {
-                    step_interval_seconds: 0.6,
                     bounds: TileRectangle {
                         min_x: 1,
                         min_y: 2,
                         max_x: 5,
                         max_y: 6,
                     },
-                    detect_distance_tiles: 4,
-                    disengage_distance_tiles: 8,
                 }),
             }],
             floors: Vec::new(),
@@ -799,17 +796,9 @@ mod tests {
             .as_ref()
             .expect("behavior preserved");
         match parsed_behavior {
-            MapBehavior::RoamAndChase {
-                step_interval_seconds,
-                bounds,
-                detect_distance_tiles,
-                disengage_distance_tiles,
-            } => {
-                assert!((step_interval_seconds - 0.6).abs() < 1e-6);
+            MapBehavior::RoamAndChase { bounds } => {
                 assert_eq!(bounds.min_x, 1);
                 assert_eq!(bounds.max_y, 6);
-                assert_eq!(*detect_distance_tiles, 4);
-                assert_eq!(*disengage_distance_tiles, 8);
             }
             other => panic!("unexpected behavior variant: {other:?}"),
         }

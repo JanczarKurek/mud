@@ -52,7 +52,7 @@ pub fn handle_editor_select_drag(
     let Some(cursor) = window.cursor_position() else {
         return;
     };
-    if panel_roots.cursor_over(cursor) {
+    if panel_roots.cursor_over(cursor, window.scale_factor()) {
         return;
     }
 
@@ -174,7 +174,7 @@ pub fn handle_editor_pick_rect_drag(
     let Some(cursor) = window.cursor_position() else {
         return;
     };
-    if panel_roots.cursor_over(cursor) {
+    if panel_roots.cursor_over(cursor, window.scale_factor()) {
         return;
     }
 

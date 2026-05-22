@@ -31,9 +31,7 @@ use crate::world::map_layout::{
 use crate::world::object_definitions::{OverworldObjectDefinition, OverworldObjectDefinitions};
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::resources::{RuntimeSpace, SpaceManager};
-use crate::world::setup::{
-    build_object_visual_bundle, instantiate_space, spawn_overworld_object,
-};
+use crate::world::setup::{build_object_visual_bundle, instantiate_space, spawn_overworld_object};
 use crate::world::WorldConfig;
 
 // ── Visuals helper (public so undo.rs can use it) ────────────────────────────
@@ -343,9 +341,10 @@ pub fn handle_editor_zoom(
     // belongs to the palette scroll handler.
     if let Ok(window) = windows.single() {
         if let Some(cursor) = window.cursor_position() {
+            let physical = cursor * window.scale_factor();
             if palette_root
                 .iter()
-                .any(|(computed, transform)| computed.contains_point(*transform, cursor))
+                .any(|(computed, transform)| computed.contains_point(*transform, physical))
             {
                 mouse_wheel.clear();
                 return;
@@ -460,7 +459,7 @@ pub fn handle_editor_middle_drag_pan(
     };
 
     if mouse.just_pressed(MouseButton::Middle) {
-        if panel_roots.cursor_over(cursor) {
+        if panel_roots.cursor_over(cursor, window.scale_factor()) {
             state.active = false;
             state.last_cursor = None;
             return;
@@ -528,7 +527,7 @@ pub fn update_editor_cursor_ghost(
     let Some(cursor) = window.cursor_position() else {
         return;
     };
-    if panel_roots.cursor_over(cursor) {
+    if panel_roots.cursor_over(cursor, window.scale_factor()) {
         return;
     }
 
@@ -668,7 +667,7 @@ pub fn handle_editor_left_click(
     let Some(cursor) = window.cursor_position() else {
         return;
     };
-    if panel_roots.cursor_over(cursor) {
+    if panel_roots.cursor_over(cursor, window.scale_factor()) {
         return;
     }
     let tile = cursor_to_tile(cursor, window, &world_config, &editor_camera);
@@ -827,7 +826,7 @@ pub fn handle_editor_right_click(
     let Some(cursor) = window.cursor_position() else {
         return;
     };
-    if panel_roots.cursor_over(cursor) {
+    if panel_roots.cursor_over(cursor, window.scale_factor()) {
         return;
     }
 
@@ -935,7 +934,7 @@ pub fn handle_editor_floor_brush_drag(
     let Some(cursor) = window.cursor_position() else {
         return;
     };
-    if panel_roots.cursor_over(cursor) {
+    if panel_roots.cursor_over(cursor, window.scale_factor()) {
         return;
     }
     let tile = cursor_to_tile(cursor, window, &world_config, &editor_camera);
@@ -2020,14 +2019,6 @@ fn build_spawn_group_from_draft(
             }
         }
     };
-    let step_interval_seconds: f32 = draft
-        .step_interval_seconds
-        .trim()
-        .parse()
-        .map_err(|_| "step_interval_seconds must be a positive number.".to_owned())?;
-    if !step_interval_seconds.is_finite() || step_interval_seconds <= 0.0 {
-        return Err("step_interval_seconds must be > 0.".into());
-    }
     let bhv_rect = parse_rect(
         "behavior bounds",
         &draft.bhv_min_x,
@@ -2036,29 +2027,8 @@ fn build_spawn_group_from_draft(
         &draft.bhv_max_y,
     )?;
     let behavior = match draft.behavior_kind {
-        BehaviorKind::Roam => MapBehavior::Roam {
-            step_interval_seconds,
-            bounds: bhv_rect,
-        },
-        BehaviorKind::RoamAndChase => {
-            let detect_distance_tiles: i32 =
-                draft.detect_distance_tiles.trim().parse().map_err(|_| {
-                    "detect_distance_tiles must be a non-negative integer.".to_owned()
-                })?;
-            let disengage_distance_tiles: i32 =
-                draft.disengage_distance_tiles.trim().parse().map_err(|_| {
-                    "disengage_distance_tiles must be a non-negative integer.".to_owned()
-                })?;
-            if detect_distance_tiles < 0 || disengage_distance_tiles < 0 {
-                return Err("detect/disengage distances must be >= 0.".into());
-            }
-            MapBehavior::RoamAndChase {
-                step_interval_seconds,
-                bounds: bhv_rect,
-                detect_distance_tiles,
-                disengage_distance_tiles,
-            }
-        }
+        BehaviorKind::Roam => MapBehavior::Roam { bounds: bhv_rect },
+        BehaviorKind::RoamAndChase => MapBehavior::RoamAndChase { bounds: bhv_rect },
     };
     Ok(SpawnGroupDef {
         id,

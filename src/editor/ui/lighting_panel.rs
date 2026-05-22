@@ -36,6 +36,17 @@ pub struct EditorLightingContent;
 #[derive(Component)]
 pub struct LightingScrubberTrack;
 
+/// Filled portion of the time-of-day bar; width is `Val::Percent(ratio * 100.0)`.
+/// Kept as a stable child entity so `sync_lighting_scrubber_visual` can update
+/// it without despawning the scrubber `Button`, which would destroy the
+/// `Interaction::Pressed` state mid-drag.
+#[derive(Component)]
+pub struct LightingScrubberFill;
+
+/// Text node showing the current ratio next to the scrubber bar.
+#[derive(Component)]
+pub struct LightingScrubberLabel;
+
 #[derive(Component, Clone, Copy)]
 pub struct LightingKeyframeRow {
     pub index: usize,
@@ -164,8 +175,11 @@ pub fn sync_lighting_panel_visibility(
     }
 }
 
-/// Rebuild the panel contents whenever the buffer, world clock, or
-/// visibility flag changes.
+/// Rebuild the panel contents whenever the buffer or visibility flag changes.
+/// Deliberately **not** triggered by `WorldClock` changes — the scrubber drag
+/// writes to it every frame, and a full despawn/respawn here would nuke the
+/// scrubber `Button`'s `Interaction::Pressed` state and break the drag. The
+/// per-frame fill update lives in `sync_lighting_scrubber_visual` below.
 pub fn sync_lighting_panel(
     editor_state: Res<EditorState>,
     buffer: Res<EditorLightingBuffer>,
@@ -176,7 +190,7 @@ pub fn sync_lighting_panel(
     if !editor_state.lighting_panel_visible {
         return;
     }
-    if !buffer.is_changed() && !world_clock.is_changed() && !editor_state.is_changed() {
+    if !buffer.is_changed() && !editor_state.is_changed() {
         return;
     }
 
@@ -215,6 +229,7 @@ pub fn sync_lighting_panel(
                 .with_children(|track| {
                     // Filled portion
                     track.spawn((
+                        LightingScrubberFill,
                         Node {
                             width: Val::Percent(ratio * 100.0),
                             height: Val::Percent(100.0),
@@ -224,6 +239,7 @@ pub fn sync_lighting_panel(
                     ));
                 });
                 row.spawn((
+                    LightingScrubberLabel,
                     Text::new(format!("{ratio:.3}")),
                     TextFont {
                         font_size: 11.0,
@@ -683,6 +699,31 @@ fn open_keyframe_modal(
     modal_state.lighting_keyframe_draft = Some(draft);
 }
 
+/// Cheap in-place update of the scrubber's filled portion + ratio label,
+/// reflecting the current `time_of_day` without rebuilding the panel.
+/// Keeping the scrubber `Button` entity alive is what lets the drag handler
+/// observe a continuous `Interaction::Pressed` while the user is scrubbing.
+pub fn sync_lighting_scrubber_visual(
+    editor_state: Res<EditorState>,
+    world_clock: Res<WorldClock>,
+    mut fill_q: Query<&mut Node, With<LightingScrubberFill>>,
+    mut label_q: Query<&mut Text, With<LightingScrubberLabel>>,
+) {
+    if !editor_state.lighting_panel_visible {
+        return;
+    }
+    if !world_clock.is_changed() && !editor_state.is_changed() {
+        return;
+    }
+    let ratio = world_clock.time_of_day.clamp(0.0, 1.0);
+    for mut node in &mut fill_q {
+        node.width = Val::Percent(ratio * 100.0);
+    }
+    for mut text in &mut label_q {
+        text.0 = format!("{ratio:.3}");
+    }
+}
+
 /// Drag handler for the time scrubber. Reads the primary window's cursor
 /// position; when the mouse is held inside the track, maps the x coordinate to
 /// `time_of_day ∈ [0, 1]` and writes it to `WorldClock`.
@@ -702,6 +743,10 @@ pub fn handle_lighting_scrubber_drag(
     let Some(cursor) = window.cursor_position() else {
         return;
     };
+    // `ComputedNode::size` and `UiGlobalTransform` live in physical pixels,
+    // while `cursor_position` is logical — convert before any hit-test or
+    // ratio math so HiDPI displays don't silently produce wrong results.
+    let cursor_physical = cursor * window.scale_factor();
     for (interaction, computed, transform) in &track_q {
         // Trigger only when interaction is Pressed (mouse down) OR while
         // dragging — Bevy keeps Pressed as long as the button is held over
@@ -709,7 +754,7 @@ pub fn handle_lighting_scrubber_drag(
         if !matches!(interaction, Interaction::Pressed | Interaction::Hovered) {
             continue;
         }
-        if !computed.contains_point(*transform, cursor) {
+        if !computed.contains_point(*transform, cursor_physical) {
             continue;
         }
         let size = computed.size();
@@ -718,7 +763,7 @@ pub fn handle_lighting_scrubber_drag(
         }
         let translation = transform.translation;
         let left = translation.x - size.x * 0.5;
-        let ratio = ((cursor.x - left) / size.x).clamp(0.0, 1.0);
+        let ratio = ((cursor_physical.x - left) / size.x).clamp(0.0, 1.0);
         world_clock.time_of_day = ratio;
     }
 }

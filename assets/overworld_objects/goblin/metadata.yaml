@@ -20,6 +20,10 @@ attack_profile:
   kind: melee
   damage_type: cut
 hp: "1d6+25+constitution*3"
+npc_behavior:
+  step_interval_seconds: 0.9
+  detect_distance_tiles: 5
+  disengage_distance_tiles: 8
 render:
   debug_color:
   - 92

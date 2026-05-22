@@ -30,11 +30,15 @@ use crate::editor::systems::{
     sync_portal_overlays, sync_tile_transforms_editor, update_editor_cursor_ghost,
 };
 use crate::editor::templates::EditorTemplatesIndex;
+use crate::editor::ui::color_picker::EditorColorPickerAssets;
 use crate::editor::ui::lighting_panel::{
     handle_lighting_panel_clicks, handle_lighting_scrubber_drag, sync_lighting_panel,
-    sync_lighting_panel_visibility,
+    sync_lighting_panel_visibility, sync_lighting_scrubber_visual,
 };
-use crate::editor::ui::color_picker::EditorColorPickerAssets;
+use crate::editor::ui::mobs_panel::{
+    apply_pick_rect_for_new_spawn_group, handle_mobs_panel_group_clicks,
+    handle_mobs_panel_place_clicks, sync_mobs_panel, sync_mobs_panel_visibility,
+};
 use crate::editor::ui::modal::{
     apply_pick_rect_result_to_modal, handle_color_picker_hue_drag, handle_color_picker_sv_drag,
     handle_lighting_keyframe_field_click, handle_modal_buttons, handle_modal_keyboard_input,
@@ -48,9 +52,9 @@ use crate::editor::ui::palette::{
     sync_palette_selection,
 };
 use crate::editor::ui::properties::{
-    apply_pick_rect_to_instance_behavior, handle_add_property_button,
-    handle_behavior_nudge_buttons, handle_behavior_pick_bounds, handle_behavior_set_buttons,
-    handle_dialog_select_buttons, handle_property_row_click, sync_properties_panel,
+    apply_pick_rect_to_instance_behavior, handle_add_property_button, handle_behavior_pick_bounds,
+    handle_behavior_set_buttons, handle_dialog_select_buttons, handle_property_row_click,
+    sync_properties_panel,
 };
 use crate::editor::ui::spawn_groups_panel::{
     handle_spawn_groups_panel_clicks, render_spawn_group_overlay, sync_spawn_groups_panel,
@@ -61,12 +65,12 @@ use crate::editor::ui::templates_panel::{
 };
 use crate::editor::ui::{
     cleanup_editor_hud, handle_exit_button_click, handle_generate_dungeon_button_click,
-    handle_lighting_toggle_button_click, handle_new_map_button_click, handle_open_button_click,
-    handle_portal_tool_button_click, handle_redo_button_click, handle_save_as_button_click,
-    handle_save_as_template_button_click, handle_save_button_click,
-    handle_select_tool_button_click, handle_spawn_groups_toggle_button_click,
-    handle_templates_toggle_button_click, handle_undo_button_click, spawn_editor_hud,
-    sync_editor_top_bar,
+    handle_lighting_toggle_button_click, handle_mobs_toggle_button_click,
+    handle_new_map_button_click, handle_open_button_click, handle_portal_tool_button_click,
+    handle_redo_button_click, handle_save_as_button_click, handle_save_as_template_button_click,
+    handle_save_button_click, handle_select_tool_button_click,
+    handle_spawn_groups_toggle_button_click, handle_templates_toggle_button_click,
+    handle_undo_button_click, spawn_editor_hud, sync_editor_top_bar,
 };
 use crate::editor::undo::handle_undo_redo;
 
@@ -88,6 +92,7 @@ fn reset_editor_session_state(mut editor_state: ResMut<EditorState>) {
     editor_state.paste_state.active = false;
     editor_state.templates_panel_visible = false;
     editor_state.spawn_groups_panel_visible = false;
+    editor_state.mobs_panel_visible = false;
     editor_state.lighting_panel_visible = false;
     editor_state.tool_before_pick = None;
 }
@@ -273,7 +278,6 @@ impl Plugin for EditorPlugin {
                     handle_add_property_button,
                     handle_behavior_set_buttons,
                     handle_behavior_pick_bounds,
-                    handle_behavior_nudge_buttons,
                     handle_dialog_select_buttons,
                     apply_pick_rect_to_instance_behavior,
                 )
@@ -295,6 +299,7 @@ impl Plugin for EditorPlugin {
                     handle_save_as_template_button_click,
                     handle_templates_toggle_button_click,
                     handle_spawn_groups_toggle_button_click,
+                    handle_mobs_toggle_button_click,
                     handle_lighting_toggle_button_click,
                     handle_exit_button_click,
                 )
@@ -310,8 +315,14 @@ impl Plugin for EditorPlugin {
                     sync_spawn_groups_panel_visibility,
                     sync_spawn_groups_panel,
                     handle_spawn_groups_panel_clicks,
+                    sync_mobs_panel_visibility,
+                    sync_mobs_panel,
+                    handle_mobs_panel_place_clicks,
+                    handle_mobs_panel_group_clicks,
+                    apply_pick_rect_for_new_spawn_group,
                     sync_lighting_panel_visibility,
                     sync_lighting_panel,
+                    sync_lighting_scrubber_visual,
                     handle_lighting_panel_clicks,
                     handle_lighting_scrubber_drag,
                     sync_editor_lighting_to_world,

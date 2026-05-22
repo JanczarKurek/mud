@@ -177,20 +177,38 @@ pub struct AnonymousObjectPlacements {
     pub facing: Option<Direction>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+/// Spawner / instance-level behavior knobs. Intrinsic per-mob values
+/// (movement cadence, detection range, alert duration, LoS) live on the
+/// object definition's `npc_behavior` block (`OverworldObjectDefinition`);
+/// the only things authored here are the patrol rectangle and whether this
+/// particular spawn should chase (i.e. attach a `HostileBehavior` at spawn).
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum MapBehavior {
-    Roam {
-        step_interval_seconds: f32,
-        bounds: TileRectangle,
-    },
-    RoamAndChase {
-        step_interval_seconds: f32,
-        bounds: TileRectangle,
-        detect_distance_tiles: i32,
-        disengage_distance_tiles: i32,
-    },
+    Roam { bounds: TileRectangle },
+    RoamAndChase { bounds: TileRectangle },
+}
+
+impl MapBehavior {
+    pub fn bounds(&self) -> TileRectangle {
+        match self {
+            MapBehavior::Roam { bounds } | MapBehavior::RoamAndChase { bounds } => *bounds,
+        }
+    }
+
+    pub fn hostile(&self) -> bool {
+        matches!(self, MapBehavior::RoamAndChase { .. })
+    }
+
+    pub fn with_bounds(mut self, new_bounds: TileRectangle) -> Self {
+        match &mut self {
+            MapBehavior::Roam { bounds } | MapBehavior::RoamAndChase { bounds } => {
+                *bounds = new_bounds;
+            }
+        }
+        self
+    }
 }
 
 /// Authored spawn-group entry. Each group spawns up to `max_count` instances
@@ -1069,15 +1087,12 @@ objects:
                 tiles: None,
             },
             behavior: MapBehavior::RoamAndChase {
-                step_interval_seconds: 0.5,
                 bounds: TileRectangle {
                     min_x: 1,
                     min_y: 2,
                     max_x: 8,
                     max_y: 9,
                 },
-                detect_distance_tiles: 4,
-                disengage_distance_tiles: 6,
             },
         };
         let yaml = serde_yaml::to_string(&group).expect("serialize");
@@ -1089,17 +1104,9 @@ objects:
         let bounds = parsed.area.bounds.expect("bounds present");
         assert_eq!(bounds.min_x, 1);
         assert_eq!(bounds.max_y, 9);
-        match parsed.behavior {
-            MapBehavior::RoamAndChase {
-                detect_distance_tiles,
-                disengage_distance_tiles,
-                ..
-            } => {
-                assert_eq!(detect_distance_tiles, 4);
-                assert_eq!(disengage_distance_tiles, 6);
-            }
-            _ => panic!("expected RoamAndChase"),
-        }
+        assert!(parsed.behavior.hostile());
+        assert_eq!(parsed.behavior.bounds().min_x, 1);
+        assert_eq!(parsed.behavior.bounds().max_y, 9);
     }
 
     #[test]
@@ -1120,10 +1127,7 @@ spawn_groups:
       bounds: { min_x: 1, min_y: 2, max_x: 8, max_y: 9 }
     behavior:
       kind: roam_and_chase
-      step_interval_seconds: 0.5
       bounds: { min_x: 1, min_y: 2, max_x: 8, max_y: 9 }
-      detect_distance_tiles: 4
-      disengage_distance_tiles: 6
 "#;
         let def: SpaceDefinition = serde_yaml::from_str(yaml).expect("parse space");
         assert_eq!(def.spawn_groups.len(), 1);

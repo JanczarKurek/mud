@@ -26,6 +26,10 @@ attack_profile:
 damage: "1d8+strength/3"
 hp: "2d10+50+constitution*4"
 armor: 2
+npc_behavior:
+  step_interval_seconds: 1.1
+  detect_distance_tiles: 6
+  disengage_distance_tiles: 10
 render:
   debug_color: [232, 96, 32]
   debug_size: 1.15

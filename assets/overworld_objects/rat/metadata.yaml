@@ -14,6 +14,10 @@ attack_profile:
   kind: melee
   damage_type: pierce
 hp: "1d4+10+constitution*2"
+npc_behavior:
+  step_interval_seconds: 0.5
+  detect_distance_tiles: 4
+  disengage_distance_tiles: 6
 render:
   debug_color: [130, 105, 80]
   debug_size: 0.70

@@ -39,9 +39,6 @@ spawn_groups:
       bounds: { min_x: 1, min_y: 1, max_x: 10, max_y: 8 }
     behavior:
       kind: roam_and_chase
-      detect_distance_tiles: 4
-      disengage_distance_tiles: 6
-      step_interval_seconds: 0.5
       bounds: { min_x: 1, min_y: 1, max_x: 10, max_y: 8 }
 
 objects:

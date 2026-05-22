@@ -8,6 +8,7 @@ use bevy::prelude::*;
 use bevy::ui::{ComputedNode, UiGlobalTransform};
 
 use crate::editor::ui::lighting_panel::EditorLightingRoot;
+use crate::editor::ui::mobs_panel::EditorMobsRoot;
 use crate::editor::ui::modal::ModalOverlayRoot;
 use crate::editor::ui::palette::EditorPaletteRoot;
 use crate::editor::ui::properties::EditorPropertiesRoot;
@@ -41,6 +42,7 @@ pub struct EditorPanelRoots<'w, 's> {
         (&'static ComputedNode, &'static UiGlobalTransform),
         With<EditorSpawnGroupsRoot>,
     >,
+    mobs: Query<'w, 's, (&'static ComputedNode, &'static UiGlobalTransform), With<EditorMobsRoot>>,
     lighting: Query<
         'w,
         's,
@@ -50,7 +52,15 @@ pub struct EditorPanelRoots<'w, 's> {
 }
 
 impl EditorPanelRoots<'_, '_> {
-    pub fn cursor_over(&self, cursor: Vec2) -> bool {
+    /// Test whether `cursor` (logical pixels, as returned by
+    /// `Window::cursor_position`) lies over any editor chrome panel.
+    /// `ComputedNode::size` and `UiGlobalTransform` are in **physical** pixels,
+    /// so the logical cursor must be scaled before `contains_point` is called —
+    /// on HiDPI displays (e.g. macOS retina, scale_factor 2.0) the mismatch
+    /// would otherwise silently miss every panel and clicks would fall through
+    /// to the map.
+    pub fn cursor_over(&self, cursor: Vec2, scale_factor: f32) -> bool {
+        let physical = cursor * scale_factor;
         self.palette
             .iter()
             .chain(self.properties.iter())
@@ -58,7 +68,8 @@ impl EditorPanelRoots<'_, '_> {
             .chain(self.modal.iter())
             .chain(self.templates.iter())
             .chain(self.spawn_groups.iter())
+            .chain(self.mobs.iter())
             .chain(self.lighting.iter())
-            .any(|(computed, transform)| computed.contains_point(*transform, cursor))
+            .any(|(computed, transform)| computed.contains_point(*transform, physical))
     }
 }

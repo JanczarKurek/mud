@@ -48,6 +48,11 @@ pub enum PickRectTarget {
     SpawnBehavior,
     /// Per-instance NPC behavior bounds (properties panel).
     InstanceBehavior,
+    /// New spawn group being created from the Mobs panel. The picked rect
+    /// becomes both the area bounds and the roam-and-chase behavior bounds;
+    /// the template id is stashed on
+    /// `EditorSpawnGroupBuffer.pending_new_spawn_group_template`.
+    NewSpawnGroup,
 }
 
 /// Result of a `PickRect` drag, consumed by whichever UI requested it.
@@ -89,6 +94,8 @@ pub struct EditorState {
     pub templates_panel_visible: bool,
     /// User-toggled visibility of the Spawn Groups side panel.
     pub spawn_groups_panel_visible: bool,
+    /// User-toggled visibility of the Mobs side panel.
+    pub mobs_panel_visible: bool,
     /// User-toggled visibility of the Lighting side panel.
     pub lighting_panel_visible: bool,
     /// Tool to restore when a `PickRect` mode finishes (or is cancelled).
@@ -368,13 +375,10 @@ pub struct SpawnGroupDraft {
     pub area_max_y: String,
     pub area_tiles: Vec<TilePosition>,
     pub behavior_kind: BehaviorKind,
-    pub step_interval_seconds: String,
     pub bhv_min_x: String,
     pub bhv_min_y: String,
     pub bhv_max_x: String,
     pub bhv_max_y: String,
-    pub detect_distance_tiles: String,
-    pub disengage_distance_tiles: String,
     /// Which numeric/text field has keyboard focus.
     pub focused_field: SpawnGroupField,
 }
@@ -401,13 +405,10 @@ pub enum SpawnGroupField {
     AreaMinY,
     AreaMaxX,
     AreaMaxY,
-    StepInterval,
     BhvMinX,
     BhvMinY,
     BhvMaxX,
     BhvMaxY,
-    DetectDistance,
-    DisengageDistance,
 }
 
 impl Default for SpawnGroupDraft {
@@ -425,13 +426,10 @@ impl Default for SpawnGroupDraft {
             area_max_y: String::new(),
             area_tiles: Vec::new(),
             behavior_kind: BehaviorKind::Roam,
-            step_interval_seconds: "0.5".into(),
             bhv_min_x: String::new(),
             bhv_min_y: String::new(),
             bhv_max_x: String::new(),
             bhv_max_y: String::new(),
-            detect_distance_tiles: "4".into(),
-            disengage_distance_tiles: "6".into(),
             focused_field: SpawnGroupField::Id,
         }
     }
@@ -462,30 +460,9 @@ impl SpawnGroupDraft {
             .as_ref()
             .map(|ts| ts.iter().map(|t| TilePosition::ground(t.x, t.y)).collect())
             .unwrap_or_default();
-        let (behavior_kind, step_interval, bhv_rect, detect_d, disengage_d) = match &group.behavior
-        {
-            MapBehavior::Roam {
-                step_interval_seconds,
-                bounds,
-            } => (
-                BehaviorKind::Roam,
-                step_interval_seconds.to_string(),
-                *bounds,
-                "4".to_string(),
-                "6".to_string(),
-            ),
-            MapBehavior::RoamAndChase {
-                step_interval_seconds,
-                bounds,
-                detect_distance_tiles,
-                disengage_distance_tiles,
-            } => (
-                BehaviorKind::RoamAndChase,
-                step_interval_seconds.to_string(),
-                *bounds,
-                detect_distance_tiles.to_string(),
-                disengage_distance_tiles.to_string(),
-            ),
+        let (behavior_kind, bhv_rect) = match &group.behavior {
+            MapBehavior::Roam { bounds } => (BehaviorKind::Roam, *bounds),
+            MapBehavior::RoamAndChase { bounds } => (BehaviorKind::RoamAndChase, *bounds),
         };
         Self {
             editing_index: Some(index),
@@ -500,13 +477,10 @@ impl SpawnGroupDraft {
             area_max_y: a_max_y,
             area_tiles,
             behavior_kind,
-            step_interval_seconds: step_interval,
             bhv_min_x: bhv_rect.min_x.to_string(),
             bhv_min_y: bhv_rect.min_y.to_string(),
             bhv_max_x: bhv_rect.max_x.to_string(),
             bhv_max_y: bhv_rect.max_y.to_string(),
-            detect_distance_tiles: detect_d,
-            disengage_distance_tiles: disengage_d,
             focused_field: SpawnGroupField::Id,
         }
     }
@@ -522,13 +496,10 @@ impl SpawnGroupDraft {
             SpawnGroupField::AreaMinY => &mut self.area_min_y,
             SpawnGroupField::AreaMaxX => &mut self.area_max_x,
             SpawnGroupField::AreaMaxY => &mut self.area_max_y,
-            SpawnGroupField::StepInterval => &mut self.step_interval_seconds,
             SpawnGroupField::BhvMinX => &mut self.bhv_min_x,
             SpawnGroupField::BhvMinY => &mut self.bhv_min_y,
             SpawnGroupField::BhvMaxX => &mut self.bhv_max_x,
             SpawnGroupField::BhvMaxY => &mut self.bhv_max_y,
-            SpawnGroupField::DetectDistance => &mut self.detect_distance_tiles,
-            SpawnGroupField::DisengageDistance => &mut self.disengage_distance_tiles,
         })
     }
 
@@ -601,6 +572,10 @@ pub struct EditorSpawnGroupBuffer {
     /// Index of the row currently selected in the spawn-groups panel; drives
     /// the area-overlay highlight on the map.
     pub selected: Option<usize>,
+    /// Template id stashed by the Mobs panel's "+ Group" button while the
+    /// user is dragging a rectangle on the map. Consumed when the
+    /// `PickRectTarget::NewSpawnGroup` result lands.
+    pub pending_new_spawn_group_template: Option<String>,
 }
 
 /// Bundle the per-map-edit buffers into a single `SystemParam` so callers
@@ -623,7 +598,10 @@ pub struct EditorSpaceResetDeps<'w, 's> {
     pub residents: Query<
         'w,
         's,
-        (bevy::prelude::Entity, &'static crate::world::components::SpaceResident),
+        (
+            bevy::prelude::Entity,
+            &'static crate::world::components::SpaceResident,
+        ),
         bevy::prelude::Without<crate::player::components::Player>,
     >,
     pub portal_markers:
