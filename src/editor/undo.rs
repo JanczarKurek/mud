@@ -120,6 +120,7 @@ fn execute_op(
                     .properties(obj.object_id)
                     .cloned()
                     .unwrap_or_default();
+                let behavior = object_registry.behavior(obj.object_id).cloned();
                 let space_id = resident.space_id;
                 let tile = *tile;
                 commands.entity(entity).despawn();
@@ -128,6 +129,7 @@ fn execute_op(
                     space_id,
                     tile,
                     properties,
+                    behavior,
                 }
             } else {
                 UndoOp::Despawn { object_id }
@@ -138,6 +140,7 @@ fn execute_op(
             space_id,
             tile,
             properties,
+            behavior,
         } => {
             let new_id = if properties.is_empty() {
                 object_registry.allocate_runtime_id(type_id.clone())
@@ -145,6 +148,9 @@ fn execute_op(
                 object_registry
                     .allocate_runtime_id_with_properties(type_id.clone(), properties.clone())
             };
+            if behavior.is_some() {
+                object_registry.set_behavior(new_id, behavior.clone());
+            }
             let entity = spawn_overworld_object(
                 commands,
                 definitions,

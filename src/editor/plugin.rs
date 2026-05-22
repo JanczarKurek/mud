@@ -2,7 +2,8 @@ use bevy::prelude::*;
 
 use crate::app::state::ClientAppState;
 use crate::editor::clipboard::{
-    handle_clipboard_shortcuts, handle_editor_paste_click, render_paste_ghost,
+    handle_clipboard_shortcuts, handle_editor_delete_key, handle_editor_paste_click,
+    render_paste_ghost,
 };
 use crate::editor::dialog_index::EditorDialogIndex;
 use crate::editor::floor_render::{
@@ -201,6 +202,7 @@ impl Plugin for EditorPlugin {
                     handle_editor_select_drag,
                     handle_editor_pick_rect_drag,
                     handle_clipboard_shortcuts,
+                    handle_editor_delete_key,
                     handle_editor_paste_click.before(handle_editor_left_click),
                 )
                     .run_if(in_state(ClientAppState::MapEditor))

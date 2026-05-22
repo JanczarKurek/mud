@@ -761,6 +761,17 @@ pub fn handle_editor_left_click(
         return;
     }
 
+    // Empty tile: drop any single-object selection so Delete/Ctrl+C don't
+    // act on a stale object the user has clicked away from. The properties
+    // panel reads `selected_object_id` and naturally empties.
+    if editor_state.selected_object_id.is_some() {
+        editor_state.selected_object_id = None;
+        prop_buffer.object_id = None;
+        prop_buffer.entries.clear();
+        prop_buffer.editing_index = None;
+        prop_buffer.edit_text.clear();
+    }
+
     let Some(ref type_id) = editor_state.selected_type_id.clone() else {
         return;
     };
@@ -871,11 +882,13 @@ pub fn handle_editor_right_click(
             .properties(deleted_id)
             .cloned()
             .unwrap_or_default();
+        let behavior = object_registry.behavior(deleted_id).cloned();
         undo_stack.push_undo(UndoOp::Spawn {
             type_id,
             space_id: editor_context.space_id,
             tile,
             properties,
+            behavior,
         });
         commands.entity(entity).despawn();
         if editor_state.selected_object_id == Some(deleted_id) {

@@ -541,9 +541,9 @@ impl SpawnGroupDraft {
 
 /// A region of the map captured by copy/cut or loaded from a template.
 /// Coordinates are *relative to the selection origin* (top-left of the bbox).
-/// Authored `MapBehavior` is intentionally dropped — behaviors are tied to
-/// authored object IDs that don't survive runtime allocation. Multi-tile
-/// sprites are captured by their tile origin only.
+/// Per-object `MapBehavior` (NPC roam/chase config) is preserved on each
+/// `FragmentObject` and reattached on paste. Multi-tile sprites are captured
+/// by their tile origin only.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct MapFragment {
     pub width: i32,
@@ -567,6 +567,8 @@ pub struct FragmentObject {
     pub type_id: String,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub properties: HashMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub behavior: Option<MapBehavior>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -680,11 +682,14 @@ pub enum UndoOp {
         object_id: u64,
     },
     /// Spawn a new object at the given position with given properties.
+    /// `behavior` carries any per-instance `MapBehavior` so undo-of-delete
+    /// (and cut/paste round-trips) preserve NPC roam/chase config.
     Spawn {
         type_id: String,
         space_id: SpaceId,
         tile: TilePosition,
         properties: HashMap<String, String>,
+        behavior: Option<MapBehavior>,
     },
     /// Remove portal at the given index from EditorPortalBuffer.
     RemovePortal {

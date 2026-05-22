@@ -54,12 +54,14 @@ pub fn fragment_from_selection(
             .properties(object_id)
             .cloned()
             .unwrap_or_default();
+        let behavior = object_registry.behavior(object_id).cloned();
         fragment.objects.push(FragmentObject {
             dx: tile.x - selection.min.x,
             dy: tile.y - selection.min.y,
             z: tile.z,
             type_id: type_id.to_owned(),
             properties,
+            behavior,
         });
     }
     if include_floors {
@@ -120,6 +122,54 @@ pub fn handle_clipboard_shortcuts(
         return;
     }
 
+    // Single-object selection wins over marquee. Build a 1×1, objects-only
+    // fragment so paste mimics the placement of just that object at the
+    // cursor.
+    if let Some(selected_id) = editor_state.selected_object_id {
+        let hit = objects.iter().find(|(_, obj, resident, _)| {
+            obj.object_id == selected_id && resident.space_id == editor_context.space_id
+        });
+        let Some((entity, obj, _, tile)) = hit else {
+            info!("Copy/Cut: selected object not found in current space");
+            return;
+        };
+        let type_id = object_registry
+            .type_id(obj.object_id)
+            .unwrap_or(&obj.definition_id)
+            .to_owned();
+        let properties = object_registry
+            .properties(obj.object_id)
+            .cloned()
+            .unwrap_or_default();
+        let behavior = object_registry.behavior(obj.object_id).cloned();
+        clipboard.fragment = Some(MapFragment {
+            width: 1,
+            height: 1,
+            objects: vec![FragmentObject {
+                dx: 0,
+                dy: 0,
+                z: tile.z,
+                type_id: type_id.clone(),
+                properties: properties.clone(),
+                behavior: behavior.clone(),
+            }],
+            floors: Vec::new(),
+        });
+        if cut {
+            undo_stack.push_undo(UndoOp::Spawn {
+                type_id,
+                space_id: editor_context.space_id,
+                tile: *tile,
+                properties,
+                behavior,
+            });
+            commands.entity(entity).despawn();
+            editor_state.selected_object_id = None;
+            editor_state.dirty = true;
+        }
+        return;
+    }
+
     let Some(selection) = editor_state.selection else {
         info!("Copy/Cut: no selection");
         return;
@@ -172,11 +222,13 @@ pub fn handle_clipboard_shortcuts(
             .properties(*object_id)
             .cloned()
             .unwrap_or_default();
+        let behavior = object_registry.behavior(*object_id).cloned();
         composite_ops.push(UndoOp::Spawn {
             type_id,
             space_id: selection.space_id,
             tile: *tile,
             properties,
+            behavior,
         });
         commands.entity(*entity).despawn();
     }
@@ -205,6 +257,93 @@ pub fn handle_clipboard_shortcuts(
                 }
             }
         }
+    }
+    if !composite_ops.is_empty() {
+        undo_stack.push_undo(UndoOp::Composite { ops: composite_ops });
+        editor_state.dirty = true;
+    }
+}
+
+/// Delete key handler. Priority is single-object selection (mirrors the
+/// right-click delete path), falling back to the marquee region — objects
+/// only, never floors. Both paths push an undo op so Ctrl+Z restores.
+pub fn handle_editor_delete_key(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    editor_context: Res<EditorContext>,
+    object_registry: Res<ObjectRegistry>,
+    mut editor_state: ResMut<EditorState>,
+    mut undo_stack: ResMut<UndoStack>,
+    mut commands: Commands,
+    objects: Query<(Entity, &OverworldObject, &SpaceResident, &TilePosition), Without<Player>>,
+) {
+    if editor_state.palette_filter_focused {
+        return;
+    }
+    if !keyboard.just_pressed(KeyCode::Delete) {
+        return;
+    }
+
+    if let Some(selected_id) = editor_state.selected_object_id {
+        let hit = objects.iter().find(|(_, obj, resident, _)| {
+            obj.object_id == selected_id && resident.space_id == editor_context.space_id
+        });
+        let Some((entity, obj, _, tile)) = hit else {
+            editor_state.selected_object_id = None;
+            return;
+        };
+        let type_id = object_registry
+            .type_id(obj.object_id)
+            .unwrap_or(&obj.definition_id)
+            .to_owned();
+        let properties = object_registry
+            .properties(obj.object_id)
+            .cloned()
+            .unwrap_or_default();
+        let behavior = object_registry.behavior(obj.object_id).cloned();
+        undo_stack.push_undo(UndoOp::Spawn {
+            type_id,
+            space_id: editor_context.space_id,
+            tile: *tile,
+            properties,
+            behavior,
+        });
+        commands.entity(entity).despawn();
+        editor_state.selected_object_id = None;
+        editor_state.dirty = true;
+        return;
+    }
+
+    let Some(selection) = editor_state.selection else {
+        return;
+    };
+    if selection.space_id != editor_context.space_id {
+        return;
+    }
+    let mut composite_ops: Vec<UndoOp> = Vec::new();
+    for (entity, obj, resident, tile) in &objects {
+        if resident.space_id != selection.space_id {
+            continue;
+        }
+        if !selection.contains(tile.x, tile.y) {
+            continue;
+        }
+        let type_id = object_registry
+            .type_id(obj.object_id)
+            .unwrap_or(&obj.definition_id)
+            .to_owned();
+        let properties = object_registry
+            .properties(obj.object_id)
+            .cloned()
+            .unwrap_or_default();
+        let behavior = object_registry.behavior(obj.object_id).cloned();
+        composite_ops.push(UndoOp::Spawn {
+            type_id,
+            space_id: selection.space_id,
+            tile: *tile,
+            properties,
+            behavior,
+        });
+        commands.entity(entity).despawn();
     }
     if !composite_ops.is_empty() {
         undo_stack.push_undo(UndoOp::Composite { ops: composite_ops });
@@ -284,6 +423,9 @@ pub fn stamp_fragment(
         };
         let new_id = object_registry
             .allocate_runtime_id_with_properties(fo.type_id.clone(), fo.properties.clone());
+        if fo.behavior.is_some() {
+            object_registry.set_behavior(new_id, fo.behavior.clone());
+        }
         let entity = crate::world::setup::spawn_overworld_object(
             commands,
             object_definitions,
@@ -598,6 +740,7 @@ mod tests {
                     z: 0,
                     type_id: "tree".to_owned(),
                     properties: std::collections::HashMap::new(),
+                    behavior: None,
                 },
                 FragmentObject {
                     dx: 2,
@@ -605,6 +748,7 @@ mod tests {
                     z: 1,
                     type_id: "lamp".to_owned(),
                     properties: props,
+                    behavior: None,
                 },
             ],
             floors: vec![
@@ -619,6 +763,55 @@ mod tests {
                     floor_id: None,
                 },
             ],
+        }
+    }
+
+    #[test]
+    fn fragment_yaml_round_trip_preserves_behavior() {
+        use crate::world::map_layout::{MapBehavior, TileRectangle};
+        let frag = MapFragment {
+            width: 1,
+            height: 1,
+            objects: vec![FragmentObject {
+                dx: 0,
+                dy: 0,
+                z: 0,
+                type_id: "goblin".to_owned(),
+                properties: std::collections::HashMap::new(),
+                behavior: Some(MapBehavior::RoamAndChase {
+                    step_interval_seconds: 0.6,
+                    bounds: TileRectangle {
+                        min_x: 1,
+                        min_y: 2,
+                        max_x: 5,
+                        max_y: 6,
+                    },
+                    detect_distance_tiles: 4,
+                    disengage_distance_tiles: 8,
+                }),
+            }],
+            floors: Vec::new(),
+        };
+        let yaml = serde_yaml::to_string(&frag).expect("serialize");
+        let parsed: MapFragment = serde_yaml::from_str(&yaml).expect("deserialize");
+        let parsed_behavior = parsed.objects[0]
+            .behavior
+            .as_ref()
+            .expect("behavior preserved");
+        match parsed_behavior {
+            MapBehavior::RoamAndChase {
+                step_interval_seconds,
+                bounds,
+                detect_distance_tiles,
+                disengage_distance_tiles,
+            } => {
+                assert!((step_interval_seconds - 0.6).abs() < 1e-6);
+                assert_eq!(bounds.min_x, 1);
+                assert_eq!(bounds.max_y, 6);
+                assert_eq!(*detect_distance_tiles, 4);
+                assert_eq!(*disengage_distance_tiles, 8);
+            }
+            other => panic!("unexpected behavior variant: {other:?}"),
         }
     }
 
