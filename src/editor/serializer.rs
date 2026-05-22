@@ -6,6 +6,8 @@ use serde::Serialize;
 use crate::editor::resources::{
     EditorContext, EditorLightingBuffer, EditorPortalBuffer, EditorSpawnGroupBuffer,
 };
+use crate::npc::components::SpawnGroupMember;
+use crate::player::components::Player;
 use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
 use crate::world::map_layout::{
     MapBehavior, SpaceLightingDef, SpacePermanence, SpawnGroupDef, TileCoordinate,
@@ -89,7 +91,13 @@ pub fn serialize_and_save(
     spawn_group_buffer: &EditorSpawnGroupBuffer,
     lighting_buffer: &EditorLightingBuffer,
     object_registry: &ObjectRegistry,
-    objects: &bevy::prelude::Query<(&OverworldObject, &SpaceResident, &TilePosition)>,
+    objects: &bevy::prelude::Query<
+        (&OverworldObject, &SpaceResident, &TilePosition),
+        (
+            bevy::prelude::Without<SpawnGroupMember>,
+            bevy::prelude::Without<Player>,
+        ),
+    >,
     floor_maps: &crate::world::floor_map::FloorMaps,
 ) {
     let mut items: Vec<(
@@ -228,7 +236,59 @@ pub fn serialize_and_save(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::world::components::SpaceId;
     use crate::world::map_layout::{AmbientKeyframe, SpaceDefinition};
+
+    /// Confirms the save query's `Without<SpawnGroupMember>` filter excludes
+    /// runtime-spawned NPCs — the original bug was that respawned rats /
+    /// goblins were getting baked back into the YAML on save.
+    #[test]
+    fn save_query_excludes_spawn_group_members() {
+        use bevy::prelude::*;
+
+        let mut app = App::new();
+        let space_id = SpaceId(1);
+
+        // Authored object: should be picked up by the save query.
+        app.world_mut().spawn((
+            OverworldObject {
+                object_id: 100,
+                definition_id: "wooden_door".into(),
+            },
+            SpaceResident { space_id },
+            TilePosition::ground(2, 3),
+        ));
+
+        // Spawn-group NPC: tagged with SpawnGroupMember, must be filtered out.
+        app.world_mut().spawn((
+            OverworldObject {
+                object_id: 200,
+                definition_id: "rat".into(),
+            },
+            SpaceResident { space_id },
+            TilePosition::ground(5, 5),
+            SpawnGroupMember {
+                space_id,
+                group_id: "cellar_rats".into(),
+            },
+        ));
+
+        let collected = app
+            .world_mut()
+            .query_filtered::<
+                (&OverworldObject, &SpaceResident, &TilePosition),
+                (Without<SpawnGroupMember>, Without<Player>),
+            >()
+            .iter(app.world())
+            .map(|(obj, _, tile)| (obj.object_id, obj.definition_id.clone(), tile.x, tile.y))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            collected,
+            vec![(100, "wooden_door".to_owned(), 2, 3)],
+            "save query should yield only the authored door, not the spawn-group rat",
+        );
+    }
 
     #[test]
     fn lighting_round_trips_through_yaml() {

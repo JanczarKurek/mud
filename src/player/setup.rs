@@ -20,7 +20,7 @@ use crate::world::lighting::LightSource;
 use crate::world::map_layout::ObjectProperties;
 use crate::world::object_definitions::{EquipmentSlot, OverworldObjectDefinitions};
 use crate::world::object_registry::ObjectRegistry;
-use crate::world::setup::attach_combat_health_bar;
+use crate::world::setup::{attach_combat_health_bar, build_object_visual_bundle};
 use crate::world::WorldConfig;
 
 /// Populate a fresh player's inventory with a starter shortbow + arrows so the
@@ -395,6 +395,7 @@ pub fn spawn_player_authoritative_in_space(
 pub fn spawn_player_visual(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
     definitions: Res<OverworldObjectDefinitions>,
     world_config: Res<WorldConfig>,
     player_query: Query<Entity, (With<Player>, Without<Sprite>)>,
@@ -411,29 +412,24 @@ pub fn spawn_player_visual(
         .get("player")
         .unwrap_or_else(|| panic!("Missing overworld object definition for id 'player'"));
 
-    let size = definition.render.sprite_pixel_size(world_config.tile_size);
-
-    let mut sprite = if let Some(sprite_path) = &definition.render.sprite_path {
-        let mut sprite = Sprite::from_image(asset_server.load(sprite_path));
-        sprite.custom_size = Some(size);
-        sprite
-    } else {
-        Sprite::from_color(definition.debug_color(), size)
-    };
-    sprite.image_mode = SpriteImageMode::Auto;
-
-    let visual =
-        crate::world::setup::world_visual_for_definition(definition, world_config.tile_size);
-    let sprite_height = visual.sprite_height;
-    let uses_y_sort = visual.y_sort;
+    let bundle = build_object_visual_bundle(
+        &asset_server,
+        &mut texture_atlas_layouts,
+        definition,
+        &world_config,
+        None,
+        1,
+    );
+    let sprite_height = bundle.sprite_height;
+    let uses_y_sort = bundle.world_visual.y_sort;
 
     commands.entity(entity).insert((
-        visual,
+        bundle.world_visual,
         DisplayedVitalStats::default(),
         HealthBarDisplayPolicy {
             always_visible: true,
         },
-        sprite,
+        bundle.sprite,
         // Baseline player vision: warm-white, dim ~1.5-tile halo. Always on
         // so dark spaces stay navigable, but tuned low enough that in
         // daylight (curve alpha=0) the shader-clamped subtraction makes the
@@ -450,10 +446,11 @@ pub fn spawn_player_visual(
         ),
     ));
 
-    if uses_y_sort {
-        commands
-            .entity(entity)
-            .insert(bevy::sprite::Anchor::BOTTOM_CENTER);
+    if let Some(animated) = bundle.animated {
+        commands.entity(entity).insert(animated);
+    }
+    if let Some(anchor) = bundle.anchor {
+        commands.entity(entity).insert(anchor);
     }
 
     attach_combat_health_bar(&mut commands, entity, world_config.tile_size, sprite_height);

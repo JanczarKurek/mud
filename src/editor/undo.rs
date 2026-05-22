@@ -29,6 +29,7 @@ pub fn handle_undo_redo(
     world_config: Res<WorldConfig>,
     editor_camera: Res<EditorCamera>,
     asset_server: Res<AssetServer>,
+    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
     objects: Query<(Entity, &OverworldObject, &SpaceResident, &TilePosition)>,
 ) {
     if modal_state.active.is_some() {
@@ -61,6 +62,7 @@ pub fn handle_undo_redo(
                 &world_config,
                 &editor_camera,
                 &asset_server,
+                &mut texture_atlas_layouts,
                 &objects,
             );
             undo_stack.redo_ops.push(inverse);
@@ -80,6 +82,7 @@ pub fn handle_undo_redo(
                 &world_config,
                 &editor_camera,
                 &asset_server,
+                &mut texture_atlas_layouts,
                 &objects,
             );
             undo_stack.undo_ops.push(inverse);
@@ -101,6 +104,7 @@ fn execute_op(
     world_config: &WorldConfig,
     editor_camera: &EditorCamera,
     asset_server: &AssetServer,
+    texture_atlas_layouts: &mut Assets<TextureAtlasLayout>,
     objects: &Query<(Entity, &OverworldObject, &SpaceResident, &TilePosition)>,
 ) -> UndoOp {
     match op {
@@ -156,6 +160,7 @@ fn execute_op(
                 insert_editor_visuals_pub(
                     &mut commands.entity(entity),
                     asset_server,
+                    texture_atlas_layouts,
                     def,
                     world_config,
                     tile,
@@ -215,6 +220,7 @@ fn execute_op(
                     world_config,
                     editor_camera,
                     asset_server,
+                    texture_atlas_layouts,
                     objects,
                 ));
             }

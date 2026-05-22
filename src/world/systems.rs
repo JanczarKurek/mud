@@ -20,9 +20,11 @@ use crate::world::resources::{
 use crate::world::setup::{spawn_client_projected_world_object, spawn_client_remote_player};
 use crate::world::WorldConfig;
 
+#[allow(clippy::too_many_arguments)]
 pub fn sync_client_world_projection(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
     client_state: Res<ClientGameState>,
     definitions: Res<OverworldObjectDefinitions>,
     mut world_config: ResMut<WorldConfig>,
@@ -80,6 +82,7 @@ pub fn sync_client_world_projection(
             let entity = spawn_client_projected_world_object(
                 &mut commands,
                 &asset_server,
+                &mut texture_atlas_layouts,
                 &definitions,
                 &world_config,
                 object.object_id,
@@ -105,6 +108,7 @@ pub fn sync_client_world_projection(
             let entity = spawn_client_projected_world_object(
                 &mut commands,
                 &asset_server,
+                &mut texture_atlas_layouts,
                 &definitions,
                 &world_config,
                 object.object_id,
@@ -123,6 +127,7 @@ pub fn sync_client_world_projection(
             let replacement = spawn_client_projected_world_object(
                 &mut commands,
                 &asset_server,
+                &mut texture_atlas_layouts,
                 &definitions,
                 &world_config,
                 object.object_id,
@@ -189,9 +194,11 @@ pub fn sync_client_world_projection(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn sync_remote_player_projection(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
     client_state: Res<ClientGameState>,
     definitions: Res<OverworldObjectDefinitions>,
     world_config: Res<WorldConfig>,
@@ -210,6 +217,7 @@ pub fn sync_remote_player_projection(
             let entity = spawn_client_remote_player(
                 &mut commands,
                 &asset_server,
+                &mut texture_atlas_layouts,
                 &definitions,
                 &world_config,
                 remote_player.player_id,
@@ -234,6 +242,7 @@ pub fn sync_remote_player_projection(
             let entity = spawn_client_remote_player(
                 &mut commands,
                 &asset_server,
+                &mut texture_atlas_layouts,
                 &definitions,
                 &world_config,
                 remote_player.player_id,
@@ -251,6 +260,7 @@ pub fn sync_remote_player_projection(
             let replacement = spawn_client_remote_player(
                 &mut commands,
                 &asset_server,
+                &mut texture_atlas_layouts,
                 &definitions,
                 &world_config,
                 remote_player.player_id,

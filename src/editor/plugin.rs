@@ -25,8 +25,8 @@ use crate::editor::systems::{
     handle_editor_middle_drag_pan, handle_editor_right_click, handle_editor_save,
     handle_editor_zoom, init_editor_client_space, init_editor_context, init_portal_buffer,
     open_file_dialog_shortcut, open_save_as_shortcut, process_modal_confirm,
-    sync_editor_lighting_to_world, sync_editor_view_to_client, sync_portal_overlays,
-    sync_tile_transforms_editor, update_editor_cursor_ghost,
+    reset_space_to_authored, sync_editor_lighting_to_world, sync_editor_view_to_client,
+    sync_portal_overlays, sync_tile_transforms_editor, update_editor_cursor_ghost,
 };
 use crate::editor::templates::EditorTemplatesIndex;
 use crate::editor::ui::lighting_panel::{
@@ -130,6 +130,11 @@ impl Plugin for EditorPlugin {
                 OnEnter(ClientAppState::MapEditor),
                 (
                     init_editor_context,
+                    reset_space_to_authored.after(init_editor_context),
+                    // attach_editor_visuals only catches entities that existed
+                    // *before* `reset_space_to_authored`'s despawns flush; the
+                    // Update-schedule copy of the same system attaches visuals
+                    // to the re-spawned entities once the command queue drains.
                     attach_editor_visuals.after(init_editor_context),
                     init_portal_buffer.after(init_editor_context),
                     init_editor_client_space.after(init_editor_context),

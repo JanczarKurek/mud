@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 
 use crate::combat::components::{AttackProfile, CombatLeash};
+use crate::world::animation::{build_animated_sprite_components, AnimatedSprite};
 use crate::combat::damage_expr::DamageExpr;
 use crate::npc::components::{
     AiMemory, AiState, HostileBehavior, Npc, RoamBounds, RoamingBehavior, RoamingRandomState,
@@ -531,9 +532,11 @@ pub fn spawn_overworld_object(
     entity.id()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_client_projected_world_object(
     commands: &mut Commands,
     asset_server: &AssetServer,
+    texture_atlas_layouts: &mut Assets<TextureAtlasLayout>,
     definitions: &OverworldObjectDefinitions,
     world_config: &WorldConfig,
     object_id: u64,
@@ -546,11 +549,15 @@ pub fn spawn_client_projected_world_object(
     let definition = definitions
         .get(definition_id)
         .unwrap_or_else(|| panic!("Missing overworld object definition for id '{definition_id}'"));
-    let sprite =
-        sprite_for_definition_state_count(asset_server, definition, world_config, state, quantity);
-    let visual = world_visual_for_definition(definition, world_config.tile_size);
-    let sprite_height = visual.sprite_height;
-    let bottom_anchored = bottom_anchor_for(&definition.render);
+    let bundle = build_object_visual_bundle(
+        asset_server,
+        texture_atlas_layouts,
+        definition,
+        world_config,
+        state,
+        quantity,
+    );
+    let sprite_height = bundle.sprite_height;
     let mut entity_commands = commands.spawn((
         ClientProjectedWorldObject {
             object_id,
@@ -560,15 +567,18 @@ pub fn spawn_client_projected_world_object(
             space_id: position.space_id,
             tile: position.tile_position,
         },
-        visual,
+        bundle.world_visual,
         StackOffset::default(),
         DisplayedVitalStats::default(),
         Facing(definition.render.default_facing.unwrap_or_default()),
-        sprite,
+        bundle.sprite,
         Transform::from_xyz(0.0, 0.0, definition.render.z_index),
     ));
-    if bottom_anchored {
-        entity_commands.insert(bevy::sprite::Anchor::BOTTOM_CENTER);
+    if let Some(animated) = bundle.animated {
+        entity_commands.insert(animated);
+    }
+    if let Some(anchor) = bundle.anchor {
+        entity_commands.insert(anchor);
     }
     let entity = entity_commands.id();
 
@@ -582,9 +592,11 @@ pub fn spawn_client_projected_world_object(
     entity
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_client_remote_player(
     commands: &mut Commands,
     asset_server: &AssetServer,
+    texture_atlas_layouts: &mut Assets<TextureAtlasLayout>,
     definitions: &OverworldObjectDefinitions,
     world_config: &WorldConfig,
     player_id: crate::player::components::PlayerId,
@@ -594,10 +606,18 @@ pub fn spawn_client_remote_player(
     let definition = definitions
         .get("player")
         .unwrap_or_else(|| panic!("Missing overworld object definition for id 'player'"));
-    let mut sprite = sprite_for_definition(asset_server, definition, world_config);
-    sprite.color = Color::srgba(0.82, 0.92, 1.0, 0.8);
-    let visual = world_visual_for_definition(definition, world_config.tile_size);
-    let sprite_height = visual.sprite_height;
+    let mut bundle = build_object_visual_bundle(
+        asset_server,
+        texture_atlas_layouts,
+        definition,
+        world_config,
+        None,
+        1,
+    );
+    // Remote-player ghost tint so the local player can distinguish their own
+    // entity from other connected players visually.
+    bundle.sprite.color = Color::srgba(0.82, 0.92, 1.0, 0.8);
+    let sprite_height = bundle.sprite_height;
 
     let mut entity_commands = commands.spawn((
         ClientRemotePlayerVisual {
@@ -608,14 +628,17 @@ pub fn spawn_client_remote_player(
             space_id: position.space_id,
             tile: position.tile_position,
         },
-        visual,
+        bundle.world_visual,
         DisplayedVitalStats::default(),
         Facing(Direction::default()),
-        sprite,
+        bundle.sprite,
         Transform::from_xyz(0.0, 0.0, definition.render.z_index),
     ));
-    if bottom_anchor_for(&definition.render) {
-        entity_commands.insert(bevy::sprite::Anchor::BOTTOM_CENTER);
+    if let Some(animated) = bundle.animated {
+        entity_commands.insert(animated);
+    }
+    if let Some(anchor) = bundle.anchor {
+        entity_commands.insert(anchor);
     }
     let entity = entity_commands.id();
 
@@ -638,70 +661,83 @@ pub fn bottom_anchor_for(render: &crate::world::object_definitions::RenderMetada
     render.y_sort || render.display_height > 0.0
 }
 
-pub fn world_visual_for_definition(
-    definition: &OverworldObjectDefinition,
-    tile_size: f32,
-) -> WorldVisual {
-    let sprite_size = definition.render.sprite_pixel_size(tile_size);
-    WorldVisual {
-        z_index: definition.render.z_index,
-        y_sort: definition.render.y_sort,
-        sprite_height: sprite_size.y,
-        rotation_by_facing: definition.render.rotation_by_facing,
-        display_height: definition.render.display_height,
-        stack_order: definition.render.stack_order,
-        hide_when_inside_facing: definition.render.hide_when_inside_facing,
-    }
+/// Full visual component set for an object definition. Built once per spawn
+/// (gameplay and editor) so both paths render identically. The animated path
+/// is preferred whenever the definition (or its current state) declares one;
+/// the still-sprite path is the fallback.
+pub struct ObjectVisualBundle {
+    pub sprite: Sprite,
+    pub world_visual: WorldVisual,
+    pub animated: Option<AnimatedSprite>,
+    pub anchor: Option<bevy::sprite::Anchor>,
+    /// Height in pixels used for healthbar / `WorldVisual.sprite_height`.
+    /// Matches the animation frame height when present so non-square sprites
+    /// (e.g. 32×48) keep their proportions instead of falling back to a square
+    /// from `sprite_pixel_size`.
+    pub sprite_height: f32,
 }
 
-pub fn sprite_for_definition(
+/// Single source of truth for "definition → render components". Replaces the
+/// previous split between `sprite_for_definition_state_count` (still sprite)
+/// and `attach_animated_sprite` (atlas swap-in). When the definition declares
+/// an animation, the returned `Sprite` is already atlas-backed and an
+/// `AnimatedSprite` accompanies it — no two-phase swap needed.
+pub fn build_object_visual_bundle(
     asset_server: &AssetServer,
-    definition: &OverworldObjectDefinition,
-    world_config: &WorldConfig,
-) -> Sprite {
-    sprite_for_definition_state(asset_server, definition, world_config, None)
-}
-
-/// Like `sprite_for_definition` but consults the per-state sprite override
-/// when `state` is `Some`. Falls back to the base `render.sprite_path` when
-/// the state has no override or no `states:` block exists.
-pub fn sprite_for_definition_state(
-    asset_server: &AssetServer,
-    definition: &OverworldObjectDefinition,
-    world_config: &WorldConfig,
-    state: Option<&str>,
-) -> Sprite {
-    sprite_for_definition_state_count(asset_server, definition, world_config, state, 1)
-}
-
-/// Like `sprite_for_definition_state` but also consults the `stack_sprites`
-/// quantity tier, so a pile of N pickups on the ground uses the right
-/// numbered variant. State overrides still win (e.g. a torch's `unlit` state
-/// won't be replaced by a stack-tier sprite).
-pub fn sprite_for_definition_state_count(
-    asset_server: &AssetServer,
+    texture_atlas_layouts: &mut Assets<TextureAtlasLayout>,
     definition: &OverworldObjectDefinition,
     world_config: &WorldConfig,
     state: Option<&str>,
     count: u32,
-) -> Sprite {
-    let size = definition.render.sprite_pixel_size(world_config.tile_size);
+) -> ObjectVisualBundle {
+    let tile_size = world_config.tile_size;
     let effective_state = state.or(definition.initial_state.as_deref());
 
-    let mut sprite = if let Some(sprite_path) = definition
-        .sprite_path_for_state_count(effective_state, count.max(1))
-        .map(str::to_owned)
-    {
-        let mut sprite = Sprite::from_image(asset_server.load(sprite_path));
-        sprite.custom_size = Some(size);
-        sprite
-    } else {
-        Sprite::from_color(definition.debug_color(), size)
+    let (sprite, animated, sprite_height) =
+        if let Some(sheet) = definition.animation_for_state(effective_state) {
+            let (animated, sprite) =
+                build_animated_sprite_components(sheet, asset_server, texture_atlas_layouts);
+            let height = sheet.frame_height as f32;
+            (sprite, Some(animated), height)
+        } else {
+            let size = definition.render.sprite_pixel_size(tile_size);
+            let mut sprite = if let Some(sprite_path) = definition
+                .sprite_path_for_state_count(effective_state, count.max(1))
+                .map(str::to_owned)
+            {
+                let mut sprite = Sprite::from_image(asset_server.load(sprite_path));
+                sprite.custom_size = Some(size);
+                sprite
+            } else {
+                Sprite::from_color(definition.debug_color(), size)
+            };
+            sprite.image_mode = SpriteImageMode::Auto;
+            (sprite, None, size.y)
+        };
+
+    let world_visual = WorldVisual {
+        z_index: definition.render.z_index,
+        y_sort: definition.render.y_sort,
+        sprite_height,
+        rotation_by_facing: definition.render.rotation_by_facing,
+        display_height: definition.render.display_height,
+        stack_order: definition.render.stack_order,
+        hide_when_inside_facing: definition.render.hide_when_inside_facing,
     };
 
-    sprite.image_mode = SpriteImageMode::Auto;
+    let anchor = if bottom_anchor_for(&definition.render) {
+        Some(bevy::sprite::Anchor::BOTTOM_CENTER)
+    } else {
+        None
+    };
 
-    sprite
+    ObjectVisualBundle {
+        sprite,
+        world_visual,
+        animated,
+        anchor,
+        sprite_height,
+    }
 }
 
 pub fn npc_base_stats_from_definition(definition: Option<&OverworldObjectDefinition>) -> BaseStats {

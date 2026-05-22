@@ -248,7 +248,6 @@ impl Plugin for WorldClientPlugin {
                     ),
                     // Animation + camera systems
                     attach_animated_sprite.after(sync_client_world_projection),
-                    advance_animation_timers,
                     detect_player_movement.after(apply_game_events_to_client_state),
                     trigger_movement_animation
                         .after(sync_client_world_projection)
@@ -298,6 +297,11 @@ impl Plugin for WorldClientPlugin {
                         .after(apply_game_events_to_client_state)
                         .after(camera_follow)
                         .run_if(in_state(ClientAppState::InGame)),
+                    // Frame cycling runs in both gameplay and the editor so
+                    // authored objects animate during map editing too.
+                    // Single registration avoids ambiguous SystemTypeSet for
+                    // `despawn_finished_ripples.after(advance_animation_timers)`.
+                    advance_animation_timers.run_if(in_game_or_editor),
                 ),
             );
 
@@ -331,9 +335,10 @@ impl Plugin for WorldClientPlugin {
 }
 
 /// Run condition: gameplay or the map editor. Used to keep the darkness
-/// overlay (and any future "show me the world like the player sees it"
-/// systems) running while the user is authoring lighting in the editor.
-fn in_game_or_editor(state: Res<State<ClientAppState>>) -> bool {
+/// overlay, sprite animation timers, and any future "show me the world like
+/// the player sees it" systems running while the user is authoring in the
+/// editor.
+pub(crate) fn in_game_or_editor(state: Res<State<ClientAppState>>) -> bool {
     matches!(
         *state.get(),
         ClientAppState::InGame | ClientAppState::MapEditor

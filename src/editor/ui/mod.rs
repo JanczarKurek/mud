@@ -395,11 +395,18 @@ pub fn handle_save_button_click(
     lighting_buffer: Res<crate::editor::resources::EditorLightingBuffer>,
     object_registry: Res<crate::world::object_registry::ObjectRegistry>,
     floor_maps: Res<crate::world::floor_map::FloorMaps>,
-    objects: Query<(
-        &crate::world::components::OverworldObject,
-        &crate::world::components::SpaceResident,
-        &crate::world::components::TilePosition,
-    )>,
+    objects: Query<
+        (
+            &crate::world::components::OverworldObject,
+            &crate::world::components::SpaceResident,
+            &crate::world::components::TilePosition,
+        ),
+        (
+            bevy::prelude::Without<crate::npc::components::SpawnGroupMember>,
+            bevy::prelude::Without<crate::player::components::Player>,
+        ),
+    >,
+    mut space_definitions: ResMut<crate::world::map_layout::SpaceDefinitions>,
 ) {
     for interaction in &save_btn {
         if *interaction == Interaction::Pressed {
@@ -412,6 +419,7 @@ pub fn handle_save_button_click(
                 &objects,
                 &floor_maps,
             );
+            space_definitions.load_single_from_disk(&editor_context.authored_id);
             editor_state.dirty = false;
         }
     }

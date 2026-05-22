@@ -93,6 +93,18 @@ impl Plugin for PlayerClientPlugin {
                     sync_authoritative_player_display,
                     sync_authoritative_player_position_view,
                     sync_projected_player_from_client_state,
+                )
+                    .run_if(in_state(ClientAppState::InGame)),
+            )
+            // Player visual sync runs in both InGame and MapEditor so the
+            // player's recolor layers stay in sync with the shared animation
+            // atlas (idle frame cycles, customization tints) when entering
+            // the editor. `PlayerLayersInitialized` makes re-attach
+            // idempotent. Single registration avoids ambiguous SystemTypeSet
+            // ordering errors that arise from per-state duplicated registration.
+            .add_systems(
+                Update,
+                (
                     spawn_player_recolor_layers
                         .after(crate::world::animation::attach_animated_sprite),
                     propagate_player_animation_to_layers
@@ -100,7 +112,7 @@ impl Plugin for PlayerClientPlugin {
                         .after(crate::world::animation::return_to_idle_animation),
                     apply_player_appearance.after(spawn_player_recolor_layers),
                 )
-                    .run_if(in_state(ClientAppState::InGame)),
+                    .run_if(crate::world::in_game_or_editor),
             )
             .add_systems(
                 Update,

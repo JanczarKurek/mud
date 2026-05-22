@@ -612,6 +612,33 @@ pub struct EditorMapBuffers<'w> {
     pub lighting: ResMut<'w, EditorLightingBuffer>,
 }
 
+/// Bundle the inputs to `reset_space_contents_from_def` into one
+/// `SystemParam` slot. Same arity-limit motivation as `EditorMapBuffers` —
+/// `apply_modal_confirmed` already takes ~15 params before this.
+#[derive(SystemParam)]
+pub struct EditorSpaceResetDeps<'w, 's> {
+    pub spawn_group_registry: ResMut<'w, crate::npc::spawn_groups::SpawnGroupRegistry>,
+    pub residents: Query<
+        'w,
+        's,
+        (bevy::prelude::Entity, &'static crate::world::components::SpaceResident),
+        bevy::prelude::Without<crate::player::components::Player>,
+    >,
+    pub portal_markers:
+        Query<'w, 's, bevy::prelude::Entity, bevy::prelude::With<EditorPortalMarker>>,
+}
+
+/// Editor-side mutable view state — context, UI state, camera, and the
+/// shared `WorldConfig` snapshot. Bundled so `apply_modal_confirmed` stays
+/// under Bevy's 16-param system arity cap.
+#[derive(SystemParam)]
+pub struct EditorViewState<'w> {
+    pub context: ResMut<'w, EditorContext>,
+    pub state: ResMut<'w, EditorState>,
+    pub camera: ResMut<'w, EditorCamera>,
+    pub world_config: ResMut<'w, crate::world::WorldConfig>,
+}
+
 /// Holds the lighting configuration for the currently-edited space. Mutable
 /// while the editor session is open; persisted into YAML on save and mirrored
 /// into the live `ClientGameState.current_space.lighting` so the darkness

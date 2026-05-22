@@ -8,18 +8,20 @@ use crate::editor::clipboard::cancel_paste;
 use crate::editor::resources::{
     BehaviorKind, ConfirmedLightingKeyframe, ConfirmedSpawnGroup, EditingField, EditorCamera,
     EditorContext, EditorLightingBuffer, EditorMapBuffers, EditorPortalBuffer,
-    EditorPropertyEditBuffer, EditorSpawnGroupBuffer, EditorState, EditorTool,
-    LightingKeyframeDraft, ModalConfirmed, ModalKind, ModalState, ModalTextField, SpawnAreaKind,
-    SpawnGroupDraft, UndoOp, UndoStack,
+    EditorPropertyEditBuffer, EditorSpaceResetDeps, EditorSpawnGroupBuffer, EditorState,
+    EditorTool, EditorViewState, LightingKeyframeDraft, ModalConfirmed, ModalKind, ModalState,
+    ModalTextField, SpawnAreaKind, SpawnGroupDraft, UndoOp, UndoStack,
 };
 use crate::editor::serializer::serialize_and_save;
 use crate::editor::templates::{save_template, EditorTemplatesIndex};
 use crate::game::commands::GameCommand;
 use crate::game::resources::PendingGameCommands;
+use crate::npc::components::SpawnGroupMember;
+use crate::npc::spawn_groups::SpawnGroupRegistry;
 use crate::player::components::Player;
 use crate::world::animation::VisualOffset;
 use crate::world::components::{
-    OverworldObject, SpaceResident, TilePosition, ViewPosition, WorldVisual,
+    OverworldObject, SpaceId, SpaceResident, TilePosition, ViewPosition, WorldVisual,
 };
 use crate::world::floor_map::FloorMaps;
 use crate::world::map_layout::{
@@ -30,16 +32,17 @@ use crate::world::object_definitions::{OverworldObjectDefinition, OverworldObjec
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::resources::{RuntimeSpace, SpaceManager};
 use crate::world::setup::{
-    bottom_anchor_for, instantiate_space, spawn_overworld_object, sprite_for_definition,
-    world_visual_for_definition,
+    build_object_visual_bundle, instantiate_space, spawn_overworld_object,
 };
 use crate::world::WorldConfig;
 
 // ── Visuals helper (public so undo.rs can use it) ────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 pub fn insert_editor_visuals_pub(
     entity_commands: &mut EntityCommands,
     asset_server: &AssetServer,
+    texture_atlas_layouts: &mut Assets<TextureAtlasLayout>,
     def: &OverworldObjectDefinition,
     world_config: &WorldConfig,
     tile: TilePosition,
@@ -48,6 +51,7 @@ pub fn insert_editor_visuals_pub(
     insert_editor_visuals(
         entity_commands,
         asset_server,
+        texture_atlas_layouts,
         def,
         world_config,
         tile,
@@ -58,15 +62,22 @@ pub fn insert_editor_visuals_pub(
 fn insert_editor_visuals(
     entity_commands: &mut EntityCommands,
     asset_server: &AssetServer,
+    texture_atlas_layouts: &mut Assets<TextureAtlasLayout>,
     def: &OverworldObjectDefinition,
     world_config: &WorldConfig,
     tile: TilePosition,
     camera: &EditorCamera,
 ) {
     let effective_size = world_config.tile_size * camera.zoom_level;
-    let sprite = sprite_for_definition(asset_server, def, world_config);
-    let visual = world_visual_for_definition(def, world_config.tile_size);
-    let bottom_anchored = bottom_anchor_for(&def.render);
+    let bundle = build_object_visual_bundle(
+        asset_server,
+        texture_atlas_layouts,
+        def,
+        world_config,
+        None,
+        1,
+    );
+    let bottom_anchored = bundle.anchor.is_some();
     let anchor_y_offset = if bottom_anchored {
         -effective_size * 0.5
     } else {
@@ -75,13 +86,107 @@ fn insert_editor_visuals(
     let x = (tile.x as f32 - camera.center.x) * effective_size;
     let y = (tile.y as f32 - camera.center.y) * effective_size + anchor_y_offset;
     entity_commands.try_insert((
-        sprite,
-        visual,
+        bundle.sprite,
+        bundle.world_visual,
         Transform::from_xyz(x, y, def.render.z_index).with_scale(Vec3::splat(camera.zoom_level)),
     ));
-    if bottom_anchored {
-        entity_commands.try_insert(bevy::sprite::Anchor::BOTTOM_CENTER);
+    if let Some(animated) = bundle.animated {
+        entity_commands.try_insert(animated);
     }
+    if let Some(anchor) = bundle.anchor {
+        entity_commands.try_insert(anchor);
+    }
+}
+
+// ── Space reset ───────────────────────────────────────────────────────────────
+
+/// Despawn everything in `space_id` except the player, rebuild the floor map
+/// from `def`, drop any spawn-group runtime state for the space, then re-spawn
+/// the authored objects from `def.resolved_objects`. Keeps the same `space_id`
+/// (so the camera, editor context, and other dangling references stay valid);
+/// only the *contents* of the space are rebuilt.
+///
+/// Called when entering the editor and on file-open so the view reflects the
+/// YAML rather than whatever runtime state happened to be in the world (spawn-
+/// group NPCs, dropped items, gameplay-mutated state).
+#[allow(clippy::too_many_arguments)]
+pub fn reset_space_contents_from_def(
+    commands: &mut Commands,
+    space_id: SpaceId,
+    def: &crate::world::map_layout::SpaceDefinition,
+    object_definitions: &OverworldObjectDefinitions,
+    object_registry: &ObjectRegistry,
+    floor_maps: &mut FloorMaps,
+    spawn_group_registry: &mut SpawnGroupRegistry,
+    residents: &Query<(Entity, &SpaceResident), Without<Player>>,
+    portal_markers: &Query<Entity, With<crate::editor::resources::EditorPortalMarker>>,
+) {
+    for (entity, resident) in residents.iter() {
+        if resident.space_id == space_id {
+            commands.entity(entity).despawn();
+        }
+    }
+    for entity in portal_markers.iter() {
+        commands.entity(entity).despawn();
+    }
+
+    spawn_group_registry
+        .groups
+        .retain(|key, _| key.space_id != space_id);
+
+    floor_maps.insert(
+        space_id,
+        TilePosition::GROUND_FLOOR,
+        def.build_floor_map(TilePosition::GROUND_FLOOR),
+    );
+
+    for object in &def.resolved_objects {
+        if def.is_contained(object.id) {
+            continue;
+        }
+        let Some(placement) = object.placement else {
+            continue;
+        };
+        crate::world::setup::spawn_overworld_object_instance(
+            commands,
+            object_definitions,
+            object_registry,
+            def,
+            object,
+            space_id,
+            placement.to_tile_position(),
+        );
+    }
+}
+
+/// `OnEnter(MapEditor)` system: refresh the editor's space from its YAML
+/// definition. Runs after `init_editor_context` so `EditorContext.space_id` is
+/// populated. Without this the editor inherits whatever was in the world (e.g.
+/// spawn-group NPCs that ran in `InGame`), and saving would round-trip those
+/// runtime entities into the YAML as static placements.
+pub fn reset_space_to_authored(
+    mut commands: Commands,
+    editor_context: Res<EditorContext>,
+    space_definitions: Res<SpaceDefinitions>,
+    object_definitions: Res<OverworldObjectDefinitions>,
+    object_registry: Res<ObjectRegistry>,
+    mut floor_maps: ResMut<FloorMaps>,
+    mut reset_deps: EditorSpaceResetDeps,
+) {
+    let Some(def) = space_definitions.get(&editor_context.authored_id) else {
+        return;
+    };
+    reset_space_contents_from_def(
+        &mut commands,
+        editor_context.space_id,
+        def,
+        &object_definitions,
+        &object_registry,
+        &mut floor_maps,
+        &mut reset_deps.spawn_group_registry,
+        &reset_deps.residents,
+        &reset_deps.portal_markers,
+    );
 }
 
 // ── Initialization ────────────────────────────────────────────────────────────
@@ -128,9 +233,11 @@ pub fn init_portal_buffer(
     lighting_buffer.selected_keyframe = None;
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn attach_editor_visuals(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
     definitions: Res<OverworldObjectDefinitions>,
     world_config: Res<WorldConfig>,
     editor_camera: Res<EditorCamera>,
@@ -151,6 +258,7 @@ pub fn attach_editor_visuals(
         insert_editor_visuals(
             &mut commands.entity(entity),
             &asset_server,
+            &mut texture_atlas_layouts,
             def,
             &world_config,
             *tile,
@@ -399,6 +507,7 @@ pub fn update_editor_cursor_ghost(
     mut commands: Commands,
     mut gizmos: Gizmos,
     asset_server: Res<AssetServer>,
+    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
     windows: Query<&Window, With<PrimaryWindow>>,
     world_config: Res<WorldConfig>,
     editor_camera: Res<EditorCamera>,
@@ -470,9 +579,16 @@ pub fn update_editor_cursor_ghost(
             let Some(def) = definitions.get(type_id) else {
                 return;
             };
-            let mut sprite = sprite_for_definition(&asset_server, def, &world_config);
-            sprite.color = sprite.color.with_alpha(0.5);
-            let bottom_anchored = bottom_anchor_for(&def.render);
+            let mut bundle = build_object_visual_bundle(
+                &asset_server,
+                &mut texture_atlas_layouts,
+                def,
+                &world_config,
+                None,
+                1,
+            );
+            bundle.sprite.color = bundle.sprite.color.with_alpha(0.5);
+            let bottom_anchored = bundle.anchor.is_some();
             let anchor_y_offset = if bottom_anchored {
                 -effective * 0.5
             } else {
@@ -489,12 +605,15 @@ pub fn update_editor_cursor_ghost(
             let z = z_base + 50.0;
             let mut entity = commands.spawn((
                 crate::editor::resources::EditorCursorMarker,
-                sprite,
+                bundle.sprite,
                 Transform::from_xyz(tile_center.x, tile_center.y + anchor_y_offset, z)
                     .with_scale(Vec3::splat(editor_camera.zoom_level)),
             ));
-            if bottom_anchored {
-                entity.insert(bevy::sprite::Anchor::BOTTOM_CENTER);
+            if let Some(animated) = bundle.animated {
+                entity.insert(animated);
+            }
+            if let Some(anchor) = bundle.anchor {
+                entity.insert(anchor);
             }
         }
         EditorTool::FloorBrush => {
@@ -539,6 +658,7 @@ pub fn handle_editor_left_click(
     existing_objects: Query<(&OverworldObject, &SpaceResident, &TilePosition), Without<Player>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
     panel_roots: crate::editor::ui::EditorPanelRoots,
 ) {
     if !mouse.just_pressed(MouseButton::Left) {
@@ -663,6 +783,7 @@ pub fn handle_editor_left_click(
     insert_editor_visuals(
         &mut commands.entity(entity),
         &asset_server,
+        &mut texture_atlas_layouts,
         def,
         &world_config,
         tile,
@@ -1091,7 +1212,11 @@ pub fn handle_editor_save(
     lighting_buffer: Res<EditorLightingBuffer>,
     object_registry: Res<ObjectRegistry>,
     floor_maps: Res<FloorMaps>,
-    objects: Query<(&OverworldObject, &SpaceResident, &TilePosition)>,
+    objects: Query<
+        (&OverworldObject, &SpaceResident, &TilePosition),
+        (Without<SpawnGroupMember>, Without<Player>),
+    >,
+    mut space_definitions: ResMut<SpaceDefinitions>,
 ) {
     if modal_state.active.is_some() {
         return;
@@ -1108,6 +1233,7 @@ pub fn handle_editor_save(
             &objects,
             &floor_maps,
         );
+        space_definitions.load_single_from_disk(&editor_context.authored_id);
         editor_state.dirty = false;
         info!("Saved map '{}'", editor_context.authored_id);
     }
@@ -1968,10 +2094,7 @@ fn parse_rect(
 #[allow(clippy::too_many_arguments)]
 pub fn apply_modal_confirmed(
     mut modal_state: ResMut<ModalState>,
-    mut editor_context: ResMut<EditorContext>,
-    mut editor_state: ResMut<EditorState>,
-    mut editor_camera: ResMut<EditorCamera>,
-    mut world_config: ResMut<WorldConfig>,
+    mut view: EditorViewState,
     mut space_manager: ResMut<SpaceManager>,
     mut floor_maps: ResMut<FloorMaps>,
     mut space_definitions: ResMut<SpaceDefinitions>,
@@ -1981,9 +2104,17 @@ pub fn apply_modal_confirmed(
     mut templates_index: ResMut<EditorTemplatesIndex>,
     object_definitions: Res<OverworldObjectDefinitions>,
     mut object_registry: ResMut<ObjectRegistry>,
-    objects_save: Query<(&OverworldObject, &SpaceResident, &TilePosition)>,
+    objects_save: Query<
+        (&OverworldObject, &SpaceResident, &TilePosition),
+        (Without<SpawnGroupMember>, Without<Player>),
+    >,
+    mut reset_deps: EditorSpaceResetDeps,
     mut commands: Commands,
 ) {
+    let editor_context = view.context.as_mut();
+    let editor_state = view.state.as_mut();
+    let editor_camera = view.camera.as_mut();
+    let world_config = view.world_config.as_mut();
     let Some(confirmed) = modal_state.confirmed.take() else {
         return;
     };
@@ -1993,9 +2124,9 @@ pub fn apply_modal_confirmed(
 
     match confirmed {
         ModalConfirmed::FileOpen { authored_id } => {
-            if space_definitions.get(&authored_id).is_none()
-                && !space_definitions.load_single_from_disk(&authored_id)
-            {
+            // Re-load from disk so the in-memory `SpaceDefinitions` matches the
+            // file (and not, e.g., a stale entry from a prior session).
+            if !space_definitions.load_single_from_disk(&authored_id) {
                 warn!("Could not load map '{authored_id}' from disk");
                 return;
             }
@@ -2004,6 +2135,19 @@ pub fn apply_modal_confirmed(
             };
 
             let space_id = if let Some(id) = space_manager.persistent_space_id(&authored_id) {
+                // Space already exists — wipe its contents and re-spawn from
+                // the fresh definition so the editor view matches the YAML.
+                reset_space_contents_from_def(
+                    &mut commands,
+                    id,
+                    &def,
+                    &object_definitions,
+                    &object_registry,
+                    &mut floor_maps,
+                    &mut reset_deps.spawn_group_registry,
+                    &reset_deps.residents,
+                    &reset_deps.portal_markers,
+                );
                 id
             } else {
                 instantiate_space(

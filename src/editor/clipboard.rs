@@ -260,6 +260,7 @@ pub fn stamp_fragment(
     world_config: &crate::world::WorldConfig,
     editor_camera: &crate::editor::resources::EditorCamera,
     asset_server: &AssetServer,
+    texture_atlas_layouts: &mut Assets<TextureAtlasLayout>,
     floor_maps: &FloorMaps,
     pending_commands: &mut PendingGameCommands,
     commands: &mut Commands,
@@ -297,6 +298,7 @@ pub fn stamp_fragment(
         crate::editor::systems::insert_editor_visuals_pub(
             &mut commands.entity(entity),
             asset_server,
+            texture_atlas_layouts,
             def,
             world_config,
             tile,
@@ -358,6 +360,7 @@ pub fn render_paste_ghost(
     mut commands: Commands,
     mut gizmos: Gizmos,
     asset_server: Res<AssetServer>,
+    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
     windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
     world_config: Res<crate::world::WorldConfig>,
     editor_camera: Res<crate::editor::resources::EditorCamera>,
@@ -458,10 +461,16 @@ pub fn render_paste_ghost(
         let Some(def) = object_definitions.get(&fo.type_id) else {
             continue;
         };
-        let mut sprite =
-            crate::world::setup::sprite_for_definition(&asset_server, def, &world_config);
-        sprite.color = sprite.color.with_alpha(0.6);
-        let bottom_anchored = crate::world::setup::bottom_anchor_for(&def.render);
+        let mut bundle = crate::world::setup::build_object_visual_bundle(
+            &asset_server,
+            &mut texture_atlas_layouts,
+            def,
+            &world_config,
+            None,
+            1,
+        );
+        bundle.sprite.color = bundle.sprite.color.with_alpha(0.6);
+        let bottom_anchored = bundle.anchor.is_some();
         let anchor_y_offset = if bottom_anchored {
             -effective * 0.5
         } else {
@@ -477,12 +486,15 @@ pub fn render_paste_ghost(
         let z = z_base + 50.0;
         let mut entity = commands.spawn((
             crate::editor::resources::EditorPasteGhostMarker,
-            sprite,
+            bundle.sprite,
             Transform::from_xyz(cx, cy + anchor_y_offset, z)
                 .with_scale(Vec3::splat(editor_camera.zoom_level)),
         ));
-        if bottom_anchored {
-            entity.insert(bevy::sprite::Anchor::BOTTOM_CENTER);
+        if let Some(animated) = bundle.animated {
+            entity.insert(animated);
+        }
+        if let Some(anchor) = bundle.anchor {
+            entity.insert(anchor);
         }
     }
 }
@@ -506,6 +518,7 @@ pub fn handle_editor_paste_click(
     mut undo_stack: ResMut<UndoStack>,
     mut pending_commands: ResMut<PendingGameCommands>,
     asset_server: Res<AssetServer>,
+    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
     panel_roots: crate::editor::ui::EditorPanelRoots,
     mut commands: Commands,
 ) {
@@ -542,6 +555,7 @@ pub fn handle_editor_paste_click(
         &world_config,
         &editor_camera,
         &asset_server,
+        &mut texture_atlas_layouts,
         &floor_maps,
         &mut pending_commands,
         &mut commands,

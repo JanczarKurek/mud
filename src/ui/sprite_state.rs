@@ -7,10 +7,10 @@ use std::collections::HashMap;
 use bevy::prelude::*;
 
 use crate::game::resources::ClientGameState;
-use crate::world::animation::{build_animated_sprite_components, AnimatedSprite};
+use crate::world::animation::AnimatedSprite;
 use crate::world::components::ClientProjectedWorldObject;
 use crate::world::object_definitions::OverworldObjectDefinitions;
-use crate::world::setup::sprite_for_definition_state_count;
+use crate::world::setup::build_object_visual_bundle;
 use crate::world::WorldConfig;
 
 /// Watches `ClientGameState.world_objects[id].state` and `.quantity` for
@@ -18,6 +18,7 @@ use crate::world::WorldConfig;
 /// `AnimatedSprite` to match the new state's overrides or the right
 /// `stack_sprites` tier. Tracks the last-seen `(state, quantity)` per object
 /// in a `Local` map so it only acts on real transitions.
+#[allow(clippy::too_many_arguments)]
 pub fn sync_object_state_visuals(
     asset_server: Res<AssetServer>,
     mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
@@ -44,7 +45,7 @@ pub fn sync_object_state_visuals(
         last_seen.insert(object_id, (new_state.clone(), new_quantity));
 
         // First-time observation: skip the initial swap (the spawn path
-        // already picked the right sprite via `sprite_for_definition_state_count`).
+        // already built the right visual bundle).
         if first_observation {
             continue;
         }
@@ -54,22 +55,20 @@ pub fn sync_object_state_visuals(
         };
         let state_ref = new_state.as_deref();
 
-        if let Some(sheet) = definition.animation_for_state(state_ref) {
-            let (animated, sprite) =
-                build_animated_sprite_components(sheet, &asset_server, &mut texture_atlas_layouts);
-            commands.entity(entity).insert((animated, sprite));
+        let bundle = build_object_visual_bundle(
+            &asset_server,
+            &mut texture_atlas_layouts,
+            definition,
+            &world_config,
+            state_ref,
+            new_quantity,
+        );
+        let mut entity_commands = commands.entity(entity);
+        entity_commands.insert(bundle.sprite);
+        if let Some(animated) = bundle.animated {
+            entity_commands.insert(animated);
         } else {
-            let sprite = sprite_for_definition_state_count(
-                &asset_server,
-                definition,
-                &world_config,
-                state_ref,
-                new_quantity,
-            );
-            commands
-                .entity(entity)
-                .remove::<AnimatedSprite>()
-                .insert(sprite);
+            entity_commands.remove::<AnimatedSprite>();
         }
     }
 
