@@ -248,8 +248,8 @@ mod tests {
 
     #[test]
     fn non_subcommand_args_parse_without_subcommand() {
-        let cli = Mud2Cli::try_parse_from(["mud2", "--connect", "127.0.0.1:7000"]).expect("parse");
+        let cli = Mud2Cli::try_parse_from(["mud2", "--tcp-client"]).expect("parse");
         assert!(cli.command.is_none());
-        assert_eq!(cli.connect.as_deref(), Some("127.0.0.1:7000"));
+        assert!(cli.mode.tcp_client);
     }
 }

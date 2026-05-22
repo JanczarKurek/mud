@@ -4,25 +4,52 @@ height: 50
 fill_floor_type: grass
 permanence: persistent
 lighting:
+  outdoor_ambient:
+  - 220
+  - 220
+  - 230
+  indoor_ambient:
+  - 48
+  - 50
+  - 60
+  has_day_night: true
   outdoor_curve:
-    - time: 0.0
-      color: [0, 0, 0]
-      alpha: 0.99
-    - time: 0.2
-      color: [0, 0, 0]
-      alpha: 0.98
-    - time: 0.3
-      color: [0, 0, 0]
-      alpha: 0.0
-    - time: 0.7
-      color: [0, 0, 0]
-      alpha: 0.0
-    - time: 0.8
-      color: [0, 0, 0]
-      alpha: 0.98
-    - time: 1.0
-      color: [0, 0, 0]
-      alpha: 0.99
+  - time: 0.2
+    color:
+    - 1
+    - 1
+    - 1
+    alpha: 0.98
+  - time: 0.25
+    color:
+    - 4
+    - 4
+    - 4
+    alpha: 0.95
+  - time: 0.3
+    color:
+    - 2
+    - 2
+    - 2
+    alpha: 0.0
+  - time: 0.7
+    color:
+    - 1
+    - 1
+    - 1
+    alpha: 0.0
+  - time: 0.75
+    color:
+    - 1
+    - 1
+    - 1
+    alpha: 0.95
+  - time: 0.8
+    color:
+    - 1
+    - 1
+    - 1
+    alpha: 0.98
 portals:
 - id: starter_cellar_entrance
   source:
@@ -42,6 +69,216 @@ portals:
     x: 3
     y: 14
 floors:
+  cave_floor:
+    placement:
+    - x: 34
+      y: 16
+    - x: 35
+      y: 16
+    - x: 35
+      y: 17
+    - x: 36
+      y: 17
+    - x: 37
+      y: 17
+    - x: 38
+      y: 17
+    - x: 25
+      y: 18
+    - x: 26
+      y: 18
+    - x: 27
+      y: 18
+    - x: 33
+      y: 18
+    - x: 38
+      y: 18
+    - x: 39
+      y: 18
+    - x: 25
+      y: 19
+    - x: 26
+      y: 19
+    - x: 27
+      y: 19
+    - x: 28
+      y: 19
+    - x: 29
+      y: 19
+    - x: 31
+      y: 19
+    - x: 39
+      y: 19
+    - x: 40
+      y: 19
+    - x: 25
+      y: 20
+    - x: 26
+      y: 20
+    - x: 27
+      y: 20
+    - x: 28
+      y: 20
+    - x: 29
+      y: 20
+    - x: 30
+      y: 20
+    - x: 31
+      y: 20
+    - x: 35
+      y: 20
+    - x: 36
+      y: 20
+    - x: 37
+      y: 20
+    - x: 38
+      y: 20
+    - x: 25
+      y: 21
+    - x: 26
+      y: 21
+    - x: 27
+      y: 21
+    - x: 28
+      y: 21
+    - x: 29
+      y: 21
+    - x: 30
+      y: 21
+    - x: 31
+      y: 21
+    - x: 32
+      y: 21
+    - x: 33
+      y: 21
+    - x: 34
+      y: 21
+    - x: 25
+      y: 22
+    - x: 26
+      y: 22
+    - x: 27
+      y: 22
+    - x: 28
+      y: 22
+    - x: 29
+      y: 22
+    - x: 30
+      y: 22
+    - x: 31
+      y: 22
+    - x: 32
+      y: 22
+    - x: 33
+      y: 22
+    - x: 34
+      y: 22
+    - x: 39
+      y: 22
+    - x: 40
+      y: 22
+    - x: 41
+      y: 22
+    - x: 25
+      y: 23
+    - x: 26
+      y: 23
+    - x: 27
+      y: 23
+    - x: 28
+      y: 23
+    - x: 29
+      y: 23
+    - x: 30
+      y: 23
+    - x: 31
+      y: 23
+    - x: 32
+      y: 23
+    - x: 33
+      y: 23
+    - x: 34
+      y: 23
+    - x: 35
+      y: 23
+    - x: 38
+      y: 23
+    - x: 42
+      y: 23
+    - x: 27
+      y: 24
+    - x: 28
+      y: 24
+    - x: 29
+      y: 24
+    - x: 30
+      y: 24
+    - x: 31
+      y: 24
+    - x: 32
+      y: 24
+    - x: 35
+      y: 24
+    - x: 36
+      y: 24
+    - x: 37
+      y: 24
+    - x: 41
+      y: 24
+    - x: 35
+      y: 25
+    - x: 36
+      y: 25
+    - x: 40
+      y: 25
+    - x: 35
+      y: 26
+    - x: 37
+      y: 26
+    - x: 38
+      y: 26
+    - x: 39
+      y: 26
+    - x: 40
+      y: 26
+    - x: 33
+      y: 27
+    - x: 34
+      y: 27
+    - x: 37
+      y: 27
+    - x: 38
+      y: 27
+    - x: 39
+      y: 27
+    - x: 33
+      y: 28
+    - x: 34
+      y: 28
+    - x: 35
+      y: 28
+    - x: 36
+      y: 28
+    - x: 37
+      y: 28
+    - x: 39
+      y: 28
+    - x: 40
+      y: 28
+    - x: 41
+      y: 29
+    - x: 42
+      y: 29
+    - x: 37
+      y: 30
+    - x: 34
+      y: 31
+    - x: 35
+      y: 31
+    - x: 36
+      y: 31
+    - x: 39
+      y: 32
   dirt_path:
     placement:
     - x: 5
@@ -120,12 +357,46 @@ floors:
       y: 26
     - x: 35
       y: 27
-    - x: 35
+    - x: 28
+      y: 28
+    - x: 29
+      y: 28
+    - x: 29
+      y: 29
+    - x: 30
+      y: 29
+    - x: 31
       y: 29
     - x: 35
+      y: 29
+    - x: 30
+      y: 30
+    - x: 31
+      y: 30
+    - x: 32
       y: 30
     - x: 35
+      y: 30
+    - x: 31
+      y: 31
+    - x: 32
+      y: 31
+    - x: 33
+      y: 31
+    - x: 32
       y: 32
+    - x: 33
+      y: 32
+    - x: 34
+      y: 32
+    - x: 35
+      y: 32
+    - x: 32
+      y: 33
+    - x: 33
+      y: 33
+    - x: 34
+      y: 33
     - x: 35
       y: 33
     - x: 35
@@ -474,133 +745,37 @@ floors:
       y: 48
     - x: 26
       y: 48
-  cave_floor:
+  water:
     placement:
-    - x: 34
-      y: 16
-    - x: 35
-      y: 16
-    - x: 35
-      y: 17
-    - x: 36
-      y: 17
-    - x: 37
-      y: 17
-    - x: 38
-      y: 17
-    - x: 33
-      y: 18
-    - x: 38
-      y: 18
-    - x: 39
-      y: 18
-    - x: 31
-      y: 19
-    - x: 39
-      y: 19
     - x: 40
-      y: 19
-    - x: 35
-      y: 20
-    - x: 36
-      y: 20
-    - x: 37
-      y: 20
-    - x: 38
-      y: 20
-    - x: 32
-      y: 21
-    - x: 34
-      y: 21
-    - x: 32
-      y: 22
-    - x: 34
-      y: 22
-    - x: 39
-      y: 22
-    - x: 40
-      y: 22
-    - x: 41
-      y: 22
-    - x: 30
-      y: 23
-    - x: 31
-      y: 23
-    - x: 34
-      y: 23
-    - x: 35
-      y: 23
-    - x: 38
-      y: 23
-    - x: 42
-      y: 23
-    - x: 31
-      y: 24
-    - x: 35
-      y: 24
-    - x: 36
-      y: 24
-    - x: 37
-      y: 24
-    - x: 41
-      y: 24
-    - x: 35
-      y: 25
-    - x: 36
-      y: 25
-    - x: 40
-      y: 25
-    - x: 35
-      y: 26
-    - x: 37
-      y: 26
-    - x: 38
-      y: 26
-    - x: 39
-      y: 26
-    - x: 40
-      y: 26
-    - x: 33
-      y: 27
-    - x: 34
-      y: 27
-    - x: 37
-      y: 27
-    - x: 38
-      y: 27
-    - x: 39
-      y: 27
-    - x: 33
-      y: 28
-    - x: 34
-      y: 28
-    - x: 35
-      y: 28
-    - x: 36
-      y: 28
-    - x: 37
-      y: 28
-    - x: 39
-      y: 28
-    - x: 40
-      y: 28
-    - x: 41
-      y: 29
-    - x: 42
-      y: 29
-    - x: 37
       y: 30
     - x: 41
       y: 30
-    - x: 34
+    - x: 42
+      y: 30
+    - x: 43
+      y: 30
+    - x: 44
+      y: 30
+    - x: 40
       y: 31
-    - x: 35
+    - x: 41
       y: 31
-    - x: 36
+    - x: 42
       y: 31
-    - x: 39
+    - x: 43
+      y: 31
+    - x: 44
+      y: 31
+    - x: 40
       y: 32
-    - x: 40
+    - x: 41
+      y: 32
+    - x: 42
+      y: 32
+    - x: 43
+      y: 32
+    - x: 44
       y: 32
   cobblestone:
     placement:
@@ -778,9 +953,6 @@ floors:
       y: 17
     - x: 10
       y: 17
-  water:
-    rects:
-    - { x: 40, y: 30, w: 5, h: 3 }
 objects:
 - type: apple
   placement:
@@ -798,7 +970,11 @@ objects:
     y: 23
 - type: archer_goblin
   placement:
+  - x: 54
+    y: 9
   - x: 56
+    y: 14
+  - x: 61
     y: 14
 - type: barrel
   placement:
@@ -810,10 +986,14 @@ objects:
   - x: 4
     y: 5
     z: 1
-  - x: 10
+  - x: 14
     y: 10
   - x: 55
     y: 36
+- type: blazing_fire
+  placement:
+  - x: 15
+    y: 15
 - type: bronze_sword
   placement:
   - x: 13
@@ -832,15 +1012,14 @@ objects:
   placement:
   - x: 4
     y: 15
+- type: chatterbox
+  placement:
+  - x: 37
+    y: 25
 - type: copper_amulet
   placement:
   - x: 64
     y: 10
-# --- Money & pouch demo (near the eastern spawn) ---
-# A loose handful of coins sits on the path between the spawn at (15, 14)
-# and the villager at (20, 16). Pick them up to see stack-tier sprites in
-# the inventory; the small_pouch and iron_chest below pre-stage container
-# nesting (a pouch full of coppers riding inside the chest).
 - type: copper_coin
   placement:
   - x: 17
@@ -853,70 +1032,14 @@ objects:
     y: 15
   - x: 19
     y: 15
-- type: silver_coin
-  placement:
-  - x: 18
-    y: 15
-  - x: 18
-    y: 16
-- type: gold_coin
-  placement:
-  - x: 19
-    y: 16
-- id: demo_small_pouch
-  type: small_pouch
-  placement: { x: 17, y: 16 }
-  contents:
-    - type: copper_coin
-    - type: copper_coin
-    - type: silver_coin
-- id: demo_treasure_chest
-  type: iron_chest
-  placement: { x: 21, y: 14 }
-  contents:
-    - type: copper_coin
-    - type: copper_coin
-    - type: silver_coin
-    - type: silver_coin
-    - type: gold_coin
-    - type: herb_pouch
-- id: blazing_fire
-  type: blazing_fire
-  placement: { x: 15, y: 15 }
-- id: bear_trap
-  type: bear_trap
-  placement: { x: 11, y: 11 }
-  properties:
-    hidden_dc: "15"
-- id: spell_chest
-  type: iron_chest
-  placement: { x: 22, y: 10}
-  contents:
-    - type: swiftness_scroll
-    - type: glimmer_scroll
-    - type: bless_scroll
-    - type: light_scroll
-    - type: fireball_scroll
-    - type: fireball_scroll
-    - type: firewall_scroll
-    - type: firewall_scroll
-# Phase-2 lock demo: a locked door blocking a side passage, with the key
-# stashed in a nearby unlocked chest. Open by either picking the lock
-# (Thievery), forcing it (Athletics), or using the matching iron key.
-- id: demo_locked_door
-  type: wooden_door
-  properties:
-    state: locked
-  placement: { x: 23, y: 10 }
-- id: demo_key_chest
-  type: iron_chest
-  placement: { x: 24, y: 10 }
-  contents:
-    - type: iron_key
 - type: cyclops
   placement:
   - x: 54
     y: 44
+  - x: 57
+    y: 47
+  - x: 61
+    y: 47
 - type: fence
   placement:
   - x: 26
@@ -977,212 +1100,236 @@ objects:
     y: 12
   - x: 32
     y: 12
+- type: fire_elemental
+  placement:
+  - x: 30
+    y: 8
+  - x: 40
+    y: 10
+  - x: 34
+    y: 14
+  - x: 40
+    y: 14
+- type: fishing_spot
+  placement:
+  - x: 8
+    y: 30
+  - x: 14
+    y: 30
+  - x: 20
+    y: 30
+  - x: 4
+    y: 35
+  - x: 24
+    y: 38
+  - x: 4
+    y: 41
 - type: floor_plank
   placement:
   - x: 2
     y: 2
     z: 1
-  - x: 3
-    y: 2
-    z: 1
-  - x: 4
-    y: 2
-    z: 1
-  - x: 5
-    y: 2
-    z: 1
-  - x: 6
-    y: 2
-    z: 1
-  - x: 7
-    y: 2
-    z: 1
-  - x: 2
-    y: 3
-    z: 1
-  - x: 4
-    y: 3
-    z: 1
-  - x: 5
-    y: 3
-    z: 1
-  - x: 6
-    y: 3
-    z: 1
-  - x: 7
-    y: 3
-    z: 1
-  - x: 2
-    y: 4
-    z: 1
-  - x: 3
-    y: 4
-    z: 1
-  - x: 4
-    y: 4
-    z: 1
-  - x: 5
-    y: 4
-    z: 1
-  - x: 6
-    y: 4
-    z: 1
-  - x: 7
-    y: 4
-    z: 1
-  - x: 2
-    y: 5
-    z: 1
-  - x: 3
-    y: 5
-    z: 1
-  - x: 4
-    y: 5
-    z: 1
-  - x: 5
-    y: 5
-    z: 1
-  - x: 6
-    y: 5
-    z: 1
-  - x: 7
-    y: 5
-    z: 1
-  - x: 2
-    y: 6
-    z: 1
-  - x: 3
-    y: 6
-    z: 1
-  - x: 4
-    y: 6
-    z: 1
-  - x: 5
-    y: 6
-    z: 1
-  - x: 6
-    y: 6
-    z: 1
-  - x: 7
-    y: 6
-    z: 1
-  - x: 2
-    y: 7
-    z: 1
-  - x: 3
-    y: 7
-    z: 1
-  - x: 4
-    y: 7
-    z: 1
-  - x: 5
-    y: 7
-    z: 1
-  - x: 6
-    y: 7
-    z: 1
-  - x: 7
-    y: 7
-    z: 1
   - x: 2
     y: 2
     z: 2
   - x: 3
     y: 2
+    z: 1
+  - x: 3
+    y: 2
     z: 2
+  - x: 4
+    y: 2
+    z: 1
   - x: 4
     y: 2
     z: 2
   - x: 5
     y: 2
+    z: 1
+  - x: 5
+    y: 2
     z: 2
   - x: 6
     y: 2
+    z: 1
+  - x: 6
+    y: 2
     z: 2
+  - x: 7
+    y: 2
+    z: 1
   - x: 7
     y: 2
     z: 2
   - x: 2
     y: 3
+    z: 1
+  - x: 2
+    y: 3
     z: 2
+  - x: 4
+    y: 3
+    z: 1
+  - x: 5
+    y: 3
+    z: 1
   - x: 5
     y: 3
     z: 2
   - x: 6
     y: 3
+    z: 1
+  - x: 6
+    y: 3
     z: 2
+  - x: 7
+    y: 3
+    z: 1
   - x: 7
     y: 3
     z: 2
   - x: 2
     y: 4
+    z: 1
+  - x: 2
+    y: 4
     z: 2
+  - x: 3
+    y: 4
+    z: 1
   - x: 3
     y: 4
     z: 2
   - x: 4
     y: 4
+    z: 1
+  - x: 4
+    y: 4
     z: 2
   - x: 5
     y: 4
+    z: 1
+  - x: 5
+    y: 4
     z: 2
+  - x: 6
+    y: 4
+    z: 1
   - x: 6
     y: 4
     z: 2
   - x: 7
     y: 4
+    z: 1
+  - x: 7
+    y: 4
     z: 2
+  - x: 2
+    y: 5
+    z: 1
   - x: 2
     y: 5
     z: 2
   - x: 3
     y: 5
+    z: 1
+  - x: 3
+    y: 5
     z: 2
+  - x: 4
+    y: 5
+    z: 1
   - x: 4
     y: 5
     z: 2
   - x: 5
     y: 5
+    z: 1
+  - x: 5
+    y: 5
     z: 2
+  - x: 6
+    y: 5
+    z: 1
   - x: 6
     y: 5
     z: 2
   - x: 7
     y: 5
+    z: 1
+  - x: 7
+    y: 5
     z: 2
+  - x: 2
+    y: 6
+    z: 1
   - x: 2
     y: 6
     z: 2
   - x: 3
     y: 6
+    z: 1
+  - x: 3
+    y: 6
     z: 2
+  - x: 4
+    y: 6
+    z: 1
   - x: 4
     y: 6
     z: 2
   - x: 5
     y: 6
+    z: 1
+  - x: 5
+    y: 6
     z: 2
+  - x: 6
+    y: 6
+    z: 1
   - x: 6
     y: 6
     z: 2
   - x: 7
     y: 6
+    z: 1
+  - x: 7
+    y: 6
     z: 2
+  - x: 2
+    y: 7
+    z: 1
   - x: 2
     y: 7
     z: 2
   - x: 3
     y: 7
+    z: 1
+  - x: 3
+    y: 7
     z: 2
+  - x: 4
+    y: 7
+    z: 1
   - x: 4
     y: 7
     z: 2
   - x: 5
     y: 7
+    z: 1
+  - x: 5
+    y: 7
     z: 2
   - x: 6
     y: 7
+    z: 1
+  - x: 6
+    y: 7
     z: 2
+  - x: 7
+    y: 7
+    z: 1
   - x: 7
     y: 7
     z: 2
@@ -1192,18 +1339,6 @@ objects:
     y: 24
 - type: flowers
   placement:
-  - x: 33
-    y: 23
-  - x: 34
-    y: 23
-  - x: 36
-    y: 23
-  - x: 37
-    y: 23
-  - x: 33
-    y: 24
-  - x: 37
-    y: 24
   - x: 38
     y: 4
   - x: 24
@@ -1232,18 +1367,30 @@ objects:
     y: 10
   - x: 18
     y: 13
+  - x: 25
+    y: 13
   - x: 39
     y: 13
   - x: 19
     y: 14
-  - x: 25
-    y: 15
   - x: 41
     y: 16
   - x: 36
     y: 18
   - x: 38
     y: 20
+  - x: 33
+    y: 23
+  - x: 34
+    y: 23
+  - x: 36
+    y: 23
+  - x: 37
+    y: 23
+  - x: 37
+    y: 24
+  - x: 33
+    y: 25
   - x: 2
     y: 27
   - x: 4
@@ -1285,25 +1432,73 @@ objects:
   - x: 48
     y: 9
   - x: 49
+    y: 10
+  - x: 52
+    y: 13
+  - x: 49
     y: 29
   - x: 56
     y: 29
+  - x: 60
+    y: 29
+  - x: 59
+    y: 30
+  - x: 55
+    y: 31
+  - x: 54
+    y: 34
   - x: 54
     y: 47
-- type: leather_armor
+  - x: 58
+    y: 47
+  - x: 58
+    y: 48
+- type: gold_coin
   placement:
-  - x: 15
-    y: 3
-- type: leather_helmet
+  - x: 19
+    y: 16
+- type: herb_patch
   placement:
-  - x: 6
-    y: 15
+  - x: 66
+    y: 25
+  - x: 27
+    y: 27
+  - x: 37
+    y: 33
+  - x: 29
+    y: 36
+  - x: 60
+    y: 36
+  - x: 44
+    y: 38
+- type: iron_chest
+  placement:
+  - x: 24
+    y: 10
+  - x: 13
+    y: 11
+  - x: 20
+    y: 14
 - type: leather_legs
   placement:
   - x: 58
     y: 20
   - x: 62
     y: 40
+- type: ore_node
+  placement:
+  - x: 52
+    y: 30
+  - x: 49
+    y: 33
+  - x: 61
+    y: 35
+  - x: 66
+    y: 35
+  - x: 55
+    y: 43
+  - x: 63
+    y: 44
 - type: player
   placement:
   - x: 15
@@ -1324,30 +1519,92 @@ objects:
     y: 34
   - x: 10
     y: 40
+  - x: 25
+    y: 42
   - x: 22
     y: 44
-# --- Usable-item demos near the spawn point (35, 25) ---
-# Two pickups to exercise the charged-item system: the rune is a 5-charge
-# consumable (untargeted self-heal); the wand carries 30 charges of a targeted
-# spell (Spark Bolt). Pick them up, right-click them in the inventory, and the
-# context menu offers "Use On" (with a gather/spell cursor as appropriate).
+  - x: 25
+    y: 44
+  - x: 25
+    y: 46
+  - x: 23
+    y: 47
+  - x: 24
+    y: 47
+  - x: 25
+    y: 47
 - type: rune_of_lesser_heal
   placement:
-    x: 36
+  - x: 36
     y: 25
-- type: wand_of_sparks
+- type: side_wall
   placement:
-    x: 34
-    y: 25
-# --- AoE / pattern-summon test scrolls (near spawn for easy testing) ---
-- type: fireball_scroll
+  - x: 2
+    y: 2
+  - x: 2
+    y: 2
+    z: 1
+  - x: 7
+    y: 2
+  - x: 7
+    y: 2
+    z: 1
+  - x: 2
+    y: 3
+  - x: 2
+    y: 3
+    z: 1
+  - x: 7
+    y: 3
+  - x: 7
+    y: 3
+    z: 1
+  - x: 2
+    y: 4
+  - x: 2
+    y: 4
+    z: 1
+  - x: 7
+    y: 4
+  - x: 7
+    y: 4
+    z: 1
+  - x: 2
+    y: 5
+  - x: 2
+    y: 5
+    z: 1
+  - x: 7
+    y: 5
+  - x: 7
+    y: 5
+    z: 1
+  - x: 2
+    y: 6
+  - x: 2
+    y: 6
+    z: 1
+  - x: 7
+    y: 6
+  - x: 7
+    y: 6
+    z: 1
+  - x: 2
+    y: 7
+  - x: 2
+    y: 7
+    z: 1
+  - x: 7
+    y: 7
+  - x: 7
+    y: 7
+    z: 1
+- type: silver_coin
   placement:
-    x: 33
-    y: 24
-- type: firewall_scroll
-  placement:
-    x: 33
-    y: 26
+  - x: 18
+    y: 15
+  - x: 18
+    y: 16
 - type: silver_ring
   placement:
   - x: 38
@@ -1360,13 +1617,12 @@ objects:
   placement:
   - x: 30
     y: 33
-- type: stone_step
+  - x: 40
+    y: 49
+- type: small_pouch
   placement:
-  - x: 3
-    y: 3
-  - x: 4
-    y: 3
-    z: 1
+  - x: 17
+    y: 16
 - type: stone
   placement:
   - x: 5
@@ -1415,6 +1671,13 @@ objects:
     y: 47
   - x: 38
     y: 47
+- type: stone_step
+  placement:
+  - x: 3
+    y: 3
+  - x: 4
+    y: 3
+    z: 1
 - type: traveler_boots
   placement:
   - x: 50
@@ -2191,16 +2454,10 @@ objects:
     y: 24
 - type: villager
   placement:
-    x: 10
-    y: 7
-  behavior:
-    kind: roam
-    step_interval_seconds: 2.0
-    bounds:
-      min_x: 9
-      min_y: 7
-      max_x: 11
-      max_y: 9
+  - x: 11
+    y: 8
+  - x: 19
+    y: 17
 - type: wall
   placement:
   - x: 3
@@ -2390,68 +2647,6 @@ objects:
     y: 48
   - x: 62
     y: 48
-- type: side_wall
-  placement:
-  - x: 2
-    y: 2
-  - x: 2
-    y: 2
-    z: 1
-  - x: 7
-    y: 2
-  - x: 7
-    y: 2
-    z: 1
-  - x: 2
-    y: 3
-  - x: 2
-    y: 3
-    z: 1
-  - x: 7
-    y: 3
-  - x: 7
-    y: 3
-    z: 1
-  - x: 2
-    y: 4
-  - x: 2
-    y: 4
-    z: 1
-  - x: 7
-    y: 4
-  - x: 7
-    y: 4
-    z: 1
-  - x: 2
-    y: 5
-  - x: 2
-    y: 5
-    z: 1
-  - x: 7
-    y: 5
-  - x: 7
-    y: 5
-    z: 1
-  - x: 2
-    y: 6
-  - x: 2
-    y: 6
-    z: 1
-  - x: 7
-    y: 6
-  - x: 7
-    y: 6
-    z: 1
-  - x: 2
-    y: 7
-  - x: 2
-    y: 7
-    z: 1
-  - x: 7
-    y: 7
-  - x: 7
-    y: 7
-    z: 1
 - type: water
   placement:
   - x: 4
@@ -3176,22 +3371,19 @@ objects:
   placement:
   - x: 58
     y: 42
-- type: chatterbox
+- type: wooden_door
+  properties:
+    state: locked
   placement:
-    x: 37
-    y: 25
-- type: villager
+    x: 23
+    y: 10
+- type: bear_trap
+  properties:
+    state: sprung
+    hidden_dc: '15'
   placement:
-    x: 20
-    y: 16
-  behavior:
-    kind: roam
-    step_interval_seconds: 2.0
-    bounds:
-      min_x: 19
-      min_y: 15
-      max_x: 21
-      max_y: 17
+    x: 13
+    y: 12
 - type: scroll
   properties:
     spell_id: lesser_heal
@@ -3216,65 +3408,6 @@ objects:
   placement:
     x: 33
     y: 43
-- type: skeleton
-  placement:
-    x: 43
-    y: 48
-  behavior:
-    kind: roam_and_chase
-    step_interval_seconds: 0.5
-    bounds:
-      min_x: 39
-      min_y: 41
-      max_x: 45
-      max_y: 49
-    detect_distance_tiles: 4
-    disengage_distance_tiles: 6
-# --- Gathering resources scattered across the map (fishing / herbs / mining) ---
-# Each node respawns ~3 minutes after being harvested. Tools required:
-# fishing_rod, herb_knife, pickaxe (all sold by the villager shopkeeper).
-- type: fishing_spot
-  placement:
-  - x: 8
-    y: 30
-  - x: 14
-    y: 30
-  - x: 20
-    y: 30
-  - x: 4
-    y: 35
-  - x: 4
-    y: 41
-  - x: 24
-    y: 38
-- type: herb_patch
-  placement:
-  - x: 27
-    y: 27
-  - x: 37
-    y: 33
-  - x: 44
-    y: 38
-  - x: 29
-    y: 36
-  - x: 60
-    y: 36
-  - x: 66
-    y: 25
-- type: ore_node
-  placement:
-  - x: 52
-    y: 30
-  - x: 49
-    y: 33
-  - x: 61
-    y: 35
-  - x: 66
-    y: 35
-  - x: 55
-    y: 43
-  - x: 63
-    y: 44
 spawn_groups:
 - id: south_rats
   template: rat

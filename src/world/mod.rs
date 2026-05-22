@@ -203,6 +203,13 @@ impl Plugin for WorldClientPlugin {
                     setup_fog_overlay,
                 ),
             )
+            // Darkness overlay also lives in the map editor so authoring the
+            // day/night curve is WYSIWYG. Fog is intentionally InGame-only —
+            // the editor wants a clean view of the whole map.
+            .add_systems(
+                OnEnter(ClientAppState::MapEditor),
+                setup_darkness_overlay,
+            )
             .add_systems(
                 Update,
                 (
@@ -275,21 +282,23 @@ impl Plugin for WorldClientPlugin {
                     // Reads each LightSource source's finalized Transform
                     // (post-`sync_tile_transforms`), the active space's
                     // ambient config, and the world clock — produces the
-                    // GPU uniforms for the fullscreen darkness quad.
+                    // GPU uniforms for the fullscreen darkness quad. Runs in
+                    // editor mode too so the lighting panel previews live.
                     update_darkness_overlay
                         .after(sync_object_light_components)
                         .after(sync_tile_transforms)
                         .after(sync_player_z)
                         .after(recompute_visible_floors)
-                        .after(camera_follow),
+                        .after(camera_follow)
+                        .run_if(in_game_or_editor),
                     // Fog overlay: reads the replicated `discovered_tiles`
                     // set from `ClientGameState` and packs the bitmask each
                     // frame. Camera-follow keeps the quad over the viewport.
                     update_fog_overlay
                         .after(apply_game_events_to_client_state)
-                        .after(camera_follow),
-                )
-                    .run_if(in_state(ClientAppState::InGame)),
+                        .after(camera_follow)
+                        .run_if(in_state(ClientAppState::InGame)),
+                ),
             );
 
         // `TtlPlugin` ticks down both server-authoritative TTL entities (corpses,
@@ -319,6 +328,16 @@ impl Plugin for WorldClientPlugin {
                 .run_if(in_state(ClientAppState::InGame)),
         );
     }
+}
+
+/// Run condition: gameplay or the map editor. Used to keep the darkness
+/// overlay (and any future "show me the world like the player sees it"
+/// systems) running while the user is authoring lighting in the editor.
+fn in_game_or_editor(state: Res<State<ClientAppState>>) -> bool {
+    matches!(
+        *state.get(),
+        ClientAppState::InGame | ClientAppState::MapEditor
+    )
 }
 
 fn mirror_client_world_objects_into_registry(

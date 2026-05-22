@@ -203,7 +203,6 @@ impl Plugin for GameAppPlugin {
                     QuestPlugin::default(),
                     TitleScreenPlugin {
                         runtime: self.runtime,
-                        server_addr: self.server_addr.clone(),
                     },
                     AboutScreenPlugin,
                     CharacterSelectScreenPlugin {
@@ -259,7 +258,6 @@ impl Plugin for GameAppPlugin {
                     },
                     TitleScreenPlugin {
                         runtime: self.runtime,
-                        server_addr: self.server_addr.clone(),
                     },
                     AssetSyncScreenPlugin,
                     AuthScreenPlugin,

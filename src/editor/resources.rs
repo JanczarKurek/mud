@@ -6,7 +6,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::world::components::{SpaceId, TilePosition};
 use crate::world::floor_definitions::FloorTypeId;
-use crate::world::map_layout::{MapBehavior, PortalDefinition, SpawnGroupDef, TileRectangle};
+use crate::world::map_layout::{
+    AmbientKeyframe, MapBehavior, PortalDefinition, SpaceLightingDef, SpawnGroupDef, TileRectangle,
+};
 
 /// Metadata about the space being edited.
 #[derive(Resource)]
@@ -87,6 +89,8 @@ pub struct EditorState {
     pub templates_panel_visible: bool,
     /// User-toggled visibility of the Spawn Groups side panel.
     pub spawn_groups_panel_visible: bool,
+    /// User-toggled visibility of the Lighting side panel.
+    pub lighting_panel_visible: bool,
     /// Tool to restore when a `PickRect` mode finishes (or is cancelled).
     pub tool_before_pick: Option<EditorTool>,
 }
@@ -179,6 +183,12 @@ pub enum ModalKind {
     SpawnGroupEdit {
         editing_index: Option<usize>,
     },
+    /// Create or edit a single day/night curve keyframe. `editing_index = None`
+    /// is create mode; `Some(i)` edits the keyframe at that index in
+    /// `EditorLightingBuffer.config.outdoor_curve`.
+    LightingKeyframeEdit {
+        editing_index: Option<usize>,
+    },
 }
 
 /// Filled by the confirm handler; consumed by `apply_modal_confirmed`.
@@ -249,12 +259,92 @@ pub struct ModalState {
     /// `process_modal_confirm` for the SpawnGroupEdit kind; consumed by a
     /// dedicated `apply_spawn_group_confirmed` system.
     pub confirmed_spawn_group: Option<ConfirmedSpawnGroup>,
+    /// Working draft for the LightingKeyframeEdit modal.
+    pub lighting_keyframe_draft: Option<LightingKeyframeDraft>,
+    /// Out-of-band confirm channel for lighting keyframes (same rationale as
+    /// `confirmed_spawn_group`).
+    pub confirmed_lighting_keyframe: Option<ConfirmedLightingKeyframe>,
 }
 
 #[derive(Clone, Debug)]
 pub struct ConfirmedSpawnGroup {
     pub editing_index: Option<usize>,
     pub group: SpawnGroupDef,
+}
+
+#[derive(Clone, Debug)]
+pub struct ConfirmedLightingKeyframe {
+    pub editing_index: Option<usize>,
+    pub keyframe: AmbientKeyframe,
+}
+
+/// Mutable working state for the lighting-keyframe modal. Numeric fields kept
+/// as strings so partial input round-trips through the UI without losing the
+/// user's edit position (same pattern as `SpawnGroupDraft`).
+#[derive(Clone, Debug)]
+pub struct LightingKeyframeDraft {
+    pub editing_index: Option<usize>,
+    pub time: String,
+    pub r: String,
+    pub g: String,
+    pub b: String,
+    pub alpha: String,
+    pub focused_field: LightingKeyframeField,
+    /// Cached hue (∈ [0, 1)) for the color-picker widgets. R/G/B remain the
+    /// source of truth, but pure-gray RGB has no defined hue, so the picker
+    /// needs a remembered value to keep the hue marker stable while the user
+    /// drags through gray.
+    pub last_hue: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LightingKeyframeField {
+    Time,
+    R,
+    G,
+    B,
+    Alpha,
+}
+
+impl Default for LightingKeyframeDraft {
+    fn default() -> Self {
+        Self {
+            editing_index: None,
+            time: "0.5".into(),
+            r: "255".into(),
+            g: "255".into(),
+            b: "255".into(),
+            alpha: "0.0".into(),
+            focused_field: LightingKeyframeField::Time,
+            last_hue: 0.0,
+        }
+    }
+}
+
+impl LightingKeyframeDraft {
+    pub fn from_existing(index: usize, kf: &AmbientKeyframe) -> Self {
+        let hue = crate::editor::ui::color_picker::rgb_to_hsv(kf.color)[0];
+        Self {
+            editing_index: Some(index),
+            time: format!("{:.3}", kf.time),
+            r: kf.color[0].to_string(),
+            g: kf.color[1].to_string(),
+            b: kf.color[2].to_string(),
+            alpha: format!("{:.3}", kf.alpha),
+            focused_field: LightingKeyframeField::Time,
+            last_hue: hue,
+        }
+    }
+
+    pub fn field_mut(&mut self, field: LightingKeyframeField) -> &mut String {
+        match field {
+            LightingKeyframeField::Time => &mut self.time,
+            LightingKeyframeField::R => &mut self.r,
+            LightingKeyframeField::G => &mut self.g,
+            LightingKeyframeField::B => &mut self.b,
+            LightingKeyframeField::Alpha => &mut self.alpha,
+        }
+    }
 }
 
 /// Mutable working state for the spawn-group modal. Numeric fields are kept
@@ -519,6 +609,19 @@ pub struct EditorSpawnGroupBuffer {
 pub struct EditorMapBuffers<'w> {
     pub portals: ResMut<'w, EditorPortalBuffer>,
     pub spawn_groups: ResMut<'w, EditorSpawnGroupBuffer>,
+    pub lighting: ResMut<'w, EditorLightingBuffer>,
+}
+
+/// Holds the lighting configuration for the currently-edited space. Mutable
+/// while the editor session is open; persisted into YAML on save and mirrored
+/// into the live `ClientGameState.current_space.lighting` so the darkness
+/// overlay reflects edits in real time.
+#[derive(Resource, Default)]
+pub struct EditorLightingBuffer {
+    pub config: SpaceLightingDef,
+    /// Index of the keyframe currently selected in the panel (drives row
+    /// highlight + future "Preview" affordance).
+    pub selected_keyframe: Option<usize>,
 }
 
 /// Marker component for portal overlay sprites.

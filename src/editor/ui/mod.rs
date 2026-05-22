@@ -1,4 +1,6 @@
 #![allow(clippy::type_complexity, clippy::too_many_arguments)]
+pub mod color_picker;
+pub mod lighting_panel;
 pub mod modal;
 pub mod palette;
 pub mod panel_roots;
@@ -18,6 +20,7 @@ use crate::editor::systems::{
     open_file_dialog_impl, open_generate_dungeon_dialog_impl, open_new_map_dialog_impl,
     open_save_as_impl,
 };
+use crate::editor::ui::lighting_panel::spawn_lighting_panel;
 use crate::editor::ui::palette::spawn_palette_panel;
 use crate::editor::ui::properties::spawn_properties_panel;
 use crate::editor::ui::spawn_groups_panel::spawn_spawn_groups_panel;
@@ -63,6 +66,8 @@ pub struct EditorSaveAsTemplateButton;
 pub struct EditorTemplatesToggleButton;
 #[derive(Component)]
 pub struct EditorSpawnGroupsToggleButton;
+#[derive(Component)]
+pub struct EditorLightingToggleButton;
 #[derive(Component)]
 pub struct EditorExitButton;
 
@@ -139,6 +144,7 @@ pub fn spawn_editor_hud(
                 );
                 spawn_top_btn(bar, "Templates", EditorTemplatesToggleButton);
                 spawn_top_btn(bar, "Spawn Groups", EditorSpawnGroupsToggleButton);
+                spawn_top_btn(bar, "Lighting", EditorLightingToggleButton);
 
                 // Spacer
                 bar.spawn(Node {
@@ -193,6 +199,7 @@ pub fn spawn_editor_hud(
                     },));
                     spawn_templates_panel(row);
                     spawn_spawn_groups_panel(row);
+                    spawn_lighting_panel(row);
                     spawn_properties_panel(row);
                 });
         });
@@ -295,6 +302,19 @@ pub fn sync_editor_top_bar(
             Without<EditorTemplatesToggleButton>,
         ),
     >,
+    mut lighting_btn: Query<
+        (&Interaction, &mut BackgroundColor, &mut BorderColor),
+        (
+            With<EditorLightingToggleButton>,
+            Without<EditorSaveButton>,
+            Without<EditorPortalToolButton>,
+            Without<EditorUndoButton>,
+            Without<EditorRedoButton>,
+            Without<EditorSelectToolButton>,
+            Without<EditorTemplatesToggleButton>,
+            Without<EditorSpawnGroupsToggleButton>,
+        ),
+    >,
 ) {
     if let Ok(mut text) = dirty_q.single_mut() {
         text.0 = if editor_state.dirty {
@@ -308,6 +328,7 @@ pub fn sync_editor_top_bar(
     let is_select = editor_state.current_tool == EditorTool::Select;
     let is_templates = editor_state.templates_panel_visible;
     let is_spawn_groups = editor_state.spawn_groups_panel_visible;
+    let is_lighting = editor_state.lighting_panel_visible;
 
     for (interaction, mut bg, mut border) in &mut save_btn {
         let (b, br) = btn_colors(*interaction, false);
@@ -344,6 +365,11 @@ pub fn sync_editor_top_bar(
         bg.0 = b;
         *border = BorderColor::all(br);
     }
+    for (interaction, mut bg, mut border) in &mut lighting_btn {
+        let (b, br) = btn_colors(*interaction, is_lighting);
+        bg.0 = b;
+        *border = BorderColor::all(br);
+    }
 }
 
 fn btn_colors(interaction: Interaction, active: bool) -> (Color, Color) {
@@ -366,6 +392,7 @@ pub fn handle_save_button_click(
     editor_context: Res<EditorContext>,
     portal_buffer: Res<crate::editor::resources::EditorPortalBuffer>,
     spawn_group_buffer: Res<crate::editor::resources::EditorSpawnGroupBuffer>,
+    lighting_buffer: Res<crate::editor::resources::EditorLightingBuffer>,
     object_registry: Res<crate::world::object_registry::ObjectRegistry>,
     floor_maps: Res<crate::world::floor_map::FloorMaps>,
     objects: Query<(
@@ -380,6 +407,7 @@ pub fn handle_save_button_click(
                 &editor_context,
                 &portal_buffer,
                 &spawn_group_buffer,
+                &lighting_buffer,
                 &object_registry,
                 &objects,
                 &floor_maps,
@@ -505,6 +533,17 @@ pub fn handle_spawn_groups_toggle_button_click(
     for interaction in &btn {
         if *interaction == Interaction::Pressed {
             editor_state.spawn_groups_panel_visible = !editor_state.spawn_groups_panel_visible;
+        }
+    }
+}
+
+pub fn handle_lighting_toggle_button_click(
+    btn: Query<&Interaction, (Changed<Interaction>, With<EditorLightingToggleButton>)>,
+    mut editor_state: ResMut<EditorState>,
+) {
+    for interaction in &btn {
+        if *interaction == Interaction::Pressed {
+            editor_state.lighting_panel_visible = !editor_state.lighting_panel_visible;
         }
     }
 }

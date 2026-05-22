@@ -14,6 +14,8 @@ pub use display::DisplaySettings;
 pub use model::{Action, Keybindings};
 pub use ui::SettingsUiState;
 
+pub use persistence::{SavedServerEntry, SavedServerList};
+
 use display::apply_display_settings;
 use persistence::{load_settings, persist_settings, SettingsLoaded};
 use ui::{
@@ -32,6 +34,7 @@ impl Plugin for SettingsPlugin {
             .init_resource::<DisplaySettings>()
             .init_resource::<SettingsUiState>()
             .init_resource::<SettingsLoaded>()
+            .init_resource::<SavedServerList>()
             .add_systems(Startup, (load_settings, spawn_settings_overlay))
             .add_systems(
                 PreUpdate,

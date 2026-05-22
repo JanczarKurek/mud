@@ -4,11 +4,12 @@
 //! [`clap::Args`] structs so the common flags (data paths, TLS, admin socket)
 //! stay in lock-step. After [`clap::Parser::parse`], the binary calls
 //! [`mud2_into_plugin`] or [`server_into_plugin`] to fold the CLI struct
-//! plus per-binary derivations (`tls://` scheme stripping, the
-//! `--server`/`--connect` runtime resolution, the admin-socket warning when
-//! the wrong runtime is selected) into a [`GameAppPlugin`]. Keeping that
-//! logic in one place — instead of in `main()` — means both binaries are
-//! near-empty and the special-case rules have one home.
+//! plus per-binary derivations (the `--server`/`--tcp-client` runtime
+//! resolution, the admin-socket warning when the wrong runtime is selected)
+//! into a [`GameAppPlugin`]. Keeping that logic in one place — instead of in
+//! `main()` — means both binaries are near-empty and the special-case rules
+//! have one home. The TCP destination is now picked from the title-screen
+//! server picker, not from a CLI flag.
 //!
 //! See `/Users/jhorecki/.claude/plans/purrfect-painting-parrot.md` for the
 //! design rationale; see `clean_cache.rs` for the `Paths` / `CleanCache`
@@ -156,7 +157,8 @@ pub struct ModeArgs {
     /// Run as headless TCP server (no GUI).
     #[arg(long, visible_alias = "headless-server")]
     pub server: bool,
-    /// Run as a TCP client connecting to a remote server. Implied by `--connect`.
+    /// Run as a TCP client connecting to a remote server. The destination
+    /// address is picked at runtime via the title-screen server picker.
     #[arg(long)]
     pub tcp_client: bool,
     /// Run as embedded client (server + client in one process). This is the default.
@@ -181,12 +183,6 @@ pub struct Mud2Cli {
 
     #[command(flatten)]
     pub mode: ModeArgs,
-
-    /// Connect to a remote server. Accepts `host:port` or `tls://host:port`;
-    /// the `tls://` scheme implies `--tls` for the client and switches the
-    /// runtime to `--tcp-client`.
-    #[arg(long, value_name = "ADDR")]
-    pub connect: Option<String>,
 
     #[command(flatten)]
     pub data: SharedDataPathArgs,
@@ -236,50 +232,30 @@ pub struct ServerCli {
 // CLI → GameAppPlugin
 // ---------------------------------------------------------------------------
 
-/// `tls://host:port` → (`host:port`, true). Any other prefix is returned
-/// as-is with `false`. Inlined from the pre-clap `src/main.rs` helper.
-fn strip_tls_scheme(addr: String) -> (String, bool) {
-    match addr.strip_prefix("tls://") {
-        Some(rest) => (rest.to_owned(), true),
-        None => (addr, false),
-    }
-}
-
-/// Resolve the `mud2` runtime from the explicit mode flags and `--connect`.
-/// An explicit mode flag always wins; if none is given and `--connect` is
-/// set, the runtime is `TcpClient`; otherwise `EmbeddedClient`.
-fn resolve_mud2_runtime(mode: &ModeArgs, connect: bool) -> AppRuntime {
+/// Resolve the `mud2` runtime from the explicit mode flags. An explicit
+/// mode flag always wins; otherwise default to `EmbeddedClient`.
+fn resolve_mud2_runtime(mode: &ModeArgs) -> AppRuntime {
     if mode.server {
         AppRuntime::HeadlessServer
     } else if mode.tcp_client {
         AppRuntime::TcpClient
     } else if mode.client {
         AppRuntime::EmbeddedClient
-    } else if connect {
-        AppRuntime::TcpClient
     } else {
         AppRuntime::EmbeddedClient
     }
 }
 
 /// Build a [`GameAppPlugin`] from a parsed [`Mud2Cli`], folding in the
-/// scheme-strip / mode-coalesce / role-gate rules.
+/// mode-coalesce / role-gate rules.
 pub fn mud2_into_plugin(cli: Mud2Cli) -> GameAppPlugin {
-    let (server_addr, tls_from_scheme) = match cli.connect {
-        Some(a) => {
-            let (rest, is_tls) = strip_tls_scheme(a);
-            (Some(rest), is_tls)
-        }
-        None => (None, false),
-    };
+    let runtime = resolve_mud2_runtime(&cli.mode);
 
-    let runtime = resolve_mud2_runtime(&cli.mode, server_addr.is_some());
-
-    // `--generate-cert` implies server `--tls`; `--insecure` and `tls://`
-    // both imply client `--tls`. Compute the booleans here rather than via
-    // clap `requires` so a plain `--tls` (no extras) keeps working.
+    // `--generate-cert` implies server `--tls`; `--insecure` implies client
+    // `--tls`. Compute the booleans here rather than via clap `requires` so
+    // a plain `--tls` (no extras) keeps working.
     let server_tls_enabled = cli.tls.tls || cli.tls.generate_cert;
-    let client_tls_enabled = cli.tls.tls || cli.insecure || tls_from_scheme;
+    let client_tls_enabled = cli.tls.tls || cli.insecure;
 
     let server_tls =
         (server_tls_enabled && matches!(runtime, AppRuntime::HeadlessServer)).then(|| {
@@ -318,7 +294,7 @@ pub fn mud2_into_plugin(cli: Mud2Cli) -> GameAppPlugin {
 
     GameAppPlugin {
         runtime,
-        server_addr,
+        server_addr: None,
         bind_addr: None,
         save_path: cli.data.save_path,
         db_path: cli.data.db_path,
@@ -400,25 +376,6 @@ mod tests {
     }
 
     #[test]
-    fn connect_with_tls_scheme_strips_and_enables_client_tls() {
-        let cli = Mud2Cli::try_parse_from(["mud2", "--connect", "tls://example.com:7000"]).unwrap();
-        let plugin = mud2_into_plugin(cli);
-        assert_eq!(plugin.server_addr.as_deref(), Some("example.com:7000"));
-        assert!(matches!(plugin.runtime, AppRuntime::TcpClient));
-        assert!(plugin.client_tls.is_some());
-        assert!(plugin.server_tls.is_none());
-    }
-
-    #[test]
-    fn connect_without_scheme_does_not_enable_tls() {
-        let cli = Mud2Cli::try_parse_from(["mud2", "--connect", "127.0.0.1:7000"]).unwrap();
-        let plugin = mud2_into_plugin(cli);
-        assert_eq!(plugin.server_addr.as_deref(), Some("127.0.0.1:7000"));
-        assert!(matches!(plugin.runtime, AppRuntime::TcpClient));
-        assert!(plugin.client_tls.is_none());
-    }
-
-    #[test]
     fn mode_flags_are_mutually_exclusive() {
         let result = Mud2Cli::try_parse_from(["mud2", "--server", "--tcp-client"]);
         assert!(result.is_err());
@@ -492,12 +449,6 @@ mod tests {
     }
 
     #[test]
-    fn equals_form_works() {
-        let cli = Mud2Cli::try_parse_from(["mud2", "--connect=10.0.0.1:7000"]).unwrap();
-        assert_eq!(cli.connect.as_deref(), Some("10.0.0.1:7000"));
-    }
-
-    #[test]
     fn generate_cert_implies_server_tls() {
         let cli = Mud2Cli::try_parse_from(["mud2", "--server", "--generate-cert"]).unwrap();
         let plugin = mud2_into_plugin(cli);
@@ -536,11 +487,17 @@ mod tests {
 
     #[test]
     fn server_cli_rejects_mud2_only_flags() {
-        // --connect / --tcp-client / --insecure / --asset-cache don't exist
-        // on the server binary; clap should reject them.
-        assert!(ServerCli::try_parse_from(["server", "--connect", "x"]).is_err());
+        // --tcp-client / --insecure / --asset-cache don't exist on the server
+        // binary; clap should reject them.
         assert!(ServerCli::try_parse_from(["server", "--tcp-client"]).is_err());
         assert!(ServerCli::try_parse_from(["server", "--insecure"]).is_err());
         assert!(ServerCli::try_parse_from(["server", "--asset-cache", "/p"]).is_err());
+    }
+
+    #[test]
+    fn connect_flag_is_rejected() {
+        // --connect was removed when the title-screen server picker took over.
+        let result = Mud2Cli::try_parse_from(["mud2", "--connect", "10.0.0.1:7000"]);
+        assert!(result.is_err());
     }
 }

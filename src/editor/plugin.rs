@@ -10,25 +10,33 @@ use crate::editor::floor_render::{
     editor_sync_floor_render_transforms, EditorFloorRenderState,
 };
 use crate::editor::resources::{
-    EditorCamera, EditorClipboard, EditorCursorMarker, EditorPasteGhostMarker,
-    EditorPickRectResult, EditorPortalBuffer, EditorPropertyEditBuffer, EditorSpawnGroupBuffer,
-    EditorState, ModalState, UndoStack,
+    EditorCamera, EditorClipboard, EditorCursorMarker, EditorLightingBuffer,
+    EditorPasteGhostMarker, EditorPickRectResult, EditorPortalBuffer, EditorPropertyEditBuffer,
+    EditorSpawnGroupBuffer, EditorState, ModalState, UndoStack,
 };
 use crate::editor::selection::{
     handle_editor_pick_rect_drag, handle_editor_select_drag, handle_editor_select_hotkey,
     render_selection,
 };
 use crate::editor::systems::{
-    apply_modal_confirmed, attach_editor_visuals, handle_editor_camera_pan, handle_editor_escape,
-    handle_editor_floor_brush_drag, handle_editor_floor_brush_hotkey, handle_editor_keyboard_input,
-    handle_editor_left_click, handle_editor_middle_drag_pan, handle_editor_right_click,
-    handle_editor_save, handle_editor_zoom, init_editor_context, init_portal_buffer,
-    open_file_dialog_shortcut, open_save_as_shortcut, process_modal_confirm, sync_portal_overlays,
+    apply_lighting_keyframe_confirmed, apply_modal_confirmed, attach_editor_visuals,
+    handle_editor_camera_pan, handle_editor_escape, handle_editor_floor_brush_drag,
+    handle_editor_floor_brush_hotkey, handle_editor_keyboard_input, handle_editor_left_click,
+    handle_editor_middle_drag_pan, handle_editor_right_click, handle_editor_save,
+    handle_editor_zoom, init_editor_client_space, init_editor_context, init_portal_buffer,
+    open_file_dialog_shortcut, open_save_as_shortcut, process_modal_confirm,
+    sync_editor_lighting_to_world, sync_editor_view_to_client, sync_portal_overlays,
     sync_tile_transforms_editor, update_editor_cursor_ghost,
 };
 use crate::editor::templates::EditorTemplatesIndex;
+use crate::editor::ui::lighting_panel::{
+    handle_lighting_panel_clicks, handle_lighting_scrubber_drag, sync_lighting_panel,
+    sync_lighting_panel_visibility,
+};
+use crate::editor::ui::color_picker::EditorColorPickerAssets;
 use crate::editor::ui::modal::{
-    apply_pick_rect_result_to_modal, handle_modal_buttons, handle_modal_keyboard_input,
+    apply_pick_rect_result_to_modal, handle_color_picker_hue_drag, handle_color_picker_sv_drag,
+    handle_lighting_keyframe_field_click, handle_modal_buttons, handle_modal_keyboard_input,
     handle_modal_list_click, handle_modal_text_field_click, handle_spawn_group_area_kind_click,
     handle_spawn_group_behavior_kind_click, handle_spawn_group_field_click,
     handle_spawn_group_pick_rect_click, spawn_or_rebuild_modal, sync_modal_error_text,
@@ -52,11 +60,12 @@ use crate::editor::ui::templates_panel::{
 };
 use crate::editor::ui::{
     cleanup_editor_hud, handle_exit_button_click, handle_generate_dungeon_button_click,
-    handle_new_map_button_click, handle_open_button_click, handle_portal_tool_button_click,
-    handle_redo_button_click, handle_save_as_button_click, handle_save_as_template_button_click,
-    handle_save_button_click, handle_select_tool_button_click,
-    handle_spawn_groups_toggle_button_click, handle_templates_toggle_button_click,
-    handle_undo_button_click, spawn_editor_hud, sync_editor_top_bar,
+    handle_lighting_toggle_button_click, handle_new_map_button_click, handle_open_button_click,
+    handle_portal_tool_button_click, handle_redo_button_click, handle_save_as_button_click,
+    handle_save_as_template_button_click, handle_save_button_click,
+    handle_select_tool_button_click, handle_spawn_groups_toggle_button_click,
+    handle_templates_toggle_button_click, handle_undo_button_click, spawn_editor_hud,
+    sync_editor_top_bar,
 };
 use crate::editor::undo::handle_undo_redo;
 
@@ -78,6 +87,7 @@ fn reset_editor_session_state(mut editor_state: ResMut<EditorState>) {
     editor_state.paste_state.active = false;
     editor_state.templates_panel_visible = false;
     editor_state.spawn_groups_panel_visible = false;
+    editor_state.lighting_panel_visible = false;
     editor_state.tool_before_pick = None;
 }
 
@@ -109,17 +119,20 @@ impl Plugin for EditorPlugin {
             .init_resource::<UndoStack>()
             .init_resource::<EditorPortalBuffer>()
             .init_resource::<EditorSpawnGroupBuffer>()
+            .init_resource::<EditorLightingBuffer>()
             .init_resource::<EditorPickRectResult>()
             .init_resource::<EditorDialogIndex>()
             .init_resource::<EditorFloorRenderState>()
             .init_resource::<EditorClipboard>()
             .init_resource::<EditorTemplatesIndex>()
+            .init_resource::<EditorColorPickerAssets>()
             .add_systems(
                 OnEnter(ClientAppState::MapEditor),
                 (
                     init_editor_context,
                     attach_editor_visuals.after(init_editor_context),
                     init_portal_buffer.after(init_editor_context),
+                    init_editor_client_space.after(init_editor_context),
                     refresh_dialog_index_on_enter.after(init_editor_context),
                     spawn_editor_hud.after(init_editor_context),
                 ),
@@ -221,10 +234,14 @@ impl Plugin for EditorPlugin {
                     handle_spawn_group_area_kind_click,
                     handle_spawn_group_behavior_kind_click,
                     handle_spawn_group_pick_rect_click,
+                    handle_lighting_keyframe_field_click,
+                    handle_color_picker_sv_drag,
+                    handle_color_picker_hue_drag,
                     process_modal_confirm
                         .after(handle_modal_buttons)
                         .after(handle_modal_keyboard_input),
                     apply_modal_confirmed.after(process_modal_confirm),
+                    apply_lighting_keyframe_confirmed.after(process_modal_confirm),
                     spawn_or_rebuild_modal,
                     sync_modal_error_text,
                     apply_pick_rect_result_to_modal,
@@ -271,6 +288,7 @@ impl Plugin for EditorPlugin {
                     handle_save_as_template_button_click,
                     handle_templates_toggle_button_click,
                     handle_spawn_groups_toggle_button_click,
+                    handle_lighting_toggle_button_click,
                     handle_exit_button_click,
                 )
                     .run_if(in_state(ClientAppState::MapEditor)),
@@ -285,6 +303,12 @@ impl Plugin for EditorPlugin {
                     sync_spawn_groups_panel_visibility,
                     sync_spawn_groups_panel,
                     handle_spawn_groups_panel_clicks,
+                    sync_lighting_panel_visibility,
+                    sync_lighting_panel,
+                    handle_lighting_panel_clicks,
+                    handle_lighting_scrubber_drag,
+                    sync_editor_lighting_to_world,
+                    sync_editor_view_to_client,
                 )
                     .run_if(in_state(ClientAppState::MapEditor)),
             );

@@ -3,9 +3,13 @@ use std::collections::HashMap;
 use bevy::log::info;
 use serde::Serialize;
 
-use crate::editor::resources::{EditorContext, EditorPortalBuffer, EditorSpawnGroupBuffer};
+use crate::editor::resources::{
+    EditorContext, EditorLightingBuffer, EditorPortalBuffer, EditorSpawnGroupBuffer,
+};
 use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
-use crate::world::map_layout::{MapBehavior, SpacePermanence, SpawnGroupDef, TileCoordinate};
+use crate::world::map_layout::{
+    MapBehavior, SpaceLightingDef, SpacePermanence, SpawnGroupDef, TileCoordinate,
+};
 use crate::world::object_registry::ObjectRegistry;
 
 #[derive(Serialize)]
@@ -15,6 +19,8 @@ struct SpaceOutput {
     height: i32,
     fill_floor_type: String,
     permanence: SpacePermanence,
+    #[serde(skip_serializing_if = "is_default_lighting")]
+    lighting: SpaceLightingDef,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     portals: Vec<PortalOutput>,
     #[serde(skip_serializing_if = "HashMap::is_empty")]
@@ -23,6 +29,13 @@ struct SpaceOutput {
     objects: Vec<ObjectEntryOutput>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     spawn_groups: Vec<SpawnGroupDef>,
+}
+
+/// Skip emitting `lighting:` when every field equals `SpaceLightingDef::default()`,
+/// keeping YAML for unauthored maps free of noise. Any deviation — a single
+/// keyframe, a tweaked ambient — produces the full block.
+fn is_default_lighting(lighting: &SpaceLightingDef) -> bool {
+    *lighting == SpaceLightingDef::default()
 }
 
 #[derive(Serialize, Default)]
@@ -69,10 +82,12 @@ struct ExplicitOutput {
 }
 
 /// Collect objects from ECS, serialize as YAML, write to disk.
+#[allow(clippy::too_many_arguments)]
 pub fn serialize_and_save(
     ctx: &EditorContext,
     portal_buffer: &EditorPortalBuffer,
     spawn_group_buffer: &EditorSpawnGroupBuffer,
+    lighting_buffer: &EditorLightingBuffer,
     object_registry: &ObjectRegistry,
     objects: &bevy::prelude::Query<(&OverworldObject, &SpaceResident, &TilePosition)>,
     floor_maps: &crate::world::floor_map::FloorMaps,
@@ -195,6 +210,7 @@ pub fn serialize_and_save(
         height: ctx.map_height,
         fill_floor_type: ctx.fill_floor_type.clone(),
         permanence: SpacePermanence::Persistent,
+        lighting: lighting_buffer.config.clone(),
         portals,
         floors: floors_out,
         objects: object_entries,
@@ -207,4 +223,67 @@ pub fn serialize_and_save(
     std::fs::write(&path, yaml)
         .unwrap_or_else(|e| panic!("Failed to write map file '{path}': {e}"));
     info!("Saved map to {path}");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::world::map_layout::{AmbientKeyframe, SpaceDefinition};
+
+    #[test]
+    fn lighting_round_trips_through_yaml() {
+        let lighting = SpaceLightingDef {
+            outdoor_ambient: [200, 180, 160],
+            indoor_ambient: [40, 30, 30],
+            has_day_night: true,
+            outdoor_curve: vec![
+                AmbientKeyframe {
+                    time: 0.0,
+                    color: [20, 30, 80],
+                    alpha: 0.6,
+                },
+                AmbientKeyframe {
+                    time: 0.5,
+                    color: [255, 255, 255],
+                    alpha: 0.0,
+                },
+            ],
+        };
+        let output = SpaceOutput {
+            authored_id: "round_trip_test".into(),
+            width: 4,
+            height: 4,
+            fill_floor_type: "grass".into(),
+            permanence: SpacePermanence::Persistent,
+            lighting: lighting.clone(),
+            portals: Vec::new(),
+            floors: HashMap::new(),
+            objects: Vec::new(),
+            spawn_groups: Vec::new(),
+        };
+        let yaml = serde_yaml::to_string(&output).expect("serialize");
+        let parsed: SpaceDefinition = serde_yaml::from_str(&yaml).expect("parse");
+        assert_eq!(parsed.lighting, lighting);
+    }
+
+    #[test]
+    fn default_lighting_is_not_emitted() {
+        let output = SpaceOutput {
+            authored_id: "default_map".into(),
+            width: 2,
+            height: 2,
+            fill_floor_type: "grass".into(),
+            permanence: SpacePermanence::Persistent,
+            lighting: SpaceLightingDef::default(),
+            portals: Vec::new(),
+            floors: HashMap::new(),
+            objects: Vec::new(),
+            spawn_groups: Vec::new(),
+        };
+        let yaml = serde_yaml::to_string(&output).expect("serialize");
+        assert!(
+            !yaml.lines().any(|l| l.starts_with("lighting:")),
+            "default lighting should not appear in YAML: {yaml}"
+        );
+    }
 }

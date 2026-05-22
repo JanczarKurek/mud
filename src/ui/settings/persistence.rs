@@ -24,6 +24,51 @@ struct SettingsFile {
     controls: ControlsFile,
     #[serde(default)]
     display: DisplayFile,
+    #[serde(default)]
+    servers: ServersFile,
+}
+
+/// Client-side server picker state on disk. The `saved` list is read-only at
+/// runtime (hand-edit the file to add entries); `selected_addr` remembers the
+/// last picked entry so the next launch defaults to it.
+#[derive(Serialize, Deserialize)]
+struct ServersFile {
+    #[serde(default = "default_saved_servers")]
+    saved: Vec<SavedServerEntry>,
+    #[serde(default)]
+    selected_addr: Option<String>,
+}
+
+impl Default for ServersFile {
+    fn default() -> Self {
+        Self {
+            saved: default_saved_servers(),
+            selected_addr: None,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct SavedServerEntry {
+    pub name: String,
+    pub addr: String,
+}
+
+fn default_saved_servers() -> Vec<SavedServerEntry> {
+    vec![SavedServerEntry {
+        name: "Local".to_owned(),
+        addr: "127.0.0.1:7000".to_owned(),
+    }]
+}
+
+/// Resource holding the loaded saved-server list plus the last picked entry.
+/// `dirty` is set by the title-screen picker so `persist_settings` flushes the
+/// change on the next frame.
+#[derive(Resource, Default, Debug)]
+pub struct SavedServerList {
+    pub saved: Vec<SavedServerEntry>,
+    pub selected_addr: Option<String>,
+    pub dirty: bool,
 }
 
 /// `#[serde(default = …)]` on each field handles a *partial* `display` block
@@ -87,12 +132,19 @@ pub fn load_settings(
     runtime: Res<AppRuntime>,
     mut keybindings: ResMut<Keybindings>,
     mut display: ResMut<DisplaySettings>,
+    mut servers: ResMut<SavedServerList>,
     mut loaded: ResMut<SettingsLoaded>,
 ) {
     if loaded.0 {
         return;
     }
     loaded.0 = true;
+
+    // Always seed the saved-server list — if no file exists or it lacks a
+    // `servers` block, this is the single source of truth for "Local".
+    servers.saved = default_saved_servers();
+    servers.selected_addr = None;
+    servers.dirty = false;
 
     let Some(path) = client_settings_path(*runtime) else {
         return;
@@ -107,6 +159,9 @@ pub fn load_settings(
         );
         return;
     };
+
+    servers.saved = file.servers.saved;
+    servers.selected_addr = file.servers.selected_addr;
 
     keybindings.apply_overrides(
         file.controls
@@ -137,13 +192,15 @@ pub fn persist_settings(
     runtime: Res<AppRuntime>,
     mut keybindings: ResMut<Keybindings>,
     mut display: ResMut<DisplaySettings>,
+    mut servers: ResMut<SavedServerList>,
 ) {
-    if !keybindings.dirty && !display.dirty {
+    if !keybindings.dirty && !display.dirty && !servers.dirty {
         return;
     }
     let Some(path) = client_settings_path(*runtime) else {
         keybindings.dirty = false;
         display.dirty = false;
+        servers.dirty = false;
         return;
     };
 
@@ -161,6 +218,10 @@ pub fn persist_settings(
             vsync: display.vsync,
             ui_scale: display.ui_scale,
         },
+        servers: ServersFile {
+            saved: servers.saved.clone(),
+            selected_addr: servers.selected_addr.clone(),
+        },
     };
 
     if let Some(parent) = path.parent() {
@@ -176,6 +237,7 @@ pub fn persist_settings(
     }
     keybindings.dirty = false;
     display.dirty = false;
+    servers.dirty = false;
 }
 
 #[cfg(test)]
@@ -200,6 +262,10 @@ mod tests {
                 movement: Some(kb.movement.clone()),
             },
             display: DisplayFile::default(),
+            servers: ServersFile {
+                saved: default_saved_servers(),
+                selected_addr: None,
+            },
         };
         let json = serde_json::to_string_pretty(&file).unwrap();
         let parsed: SettingsFile = serde_json::from_str(&json).unwrap();
@@ -228,6 +294,47 @@ mod tests {
         assert_eq!(parsed.display.ui_scale, 1.0);
         assert!(parsed.display.vsync);
         assert_eq!(parsed.display.window_mode, WindowModeSetting::Windowed);
+    }
+
+    #[test]
+    fn settings_file_without_servers_block_seeds_local() {
+        // A file written before the servers block was introduced must
+        // populate the `Local` seed on read.
+        let json = r#"{"controls":{"bindings":[],"movement":null},"display":{}}"#;
+        let parsed: SettingsFile = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.servers.saved.len(), 1);
+        assert_eq!(parsed.servers.saved[0].name, "Local");
+        assert_eq!(parsed.servers.saved[0].addr, "127.0.0.1:7000");
+    }
+
+    #[test]
+    fn servers_block_round_trips() {
+        let original = ServersFile {
+            saved: vec![
+                SavedServerEntry {
+                    name: "Local".into(),
+                    addr: "127.0.0.1:7000".into(),
+                },
+                SavedServerEntry {
+                    name: "Prod".into(),
+                    addr: "mud.example.com:7000".into(),
+                },
+            ],
+            selected_addr: Some("mud.example.com:7000".into()),
+        };
+        let file = SettingsFile {
+            controls: ControlsFile::default(),
+            display: DisplayFile::default(),
+            servers: original,
+        };
+        let json = serde_json::to_string_pretty(&file).unwrap();
+        let parsed: SettingsFile = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.servers.saved.len(), 2);
+        assert_eq!(parsed.servers.saved[1].addr, "mud.example.com:7000");
+        assert_eq!(
+            parsed.servers.selected_addr.as_deref(),
+            Some("mud.example.com:7000")
+        );
     }
 
     #[test]

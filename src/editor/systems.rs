@@ -6,10 +6,11 @@ use bevy::window::PrimaryWindow;
 
 use crate::editor::clipboard::cancel_paste;
 use crate::editor::resources::{
-    BehaviorKind, ConfirmedSpawnGroup, EditingField, EditorCamera, EditorContext, EditorMapBuffers,
-    EditorPortalBuffer, EditorPropertyEditBuffer, EditorSpawnGroupBuffer, EditorState, EditorTool,
-    ModalConfirmed, ModalKind, ModalState, ModalTextField, SpawnAreaKind, SpawnGroupDraft, UndoOp,
-    UndoStack,
+    BehaviorKind, ConfirmedLightingKeyframe, ConfirmedSpawnGroup, EditingField, EditorCamera,
+    EditorContext, EditorLightingBuffer, EditorMapBuffers, EditorPortalBuffer,
+    EditorPropertyEditBuffer, EditorSpawnGroupBuffer, EditorState, EditorTool,
+    LightingKeyframeDraft, ModalConfirmed, ModalKind, ModalState, ModalTextField, SpawnAreaKind,
+    SpawnGroupDraft, UndoOp, UndoStack,
 };
 use crate::editor::serializer::serialize_and_save;
 use crate::editor::templates::{save_template, EditorTemplatesIndex};
@@ -22,8 +23,8 @@ use crate::world::components::{
 };
 use crate::world::floor_map::FloorMaps;
 use crate::world::map_layout::{
-    MapBehavior, PortalDefinition, SpaceDefinitions, SpawnArea, SpawnGroupDef, TileCoordinate,
-    TileRectangle,
+    AmbientKeyframe, MapBehavior, PortalDefinition, SpaceDefinitions, SpawnArea, SpawnGroupDef,
+    TileCoordinate, TileRectangle,
 };
 use crate::world::object_definitions::{OverworldObjectDefinition, OverworldObjectDefinitions};
 use crate::world::object_registry::ObjectRegistry;
@@ -117,11 +118,14 @@ pub fn init_portal_buffer(
     space_definitions: Res<SpaceDefinitions>,
     mut portal_buffer: ResMut<EditorPortalBuffer>,
     mut spawn_group_buffer: ResMut<EditorSpawnGroupBuffer>,
+    mut lighting_buffer: ResMut<EditorLightingBuffer>,
 ) {
     let def = space_definitions.get(&editor_context.authored_id);
     portal_buffer.portals = def.map(|d| d.portals.clone()).unwrap_or_default();
     spawn_group_buffer.groups = def.map(|d| d.spawn_groups.clone()).unwrap_or_default();
     spawn_group_buffer.selected = None;
+    lighting_buffer.config = def.map(|d| d.lighting.clone()).unwrap_or_default();
+    lighting_buffer.selected_keyframe = None;
 }
 
 pub fn attach_editor_visuals(
@@ -1084,6 +1088,7 @@ pub fn handle_editor_save(
     editor_context: Res<EditorContext>,
     portal_buffer: Res<EditorPortalBuffer>,
     spawn_group_buffer: Res<EditorSpawnGroupBuffer>,
+    lighting_buffer: Res<EditorLightingBuffer>,
     object_registry: Res<ObjectRegistry>,
     floor_maps: Res<FloorMaps>,
     objects: Query<(&OverworldObject, &SpaceResident, &TilePosition)>,
@@ -1098,6 +1103,7 @@ pub fn handle_editor_save(
             &editor_context,
             &portal_buffer,
             &spawn_group_buffer,
+            &lighting_buffer,
             &object_registry,
             &objects,
             &floor_maps,
@@ -1576,6 +1582,26 @@ pub fn process_modal_confirm(
                 }
             }
         }
+        ModalKind::LightingKeyframeEdit { editing_index } => {
+            let Some(draft) = modal_state.lighting_keyframe_draft.clone() else {
+                modal_state.active = None;
+                return;
+            };
+            match build_keyframe_from_draft(&draft) {
+                Ok(keyframe) => {
+                    modal_state.active = None;
+                    modal_state.error_message = None;
+                    modal_state.lighting_keyframe_draft = None;
+                    modal_state.confirmed_lighting_keyframe = Some(ConfirmedLightingKeyframe {
+                        editing_index,
+                        keyframe,
+                    });
+                }
+                Err(msg) => {
+                    modal_state.error_message = Some(msg);
+                }
+            }
+        }
     }
 }
 
@@ -1610,6 +1636,175 @@ pub fn apply_spawn_group_confirmed(
         }
     }
     editor_state.dirty = true;
+}
+
+/// Drains `ModalState.confirmed_lighting_keyframe` and applies the edit/insert
+/// into `EditorLightingBuffer.config.outdoor_curve`, then re-sorts by `time`.
+pub fn apply_lighting_keyframe_confirmed(
+    mut modal_state: ResMut<ModalState>,
+    mut lighting_buffer: ResMut<EditorLightingBuffer>,
+    mut editor_state: ResMut<EditorState>,
+) {
+    let Some(confirmed) = modal_state.confirmed_lighting_keyframe.take() else {
+        return;
+    };
+    let ConfirmedLightingKeyframe {
+        editing_index,
+        keyframe,
+    } = confirmed;
+    match editing_index {
+        Some(idx) if idx < lighting_buffer.config.outdoor_curve.len() => {
+            lighting_buffer.config.outdoor_curve[idx] = keyframe;
+        }
+        _ => {
+            lighting_buffer.config.outdoor_curve.push(keyframe);
+        }
+    }
+    lighting_buffer.config.outdoor_curve.sort_by(|a, b| {
+        a.time
+            .partial_cmp(&b.time)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    lighting_buffer.selected_keyframe = None;
+    editor_state.dirty = true;
+}
+
+fn build_keyframe_from_draft(draft: &LightingKeyframeDraft) -> Result<AmbientKeyframe, String> {
+    let time: f32 = draft
+        .time
+        .trim()
+        .parse()
+        .map_err(|_| "time must be a number".to_owned())?;
+    if !time.is_finite() || !(0.0..=1.0).contains(&time) {
+        return Err("time must be in [0.0, 1.0].".into());
+    }
+    let parse_u8 = |s: &str, label: &str| -> Result<u8, String> {
+        let v: i32 = s
+            .trim()
+            .parse()
+            .map_err(|_| format!("{label} must be an integer 0–255."))?;
+        if !(0..=255).contains(&v) {
+            return Err(format!("{label} must be in 0–255."));
+        }
+        Ok(v as u8)
+    };
+    let r = parse_u8(&draft.r, "R")?;
+    let g = parse_u8(&draft.g, "G")?;
+    let b = parse_u8(&draft.b, "B")?;
+    let alpha: f32 = draft
+        .alpha
+        .trim()
+        .parse()
+        .map_err(|_| "alpha must be a number".to_owned())?;
+    if !alpha.is_finite() || !(0.0..=1.0).contains(&alpha) {
+        return Err("alpha must be in [0.0, 1.0].".into());
+    }
+    Ok(AmbientKeyframe {
+        time,
+        color: [r, g, b],
+        alpha,
+    })
+}
+
+/// Mirror `EditorLightingBuffer` into both the server-side `SpaceDefinitions`
+/// and the client-side `ClientGameState.current_space.lighting` so the
+/// darkness shader (`update_darkness_overlay`) picks up edits in real time.
+///
+/// Bypasses `PendingGameEvents` deliberately — the editor is single-user and
+/// every keyframe drag would otherwise emit a full event round-trip.
+pub fn sync_editor_lighting_to_world(
+    lighting_buffer: Res<EditorLightingBuffer>,
+    editor_context: Res<EditorContext>,
+    mut space_definitions: ResMut<SpaceDefinitions>,
+    mut space_manager: ResMut<crate::world::resources::SpaceManager>,
+    mut client_state: ResMut<crate::game::resources::ClientGameState>,
+) {
+    if !lighting_buffer.is_changed() {
+        return;
+    }
+    if let Some(def) = space_definitions
+        .spaces
+        .get_mut(&editor_context.authored_id)
+    {
+        def.lighting = lighting_buffer.config.clone();
+    }
+    if let Some(runtime) = space_manager.spaces.get_mut(&editor_context.space_id) {
+        runtime.lighting = lighting_buffer.config.clone();
+    }
+    if let Some(current) = client_state.current_space.as_mut() {
+        if current.space_id == editor_context.space_id {
+            current.lighting = lighting_buffer.config.clone();
+        }
+    }
+}
+
+/// Ensure `ClientGameState.current_space` is populated when the editor opens
+/// so the darkness overlay has a `lighting` config to read. The user can
+/// reach the editor straight from the title screen, in which case no game
+/// events have run and `current_space` is `None`.
+pub fn init_editor_client_space(
+    editor_context: Res<EditorContext>,
+    space_definitions: Res<SpaceDefinitions>,
+    space_manager: Res<SpaceManager>,
+    world_config: Res<WorldConfig>,
+    mut client_state: ResMut<crate::game::resources::ClientGameState>,
+) {
+    let needs_init = client_state
+        .current_space
+        .as_ref()
+        .is_none_or(|s| s.space_id != editor_context.space_id);
+    if !needs_init {
+        return;
+    }
+    let lighting = space_definitions
+        .get(&editor_context.authored_id)
+        .map(|d| d.lighting.clone())
+        .unwrap_or_default();
+    let (width, height, fill_floor_type) = space_manager
+        .get(editor_context.space_id)
+        .map(|s| (s.width, s.height, s.fill_floor_type.clone()))
+        .unwrap_or((
+            world_config.map_width,
+            world_config.map_height,
+            world_config.fill_floor_type.clone(),
+        ));
+    client_state.current_space = Some(crate::game::resources::ClientSpaceState {
+        space_id: editor_context.space_id,
+        authored_id: editor_context.authored_id.clone(),
+        width,
+        height,
+        fill_floor_type,
+        lighting,
+    });
+}
+
+/// Bridges that let the gameplay-side darkness overlay run inside the editor:
+/// mirror the scrubber-driven `WorldClock.time_of_day` into
+/// `client_state.world_time` (the shader reads the replicated copy), and the
+/// editor camera into `client_state.player_position` (the shader uses it to
+/// anchor the indoor-mask window — in editor mode the window follows the
+/// authoring camera). Gated to `MapEditor` by the plugin registration so
+/// gameplay's authoritative writes are untouched.
+pub fn sync_editor_view_to_client(
+    editor_context: Res<EditorContext>,
+    editor_camera: Res<EditorCamera>,
+    world_clock: Res<crate::world::lighting::WorldClock>,
+    mut client_state: ResMut<crate::game::resources::ClientGameState>,
+) {
+    if world_clock.is_changed() && client_state.world_time != world_clock.time_of_day {
+        client_state.world_time = world_clock.time_of_day;
+    }
+    if editor_camera.is_changed() || editor_context.is_changed() {
+        let tile = crate::world::components::TilePosition::ground(
+            editor_camera.center.x.round() as i32,
+            editor_camera.center.y.round() as i32,
+        );
+        let pos = crate::world::components::SpacePosition::new(editor_context.space_id, tile);
+        if client_state.player_position != Some(pos) {
+            client_state.player_position = Some(pos);
+            client_state.player_tile_position = Some(tile);
+        }
+    }
 }
 
 /// Validate and convert a `SpawnGroupDraft` into an authoritative
@@ -1794,6 +1989,7 @@ pub fn apply_modal_confirmed(
     };
     let portal_buffer = buffers.portals.as_mut();
     let spawn_group_buffer = buffers.spawn_groups.as_mut();
+    let lighting_buffer = buffers.lighting.as_mut();
 
     match confirmed {
         ModalConfirmed::FileOpen { authored_id } => {
@@ -1835,6 +2031,8 @@ pub fn apply_modal_confirmed(
             portal_buffer.portals = def.portals.clone();
             spawn_group_buffer.groups = def.spawn_groups.clone();
             spawn_group_buffer.selected = None;
+            lighting_buffer.config = def.lighting.clone();
+            lighting_buffer.selected_keyframe = None;
             editor_state.dirty = false;
             editor_state.selected_type_id = None;
             editor_state.selected_object_id = None;
@@ -1850,6 +2048,7 @@ pub fn apply_modal_confirmed(
                 &editor_context,
                 portal_buffer,
                 spawn_group_buffer,
+                lighting_buffer,
                 &object_registry,
                 &objects_save,
                 &floor_maps,

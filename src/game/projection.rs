@@ -58,7 +58,7 @@ pub const INTEREST_RADIUS: f32 = 30.0;
 fn in_interest_radius(local: TilePosition, other: TilePosition) -> bool {
     let dx = (local.x - other.x) as f32;
     let dy = (local.y - other.y) as f32;
-    return dx.abs() <= INTEREST_RADIUS && dy.abs() <= INTEREST_RADIUS
+    return dx.abs() <= INTEREST_RADIUS && dy.abs() <= INTEREST_RADIUS;
 }
 
 pub type ProjectionPlayerQuery<'w, 's> = Query<
@@ -184,8 +184,11 @@ pub fn compute_events_for_peer(
     let mut seen_remote_player_ids: Vec<PlayerId> = Vec::new();
     // Remote players are projected after the player loop ends so we know
     // local_space_id / local_tile_position regardless of iteration order.
-    let mut deferred_remote_candidates: Vec<(SpaceResident, TilePosition, ClientRemotePlayerState)> =
-        Vec::new();
+    let mut deferred_remote_candidates: Vec<(
+        SpaceResident,
+        TilePosition,
+        ClientRemotePlayerState,
+    )> = Vec::new();
 
     for (
         identity,
