@@ -38,6 +38,13 @@ pub enum EditorTool {
     PickRect {
         target: PickRectTarget,
     },
+    /// Building drawing mode. Drags a marquee like Select, and on release
+    /// stamps walls around the perimeter + floor inside the rectangle as a
+    /// single composite undo, driven by the currently-selected building
+    /// preset (see [`BuildingToolState`] and `crate::editor::building`).
+    /// Subsequent clicks on perimeter walls (with `place_door_armed`) swap
+    /// the wall for the preset's door.
+    BuildingDraw,
 }
 
 /// Where the result of a `PickRect` drag should land.
@@ -103,6 +110,23 @@ pub struct EditorState {
     pub vendor_stashes_panel_visible: bool,
     /// Tool to restore when a `PickRect` mode finishes (or is cancelled).
     pub tool_before_pick: Option<EditorTool>,
+    /// Building-tool selections (preset, floor override, door-arm). Only
+    /// consulted while `current_tool == BuildingDraw`.
+    pub building: BuildingToolState,
+}
+
+/// Per-session state for the building-draw tool: which preset is active,
+/// whether the user has overridden its default floor, and whether the next
+/// perimeter click should swap a wall for the preset's door.
+#[derive(Default, Clone, Debug)]
+pub struct BuildingToolState {
+    pub selected_preset_id: Option<String>,
+    /// `None` = use the preset's `default_floor`. `Some(id)` overrides it.
+    pub floor_override: Option<FloorTypeId>,
+    /// When true, the next left-click on a perimeter wall converts it into
+    /// the active preset's door. Auto-disarms after one successful swap so
+    /// each toggle = one door.
+    pub place_door_armed: bool,
 }
 
 /// Inclusive rectangular region of the editor map. `min`/`max` are the

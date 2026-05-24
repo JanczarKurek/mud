@@ -7,6 +7,7 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, UiGlobalTransform};
 
+use crate::editor::ui::building_panel::EditorBuildingRoot;
 use crate::editor::ui::lighting_panel::EditorLightingRoot;
 use crate::editor::ui::mobs_panel::EditorMobsRoot;
 use crate::editor::ui::modal::ModalOverlayRoot;
@@ -56,6 +57,12 @@ pub struct EditorPanelRoots<'w, 's> {
         (&'static ComputedNode, &'static UiGlobalTransform),
         With<EditorVendorStashesRoot>,
     >,
+    building: Query<
+        'w,
+        's,
+        (&'static ComputedNode, &'static UiGlobalTransform),
+        With<EditorBuildingRoot>,
+    >,
 }
 
 impl EditorPanelRoots<'_, '_> {
@@ -78,6 +85,7 @@ impl EditorPanelRoots<'_, '_> {
             .chain(self.mobs.iter())
             .chain(self.lighting.iter())
             .chain(self.vendor_stashes.iter())
+            .chain(self.building.iter())
             .any(|(computed, transform)| computed.contains_point(*transform, physical))
     }
 }

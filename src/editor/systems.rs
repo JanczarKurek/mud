@@ -642,6 +642,9 @@ pub fn update_editor_cursor_ghost(
         // PickRect mode reuses `render_selection`'s overlay for the live drag
         // rectangle, so no extra ghost needed here.
         EditorTool::PickRect { .. } => {}
+        // BuildingDraw reuses the same selection rectangle for its drag
+        // preview; per-tile ghost would just add noise.
+        EditorTool::BuildingDraw => {}
     }
 }
 
@@ -701,6 +704,14 @@ pub fn handle_editor_left_click(
     // PickRect mode owns the click; let `handle_editor_pick_rect_drag` write
     // the result.
     if matches!(editor_state.current_tool, EditorTool::PickRect { .. }) {
+        return;
+    }
+    // BuildingDraw owns its own click flow: the drag handler captures the
+    // rectangle, and `handle_editor_building_door_swap_click` (a separate
+    // system that runs *before* this one) swaps a wall for a door when
+    // `place_door_armed` is set. Either way, the brush spawn / object-select
+    // logic below should not fire while the building tool is active.
+    if editor_state.current_tool == EditorTool::BuildingDraw {
         return;
     }
 

@@ -1,0 +1,9 @@
+id: stone
+name: Stone Building
+walls:
+  north: wall
+  south: wall
+  east: side_wall
+  west: side_wall
+default_floor: cobblestone
+default_door: wooden_door

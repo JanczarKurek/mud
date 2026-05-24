@@ -1,6 +1,9 @@
 use bevy::prelude::*;
 
 use crate::app::state::ClientAppState;
+use crate::editor::building::{
+    handle_editor_building_door_swap_click, handle_editor_building_draw_drag,
+};
 use crate::editor::clipboard::{
     handle_clipboard_shortcuts, handle_editor_delete_key, handle_editor_paste_click,
     render_paste_ghost,
@@ -30,6 +33,9 @@ use crate::editor::systems::{
     sync_portal_overlays, sync_tile_transforms_editor, update_editor_cursor_ghost,
 };
 use crate::editor::templates::EditorTemplatesIndex;
+use crate::editor::ui::building_panel::{
+    handle_building_panel_clicks, sync_building_panel, sync_building_panel_visibility,
+};
 use crate::editor::ui::color_picker::EditorColorPickerAssets;
 use crate::editor::ui::lighting_panel::{
     handle_lighting_panel_clicks, handle_lighting_scrubber_drag, sync_lighting_panel,
@@ -69,14 +75,14 @@ use crate::editor::ui::vendor_stashes_panel::{
     sync_vendor_stashes_panel_visibility,
 };
 use crate::editor::ui::{
-    cleanup_editor_hud, handle_exit_button_click, handle_generate_dungeon_button_click,
-    handle_lighting_toggle_button_click, handle_mobs_toggle_button_click,
-    handle_new_map_button_click, handle_open_button_click, handle_portal_tool_button_click,
-    handle_redo_button_click, handle_save_as_button_click, handle_save_as_template_button_click,
-    handle_save_button_click, handle_select_tool_button_click,
-    handle_spawn_groups_toggle_button_click, handle_templates_toggle_button_click,
-    handle_undo_button_click, handle_vendor_stashes_toggle_button_click, spawn_editor_hud,
-    sync_editor_top_bar,
+    cleanup_editor_hud, handle_building_tool_button_click, handle_exit_button_click,
+    handle_generate_dungeon_button_click, handle_lighting_toggle_button_click,
+    handle_mobs_toggle_button_click, handle_new_map_button_click, handle_open_button_click,
+    handle_portal_tool_button_click, handle_redo_button_click, handle_save_as_button_click,
+    handle_save_as_template_button_click, handle_save_button_click,
+    handle_select_tool_button_click, handle_spawn_groups_toggle_button_click,
+    handle_templates_toggle_button_click, handle_undo_button_click,
+    handle_vendor_stashes_toggle_button_click, spawn_editor_hud, sync_editor_top_bar,
 };
 use crate::editor::undo::handle_undo_redo;
 
@@ -131,6 +137,30 @@ fn cleanup_editor_ghost_markers(
 
 impl Plugin for EditorPlugin {
     fn build(&self, app: &mut App) {
+        // Building-preset asset type is editor-only (presets aren't read by
+        // the runtime game — once a building is stamped, the world just sees
+        // plain wall + floor + door entities). Load + validate at plugin
+        // construction so a typo in a preset YAML fails fast. Validation
+        // borrows the already-inserted object/floor resources by reference;
+        // EditorPlugin is registered after WorldClientPlugin in
+        // `src/app/plugin.rs` so both are present here.
+        let presets = crate::world::building_presets::BuildingPresets::load_from_disk();
+        {
+            let world = app.world();
+            let object_defs = world
+                .get_resource::<crate::world::object_definitions::OverworldObjectDefinitions>();
+            let floor_defs = world
+                .get_resource::<crate::world::floor_definitions::FloorTilesetDefinitions>();
+            match (object_defs, floor_defs) {
+                (Some(objs), Some(floors)) => presets.validate_against(objs, floors),
+                _ => warn!(
+                    "BuildingPresets: skipped validation — object or floor definitions \
+                     not yet inserted"
+                ),
+            }
+        }
+        app.insert_resource(presets);
+
         app.init_resource::<EditorState>()
             .init_resource::<EditorCamera>()
             .init_resource::<EditorPropertyEditBuffer>()
@@ -227,6 +257,22 @@ impl Plugin for EditorPlugin {
                     .run_if(in_state(ClientAppState::MapEditor))
                     .run_if(no_modal),
             )
+            // Building tool input. Door-swap runs BEFORE the generic
+            // left-click handler so the wall→door swap happens cleanly
+            // without the brush flow also picking up the same click.
+            .add_systems(
+                Update,
+                handle_editor_building_door_swap_click
+                    .before(handle_editor_left_click)
+                    .run_if(in_state(ClientAppState::MapEditor))
+                    .run_if(no_modal),
+            )
+            .add_systems(
+                Update,
+                handle_editor_building_draw_drag
+                    .run_if(in_state(ClientAppState::MapEditor))
+                    .run_if(no_modal),
+            )
             // Selection / paste rendering (always; user wants to see the rect
             // even while a modal is open or when they switch tools).
             .add_systems(
@@ -316,7 +362,18 @@ impl Plugin for EditorPlugin {
                     handle_mobs_toggle_button_click,
                     handle_lighting_toggle_button_click,
                     handle_vendor_stashes_toggle_button_click,
+                    handle_building_tool_button_click,
                     handle_exit_button_click,
+                )
+                    .run_if(in_state(ClientAppState::MapEditor)),
+            )
+            // Building panel sync + clicks.
+            .add_systems(
+                Update,
+                (
+                    sync_building_panel_visibility,
+                    sync_building_panel,
+                    handle_building_panel_clicks,
                 )
                     .run_if(in_state(ClientAppState::MapEditor)),
             )

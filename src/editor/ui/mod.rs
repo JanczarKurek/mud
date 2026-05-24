@@ -1,4 +1,5 @@
 #![allow(clippy::type_complexity, clippy::too_many_arguments)]
+pub mod building_panel;
 pub mod color_picker;
 pub mod lighting_panel;
 pub mod mobs_panel;
@@ -22,6 +23,7 @@ use crate::editor::systems::{
     open_file_dialog_impl, open_generate_dungeon_dialog_impl, open_new_map_dialog_impl,
     open_save_as_impl,
 };
+use crate::editor::ui::building_panel::spawn_building_panel;
 use crate::editor::ui::lighting_panel::spawn_lighting_panel;
 use crate::editor::ui::mobs_panel::spawn_mobs_panel;
 use crate::editor::ui::palette::spawn_palette_panel;
@@ -76,6 +78,8 @@ pub struct EditorMobsToggleButton;
 pub struct EditorLightingToggleButton;
 #[derive(Component)]
 pub struct EditorVendorStashesToggleButton;
+#[derive(Component)]
+pub struct EditorBuildingToolButton;
 #[derive(Component)]
 pub struct EditorExitButton;
 
@@ -165,6 +169,9 @@ pub fn spawn_editor_hud(
                 // Portal tool toggle
                 spawn_top_btn(bar, "Portal Tool", EditorPortalToolButton);
 
+                // Building draw tool toggle
+                spawn_top_btn(bar, "Building", EditorBuildingToolButton);
+
                 // Exit to title screen
                 spawn_top_btn(bar, "Exit to Title", EditorExitButton);
 
@@ -212,6 +219,7 @@ pub fn spawn_editor_hud(
                     spawn_mobs_panel(row);
                     spawn_lighting_panel(row);
                     spawn_vendor_stashes_panel(row);
+                    spawn_building_panel(row);
                     spawn_properties_panel(row);
                 });
         });
@@ -356,6 +364,22 @@ pub fn sync_editor_top_bar(
             Without<EditorLightingToggleButton>,
         ),
     >,
+    mut building_btn: Query<
+        (&Interaction, &mut BackgroundColor, &mut BorderColor),
+        (
+            With<EditorBuildingToolButton>,
+            Without<EditorSaveButton>,
+            Without<EditorPortalToolButton>,
+            Without<EditorUndoButton>,
+            Without<EditorRedoButton>,
+            Without<EditorSelectToolButton>,
+            Without<EditorTemplatesToggleButton>,
+            Without<EditorSpawnGroupsToggleButton>,
+            Without<EditorMobsToggleButton>,
+            Without<EditorLightingToggleButton>,
+            Without<EditorVendorStashesToggleButton>,
+        ),
+    >,
 ) {
     if let Ok(mut text) = dirty_q.single_mut() {
         text.0 = if editor_state.dirty {
@@ -367,6 +391,7 @@ pub fn sync_editor_top_bar(
 
     let is_portal = editor_state.current_tool == EditorTool::Portal;
     let is_select = editor_state.current_tool == EditorTool::Select;
+    let is_building = editor_state.current_tool == EditorTool::BuildingDraw;
     let is_templates = editor_state.templates_panel_visible;
     let is_spawn_groups = editor_state.spawn_groups_panel_visible;
     let is_mobs = editor_state.mobs_panel_visible;
@@ -420,6 +445,11 @@ pub fn sync_editor_top_bar(
     }
     for (interaction, mut bg, mut border) in &mut vendor_stashes_btn {
         let (b, br) = btn_colors(*interaction, is_vendor_stashes);
+        bg.0 = b;
+        *border = BorderColor::all(br);
+    }
+    for (interaction, mut bg, mut border) in &mut building_btn {
+        let (b, br) = btn_colors(*interaction, is_building);
         bg.0 = b;
         *border = BorderColor::all(br);
     }
@@ -537,6 +567,26 @@ pub fn handle_portal_tool_button_click(
             } else {
                 EditorTool::Portal
             };
+        }
+    }
+}
+
+pub fn handle_building_tool_button_click(
+    btn: Query<&Interaction, (Changed<Interaction>, With<EditorBuildingToolButton>)>,
+    mut editor_state: ResMut<EditorState>,
+) {
+    for interaction in &btn {
+        if *interaction == Interaction::Pressed {
+            editor_state.current_tool = if editor_state.current_tool == EditorTool::BuildingDraw {
+                EditorTool::Brush
+            } else {
+                EditorTool::BuildingDraw
+            };
+            // Stop arming the door-swap when leaving the tool — avoids the
+            // next entry surprising the user with a click that swaps a wall.
+            if editor_state.current_tool != EditorTool::BuildingDraw {
+                editor_state.building.place_door_armed = false;
+            }
         }
     }
 }

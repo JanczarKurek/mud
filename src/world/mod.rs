@@ -1,5 +1,6 @@
 pub mod animation;
 pub mod attached;
+pub mod building_presets;
 pub mod camera;
 pub mod components;
 pub mod darkness;
