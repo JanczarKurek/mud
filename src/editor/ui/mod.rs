@@ -8,6 +8,7 @@ pub mod panel_roots;
 pub mod properties;
 pub mod spawn_groups_panel;
 pub mod templates_panel;
+pub mod vendor_stashes_panel;
 
 pub use panel_roots::EditorPanelRoots;
 
@@ -27,6 +28,7 @@ use crate::editor::ui::palette::spawn_palette_panel;
 use crate::editor::ui::properties::spawn_properties_panel;
 use crate::editor::ui::spawn_groups_panel::spawn_spawn_groups_panel;
 use crate::editor::ui::templates_panel::spawn_templates_panel;
+use crate::editor::ui::vendor_stashes_panel::spawn_vendor_stashes_panel;
 use crate::player::components::Player;
 use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
 use crate::world::floor_definitions::FloorTilesetDefinitions;
@@ -72,6 +74,8 @@ pub struct EditorSpawnGroupsToggleButton;
 pub struct EditorMobsToggleButton;
 #[derive(Component)]
 pub struct EditorLightingToggleButton;
+#[derive(Component)]
+pub struct EditorVendorStashesToggleButton;
 #[derive(Component)]
 pub struct EditorExitButton;
 
@@ -150,6 +154,7 @@ pub fn spawn_editor_hud(
                 spawn_top_btn(bar, "Spawn Groups", EditorSpawnGroupsToggleButton);
                 spawn_top_btn(bar, "Mobs", EditorMobsToggleButton);
                 spawn_top_btn(bar, "Lighting", EditorLightingToggleButton);
+                spawn_top_btn(bar, "Vendor Stashes", EditorVendorStashesToggleButton);
 
                 // Spacer
                 bar.spawn(Node {
@@ -206,6 +211,7 @@ pub fn spawn_editor_hud(
                     spawn_spawn_groups_panel(row);
                     spawn_mobs_panel(row);
                     spawn_lighting_panel(row);
+                    spawn_vendor_stashes_panel(row);
                     spawn_properties_panel(row);
                 });
         });
@@ -335,6 +341,21 @@ pub fn sync_editor_top_bar(
             Without<EditorMobsToggleButton>,
         ),
     >,
+    mut vendor_stashes_btn: Query<
+        (&Interaction, &mut BackgroundColor, &mut BorderColor),
+        (
+            With<EditorVendorStashesToggleButton>,
+            Without<EditorSaveButton>,
+            Without<EditorPortalToolButton>,
+            Without<EditorUndoButton>,
+            Without<EditorRedoButton>,
+            Without<EditorSelectToolButton>,
+            Without<EditorTemplatesToggleButton>,
+            Without<EditorSpawnGroupsToggleButton>,
+            Without<EditorMobsToggleButton>,
+            Without<EditorLightingToggleButton>,
+        ),
+    >,
 ) {
     if let Ok(mut text) = dirty_q.single_mut() {
         text.0 = if editor_state.dirty {
@@ -350,6 +371,7 @@ pub fn sync_editor_top_bar(
     let is_spawn_groups = editor_state.spawn_groups_panel_visible;
     let is_mobs = editor_state.mobs_panel_visible;
     let is_lighting = editor_state.lighting_panel_visible;
+    let is_vendor_stashes = editor_state.vendor_stashes_panel_visible;
 
     for (interaction, mut bg, mut border) in &mut save_btn {
         let (b, br) = btn_colors(*interaction, false);
@@ -396,6 +418,11 @@ pub fn sync_editor_top_bar(
         bg.0 = b;
         *border = BorderColor::all(br);
     }
+    for (interaction, mut bg, mut border) in &mut vendor_stashes_btn {
+        let (b, br) = btn_colors(*interaction, is_vendor_stashes);
+        bg.0 = b;
+        *border = BorderColor::all(br);
+    }
 }
 
 fn btn_colors(interaction: Interaction, active: bool) -> (Color, Color) {
@@ -419,6 +446,7 @@ pub fn handle_save_button_click(
     portal_buffer: Res<crate::editor::resources::EditorPortalBuffer>,
     spawn_group_buffer: Res<crate::editor::resources::EditorSpawnGroupBuffer>,
     lighting_buffer: Res<crate::editor::resources::EditorLightingBuffer>,
+    vendor_stash_buffer: Res<crate::editor::resources::EditorVendorStashBuffer>,
     object_registry: Res<crate::world::object_registry::ObjectRegistry>,
     floor_maps: Res<crate::world::floor_map::FloorMaps>,
     objects: Query<
@@ -441,6 +469,7 @@ pub fn handle_save_button_click(
                 &portal_buffer,
                 &spawn_group_buffer,
                 &lighting_buffer,
+                &vendor_stash_buffer,
                 &object_registry,
                 &objects,
                 &floor_maps,
@@ -589,6 +618,17 @@ pub fn handle_lighting_toggle_button_click(
     for interaction in &btn {
         if *interaction == Interaction::Pressed {
             editor_state.lighting_panel_visible = !editor_state.lighting_panel_visible;
+        }
+    }
+}
+
+pub fn handle_vendor_stashes_toggle_button_click(
+    btn: Query<&Interaction, (Changed<Interaction>, With<EditorVendorStashesToggleButton>)>,
+    mut editor_state: ResMut<EditorState>,
+) {
+    for interaction in &btn {
+        if *interaction == Interaction::Pressed {
+            editor_state.vendor_stashes_panel_visible = !editor_state.vendor_stashes_panel_visible;
         }
     }
 }

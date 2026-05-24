@@ -13,7 +13,7 @@ use crate::editor::floor_render::{
 use crate::editor::resources::{
     EditorCamera, EditorClipboard, EditorCursorMarker, EditorLightingBuffer,
     EditorPasteGhostMarker, EditorPickRectResult, EditorPortalBuffer, EditorPropertyEditBuffer,
-    EditorSpawnGroupBuffer, EditorState, ModalState, UndoStack,
+    EditorSpawnGroupBuffer, EditorState, EditorVendorStashBuffer, ModalState, UndoStack,
 };
 use crate::editor::selection::{
     handle_editor_pick_rect_drag, handle_editor_select_drag, handle_editor_select_hotkey,
@@ -63,6 +63,11 @@ use crate::editor::ui::spawn_groups_panel::{
 use crate::editor::ui::templates_panel::{
     handle_templates_panel_clicks, sync_templates_panel, sync_templates_panel_visibility,
 };
+use crate::editor::ui::vendor_stashes_panel::{
+    handle_vendor_stash_keyboard_input, handle_vendor_stash_palette_pick,
+    handle_vendor_stashes_panel_clicks, sync_vendor_stashes_panel,
+    sync_vendor_stashes_panel_visibility,
+};
 use crate::editor::ui::{
     cleanup_editor_hud, handle_exit_button_click, handle_generate_dungeon_button_click,
     handle_lighting_toggle_button_click, handle_mobs_toggle_button_click,
@@ -70,7 +75,8 @@ use crate::editor::ui::{
     handle_redo_button_click, handle_save_as_button_click, handle_save_as_template_button_click,
     handle_save_button_click, handle_select_tool_button_click,
     handle_spawn_groups_toggle_button_click, handle_templates_toggle_button_click,
-    handle_undo_button_click, spawn_editor_hud, sync_editor_top_bar,
+    handle_undo_button_click, handle_vendor_stashes_toggle_button_click, spawn_editor_hud,
+    sync_editor_top_bar,
 };
 use crate::editor::undo::handle_undo_redo;
 
@@ -87,14 +93,21 @@ fn has_modal(s: Res<ModalState>) -> bool {
 /// editor so a future re-entry on a different map doesn't carry over stale
 /// per-map state. (Clipboard contents and the templates index are kept —
 /// they're cross-session by design.)
-fn reset_editor_session_state(mut editor_state: ResMut<EditorState>) {
+fn reset_editor_session_state(
+    mut editor_state: ResMut<EditorState>,
+    mut vendor_stash_buffer: ResMut<EditorVendorStashBuffer>,
+) {
     editor_state.selection = None;
     editor_state.paste_state.active = false;
     editor_state.templates_panel_visible = false;
     editor_state.spawn_groups_panel_visible = false;
     editor_state.mobs_panel_visible = false;
     editor_state.lighting_panel_visible = false;
+    editor_state.vendor_stashes_panel_visible = false;
     editor_state.tool_before_pick = None;
+    vendor_stash_buffer.editing = None;
+    vendor_stash_buffer.edit_text.clear();
+    vendor_stash_buffer.pending_ware_pick = None;
 }
 
 /// Re-scan `assets/dialogs/` when the editor opens so the dropdown list is
@@ -126,6 +139,7 @@ impl Plugin for EditorPlugin {
             .init_resource::<EditorPortalBuffer>()
             .init_resource::<EditorSpawnGroupBuffer>()
             .init_resource::<EditorLightingBuffer>()
+            .init_resource::<EditorVendorStashBuffer>()
             .init_resource::<EditorPickRectResult>()
             .init_resource::<EditorDialogIndex>()
             .init_resource::<EditorFloorRenderState>()
@@ -301,6 +315,7 @@ impl Plugin for EditorPlugin {
                     handle_spawn_groups_toggle_button_click,
                     handle_mobs_toggle_button_click,
                     handle_lighting_toggle_button_click,
+                    handle_vendor_stashes_toggle_button_click,
                     handle_exit_button_click,
                 )
                     .run_if(in_state(ClientAppState::MapEditor)),
@@ -329,6 +344,30 @@ impl Plugin for EditorPlugin {
                     sync_editor_view_to_client,
                 )
                     .run_if(in_state(ClientAppState::MapEditor)),
+            )
+            // Vendor stashes panel — split into its own add_systems call to
+            // stay under Bevy's per-tuple system arity limit.
+            .add_systems(
+                Update,
+                (
+                    sync_vendor_stashes_panel_visibility,
+                    sync_vendor_stashes_panel,
+                    handle_vendor_stashes_panel_clicks,
+                    // `handle_palette_clicks` checks `pending_ware_pick` and
+                    // bails when armed; this pick handler then consumes the
+                    // click and clears the arm. Order matters: if pick ran
+                    // first it would clear the flag before palette_clicks
+                    // could see it, and the brush would arm.
+                    handle_vendor_stash_palette_pick
+                        .after(crate::editor::ui::palette::handle_palette_clicks),
+                )
+                    .run_if(in_state(ClientAppState::MapEditor)),
+            )
+            .add_systems(
+                Update,
+                handle_vendor_stash_keyboard_input
+                    .run_if(in_state(ClientAppState::MapEditor))
+                    .run_if(no_modal),
             );
     }
 }

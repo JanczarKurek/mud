@@ -131,13 +131,16 @@ impl WareDef {
 
 impl Stockpile {
     pub fn from_def(def: &ShopkeeperDef) -> Self {
+        Self::from_wares(&def.wares)
+    }
+
+    /// Build a `Stockpile` directly from a wares list. Used by the map-level
+    /// vendor-stash override path: when an NPC instance carries a
+    /// `vendor_stash` property naming a stash in its space, that stash's
+    /// wares replace the template's defaults.
+    pub fn from_wares(wares: &[WareDef]) -> Self {
         Self {
-            wares: def
-                .wares
-                .iter()
-                .cloned()
-                .map(|ware| ware.into_entry())
-                .collect(),
+            wares: wares.iter().cloned().map(|w| w.into_entry()).collect(),
         }
     }
 }

@@ -56,6 +56,12 @@ pub struct SpaceDefinition {
     /// Poisson-style timer when members die or are removed.
     #[serde(default)]
     pub spawn_groups: Vec<SpawnGroupDef>,
+    /// Named ware lists ("vendor stashes") authored in this map. Referenced
+    /// by a shopkeeper NPC instance's `vendor_stash` property to override the
+    /// template's default wares — see `spawn_overworld_object_instance`.
+    /// Created and edited in the level editor's Vendor Stashes panel.
+    #[serde(default)]
+    pub vendor_stashes: Vec<VendorStashDef>,
     /// Floor placements grouped by floor type id. Overlay on top of `fill_floor_type`.
     #[serde(default)]
     pub floors: HashMap<FloorTypeId, FloorPlacements>,
@@ -225,6 +231,17 @@ pub struct SpawnGroupDef {
     pub respawn_mean_seconds: f32,
     pub area: SpawnArea,
     pub behavior: MapBehavior,
+}
+
+/// Named ware list for a vendor on this map. Shopkeeper NPC instances pointed
+/// at this stash (via the `vendor_stash` property) override their template's
+/// default wares with this list. Unique by `id` within the space.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct VendorStashDef {
+    pub id: String,
+    #[serde(default)]
+    pub wares: Vec<crate::game::shop::WareDef>,
 }
 
 /// Spawn area. Exactly one of `bounds` or `tiles` must be set; this is
@@ -519,7 +536,33 @@ impl SpaceDefinition {
         self.object_indices = object_indices;
         self.authored_id_lookup = name_to_id;
         self.validate_spawn_groups();
+        self.validate_vendor_stashes();
         next_id
+    }
+
+    /// Panics if vendor stash ids collide within this space — instance
+    /// `vendor_stash` properties resolve by id, so duplicates would create
+    /// ambiguity at spawn time.
+    pub fn validate_vendor_stashes(&self) {
+        let mut seen_ids: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for stash in &self.vendor_stashes {
+            assert!(
+                !stash.id.trim().is_empty(),
+                "Vendor stash in space '{}' has an empty id",
+                self.authored_id,
+            );
+            assert!(
+                seen_ids.insert(stash.id.as_str()),
+                "Vendor stash id '{}' is declared twice in space '{}'",
+                stash.id,
+                self.authored_id,
+            );
+        }
+    }
+
+    /// Look up a vendor stash by id within this space.
+    pub fn find_vendor_stash(&self, id: &str) -> Option<&VendorStashDef> {
+        self.vendor_stashes.iter().find(|s| s.id == id)
     }
 
     /// Panics if any authored `spawn_groups` entry violates the schema:
@@ -650,6 +693,7 @@ impl SpaceDefinition {
             portals: Vec::new(),
             objects: Vec::new(),
             spawn_groups: Vec::new(),
+            vendor_stashes: Vec::new(),
             floors: HashMap::new(),
             legend: HashMap::new(),
             tiles: None,
@@ -1132,6 +1176,57 @@ spawn_groups:
         let def: SpaceDefinition = serde_yaml::from_str(yaml).expect("parse space");
         assert_eq!(def.spawn_groups.len(), 1);
         assert_eq!(def.spawn_groups[0].id, "cellar_rats");
+    }
+
+    #[test]
+    fn vendor_stashes_round_trip_through_full_space_yaml() {
+        // Editor will produce YAML containing `vendor_stashes:`. Verify that
+        // a stash with mixed Infinite/Finite stock parses back into the
+        // expected `WareDef` shape.
+        let yaml = r#"
+authored_id: t
+width: 8
+height: 8
+fill_floor_type: grass
+vendor_stashes:
+  - id: town_armorer
+    wares:
+      - type_id: bronze_sword
+        price_copper: 720
+        stock: 2
+      - type_id: apple
+        price_copper: 4
+        stock: infinite
+"#;
+        let def: SpaceDefinition = serde_yaml::from_str(yaml).expect("parse space");
+        assert_eq!(def.vendor_stashes.len(), 1);
+        let stash = &def.vendor_stashes[0];
+        assert_eq!(stash.id, "town_armorer");
+        assert_eq!(stash.wares.len(), 2);
+        assert_eq!(stash.wares[0].type_id, "bronze_sword");
+        assert_eq!(stash.wares[0].price_copper, 720);
+        assert!(matches!(
+            stash.wares[1].stock,
+            crate::game::shop::StockModeDef::Word(crate::game::shop::StockWord::Infinite),
+        ));
+    }
+
+    #[test]
+    #[should_panic(expected = "declared twice")]
+    fn vendor_stash_duplicate_id_panics() {
+        let yaml = r#"
+authored_id: t
+width: 4
+height: 4
+fill_floor_type: grass
+vendor_stashes:
+  - id: dup
+    wares: []
+  - id: dup
+    wares: []
+"#;
+        let mut def: SpaceDefinition = serde_yaml::from_str(yaml).expect("parse space");
+        def.resolve_objects(1);
     }
 
     #[test]

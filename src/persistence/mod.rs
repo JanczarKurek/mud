@@ -911,11 +911,26 @@ fn load_world_from_snapshot(
             }
         }
 
-        // Re-derive Shopkeeper + Stockpile from the object definition on load.
-        // Stockpile state (decremented finite stock) is not persisted in the
-        // snapshot — wares reset to their YAML values on reload. Mirrors the
-        // fresh-spawn path in `world::setup::spawn_overworld_object`.
-        if let Some(shopkeeper_def) = object_definitions
+        // Re-derive Shopkeeper + Stockpile from the object definition (or the
+        // map-level `vendor_stash` override) on load. Stockpile state
+        // (decremented finite stock) is not persisted in the snapshot — wares
+        // reset to their authored values on reload. Mirrors the fresh-spawn
+        // path in `world::setup::spawn_overworld_object_instance`.
+        let stash_override = object
+            .properties
+            .get("vendor_stash")
+            .and_then(|stash_id| {
+                space_manager
+                    .get(space_id)
+                    .and_then(|runtime| authored_spaces.get(&runtime.authored_id))
+                    .and_then(|def| def.find_vendor_stash(stash_id))
+            });
+        if let Some(stash) = stash_override {
+            entity.insert((
+                crate::game::shop::Shopkeeper,
+                crate::game::shop::Stockpile::from_wares(&stash.wares),
+            ));
+        } else if let Some(shopkeeper_def) = object_definitions
             .get(&definition_id_for_lookup)
             .and_then(|def| def.shopkeeper.as_ref())
         {

@@ -407,7 +407,15 @@ pub fn handle_palette_filter_click(
 pub fn handle_palette_clicks(
     mut editor_state: ResMut<EditorState>,
     items: Query<(&EditorPaletteItem, &Interaction), (Changed<Interaction>, With<Button>)>,
+    vendor_stash_buffer: Res<crate::editor::resources::EditorVendorStashBuffer>,
 ) {
+    // Vendor-stash ware picking has priority: when a pick is armed, palette
+    // clicks belong to the stash flow (handled by
+    // `handle_vendor_stash_palette_pick`), not to the object brush. Without
+    // this gate, picking a ware would also arm the brush.
+    if vendor_stash_buffer.pending_ware_pick.is_some() {
+        return;
+    }
     for (item, interaction) in &items {
         if *interaction == Interaction::Pressed {
             // Clicking an object palette item exits filter mode and switches

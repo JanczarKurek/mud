@@ -5,12 +5,13 @@ use serde::Serialize;
 
 use crate::editor::resources::{
     EditorContext, EditorLightingBuffer, EditorPortalBuffer, EditorSpawnGroupBuffer,
+    EditorVendorStashBuffer,
 };
 use crate::npc::components::SpawnGroupMember;
 use crate::player::components::Player;
 use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
 use crate::world::map_layout::{
-    MapBehavior, SpaceLightingDef, SpacePermanence, SpawnGroupDef, TileCoordinate,
+    MapBehavior, SpaceLightingDef, SpacePermanence, SpawnGroupDef, TileCoordinate, VendorStashDef,
 };
 use crate::world::object_registry::ObjectRegistry;
 
@@ -31,6 +32,8 @@ struct SpaceOutput {
     objects: Vec<ObjectEntryOutput>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     spawn_groups: Vec<SpawnGroupDef>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    vendor_stashes: Vec<VendorStashDef>,
 }
 
 /// Skip emitting `lighting:` when every field equals `SpaceLightingDef::default()`,
@@ -90,6 +93,7 @@ pub fn serialize_and_save(
     portal_buffer: &EditorPortalBuffer,
     spawn_group_buffer: &EditorSpawnGroupBuffer,
     lighting_buffer: &EditorLightingBuffer,
+    vendor_stash_buffer: &EditorVendorStashBuffer,
     object_registry: &ObjectRegistry,
     objects: &bevy::prelude::Query<
         (&OverworldObject, &SpaceResident, &TilePosition),
@@ -223,6 +227,7 @@ pub fn serialize_and_save(
         floors: floors_out,
         objects: object_entries,
         spawn_groups: spawn_group_buffer.groups.clone(),
+        vendor_stashes: vendor_stash_buffer.stashes.clone(),
     };
 
     let yaml = serde_yaml::to_string(&output)
@@ -320,6 +325,7 @@ mod tests {
             floors: HashMap::new(),
             objects: Vec::new(),
             spawn_groups: Vec::new(),
+            vendor_stashes: Vec::new(),
         };
         let yaml = serde_yaml::to_string(&output).expect("serialize");
         let parsed: SpaceDefinition = serde_yaml::from_str(&yaml).expect("parse");
@@ -339,6 +345,7 @@ mod tests {
             floors: HashMap::new(),
             objects: Vec::new(),
             spawn_groups: Vec::new(),
+            vendor_stashes: Vec::new(),
         };
         let yaml = serde_yaml::to_string(&output).expect("serialize");
         assert!(

@@ -571,6 +571,7 @@ fn dialog_button(
 pub fn handle_property_row_click(
     rows: Query<(&EditorPropertyRow, &Interaction), (Changed<Interaction>, With<Button>)>,
     mut prop_buffer: ResMut<EditorPropertyEditBuffer>,
+    mut vendor_stash_buffer: ResMut<crate::editor::resources::EditorVendorStashBuffer>,
 ) {
     for (row, interaction) in &rows {
         if *interaction == Interaction::Pressed {
@@ -580,6 +581,10 @@ pub fn handle_property_row_click(
                 continue;
             }
             if let Some(initial_value) = prop_buffer.entries.get(index).map(|e| e.1.clone()) {
+                // Drop any active vendor-stash edit so the keyboard pipeline
+                // doesn't end up routing keystrokes into both panels.
+                vendor_stash_buffer.editing = None;
+                vendor_stash_buffer.edit_text.clear();
                 prop_buffer.editing_index = Some(index);
                 prop_buffer.editing_field = EditingField::Value;
                 prop_buffer.edit_text = initial_value;
@@ -592,9 +597,12 @@ pub fn handle_property_row_click(
 pub fn handle_add_property_button(
     add_btns: Query<&Interaction, (Changed<Interaction>, With<EditorPropertyAddButton>)>,
     mut prop_buffer: ResMut<EditorPropertyEditBuffer>,
+    mut vendor_stash_buffer: ResMut<crate::editor::resources::EditorVendorStashBuffer>,
 ) {
     for interaction in &add_btns {
         if *interaction == Interaction::Pressed {
+            vendor_stash_buffer.editing = None;
+            vendor_stash_buffer.edit_text.clear();
             let new_index = prop_buffer.entries.len();
             prop_buffer.entries.push((String::new(), String::new()));
             prop_buffer.editing_index = Some(new_index);

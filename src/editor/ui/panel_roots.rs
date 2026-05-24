@@ -14,6 +14,7 @@ use crate::editor::ui::palette::EditorPaletteRoot;
 use crate::editor::ui::properties::EditorPropertiesRoot;
 use crate::editor::ui::spawn_groups_panel::EditorSpawnGroupsRoot;
 use crate::editor::ui::templates_panel::EditorTemplatesRoot;
+use crate::editor::ui::vendor_stashes_panel::EditorVendorStashesRoot;
 use crate::editor::ui::EditorTopBarRoot;
 
 #[derive(SystemParam)]
@@ -49,6 +50,12 @@ pub struct EditorPanelRoots<'w, 's> {
         (&'static ComputedNode, &'static UiGlobalTransform),
         With<EditorLightingRoot>,
     >,
+    vendor_stashes: Query<
+        'w,
+        's,
+        (&'static ComputedNode, &'static UiGlobalTransform),
+        With<EditorVendorStashesRoot>,
+    >,
 }
 
 impl EditorPanelRoots<'_, '_> {
@@ -70,6 +77,7 @@ impl EditorPanelRoots<'_, '_> {
             .chain(self.spawn_groups.iter())
             .chain(self.mobs.iter())
             .chain(self.lighting.iter())
+            .chain(self.vendor_stashes.iter())
             .any(|(computed, transform)| computed.contains_point(*transform, physical))
     }
 }

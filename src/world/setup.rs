@@ -214,10 +214,26 @@ pub fn spawn_overworld_object_instance(
     // entity for simplicity; the abstraction is preserved by making them
     // distinct components so admin scripts and projection code can target
     // either independently.
-    if let Some(shopkeeper_def) = definitions
+    //
+    // Per-instance `vendor_stash` override: when the NPC's `properties`
+    // carries a `vendor_stash` key naming a stash defined in the map's
+    // `vendor_stashes:` list, the stash wares replace the template defaults.
+    // A `vendor_stash` property also promotes a non-shopkeeper template into
+    // a vendor so map authors can attach wares to any NPC without editing the
+    // template metadata.
+    let template_shopkeeper = definitions
         .get(&object.type_id)
-        .and_then(|def| def.shopkeeper.as_ref())
-    {
+        .and_then(|def| def.shopkeeper.as_ref());
+    let stash_override = object
+        .properties
+        .get("vendor_stash")
+        .and_then(|stash_id| space.find_vendor_stash(stash_id));
+    if let Some(stash) = stash_override {
+        commands.entity(entity).insert((
+            crate::game::shop::Shopkeeper,
+            crate::game::shop::Stockpile::from_wares(&stash.wares),
+        ));
+    } else if let Some(shopkeeper_def) = template_shopkeeper {
         commands.entity(entity).insert((
             crate::game::shop::Shopkeeper,
             crate::game::shop::Stockpile::from_def(shopkeeper_def),

@@ -222,6 +222,7 @@ pub fn init_portal_buffer(
     mut portal_buffer: ResMut<EditorPortalBuffer>,
     mut spawn_group_buffer: ResMut<EditorSpawnGroupBuffer>,
     mut lighting_buffer: ResMut<EditorLightingBuffer>,
+    mut vendor_stash_buffer: ResMut<crate::editor::resources::EditorVendorStashBuffer>,
 ) {
     let def = space_definitions.get(&editor_context.authored_id);
     portal_buffer.portals = def.map(|d| d.portals.clone()).unwrap_or_default();
@@ -229,6 +230,11 @@ pub fn init_portal_buffer(
     spawn_group_buffer.selected = None;
     lighting_buffer.config = def.map(|d| d.lighting.clone()).unwrap_or_default();
     lighting_buffer.selected_keyframe = None;
+    vendor_stash_buffer.stashes = def.map(|d| d.vendor_stashes.clone()).unwrap_or_default();
+    vendor_stash_buffer.selected = None;
+    vendor_stash_buffer.editing = None;
+    vendor_stash_buffer.edit_text.clear();
+    vendor_stash_buffer.pending_ware_pick = None;
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1126,6 +1132,7 @@ pub fn handle_editor_escape(
     modal_state: Res<ModalState>,
     mut editor_state: ResMut<EditorState>,
     mut prop_buffer: ResMut<EditorPropertyEditBuffer>,
+    vendor_stash_buffer: Res<crate::editor::resources::EditorVendorStashBuffer>,
 ) {
     if !keyboard.just_pressed(KeyCode::Escape) {
         return;
@@ -1134,6 +1141,11 @@ pub fn handle_editor_escape(
         return;
     }
     if prop_buffer.editing_index.is_some() {
+        return;
+    }
+    if vendor_stash_buffer.editing.is_some() {
+        // The vendor-stash keyboard handler owns Esc while a field is being
+        // edited; skip the tool/selection-clear cascade in that case.
         return;
     }
     if editor_state.palette_filter_focused {
@@ -1222,6 +1234,7 @@ pub fn handle_editor_save(
     portal_buffer: Res<EditorPortalBuffer>,
     spawn_group_buffer: Res<EditorSpawnGroupBuffer>,
     lighting_buffer: Res<EditorLightingBuffer>,
+    vendor_stash_buffer: Res<crate::editor::resources::EditorVendorStashBuffer>,
     object_registry: Res<ObjectRegistry>,
     floor_maps: Res<FloorMaps>,
     objects: Query<
@@ -1241,6 +1254,7 @@ pub fn handle_editor_save(
             &portal_buffer,
             &spawn_group_buffer,
             &lighting_buffer,
+            &vendor_stash_buffer,
             &object_registry,
             &objects,
             &floor_maps,
@@ -2104,6 +2118,7 @@ pub fn apply_modal_confirmed(
     let portal_buffer = buffers.portals.as_mut();
     let spawn_group_buffer = buffers.spawn_groups.as_mut();
     let lighting_buffer = buffers.lighting.as_mut();
+    let vendor_stash_buffer = buffers.vendor_stashes.as_mut();
 
     match confirmed {
         ModalConfirmed::FileOpen { authored_id } => {
@@ -2160,6 +2175,11 @@ pub fn apply_modal_confirmed(
             spawn_group_buffer.selected = None;
             lighting_buffer.config = def.lighting.clone();
             lighting_buffer.selected_keyframe = None;
+            vendor_stash_buffer.stashes = def.vendor_stashes.clone();
+            vendor_stash_buffer.selected = None;
+            vendor_stash_buffer.editing = None;
+            vendor_stash_buffer.edit_text.clear();
+            vendor_stash_buffer.pending_ware_pick = None;
             editor_state.dirty = false;
             editor_state.selected_type_id = None;
             editor_state.selected_object_id = None;
@@ -2176,6 +2196,7 @@ pub fn apply_modal_confirmed(
                 portal_buffer,
                 spawn_group_buffer,
                 lighting_buffer,
+                vendor_stash_buffer,
                 &object_registry,
                 &objects_save,
                 &floor_maps,
@@ -2226,6 +2247,11 @@ pub fn apply_modal_confirmed(
             portal_buffer.portals = vec![];
             spawn_group_buffer.groups.clear();
             spawn_group_buffer.selected = None;
+            vendor_stash_buffer.stashes.clear();
+            vendor_stash_buffer.selected = None;
+            vendor_stash_buffer.editing = None;
+            vendor_stash_buffer.edit_text.clear();
+            vendor_stash_buffer.pending_ware_pick = None;
             editor_state.dirty = true;
             editor_state.selected_type_id = None;
             editor_state.selected_object_id = None;
@@ -2306,6 +2332,11 @@ pub fn apply_modal_confirmed(
             portal_buffer.portals.clear();
             spawn_group_buffer.groups.clear();
             spawn_group_buffer.selected = None;
+            vendor_stash_buffer.stashes.clear();
+            vendor_stash_buffer.selected = None;
+            vendor_stash_buffer.editing = None;
+            vendor_stash_buffer.edit_text.clear();
+            vendor_stash_buffer.pending_ware_pick = None;
             editor_state.dirty = true;
             editor_state.selected_type_id = None;
             editor_state.selected_object_id = None;

@@ -8,6 +8,7 @@ use crate::world::components::{SpaceId, TilePosition};
 use crate::world::floor_definitions::FloorTypeId;
 use crate::world::map_layout::{
     AmbientKeyframe, MapBehavior, PortalDefinition, SpaceLightingDef, SpawnGroupDef, TileRectangle,
+    VendorStashDef,
 };
 
 /// Metadata about the space being edited.
@@ -98,6 +99,8 @@ pub struct EditorState {
     pub mobs_panel_visible: bool,
     /// User-toggled visibility of the Lighting side panel.
     pub lighting_panel_visible: bool,
+    /// User-toggled visibility of the Vendor Stashes side panel.
+    pub vendor_stashes_panel_visible: bool,
     /// Tool to restore when a `PickRect` mode finishes (or is cancelled).
     pub tool_before_pick: Option<EditorTool>,
 }
@@ -578,6 +581,52 @@ pub struct EditorSpawnGroupBuffer {
     pub pending_new_spawn_group_template: Option<String>,
 }
 
+/// Holds the vendor-stash definitions for the currently-edited space (mutable,
+/// persisted to YAML on save). Populated when a map opens; drained back to
+/// the serializer's `SpaceOutput.vendor_stashes`.
+///
+/// Inline editing state lives alongside the stash list: `editing_ware` and
+/// `edit_text` mirror the pattern in `EditorPropertyEditBuffer` so a single
+/// click on a ware field puts that field into edit mode with no modal.
+#[derive(Resource, Default)]
+pub struct EditorVendorStashBuffer {
+    pub stashes: Vec<VendorStashDef>,
+    /// Index of the stash whose wares are expanded for editing in the panel.
+    /// `None` collapses every stash to its summary row.
+    pub selected: Option<usize>,
+    /// Active inline-edit cursor: which stash and which field is being typed
+    /// into. `None` means no field has focus.
+    pub editing: Option<VendorStashEditingField>,
+    /// Buffered text for the currently-edited field; committed back to the
+    /// stash when focus moves or Enter is pressed.
+    pub edit_text: String,
+    /// "Pick from palette" arm. While `Some`, the next click on an
+    /// `EditorPaletteItem` is captured by `handle_vendor_stash_palette_pick`
+    /// (instead of arming the brush) and the picked `type_id` is written into
+    /// `stashes[stash_index].wares[ware_index].type_id`.
+    pub pending_ware_pick: Option<VendorWarePickTarget>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct VendorWarePickTarget {
+    pub stash_index: usize,
+    pub ware_index: usize,
+}
+
+/// Identifies one editable text field inside the Vendor Stashes panel.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VendorStashEditingField {
+    /// The stash's identifier (the value referenced from a shopkeeper's
+    /// `vendor_stash` property).
+    StashId { stash_index: usize },
+    /// A ware's `type_id` column.
+    WareTypeId { stash_index: usize, ware_index: usize },
+    /// A ware's `price_copper` column (numeric).
+    WarePrice { stash_index: usize, ware_index: usize },
+    /// A ware's `stock` column. Accepts `infinite` or a non-negative integer.
+    WareStock { stash_index: usize, ware_index: usize },
+}
+
 /// Bundle the per-map-edit buffers into a single `SystemParam` so callers
 /// like `apply_modal_confirmed` can take both with one slot — Bevy caps
 /// system parameter count at 16, and threading this many resources through
@@ -587,6 +636,7 @@ pub struct EditorMapBuffers<'w> {
     pub portals: ResMut<'w, EditorPortalBuffer>,
     pub spawn_groups: ResMut<'w, EditorSpawnGroupBuffer>,
     pub lighting: ResMut<'w, EditorLightingBuffer>,
+    pub vendor_stashes: ResMut<'w, EditorVendorStashBuffer>,
 }
 
 /// Bundle the inputs to `reset_space_contents_from_def` into one
