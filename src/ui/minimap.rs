@@ -309,7 +309,7 @@ fn paint_tile_window(
                 || world_y >= space_height
             {
                 OUT_OF_BOUNDS_COLOR
-            } else if discovered.is_some_and(|set| set.contains(&(world_x, world_y, player_z))) {
+            } else if discovered.is_some_and(|set| set.contains(&(world_x, world_y))) {
                 fill
             } else {
                 fog_color_for_tile(world_x, world_y)
@@ -333,9 +333,9 @@ fn paint_tile_window(
             continue;
         }
         // Don't reveal object positions on tiles the player hasn't seen.
-        if !discovered.is_some_and(|set| {
-            set.contains(&(object.tile_position.x, object.tile_position.y, player_z))
-        }) {
+        if !discovered
+            .is_some_and(|set| set.contains(&(object.tile_position.x, object.tile_position.y)))
+        {
             continue;
         }
         let dx = object.tile_position.x - player_x;

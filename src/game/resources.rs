@@ -508,17 +508,17 @@ pub enum GameEvent {
     /// state. Sent on first projection / when the projection detects drift.
     /// The fold overwrites `ClientGameState.discovered_tiles`. Tiles are
     /// grouped by `SpaceId` so a multi-space discovery history travels in one
-    /// payload.
+    /// payload. Tuples are 2D `(x, y)` — fog of war ignores floor.
     DiscoveredTilesReplaced {
-        tiles: HashMap<SpaceId, Vec<(i32, i32, i32)>>,
+        tiles: HashMap<SpaceId, Vec<(i32, i32)>>,
     },
     /// Delta event: the local player just revealed `tiles` in `space_id`.
     /// Emitted by `compute_events_for_peer` when authoritative
     /// `DiscoveredTiles` grew between projection ticks. Folded as a union
-    /// into `ClientGameState.discovered_tiles`.
+    /// into `ClientGameState.discovered_tiles`. Tuples are 2D `(x, y)`.
     TilesDiscovered {
         space_id: SpaceId,
-        tiles: Vec<(i32, i32, i32)>,
+        tiles: Vec<(i32, i32)>,
     },
 }
 
@@ -663,6 +663,7 @@ pub struct ClientGameState {
     /// Tiles the local player has ever seen, grouped by space. Drives the
     /// fog-of-war overlay on the main view and the minimap. Folded from
     /// `DiscoveredTilesReplaced` (baseline) and `TilesDiscovered` (delta).
+    /// Stored as 2D `(x, y)` — fog of war ignores floor.
     #[serde(default)]
-    pub discovered_tiles: HashMap<SpaceId, HashSet<(i32, i32, i32)>>,
+    pub discovered_tiles: HashMap<SpaceId, HashSet<(i32, i32)>>,
 }

@@ -818,22 +818,25 @@ impl RegenBuffs {
 /// to the owning client via `GameEvent::DiscoveredTilesReplaced` and
 /// `TilesDiscovered`, where it lands in `ClientGameState.discovered_tiles`.
 /// Persisted across logins through `PlayerStateDump.discovered_tiles`.
+///
+/// Storage is 2D `(x, y)` per space — fog of war ignores floor. Walking
+/// around the base of a tower reveals that column on every floor at once.
 #[derive(Component, Clone, Debug, Default, PartialEq, Eq)]
 pub struct DiscoveredTiles {
-    pub by_space: HashMap<SpaceId, HashSet<(i32, i32, i32)>>,
+    pub by_space: HashMap<SpaceId, HashSet<(i32, i32)>>,
 }
 
 impl DiscoveredTiles {
-    pub fn contains(&self, space_id: SpaceId, x: i32, y: i32, z: i32) -> bool {
+    pub fn contains(&self, space_id: SpaceId, x: i32, y: i32) -> bool {
         self.by_space
             .get(&space_id)
-            .is_some_and(|set| set.contains(&(x, y, z)))
+            .is_some_and(|set| set.contains(&(x, y)))
     }
 
-    /// Insert `(x, y, z)` into `space_id`'s set. Returns `true` if the tile
+    /// Insert `(x, y)` into `space_id`'s set. Returns `true` if the tile
     /// was newly inserted (i.e. previously undiscovered).
-    pub fn insert(&mut self, space_id: SpaceId, x: i32, y: i32, z: i32) -> bool {
-        self.by_space.entry(space_id).or_default().insert((x, y, z))
+    pub fn insert(&mut self, space_id: SpaceId, x: i32, y: i32) -> bool {
+        self.by_space.entry(space_id).or_default().insert((x, y))
     }
 }
 

@@ -6,16 +6,14 @@ use crate::world::components::SpaceId;
 use crate::world::direction::Direction;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 
-/// Highest floor index the camera ever renders relative to the player's floor.
-/// The lookup terminates earlier when a covering tile is found. Three is enough
-/// for overworld buildings; dungeons with deep towers would raise this.
-const MAX_FLOORS_ABOVE: i32 = 3;
-
-/// How many floors below the player to keep visible for depth cues. Lower
-/// floors render at full alpha — the floor-screen offset is the sole depth
-/// cue, so brief one-tile elevations (climbing onto a barrel) don't make the
-/// whole map flicker between bright and dim.
-const MAX_FLOORS_BELOW: i32 = 3;
+/// How many floors above the player we'll scan upward in search of an
+/// `occludes_floor_above` tile. The scan terminates as soon as a covering tile
+/// is found, so this only sets the depth for an *uncovered* player (e.g.
+/// standing outside in the open). Generous enough for the tallest authored
+/// buildings — `floor_maps` is *not* a reliable upper bound because in this
+/// codebase only the ground floor gets a `FloorMap` entry; upper-story floors,
+/// walls, and roofs live in `world_objects` at the same z.
+const MAX_FLOORS_ABOVE: i32 = 16;
 
 /// True iff `(x, y, z)` is "indoor" — i.e. some object on `(x, y, z+1)` in
 /// `space_id` has `render.occludes_floor_above = true`. The same predicate
@@ -144,6 +142,10 @@ pub fn recompute_visible_floors(
     let player_y = player_pos.tile_position.y;
     let space_id = player_pos.space_id;
 
+    // Upper bound: same occlusion-driven scan as before, but with a much
+    // larger cap (`MAX_FLOORS_ABOVE`) so that tall buildings render above an
+    // uncovered player. The scan still breaks at the first `occludes_floor_above`
+    // tile, so a player under a roof only sees up to the roof.
     let mut highest_visible = player_floor;
     for step in 1..=MAX_FLOORS_ABOVE {
         let floor = player_floor + step;
@@ -164,9 +166,27 @@ pub fn recompute_visible_floors(
         highest_visible = floor;
     }
 
+    // Lower bound: every floor below the player stays visible — no artificial
+    // cap. `space_min_z` extends the range downward when the space has authored
+    // floors below ground (e.g. a basement); the `min(_, player_floor)`
+    // guarantees the player's own floor is always inside the range.
+    let space_min_z = floor_min_z(&client_state, space_id, player_floor);
+
     range.player_floor = player_floor;
-    range.lowest_visible = player_floor - MAX_FLOORS_BELOW;
+    range.lowest_visible = space_min_z.min(player_floor);
     range.highest_visible = highest_visible;
+}
+
+/// Minimum `z` of all `FloorMap`s in `space_id`, with `player_floor` as a
+/// fallback when the space has no maps loaded yet.
+fn floor_min_z(state: &ClientGameState, space_id: SpaceId, player_floor: i32) -> i32 {
+    state
+        .floor_maps
+        .keys()
+        .filter(|(sid, _)| *sid == space_id)
+        .map(|(_, z)| *z)
+        .min()
+        .unwrap_or(player_floor)
 }
 
 #[cfg(test)]
@@ -322,5 +342,46 @@ render:
         assert!(map.contains(SpaceId(7), 5, 5, 0));
         assert!(!map.contains(SpaceId(7), 5, 5, 1));
         assert!(!map.contains(SpaceId(7), 4, 5, 0));
+    }
+
+    /// With the player on a high floor and the space's ground floor at
+    /// `z = 0`, every floor below the player should be visible — no
+    /// `MAX_FLOORS_BELOW` cap. Upper floors run the occlusion-driven scan to
+    /// `MAX_FLOORS_ABOVE`; with no roof above the player, the full cap is used.
+    #[test]
+    fn visible_floor_range_uncapped_below_and_scans_above() {
+        use crate::game::resources::ClientGameState;
+        use crate::world::components::{SpacePosition, TilePosition};
+        use crate::world::floor_map::FloorMap;
+        use crate::world::object_definitions::OverworldObjectDefinitions;
+        use std::collections::HashMap;
+
+        let space = SpaceId(3);
+        let mut state = ClientGameState {
+            player_position: Some(SpacePosition::new(space, TilePosition::new(0, 0, 5))),
+            ..Default::default()
+        };
+        // Only the ground floor has a `FloorMap` entry — matches how this
+        // codebase actually populates `floor_maps`. Upper-story content lives
+        // in `world_objects`, not `floor_maps`.
+        state.floor_maps.insert((space, 0), FloorMap::default());
+
+        let defs = OverworldObjectDefinitions::new_for_test(HashMap::new());
+
+        let mut app = App::new();
+        app.insert_resource(state);
+        app.insert_resource(defs);
+        app.insert_resource(VisibleFloorRange::default());
+        app.add_systems(Update, recompute_visible_floors);
+        app.update();
+
+        let range = *app.world().resource::<VisibleFloorRange>();
+        assert_eq!(range.player_floor, 5);
+        assert_eq!(range.lowest_visible, 0, "no MAX_FLOORS_BELOW cap");
+        assert_eq!(
+            range.highest_visible,
+            5 + MAX_FLOORS_ABOVE,
+            "no roof above player → full upper scan"
+        );
     }
 }

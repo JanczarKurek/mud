@@ -644,11 +644,20 @@ pub enum VendorStashEditingField {
     /// `vendor_stash` property).
     StashId { stash_index: usize },
     /// A ware's `type_id` column.
-    WareTypeId { stash_index: usize, ware_index: usize },
+    WareTypeId {
+        stash_index: usize,
+        ware_index: usize,
+    },
     /// A ware's `price_copper` column (numeric).
-    WarePrice { stash_index: usize, ware_index: usize },
+    WarePrice {
+        stash_index: usize,
+        ware_index: usize,
+    },
     /// A ware's `stock` column. Accepts `infinite` or a non-negative integer.
-    WareStock { stash_index: usize, ware_index: usize },
+    WareStock {
+        stash_index: usize,
+        ware_index: usize,
+    },
 }
 
 /// Bundle the per-map-edit buffers into a single `SystemParam` so callers

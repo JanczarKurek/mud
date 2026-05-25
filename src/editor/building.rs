@@ -279,10 +279,22 @@ fn wall_for_position(x: i32, y: i32, width: i32, height: i32, walls: &WallSlots)
     let on_right = x == width - 1;
 
     match (on_top, on_bottom, on_left, on_right) {
-        (true, _, true, _) => walls.corner_nw.clone().unwrap_or_else(|| walls.north.clone()),
-        (true, _, _, true) => walls.corner_ne.clone().unwrap_or_else(|| walls.north.clone()),
-        (_, true, true, _) => walls.corner_sw.clone().unwrap_or_else(|| walls.south.clone()),
-        (_, true, _, true) => walls.corner_se.clone().unwrap_or_else(|| walls.south.clone()),
+        (true, _, true, _) => walls
+            .corner_nw
+            .clone()
+            .unwrap_or_else(|| walls.north.clone()),
+        (true, _, _, true) => walls
+            .corner_ne
+            .clone()
+            .unwrap_or_else(|| walls.north.clone()),
+        (_, true, true, _) => walls
+            .corner_sw
+            .clone()
+            .unwrap_or_else(|| walls.south.clone()),
+        (_, true, _, true) => walls
+            .corner_se
+            .clone()
+            .unwrap_or_else(|| walls.south.clone()),
         (true, _, _, _) => walls.north.clone(),
         (_, true, _, _) => walls.south.clone(),
         (_, _, true, _) => walls.west.clone(),
@@ -491,10 +503,7 @@ mod tests {
     fn corner_override_wins_when_set() {
         let mut walls = basic_walls();
         walls.corner_ne = Some("corner_ne_sprite".into());
-        assert_eq!(
-            wall_for_position(4, 0, 5, 4, &walls),
-            "corner_ne_sprite",
-        );
+        assert_eq!(wall_for_position(4, 0, 5, 4, &walls), "corner_ne_sprite",);
         // Other corners still fall back since their overrides are None.
         assert_eq!(wall_for_position(0, 0, 5, 4, &walls), "wall");
     }
@@ -532,21 +541,17 @@ mod tests {
         // Floor on every tile = 12.
         assert_eq!(fragment.floors.len(), 12);
         // All floor entries carry the cobblestone id.
-        assert!(
-            fragment
-                .floors
-                .iter()
-                .all(|ff| ff.floor_id.as_deref() == Some("cobblestone"))
-        );
+        assert!(fragment
+            .floors
+            .iter()
+            .all(|ff| ff.floor_id.as_deref() == Some("cobblestone")));
         // Interior tile (1, 1) is NOT in the objects list.
         assert!(!fragment.objects.iter().any(|fo| fo.dx == 1 && fo.dy == 1));
         // Corner (0, 0) has a wall (the north id).
-        assert!(
-            fragment
-                .objects
-                .iter()
-                .any(|fo| fo.dx == 0 && fo.dy == 0 && fo.type_id == "wall")
-        );
+        assert!(fragment
+            .objects
+            .iter()
+            .any(|fo| fo.dx == 0 && fo.dy == 0 && fo.type_id == "wall"));
     }
 
     #[test]

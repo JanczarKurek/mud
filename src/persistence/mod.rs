@@ -223,13 +223,81 @@ pub struct PlayerStateDump {
     #[serde(default)]
     pub appearance: crate::player::components::PlayerAppearance,
     /// Tiles the player has revealed, grouped by space and stored as sorted
-    /// `(x, y, z)` triples for stable JSON ordering. Rehydrated into the
-    /// player's `DiscoveredTiles` component on load and consumed by the
-    /// fog-of-war overlay. `#[serde(default)]` so rows written before this
-    /// field existed default to "nothing discovered".
-    #[serde(default)]
+    /// `(x, y)` pairs for stable JSON ordering. Rehydrated into the player's
+    /// `DiscoveredTiles` component on load and consumed by the fog-of-war
+    /// overlay. `#[serde(default)]` so rows written before this field existed
+    /// default to "nothing discovered".
+    ///
+    /// `#[serde(deserialize_with = "deserialize_discovered_tiles")]` accepts
+    /// both the current 2D `(x, y)` form and the legacy 3D `(x, y, z)` form
+    /// (saves written before fog of war went 2D), collapsing the latter by
+    /// dropping `z` and deduplicating per space.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_discovered_tiles",
+        serialize_with = "serialize_discovered_tiles"
+    )]
     pub discovered_tiles:
-        std::collections::HashMap<crate::world::components::SpaceId, Vec<(i32, i32, i32)>>,
+        std::collections::HashMap<crate::world::components::SpaceId, Vec<(i32, i32)>>,
+}
+
+/// Accept both the current 2D `(x, y)` shape and the legacy 3D `(x, y, z)`
+/// shape for `discovered_tiles`. Legacy triples get their `z` stripped and the
+/// resulting `(x, y)` pairs deduplicated per space.
+fn deserialize_discovered_tiles<'de, D>(
+    deserializer: D,
+) -> Result<std::collections::HashMap<crate::world::components::SpaceId, Vec<(i32, i32)>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum TileList {
+        TwoD(Vec<(i32, i32)>),
+        ThreeD(Vec<(i32, i32, i32)>),
+    }
+    let raw: std::collections::HashMap<crate::world::components::SpaceId, TileList> =
+        std::collections::HashMap::deserialize(deserializer)?;
+    let mut out = std::collections::HashMap::with_capacity(raw.len());
+    for (space_id, list) in raw {
+        let pairs: Vec<(i32, i32)> = match list {
+            TileList::TwoD(v) => v,
+            TileList::ThreeD(v) => {
+                let mut seen: std::collections::HashSet<(i32, i32)> =
+                    std::collections::HashSet::with_capacity(v.len());
+                let mut pairs = Vec::with_capacity(v.len());
+                for (x, y, _z) in v {
+                    if seen.insert((x, y)) {
+                        pairs.push((x, y));
+                    }
+                }
+                pairs
+            }
+        };
+        out.insert(space_id, pairs);
+    }
+    Ok(out)
+}
+
+/// Serialize `discovered_tiles` with stable per-space ordering so JSON diffs
+/// stay legible across saves.
+fn serialize_discovered_tiles<S>(
+    value: &std::collections::HashMap<crate::world::components::SpaceId, Vec<(i32, i32)>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    use serde::ser::SerializeMap;
+    let mut sorted: Vec<(&crate::world::components::SpaceId, &Vec<(i32, i32)>)> =
+        value.iter().collect();
+    sorted.sort_by_key(|(space, _)| space.0);
+    let mut map = serializer.serialize_map(Some(sorted.len()))?;
+    for (space_id, tiles) in sorted {
+        map.serialize_entry(space_id, tiles)?;
+    }
+    map.end()
 }
 
 /// Build a `PlayerStateDump` from the components of a single player entity.
@@ -259,10 +327,10 @@ pub fn build_player_state_dump(
 ) -> PlayerStateDump {
     let mut discovered: std::collections::HashMap<
         crate::world::components::SpaceId,
-        Vec<(i32, i32, i32)>,
+        Vec<(i32, i32)>,
     > = std::collections::HashMap::new();
     for (space_id, set) in &discovered_tiles.by_space {
-        let mut tiles: Vec<(i32, i32, i32)> = set.iter().copied().collect();
+        let mut tiles: Vec<(i32, i32)> = set.iter().copied().collect();
         tiles.sort_unstable();
         discovered.insert(*space_id, tiles);
     }
@@ -916,15 +984,12 @@ fn load_world_from_snapshot(
         // (decremented finite stock) is not persisted in the snapshot — wares
         // reset to their authored values on reload. Mirrors the fresh-spawn
         // path in `world::setup::spawn_overworld_object_instance`.
-        let stash_override = object
-            .properties
-            .get("vendor_stash")
-            .and_then(|stash_id| {
-                space_manager
-                    .get(space_id)
-                    .and_then(|runtime| authored_spaces.get(&runtime.authored_id))
-                    .and_then(|def| def.find_vendor_stash(stash_id))
-            });
+        let stash_override = object.properties.get("vendor_stash").and_then(|stash_id| {
+            space_manager
+                .get(space_id)
+                .and_then(|runtime| authored_spaces.get(&runtime.authored_id))
+                .and_then(|def| def.find_vendor_stash(stash_id))
+        });
         if let Some(stash) = stash_override {
             entity.insert((
                 crate::game::shop::Shopkeeper,
@@ -1272,6 +1337,79 @@ mod tests {
         let re_json = serde_json::to_string(&dump).unwrap();
         let re_dump: PlayerStateDump = serde_json::from_str(&re_json).unwrap();
         assert!(re_dump.home_position.is_none());
+    }
+
+    /// Saves written before fog of war went 2D stored discovery as `(x, y, z)`
+    /// triples. The custom deserializer must accept the legacy shape and
+    /// project to `(x, y)` pairs, deduplicating columns that were discovered
+    /// on more than one floor.
+    #[test]
+    fn discovered_tiles_migrates_legacy_3d_to_2d() {
+        // Hand-rolled JSON in the legacy shape: same (x, y) on two different
+        // floors should collapse to one entry.
+        let json = r#"{
+            "player_id": 1,
+            "space_id": 0,
+            "tile_position": { "x": 0, "y": 0, "z": 0 },
+            "discovered_tiles": { "0": [[3, 4, 0], [3, 4, 1], [5, 6, 0]] }
+        }"#;
+
+        // Strip everything except the fields we care about by relying on
+        // `#[serde(default)]` on the rest.
+        let value: serde_json::Value = serde_json::from_str(json).unwrap();
+        let mut obj = serde_json::Map::new();
+        for (k, v) in value.as_object().unwrap() {
+            obj.insert(k.clone(), v.clone());
+        }
+        // Fill in the required (non-default) fields with defaults.
+        for (k, v) in serde_json::to_value(PlayerStateDump {
+            player_id: PlayerId(1),
+            space_id: Some(crate::world::components::SpaceId(0)),
+            tile_position: TilePosition::ground(0, 0),
+            inventory: Inventory::default(),
+            chat_log: ChatLog::default(),
+            base_stats: BaseStats::default(),
+            derived_stats: DerivedStats::default(),
+            vital_stats: VitalStats::full(100.0, 50.0),
+            movement_cooldown: MovementCooldown::default(),
+            attack_profile: AttackProfile::melee(),
+            combat_leash: CombatLeash {
+                max_distance_tiles: 6,
+            },
+            yarn_vars: Default::default(),
+            facing: Default::default(),
+            home_position: None,
+            experience: Default::default(),
+            class: Default::default(),
+            magic_effects: Default::default(),
+            stash: Default::default(),
+            skill_sheet: Default::default(),
+            appearance: Default::default(),
+            discovered_tiles: Default::default(),
+        })
+        .unwrap()
+        .as_object()
+        .unwrap()
+        .iter()
+        {
+            obj.entry(k.clone()).or_insert_with(|| v.clone());
+        }
+        // Force the legacy 3D shape we want to test.
+        obj.insert(
+            "discovered_tiles".to_string(),
+            serde_json::json!({ "0": [[3, 4, 0], [3, 4, 1], [5, 6, 0]] }),
+        );
+
+        let dump: PlayerStateDump =
+            serde_json::from_value(serde_json::Value::Object(obj)).expect("legacy save loads");
+        let space = crate::world::components::SpaceId(0);
+        let mut tiles = dump
+            .discovered_tiles
+            .get(&space)
+            .cloned()
+            .unwrap_or_default();
+        tiles.sort_unstable();
+        assert_eq!(tiles, vec![(3, 4), (5, 6)]);
     }
 
     /// `MagicEffects` and the generic `Ttl` round-trip through serde, and

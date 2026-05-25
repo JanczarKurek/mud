@@ -143,20 +143,15 @@ pub fn update_fog_overlay(
     };
 
     let space_id = player_pos.space_id;
-    let player_z = player_pos.tile_position.z;
     let window_x0 = player_pos.tile_position.x - WINDOW_RADIUS;
     let window_y0 = player_pos.tile_position.y - WINDOW_RADIUS;
 
-    // Build the discovered-tile bitmask for the visible window at the player's
-    // floor. v1 only fogs the player's current floor — upper/lower bands are
-    // depth cues that read as "we can see them" even when the player hasn't
-    // explored that exact column.
+    // Build the discovered-tile bitmask for the visible window. Fog is 2D —
+    // a tile reads as discovered for every floor as soon as the player has
+    // seen its `(x, y)` column on any floor.
     let mut mask = [UVec4::ZERO; MASK_VEC4_COUNT];
     if let Some(set) = client_state.discovered_tiles.get(&space_id) {
-        for &(tx, ty, tz) in set.iter() {
-            if tz != player_z {
-                continue;
-            }
+        for &(tx, ty) in set.iter() {
             let mx = tx - window_x0;
             let my = ty - window_y0;
             if mx < 0 || mx >= WINDOW_W || my < 0 || my >= WINDOW_H {

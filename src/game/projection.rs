@@ -462,7 +462,7 @@ pub fn compute_events_for_peer(
                 for (space_id, auth_set) in authoritative.by_space.iter() {
                     let empty = std::collections::HashSet::new();
                     let prev_set = previous.discovered_tiles.get(space_id).unwrap_or(&empty);
-                    let new_tiles: Vec<(i32, i32, i32)> = auth_set
+                    let new_tiles: Vec<(i32, i32)> = auth_set
                         .iter()
                         .filter(|t| !prev_set.contains(t))
                         .copied()

@@ -149,8 +149,8 @@ impl Plugin for EditorPlugin {
             let world = app.world();
             let object_defs = world
                 .get_resource::<crate::world::object_definitions::OverworldObjectDefinitions>();
-            let floor_defs = world
-                .get_resource::<crate::world::floor_definitions::FloorTilesetDefinitions>();
+            let floor_defs =
+                world.get_resource::<crate::world::floor_definitions::FloorTilesetDefinitions>();
             match (object_defs, floor_defs) {
                 (Some(objs), Some(floors)) => presets.validate_against(objs, floors),
                 _ => warn!(

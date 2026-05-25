@@ -292,16 +292,8 @@ pub fn sync_vendor_stashes_panel(
                             },
                             TextColor(Color::srgb(0.70, 0.64, 0.55)),
                         ));
-                        action_button(
-                            header,
-                            "Dup",
-                            EditorVendorStashDuplicateButton { index },
-                        );
-                        action_button(
-                            header,
-                            "Del",
-                            EditorVendorStashDeleteButton { index },
-                        );
+                        action_button(header, "Dup", EditorVendorStashDuplicateButton { index });
+                        action_button(header, "Del", EditorVendorStashDeleteButton { index });
                     });
 
                 if !is_selected {
@@ -309,16 +301,17 @@ pub fn sync_vendor_stashes_panel(
                 }
 
                 // Expanded wares editor.
-                row.spawn((Node {
-                    width: Val::Percent(100.0),
-                    flex_direction: FlexDirection::Column,
-                    row_gap: Val::Px(2.0),
-                    margin: UiRect::top(Val::Px(4.0)),
-                    padding: UiRect::top(Val::Px(4.0)),
-                    border: UiRect::top(Val::Px(1.0)),
-                    ..default()
-                },
-                BorderColor::all(Color::srgb(0.25, 0.18, 0.12)),
+                row.spawn((
+                    Node {
+                        width: Val::Percent(100.0),
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(2.0),
+                        margin: UiRect::top(Val::Px(4.0)),
+                        padding: UiRect::top(Val::Px(4.0)),
+                        border: UiRect::top(Val::Px(1.0)),
+                        ..default()
+                    },
+                    BorderColor::all(Color::srgb(0.25, 0.18, 0.12)),
                 ))
                 .with_children(|wares_section| {
                     if stash.wares.is_empty() {
@@ -461,15 +454,24 @@ fn ware_field_text(
 ) -> String {
     let active = match (editing, kind) {
         (
-            Some(VendorStashEditingField::WareTypeId { stash_index: si, ware_index: wi }),
+            Some(VendorStashEditingField::WareTypeId {
+                stash_index: si,
+                ware_index: wi,
+            }),
             WareFieldKind::TypeId,
         )
         | (
-            Some(VendorStashEditingField::WarePrice { stash_index: si, ware_index: wi }),
+            Some(VendorStashEditingField::WarePrice {
+                stash_index: si,
+                ware_index: wi,
+            }),
             WareFieldKind::Price,
         )
         | (
-            Some(VendorStashEditingField::WareStock { stash_index: si, ware_index: wi }),
+            Some(VendorStashEditingField::WareStock {
+                stash_index: si,
+                ware_index: wi,
+            }),
             WareFieldKind::Stock,
         ) => si == stash_index && wi == ware_index,
         _ => false,
@@ -567,7 +569,10 @@ fn action_button<M: Component>(parent: &mut ChildSpawnerCommands, label: &str, m
 /// Click handlers: row select, action buttons, add button, field-edit kick-off.
 #[allow(clippy::too_many_arguments)]
 pub fn handle_vendor_stashes_panel_clicks(
-    rows: Query<(&EditorVendorStashRow, &Interaction), (Changed<Interaction>, With<EditorVendorStashRow>)>,
+    rows: Query<
+        (&EditorVendorStashRow, &Interaction),
+        (Changed<Interaction>, With<EditorVendorStashRow>),
+    >,
     delete_btns: Query<
         (&EditorVendorStashDeleteButton, &Interaction),
         (Changed<Interaction>, With<Button>),
@@ -774,9 +779,18 @@ pub fn handle_vendor_stashes_panel_clicks(
         // don't end up pointing the edit cursor at a now-empty slot.
         let editing_matches_this_ware = match buffer.editing {
             Some(
-                VendorStashEditingField::WareTypeId { stash_index, ware_index }
-                | VendorStashEditingField::WarePrice { stash_index, ware_index }
-                | VendorStashEditingField::WareStock { stash_index, ware_index },
+                VendorStashEditingField::WareTypeId {
+                    stash_index,
+                    ware_index,
+                }
+                | VendorStashEditingField::WarePrice {
+                    stash_index,
+                    ware_index,
+                }
+                | VendorStashEditingField::WareStock {
+                    stash_index,
+                    ware_index,
+                },
             ) => stash_index == btn.stash_index && ware_index == btn.ware_index,
             _ => false,
         };

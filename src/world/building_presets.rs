@@ -77,8 +77,8 @@ impl BuildingPresets {
     pub fn load_from_disk() -> Self {
         let mut by_id = BTreeMap::new();
         for asset in discover_yaml_assets("building_presets", "building preset") {
-            let preset = serde_yaml::from_str::<BuildingPreset>(&asset.contents)
-                .unwrap_or_else(|error| {
+            let preset =
+                serde_yaml::from_str::<BuildingPreset>(&asset.contents).unwrap_or_else(|error| {
                     panic!(
                         "Failed to parse building preset {}: {error}",
                         asset.path.display()

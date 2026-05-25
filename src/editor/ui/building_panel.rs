@@ -207,7 +207,9 @@ pub fn sync_building_panel(
                     c,
                     name,
                     is_active,
-                    EditorBuildingPresetRow { preset_id: id.clone() },
+                    EditorBuildingPresetRow {
+                        preset_id: id.clone(),
+                    },
                 );
             }
         }
@@ -297,12 +299,7 @@ fn empty_note(c: &mut ChildSpawnerCommands, label: &str) {
         });
 }
 
-fn spawn_row<M: Component>(
-    c: &mut ChildSpawnerCommands,
-    label: &str,
-    active: bool,
-    marker: M,
-) {
+fn spawn_row<M: Component>(c: &mut ChildSpawnerCommands, label: &str, active: bool, marker: M) {
     c.spawn((
         Button,
         marker,

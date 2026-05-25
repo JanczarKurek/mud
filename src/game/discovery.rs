@@ -1,8 +1,9 @@
 //! Per-player map discovery (fog-of-war substrate).
 //!
 //! Each player carries a [`crate::player::components::DiscoveredTiles`]
-//! component listing the `(x, y, z)` tiles they have ever seen in each space.
-//! This module owns the single mutation pipeline:
+//! component listing the `(x, y)` tiles they have ever seen in each space.
+//! Fog of war is 2D — floor doesn't matter. This module owns the single
+//! mutation pipeline:
 //!
 //! - [`PendingDiscoveryEvents`] — queue of pending reveals. Any system that
 //!   wants to grant discovery (movement sweep, future scout NPCs, reveal
@@ -34,7 +35,7 @@ pub const DISCOVERY_RADIUS: f32 = 6.0;
 pub struct DiscoveryEvent {
     pub player: crate::player::components::PlayerId,
     pub space_id: SpaceId,
-    pub tiles: Vec<(i32, i32, i32)>,
+    pub tiles: Vec<(i32, i32)>,
 }
 
 #[derive(Resource, Default)]
@@ -66,8 +67,7 @@ pub fn discover_around_players(
         let Some(space) = space_manager.get(resident.space_id) else {
             continue;
         };
-        let z = tile.z;
-        let mut new_tiles: Vec<(i32, i32, i32)> = Vec::new();
+        let mut new_tiles: Vec<(i32, i32)> = Vec::new();
         for dy in -radius_ceil..=radius_ceil {
             for dx in -radius_ceil..=radius_ceil {
                 let fx = dx as f32;
@@ -80,10 +80,10 @@ pub fn discover_around_players(
                 if x < 0 || y < 0 || x >= space.width || y >= space.height {
                     continue;
                 }
-                if discovered.contains(resident.space_id, x, y, z) {
+                if discovered.contains(resident.space_id, x, y) {
                     continue;
                 }
-                new_tiles.push((x, y, z));
+                new_tiles.push((x, y));
             }
         }
         if !new_tiles.is_empty() {
@@ -111,8 +111,8 @@ pub fn apply_pending_discovery(
             if identity.id != event.player {
                 continue;
             }
-            for (x, y, z) in &event.tiles {
-                discovered.insert(event.space_id, *x, *y, *z);
+            for (x, y) in &event.tiles {
+                discovered.insert(event.space_id, *x, *y);
             }
             break;
         }
@@ -127,11 +127,11 @@ mod tests {
     #[test]
     fn discovered_tiles_insert_dedupes() {
         let mut set = DiscoveredTiles::default();
-        assert!(set.insert(SpaceId(0), 1, 2, 0));
-        assert!(!set.insert(SpaceId(0), 1, 2, 0));
-        assert!(set.contains(SpaceId(0), 1, 2, 0));
-        assert!(!set.contains(SpaceId(0), 1, 2, 1));
-        assert!(!set.contains(SpaceId(1), 1, 2, 0));
+        assert!(set.insert(SpaceId(0), 1, 2));
+        assert!(!set.insert(SpaceId(0), 1, 2));
+        assert!(set.contains(SpaceId(0), 1, 2));
+        assert!(!set.contains(SpaceId(0), 1, 3));
+        assert!(!set.contains(SpaceId(1), 1, 2));
     }
 
     #[test]
