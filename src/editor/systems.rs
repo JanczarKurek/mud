@@ -1400,7 +1400,7 @@ pub fn open_generate_dungeon_dialog_impl(modal_state: &mut ModalState) {
             ModalTextField {
                 label: "Wall Type".into(),
                 value: String::new(),
-                placeholder: "wall".into(),
+                placeholder: "wall_s".into(),
                 numeric_only: false,
             },
             ModalTextField {
@@ -1581,7 +1581,7 @@ pub fn process_modal_confirm(
                 .get(3)
                 .filter(|s| !s.is_empty())
                 .cloned()
-                .unwrap_or_else(|| "wall".into());
+                .unwrap_or_else(|| "wall_s".into());
             if definitions.get(&wall_type).is_none() {
                 modal_state.error_message = Some(format!("Unknown wall type '{wall_type}'."));
                 return;

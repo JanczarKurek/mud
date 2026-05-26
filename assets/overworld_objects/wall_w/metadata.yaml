@@ -1,0 +1,14 @@
+extends: obstacle
+name: West Wall
+description: Vertical wall slab on the west edge of its tile (interior is to the east).
+render:
+  z_index: 0.3
+  debug_color: [120, 114, 103]
+  debug_size: 1.0
+  sprite_path: overworld_objects/wall_w/sprite.png
+  sprite_width_tiles: 1.5
+  sprite_height_tiles: 1.521
+  occludes_floor_above: true
+  display_height: 1.0
+  hide_when_inside_facing: east
+  stack_order: 50

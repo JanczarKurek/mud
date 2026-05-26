@@ -324,12 +324,17 @@ pub fn sync_remote_player_projection(
 /// entity on floor N renders above every entity on floor N-1.
 pub const FLOOR_Z_STEP: f32 = 10.0;
 
-/// How many tiles each floor shifts on screen relative to the player's floor
-/// to convey depth. Higher floors shift up-LEFT (negative x, positive y in
-/// Bevy 2D world coords with y-up); lower floors shift down-RIGHT. Half a
-/// tile per floor reads as a clear depth cue without the jarring full-grid
-/// jump of a 1.0 shift.
-pub const FLOOR_SCREEN_OFFSET_TILES: f32 = 0.5;
+/// Per-floor screen shift in tile units, split into screen-X and screen-Y so
+/// the perspective ratio is configurable independently. Defaults give
+/// (−0.5, +0.5) tiles per floor = (−24, +24) px with tile_size=48: higher
+/// floors render up-LEFT, lower floors down-RIGHT.
+///
+/// Mirror these constants in `scripts/wall_perspective.py` — wall sprite slope
+/// must match this shift so a wall stacked on floor +1 lands its base flush
+/// on the lower wall's top cap. After changing these values, regenerate the
+/// wall set: `python3 scripts/gen_wall_set.py`.
+pub const FLOOR_SHIFT_X_TILES: f32 = -0.5;
+pub const FLOOR_SHIFT_Y_TILES: f32 = 0.5;
 
 /// Alpha applied to objects flagged `hide_when_inside_facing = South|East`
 /// when the player is inside an enclosed area. Faint silhouette rather than
@@ -342,8 +347,8 @@ pub const WALL_INSIDE_ALPHA: f32 = 0.15;
 pub fn floor_screen_offset(floor: i32, player_floor: i32, tile_size: f32) -> Vec2 {
     let d = (floor - player_floor) as f32;
     Vec2::new(
-        -d * FLOOR_SCREEN_OFFSET_TILES * tile_size,
-        d * FLOOR_SCREEN_OFFSET_TILES * tile_size,
+        d * FLOOR_SHIFT_X_TILES * tile_size,
+        d * FLOOR_SHIFT_Y_TILES * tile_size,
     )
 }
 

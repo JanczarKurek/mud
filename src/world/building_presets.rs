@@ -153,16 +153,16 @@ mod tests {
 id: stone
 name: Stone Building
 walls:
-  north: wall
-  south: wall
-  east: side_wall
-  west: side_wall
+  north: wall_n
+  south: wall_s
+  east: wall_e
+  west: wall_w
 default_floor: cobblestone
 default_door: wooden_door
 "#,
         );
         assert_eq!(p.id, "stone");
-        assert_eq!(p.walls.north, "wall");
+        assert_eq!(p.walls.north, "wall_n");
         assert!(p.walls.corner_ne.is_none());
         assert_eq!(p.default_floor.as_deref(), Some("cobblestone"));
         assert_eq!(p.default_door.as_deref(), Some("wooden_door"));
@@ -196,8 +196,8 @@ walls:
         // Assumes the working directory is the repo root (cargo test default).
         let presets = BuildingPresets::load_from_disk();
         let stone = presets.get("stone").expect("stone preset exists on disk");
-        assert_eq!(stone.walls.north, "wall");
-        assert_eq!(stone.walls.east, "side_wall");
+        assert_eq!(stone.walls.north, "wall_n");
+        assert_eq!(stone.walls.east, "wall_e");
         assert_eq!(stone.default_door.as_deref(), Some("wooden_door"));
     }
 }

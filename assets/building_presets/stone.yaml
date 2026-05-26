@@ -1,9 +1,13 @@
 id: stone
 name: Stone Building
 walls:
-  north: wall
-  south: wall
-  east: side_wall
-  west: side_wall
+  north: wall_n
+  south: wall_s
+  east: wall_e
+  west: wall_w
+  corner_nw: wall_corner_nw
+  corner_ne: wall_corner_ne
+  corner_sw: wall_corner_sw
+  corner_se: wall_corner_se
 default_floor: cobblestone
 default_door: wooden_door

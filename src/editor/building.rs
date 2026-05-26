@@ -267,18 +267,18 @@ fn build_fragment(
 }
 
 /// Pick the wall `type_id` for tile `(x, y)` inside a `width × height`
-/// rectangle (relative coords; `(0, 0)` is the top-left of the building).
-/// Corner overrides win when present; otherwise the corner takes the
-/// horizontal (top/bottom) wall — since the existing wall sprites are 2-tile
-/// horizontal vs 1×2 vertical, horizontal dominance keeps the visual
-/// silhouette closed at the corners.
+/// rectangle (local coords; `(0, 0)` is the building's south-west tile —
+/// the fragment loops y from 0 upward and `stamp_fragment` lays it out as
+/// `world_tile = sel.min + (dx, dy)`, where `sel.min.y` is the southmost
+/// world row because Bevy's +y = north). So `y == 0` is the building's
+/// SOUTH edge and `y == height - 1` is the NORTH edge.
 fn wall_for_position(x: i32, y: i32, width: i32, height: i32, walls: &WallSlots) -> String {
-    let on_top = y == 0;
-    let on_bottom = y == height - 1;
-    let on_left = x == 0;
-    let on_right = x == width - 1;
+    let on_south = y == 0;
+    let on_north = y == height - 1;
+    let on_west = x == 0;
+    let on_east = x == width - 1;
 
-    match (on_top, on_bottom, on_left, on_right) {
+    match (on_north, on_south, on_west, on_east) {
         (true, _, true, _) => walls
             .corner_nw
             .clone()
@@ -477,10 +477,10 @@ mod tests {
 
     fn basic_walls() -> WallSlots {
         WallSlots {
-            north: "wall".into(),
-            south: "wall".into(),
-            east: "side_wall".into(),
-            west: "side_wall".into(),
+            north: "wall_n".into(),
+            south: "wall_s".into(),
+            east: "wall_e".into(),
+            west: "wall_w".into(),
             corner_nw: None,
             corner_ne: None,
             corner_sw: None,
@@ -491,34 +491,37 @@ mod tests {
     #[test]
     fn corner_falls_back_to_horizontal_when_no_override() {
         let walls = basic_walls();
-        // Top-left and top-right → north
-        assert_eq!(wall_for_position(0, 0, 5, 4, &walls), "wall");
-        assert_eq!(wall_for_position(4, 0, 5, 4, &walls), "wall");
-        // Bottom-left and bottom-right → south (same id in this preset)
-        assert_eq!(wall_for_position(0, 3, 5, 4, &walls), "wall");
-        assert_eq!(wall_for_position(4, 3, 5, 4, &walls), "wall");
+        // Local (0, 0) = SW in world coords (smallest x, smallest y) → south
+        assert_eq!(wall_for_position(0, 0, 5, 4, &walls), "wall_s");
+        // Local (W-1, 0) = SE → south
+        assert_eq!(wall_for_position(4, 0, 5, 4, &walls), "wall_s");
+        // Local (0, H-1) = NW → north
+        assert_eq!(wall_for_position(0, 3, 5, 4, &walls), "wall_n");
+        // Local (W-1, H-1) = NE → north
+        assert_eq!(wall_for_position(4, 3, 5, 4, &walls), "wall_n");
     }
 
     #[test]
     fn corner_override_wins_when_set() {
         let mut walls = basic_walls();
         walls.corner_ne = Some("corner_ne_sprite".into());
-        assert_eq!(wall_for_position(4, 0, 5, 4, &walls), "corner_ne_sprite",);
+        // Local (W-1, H-1) is the world-NE corner.
+        assert_eq!(wall_for_position(4, 3, 5, 4, &walls), "corner_ne_sprite",);
         // Other corners still fall back since their overrides are None.
-        assert_eq!(wall_for_position(0, 0, 5, 4, &walls), "wall");
+        assert_eq!(wall_for_position(0, 0, 5, 4, &walls), "wall_s");
     }
 
     #[test]
     fn edge_tiles_pick_the_right_side() {
         let walls = basic_walls();
-        // Top edge non-corner → north
-        assert_eq!(wall_for_position(2, 0, 5, 4, &walls), "wall");
-        // Left edge non-corner → west
-        assert_eq!(wall_for_position(0, 1, 5, 4, &walls), "side_wall");
-        // Right edge non-corner → east
-        assert_eq!(wall_for_position(4, 2, 5, 4, &walls), "side_wall");
-        // Bottom edge non-corner → south
-        assert_eq!(wall_for_position(2, 3, 5, 4, &walls), "wall");
+        // South edge non-corner (local y=0) → south
+        assert_eq!(wall_for_position(2, 0, 5, 4, &walls), "wall_s");
+        // West edge non-corner (local x=0) → west
+        assert_eq!(wall_for_position(0, 1, 5, 4, &walls), "wall_w");
+        // East edge non-corner (local x=W-1) → east
+        assert_eq!(wall_for_position(4, 2, 5, 4, &walls), "wall_e");
+        // North edge non-corner (local y=H-1) → north
+        assert_eq!(wall_for_position(2, 3, 5, 4, &walls), "wall_n");
     }
 
     #[test]
@@ -547,11 +550,11 @@ mod tests {
             .all(|ff| ff.floor_id.as_deref() == Some("cobblestone")));
         // Interior tile (1, 1) is NOT in the objects list.
         assert!(!fragment.objects.iter().any(|fo| fo.dx == 1 && fo.dy == 1));
-        // Corner (0, 0) has a wall (the north id).
+        // Local (0, 0) is the SW corner — falls back to the south wall id.
         assert!(fragment
             .objects
             .iter()
-            .any(|fo| fo.dx == 0 && fo.dy == 0 && fo.type_id == "wall"));
+            .any(|fo| fo.dx == 0 && fo.dy == 0 && fo.type_id == "wall_s"));
     }
 
     #[test]

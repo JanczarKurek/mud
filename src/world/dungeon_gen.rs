@@ -44,7 +44,7 @@ impl Default for DungeonParams {
         Self {
             width: 64,
             height: 48,
-            wall_type_id: "wall".into(),
+            wall_type_id: "wall_s".into(),
             chamber_floor: "cobblestone".into(),
             corridor_floor: "dirt_path".into(),
             // Empty = void/black tiles outside the dungeon.
@@ -587,7 +587,7 @@ mod tests {
             .objects
             .iter()
             .filter_map(|e| match e {
-                MapObjectEntry::Anonymous(g) if g.type_id == "wall" => Some(g.placement.len()),
+                MapObjectEntry::Anonymous(g) if g.type_id == "wall_s" => Some(g.placement.len()),
                 _ => None,
             })
             .sum();

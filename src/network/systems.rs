@@ -1587,7 +1587,7 @@ mod tests {
         );
 
         spawn_player(&mut app, 1, center.x, center.y);
-        spawn_container(&mut app, "wall", center.x + 1, center.y);
+        spawn_container(&mut app, "wall_s", center.x + 1, center.y);
 
         type SpawnState<'w, 's> = SystemState<(
             Query<

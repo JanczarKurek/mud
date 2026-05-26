@@ -1048,6 +1048,12 @@ objects:
     y: 10
   - x: 61
     y: 14
+- type: bear_trap
+  properties:
+    text: Step here to enter the cellar.
+  placement:
+    x: 23
+    y: 10
 - type: blazing_fire
   placement:
   - x: 55
@@ -1597,97 +1603,24 @@ objects:
   placement:
   - x: 25
     y: 47
-- type: side_wall
+- type: scroll
+  properties:
+    text: South road leads to the old dungeon. Adventurers beware!
   placement:
-  - x: 2
-    y: 2
-  - x: 2
-    y: 2
-    z: 1
-  - x: 7
-    y: 2
-  - x: 7
-    y: 2
-    z: 1
-  - x: 2
-    y: 3
-  - x: 2
-    y: 3
-    z: 1
-  - x: 7
-    y: 3
-  - x: 7
-    y: 3
-    z: 1
-  - x: 2
-    y: 4
-  - x: 2
-    y: 4
-    z: 1
-  - x: 7
-    y: 4
-  - x: 7
-    y: 4
-    z: 1
-  - x: 2
-    y: 5
-  - x: 2
-    y: 5
-    z: 1
-  - x: 7
-    y: 5
-  - x: 7
-    y: 5
-    z: 1
-  - x: 2
-    y: 6
-  - x: 2
-    y: 6
-    z: 1
-  - x: 7
-    y: 6
-  - x: 7
-    y: 6
-    z: 1
-  - x: 2
-    y: 7
-  - x: 2
-    y: 7
-    z: 1
-  - x: 7
-    y: 7
-  - x: 24
-    y: 18
-  - x: 33
-    y: 18
-  - x: 24
-    y: 19
-  - x: 33
-    y: 19
-  - x: 24
-    y: 20
-  - x: 33
-    y: 20
-  - x: 24
-    y: 21
-  - x: 33
-    y: 21
-  - x: 24
-    y: 22
-  - x: 33
-    y: 22
-  - x: 24
-    y: 23
-  - x: 33
-    y: 23
-  - x: 36
-    y: 25
+    x: 13
+    y: 12
 - type: sign_post
   placement:
   - x: 5
     y: 21
   - x: 33
     y: 43
+- type: sign_post
+  properties:
+    text: The sinkhole ahead leads deep underground. Return is not guaranteed.
+  placement:
+    x: 40
+    y: 16
 - type: silver_coin
   placement:
   - x: 7
@@ -2548,141 +2481,162 @@ objects:
     y: 8
   - x: 67
     y: 24
-- type: wall
+- type: wall_corner_ne
   placement:
-  - x: 3
-    y: 2
-  - x: 3
-    y: 2
-    z: 1
-  - x: 4
-    y: 2
-  - x: 4
-    y: 2
-    z: 1
-  - x: 5
-    y: 2
-  - x: 5
-    y: 2
-    z: 1
-  - x: 6
-    y: 2
-  - x: 6
-    y: 2
-    z: 1
-  - x: 11
-    y: 2
-  - x: 12
-    y: 2
-  - x: 13
-    y: 2
-  - x: 14
-    y: 2
-  - x: 15
-    y: 2
-  - x: 16
-    y: 2
-  - x: 17
-    y: 2
-  - x: 11
-    y: 3
-  - x: 17
-    y: 3
-  - x: 11
-    y: 4
-  - x: 17
-    y: 4
-  - x: 11
-    y: 5
-  - x: 17
-    y: 5
-  - x: 11
-    y: 6
-  - x: 12
-    y: 6
-  - x: 13
-    y: 6
-  - x: 15
-    y: 6
-  - x: 16
-    y: 6
   - x: 17
     y: 6
-  - x: 3
-    y: 7
-  - x: 3
-    y: 7
-    z: 1
-  - x: 4
-    y: 7
-  - x: 4
-    y: 7
-    z: 1
-  - x: 6
-    y: 7
-  - x: 6
-    y: 7
-    z: 1
-  - x: 2
-    y: 13
-  - x: 3
-    y: 13
-  - x: 4
-    y: 13
-  - x: 5
-    y: 13
-  - x: 6
-    y: 13
   - x: 7
-    y: 13
-  - x: 2
-    y: 14
-  - x: 7
-    y: 14
-  - x: 2
-    y: 15
-  - x: 7
-    y: 15
-  - x: 2
-    y: 16
-  - x: 7
-    y: 16
-  - x: 2
-    y: 17
-  - x: 7
-    y: 17
+    y: 7
   - x: 19
     y: 17
-  - x: 24
-    y: 17
-  - x: 25
-    y: 17
-  - x: 26
-    y: 17
-  - x: 27
-    y: 17
-  - x: 29
-    y: 17
-  - x: 30
-    y: 17
-  - x: 31
-    y: 17
-  - x: 32
-    y: 17
-  - x: 33
-    y: 17
-  - x: 2
-    y: 18
-  - x: 3
-    y: 18
-  - x: 5
-    y: 18
-  - x: 6
-    y: 18
   - x: 7
+    y: 18
+  - x: 33
+    y: 24
+  - x: 36
+    y: 25
+  - x: 58
+    y: 28
+  - x: 65
+    y: 28
+  - x: 67
+    y: 33
+  - x: 49
+    y: 48
+  - x: 56
+    y: 48
+  - x: 61
+    y: 48
+  - x: 6
+    y: 7
+    z: 1
+- type: wall_corner_nw
+  placement:
+  - x: 11
+    y: 6
+  - x: 2
+    y: 7
+  - x: 2
     y: 18
   - x: 24
     y: 24
+  - x: 53
+    y: 28
+  - x: 61
+    y: 28
+  - x: 46
+    y: 33
+  - x: 47
+    y: 48
+  - x: 52
+    y: 48
+  - x: 59
+    y: 48
+  - x: 2
+    y: 7
+    z: 1
+- type: wall_corner_se
+  placement:
+  - x: 7
+    y: 2
+  - x: 17
+    y: 2
+  - x: 7
+    y: 13
+  - x: 33
+    y: 17
+  - x: 50
+    y: 28
+  - x: 67
+    y: 29
+  - x: 7
+    y: 2
+    z: 1
+- type: wall_corner_sw
+  placement:
+  - x: 2
+    y: 2
+  - x: 11
+    y: 2
+  - x: 2
+    y: 13
+  - x: 24
+    y: 17
+  - x: 46
+    y: 28
+  - x: 2
+    y: 2
+    z: 1
+- type: wall_e
+  placement:
+  - x: 7
+    y: 3
+  - x: 17
+    y: 3
+  - x: 7
+    y: 4
+  - x: 17
+    y: 4
+  - x: 7
+    y: 5
+  - x: 17
+    y: 5
+  - x: 7
+    y: 6
+  - x: 7
+    y: 14
+  - x: 7
+    y: 15
+  - x: 7
+    y: 16
+  - x: 7
+    y: 17
+  - x: 33
+    y: 18
+  - x: 33
+    y: 19
+  - x: 33
+    y: 20
+  - x: 33
+    y: 21
+  - x: 33
+    y: 22
+  - x: 33
+    y: 23
+  - x: 7
+    y: 3
+    z: 1
+  - x: 7
+    y: 4
+    z: 1
+  - x: 7
+    y: 5
+    z: 1
+  - x: 7
+    y: 6
+    z: 1
+- type: wall_n
+  placement:
+  - x: 12
+    y: 6
+  - x: 13
+    y: 6
+  - x: 15
+    y: 6
+  - x: 16
+    y: 6
+  - x: 3
+    y: 7
+  - x: 4
+    y: 7
+  - x: 6
+    y: 7
+  - x: 3
+    y: 18
+  - x: 5
+    y: 18
+  - x: 6
+    y: 18
   - x: 25
     y: 24
   - x: 26
@@ -2699,19 +2653,59 @@ objects:
     y: 24
   - x: 32
     y: 24
-  - x: 33
-    y: 24
-  - x: 46
-    y: 28
+  - x: 3
+    y: 7
+    z: 1
+  - x: 4
+    y: 7
+    z: 1
+- type: wall_s
+  placement:
+  - x: 3
+    y: 2
+  - x: 4
+    y: 2
+  - x: 5
+    y: 2
+  - x: 6
+    y: 2
+  - x: 12
+    y: 2
+  - x: 13
+    y: 2
+  - x: 14
+    y: 2
+  - x: 15
+    y: 2
+  - x: 16
+    y: 2
+  - x: 3
+    y: 13
+  - x: 4
+    y: 13
+  - x: 5
+    y: 13
+  - x: 6
+    y: 13
+  - x: 25
+    y: 17
+  - x: 26
+    y: 17
+  - x: 27
+    y: 17
+  - x: 29
+    y: 17
+  - x: 30
+    y: 17
+  - x: 31
+    y: 17
+  - x: 32
+    y: 17
   - x: 47
     y: 28
   - x: 48
     y: 28
   - x: 49
-    y: 28
-  - x: 50
-    y: 28
-  - x: 53
     y: 28
   - x: 54
     y: 28
@@ -2721,45 +2715,13 @@ objects:
     y: 28
   - x: 57
     y: 28
-  - x: 58
-    y: 28
-  - x: 61
-    y: 28
   - x: 62
     y: 28
   - x: 63
     y: 28
   - x: 64
     y: 28
-  - x: 65
-    y: 28
-  - x: 46
-    y: 29
-  - x: 67
-    y: 29
-  - x: 46
-    y: 30
-  - x: 67
-    y: 30
-  - x: 46
-    y: 31
-  - x: 67
-    y: 31
-  - x: 46
-    y: 32
-  - x: 67
-    y: 32
-  - x: 46
-    y: 33
-  - x: 67
-    y: 33
-  - x: 47
-    y: 48
   - x: 48
-    y: 48
-  - x: 49
-    y: 48
-  - x: 52
     y: 48
   - x: 53
     y: 48
@@ -2767,14 +2729,82 @@ objects:
     y: 48
   - x: 55
     y: 48
-  - x: 56
-    y: 48
-  - x: 59
-    y: 48
   - x: 60
     y: 48
-  - x: 61
-    y: 48
+  - x: 3
+    y: 2
+    z: 1
+  - x: 4
+    y: 2
+    z: 1
+  - x: 5
+    y: 2
+    z: 1
+  - x: 6
+    y: 2
+    z: 1
+- type: wall_w
+  placement:
+  - x: 2
+    y: 3
+  - x: 11
+    y: 3
+  - x: 2
+    y: 4
+  - x: 11
+    y: 4
+  - x: 2
+    y: 5
+  - x: 11
+    y: 5
+  - x: 2
+    y: 6
+  - x: 2
+    y: 14
+  - x: 2
+    y: 15
+  - x: 2
+    y: 16
+  - x: 2
+    y: 17
+  - x: 24
+    y: 18
+  - x: 24
+    y: 19
+  - x: 24
+    y: 20
+  - x: 24
+    y: 21
+  - x: 24
+    y: 22
+  - x: 24
+    y: 23
+  - x: 46
+    y: 29
+  - x: 46
+    y: 30
+  - x: 67
+    y: 30
+  - x: 46
+    y: 31
+  - x: 67
+    y: 31
+  - x: 46
+    y: 32
+  - x: 67
+    y: 32
+  - x: 2
+    y: 3
+    z: 1
+  - x: 2
+    y: 4
+    z: 1
+  - x: 2
+    y: 5
+    z: 1
+  - x: 2
+    y: 6
+    z: 1
 - type: water
   placement:
   - x: 4
@@ -3491,10 +3521,22 @@ objects:
     y: 46
   - x: 62
     y: 48
+- type: well
+  properties:
+    state: locked
+  placement:
+    x: 24
+    y: 46
 - type: wooden_door
   placement:
   - x: 28
     y: 17
+- type: wooden_door
+  properties:
+    spell_id: lesser_heal
+  placement:
+    x: 58
+    y: 42
 - type: wooden_shield
   properties:
     state: sprung
@@ -3502,36 +3544,6 @@ objects:
   placement:
     x: 10
     y: 9
-- type: bear_trap
-  properties:
-    text: Step here to enter the cellar.
-  placement:
-    x: 23
-    y: 10
-- type: scroll
-  properties:
-    text: South road leads to the old dungeon. Adventurers beware!
-  placement:
-    x: 13
-    y: 12
-- type: sign_post
-  properties:
-    text: The sinkhole ahead leads deep underground. Return is not guaranteed.
-  placement:
-    x: 40
-    y: 16
-- type: wooden_door
-  properties:
-    spell_id: lesser_heal
-  placement:
-    x: 58
-    y: 42
-- type: well
-  properties:
-    state: locked
-  placement:
-    x: 24
-    y: 46
 spawn_groups:
 - id: south_rats
   template: rat

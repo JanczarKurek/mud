@@ -9,19 +9,28 @@ lighting:
   has_day_night: false
 
 legend:
-  "#": wall
+  # Text row 0 maps to world y=0 (Bevy +y = north), so the FIRST line of
+  # the `tiles` block is the SOUTH wall and the LAST line is the NORTH wall.
+  "S": wall_s
+  "N": wall_n
+  "E": wall_e
+  "W": wall_w
+  "a": wall_corner_sw
+  "b": wall_corner_se
+  "c": wall_corner_nw
+  "d": wall_corner_ne
 
 tiles: |
-  #####.######
-  #..........#
-  #..........#
-  #..........#
-  #..........#
-  #..........#
-  #..........#
-  #..........#
-  #..........#
-  ############
+  aSSSS.SSSSSb
+  W..........E
+  W..........E
+  W..........E
+  W..........E
+  W..........E
+  W..........E
+  W..........E
+  W..........E
+  cNNNNNNNNNNd
 
 portals:
   - id: cellar_exit

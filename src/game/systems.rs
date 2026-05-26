@@ -5120,8 +5120,8 @@ mod tests {
         let wall_id = app
             .world_mut()
             .resource_mut::<ObjectRegistry>()
-            .allocate_runtime_id("wall");
-        spawn_world_object(&mut app, "wall", wall_id, TilePosition::ground(11, 10));
+            .allocate_runtime_id("wall_s");
+        spawn_world_object(&mut app, "wall_s", wall_id, TilePosition::ground(11, 10));
 
         app.world_mut()
             .resource_mut::<PendingGameCommands>()
