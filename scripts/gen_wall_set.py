@@ -32,6 +32,8 @@ from wall_perspective import (
     TILE_PX,
     WALL_HEIGHT_FLOORS,
     WALL_INSET,
+    WALL_VIZ_HEIGHT_TILES,
+    WALL_VIZ_WIDTH_TILES,
     BG,
     STONE,
     STONE_HI,
@@ -66,10 +68,15 @@ ASSETS_DIR = "assets/overworld_objects"
 # Corners are L-shapes whose two half-tile arms meet at the inset position
 # and reach back to the adjacent directional wall slabs.
 
-_N = 1.0 - WALL_INSET   # slab position for north-side walls (high fy)
-_S = WALL_INSET         # slab position for south-side walls (low fy)
-_E = 1.0 - WALL_INSET   # slab position for east-side walls (high fx)
-_W = WALL_INSET         # slab position for west-side walls (low fx)
+# Slab base positions (the fy of an axis="y" arm; the fx of an axis="x" arm).
+# wall_s / wall_e use the requested inset directly. wall_n / wall_w have to
+# clamp toward the centre because the iso projection extends the visible
+# slab top by WALL_VIZ_*_TILES *up-and-left*; without the clamp those two
+# walls would visually overshoot the tile's north / west boundary.
+_S = WALL_INSET
+_E = 1.0 - WALL_INSET
+_N = min(1.0 - WALL_INSET, 1.0 - WALL_VIZ_HEIGHT_TILES)
+_W = max(WALL_INSET, WALL_VIZ_WIDTH_TILES)
 
 SPECS = [
     # ── Four directional walls. Each spans the full tile width along its

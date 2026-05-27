@@ -1,6 +1,9 @@
 //! Client-side performance diagnostics overlay.
 //!
 //! Four keys, all client-only:
+//! - **F2** toggles a debug tile-grid overlay (gameplay only) — draws gizmo
+//!   lines along tile boundaries within the visible viewport so coordinates
+//!   are easy to eyeball during play.
 //! - **F3** toggles a compact FPS / frame-time readout.
 //! - **F4** toggles an expanded panel: rolling-window min/avg/p99/max frame
 //!   times, entity count, and live `ViewScrollOffset` progress.
@@ -42,11 +45,12 @@ use bevy::transform::TransformSystems;
 use bevy::ui::UiSystems;
 use bevy::window::{PresentMode, PrimaryWindow};
 
-use crate::app::state::DiagnosticPause;
+use crate::app::state::{ClientAppState, DiagnosticPause};
 use crate::world::components::ClientProjectedWorldObject;
 use crate::world::darkness::DarknessOverlay;
 use crate::world::floor_render::FloorRenderCell;
 use crate::world::resources::ViewScrollOffset;
+use crate::world::WorldConfig;
 
 const SAMPLE_WINDOW: usize = 120;
 const SPIKE_THRESHOLD_MS: f32 = 18.0;
@@ -105,7 +109,11 @@ impl Plugin for DiagnosticsPlugin {
                 update_expanded_overlay,
             ),
         )
-        .add_systems(Update, handle_archetype_dump);
+        .add_systems(Update, handle_archetype_dump)
+        .add_systems(
+            Update,
+            draw_debug_grid.run_if(in_state(ClientAppState::InGame)),
+        );
     }
 }
 
@@ -116,6 +124,7 @@ pub struct PerfOverlayState {
     pub floor_hidden: bool,
     pub darkness_hidden: bool,
     pub objects_hidden: bool,
+    pub grid_visible: bool,
 }
 
 #[derive(Resource, Default)]
@@ -295,6 +304,13 @@ fn handle_overlay_input(
     objects_q: Query<Entity, With<ClientProjectedWorldObject>>,
     mut commands: Commands,
 ) {
+    if keys.just_pressed(KeyCode::F2) {
+        state.grid_visible = !state.grid_visible;
+        info!(
+            "Diagnostics: debug grid {} (F2)",
+            if state.grid_visible { "ON" } else { "OFF" }
+        );
+    }
     if keys.just_pressed(KeyCode::F3) {
         state.compact_visible = !state.compact_visible;
     }
@@ -402,6 +418,63 @@ fn handle_overlay_input(
             },
             count,
         );
+    }
+}
+
+/// F2 overlay — draws the tile grid as gizmo lines over the visible viewport.
+///
+/// Tile centers sit at `(x * tile_size, y * tile_size)` in world space, so
+/// tile boundaries fall at `(n + 0.5) * tile_size` for integer `n`. The camera
+/// is unscaled, so the visible viewport is the primary window's logical size
+/// centered on the camera translation. We only draw lines that intersect the
+/// viewport — drawing the full map's worth of gizmos every frame would push
+/// thousands of line segments through the gizmo buffer for nothing.
+fn draw_debug_grid(
+    state: Res<PerfOverlayState>,
+    world_config: Res<WorldConfig>,
+    camera_q: Query<&Transform, With<Camera2d>>,
+    window_q: Query<&Window, With<PrimaryWindow>>,
+    mut gizmos: Gizmos,
+) {
+    if !state.grid_visible {
+        return;
+    }
+    let Ok(camera) = camera_q.single() else {
+        return;
+    };
+    let Ok(window) = window_q.single() else {
+        return;
+    };
+
+    let ts = world_config.tile_size;
+    if ts <= 0.0 {
+        return;
+    }
+    let half_w = window.width() * 0.5;
+    let half_h = window.height() * 0.5;
+    let cx = camera.translation.x;
+    let cy = camera.translation.y;
+    let left = cx - half_w;
+    let right = cx + half_w;
+    let bottom = cy - half_h;
+    let top = cy + half_h;
+
+    // Convert viewport bounds into the integer range of tile boundaries to
+    // draw. Boundary `n` sits at x = (n - 0.5) * ts, where tile `n` spans
+    // [(n - 0.5) * ts, (n + 0.5) * ts]. Solve for n at `left` and `right`.
+    let first_col = ((left / ts) + 0.5).floor() as i32;
+    let last_col = ((right / ts) + 0.5).ceil() as i32;
+    let first_row = ((bottom / ts) + 0.5).floor() as i32;
+    let last_row = ((top / ts) + 0.5).ceil() as i32;
+
+    let color = Color::srgba(1.0, 1.0, 1.0, 0.18);
+    for col in first_col..=last_col {
+        let x = (col as f32 - 0.5) * ts;
+        gizmos.line_2d(Vec2::new(x, bottom), Vec2::new(x, top), color);
+    }
+    for row in first_row..=last_row {
+        let y = (row as f32 - 0.5) * ts;
+        gizmos.line_2d(Vec2::new(left, y), Vec2::new(right, y), color);
     }
 }
 

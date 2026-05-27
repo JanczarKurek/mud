@@ -7,7 +7,7 @@ render:
   debug_size: 1.0
   sprite_path: overworld_objects/wall_n/sprite.png
   sprite_width_tiles: 2.0
-  sprite_height_tiles: 1.271
+  sprite_height_tiles: 1.021
   occludes_floor_above: true
   display_height: 1.0
   hide_when_inside_facing: south

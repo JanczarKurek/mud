@@ -37,8 +37,19 @@ WALL_HEIGHT_FLOORS = 1.0
 # right at the perimeter), 0.5 = slab at the tile midline (no directional
 # bias). Tune up to move walls further toward the middle of their tile so
 # players can stand closer to the visual edge of a room without overlapping
-# the sprite. Applies symmetrically to all four directional walls + corners.
+# the sprite. Applies to wall_s and wall_e directly; wall_n and wall_w are
+# clamped (see below) so their visual top doesn't extend past their tile.
 WALL_INSET = 0.25
+
+# Visual extent of the wall body in tile units due to the iso floor shift.
+# A 1-floor-tall wall projects fz=1 to (FLOOR_SHIFT_X_TILES, -FLOOR_SHIFT_Y_TILES)
+# tiles on screen — i.e. the slab TOP sits 0.5 tiles up-left of the slab
+# bottom. For wall_n / wall_w, that means a slab placed at the "natural"
+# inset position (fy = 1 - INSET / fx = INSET) would visually overshoot
+# the tile's north / west boundary by exactly this amount. So we cap them
+# to keep the rendered sprite inside its tile cell.
+WALL_VIZ_HEIGHT_TILES = WALL_HEIGHT_FLOORS * abs(FLOOR_SHIFT_Y_TILES)
+WALL_VIZ_WIDTH_TILES  = WALL_HEIGHT_FLOORS * abs(FLOOR_SHIFT_X_TILES)
 
 # Derived: screen shift per floor in pixels (Bevy world coords: +y up).
 SHIFT_X_PX = FLOOR_SHIFT_X_TILES * TILE_PX
