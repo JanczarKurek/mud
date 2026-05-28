@@ -19,13 +19,13 @@ use crate::ui::components::{
     BackpackSlotRow, ChatTerminal, ContainerSlotButton, ContainerSlotImage,
     ContextMenuAttackButton, ContextMenuInspectButton, ContextMenuOpenButton, ContextMenuRoot,
     ContextMenuTakePartialButton, ContextMenuUseButton, ContextMenuUseOnButton,
-    CurrentCombatTargetLabel, DockedPanelBody, DockedPanelCanvas, DockedPanelCloseButton,
-    DockedPanelDragHandle, DockedPanelResizeHandle, DockedPanelRoot, DockedPanelTitle,
-    DragPreviewImage, DragPreviewLabel, DragPreviewQuantity, DragPreviewRoot, EquipmentSlotButton,
-    EquipmentSlotImage, HealthFill, ItemSlotButton, ItemSlotImage, ItemSlotKind,
-    ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot, ManaFill, QuickbarSlotMarker,
-    RightSidebarRoot, TakePartialAmountLabel, TakePartialCancelButton, TakePartialConfirmButton,
-    TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot,
+    DockedPanelBody, DockedPanelCanvas, DockedPanelCloseButton, DockedPanelDragHandle,
+    DockedPanelResizeHandle, DockedPanelRoot, DockedPanelTitle, DragPreviewImage, DragPreviewLabel,
+    DragPreviewQuantity, DragPreviewRoot, EquipmentSlotButton, EquipmentSlotImage, HealthFill,
+    ItemSlotButton, ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ItemTooltipLabel,
+    ItemTooltipRoot, ManaFill, NearbyNpcDot, NearbyNpcHpFill, NearbyNpcRow, NearbyNpcsList,
+    QuickbarSlotMarker, RightSidebarRoot, TakePartialAmountLabel, TakePartialCancelButton,
+    TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot,
 };
 use crate::ui::resources::{
     ContextMenuState, ContextMenuTarget, CursorMode, CursorState, DockedPanelDragState,
@@ -245,7 +245,7 @@ pub fn manage_open_containers(
         | DockedPanelKind::Status
         | DockedPanelKind::Equipment
         | DockedPanelKind::Backpack
-        | DockedPanelKind::CurrentTarget => true,
+        | DockedPanelKind::NearbyNpcs => true,
         DockedPanelKind::Container { object_id } => player_position
             .and_then(|player_position| {
                 client_state
@@ -316,12 +316,6 @@ pub fn handle_docked_panel_close_buttons(
                 .panel(button.panel_id)
                 .map(|panel| panel.kind)
             {
-                Some(DockedPanelKind::CurrentTarget) => {
-                    pending_commands.push(GameCommand::SetCombatTarget {
-                        target_object_id: None,
-                    });
-                    docked_panel_state.close_current_target();
-                }
                 Some(DockedPanelKind::Container { object_id }) => {
                     pending_commands.push(GameCommand::CloseContainer { object_id });
                     docked_panel_state.close_panel(button.panel_id);
@@ -334,7 +328,8 @@ pub fn handle_docked_panel_close_buttons(
                 Some(DockedPanelKind::Status)
                 | Some(DockedPanelKind::Equipment)
                 | Some(DockedPanelKind::Backpack)
-                | Some(DockedPanelKind::Minimap) => {
+                | Some(DockedPanelKind::Minimap)
+                | Some(DockedPanelKind::NearbyNpcs) => {
                     docked_panel_state.close_panel(button.panel_id);
                 }
                 None => {}
@@ -344,30 +339,326 @@ pub fn handle_docked_panel_close_buttons(
     }
 }
 
-pub fn sync_current_combat_target(
+/// Tile distance used to sort the Nearby NPCs panel — Chebyshev (8-directional)
+/// matches how server-side NPC AI measures range.
+fn chebyshev_distance(a: TilePosition, b: TilePosition) -> i32 {
+    (a.x - b.x).abs().max((a.y - b.y).abs())
+}
+
+/// Threat tier for the Nearby NPCs sort key. Lower is "more dangerous" so the
+/// `sort_by_key` puts threats at the top: 0 = aggroed onto you, 1 = hostile
+/// but not engaged with you, 2 = passive.
+fn nearby_npc_threat_tier(o: &crate::game::resources::ClientWorldObjectState) -> u8 {
+    if o.is_targeting_local_player {
+        0
+    } else if o.is_hostile {
+        1
+    } else {
+        2
+    }
+}
+
+fn nearby_npc_dot_asset(o: &crate::game::resources::ClientWorldObjectState) -> &'static str {
+    if o.is_targeting_local_player {
+        "ui/hud_indicators/dot_red.png"
+    } else if o.is_hostile {
+        "ui/hud_indicators/dot_yellow.png"
+    } else {
+        "ui/hud_indicators/dot_green.png"
+    }
+}
+
+fn hp_fill_color(ratio: f32) -> Color {
+    if ratio > 0.6 {
+        Color::srgb(0.30, 0.78, 0.32)
+    } else if ratio > 0.3 {
+        Color::srgb(0.92, 0.70, 0.20)
+    } else {
+        Color::srgb(0.88, 0.25, 0.22)
+    }
+}
+
+/// Two-phase reconciler for the Nearby NPCs panel:
+///   - Phase A: when the sorted (threat_tier, distance) sequence of object_ids
+///     changes, despawn all rows and respawn them in the new order. The
+///     `Local<Vec<u64>>` snapshot avoids the despawn churn on frames where
+///     nothing structurally changed.
+///   - Phase B: every frame, refresh per-row visual state (dot color, HP fill,
+///     target border) so HP ticks and aggro flips show up without rebuilds.
+#[allow(clippy::too_many_arguments)]
+pub fn sync_nearby_npcs_panel(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
     client_state: Res<ClientGameState>,
     object_registry: Res<ObjectRegistry>,
     definitions: Res<OverworldObjectDefinitions>,
     spell_definitions: Res<SpellDefinitions>,
+    palette: Res<crate::ui::theme::Palette>,
+    gameplay_settings: Option<Res<crate::ui::settings::gameplay::GameplaySettings>>,
     mut docked_panel_state: ResMut<DockedPanelState>,
-    mut label_query: Query<&mut Text, With<CurrentCombatTargetLabel>>,
+    list_query: Query<Entity, With<NearbyNpcsList>>,
+    row_query: Query<Entity, With<NearbyNpcRow>>,
+    mut dot_query: Query<(&NearbyNpcDot, &mut ImageNode)>,
+    mut hp_query: Query<(&NearbyNpcHpFill, &mut Node, &mut BackgroundColor)>,
+    mut border_query: Query<(&NearbyNpcRow, &mut BorderColor)>,
+    mut last_order: Local<Vec<u64>>,
+    mut last_list_count: Local<usize>,
 ) {
-    let Ok(mut label) = label_query.single_mut() else {
-        return;
+    // Without a known player tile we can't sort by distance — but the auto-open
+    // logic below still needs to run, so use a zero origin as a degenerate
+    // fallback and accept that the order is meaningless on the first frame
+    // before `PlayerPositionChanged` lands.
+    let player_tile = client_state
+        .player_tile_position
+        .unwrap_or_else(|| TilePosition::new(0, 0, 0));
+    // Show only NPCs within (their effective inspect range + 2) Chebyshev tiles
+    // of the local player — keeps the list focused on NPCs the player could
+    // actually interact with, plus a small buffer so a stepping NPC doesn't
+    // flicker off the list at the edge.
+    let nearby_window = |npc: &crate::game::resources::ClientWorldObjectState| -> i32 {
+        definitions
+            .get(&npc.definition_id)
+            .and_then(|def| def.inspect_range)
+            .unwrap_or(crate::world::hidden::DEFAULT_INSPECT_RANGE)
+            + 2
     };
+    let mut npcs: Vec<&crate::game::resources::ClientWorldObjectState> = client_state
+        .world_objects
+        .values()
+        .filter(|o| o.is_npc)
+        .filter(|o| chebyshev_distance(player_tile, o.tile_position) <= nearby_window(o))
+        .collect();
+    npcs.sort_by_key(|o| {
+        (
+            nearby_npc_threat_tier(o),
+            chebyshev_distance(player_tile, o.tile_position),
+        )
+    });
 
-    let text = if let Some(target_object_id) = client_state.current_target_object_id {
-        docked_panel_state.open_current_target();
-        let name = object_registry
-            .display_name(target_object_id, &definitions, &spell_definitions)
-            .unwrap_or_else(|| target_object_id.to_string());
-        format!("Target: {name}")
+    // Auto open/close: only when the user opted in via the Gameplay setting.
+    let auto_open = gameplay_settings
+        .as_deref()
+        .map(|s| s.auto_open_nearby_npcs_panel)
+        .unwrap_or(false);
+    if auto_open {
+        if npcs.is_empty() {
+            docked_panel_state.close_nearby_npcs();
+        } else {
+            docked_panel_state.open_nearby_npcs();
+        }
+    }
+
+    // Both the pre-spawned docked panel body and a freshly-undocked floating
+    // window carry their own `NearbyNpcsList` child (each call to
+    // `spawn_nearby_npcs_panel_body` adds one). Iterate over every instance so
+    // the floating window also gets rows; force a rebuild when the count
+    // changes so a newly-spawned floating list populates immediately even if
+    // the NPC order is unchanged.
+    let list_entities: Vec<Entity> = list_query.iter().collect();
+    let current_order: Vec<u64> = npcs.iter().map(|o| o.object_id).collect();
+    let order_changed = *last_order != current_order || list_entities.len() != *last_list_count;
+
+    if order_changed {
+        for row in row_query.iter() {
+            commands.entity(row).despawn();
+        }
+        for list_entity in &list_entities {
+            commands.entity(*list_entity).with_children(|parent| {
+                for npc in &npcs {
+                    let name = object_registry
+                        .display_name(npc.object_id, &definitions, &spell_definitions)
+                        .unwrap_or_else(|| npc.object_id.to_string());
+                    spawn_nearby_npc_row(parent, &asset_server, &palette, npc, name);
+                }
+            });
+        }
+        *last_order = current_order;
+        *last_list_count = list_entities.len();
+    }
+
+    let target = client_state.current_target_object_id;
+
+    for (dot, mut image) in dot_query.iter_mut() {
+        if let Some(npc) = client_state.world_objects.get(&dot.object_id) {
+            let desired: Handle<Image> = asset_server.load(nearby_npc_dot_asset(npc));
+            if image.image != desired {
+                image.image = desired;
+            }
+        }
+    }
+
+    for (hp, mut node, mut bg) in hp_query.iter_mut() {
+        if let Some(npc) = client_state.world_objects.get(&hp.object_id) {
+            let (ratio, has_vitals) = match npc.vitals {
+                Some(v) if v.max_health > 0.0 => {
+                    ((v.health / v.max_health).clamp(0.0, 1.0), true)
+                }
+                _ => (0.0, false),
+            };
+            node.width = percent(ratio * 100.0);
+            bg.0 = if has_vitals {
+                hp_fill_color(ratio)
+            } else {
+                Color::NONE
+            };
+        }
+    }
+
+    for (row, mut border) in border_query.iter_mut() {
+        let is_target = Some(row.object_id) == target;
+        *border = BorderColor::all(if is_target {
+            palette.border_danger
+        } else {
+            Color::NONE
+        });
+    }
+}
+
+fn spawn_nearby_npc_row(
+    parent: &mut ChildSpawnerCommands,
+    asset_server: &AssetServer,
+    palette: &crate::ui::theme::Palette,
+    npc: &crate::game::resources::ClientWorldObjectState,
+    name: String,
+) {
+    let object_id = npc.object_id;
+    let dot_handle: Handle<Image> = asset_server.load(nearby_npc_dot_asset(npc));
+    let (hp_ratio, has_vitals) = match npc.vitals {
+        Some(v) if v.max_health > 0.0 => ((v.health / v.max_health).clamp(0.0, 1.0), true),
+        _ => (0.0, false),
+    };
+    let hp_fill_bg = if has_vitals {
+        hp_fill_color(hp_ratio)
     } else {
-        docked_panel_state.close_current_target();
-        "Target: none".to_owned()
+        Color::NONE
     };
 
-    label.0 = text;
+    parent
+        .spawn((
+            Button,
+            NearbyNpcRow { object_id },
+            Node {
+                width: percent(100.0),
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                column_gap: px(6.0),
+                padding: UiRect::all(px(3.0)),
+                border: UiRect::all(px(1.0)),
+                ..default()
+            },
+            BackgroundColor(Color::NONE),
+            BorderColor::all(Color::NONE),
+        ))
+        .with_children(|row| {
+            row.spawn((
+                ImageNode::new(dot_handle),
+                NearbyNpcDot { object_id },
+                Node {
+                    width: px(14.0),
+                    height: px(14.0),
+                    ..default()
+                },
+            ));
+            row.spawn((
+                Text::new(name),
+                TextFont {
+                    font_size: 13.0,
+                    ..default()
+                },
+                TextColor(palette.text_primary),
+                Node {
+                    flex_grow: 1.0,
+                    ..default()
+                },
+            ));
+            row.spawn((
+                Node {
+                    width: px(60.0),
+                    height: px(8.0),
+                    border: UiRect::all(px(1.0)),
+                    ..default()
+                },
+                BackgroundColor(palette.surface_vital_bg),
+                BorderColor::all(palette.border_slot),
+            ))
+            .with_children(|bar| {
+                bar.spawn((
+                    Node {
+                        width: percent(hp_ratio * 100.0),
+                        height: percent(100.0),
+                        ..default()
+                    },
+                    NearbyNpcHpFill { object_id },
+                    BackgroundColor(hp_fill_bg),
+                ));
+            });
+        });
+}
+
+/// Translates a click on any Nearby NPCs row into a game command. The row
+/// acts as a stand-in for clicking the NPC in the world: if the player is
+/// currently in spell-targeting or use-on-targeting mode, the click resolves
+/// that mode against this NPC and clears the targeting state. Otherwise the
+/// click sets the NPC as the player's combat target.
+///
+/// Runs before `CommandIntercept` *and* before `handle_use_on_targeting` /
+/// `handle_spell_targeting` so those world-targeting systems see the cleared
+/// state and don't double-fire from the same left-click.
+#[allow(clippy::too_many_arguments)]
+pub fn handle_nearby_npc_row_clicks(
+    row_query: Query<(&Interaction, &NearbyNpcRow), Changed<Interaction>>,
+    docked_panel_state: Res<DockedPanelState>,
+    mut pending_commands: ResMut<PendingGameCommands>,
+    mut use_on_state: ResMut<UseOnState>,
+    mut spell_targeting_state: ResMut<SpellTargetingState>,
+    mut cursor_state: ResMut<CursorState>,
+) {
+    for (interaction, row) in row_query.iter() {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        let object_id = row.object_id;
+
+        // Active spell targeting → cast at this NPC.
+        if let (Some(source), Some(spell_id)) = (
+            spell_targeting_state.source,
+            spell_targeting_state.spell_id.clone(),
+        ) {
+            if let Some(source_ref) =
+                context_target_to_item_reference(source, &docked_panel_state)
+            {
+                pending_commands.push(GameCommand::CastSpellAt {
+                    source: source_ref,
+                    spell_id,
+                    target_object_id: object_id,
+                });
+            }
+            spell_targeting_state.source = None;
+            spell_targeting_state.spell_id = None;
+            cursor_state.reset_to_default();
+            continue;
+        }
+
+        // Active use-on → use the source item on this NPC.
+        if let Some(source) = use_on_state.source {
+            if let Some(source_ref) =
+                context_target_to_item_reference(source, &docked_panel_state)
+            {
+                pending_commands.push(GameCommand::UseItemOn {
+                    source: source_ref,
+                    target: UseTarget::Object(object_id),
+                });
+            }
+            use_on_state.source = None;
+            cursor_state.reset_to_default();
+            continue;
+        }
+
+        // Default: this NPC becomes the player's combat target.
+        pending_commands.push(GameCommand::SetCombatTarget {
+            target_object_id: Some(object_id),
+        });
+    }
 }
 
 pub fn sync_vital_bars(
@@ -1667,6 +1958,7 @@ pub fn handle_attack_targeting(
     cursor_state.reset_to_default();
 }
 
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn handle_context_menu_opening(
     mouse_input: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
@@ -1680,6 +1972,7 @@ pub fn handle_context_menu_opening(
     mut use_on_state: ResMut<UseOnState>,
     mut spell_targeting_state: ResMut<SpellTargetingState>,
     mut cursor_state: ResMut<CursorState>,
+    nearby_npc_rows: Query<(&NearbyNpcRow, &ComputedNode, &UiGlobalTransform)>,
     mut slot_queries: ParamSet<(
         Query<
             (
@@ -1746,6 +2039,54 @@ pub fn handle_context_menu_opening(
         cursor_state.reset_to_default();
         context_menu_state.hide();
         return;
+    }
+
+    // Right-clicking on a Nearby NPCs row treats that NPC as the right-click
+    // target — same context menu flags as right-clicking the NPC in the world.
+    if let Some(npc_object_id) = nearby_npc_rows
+        .iter()
+        .find(|(_, computed, transform)| {
+            point_in_ui_node(cursor_position, computed, transform)
+        })
+        .map(|(row, _, _)| row.object_id)
+    {
+        if let Some(object) = client_state.world_objects.get(&npc_object_id) {
+            let near = is_near_player(&player_position, &object.tile_position);
+            let can_use =
+                near && object_is_usable(object.object_id, &object_registry, &definitions);
+            let interaction = if near {
+                applicable_interaction(object, &definitions)
+            } else {
+                None
+            };
+            context_menu_state.show(
+                cursor_position,
+                ContextMenuTarget::World(object.object_id),
+                near && object.is_container,
+                can_use,
+                near && can_use_on(
+                    object.object_id,
+                    &object_registry,
+                    &definitions,
+                    &spell_definitions,
+                ),
+                object.is_npc,
+                near && object.quantity > 1,
+                near && object.is_npc && object.has_dialog,
+                near && object.is_shopkeeper,
+                interaction,
+            );
+            if near {
+                let (pick, force, key) = lock_verb_visibility(object, &definitions, &client_state);
+                context_menu_state.set_lock_verbs(pick, force, key);
+                context_menu_state.set_can_hide(hide_verb_visibility(
+                    object,
+                    &definitions,
+                    &client_state,
+                ));
+            }
+            return;
+        }
     }
 
     let hovered_slot = hovered_slot_kind_from_ui(cursor_position, &mut slot_queries);
@@ -1993,7 +2334,7 @@ pub fn sync_docked_panel_titles(
             Some(DockedPanelKind::Status) => "Status".to_owned(),
             Some(DockedPanelKind::Equipment) => "Equipment".to_owned(),
             Some(DockedPanelKind::Backpack) => "Backpack".to_owned(),
-            Some(DockedPanelKind::CurrentTarget) => "Current Target".to_owned(),
+            Some(DockedPanelKind::NearbyNpcs) => "Nearby NPCs".to_owned(),
             Some(DockedPanelKind::Container { object_id }) => client_state
                 .world_objects
                 .get(&object_id)

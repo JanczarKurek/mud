@@ -298,6 +298,15 @@ pub struct ClientWorldObjectState {
     /// that are already hidden.
     #[serde(default)]
     pub is_hidden: bool,
+    /// True when the server-side NPC carries a `HostileBehavior` component.
+    /// Drives the threat-color dot in the Nearby NPCs panel.
+    #[serde(default)]
+    pub is_hostile: bool,
+    /// True when this NPC's `CombatTarget` points at the local player's
+    /// entity (i.e. it is currently aggroed onto you). Computed per-peer in
+    /// `compute_events_for_peer`.
+    #[serde(default)]
+    pub is_targeting_local_player: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

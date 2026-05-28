@@ -65,7 +65,8 @@ pub type ProjectionPlayerQuery<'w, 's> = Query<
     'w,
     's,
     (
-        &'static PlayerIdentity,
+        // Grouped to keep the outer tuple under Bevy's 15-tuple cap.
+        (Entity, &'static PlayerIdentity),
         &'static InventoryState,
         &'static ChatLogState,
         &'static SpaceResident,
@@ -118,6 +119,11 @@ pub type ProjectionWorldObjectQuery<'w, 's> = Query<
         Option<&'static ObjectState>,
         Has<Shopkeeper>,
         Option<&'static crate::world::hidden::Hidden>,
+        // Grouped to keep the outer tuple under Bevy's 15-tuple cap.
+        (
+            Has<crate::npc::components::HostileBehavior>,
+            Option<&'static CombatTarget>,
+        ),
     ),
     Without<Player>,
 >;
@@ -190,8 +196,9 @@ pub fn compute_events_for_peer(
         ClientRemotePlayerState,
     )> = Vec::new();
 
+    let mut local_player_entity: Option<Entity> = None;
     for (
-        identity,
+        (player_entity, identity),
         inventory,
         chat_log,
         space_resident,
@@ -218,6 +225,7 @@ pub fn compute_events_for_peer(
 
         if identity.id == local_player_id {
             local_player_object_id = Some(player_object.object_id);
+            local_player_entity = Some(player_entity);
             local_space_id = Some(space_resident.space_id);
             local_tile_position = Some(*tile_position);
 
@@ -651,6 +659,7 @@ pub fn compute_events_for_peer(
         state,
         has_shopkeeper,
         hidden,
+        (has_hostile, npc_combat_target),
     ) in world_object_query.iter()
     {
         if space_resident.space_id != local_space_id {
@@ -668,6 +677,10 @@ pub fn compute_events_for_peer(
             continue;
         }
         current_world_object_ids.push(object.object_id);
+        let is_targeting_local_player = match (npc_combat_target, local_player_entity) {
+            (Some(target), Some(local_entity)) => target.entity == local_entity,
+            _ => false,
+        };
         let projected_object = ClientWorldObjectState {
             object_id: object.object_id,
             definition_id: object.definition_id.clone(),
@@ -689,6 +702,8 @@ pub fn compute_events_for_peer(
             state: state.map(|s| s.0.clone()),
             is_shopkeeper: has_shopkeeper,
             is_hidden: hidden.is_some(),
+            is_hostile: has_hostile,
+            is_targeting_local_player,
         };
 
         if previous.world_objects.get(&object.object_id) != Some(&projected_object) {
@@ -813,7 +828,7 @@ pub fn collect_game_events_from_authority(
     pending_game_events.events.clear();
 
     let local_player_id = match player_query.single() {
-        Ok((identity, ..)) => identity.id,
+        Ok(((_entity, identity), ..)) => identity.id,
         Err(QuerySingleError::NoEntities(_)) => {
             bevy::log::warn!("collect_game_events: no Player entity found");
             return;

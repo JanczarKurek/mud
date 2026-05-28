@@ -3,7 +3,7 @@ pub mod character_sheet;
 pub mod chat_input;
 pub mod components;
 pub mod container_panel;
-pub mod current_target_panel;
+pub mod nearby_npcs_panel;
 pub mod dialog;
 pub mod equipment_panel;
 pub mod item_details;
@@ -44,7 +44,7 @@ use crate::app::state::ClientAppState;
 use crate::ui::backpack_panel::BackpackPanel;
 use crate::ui::chat_input::{handle_chat_click_focus, handle_chat_submissions, toggle_chat_focus};
 use crate::ui::container_panel::ContainerPanel;
-use crate::ui::current_target_panel::CurrentTargetPanel;
+use crate::ui::nearby_npcs_panel::NearbyNpcsPanel;
 use crate::ui::dialog::{
     auto_pin_dialog_transcript_scroll, handle_dialog_panel_clicks,
     handle_dialog_transcript_scrolling, sync_dialog_panel_continue_button,
@@ -90,7 +90,8 @@ use crate::ui::systems::{
     sync_context_menu_pick_lock_button, sync_context_menu_root,
     sync_context_menu_take_partial_button, sync_context_menu_talk_button,
     sync_context_menu_trade_button, sync_context_menu_use_button, sync_context_menu_use_key_button,
-    sync_context_menu_use_on_button, sync_current_combat_target, sync_docked_panel_layout,
+    handle_nearby_npc_row_clicks, sync_context_menu_use_on_button, sync_docked_panel_layout,
+    sync_nearby_npcs_panel,
     sync_docked_panel_titles, sync_drag_preview, sync_equipment_slot_images,
     sync_item_slot_button_visibility, sync_item_tooltip, sync_magic_effects_label,
     sync_native_custom_cursor, sync_regen_buff_label, sync_take_partial_label, sync_vital_bars,
@@ -119,7 +120,7 @@ impl Plugin for UiPlugin {
             MountablePanelPlugin::<StatusPanel>::default(),
             MountablePanelPlugin::<EquipmentPanel>::default(),
             MountablePanelPlugin::<BackpackPanel>::default(),
-            MountablePanelPlugin::<CurrentTargetPanel>::default(),
+            MountablePanelPlugin::<NearbyNpcsPanel>::default(),
             MountablePanelPlugin::<MinimapPanel>::default(),
             MountablePanelPlugin::<ContainerPanel>::default(),
             crate::ui::settings::SettingsPlugin,
@@ -171,7 +172,7 @@ impl Plugin for UiPlugin {
                 sync_context_menu_use_button,
                 sync_context_menu_use_on_button,
                 sync_context_menu_talk_button,
-                sync_current_combat_target,
+                sync_nearby_npcs_panel,
                 sync_docked_panel_layout.after(MountablePanelLifecycleSet),
                 sync_docked_panel_titles,
             )
@@ -229,6 +230,14 @@ impl Plugin for UiPlugin {
             Update,
             handle_context_menu_actions
                 .before(crate::game::CommandIntercept)
+                .run_if(in_state(ClientAppState::InGame)),
+        )
+        .add_systems(
+            Update,
+            handle_nearby_npc_row_clicks
+                .before(crate::game::CommandIntercept)
+                .before(handle_use_on_targeting)
+                .before(handle_spell_targeting)
                 .run_if(in_state(ClientAppState::InGame)),
         )
         .add_systems(

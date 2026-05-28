@@ -11,7 +11,7 @@ use crate::ui::components::{
     ContextMenuOpenButton, ContextMenuPickLockButton, ContextMenuRoot,
     ContextMenuTakePartialButton, ContextMenuTalkButton, ContextMenuTradeButton,
     ContextMenuUseButton, ContextMenuUseKeyButton, ContextMenuUseOnButton,
-    CurrentCombatTargetLabel, CurrentTargetPanelContent, CurrentTargetPanelUndockButton,
+    NearbyNpcsList, NearbyNpcsPanelUndockButton,
     DockedPanelBody, DockedPanelCanvas, DockedPanelCloseButton, DockedPanelDragHandle,
     DockedPanelResizeHandle, DockedPanelRoot, DockedPanelTitle, DragPreviewImage, DragPreviewLabel,
     DragPreviewQuantity, DragPreviewRoot, EquipmentPanelContent, EquipmentPanelUndockButton,
@@ -874,7 +874,7 @@ fn spawn_docked_panel_canvas(
     theme: &UiThemeAssets,
     palette: &Palette,
 ) {
-    spawn_current_target_panel(parent, theme, palette);
+    spawn_nearby_npcs_panel(parent, theme, palette);
 
     for offset in 0..DockedPanelState::MAX_OPEN_CONTAINERS {
         spawn_container_panel(
@@ -974,7 +974,7 @@ pub(crate) fn spawn_trade_button<T: Component>(
         });
 }
 
-fn spawn_current_target_panel(
+fn spawn_nearby_npcs_panel(
     parent: &mut ChildSpawnerCommands,
     theme: &UiThemeAssets,
     palette: &Palette,
@@ -982,35 +982,38 @@ fn spawn_current_target_panel(
     let undock_image = theme.undock_button.clone();
     spawn_docked_panel_with_extras(
         parent,
-        DockedPanelState::CURRENT_TARGET_PANEL_ID,
+        DockedPanelState::NEARBY_NPCS_PANEL_ID,
         theme,
         palette,
         |title_extras| {
-            spawn_themed_icon_button(title_extras, undock_image, CurrentTargetPanelUndockButton);
+            spawn_themed_icon_button(title_extras, undock_image, NearbyNpcsPanelUndockButton);
         },
-        |body| spawn_current_target_panel_body(body, palette),
+        |body| spawn_nearby_npcs_panel_body(body, palette),
     );
 }
 
-/// Body contents of the combat-target panel — just the label. Shared
-/// between docked and floating variants via the `MountablePanel` impl.
-pub(crate) fn spawn_current_target_panel_body(
+/// Body of the Nearby NPCs panel — a scrollable column whose rows are
+/// (re)spawned by `sync_nearby_npcs_panel` whenever the visible NPC set or
+/// its sort order changes. Shared between docked and floating variants via
+/// the `MountablePanel` impl.
+pub(crate) fn spawn_nearby_npcs_panel_body(
     parent: &mut ChildSpawnerCommands,
     palette: &Palette,
 ) {
     parent.spawn((
-        Text::new("Target: none"),
-        CurrentCombatTargetLabel,
-        CurrentTargetPanelContent,
-        TextFont {
-            font_size: 14.0,
-            ..default()
-        },
-        TextColor(palette.text_muted),
         Node {
             width: percent(100.0),
+            flex_grow: 1.0,
+            flex_direction: FlexDirection::Column,
+            row_gap: px(2.0),
+            min_height: px(0.0),
+            padding: UiRect::all(px(4.0)),
+            overflow: Overflow::scroll_y(),
             ..default()
         },
+        NearbyNpcsList,
+        ScrollPosition::default(),
+        BackgroundColor(palette.surface_raised),
     ));
 }
 

@@ -305,8 +305,32 @@ pub struct DialogPanelOptionButton {
     pub option_idx: usize,
 }
 
+/// Scroll container inside the Nearby NPCs panel. Rows (one per nearby NPC)
+/// are dynamically (re)spawned as children by `sync_nearby_npcs_panel`.
 #[derive(Component)]
-pub struct CurrentTargetPanelContent;
+pub struct NearbyNpcsList;
+
+/// Outer row entity for one NPC inside the Nearby NPCs panel. The
+/// `object_id` ties the row to a `ClientWorldObjectState` so per-frame
+/// updates (dot color, HP fill, target border) can find their data.
+#[derive(Component)]
+pub struct NearbyNpcRow {
+    pub object_id: u64,
+}
+
+/// The colored threat dot inside a Nearby NPCs row. Its `TextColor` is
+/// updated each frame based on the matching NPC's hostility / aggro.
+#[derive(Component)]
+pub struct NearbyNpcDot {
+    pub object_id: u64,
+}
+
+/// The inner fill node of the HP bar inside a Nearby NPCs row. Width is
+/// driven each frame from the NPC's `vitals.health / vitals.max_health`.
+#[derive(Component)]
+pub struct NearbyNpcHpFill {
+    pub object_id: u64,
+}
 
 #[derive(Component)]
 pub struct ContainerPanelContent;
@@ -372,21 +396,21 @@ pub struct BackpackPanelFloatingRoot;
 #[derive(Component, Default)]
 pub struct BackpackPanelFloatingCloseButton;
 
-/// Title-bar undock arrow on the docked combat-target panel.
+/// Title-bar undock arrow on the docked Nearby NPCs panel.
 #[derive(Component, Default)]
-pub struct CurrentTargetPanelUndockButton;
+pub struct NearbyNpcsPanelUndockButton;
 
-/// Title-bar dock-back arrow on the floating combat-target window.
+/// Title-bar dock-back arrow on the floating Nearby NPCs window.
 #[derive(Component, Default)]
-pub struct CurrentTargetPanelDockButton;
+pub struct NearbyNpcsPanelDockButton;
 
-/// Marker on the root of the floating combat-target window.
+/// Marker on the root of the floating Nearby NPCs window.
 #[derive(Component, Default)]
-pub struct CurrentTargetPanelFloatingRoot;
+pub struct NearbyNpcsPanelFloatingRoot;
 
-/// Close-X on the floating combat-target window.
+/// Close-X on the floating Nearby NPCs window.
 #[derive(Component, Default)]
-pub struct CurrentTargetPanelFloatingCloseButton;
+pub struct NearbyNpcsPanelFloatingCloseButton;
 
 /// Title-bar undock arrow on the docked minimap panel.
 #[derive(Component, Default)]
@@ -464,10 +488,10 @@ impl_unit_panel_instance_marker!(
     BackpackPanelDockButton,
     BackpackPanelFloatingRoot,
     BackpackPanelFloatingCloseButton,
-    CurrentTargetPanelUndockButton,
-    CurrentTargetPanelDockButton,
-    CurrentTargetPanelFloatingRoot,
-    CurrentTargetPanelFloatingCloseButton,
+    NearbyNpcsPanelUndockButton,
+    NearbyNpcsPanelDockButton,
+    NearbyNpcsPanelFloatingRoot,
+    NearbyNpcsPanelFloatingCloseButton,
     MinimapPanelUndockButton,
     MinimapPanelDockButton,
     MinimapPanelFloatingRoot,
@@ -553,9 +577,6 @@ pub struct TradePopupTitleBar;
 /// Close (X) button in the trade popup title bar — emits `CancelTrade`.
 #[derive(Component)]
 pub struct TradePopupCloseButton;
-
-#[derive(Component)]
-pub struct CurrentCombatTargetLabel;
 
 #[derive(Component)]
 pub struct RightSidebarRoot;

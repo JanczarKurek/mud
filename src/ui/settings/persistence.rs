@@ -13,6 +13,7 @@ use crate::app::paths::client_settings_path;
 use crate::app::plugin::AppRuntime;
 
 use super::display::{DisplaySettings, WindowModeSetting};
+use super::gameplay::GameplaySettings;
 use super::model::{Action, Bindings, Keybindings, MovementBindings};
 
 /// On-disk schema. `#[serde(default)]` everywhere so older/newer files with
@@ -25,7 +26,24 @@ struct SettingsFile {
     #[serde(default)]
     display: DisplayFile,
     #[serde(default)]
+    gameplay: GameplayFile,
+    #[serde(default)]
     servers: ServersFile,
+}
+
+#[derive(Serialize, Deserialize)]
+struct GameplayFile {
+    #[serde(default)]
+    auto_open_nearby_npcs_panel: bool,
+}
+
+impl Default for GameplayFile {
+    fn default() -> Self {
+        let g = GameplaySettings::default();
+        Self {
+            auto_open_nearby_npcs_panel: g.auto_open_nearby_npcs_panel,
+        }
+    }
 }
 
 /// Client-side server picker state on disk. The `saved` list is read-only at
@@ -132,6 +150,7 @@ pub fn load_settings(
     runtime: Res<AppRuntime>,
     mut keybindings: ResMut<Keybindings>,
     mut display: ResMut<DisplaySettings>,
+    mut gameplay: ResMut<GameplaySettings>,
     mut servers: ResMut<SavedServerList>,
     mut loaded: ResMut<SettingsLoaded>,
 ) {
@@ -185,6 +204,9 @@ pub fn load_settings(
         1.0
     };
     display.dirty = false;
+
+    gameplay.auto_open_nearby_npcs_panel = file.gameplay.auto_open_nearby_npcs_panel;
+    gameplay.dirty = false;
 }
 
 /// `Last`: write when `dirty`. Same shape as `persist_quickbar`.
@@ -192,14 +214,16 @@ pub fn persist_settings(
     runtime: Res<AppRuntime>,
     mut keybindings: ResMut<Keybindings>,
     mut display: ResMut<DisplaySettings>,
+    mut gameplay: ResMut<GameplaySettings>,
     mut servers: ResMut<SavedServerList>,
 ) {
-    if !keybindings.dirty && !display.dirty && !servers.dirty {
+    if !keybindings.dirty && !display.dirty && !gameplay.dirty && !servers.dirty {
         return;
     }
     let Some(path) = client_settings_path(*runtime) else {
         keybindings.dirty = false;
         display.dirty = false;
+        gameplay.dirty = false;
         servers.dirty = false;
         return;
     };
@@ -217,6 +241,9 @@ pub fn persist_settings(
             window_mode: display.window_mode,
             vsync: display.vsync,
             ui_scale: display.ui_scale,
+        },
+        gameplay: GameplayFile {
+            auto_open_nearby_npcs_panel: gameplay.auto_open_nearby_npcs_panel,
         },
         servers: ServersFile {
             saved: servers.saved.clone(),
@@ -237,6 +264,7 @@ pub fn persist_settings(
     }
     keybindings.dirty = false;
     display.dirty = false;
+    gameplay.dirty = false;
     servers.dirty = false;
 }
 
@@ -262,6 +290,7 @@ mod tests {
                 movement: Some(kb.movement.clone()),
             },
             display: DisplayFile::default(),
+            gameplay: GameplayFile::default(),
             servers: ServersFile {
                 saved: default_saved_servers(),
                 selected_addr: None,
@@ -325,6 +354,7 @@ mod tests {
         let file = SettingsFile {
             controls: ControlsFile::default(),
             display: DisplayFile::default(),
+            gameplay: GameplayFile::default(),
             servers: original,
         };
         let json = serde_json::to_string_pretty(&file).unwrap();

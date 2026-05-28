@@ -346,6 +346,8 @@ render:
                 state: None,
                 is_shopkeeper: false,
                 is_hidden: false,
+                is_hostile: false,
+                is_targeting_local_player: false,
             },
         );
 

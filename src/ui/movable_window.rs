@@ -53,8 +53,8 @@ pub enum MovableWindowId {
     /// Floating-mode backpack panel (4x4 inventory grid). Singleton.
     /// Spawned by `sync_backpack_panel_floating_lifecycle`.
     BackpackPanel,
-    /// Floating-mode current-target combat panel. Singleton.
-    CurrentTargetPanel,
+    /// Floating-mode Nearby NPCs panel. Singleton.
+    NearbyNpcsPanel,
     /// Floating-mode minimap panel. Singleton.
     MinimapPanel,
     /// Per-character Log window (quests + notes). Singleton, toggled by

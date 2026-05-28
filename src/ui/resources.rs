@@ -283,7 +283,7 @@ pub enum DockedPanelKind {
     Status,
     Equipment,
     Backpack,
-    CurrentTarget,
+    NearbyNpcs,
     Container {
         object_id: u64,
     },
@@ -353,7 +353,7 @@ singleton_mode_resource!(
     StatusPanelMode,
     EquipmentPanelMode,
     BackpackPanelMode,
-    CurrentTargetPanelMode,
+    NearbyNpcsPanelMode,
     MinimapPanelMode,
 );
 
@@ -396,7 +396,7 @@ impl DockedPanelState {
     pub const STATUS_PANEL_ID: usize = 0;
     pub const EQUIPMENT_PANEL_ID: usize = 1;
     pub const BACKPACK_PANEL_ID: usize = 2;
-    pub const CURRENT_TARGET_PANEL_ID: usize = 3;
+    pub const NEARBY_NPCS_PANEL_ID: usize = 3;
     pub const FIRST_CONTAINER_PANEL_ID: usize = 4;
     pub const MINIMAP_PANEL_ID: usize = 10;
     pub const MAX_OPEN_CONTAINERS: usize = 4;
@@ -409,11 +409,11 @@ impl DockedPanelState {
     pub const MIN_PANEL_HEIGHT: f32 = 84.0;
     pub const MAX_PANEL_HEIGHT: f32 = 480.0;
 
-    pub fn open_current_target(&mut self) {
+    pub fn open_nearby_npcs(&mut self) {
         let panel = DockedPanel {
-            id: Self::CURRENT_TARGET_PANEL_ID,
-            kind: DockedPanelKind::CurrentTarget,
-            title: "Current Target".to_owned(),
+            id: Self::NEARBY_NPCS_PANEL_ID,
+            kind: DockedPanelKind::NearbyNpcs,
+            title: "Nearby NPCs".to_owned(),
             height: Self::DEFAULT_TARGET_PANEL_HEIGHT,
             closable: true,
             resizable: true,
@@ -422,8 +422,8 @@ impl DockedPanelState {
         self.upsert_panel(panel);
     }
 
-    pub fn close_current_target(&mut self) {
-        self.close_panel(Self::CURRENT_TARGET_PANEL_ID);
+    pub fn close_nearby_npcs(&mut self) {
+        self.close_panel(Self::NEARBY_NPCS_PANEL_ID);
     }
 
     pub fn open(&mut self, object_id: u64) {
@@ -814,6 +814,7 @@ pub enum MenuAction {
     ToggleBackpack,
     ToggleEquipment,
     ToggleMinimap,
+    ToggleNearbyNpcs,
     ToggleLog,
     OpenSettings,
     Logout,

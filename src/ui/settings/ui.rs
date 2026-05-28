@@ -15,6 +15,7 @@ use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton};
 use crate::ui::theme::{Palette, UiThemeAssets};
 
 use super::display::{DisplayOption, DisplaySettings};
+use super::gameplay::{GameplayOption, GameplaySettings};
 use super::keycode_serde::is_modifier_key;
 use super::model::{all_actions, Action, Binding, Keybindings, Modifiers, MovementDir};
 
@@ -26,15 +27,17 @@ pub enum SettingsSection {
     #[default]
     Controls,
     Display,
+    Gameplay,
 }
 
 impl SettingsSection {
-    const ALL: [SettingsSection; 2] = [Self::Controls, Self::Display];
+    const ALL: [SettingsSection; 3] = [Self::Controls, Self::Display, Self::Gameplay];
 
     fn label(self) -> &'static str {
         match self {
             Self::Controls => "Controls",
             Self::Display => "Display",
+            Self::Gameplay => "Gameplay",
         }
     }
 }
@@ -95,6 +98,13 @@ pub struct OptionRowButton(DisplayOption);
 
 #[derive(Component, Clone, Copy)]
 pub struct OptionRowLabel(DisplayOption);
+
+/// A Gameplay-section row whose button cycles one [`GameplayOption`].
+#[derive(Component, Clone, Copy)]
+pub struct GameplayOptionRowButton(GameplayOption);
+
+#[derive(Component, Clone, Copy)]
+pub struct GameplayOptionRowLabel(GameplayOption);
 
 #[derive(Component, Clone, Copy)]
 pub struct BindingRowButton {
@@ -266,6 +276,26 @@ pub fn spawn_settings_overlay(
                                 );
                             }
                         });
+
+                        // Gameplay section (hidden until its tab is selected).
+                        list.spawn((
+                            SectionContent(SettingsSection::Gameplay),
+                            Node {
+                                width: percent(100.0),
+                                flex_direction: FlexDirection::Column,
+                                row_gap: px(4.0),
+                                display: Display::None,
+                                ..default()
+                            },
+                        ))
+                        .with_children(|sec| {
+                            spawn_section_header(sec, &palette, "Gameplay");
+                            for opt in GameplayOption::ALL {
+                                spawn_gameplay_option_row(
+                                    sec, &theme, &palette, opt, btn_bg, btn_border, btn_text,
+                                );
+                            }
+                        });
                     });
 
                 // Sticky footer (outside the scroll area).
@@ -384,6 +414,71 @@ fn spawn_option_row(
             .with_children(|button| {
                 button.spawn((
                     OptionRowLabel(opt),
+                    Text::new(""),
+                    TextFont {
+                        font_size: 14.0,
+                        ..default()
+                    },
+                    TextColor(btn_text),
+                ));
+            });
+        });
+}
+
+#[allow(clippy::too_many_arguments)]
+fn spawn_gameplay_option_row(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+    opt: GameplayOption,
+    btn_bg: Color,
+    btn_border: Color,
+    btn_text: Color,
+) {
+    parent
+        .spawn((Node {
+            width: percent(100.0),
+            flex_direction: FlexDirection::Row,
+            justify_content: JustifyContent::SpaceBetween,
+            align_items: AlignItems::Center,
+            column_gap: px(12.0),
+            padding: UiRect::axes(px(8.0), px(4.0)),
+            ..default()
+        },))
+        .with_children(|row| {
+            row.spawn((
+                Text::new(opt.label()),
+                TextFont {
+                    font_size: 15.0,
+                    ..default()
+                },
+                TextColor(palette.text_primary),
+                Node {
+                    flex_grow: 1.0,
+                    ..default()
+                },
+            ));
+            row.spawn((
+                Button,
+                ThemedButton::new(ButtonStyle::Secondary),
+                GameplayOptionRowButton(opt),
+                Node {
+                    width: px(190.0),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    padding: UiRect::axes(px(10.0), px(6.0)),
+                    border: UiRect::all(px(1.0)),
+                    ..default()
+                },
+                ImageNode::new(theme.button_frame.clone())
+                    .with_mode(theme.button_image_mode())
+                    .with_color(btn_bg),
+                BackgroundColor(Color::NONE),
+                BorderColor::all(btn_border),
+            ))
+            .with_children(|button| {
+                button.spawn((
+                    GameplayOptionRowLabel(opt),
                     Text::new(""),
                     TextFont {
                         font_size: 14.0,
@@ -735,6 +830,31 @@ pub fn handle_option_row_clicks(
     for (interaction, button) in &buttons {
         if *interaction == Interaction::Pressed {
             button.0.cycle(&mut display);
+        }
+    }
+}
+
+/// Repaint each Gameplay-section row button with its option's current value.
+pub fn sync_gameplay_option_row_labels(
+    gameplay: Res<GameplaySettings>,
+    mut labels: Query<(&GameplayOptionRowLabel, &mut Text)>,
+) {
+    for (label, mut text) in &mut labels {
+        let desired = label.0.value_label(&gameplay);
+        if text.0 != desired {
+            text.0 = desired;
+        }
+    }
+}
+
+/// Click a Gameplay row → advance that option to its next value.
+pub fn handle_gameplay_option_row_clicks(
+    mut gameplay: ResMut<GameplaySettings>,
+    buttons: Query<(&Interaction, &GameplayOptionRowButton), Changed<Interaction>>,
+) {
+    for (interaction, button) in &buttons {
+        if *interaction == Interaction::Pressed {
+            button.0.cycle(&mut gameplay);
         }
     }
 }

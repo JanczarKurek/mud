@@ -3,6 +3,7 @@
 //! approved plan for the design rationale.
 
 pub mod display;
+pub mod gameplay;
 pub mod keycode_serde;
 pub mod model;
 pub mod persistence;
@@ -11,6 +12,7 @@ pub mod ui;
 use bevy::prelude::*;
 
 pub use display::DisplaySettings;
+pub use gameplay::GameplaySettings;
 pub use model::{Action, Keybindings};
 pub use ui::SettingsUiState;
 
@@ -19,11 +21,12 @@ pub use persistence::{SavedServerEntry, SavedServerList};
 use display::apply_display_settings;
 use persistence::{load_settings, persist_settings, SettingsLoaded};
 use ui::{
-    capture_keybind, handle_binding_row_clicks, handle_option_row_clicks,
-    handle_settings_close_button, handle_settings_reset_button, handle_settings_scroll,
-    handle_tab_clicks, is_capturing, is_open, spawn_settings_overlay,
-    swallow_input_while_settings_open, sync_binding_row_labels, sync_option_row_labels,
-    sync_section_visibility, sync_settings_overlay_visibility, SettingsCaptureSet,
+    capture_keybind, handle_binding_row_clicks, handle_gameplay_option_row_clicks,
+    handle_option_row_clicks, handle_settings_close_button, handle_settings_reset_button,
+    handle_settings_scroll, handle_tab_clicks, is_capturing, is_open, spawn_settings_overlay,
+    swallow_input_while_settings_open, sync_binding_row_labels, sync_gameplay_option_row_labels,
+    sync_option_row_labels, sync_section_visibility, sync_settings_overlay_visibility,
+    SettingsCaptureSet,
 };
 
 pub struct SettingsPlugin;
@@ -32,6 +35,7 @@ impl Plugin for SettingsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Keybindings>()
             .init_resource::<DisplaySettings>()
+            .init_resource::<GameplaySettings>()
             .init_resource::<SettingsUiState>()
             .init_resource::<SettingsLoaded>()
             .init_resource::<SavedServerList>()
@@ -63,6 +67,8 @@ impl Plugin for SettingsPlugin {
                     sync_section_visibility,
                     sync_option_row_labels,
                     handle_option_row_clicks,
+                    sync_gameplay_option_row_labels,
+                    handle_gameplay_option_row_clicks,
                     apply_display_settings,
                 ),
             )

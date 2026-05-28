@@ -43,6 +43,7 @@ const MENU_DEFINITIONS: &[MenuDefinition] = &[
             ("Inventory", MenuAction::ToggleBackpack),
             ("Character", MenuAction::ToggleStatus),
             ("Equipment", MenuAction::ToggleEquipment),
+            ("Nearby NPCs", MenuAction::ToggleNearbyNpcs),
             ("Log  (L)", MenuAction::ToggleLog),
         ],
     },
@@ -295,6 +296,9 @@ pub fn apply_menu_actions(
             }
             MenuAction::ToggleMinimap => {
                 toggle_panel::<crate::ui::minimap_panel::MinimapPanel>(&mut panel_state);
+            }
+            MenuAction::ToggleNearbyNpcs => {
+                toggle_panel::<crate::ui::nearby_npcs_panel::NearbyNpcsPanel>(&mut panel_state);
             }
             MenuAction::ToggleLog => {
                 crate::ui::log_panel::toggle_log_window(
