@@ -26,6 +26,26 @@ impl ViewScrollOffset {
     }
 }
 
+/// Signed residual lerping the *visual* player_z back to the authoritative
+/// player_z after a floor change. Right after the player steps from `z=0` to
+/// `z=2`, `residual_z = -2.0` so `floor_screen_offset` is fed the old player_z
+/// and every entity still draws at its old perspective. As `residual_z` decays
+/// to zero, the world's perspective slides to the new floor.
+#[derive(Resource, Default, Clone, Debug)]
+pub struct FloorTransitionOffset {
+    pub residual_z: f32,
+    pub elapsed: f32,
+    pub duration: f32,
+}
+
+impl FloorTransitionOffset {
+    /// Visual player_z to feed `floor_screen_offset`, given the authoritative
+    /// integer player_z from `VisibleFloorRange`.
+    pub fn visual_player_z(&self, authoritative_player_z: i32) -> f32 {
+        authoritative_player_z as f32 + self.residual_z
+    }
+}
+
 use crate::player::components::PlayerId;
 use crate::world::components::SpaceId;
 use crate::world::map_layout::{SpaceLightingDef, SpacePermanence};

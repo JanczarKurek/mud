@@ -4,7 +4,7 @@ use crate::game::resources::ClientGameState;
 use crate::player::components::Player;
 use crate::world::components::{ClientProjectedWorldObject, TilePosition};
 use crate::world::object_definitions::{AnimationSheetDef, OverworldObjectDefinitions};
-use crate::world::resources::ViewScrollOffset;
+use crate::world::resources::{FloorTransitionOffset, ViewScrollOffset};
 use crate::world::WorldConfig;
 
 // ── Components ────────────────────────────────────────────────────────────────
@@ -320,6 +320,19 @@ pub fn tick_view_scroll(time: Res<Time>, mut offset: ResMut<ViewScrollOffset>) {
     }
 }
 
+/// Advances the local player's floor-transition residual toward zero.
+pub fn tick_floor_transition(time: Res<Time>, mut offset: ResMut<FloorTransitionOffset>) {
+    if offset.duration <= 0.0 || offset.residual_z == 0.0 {
+        return;
+    }
+    offset.elapsed += time.delta_secs();
+    let decay = time.delta_secs() / offset.duration;
+    offset.residual_z *= 1.0 - decay.min(1.0);
+    if offset.elapsed >= offset.duration || offset.residual_z.abs() < 0.01 {
+        offset.residual_z = 0.0;
+    }
+}
+
 /// Advances per-entity visual offsets toward zero.
 pub fn tick_visual_offsets(
     time: Res<Time>,
@@ -341,11 +354,13 @@ pub fn tick_visual_offsets(
 }
 
 /// Detects when the local player tile position changes and triggers smooth
-/// viewport scrolling + the player walk animation. Runs purely client-side.
+/// viewport scrolling, smooth floor-perspective transitions, and the player
+/// walk animation. Runs purely client-side.
 pub fn detect_player_movement(
     client_state: Res<ClientGameState>,
     world_config: Res<WorldConfig>,
     mut view_scroll: ResMut<ViewScrollOffset>,
+    mut floor_transition: ResMut<FloorTransitionOffset>,
     mut commands: Commands,
     player_query: Query<Entity, With<Player>>,
     mut last_tile: Local<Option<TilePosition>>,
@@ -358,9 +373,9 @@ pub fn detect_player_movement(
         let dx = new_tile.x - old_tile.x;
         let dy = new_tile.y - old_tile.y;
         let dz = new_tile.z - old_tile.z;
-        // Only animate single-tile steps; skip teleports (portal jumps) and
-        // floor transitions (stairs), which shouldn't play the walk clip.
-        if dz == 0 && (dx != 0 || dy != 0) && dx.abs() <= 1 && dy.abs() <= 1 {
+        // Animate single-tile xy steps; skip xy teleports (portal jumps).
+        let xy_step = (dx != 0 || dy != 0) && dx.abs() <= 1 && dy.abs() <= 1;
+        if xy_step {
             view_scroll.current = Vec2::new(
                 dx as f32 * world_config.tile_size,
                 dy as f32 * world_config.tile_size,
@@ -371,6 +386,14 @@ pub fn detect_player_movement(
             if let Ok(entity) = player_query.single() {
                 commands.entity(entity).insert(JustMoved { dx, dy });
             }
+        }
+        // Smooth the floor-perspective shift on any z change (stair-climb,
+        // half-block stack step). The visual player_z lags behind by `-dz`
+        // and decays back to 0 over the same duration as an xy step.
+        if dz != 0 && dz.abs() <= 4 {
+            floor_transition.residual_z = -dz as f32;
+            floor_transition.elapsed = 0.0;
+            floor_transition.duration = 0.18;
         }
     }
 

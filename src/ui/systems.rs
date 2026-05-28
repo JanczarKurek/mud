@@ -3742,8 +3742,8 @@ fn cursor_to_ground_tile(
     let window_center = Vec2::new(window.width() * 0.5, window.height() * 0.5);
     let cursor_offset = cursor_position - window_center;
     let floor_offset = crate::world::systems::floor_screen_offset(
-        0,
-        player_position.z,
+        0.0,
+        player_position.z as f32,
         world_config.tile_size,
     );
     let tile_offset_x =
@@ -3779,8 +3779,8 @@ fn cursor_hits_tile(
     let cursor_dx = cursor_offset.x;
     let cursor_dy = -cursor_offset.y;
     let floor_offset = crate::world::systems::floor_screen_offset(
-        tile_z,
-        player_position.z,
+        tile_z as f32,
+        player_position.z as f32,
         world_config.tile_size,
     );
     let tile_dx = (tile_x - player_position.x) as f32 * world_config.tile_size + floor_offset.x;

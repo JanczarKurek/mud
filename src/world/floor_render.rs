@@ -13,6 +13,7 @@ use crate::world::floor_definitions::{
 use crate::world::floor_map::FloorMap;
 use crate::world::floors::{IndoorTileMap, VisibleFloorRange};
 use crate::world::lighting::srgb_u8_to_linear;
+use crate::world::resources::FloorTransitionOffset;
 use crate::world::systems::{flat_floor_z, floor_screen_offset};
 use crate::world::WorldConfig;
 
@@ -623,6 +624,7 @@ pub fn sync_floor_render_transforms(
     client_state: Res<ClientGameState>,
     world_config: Res<WorldConfig>,
     visible_floors: Res<VisibleFloorRange>,
+    floor_transition: Res<FloorTransitionOffset>,
     indoor: Res<IndoorTileMap>,
     mut query: Query<(&FloorRenderCell, &mut Transform, &mut Sprite)>,
 ) {
@@ -655,8 +657,11 @@ pub fn sync_floor_render_transforms(
         // `cell.z` is an integer floor index; convert to half-block z so the
         // shared `floor_screen_offset` (which is fractional in half-block z)
         // produces the correct shift relative to the player's half-block z.
-        let floor_offset =
-            floor_screen_offset(cell.z * 2, visible_floors.player_z, world_config.tile_size);
+        let floor_offset = floor_screen_offset(
+            (cell.z * 2) as f32,
+            floor_transition.visual_player_z(visible_floors.player_z),
+            world_config.tile_size,
+        );
         let dx =
             (cell.rx as f32 - 0.5 + cell.local_offset.x) * world_config.tile_size + floor_offset.x;
         let dy =

@@ -36,7 +36,8 @@ use crate::game::projection::apply_game_events_to_client_state;
 use crate::magic::resources::SpellDefinitions;
 use crate::world::animation::{
     advance_animation_timers, attach_animated_sprite, cleanup_just_moved, detect_player_movement,
-    return_to_idle_animation, tick_view_scroll, tick_visual_offsets, trigger_movement_animation,
+    return_to_idle_animation, tick_floor_transition, tick_view_scroll, tick_visual_offsets,
+    trigger_movement_animation,
 };
 use crate::world::attached::sync_attached_object_visuals;
 use crate::world::camera::camera_follow;
@@ -62,7 +63,8 @@ use crate::world::map_layout::SpaceDefinitions;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::resources::{
-    ClientRemotePlayerProjectionState, ClientWorldProjectionState, SpaceManager, ViewScrollOffset,
+    ClientRemotePlayerProjectionState, ClientWorldProjectionState, FloorTransitionOffset,
+    SpaceManager, ViewScrollOffset,
 };
 use crate::world::setup::{initialize_runtime_spaces, WorldStartupSet};
 use crate::world::step_triggers::{
@@ -202,6 +204,7 @@ impl Plugin for WorldClientPlugin {
             .insert_resource(ClientWorldProjectionState::default())
             .insert_resource(ClientRemotePlayerProjectionState::default())
             .insert_resource(ViewScrollOffset::default())
+            .insert_resource(FloorTransitionOffset::default())
             .insert_resource(VisibleFloorRange::default())
             .insert_resource(IndoorTileMap::default())
             .add_plugins(bevy::sprite_render::Material2dPlugin::<
@@ -260,6 +263,7 @@ impl Plugin for WorldClientPlugin {
                     return_to_idle_animation.after(trigger_movement_animation),
                     cleanup_just_moved.after(return_to_idle_animation),
                     tick_view_scroll,
+                    tick_floor_transition,
                     tick_visual_offsets,
                     camera_follow
                         .after(tick_view_scroll)

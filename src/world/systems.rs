@@ -15,7 +15,8 @@ use crate::world::floors::{
 use crate::world::lighting::srgb_u8_to_linear;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::resources::{
-    ClientRemotePlayerProjectionState, ClientWorldProjectionState, SpaceManager,
+    ClientRemotePlayerProjectionState, ClientWorldProjectionState, FloorTransitionOffset,
+    SpaceManager,
 };
 use crate::world::setup::{spawn_client_projected_world_object, spawn_client_remote_player};
 use crate::world::WorldConfig;
@@ -29,6 +30,8 @@ pub fn sync_client_world_projection(
     definitions: Res<OverworldObjectDefinitions>,
     mut world_config: ResMut<WorldConfig>,
     mut projection_state: ResMut<ClientWorldProjectionState>,
+    visible_floors: Res<VisibleFloorRange>,
+    floor_transition: Res<FloorTransitionOffset>,
     mut last_had_space: Local<bool>,
     mut projected_query: Query<(
         Entity,
@@ -146,20 +149,26 @@ pub fn sync_client_world_projection(
         view.space_id = object.position.space_id;
         let old_tile = view.tile;
         view.tile = object.position.tile_position;
-        if old_tile != view.tile && old_tile.z == view.tile.z {
+        if old_tile != view.tile {
             let dx = view.tile.x - old_tile.x;
             let dy = view.tile.y - old_tile.y;
-            commands.entity(query_entity).insert((
-                JustMoved { dx, dy },
-                VisualOffset {
-                    current: Vec2::new(
-                        -dx as f32 * world_config.tile_size,
-                        -dy as f32 * world_config.tile_size,
-                    ),
-                    elapsed: 0.0,
-                    duration: 0.18,
-                },
-            ));
+            let player_z_f = floor_transition.visual_player_z(visible_floors.player_z);
+            let tile_size = world_config.tile_size;
+            let tile_delta = Vec2::new(-dx as f32 * tile_size, -dy as f32 * tile_size);
+            let floor_delta = floor_screen_offset(old_tile.z as f32, player_z_f, tile_size)
+                - floor_screen_offset(view.tile.z as f32, player_z_f, tile_size);
+            let visual_offset = VisualOffset {
+                current: tile_delta + floor_delta,
+                elapsed: 0.0,
+                duration: 0.18,
+            };
+            if dx != 0 || dy != 0 {
+                commands
+                    .entity(query_entity)
+                    .insert((JustMoved { dx, dy }, visual_offset));
+            } else {
+                commands.entity(query_entity).insert(visual_offset);
+            }
         }
         if let Some(vitals) = object.vitals {
             displayed_vitals.health = vitals.health;
@@ -203,6 +212,8 @@ pub fn sync_remote_player_projection(
     definitions: Res<OverworldObjectDefinitions>,
     world_config: Res<WorldConfig>,
     mut projection_state: ResMut<ClientRemotePlayerProjectionState>,
+    visible_floors: Res<VisibleFloorRange>,
+    floor_transition: Res<FloorTransitionOffset>,
     mut projected_query: Query<(
         Entity,
         &ClientRemotePlayerVisual,
@@ -276,21 +287,41 @@ pub fn sync_remote_player_projection(
         view.space_id = remote_player.position.space_id;
         let old_tile = view.tile;
         view.tile = remote_player.position.tile_position;
-        if old_tile != view.tile && old_tile.z == view.tile.z {
+        if old_tile != view.tile {
             let dx = view.tile.x - old_tile.x;
             let dy = view.tile.y - old_tile.y;
-            if dx.abs() <= 1 && dy.abs() <= 1 {
-                commands.entity(query_entity).insert((
-                    JustMoved { dx, dy },
-                    VisualOffset {
-                        current: Vec2::new(
-                            -dx as f32 * world_config.tile_size,
-                            -dy as f32 * world_config.tile_size,
-                        ),
-                        elapsed: 0.0,
-                        duration: 0.18,
-                    },
-                ));
+            let dz = view.tile.z - old_tile.z;
+            // Skip teleport-class xy jumps (keep the existing single-tile gate
+            // for xy) but always smooth z changes.
+            let xy_step_animatable =
+                (dx != 0 || dy != 0) && dx.abs() <= 1 && dy.abs() <= 1;
+            let z_smoothable = dz != 0 && dz.abs() <= 4;
+            if xy_step_animatable || z_smoothable {
+                let player_z_f = floor_transition.visual_player_z(visible_floors.player_z);
+                let tile_size = world_config.tile_size;
+                let tile_delta = if xy_step_animatable {
+                    Vec2::new(-dx as f32 * tile_size, -dy as f32 * tile_size)
+                } else {
+                    Vec2::ZERO
+                };
+                let floor_delta = if z_smoothable {
+                    floor_screen_offset(old_tile.z as f32, player_z_f, tile_size)
+                        - floor_screen_offset(view.tile.z as f32, player_z_f, tile_size)
+                } else {
+                    Vec2::ZERO
+                };
+                let visual_offset = VisualOffset {
+                    current: tile_delta + floor_delta,
+                    elapsed: 0.0,
+                    duration: 0.18,
+                };
+                if xy_step_animatable {
+                    commands
+                        .entity(query_entity)
+                        .insert((JustMoved { dx, dy }, visual_offset));
+                } else {
+                    commands.entity(query_entity).insert(visual_offset);
+                }
             }
         }
         displayed_vitals.health = remote_player.vitals.health;
@@ -354,9 +385,9 @@ pub const WALL_INSIDE_ALPHA: f32 = 0.15;
 ///
 /// Floor cells live at integer floors; callers pass `cell_floor * 2` as
 /// `view_z`. Object sprites pass their `tile.z` directly.
-pub fn floor_screen_offset(view_z: i32, player_z: i32, tile_size: f32) -> Vec2 {
+pub fn floor_screen_offset(view_z: f32, player_z: f32, tile_size: f32) -> Vec2 {
     // Half-block step = half a floor.
-    let d = (view_z - player_z) as f32 * 0.5;
+    let d = (view_z - player_z) * 0.5;
     Vec2::new(
         d * FLOOR_SHIFT_X_TILES * tile_size,
         d * FLOOR_SHIFT_Y_TILES * tile_size,
@@ -390,6 +421,7 @@ pub fn sync_tile_transforms(
     client_state: Res<ClientGameState>,
     world_config: Res<WorldConfig>,
     visible_floors: Res<VisibleFloorRange>,
+    floor_transition: Res<FloorTransitionOffset>,
     definitions: Res<OverworldObjectDefinitions>,
     indoor: Res<IndoorTileMap>,
     mut query: Query<
@@ -468,9 +500,12 @@ pub fn sync_tile_transforms(
         // Single offset source: each half-block of z = half a floor of
         // perspective shift. This produces both cross-floor (full-block) and
         // intra-floor (half-block stack) diagonal shifts from one formula.
+        // `player_z` is the *visual* player_z (lerps to authoritative over
+        // the floor-transition duration) so the whole scene smoothly shifts
+        // when the local player changes floor.
         let floor_offset = floor_screen_offset(
-            view.tile.z,
-            visible_floors.player_z,
+            view.tile.z as f32,
+            floor_transition.visual_player_z(visible_floors.player_z),
             world_config.tile_size,
         );
 
@@ -679,14 +714,14 @@ mod tests {
     fn floor_screen_offset_zero_at_player_z() {
         // A sprite at the same z as the player has no offset — Tibia view
         // pivots around the player.
-        let offset = floor_screen_offset(4, 4, 48.0);
+        let offset = floor_screen_offset(4.0, 4.0, 48.0);
         assert_eq!(offset, Vec2::ZERO);
     }
 
     #[test]
     fn floor_screen_offset_full_floor_above_is_full_shift() {
         // Two half-blocks above the player = one full floor → half a tile up-LEFT.
-        let offset = floor_screen_offset(6, 4, 48.0);
+        let offset = floor_screen_offset(6.0, 4.0, 48.0);
         assert_eq!(offset.x, -24.0);
         assert_eq!(offset.y, 24.0);
     }
@@ -694,7 +729,7 @@ mod tests {
     #[test]
     fn floor_screen_offset_full_floor_below_is_full_shift() {
         // Two half-blocks below the player → half a tile down-right.
-        let offset = floor_screen_offset(2, 4, 48.0);
+        let offset = floor_screen_offset(2.0, 4.0, 48.0);
         assert_eq!(offset.x, 24.0);
         assert_eq!(offset.y, -24.0);
     }
@@ -702,7 +737,7 @@ mod tests {
     #[test]
     fn floor_screen_offset_half_block_is_half_shift() {
         // One half-block above the player = half a floor → quarter-tile shift.
-        let offset = floor_screen_offset(5, 4, 48.0);
+        let offset = floor_screen_offset(5.0, 4.0, 48.0);
         assert_eq!(offset.x, -12.0);
         assert_eq!(offset.y, 12.0);
     }

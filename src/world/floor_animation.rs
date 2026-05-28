@@ -20,6 +20,7 @@ use crate::world::animation::AnimatedSprite;
 use crate::world::components::SpaceId;
 use crate::world::floor_definitions::{FloorRippleDef, FloorTilesetDefinitions, FloorTypeId};
 use crate::world::floors::VisibleFloorRange;
+use crate::world::resources::FloorTransitionOffset;
 use crate::world::systems::{flat_floor_z, floor_screen_offset};
 use crate::world::WorldConfig;
 
@@ -160,6 +161,7 @@ pub fn tick_floor_ripple_scheduler(
     client_state: Res<ClientGameState>,
     floor_defs: Res<FloorTilesetDefinitions>,
     visible_floors: Res<VisibleFloorRange>,
+    floor_transition: Res<FloorTransitionOffset>,
     world_config: Res<WorldConfig>,
     mut scheduler: ResMut<FloorRippleScheduler>,
     mut atlases: ResMut<FloorRippleAtlases>,
@@ -225,8 +227,11 @@ pub fn tick_floor_ripple_scheduler(
     // frame so camera scroll / player-floor changes keep the ripple anchored.
     // `floor_z` is an integer floor index → convert to half-block z (`* 2`)
     // for the fractional `floor_screen_offset`.
-    let floor_offset =
-        floor_screen_offset(floor_z * 2, visible_floors.player_z, world_config.tile_size);
+    let floor_offset = floor_screen_offset(
+        (floor_z * 2) as f32,
+        floor_transition.visual_player_z(visible_floors.player_z),
+        world_config.tile_size,
+    );
     let dx = tile_x as f32 * world_config.tile_size + floor_offset.x;
     let dy = tile_y as f32 * world_config.tile_size + floor_offset.y;
     let z = flat_floor_z(ripple.z_offset, floor_z);
@@ -259,6 +264,7 @@ pub fn sync_ripple_overlay_transforms(
     client_state: Res<ClientGameState>,
     world_config: Res<WorldConfig>,
     visible_floors: Res<VisibleFloorRange>,
+    floor_transition: Res<FloorTransitionOffset>,
     mut query: Query<(&RippleOverlay, &mut Transform)>,
 ) {
     let Some(player_position) = client_state.player_position else {
@@ -273,8 +279,8 @@ pub fn sync_ripple_overlay_transforms(
             -10_000.0
         };
         let floor_offset = floor_screen_offset(
-            overlay.floor_z * 2,
-            visible_floors.player_z,
+            (overlay.floor_z * 2) as f32,
+            floor_transition.visual_player_z(visible_floors.player_z),
             world_config.tile_size,
         );
         let dx = overlay.tile_x as f32 * world_config.tile_size + floor_offset.x;
