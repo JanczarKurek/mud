@@ -157,8 +157,14 @@ pub fn passive_perception_tick(
     }
 }
 
+/// Matches `inspect_distance_tiles` in `game/systems.rs`: Chebyshev with
+/// elevation counted at half weight. `z` is in half-block units, so dividing
+/// by 2 gives one tile of distance per floor of vertical separation.
 fn chebyshev_distance(a: TilePosition, b: TilePosition) -> i32 {
-    (a.x - b.x).abs().max((a.y - b.y).abs())
+    let dx = (a.x - b.x).abs();
+    let dy = (a.y - b.y).abs();
+    let dz = (a.z - b.z).abs() / 2;
+    dx.max(dy).max(dz)
 }
 
 #[cfg(test)]

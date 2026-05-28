@@ -1258,7 +1258,7 @@ fn handle_inspect(
             .and_then(|def| def.inspect_range)
             .unwrap_or(DEFAULT_INSPECT_RANGE);
         let effective_range = (base + focus / FOCUS_TILES_PER_POINT).max(1);
-        chebyshev_distance_tiles(player_position, target_tile) > effective_range
+        inspect_distance_tiles(player_position, target_tile) > effective_range
     } else {
         false
     };
@@ -4394,6 +4394,17 @@ fn chebyshev_distance_tiles(a: TilePosition, b: TilePosition) -> i32 {
         return i32::MAX;
     }
     (a.x - b.x).abs().max((a.y - b.y).abs())
+}
+
+/// Distance metric for inspect/perception: like Chebyshev but with elevation
+/// counted at half weight. `z` is in half-block units (see `TilePosition`),
+/// so dividing by 2 means one floor of vertical separation counts as one
+/// tile of horizontal distance, and same-floor inspects ignore z entirely.
+fn inspect_distance_tiles(a: TilePosition, b: TilePosition) -> i32 {
+    let dx = (a.x - b.x).abs();
+    let dy = (a.y - b.y).abs();
+    let dz = (a.z - b.z).abs() / 2;
+    dx.max(dy).max(dz)
 }
 
 /// Central walkability check for player moves (and, later, teleport targets).
