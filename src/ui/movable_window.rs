@@ -17,6 +17,7 @@ use bevy::window::PrimaryWindow;
 
 use crate::app::state::ClientAppState;
 use crate::ui::components::ItemSlotKind;
+use crate::ui::systems::cursor_to_val_px;
 use crate::ui::theme::{Palette, UiThemeAssets};
 
 /// Stable identity for a movable window. Used to dedupe re-opens — if a
@@ -347,6 +348,7 @@ pub fn spawn_movable_window_close_button(
 fn handle_movable_window_resize(
     mouse_input: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
+    ui_scale: Res<UiScale>,
     mut resize: ResMut<MovableWindowResize>,
     mut drag: ResMut<MovableWindowDrag>,
     handle_query: Query<(
@@ -360,12 +362,16 @@ fn handle_movable_window_resize(
     let Ok(window) = window_query.single() else {
         return;
     };
-    let Some(cursor) = window.cursor_position() else {
+    let Some(cursor_logical) = window.cursor_position() else {
         if resize.active.is_some() {
             resize.active = None;
         }
         return;
     };
+    // `cursor_logical` (logical px) is the right input for `point_in_node`
+    // (which scales up internally). `cursor` lives in `Val::Px`-space, so it
+    // can be diff'd against `val_to_px(node.left)` and written back via `px()`.
+    let cursor = cursor_to_val_px(cursor_logical, &ui_scale);
 
     if !mouse_input.pressed(MouseButton::Left) {
         if resize.active.is_some() {
@@ -376,7 +382,7 @@ fn handle_movable_window_resize(
 
     if mouse_input.just_pressed(MouseButton::Left) && resize.active.is_none() {
         for (handle, computed, transform) in &handle_query {
-            if point_in_node(cursor, computed, transform) {
+            if point_in_node(cursor_logical, computed, transform) {
                 resize.active = Some(handle.owner);
                 drag.focused = Some(handle.owner);
                 break;
@@ -409,6 +415,7 @@ fn handle_movable_window_resize(
 fn handle_movable_window_drag(
     mouse_input: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
+    ui_scale: Res<UiScale>,
     resize: Res<MovableWindowResize>,
     mut drag: ResMut<MovableWindowDrag>,
     title_query: Query<(&MovableWindowTitleBar, &ComputedNode, &UiGlobalTransform)>,
@@ -429,12 +436,16 @@ fn handle_movable_window_drag(
     let Ok(window) = window_query.single() else {
         return;
     };
-    let Some(cursor) = window.cursor_position() else {
+    let Some(cursor_logical) = window.cursor_position() else {
         if drag.dragging.is_some() {
             drag.dragging = None;
         }
         return;
     };
+    // `cursor_logical` (logical px) feeds `point_in_node`, which scales up
+    // internally. `cursor` lives in `Val::Px`-space and is what we can mix
+    // with `val_to_px(node.left)` and write back via `px()`.
+    let cursor = cursor_to_val_px(cursor_logical, &ui_scale);
 
     if !mouse_input.pressed(MouseButton::Left) {
         if drag.dragging.is_some() {
@@ -448,7 +459,7 @@ fn handle_movable_window_drag(
         // don't also focus / drag-start from it.
         let on_resize_handle = handle_query
             .iter()
-            .any(|(node, transform)| point_in_node(cursor, node, transform));
+            .any(|(node, transform)| point_in_node(cursor_logical, node, transform));
         if on_resize_handle {
             return;
         }
@@ -458,11 +469,11 @@ fn handle_movable_window_drag(
         // Interaction-driven system.
         let on_button = button_query.iter().any(|(node, transform, visibility)| {
             visibility.is_none_or(|v| *v != Visibility::Hidden)
-                && point_in_node(cursor, node, transform)
+                && point_in_node(cursor_logical, node, transform)
         });
         if !on_button {
             for (bar, computed, transform) in &title_query {
-                if point_in_node(cursor, computed, transform) {
+                if point_in_node(cursor_logical, computed, transform) {
                     let position = match node_query.get(bar.owner) {
                         Ok(node) => Vec2::new(val_to_px(node.left), val_to_px(node.top)),
                         Err(_) => continue,
@@ -478,7 +489,7 @@ fn handle_movable_window_drag(
         // for a small set of windows that's an acceptable tie-breaker.
         let mut best: Option<Entity> = None;
         for (entity, computed, transform) in &window_box_query {
-            if point_in_node(cursor, computed, transform) {
+            if point_in_node(cursor_logical, computed, transform) {
                 best = Some(entity);
             }
         }

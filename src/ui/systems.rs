@@ -1120,6 +1120,7 @@ fn classify_chat_line(line: &str) -> bevy_terminal::LineStyle {
 
 pub fn sync_context_menu_root(
     context_menu_state: Res<ContextMenuState>,
+    ui_scale: Res<UiScale>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     mut root_query: Query<(&mut Node, &mut Visibility, &ComputedNode), With<ContextMenuRoot>>,
 ) {
@@ -1136,14 +1137,19 @@ pub fn sync_context_menu_root(
         Visibility::Hidden
     };
 
-    let menu_size = computed_node.size();
+    // `computed_node.size()` is physical pixels; `window.width()/height()` and
+    // `context_menu_state.position` are cursor-logical pixels. Bring the menu
+    // size into the same space before clamping.
+    let menu_size = computed_node.size() * computed_node.inverse_scale_factor();
     let max_left = (window.width() - menu_size.x).max(0.0);
     let max_top = (window.height() - menu_size.y).max(0.0);
-    let clamped_left = context_menu_state.position.x.clamp(0.0, max_left);
-    let clamped_top = context_menu_state.position.y.clamp(0.0, max_top);
-
-    root_node.left = px(clamped_left);
-    root_node.top = px(clamped_top);
+    let clamped = Vec2::new(
+        context_menu_state.position.x.clamp(0.0, max_left),
+        context_menu_state.position.y.clamp(0.0, max_top),
+    );
+    let anchor = cursor_to_val_px(clamped, &ui_scale);
+    root_node.left = px(anchor.x);
+    root_node.top = px(anchor.y);
 }
 
 pub fn sync_context_menu_open_button(
@@ -2990,6 +2996,7 @@ pub fn sync_drag_preview(
     definitions: Res<OverworldObjectDefinitions>,
     spell_definitions: Res<SpellDefinitions>,
     asset_server: Res<AssetServer>,
+    ui_scale: Res<UiScale>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     mut preview_query: Query<(&mut Node, &mut Visibility), With<DragPreviewRoot>>,
     mut label_query: Query<
@@ -3092,8 +3099,9 @@ pub fn sync_drag_preview(
     };
 
     *root_visibility = Visibility::Visible;
-    preview_node.left = px(cursor_position.x + 14.0);
-    preview_node.top = px(cursor_position.y + 14.0);
+    let anchor = cursor_to_val_px(cursor_position, &ui_scale);
+    preview_node.left = px(anchor.x + 14.0);
+    preview_node.top = px(anchor.y + 14.0);
     label.0 = label_text;
 
     if let Some(sprite_path) = sprite_path {
@@ -3118,6 +3126,7 @@ pub fn sync_item_tooltip(
     docked_panel_state: Res<DockedPanelState>,
     definitions: Res<OverworldObjectDefinitions>,
     spell_definitions: Res<SpellDefinitions>,
+    ui_scale: Res<UiScale>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     slot_query: Query<(&Interaction, &ItemSlotButton)>,
     mut tooltip_query: Query<(&mut Node, &mut Visibility), With<ItemTooltipRoot>>,
@@ -3171,8 +3180,9 @@ pub fn sync_item_tooltip(
     };
 
     *tooltip_visibility = Visibility::Visible;
-    tooltip_node.left = px(cursor_position.x + 18.0);
-    tooltip_node.top = px(cursor_position.y - 24.0);
+    let anchor = cursor_to_val_px(cursor_position, &ui_scale);
+    tooltip_node.left = px(anchor.x + 18.0);
+    tooltip_node.top = px(anchor.y - 24.0);
     label.0 = name;
 }
 
@@ -3632,6 +3642,20 @@ fn point_in_ui_node(
         cursor_position
     };
     computed_node.contains_point(*global_transform, physical_cursor)
+}
+
+/// Convert a logical cursor position (from `Window::cursor_position()`) into a
+/// scalar suitable for `Node.left` / `Node.top`. Bevy multiplies `Val::Px(x)`
+/// by `UiScale` during layout, but the cursor is unaffected by `UiScale`, so
+/// `Val::Px(cursor.x)` lands the node at `cursor.x * UiScale` in screen-space.
+/// Dividing here cancels that. Mirror of the hit-test conversion in
+/// `point_in_ui_node`.
+pub(crate) fn cursor_to_val_px(cursor: Vec2, ui_scale: &UiScale) -> Vec2 {
+    if ui_scale.0 > 0.0 {
+        cursor / ui_scale.0
+    } else {
+        cursor
+    }
 }
 
 pub(crate) fn stack_in_slot_kind(
