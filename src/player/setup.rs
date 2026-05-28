@@ -550,9 +550,12 @@ pub fn spawn_player_recolor_layers(
 
         // Stack each layer slightly above the previous one (and above the
         // base sprite) so they composite in declaration order. The base
-        // sprite sits at z = render.z_index; we keep layers strictly above
-        // it but below the next integer z step.
-        let z_offset = 0.01 * (idx as f32 + 1.0);
+        // sprite sits 0.005 below `y_sort_z(tile_y)` (see `sync_player_z`)
+        // so that world objects on the same tile_y render in front of the
+        // player; layer offsets must fit inside that 0.005 epsilon or
+        // clothes will appear on top of an occluder while the base sprite
+        // is correctly hidden.
+        let z_offset = 0.001 * (idx as f32 + 1.0);
 
         let mut layer_entity = commands.spawn((
             layer_sprite,
