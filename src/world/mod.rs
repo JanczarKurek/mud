@@ -22,6 +22,7 @@ pub mod object_definitions;
 pub mod object_registry;
 pub mod resources;
 pub mod setup;
+pub mod stacks;
 pub mod step_triggers;
 pub mod systems;
 pub mod ttl;
@@ -68,9 +69,9 @@ use crate::world::step_triggers::{
     process_continuous_step_triggers, process_step_triggers, PendingStepEvents,
 };
 use crate::world::systems::{
-    cleanup_empty_ephemeral_spaces, compute_stack_offsets,
-    sync_authoritative_world_object_position_view, sync_client_world_projection,
-    sync_combat_health_bars, sync_player_z, sync_remote_player_projection, sync_tile_transforms,
+    cleanup_empty_ephemeral_spaces, sync_authoritative_world_object_position_view,
+    sync_client_world_projection, sync_combat_health_bars, sync_player_z,
+    sync_remote_player_projection, sync_tile_transforms,
 };
 use crate::world::vfx::VfxDefinitions;
 
@@ -107,6 +108,7 @@ impl Plugin for WorldServerPlugin {
         .insert_resource(VfxDefinitions::load_from_disk())
         .insert_resource(FloorTilesetDefinitions::load_from_disk())
         .insert_resource(PendingStepEvents::default())
+        .insert_resource(crate::world::stacks::PendingStackSettleEvents::default())
         .add_systems(
             Startup,
             initialize_runtime_spaces.in_set(WorldStartupSet::InitializeRuntimeSpaces),
@@ -124,6 +126,16 @@ impl Plugin for WorldServerPlugin {
                 .after(crate::game::systems::process_game_commands)
                 .after(crate::npc::systems::update_roaming_npcs)
                 .before(crate::combat::damage::apply_pending_damage)
+                .run_if(crate::app::state::simulation_active),
+        )
+        .add_systems(
+            Update,
+            // Drain pending stack-settle requests after the command handlers
+            // (pickup / move) push them, and before event collection so the
+            // re-stacked positions get replicated to clients in the same frame.
+            crate::world::stacks::settle_pending_stacks
+                .after(crate::game::systems::process_game_commands)
+                .before(crate::game::projection::collect_game_events_from_authority)
                 .run_if(crate::app::state::simulation_active),
         )
         .add_systems(
@@ -228,11 +240,6 @@ impl Plugin for WorldClientPlugin {
                             .after(apply_game_events_to_client_state)
                             .before(sync_tile_transforms)
                             .before(sync_floor_render_transforms),
-                        compute_stack_offsets
-                            .after(sync_client_world_projection)
-                            .after(sync_remote_player_projection)
-                            .after(sync_authoritative_world_object_position_view)
-                            .before(sync_tile_transforms),
                         sync_tile_transforms.after(detect_player_movement),
                         sync_player_z,
                         sync_combat_health_bars,

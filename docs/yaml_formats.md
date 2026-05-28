@@ -907,14 +907,15 @@ The `text` value supports three count placeholders in addition to the normal `{p
 - Use this for single-sprite props (signposts, arrows, beds) that have no per-direction animation frames
 - Rotated sprites use center anchoring — when this flag is `true`, the bottom-center y-sort shift is skipped so the sprite sits square on the tile after rotation. Design sprites for this flag as square tiles
 
-### `display_height`
-- Type: float (in tiles)
+### `block_size`
+- Type: unsigned integer (`0`, `1`, or `2`)
 - Optional: yes
-- Default: `0.0`
-- Meaning: visual height of the object, used for Tibia-style vertical stacking when multiple tall objects share a tile (e.g. a chest atop a barrel) and to gate auto-climb together with `walkable_surface`. Independent of the sprite's pixel size — `display_height` governs *logical* stacking math, while `sprite_height_tiles` governs how big the art is drawn
-- Typical values: wall `1.0`, barrel `0.5`, chest `0.4`, low rock `0.3`, ground items `0.0`
-- Combined with `walkable_surface: true`, this lets the player auto-step up by one z when walking into the object — they snap onto its top and snap back down on stepping off
-- Objects with `display_height > 0` are rendered bottom-anchored (sprite footprint sits on the tile, art rises upward), unless `rotation_by_facing` is set — rotated sprites stay center-anchored
+- Default: `0`
+- Meaning: physical size of the object in *half-block units*. `0` = flat (ground item, decal — does not participate in vertical stacking); `1` = half block (chest, low rock); `2` = full block (barrel, wall, stone step). Drives stack rendering, auto-climb, and bottom-anchored sprite alignment
+- The world's `z` axis is in half-block units (a real floor = 2 z); a half-block step up adds `+1` to z, a full-block step adds `+2`
+- Combined with `walkable_surface: true`, this lets the player auto-step up onto the object by `block_size` z units when walking into it — they snap onto its top and snap back down on stepping off
+- Block-sized objects (`block_size > 0`) are rendered bottom-anchored (sprite footprint sits on the tile, art rises upward), unless `rotation_by_facing` is set — rotated sprites stay center-anchored
+- Stacking: when an object is dropped on a tile already holding block-sized objects, it lands on top of the column (its feet at the stack top). The stack-top must be within `±1` z of the player and the resulting new top within `+2` z of the player's feet — caps how high you can build from where you're standing
 
 ### `hide_when_inside_facing`
 - Type: string (`north`, `south`, `east`, `west`) or omitted
@@ -927,7 +928,7 @@ The `text` value supports three count placeholders in addition to the normal `{p
 - Type: integer
 - Optional: yes
 - Default: `0`
-- Meaning: tiebreaker when multiple `display_height > 0` objects share a tile. Lower values render at the bottom of the stack, higher values on top. When two objects share the same `stack_order`, the authoritative `object_id` (server-allocated) breaks the tie
+- Meaning: tiebreaker when multiple block-sized objects sit at the same `z` in a column (overlapping flat decals, equally-sized props authored together). Lower values render at the bottom of the stack, higher values on top. When two objects share the same `stack_order`, the authoritative `object_id` (server-allocated) breaks the tie. Physical stacking sorts by `z` first; `stack_order` only matters for same-`z` ties
 - Suggested values: barrel `10`, chest `20`, wall `50`
 
 ### `animation`

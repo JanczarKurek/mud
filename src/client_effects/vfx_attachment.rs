@@ -109,7 +109,7 @@ pub fn project_active_effects_to_attachments(
                     y_sort: true,
                     sprite_height: sprite_height_tiles,
                     rotation_by_facing: false,
-                    display_height: 0.0,
+                    block_size: 0,
                     stack_order: 0,
                     hide_when_inside_facing: None,
                 },

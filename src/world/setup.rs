@@ -15,7 +15,7 @@ use crate::world::animation::{build_animated_sprite_components, AnimatedSprite};
 use crate::world::components::{
     ClientProjectedWorldObject, ClientRemotePlayerVisual, CombatHealthBar, DisplayedVitalStats,
     Facing, HealthBarDisplayPolicy, OverworldObject, SpaceId, SpacePosition, SpaceResident,
-    StackOffset, TilePosition, ViewPosition, WorldVisual,
+    TilePosition, ViewPosition, WorldVisual,
 };
 use crate::world::direction::Direction;
 use crate::world::floor_map::FloorMaps;
@@ -567,7 +567,6 @@ pub fn spawn_client_projected_world_object(
             tile: position.tile_position,
         },
         bundle.world_visual,
-        StackOffset::default(),
         DisplayedVitalStats::default(),
         Facing(definition.render.default_facing.unwrap_or_default()),
         bundle.sprite,
@@ -650,14 +649,14 @@ pub fn spawn_client_remote_player(
 
 /// Sprites are bottom-anchored when their footprint sits on a tile and they
 /// may rise above it. That includes y-sorted characters (NPCs, players) and
-/// any object with a `display_height` (walls, chests). Sprites that rotate
+/// any block-sized object (walls, chests, barrels). Sprites that rotate
 /// with facing keep the default center anchor so rotation pivots around the
 /// sprite center.
 pub fn bottom_anchor_for(render: &crate::world::object_definitions::RenderMetadata) -> bool {
     if render.rotation_by_facing {
         return false;
     }
-    render.y_sort || render.display_height > 0.0
+    render.y_sort || render.block_size > 0
 }
 
 /// Full visual component set for an object definition. Built once per spawn
@@ -719,7 +718,7 @@ pub fn build_object_visual_bundle(
         y_sort: definition.render.y_sort,
         sprite_height,
         rotation_by_facing: definition.render.rotation_by_facing,
-        display_height: definition.render.display_height,
+        block_size: definition.render.block_size,
         stack_order: definition.render.stack_order,
         hide_when_inside_facing: definition.render.hide_when_inside_facing,
     };

@@ -630,7 +630,6 @@ pub fn sync_floor_render_transforms(
     let Some(player_position) = client_state.player_position else {
         return;
     };
-    let player_floor = visible_floors.player_floor;
 
     // Indoor ambient color used as per-cell tint for floor tiles whose corner
     // is inside an enclosed area. Mirrors the per-sprite tint in
@@ -653,7 +652,11 @@ pub fn sync_floor_render_transforms(
         } else {
             flat_floor_z(cell.priority_z, cell.z)
         };
-        let floor_offset = floor_screen_offset(cell.z, player_floor, world_config.tile_size);
+        // `cell.z` is an integer floor index; convert to half-block z so the
+        // shared `floor_screen_offset` (which is fractional in half-block z)
+        // produces the correct shift relative to the player's half-block z.
+        let floor_offset =
+            floor_screen_offset(cell.z * 2, visible_floors.player_z, world_config.tile_size);
         let dx =
             (cell.rx as f32 - 0.5 + cell.local_offset.x) * world_config.tile_size + floor_offset.x;
         let dy =

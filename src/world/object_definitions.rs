@@ -859,19 +859,18 @@ pub struct RenderMetadata {
     /// and stair tiles opt in. The ground floor is always walkable.
     #[serde(default)]
     pub walkable_surface: bool,
-    /// Visual height of this object in tiles (wall=1.0, chest~0.4, barrel~0.5,
-    /// low_rock~0.3, ground item=0.0). Drives vertical stacking when multiple
-    /// objects share a tile, and gates auto-climb together with
-    /// `walkable_surface`. Pure visual — collision still governed by
-    /// `colliding`/state colliding flags.
+    /// Physical size of this object in half-block units. `0` = flat (ground
+    /// items, decals), `1` = half-block (chest, low rock), `2` = full block
+    /// (barrel, wall, stone step). Drives stacking math, auto-climb, and
+    /// bottom-anchored sprite alignment.
     #[serde(default)]
-    pub display_height: f32,
+    pub block_size: u8,
     /// Which building-wall side this object represents, for the
     /// hide-when-inside rule. Only `South` and `East` are honoured (the
     /// camera-facing sides). `None` = not a wall.
     #[serde(default)]
     pub hide_when_inside_facing: Option<Direction>,
-    /// Tiebreaker for stack ordering when several `display_height > 0` objects
+    /// Tiebreaker for stack ordering when several block-sized objects
     /// share `(space, x, y, z)`. Suggested values: barrel=10, chest=20. When
     /// equal, the authoritative `object_id` breaks the tie.
     #[serde(default)]

@@ -850,7 +850,7 @@ mod tests {
             true,
             vec![
                 (id_a, TilePosition::ground(10, 20)),
-                (id_b, TilePosition::new(12, 21, 1)),
+                (id_b, TilePosition::new(12, 21, 2)),
                 // Out of selection — must be filtered.
                 (id_a, TilePosition::ground(0, 0)),
             ],
@@ -862,7 +862,7 @@ mod tests {
         // Both objects in-selection are captured with relative coords.
         let dxs: Vec<(i32, i32, i32)> = frag.objects.iter().map(|o| (o.dx, o.dy, o.z)).collect();
         assert!(dxs.contains(&(0, 0, 0)));
-        assert!(dxs.contains(&(2, 1, 1)));
+        assert!(dxs.contains(&(2, 1, 2)));
         // Floors include the whole bbox (3 * 2 = 6 cells).
         assert_eq!(frag.floors.len(), 6);
         let first = frag

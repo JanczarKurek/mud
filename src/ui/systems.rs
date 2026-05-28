@@ -5,6 +5,7 @@ use bevy::prelude::*;
 use bevy::ui::{ComputedNode, ScrollPosition, UiGlobalTransform};
 use bevy::window::{CursorIcon, CustomCursor, CustomCursorImage, PrimaryWindow};
 
+use crate::game::helpers::is_near_player;
 use crate::game::commands::{
     GameCommand, InspectTarget, ItemDestination, ItemReference, ItemSlotRef, UseTarget,
 };
@@ -1504,21 +1505,20 @@ pub fn handle_use_on_targeting(
         return;
     }
 
-    for object in client_state.world_objects.values() {
-        if object.tile_position != target_tile {
-            continue;
-        }
-        if !is_near_player(&player_position, &object.tile_position) {
-            continue;
-        }
-
+    if let Some(object) = topmost_object_at_cursor(
+        &client_state,
+        window,
+        cursor_position,
+        &player_position,
+        &world_config,
+        |o| is_near_player(&player_position, &o.tile_position),
+    ) {
         pending_commands.push(GameCommand::UseItemOn {
             source,
             target: UseTarget::Object(object.object_id),
         });
         use_on_state.source = None;
         cursor_state.reset_to_default();
-        return;
     }
 }
 
@@ -1576,11 +1576,15 @@ pub fn handle_spell_targeting(
             });
         }
     } else {
-        let selected_target = client_state
-            .world_objects
-            .values()
-            .find(|object| object.is_npc && object.tile_position == target_tile)
-            .map(|object| object.object_id);
+        let selected_target = topmost_object_at_cursor(
+            &client_state,
+            window,
+            cursor_position,
+            &player_position,
+            &world_config,
+            |o| o.is_npc,
+        )
+        .map(|object| object.object_id);
 
         let Some(target_object_id) = selected_target else {
             return;
@@ -1634,18 +1638,23 @@ pub fn handle_attack_targeting(
         return;
     };
 
-    let target_tile = cursor_to_tile(window, cursor_position, &player_position, &world_config);
-
-    let world_target = client_state
-        .world_objects
-        .values()
-        .find(|object| object.is_npc && object.tile_position == target_tile)
-        .map(|object| object.object_id);
-    let remote_target = client_state
-        .remote_players
-        .values()
-        .find(|player| player.tile_position == target_tile)
-        .map(|player| player.object_id);
+    let world_target = topmost_object_at_cursor(
+        &client_state,
+        window,
+        cursor_position,
+        &player_position,
+        &world_config,
+        |o| o.is_npc,
+    )
+    .map(|object| object.object_id);
+    let remote_target = topmost_remote_player_at_cursor(
+        &client_state,
+        window,
+        cursor_position,
+        &player_position,
+        &world_config,
+    )
+    .map(|player| player.object_id);
 
     let Some(target_object_id) = world_target.or(remote_target) else {
         return;
@@ -1798,11 +1807,13 @@ pub fn handle_context_menu_opening(
     // Priority order at a tile: remote player > NPC (incl. shopkeeper) > other
     // world object. Without this sort, the HashMap iteration order would let a
     // pickup item under a villager swallow the right-click.
-    for remote_player in client_state.remote_players.values() {
-        if remote_player.tile_position != target_tile {
-            continue;
-        }
-
+    if let Some(remote_player) = topmost_remote_player_at_cursor(
+        &client_state,
+        window,
+        cursor_position,
+        &player_position,
+        &world_config,
+    ) {
         let near = is_near_player(&player_position, &remote_player.tile_position);
         let can_use =
             near && object_is_usable(remote_player.object_id, &object_registry, &definitions);
@@ -1833,19 +1844,27 @@ pub fn handle_context_menu_opening(
         return;
     }
 
-    let mut best_object: Option<&crate::game::resources::ClientWorldObjectState> = None;
-    for object in client_state.world_objects.values() {
-        if object.tile_position != target_tile {
-            continue;
-        }
-        let upgrade = match best_object {
-            None => true,
-            Some(current) => object.is_npc && !current.is_npc,
-        };
-        if upgrade {
-            best_object = Some(object);
-        }
-    }
+    // Priority: any NPC at the cursor wins (so an NPC standing on top of a
+    // pickup is the right-click target, not the pickup); otherwise the
+    // topmost object in the column.
+    let best_object = topmost_object_at_cursor(
+        &client_state,
+        window,
+        cursor_position,
+        &player_position,
+        &world_config,
+        |o| o.is_npc,
+    )
+    .or_else(|| {
+        topmost_object_at_cursor(
+            &client_state,
+            window,
+            cursor_position,
+            &player_position,
+            &world_config,
+            |_| true,
+        )
+    });
 
     if let Some(object) = best_object {
         let near = is_near_player(&player_position, &object.tile_position);
@@ -2451,25 +2470,24 @@ pub fn handle_movable_dragging(
             }
         }
 
-        let target_tile = cursor_to_tile(window, cursor_position, &player_position, &world_config);
-
-        for object in client_state.world_objects.values() {
-            if !object.is_movable || object.tile_position != target_tile {
-                continue;
-            }
-
-            if !is_near_player(&player_position, &object.tile_position) {
-                continue;
-            }
-
+        if let Some(object) = topmost_object_at_cursor(
+            &client_state,
+            window,
+            cursor_position,
+            &player_position,
+            &world_config,
+            |o| o.is_movable && is_near_player(&player_position, &o.tile_position),
+        ) {
             info!(
-                "drag_start world_object_id={} origin=({}, {})",
-                object.object_id, object.tile_position.x, object.tile_position.y
+                "drag_start world_object_id={} origin=({}, {}, {})",
+                object.object_id,
+                object.tile_position.x,
+                object.tile_position.y,
+                object.tile_position.z,
             );
             drag_state.source = Some(DragSource::World);
             drag_state.object_id = Some(object.object_id);
             drag_state.world_origin = Some(object.tile_position);
-            break;
         }
     }
 
@@ -2477,7 +2495,14 @@ pub fn handle_movable_dragging(
         return;
     }
 
-    let target_tile = cursor_to_tile(window, cursor_position, &player_position, &world_config);
+    // Drop on the visual ground tile under the cursor. Projecting at z=0
+    // reverses the half-floor perspective shift the ground gets when the
+    // player stands on a half-block, so the user can "aim down" to ground
+    // level without their target jumping one tile. The server still snaps
+    // the final z to the column's stack top, so dropping onto a chest's
+    // visible position lands on top of the chest.
+    let target_tile =
+        cursor_to_ground_tile(window, cursor_position, &player_position, &world_config);
     let drag_source = drag_state.source.take();
     let dragged_object_id = drag_state.object_id.take();
     let world_origin = drag_state.world_origin.take();
@@ -3673,6 +3698,15 @@ fn inventory_pouch_sub_slot(
         .flatten()
 }
 
+/// Maps a screen-space cursor to a tile `(x, y, z)`. The returned `z` is
+/// `player.z` and the `(x, y)` is computed as if the target tile sat at the
+/// player's `z` plane (no perspective correction). Useful for "is the cursor
+/// on the player's own tile?" comparisons. For finding objects, use
+/// [`topmost_object_at_cursor`] (per-object projection). For *placement on
+/// the ground*, use [`cursor_to_ground_tile`] — when the player is on a
+/// half-block, the unprojected cursor maps to the wrong tile_y for ground
+/// targets because ground sprites are diagonally shifted by
+/// `floor_screen_offset`.
 fn cursor_to_tile(
     window: &Window,
     cursor_position: Vec2,
@@ -3691,12 +3725,140 @@ fn cursor_to_tile(
     )
 }
 
-fn is_near_player(player_position: &TilePosition, target_position: &TilePosition) -> bool {
-    if player_position.z != target_position.z {
-        return false;
-    }
-    let delta_x = (player_position.x - target_position.x).abs();
-    let delta_y = (player_position.y - target_position.y).abs();
+/// Maps the cursor to a tile at `z = 0` (ground), reversing the ground
+/// floor's perspective shift relative to the player's `z`. Use this when the
+/// user is targeting *where on the ground* their action lands — drag-release
+/// placement, ground-targeted spells — so the cursor stays aligned with the
+/// visual ground tile under it when the player stands on a half-block.
+/// Server-side resolution (`resolve_world_drop_tile` etc.) still snaps the
+/// final `z` to the column's stack top, so dropping on a chest's visible
+/// position still places on top of the chest.
+fn cursor_to_ground_tile(
+    window: &Window,
+    cursor_position: Vec2,
+    player_position: &TilePosition,
+    world_config: &WorldConfig,
+) -> TilePosition {
+    let window_center = Vec2::new(window.width() * 0.5, window.height() * 0.5);
+    let cursor_offset = cursor_position - window_center;
+    let floor_offset = crate::world::systems::floor_screen_offset(
+        0,
+        player_position.z,
+        world_config.tile_size,
+    );
+    let tile_offset_x =
+        ((cursor_offset.x - floor_offset.x) / world_config.tile_size).round() as i32;
+    let tile_offset_y =
+        ((-cursor_offset.y - floor_offset.y) / world_config.tile_size).round() as i32;
 
-    delta_x <= 1 && delta_y <= 1
+    TilePosition::new(
+        player_position.x + tile_offset_x,
+        player_position.y + tile_offset_y,
+        0,
+    )
 }
+
+/// True iff the cursor lies within the screen-rendered footprint of a tile at
+/// world coordinates `(tile_x, tile_y, tile_z)`. Camera is anchored on
+/// `player_position`, and tiles at a non-player `z` are diagonally shifted by
+/// `floor_screen_offset(tile_z, player.z)` — this function reverses that
+/// shift per candidate so an object on the ground (`z=0`) is still clickable
+/// when the player is standing on a chest (`z=1`).
+fn cursor_hits_tile(
+    window: &Window,
+    cursor_position: Vec2,
+    player_position: &TilePosition,
+    world_config: &WorldConfig,
+    tile_x: i32,
+    tile_y: i32,
+    tile_z: i32,
+) -> bool {
+    let window_center = Vec2::new(window.width() * 0.5, window.height() * 0.5);
+    let cursor_offset = cursor_position - window_center;
+    // Cursor in world-space relative to camera (which sits on player tile).
+    let cursor_dx = cursor_offset.x;
+    let cursor_dy = -cursor_offset.y;
+    let floor_offset = crate::world::systems::floor_screen_offset(
+        tile_z,
+        player_position.z,
+        world_config.tile_size,
+    );
+    let tile_dx = (tile_x - player_position.x) as f32 * world_config.tile_size + floor_offset.x;
+    let tile_dy = (tile_y - player_position.y) as f32 * world_config.tile_size + floor_offset.y;
+    let half = world_config.tile_size * 0.5;
+    (cursor_dx - tile_dx).abs() <= half && (cursor_dy - tile_dy).abs() <= half
+}
+
+/// Find the topmost world object whose rendered tile is under the cursor and
+/// passes `predicate`. Per-object perspective projection (`cursor_hits_tile`)
+/// means objects at any `z` are picked correctly — including a ground chest
+/// while the player stands on another chest. Ties broken by higher `z`
+/// (visible top of the stack wins).
+fn topmost_object_at_cursor<'a, F>(
+    client_state: &'a ClientGameState,
+    window: &Window,
+    cursor_position: Vec2,
+    player_position: &TilePosition,
+    world_config: &WorldConfig,
+    mut predicate: F,
+) -> Option<&'a crate::game::resources::ClientWorldObjectState>
+where
+    F: FnMut(&crate::game::resources::ClientWorldObjectState) -> bool,
+{
+    let mut best: Option<&crate::game::resources::ClientWorldObjectState> = None;
+    for object in client_state.world_objects.values() {
+        if !predicate(object) {
+            continue;
+        }
+        if !cursor_hits_tile(
+            window,
+            cursor_position,
+            player_position,
+            world_config,
+            object.tile_position.x,
+            object.tile_position.y,
+            object.tile_position.z,
+        ) {
+            continue;
+        }
+        if best
+            .map(|b| object.tile_position.z > b.tile_position.z)
+            .unwrap_or(true)
+        {
+            best = Some(object);
+        }
+    }
+    best
+}
+
+/// Remote-player counterpart of [`topmost_object_at_cursor`].
+fn topmost_remote_player_at_cursor<'a>(
+    client_state: &'a ClientGameState,
+    window: &Window,
+    cursor_position: Vec2,
+    player_position: &TilePosition,
+    world_config: &WorldConfig,
+) -> Option<&'a crate::game::resources::ClientRemotePlayerState> {
+    let mut best: Option<&crate::game::resources::ClientRemotePlayerState> = None;
+    for player in client_state.remote_players.values() {
+        if !cursor_hits_tile(
+            window,
+            cursor_position,
+            player_position,
+            world_config,
+            player.tile_position.x,
+            player.tile_position.y,
+            player.tile_position.z,
+        ) {
+            continue;
+        }
+        if best
+            .map(|b| player.tile_position.z > b.tile_position.z)
+            .unwrap_or(true)
+        {
+            best = Some(player);
+        }
+    }
+    best
+}
+

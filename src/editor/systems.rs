@@ -390,11 +390,13 @@ pub fn sync_tile_transforms_editor(
         let z = if !is_active {
             -10_000.0
         } else if world_visual.y_sort {
-            crate::world::systems::y_sort_z(tile_position.y, tile_position.z, 0)
+            let floor = crate::world::components::floor_index(tile_position.z);
+            crate::world::systems::y_sort_z(tile_position.y, floor, 0)
         } else {
-            crate::world::systems::flat_floor_z(world_visual.z_index, tile_position.z)
+            let floor = crate::world::components::floor_index(tile_position.z);
+            crate::world::systems::flat_floor_z(world_visual.z_index, floor)
         };
-        let bottom_anchored = (world_visual.y_sort || world_visual.display_height > 0.0)
+        let bottom_anchored = (world_visual.y_sort || world_visual.block_size > 0)
             && !world_visual.rotation_by_facing;
         let anchor_y_offset = if bottom_anchored {
             -effective_size * 0.5
@@ -2432,7 +2434,7 @@ pub fn sync_portal_overlays(
                 y_sort: false,
                 sprite_height: 0.0,
                 rotation_by_facing: false,
-                display_height: 0.0,
+                block_size: 0,
                 stack_order: 0,
                 hide_when_inside_facing: None,
             },

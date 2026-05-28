@@ -50,6 +50,11 @@ pub fn camera_follow(
     // the scroll lerp. Anchor offset matches the convention used at spawn time
     // (`src/player/setup.rs:269`) and in `sync_tile_transforms` for y-sorted
     // sprites: bottom-center anchor needs `-tile_size/2` to land on the tile.
+    //
+    // The player has no z-based visual offset itself — the world tiles around
+    // it carry the perspective shift via `floor_screen_offset(view_z,
+    // player_z)`, which is fractional in `player_z` so half-block climbs (z=0
+    // → z=1) shift the world by half a floor and the player appears to rise.
     if let Ok((mut player_transform, world_visual)) = player_q.single_mut() {
         let anchor_y = if world_visual.y_sort {
             -world_config.tile_size * 0.5

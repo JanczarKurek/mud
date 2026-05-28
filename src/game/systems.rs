@@ -59,6 +59,9 @@ pub struct CommandOutputs<'w, 's> {
         (With<Npc>, Without<Player>),
     >,
     pub player_carry: Query<'w, 's, &'static MaxCarryWeight, With<Player>>,
+    /// Stack-settle requests pushed by pickup / move handlers, drained by
+    /// `settle_pending_stacks` later in the same frame.
+    pub pending_stack_settle: ResMut<'w, crate::world::stacks::PendingStackSettleEvents>,
     /// True iff the player entity carries the `Encumbered` marker. Doubles
     /// the movement cooldown when set.
     pub player_encumbered: Query<'w, 's, (), (With<Player>, With<Encumbered>)>,
@@ -458,15 +461,16 @@ pub fn process_game_commands(
                     destination,
                     &mut container_query,
                     &mut player_queries.p2(),
-                    &collider_positions,
                     &movable_query,
                     &object_query,
                     &quantity_query,
+                    &collider_positions,
                     &mut object_registry,
                     &definitions,
                     &world_config,
                     &command_outputs.player_carry,
                     &command_outputs.hidden_query,
+                    &mut command_outputs.pending_stack_settle,
                     &mut commands,
                 );
             }
@@ -496,6 +500,7 @@ pub fn process_game_commands(
                     &world_config,
                     &command_outputs.player_carry,
                     &command_outputs.hidden_query,
+                    &mut command_outputs.pending_stack_settle,
                     &mut commands,
                 );
             }
@@ -2312,7 +2317,6 @@ fn handle_move_item(
         ),
         With<Player>,
     >,
-    collider_positions: &[TilePosition],
     movable_query: &Query<
         (Entity, &SpaceResident, &TilePosition, &OverworldObject),
         (With<Movable>, Without<Player>),
@@ -2322,11 +2326,13 @@ fn handle_move_item(
         Without<Player>,
     >,
     quantity_query: &Query<&Quantity>,
+    collider_positions: &[TilePosition],
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     world_config: &WorldConfig,
     max_carry_query: &Query<&MaxCarryWeight, With<Player>>,
     hidden_query: &Query<&crate::world::hidden::Hidden, Without<Player>>,
+    pending_stack_settle: &mut crate::world::stacks::PendingStackSettleEvents,
     commands: &mut Commands,
 ) {
     let max_carry = max_carry_query
@@ -2397,9 +2403,18 @@ fn handle_move_item(
                 return;
             }
             commands.entity(entity).despawn();
+            // Any items stacked above this one need to settle down to fill
+            // the gap. `removed_entity` excludes the despawning entity from
+            // the column query (Bevy commands haven't flushed yet).
+            pending_stack_settle.push(crate::world::stacks::SettleStackEvent {
+                space_id: space_resident.space_id,
+                x: tile_position.x,
+                y: tile_position.y,
+                removed_entity: Some(entity),
+            });
         }
         (ItemReference::WorldObject(object_id), ItemDestination::WorldTile(target_tile)) => {
-            let Some((entity, origin)) = find_movable_entity(
+            let Some((entity, origin, definition_id)) = find_movable_entity_with_definition(
                 object_id,
                 space_resident.space_id,
                 movable_query,
@@ -2408,7 +2423,8 @@ fn handle_move_item(
             ) else {
                 return;
             };
-            // Attempt stack merge first (before the "occupied by movable" check that blocks it).
+            // Attempt stack merge first (before the stack-placement path that
+            // would create a new physical stack instead of merging quantities).
             let merged = is_near_player(&player_position, &target_tile)
                 && merge_into_ground_stack(
                     entity,
@@ -2421,19 +2437,36 @@ fn handle_move_item(
                     definitions,
                     commands,
                 );
-            if !merged
-                && is_valid_world_drop(
+            if !merged {
+                let placed_block_size = definitions
+                    .get(&definition_id)
+                    .map_or(0, |def| def.render.block_size);
+                if let Some(resolved) = resolve_world_drop_tile(
                     target_tile,
                     Some(origin),
+                    placed_block_size,
                     space_resident.space_id,
                     &player_position,
                     entity,
+                    object_query,
                     collider_positions,
-                    movable_query,
+                    definitions,
                     world_config,
-                )
-            {
-                commands.entity(entity).insert(target_tile);
+                ) {
+                    commands.entity(entity).insert(resolved);
+                    // Old column may need to settle if we lifted a block out
+                    // of the middle. Exclude `entity` since its TilePosition
+                    // is being overwritten in the same frame and the query
+                    // would still see the old `z`.
+                    if origin != resolved {
+                        pending_stack_settle.push(crate::world::stacks::SettleStackEvent {
+                            space_id: space_resident.space_id,
+                            x: origin.x,
+                            y: origin.y,
+                            removed_entity: Some(entity),
+                        });
+                    }
+                }
             }
         }
         (ItemReference::Slot(slot_ref), ItemDestination::Slot(destination_ref)) => {
@@ -2510,14 +2543,18 @@ fn handle_move_item(
             }
 
             // No merge: find a valid drop tile and spawn a new world object.
+            let placed_block_size =
+                definitions.get(&type_id).map_or(0, |def| def.render.block_size);
             let Some(world_drop_tile) = find_nearest_valid_world_drop_tile(
                 target_tile,
                 None,
+                placed_block_size,
                 space_resident.space_id,
                 &player_position,
                 Entity::PLACEHOLDER,
+                object_query,
                 collider_positions,
-                movable_query,
+                definitions,
                 world_config,
             ) else {
                 restore_stack_to_slot_ref(
@@ -2595,6 +2632,7 @@ fn handle_take_from_stack(
     world_config: &WorldConfig,
     max_carry_query: &Query<&MaxCarryWeight, With<Player>>,
     hidden_query: &Query<&crate::world::hidden::Hidden, Without<Player>>,
+    pending_stack_settle: &mut crate::world::stacks::PendingStackSettleEvents,
     commands: &mut Commands,
 ) {
     let max_carry = max_carry_query
@@ -2723,14 +2761,18 @@ fn handle_take_from_stack(
                     }
                 }
                 ItemDestination::WorldTile(target_tile) => {
+                    let placed_block_size =
+                        definitions.get(&src_type_id).map_or(0, |def| def.render.block_size);
                     let Some(world_drop_tile) = find_nearest_valid_world_drop_tile(
                         target_tile,
                         None,
+                        placed_block_size,
                         space_resident.space_id,
                         &player_position,
                         Entity::PLACEHOLDER,
+                        object_query,
                         collider_positions,
-                        movable_query,
+                        definitions,
                         world_config,
                     ) else {
                         return;
@@ -2807,6 +2849,14 @@ fn handle_take_from_stack(
             // Update or despawn the world entity
             if actual_amount >= world_qty {
                 commands.entity(entity).despawn();
+                // Items stacked above (rare for ground stacks, but possible
+                // when a chest sat on top of a quantity object) settle down.
+                pending_stack_settle.push(crate::world::stacks::SettleStackEvent {
+                    space_id: space_resident.space_id,
+                    x: tile_position.x,
+                    y: tile_position.y,
+                    removed_entity: Some(entity),
+                });
             } else {
                 let remaining = world_qty - actual_amount;
                 if remaining > 1 {
@@ -3201,26 +3251,6 @@ fn find_combat_target_entity(
                     (resident.space_id == source_space_id && object.object_id == object_id)
                         .then_some(entity)
                 })
-        })
-}
-
-fn find_movable_entity(
-    object_id: u64,
-    space_id: crate::world::components::SpaceId,
-    movable_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        (With<Movable>, Without<Player>),
-    >,
-    player_id: PlayerId,
-    hidden_query: &Query<&crate::world::hidden::Hidden, Without<Player>>,
-) -> Option<(Entity, TilePosition)> {
-    movable_query
-        .iter()
-        .find_map(|(entity, resident, tile_position, object)| {
-            (resident.space_id == space_id
-                && object.object_id == object_id
-                && is_visible_to(entity, player_id, hidden_query))
-            .then_some((entity, *tile_position))
         })
 }
 
@@ -4368,16 +4398,14 @@ fn chebyshev_distance_tiles(a: TilePosition, b: TilePosition) -> i32 {
 
 /// Central walkability check for player moves (and, later, teleport targets).
 ///
-/// Ground floor is walkable anywhere a collider isn't present. Upper floors
-/// (`z != 0`) require either:
+/// Ground floor is walkable anywhere a collider isn't present. Upper z
+/// requires either:
 ///   - a flat walkable object AT the target tile (planks, stair landings —
-///     `walkable_surface: true`, `display_height == 0`), or
-///   - a tall walkable object on the tile BELOW the target whose top reaches
-///     up to this z (barrels, chests, low rocks — `walkable_surface: true`
-///     AND `display_height > 0`). This is the auto-climb surface.
-/// This makes upper floors "built from positive-space tiles" rather than
-/// infinite planes, so players can't walk past the edge of an authored
-/// building unless they fall.
+///     `walkable_surface: true`, `block_size == 0`), or
+///   - a walkable block below whose top reaches `target.z` (i.e. an object
+///     at `(x, y, target.z - bs)` with `walkable_surface: true` and
+///     `block_size: bs`, for `bs ∈ {1, 2}`). Half-blocks (chests) climb to
+///     `+1` z, full blocks (barrels) climb to `+2`.
 fn is_walkable_tile(
     target: TilePosition,
     space_id: crate::world::components::SpaceId,
@@ -4405,33 +4433,41 @@ fn is_walkable_tile(
         .any(|(_, _, _, object)| {
             definitions
                 .get(&object.definition_id)
-                .is_some_and(|def| def.render.walkable_surface && def.render.display_height == 0.0)
+                .is_some_and(|def| def.render.walkable_surface && def.render.block_size == 0)
         });
     if flat_walkable_here {
         return true;
     }
 
-    let climbable_below = TilePosition::new(target.x, target.y, target.z - 1);
     object_query
         .iter()
-        .filter(|(_, resident, tile, _)| resident.space_id == space_id && **tile == climbable_below)
-        .any(|(_, _, _, object)| {
-            definitions
-                .get(&object.definition_id)
-                .is_some_and(|def| def.render.walkable_surface && def.render.display_height > 0.0)
+        .filter(|(_, resident, tile, _)| {
+            resident.space_id == space_id && tile.x == target.x && tile.y == target.y
+        })
+        .any(|(_, _, tile, object)| {
+            let Some(def) = definitions.get(&object.definition_id) else {
+                return false;
+            };
+            if !def.render.walkable_surface || def.render.block_size == 0 {
+                return false;
+            }
+            tile.z + def.render.block_size as i32 == target.z
         })
 }
 
 /// Tibia-style step resolver: when the player tries to step onto
 /// `(target_xy, current_z)`, work out where they actually land.
 ///
-/// - If that tile is walkable as-is, use it.
-/// - If it is blocked by a collider AND the tile one floor above is walkable
-///   (some object there has `walkable_surface: true`), auto-climb +1 z.
-/// - If the tile is unsupported (no collider but no walkable surface either,
-///   i.e. you walked off a plank) AND `current_z > 0` AND the tile one floor
-///   below is walkable, drop -1 z.
-/// - Otherwise return `None`: the move is blocked.
+/// Everything is decided by the target column's `stack_top`:
+///   * `stack_top > current_z` (something blocks above): climb to `stack_top`
+///     iff the gap is `≤ 2` half-blocks AND the top is walkable. A stack of
+///     two chests (top = 2) is one +2 climb, identical to climbing a barrel.
+///   * `stack_top == current_z`: walk flat at `current_z`.
+///   * `stack_top < current_z` (cliff edge): fall to the highest walkable
+///     surface ≤ `current_z`. Falling off a barrel onto a chest leaves you
+///     on the chest, not the ground.
+///   * Tiles with only flat decals (no block-sized objects) act like ground
+///     at the existing z (or the player's current z if no obstruction).
 fn resolve_step_with_climb(
     target_xy: (i32, i32),
     current_z: i32,
@@ -4444,6 +4480,59 @@ fn resolve_step_with_climb(
     definitions: &OverworldObjectDefinitions,
 ) -> Option<TilePosition> {
     let (x, y) = target_xy;
+    let column_members = || {
+        object_query
+            .iter()
+            .map(|(entity, resident, tile, object)| crate::world::stacks::ColumnMember {
+                entity,
+                resident,
+                tile,
+                object,
+            })
+    };
+    let stack_top = crate::world::stacks::stack_top_z(
+        space_id,
+        x,
+        y,
+        column_members(),
+        definitions,
+    );
+
+    // Climb path: a block-sized stack in front of the player.
+    if stack_top > current_z {
+        if stack_top - current_z > 2 {
+            return None;
+        }
+        let stack_top_walkable = crate::world::stacks::stack_top_is_walkable(
+            space_id,
+            x,
+            y,
+            Entity::PLACEHOLDER,
+            column_members(),
+            definitions,
+        );
+        if !stack_top_walkable {
+            return None;
+        }
+        let above = TilePosition::new(x, y, stack_top);
+        let blocked_above = collider_positions.iter().any(|p| *p == above);
+        let ceiling_above = object_query
+            .iter()
+            .filter(|(_, resident, tile, _)| resident.space_id == space_id && **tile == above)
+            .any(|(_, _, _, object)| {
+                definitions
+                    .get(&object.definition_id)
+                    .is_some_and(|def| def.render.walkable_surface && def.render.block_size == 0)
+            });
+        if blocked_above || ceiling_above {
+            return None;
+        }
+        return Some(above);
+    }
+
+    // Flat path: target is at-or-below current_z. Try `current_z` first
+    // (lateral step or flat decal), then fall to the highest walkable surface
+    // below. Ground (`z=0`) is walkable iff there's no collider there.
     let here = TilePosition::new(x, y, current_z);
     if is_walkable_tile(
         here,
@@ -4454,61 +4543,20 @@ fn resolve_step_with_climb(
     ) {
         return Some(here);
     }
-
-    let blocked_by_collider = collider_positions.iter().any(|p| *p == here);
-
-    if blocked_by_collider {
-        // Climb-up rules (Tibia-style stairs of stacked steps):
-        //   - The tile being walked INTO must have a `walkable_surface` object
-        //     with `display_height > 0` — i.e. an actual step / barrel / chest
-        //     whose top we can stand on. Walls (no walkable_surface) reject.
-        //   - The target z+1 must be open: no collider, AND no flat walkable
-        //     (plank/ground) directly above. A flat walkable above is a
-        //     ceiling — you'd bonk your head, so the climb is refused.
-        //
-        // This lets authors carve a proper staircase by placing steps on the
-        // lower floor and *omitting* the plank tiles directly above each
-        // step. Players climb up through the holes; they fall back down
-        // through the same holes when walking off the rooftop.
-        let above = TilePosition::new(x, y, current_z + 1);
-        let blocked_above = collider_positions.iter().any(|p| *p == above);
-        let ceiling_above = object_query
-            .iter()
-            .filter(|(_, resident, tile, _)| resident.space_id == space_id && **tile == above)
-            .any(|(_, _, _, object)| {
-                definitions.get(&object.definition_id).is_some_and(|def| {
-                    def.render.walkable_surface && def.render.display_height == 0.0
-                })
-            });
-        let step_below = object_query
-            .iter()
-            .filter(|(_, resident, tile, _)| resident.space_id == space_id && **tile == here)
-            .any(|(_, _, _, object)| {
-                definitions.get(&object.definition_id).is_some_and(|def| {
-                    def.render.walkable_surface && def.render.display_height > 0.0
-                })
-            });
-        if step_below && !blocked_above && !ceiling_above {
-            return Some(above);
-        }
-        return None;
-    }
-
-    // Not blocked by a collider AND not walkable → unsupported. Drop down if
-    // there's solid ground one z below.
     if current_z > 0 {
-        let below = TilePosition::new(x, y, current_z - 1);
-        if is_walkable_tile(
-            below,
-            space_id,
-            collider_positions,
-            object_query,
-            definitions,
-        ) {
-            return Some(below);
+        for z in (0..current_z).rev() {
+            let below = TilePosition::new(x, y, z);
+            if is_walkable_tile(
+                below,
+                space_id,
+                collider_positions,
+                object_query,
+                definitions,
+            ) {
+                return Some(below);
+            }
         }
     }
-
     None
 }
 
@@ -4998,11 +5046,12 @@ mod tests {
     #[test]
     fn upper_floor_walk_requires_walkable_surface_or_drops_down() {
         let mut app = setup_server_app();
-        // Player already on floor 1 standing on a plank; no plank to the east.
+        // Player already on floor 1 (raw z=2 in half-block units) standing on
+        // a plank; no plank to the east.
         let player = spawn_player(&mut app, 1, 10, 10);
         app.world_mut()
             .entity_mut(player)
-            .insert(TilePosition::new(10, 10, 1));
+            .insert(TilePosition::new(10, 10, 2));
 
         let plank_id = app
             .world_mut()
@@ -5012,7 +5061,7 @@ mod tests {
             &mut app,
             "floor_plank",
             plank_id,
-            TilePosition::new(10, 10, 1),
+            TilePosition::new(10, 10, 2),
         );
 
         // Walk east into "empty air" on floor 1 — Tibia-style, the player
@@ -5063,8 +5112,8 @@ mod tests {
         let tile = *app.world().get::<TilePosition>(player).unwrap();
         assert_eq!(
             tile,
-            TilePosition::new(11, 10, 1),
-            "player should auto-climb onto the barrel"
+            TilePosition::new(11, 10, 2),
+            "player should auto-climb onto the barrel (full block = +2 in half-block z units)"
         );
     }
 
@@ -5085,11 +5134,12 @@ mod tests {
             .world_mut()
             .resource_mut::<ObjectRegistry>()
             .allocate_runtime_id("floor_plank");
+        // Ceiling sits on floor 1 (raw z=2), directly above the barrel.
         spawn_world_object(
             &mut app,
             "floor_plank",
             plank_id,
-            TilePosition::new(11, 10, 1),
+            TilePosition::new(11, 10, 2),
         );
 
         app.world_mut()
@@ -5202,91 +5252,148 @@ mod tests {
     }
 }
 
-fn is_valid_world_drop(
+/// Resolve a world-tile drop. Returns the chosen `TilePosition` (with `z`
+/// snapped to the stack top of the column) when the drop is allowed, else
+/// `None`. Rules:
+///   * target `(x, y)` must be on-map and horizontally within 1 tile of
+///     the player;
+///   * the column's existing top must be reachable (within ±1 z of the
+///     player) AND the resulting new top must be at most `player_z + 2`
+///     (i.e. `crate::world::stacks::can_place_on_stack`);
+///   * the topmost block already in the column must have a walkable top
+///     surface (you can't drop onto a wall);
+///   * for moves, `dragged_entity` is excluded from the column so an
+///     object doesn't stack on itself.
+fn resolve_world_drop_tile(
     target_tile: TilePosition,
     origin_tile: Option<TilePosition>,
+    placed_block_size: u8,
     space_id: crate::world::components::SpaceId,
     player_position: &TilePosition,
     dragged_entity: Entity,
-    collider_positions: &[TilePosition],
-    movable_query: &Query<
+    object_query: &Query<
         (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        (With<Movable>, Without<Player>),
+        Without<Player>,
     >,
+    collider_positions: &[TilePosition],
+    definitions: &OverworldObjectDefinitions,
     world_config: &WorldConfig,
-) -> bool {
+) -> Option<TilePosition> {
     if target_tile.x < 0
         || target_tile.y < 0
         || target_tile.x >= world_config.map_width
         || target_tile.y >= world_config.map_height
     {
-        return false;
+        return None;
     }
-
-    if !is_near_player(player_position, &target_tile) {
-        return false;
-    }
-
-    if origin_tile == Some(target_tile) {
-        return true;
-    }
-
-    if collider_positions
-        .iter()
-        .any(|collider_position| *collider_position == target_tile)
+    if (player_position.x - target_tile.x).abs() > 1
+        || (player_position.y - target_tile.y).abs() > 1
     {
-        return false;
+        return None;
     }
 
-    !movable_query
-        .iter()
-        .any(|(entity, resident, tile_position, _)| {
-            resident.space_id == space_id
-                && entity != dragged_entity
-                && *tile_position == target_tile
-        })
+    let column_members = || {
+        object_query
+            .iter()
+            .map(|(entity, resident, tile, object)| crate::world::stacks::ColumnMember {
+                entity,
+                resident,
+                tile,
+                object,
+            })
+    };
+
+    let stack_top = crate::world::stacks::stack_top_z_excluding(
+        space_id,
+        target_tile.x,
+        target_tile.y,
+        dragged_entity,
+        column_members(),
+        definitions,
+    );
+
+    let resolved = TilePosition::new(target_tile.x, target_tile.y, stack_top);
+    if origin_tile == Some(resolved) {
+        return Some(resolved);
+    }
+
+    if !crate::world::stacks::stack_top_is_walkable(
+        space_id,
+        target_tile.x,
+        target_tile.y,
+        dragged_entity,
+        column_members(),
+        definitions,
+    ) {
+        return None;
+    }
+
+    if !crate::world::stacks::can_place_on_stack(
+        player_position.z,
+        stack_top,
+        placed_block_size,
+    ) {
+        return None;
+    }
+
+    // Block placement that would overlap a character's footprint. A character
+    // (player or NPC) at `(target.x, target.y, cz)` occupies `cz` (its feet
+    // tile); a placed item with `block_size = bs` occupies `[stack_top,
+    // stack_top + bs)`. Reject if any collider sits inside that span so we
+    // can't materialize a chest under someone's feet.
+    let placed_top = stack_top + placed_block_size as i32;
+    if collider_positions.iter().any(|c| {
+        c.x == target_tile.x
+            && c.y == target_tile.y
+            && c.z >= stack_top
+            && c.z < placed_top
+    }) {
+        return None;
+    }
+
+    Some(resolved)
 }
 
 fn find_nearest_valid_world_drop_tile(
     target_tile: TilePosition,
     origin_tile: Option<TilePosition>,
+    placed_block_size: u8,
     space_id: crate::world::components::SpaceId,
     player_position: &TilePosition,
     dragged_entity: Entity,
-    collider_positions: &[TilePosition],
-    movable_query: &Query<
+    object_query: &Query<
         (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        (With<Movable>, Without<Player>),
+        Without<Player>,
     >,
+    collider_positions: &[TilePosition],
+    definitions: &OverworldObjectDefinitions,
     world_config: &WorldConfig,
 ) -> Option<TilePosition> {
     let mut candidates = Vec::new();
     for y in -1..=1 {
         for x in -1..=1 {
-            candidates.push(TilePosition::new(
-                target_tile.x + x,
-                target_tile.y + y,
-                target_tile.z,
-            ));
+            candidates.push((target_tile.x + x, target_tile.y + y));
         }
     }
 
-    candidates.sort_by_key(|candidate| {
+    candidates.sort_by_key(|(cx, cy)| {
         (
-            (candidate.x - target_tile.x).abs() + (candidate.y - target_tile.y).abs(),
-            i32::from(candidate.x != target_tile.x && candidate.y != target_tile.y),
+            (cx - target_tile.x).abs() + (cy - target_tile.y).abs(),
+            i32::from(*cx != target_tile.x && *cy != target_tile.y),
         )
     });
 
-    candidates.into_iter().find(|candidate| {
-        is_valid_world_drop(
-            *candidate,
+    candidates.into_iter().find_map(|(cx, cy)| {
+        resolve_world_drop_tile(
+            TilePosition::new(cx, cy, target_tile.z),
             origin_tile,
+            placed_block_size,
             space_id,
             player_position,
             dragged_entity,
+            object_query,
             collider_positions,
-            movable_query,
+            definitions,
             world_config,
         )
     })

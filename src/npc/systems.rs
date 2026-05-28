@@ -1399,7 +1399,8 @@ mod tests {
         app.add_plugins(MinimalPlugins);
         app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
 
-        spawn_player(&mut app, 1, TilePosition::new(5, 6, 1));
+        // Player on floor 1 (raw z=2 in half-block units), NPC on ground floor.
+        spawn_player(&mut app, 1, TilePosition::new(5, 6, 2));
         let npc = spawn_melee(&mut app, TilePosition::ground(5, 5));
 
         app.add_systems(Update, update_roaming_npcs);

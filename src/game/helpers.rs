@@ -35,10 +35,12 @@ pub fn colliders_in_space(space_id: SpaceId, query: &ColliderQuery) -> Vec<TileP
 }
 
 /// Adjacency check used by every "do something to a nearby object" command
-/// (move-item, open container, rotate, interact). Chebyshev-1 on the same
-/// floor.
+/// (move-item, open container, rotate, interact). Chebyshev-1 horizontally;
+/// `z` is allowed within ±2 (one full block) so the player can reach items
+/// sitting on an adjacent barrel, a chest stacked on a chest, or one full
+/// block down — i.e. the same vertical window as auto-climb.
 pub fn is_near_player(player_position: &TilePosition, target_position: &TilePosition) -> bool {
-    player_position.z == target_position.z
+    (player_position.z - target_position.z).abs() <= 2
         && (player_position.x - target_position.x).abs() <= 1
         && (player_position.y - target_position.y).abs() <= 1
 }

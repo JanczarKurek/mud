@@ -9,5 +9,5 @@ render:
   sprite_width_tiles: 1.021
   sprite_height_tiles: 1.521
   occludes_floor_above: true
-  display_height: 1.0
+  block_size: 2
   stack_order: 50

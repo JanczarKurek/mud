@@ -16,7 +16,7 @@ use crate::ui::resources::{
     DockedPanelState, FloatingMinimapPan, FloatingMinimapPanDrag, FloatingMinimapZoom,
     HudMinimapSettings, MinimapPanelMode, MinimapZoom,
 };
-use crate::world::components::SpaceId;
+use crate::world::components::{floor_index, SpaceId};
 use crate::world::floor_definitions::FloorTilesetDefinitions;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 
@@ -177,11 +177,12 @@ pub fn update_minimap_images(
                     );
                 }
 
+                let player_floor = floor_index(tile.z);
                 for remote in client_state.remote_players.values() {
                     if remote.position.space_id != space_id {
                         continue;
                     }
-                    if remote.tile_position.z != tile.z {
+                    if floor_index(remote.tile_position.z) != player_floor {
                         continue;
                     }
                     let dx = remote.tile_position.x - center_x;
@@ -205,7 +206,7 @@ pub fn update_minimap_images(
                     if object.position.space_id != space_id {
                         continue;
                     }
-                    if object.tile_position.z != tile.z {
+                    if floor_index(object.tile_position.z) != player_floor {
                         continue;
                     }
                     if !object.is_npc && !object.is_container {
@@ -322,11 +323,12 @@ fn paint_tile_window(
         }
     }
 
+    let player_floor = floor_index(player_z);
     for object in client_state.world_objects.values() {
         if object.position.space_id != space_id {
             continue;
         }
-        if object.tile_position.z != player_z {
+        if floor_index(object.tile_position.z) != player_floor {
             continue;
         }
         if object.is_npc || object.is_movable || object.is_container {

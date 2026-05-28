@@ -623,7 +623,7 @@ fn save_world_on_app_exit(
     });
 
     let dump = WorldStateDump {
-        format_version: 12,
+        format_version: 13,
         spaces,
         saved_at_unix_seconds: SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -696,9 +696,9 @@ fn load_world_from_snapshot(
         }
     };
 
-    if dump.format_version < 10 {
+    if dump.format_version < 13 {
         warn!(
-            "world snapshot at {} is format_version {} (<10); spawn-group state was not persisted before v10 — discarding stale snapshot and starting fresh world",
+            "world snapshot at {} is format_version {} (<13); Z-coordinates switched to half-block units in v13 — discarding stale snapshot and starting fresh world",
             save_config.path.display(),
             dump.format_version
         );
@@ -1172,7 +1172,7 @@ mod tests {
             serde_json::from_str::<WorldStateDump>(&std::fs::read_to_string(&save_path).unwrap())
                 .unwrap();
 
-        assert_eq!(dump.format_version, 12);
+        assert_eq!(dump.format_version, 13);
         assert!(!dump.spaces.is_empty());
         // Players don't appear in the world snapshot at all (they live in the
         // accounts DB) and the object registry is no longer persisted, so the
@@ -1190,7 +1190,7 @@ mod tests {
         let _ = std::fs::remove_file(&save_path);
 
         let dump = WorldStateDump {
-            format_version: 10,
+            format_version: 13,
             saved_at_unix_seconds: 0,
             world_config: WorldConfigDump {
                 current_space_id: Some(crate::world::components::SpaceId(7)),
@@ -1526,7 +1526,7 @@ mod tests {
         let _ = std::fs::remove_file(&save_path);
 
         let dump = WorldStateDump {
-            format_version: 10,
+            format_version: 13,
             saved_at_unix_seconds: 0,
             world_config: WorldConfigDump {
                 current_space_id: Some(crate::world::components::SpaceId(7)),

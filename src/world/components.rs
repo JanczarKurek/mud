@@ -39,6 +39,17 @@ impl TilePosition {
     }
 }
 
+/// `z` is in half-block units: a real floor (where the minimap label flips,
+/// where ceilings live, where `FloorMap`s are keyed) sits at every *even* z.
+/// `floor_index(z)` collapses a raw z down to the floor it belongs to —
+/// `0/1 → floor 0`, `2/3 → floor 1`, etc. Use this anywhere a "what floor am
+/// I on" question is being asked (minimap, indoor occlusion, visible-floor
+/// culling, floor map lookups). Raw z is used for stack rendering, auto-
+/// climb math, and pickup reach.
+pub fn floor_index(z: i32) -> i32 {
+    z.div_euclid(2)
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SpacePosition {
     pub space_id: SpaceId,
@@ -97,8 +108,11 @@ pub struct WorldVisual {
     pub y_sort: bool,
     pub sprite_height: f32,
     pub rotation_by_facing: bool,
-    /// Visual height in tiles, mirrored from `RenderMetadata.display_height`.
-    pub display_height: f32,
+    /// Physical size in half-block units, mirrored from
+    /// `RenderMetadata.block_size`. `0` = flat ground item, `1` = half block
+    /// (chest), `2` = full block (barrel, wall). Drives stack rendering and
+    /// bottom-anchored sprite alignment.
+    pub block_size: u8,
     /// Sort key for stacking objects on the same tile, mirrored from
     /// `RenderMetadata.stack_order`.
     pub stack_order: i32,
@@ -107,12 +121,6 @@ pub struct WorldVisual {
     /// `RenderMetadata.hide_when_inside_facing`.
     pub hide_when_inside_facing: Option<Direction>,
 }
-
-/// Pixel y-offset applied to a sprite when it sits atop other tall objects on
-/// the same tile. Presentation-only — populated by `compute_stack_offsets`
-/// from `WorldVisual.display_height` of every other entity sharing the tile.
-#[derive(Component, Clone, Copy, Debug, Default)]
-pub struct StackOffset(pub f32);
 
 #[derive(Component)]
 pub struct CombatHealthBar {

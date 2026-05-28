@@ -26,7 +26,7 @@ import math
 
 # ── Mirror these from src/world/systems.rs ───────────────────────────────
 TILE_PX = 48                  # WorldConfig.tile_size
-FLOOR_SHIFT_X_TILES = -0.5    # FLOOR_SHIFT_X_TILES
+FLOOR_SHIFT_X_TILES = -0.75    # FLOOR_SHIFT_X_TILES
 FLOOR_SHIFT_Y_TILES = 0.5     # FLOOR_SHIFT_Y_TILES
 
 # ── Script-only knob: how tall the wall body is in floors (visual only) ─

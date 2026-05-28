@@ -223,8 +223,10 @@ pub fn tick_floor_ripple_scheduler(
 
     // Initial transform — `sync_ripple_overlay_transforms` refreshes each
     // frame so camera scroll / player-floor changes keep the ripple anchored.
+    // `floor_z` is an integer floor index → convert to half-block z (`* 2`)
+    // for the fractional `floor_screen_offset`.
     let floor_offset =
-        floor_screen_offset(floor_z, visible_floors.player_floor, world_config.tile_size);
+        floor_screen_offset(floor_z * 2, visible_floors.player_z, world_config.tile_size);
     let dx = tile_x as f32 * world_config.tile_size + floor_offset.x;
     let dy = tile_y as f32 * world_config.tile_size + floor_offset.y;
     let z = flat_floor_z(ripple.z_offset, floor_z);
@@ -271,8 +273,8 @@ pub fn sync_ripple_overlay_transforms(
             -10_000.0
         };
         let floor_offset = floor_screen_offset(
-            overlay.floor_z,
-            visible_floors.player_floor,
+            overlay.floor_z * 2,
+            visible_floors.player_z,
             world_config.tile_size,
         );
         let dx = overlay.tile_x as f32 * world_config.tile_size + floor_offset.x;

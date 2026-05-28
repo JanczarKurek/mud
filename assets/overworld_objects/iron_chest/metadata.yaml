@@ -10,7 +10,7 @@ render:
   sprite_path: overworld_objects/iron_chest/closed.png
   sprite_width_tiles: 1.0
   sprite_height_tiles: 0.5
-  display_height: 0.4
+  block_size: 1
   walkable_surface: true
   stack_order: 20
 states:

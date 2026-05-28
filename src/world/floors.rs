@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use std::collections::HashSet;
 
 use crate::game::resources::ClientGameState;
-use crate::world::components::SpaceId;
+use crate::world::components::{floor_index, SpaceId};
 use crate::world::direction::Direction;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 
@@ -15,20 +15,24 @@ use crate::world::object_definitions::OverworldObjectDefinitions;
 /// walls, and roofs live in `world_objects` at the same z.
 const MAX_FLOORS_ABOVE: i32 = 16;
 
-/// True iff `(x, y, z)` is "indoor" — i.e. some object on `(x, y, z+1)` in
-/// `space_id` has `render.occludes_floor_above = true`. The same predicate
-/// powers floor-roof culling (`recompute_visible_floors`) and outdoor-light
-/// occlusion in the lighting system.
+/// True iff floor `floor_idx` at `(x, y)` is "indoor" — i.e. some object on
+/// the next floor up (`floor_idx + 1`) at `(x, y)` has
+/// `render.occludes_floor_above = true`. Callers with a raw `z` should pass
+/// `floor_index(z)`. The same predicate powers floor-roof culling
+/// (`recompute_visible_floors`) and outdoor-light occlusion in the lighting
+/// system.
 pub fn is_indoor_tile(
     state: &ClientGameState,
     definitions: &OverworldObjectDefinitions,
     space_id: SpaceId,
     x: i32,
     y: i32,
-    z: i32,
+    floor_idx: i32,
 ) -> bool {
     state.world_objects.values().any(|object| {
-        if object.position.space_id != space_id || object.tile_position.z != z + 1 {
+        if object.position.space_id != space_id
+            || floor_index(object.tile_position.z) != floor_idx + 1
+        {
             return false;
         }
         if object.tile_position.x != x || object.tile_position.y != y {
@@ -48,19 +52,22 @@ pub fn is_indoor_tile(
 /// overworld.
 #[derive(Resource, Default, Clone, Debug)]
 pub struct IndoorTileMap {
+    /// `(space, x, y, floor_idx)` of every covered tile. `floor_idx` is the
+    /// covered floor itself (one below the floor that holds the occluder).
     tiles: HashSet<(SpaceId, i32, i32, i32)>,
 }
 
 impl IndoorTileMap {
-    pub fn contains(&self, space_id: SpaceId, x: i32, y: i32, z: i32) -> bool {
-        self.tiles.contains(&(space_id, x, y, z))
+    pub fn contains(&self, space_id: SpaceId, x: i32, y: i32, floor_idx: i32) -> bool {
+        self.tiles.contains(&(space_id, x, y, floor_idx))
     }
 }
 
 /// Build the per-frame `IndoorTileMap` from one sweep over `world_objects`.
 /// Schedules after `apply_game_events_to_client_state` so the set reflects the
 /// latest replicated state. Matches the predicate in `is_indoor_tile`: an
-/// object on `(x, y, z+1)` with `occludes_floor_above` makes `(x, y, z)` indoor.
+/// occluder on floor `floor_index(object.z)` makes `(x, y, floor_index(object.z) - 1)`
+/// indoor.
 pub fn recompute_indoor_tile_map(
     client_state: Res<ClientGameState>,
     definitions: Res<OverworldObjectDefinitions>,
@@ -76,8 +83,12 @@ pub fn recompute_indoor_tile_map(
             continue;
         }
         let tile = object.tile_position;
-        map.tiles
-            .insert((object.position.space_id, tile.x, tile.y, tile.z - 1));
+        map.tiles.insert((
+            object.position.space_id,
+            tile.x,
+            tile.y,
+            floor_index(tile.z) - 1,
+        ));
     }
 }
 
@@ -99,7 +110,7 @@ pub fn should_apply_indoor_tint(
     space_id: SpaceId,
     x: i32,
     y: i32,
-    z: i32,
+    floor_idx: i32,
     hide_when_inside_facing: Option<Direction>,
 ) -> bool {
     let (sx, sy) = match hide_when_inside_facing {
@@ -109,7 +120,7 @@ pub fn should_apply_indoor_tint(
         Some(Direction::North) => (x, y + 1),
         Some(Direction::West) => (x - 1, y),
     };
-    indoor.contains(space_id, sx, sy, z)
+    indoor.contains(space_id, sx, sy, floor_idx)
 }
 
 /// Window of floor indices currently rendered on the client. Recomputed each
@@ -117,7 +128,13 @@ pub fn should_apply_indoor_tint(
 /// Consumed by `sync_tile_transforms` to cull/dim by floor.
 #[derive(Resource, Clone, Copy, Debug, Default)]
 pub struct VisibleFloorRange {
+    /// Floor index of the player (`floor_index(player.z)`). Used for culling
+    /// and floor-bucketed checks (visible-range, indoor-tile lookups).
     pub player_floor: i32,
+    /// Player `z` in half-block units. Used by `floor_screen_offset` to
+    /// produce fractional-floor diagonal shifts on intra-floor climbs (e.g.
+    /// standing on a half-block chest = z+1 = half-floor up).
+    pub player_z: i32,
     pub lowest_visible: i32,
     pub highest_visible: i32,
 }
@@ -137,7 +154,7 @@ pub fn recompute_visible_floors(
     let Some(player_pos) = client_state.player_position else {
         return;
     };
-    let player_floor = player_pos.tile_position.z;
+    let player_floor = floor_index(player_pos.tile_position.z);
     let player_x = player_pos.tile_position.x;
     let player_y = player_pos.tile_position.y;
     let space_id = player_pos.space_id;
@@ -173,6 +190,7 @@ pub fn recompute_visible_floors(
     let space_min_z = floor_min_z(&client_state, space_id, player_floor);
 
     range.player_floor = player_floor;
+    range.player_z = player_pos.tile_position.z;
     range.lowest_visible = space_min_z.min(player_floor);
     range.highest_visible = highest_visible;
 }
@@ -309,14 +327,14 @@ render:
         let defs = OverworldObjectDefinitions::new_for_test(defs_map);
 
         let mut state = ClientGameState::default();
-        // Object at (5, 5, 1) → indoor at (5, 5, 0).
+        // Roof on floor 1 (raw z=2 in half-block units) → covers floor 0 at (5, 5).
         state.world_objects.insert(
             1,
             ClientWorldObjectState {
                 object_id: 1,
                 definition_id: "roof".to_string(),
-                position: SpacePosition::new(SpaceId(7), TilePosition::new(5, 5, 1)),
-                tile_position: TilePosition::new(5, 5, 1),
+                position: SpacePosition::new(SpaceId(7), TilePosition::new(5, 5, 2)),
+                tile_position: TilePosition::new(5, 5, 2),
                 vitals: None,
                 is_container: false,
                 is_npc: false,
@@ -357,8 +375,9 @@ render:
         use std::collections::HashMap;
 
         let space = SpaceId(3);
+        // Player on floor 2 = raw z=4 in half-block units.
         let mut state = ClientGameState {
-            player_position: Some(SpacePosition::new(space, TilePosition::new(0, 0, 5))),
+            player_position: Some(SpacePosition::new(space, TilePosition::new(0, 0, 4))),
             ..Default::default()
         };
         // Only the ground floor has a `FloorMap` entry — matches how this
@@ -376,11 +395,11 @@ render:
         app.update();
 
         let range = *app.world().resource::<VisibleFloorRange>();
-        assert_eq!(range.player_floor, 5);
+        assert_eq!(range.player_floor, 2);
         assert_eq!(range.lowest_visible, 0, "no MAX_FLOORS_BELOW cap");
         assert_eq!(
             range.highest_visible,
-            5 + MAX_FLOORS_ABOVE,
+            2 + MAX_FLOORS_ABOVE,
             "no roof above player → full upper scan"
         );
     }

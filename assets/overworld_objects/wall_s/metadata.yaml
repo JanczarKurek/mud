@@ -6,9 +6,9 @@ render:
   debug_color: [120, 114, 103]
   debug_size: 1.0
   sprite_path: overworld_objects/wall_s/sprite.png
-  sprite_width_tiles: 2.0
+  sprite_width_tiles: 2.5
   sprite_height_tiles: 0.771
   occludes_floor_above: true
-  display_height: 1.0
+  block_size: 2
   hide_when_inside_facing: south
   stack_order: 50
