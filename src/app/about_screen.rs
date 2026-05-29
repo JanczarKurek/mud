@@ -78,9 +78,11 @@ fn spawn_about_screen(
     let theme = theme.clone();
     let palette = *palette;
 
-    // Player sheet: 4 cols x 2 rows of 32x48 frames; walk clip is row 1.
+    // Player sheet: 4 cols x 8 rows of 96x96 frames (see
+    // `assets/overworld_objects/player/metadata.yaml`). walk_s is row 1, so
+    // its first frame is index 4.
     let sheet: Handle<Image> = asset_server.load("overworld_objects/player/sheet.png");
-    let layout = TextureAtlasLayout::from_grid(UVec2::new(32, 48), 4, 2, None, None);
+    let layout = TextureAtlasLayout::from_grid(UVec2::new(96, 96), 4, 8, None, None);
     let layout_handle = texture_atlas_layouts.add(layout);
 
     let (back_bg, back_border, back_text) = idle_colors(&palette, ButtonStyle::Primary, false);
@@ -203,7 +205,7 @@ fn spawn_about_screen(
                     .with_children(|row| {
                         row.spawn((
                             Node {
-                                width: px(96.0),
+                                width: px(144.0),
                                 height: px(144.0),
                                 ..default()
                             },

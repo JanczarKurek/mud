@@ -213,9 +213,11 @@ struct PreviewAnimation {
     base_index: u32,
 }
 
-const PREVIEW_FRAME_W: u32 = 32;
-const PREVIEW_FRAME_H: u32 = 48;
-const PREVIEW_SCALE: f32 = 4.0;
+const PREVIEW_FRAME_W: u32 = 96;
+const PREVIEW_FRAME_H: u32 = 96;
+const PREVIEW_SHEET_COLS: u32 = 4;
+const PREVIEW_SHEET_ROWS: u32 = 8;
+const PREVIEW_SCALE: f32 = 2.0;
 const PREVIEW_FPS: f32 = 3.0;
 const PREVIEW_IDLE_FRAMES: u32 = 4;
 
@@ -276,13 +278,13 @@ fn spawn_character_create_screen(
     let theme = theme.clone();
     let palette = *palette;
 
-    // Player sheet atlas: 4 cols × 2 rows of 32×48 frames. Shared across the
-    // base sheet + every tintable layer ImageNode so they index the same
-    // frame each tick.
+    // Player sheet atlas: must match `assets/overworld_objects/player/metadata.yaml`
+    // (96×96 frames, 4 cols × 8 rows). Shared across the base sheet + every
+    // tintable layer ImageNode so they index the same frame each tick.
     let preview_layout = TextureAtlasLayout::from_grid(
         UVec2::new(PREVIEW_FRAME_W, PREVIEW_FRAME_H),
-        4,
-        2,
+        PREVIEW_SHEET_COLS,
+        PREVIEW_SHEET_ROWS,
         None,
         None,
     );
