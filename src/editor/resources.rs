@@ -265,11 +265,33 @@ pub enum ModalConfirmed {
     },
 }
 
+/// One row in a `ModalPickerField`. `id = None` is a sentinel "no selection"
+/// option (e.g. "(No fill)") which the confirm path forwards as an empty
+/// string. `swatch` is the colour shown next to the label.
+#[derive(Clone, Debug)]
+pub struct ModalPickerOption {
+    pub id: Option<String>,
+    pub label: String,
+    pub swatch: Color,
+}
+
+/// A click-picker control embedded in a modal (alongside text fields).
+/// Rendered as a labeled scrollable list of swatch+label rows.
+#[derive(Clone, Debug)]
+pub struct ModalPickerField {
+    pub label: String,
+    pub options: Vec<ModalPickerOption>,
+    pub selected: usize,
+}
+
 #[derive(Resource, Default)]
 pub struct ModalState {
     pub active: Option<ModalKind>,
     pub text_fields: Vec<ModalTextField>,
     pub focused_field: usize,
+    /// Click-pickers rendered after the text fields. Each picker's selection
+    /// is stored as an index into its `options` vec.
+    pub picker_fields: Vec<ModalPickerField>,
     /// Items shown in a scrollable list (used by FileOpen).
     pub list_items: Vec<String>,
     pub selected_list_item: Option<usize>,

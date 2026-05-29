@@ -407,9 +407,7 @@ pub fn floor_screen_offset(view_z: f32, player_z: f32, tile_size: f32) -> Vec2 {
 /// atop barrel). Floor offsets are additive and dominate y-sort so upper
 /// floors always render above lower ones when both are visible.
 pub fn y_sort_z(tile_x: i32, tile_y: i32, floor: i32, stack_index: i32) -> f32 {
-    floor as f32 * FLOOR_Z_STEP
-        + 1.0
-        - tile_y as f32 * 0.01
+    floor as f32 * FLOOR_Z_STEP + 1.0 - tile_y as f32 * 0.01
         + tile_x as f32 * 0.01
         + stack_index as f32 * 0.001
 }

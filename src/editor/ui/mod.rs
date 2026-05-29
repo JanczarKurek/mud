@@ -537,10 +537,11 @@ pub fn handle_save_as_button_click(
 pub fn handle_new_map_button_click(
     btn: Query<&Interaction, (Changed<Interaction>, With<EditorNewMapButton>)>,
     mut modal_state: ResMut<ModalState>,
+    floor_defs: Res<crate::world::floor_definitions::FloorTilesetDefinitions>,
 ) {
     for interaction in &btn {
         if *interaction == Interaction::Pressed && modal_state.active.is_none() {
-            open_new_map_dialog_impl(&mut modal_state);
+            open_new_map_dialog_impl(&mut modal_state, &floor_defs);
         }
     }
 }
@@ -548,10 +549,12 @@ pub fn handle_new_map_button_click(
 pub fn handle_generate_dungeon_button_click(
     btn: Query<&Interaction, (Changed<Interaction>, With<EditorGenerateDungeonButton>)>,
     mut modal_state: ResMut<ModalState>,
+    floor_defs: Res<crate::world::floor_definitions::FloorTilesetDefinitions>,
+    object_defs: Res<crate::world::object_definitions::OverworldObjectDefinitions>,
 ) {
     for interaction in &btn {
         if *interaction == Interaction::Pressed && modal_state.active.is_none() {
-            open_generate_dungeon_dialog_impl(&mut modal_state);
+            open_generate_dungeon_dialog_impl(&mut modal_state, &floor_defs, &object_defs);
         }
     }
 }

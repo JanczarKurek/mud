@@ -233,8 +233,8 @@ pub fn trigger_movement_animation(
                     atlas_columns: u32,
                     facing: Option<Direction>| {
         // Prefer a directional walk; fall back to plain walk; then to idle.
-        let resolved = resolved_clip(clips, "walk", facing)
-            .or_else(|| resolved_clip(clips, "idle", facing));
+        let resolved =
+            resolved_clip(clips, "walk", facing).or_else(|| resolved_clip(clips, "idle", facing));
         if let Some((clip_name, clip)) = resolved {
             apply_clip(
                 animated,
@@ -309,8 +309,7 @@ pub fn return_to_idle_animation(
         };
         // Swap if we were walking, OR if the directional idle for the current
         // facing differs from the clip we're currently playing (turn-in-place).
-        let needs_swap =
-            is_walk_clip(&animated.current_clip) || animated.current_clip != clip_name;
+        let needs_swap = is_walk_clip(&animated.current_clip) || animated.current_clip != clip_name;
         if !needs_swap {
             return;
         }

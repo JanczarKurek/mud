@@ -453,7 +453,12 @@ pub fn spawn_player_visual(
         commands.entity(entity).insert(anchor);
     }
 
-    attach_combat_health_bar(&mut commands, entity, world_config.tile_size, hud_anchor_height);
+    attach_combat_health_bar(
+        &mut commands,
+        entity,
+        world_config.tile_size,
+        hud_anchor_height,
+    );
 }
 
 /// Marker inserted on the player entity once its recolor sprite layers have

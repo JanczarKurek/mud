@@ -9,8 +9,9 @@ use crate::editor::resources::{
     BehaviorKind, ConfirmedLightingKeyframe, ConfirmedSpawnGroup, EditingField, EditorCamera,
     EditorContext, EditorLightingBuffer, EditorMapBuffers, EditorPortalBuffer,
     EditorPropertyEditBuffer, EditorSpaceResetDeps, EditorSpawnGroupBuffer, EditorState,
-    EditorTool, EditorViewState, LightingKeyframeDraft, ModalConfirmed, ModalKind, ModalState,
-    ModalTextField, SpawnAreaKind, SpawnGroupDraft, UndoOp, UndoStack,
+    EditorTool, EditorViewState, LightingKeyframeDraft, ModalConfirmed, ModalKind,
+    ModalPickerField, ModalPickerOption, ModalState, ModalTextField, SpawnAreaKind,
+    SpawnGroupDraft, UndoOp, UndoStack,
 };
 use crate::editor::serializer::serialize_and_save;
 use crate::editor::templates::{save_template, EditorTemplatesIndex};
@@ -23,6 +24,7 @@ use crate::world::animation::VisualOffset;
 use crate::world::components::{
     OverworldObject, SpaceId, SpaceResident, TilePosition, ViewPosition, WorldVisual,
 };
+use crate::world::floor_definitions::FloorTilesetDefinitions;
 use crate::world::floor_map::FloorMaps;
 use crate::world::map_layout::{
     AmbientKeyframe, MapBehavior, PortalDefinition, SpaceDefinitions, SpawnArea, SpawnGroupDef,
@@ -1344,7 +1346,11 @@ pub fn open_save_as_impl(editor_context: &EditorContext, modal_state: &mut Modal
     };
 }
 
-pub fn open_new_map_dialog_impl(modal_state: &mut ModalState) {
+pub fn open_new_map_dialog_impl(
+    modal_state: &mut ModalState,
+    floor_defs: &FloorTilesetDefinitions,
+) {
+    let picker = build_floor_picker("Floor Fill", floor_defs, true, Some("grass"));
     *modal_state = ModalState {
         active: Some(ModalKind::NewMap),
         text_fields: vec![
@@ -1366,18 +1372,96 @@ pub fn open_new_map_dialog_impl(modal_state: &mut ModalState) {
                 placeholder: "24".into(),
                 numeric_only: true,
             },
-            ModalTextField {
-                label: "Fill Tile Type".into(),
-                value: String::new(),
-                placeholder: "grass".into(),
-                numeric_only: false,
-            },
         ],
+        picker_fields: vec![picker],
         ..default()
     };
 }
 
-pub fn open_generate_dungeon_dialog_impl(modal_state: &mut ModalState) {
+/// Read the selected `id` from a picker at `index` (None if no selection or
+/// the picker doesn't exist). Used by `process_modal_confirm`.
+fn picker_value(pickers: &[ModalPickerField], index: usize) -> Option<String> {
+    pickers
+        .get(index)
+        .and_then(|p| p.options.get(p.selected))
+        .and_then(|opt| opt.id.clone())
+}
+
+/// Build a floor picker with an optional `(No fill)` sentinel at index 0.
+/// Floors are sorted by priority then id (mirrors the left-side palette).
+fn build_floor_picker(
+    label: &str,
+    floor_defs: &FloorTilesetDefinitions,
+    include_none: bool,
+    default_id: Option<&str>,
+) -> ModalPickerField {
+    let mut options: Vec<ModalPickerOption> = Vec::new();
+    if include_none {
+        options.push(ModalPickerOption {
+            id: None,
+            label: "(No fill)".into(),
+            swatch: Color::srgba(0.0, 0.0, 0.0, 0.0),
+        });
+    }
+    let mut sorted: Vec<&crate::world::floor_definitions::FloorTilesetDefinition> =
+        floor_defs.iter().collect();
+    sorted.sort_by(|a, b| a.priority.cmp(&b.priority).then(a.id.cmp(&b.id)));
+    for def in sorted {
+        options.push(ModalPickerOption {
+            id: Some(def.id.clone()),
+            label: def.name.clone(),
+            swatch: def.debug_color(),
+        });
+    }
+    let selected = default_id
+        .and_then(|target| options.iter().position(|o| o.id.as_deref() == Some(target)))
+        .unwrap_or(0);
+    ModalPickerField {
+        label: label.into(),
+        options,
+        selected,
+    }
+}
+
+/// Build an object picker. Used for `Wall Type` in Generate Dungeon — there's
+/// no "(None)" sentinel since the generator requires a concrete object.
+fn build_object_picker(
+    label: &str,
+    object_defs: &OverworldObjectDefinitions,
+    default_id: Option<&str>,
+) -> ModalPickerField {
+    let mut ids: Vec<&str> = object_defs.ids().collect();
+    ids.sort();
+    let options: Vec<ModalPickerOption> = ids
+        .iter()
+        .filter_map(|id| {
+            object_defs.get(id).map(|def| ModalPickerOption {
+                id: Some((*id).to_owned()),
+                label: def.name.clone(),
+                swatch: def.debug_color(),
+            })
+        })
+        .collect();
+    let selected = default_id
+        .and_then(|target| options.iter().position(|o| o.id.as_deref() == Some(target)))
+        .unwrap_or(0);
+    ModalPickerField {
+        label: label.into(),
+        options,
+        selected,
+    }
+}
+
+pub fn open_generate_dungeon_dialog_impl(
+    modal_state: &mut ModalState,
+    floor_defs: &FloorTilesetDefinitions,
+    object_defs: &OverworldObjectDefinitions,
+) {
+    let wall_picker = build_object_picker("Wall Type", object_defs, Some("wall_s"));
+    let chamber_picker =
+        build_floor_picker("Chamber Floor", floor_defs, false, Some("cobblestone"));
+    let corridor_picker =
+        build_floor_picker("Corridor Floor", floor_defs, false, Some("dirt_path"));
     *modal_state = ModalState {
         active: Some(ModalKind::GenerateDungeon),
         text_fields: vec![
@@ -1398,24 +1482,6 @@ pub fn open_generate_dungeon_dialog_impl(modal_state: &mut ModalState) {
                 value: String::new(),
                 placeholder: "48".into(),
                 numeric_only: true,
-            },
-            ModalTextField {
-                label: "Wall Type".into(),
-                value: String::new(),
-                placeholder: "wall_s".into(),
-                numeric_only: false,
-            },
-            ModalTextField {
-                label: "Chamber Floor".into(),
-                value: String::new(),
-                placeholder: "cobblestone".into(),
-                numeric_only: false,
-            },
-            ModalTextField {
-                label: "Corridor Floor".into(),
-                value: String::new(),
-                placeholder: "dirt_path".into(),
-                numeric_only: false,
             },
             ModalTextField {
                 label: "Target Rooms".into(),
@@ -1448,6 +1514,7 @@ pub fn open_generate_dungeon_dialog_impl(modal_state: &mut ModalState) {
                 numeric_only: true,
             },
         ],
+        picker_fields: vec![wall_picker, chamber_picker, corridor_picker],
         ..default()
     };
 }
@@ -1458,7 +1525,6 @@ pub fn process_modal_confirm(
     mut modal_state: ResMut<ModalState>,
     editor_state: Res<EditorState>,
     definitions: Res<OverworldObjectDefinitions>,
-    floor_defs: Res<crate::world::floor_definitions::FloorTilesetDefinitions>,
 ) {
     if !modal_state.confirm_triggered {
         return;
@@ -1532,11 +1598,13 @@ pub fn process_modal_confirm(
                     return;
                 }
             };
-            let fill_type = vals.get(3).cloned().unwrap_or_else(|| "grass".into());
-            if definitions.get(&fill_type).is_none() {
-                modal_state.error_message = Some(format!("Unknown fill tile '{fill_type}'."));
-                return;
-            }
+            // Floor fill picker — empty string id = "(No fill)" → blank map.
+            let fill_type = modal_state
+                .picker_fields
+                .first()
+                .and_then(|p| p.options.get(p.selected))
+                .and_then(|opt| opt.id.clone())
+                .unwrap_or_default();
             modal_state.active = None;
             modal_state.error_message = None;
             modal_state.confirmed = Some(ModalConfirmed::NewMap {
@@ -1579,36 +1647,16 @@ pub fn process_modal_confirm(
                     }
                 },
             };
-            let wall_type = vals
-                .get(3)
-                .filter(|s| !s.is_empty())
-                .cloned()
-                .unwrap_or_else(|| "wall_s".into());
-            if definitions.get(&wall_type).is_none() {
-                modal_state.error_message = Some(format!("Unknown wall type '{wall_type}'."));
-                return;
-            }
-            let chamber_floor = vals
-                .get(4)
-                .filter(|s| !s.is_empty())
-                .cloned()
-                .unwrap_or_else(|| "cobblestone".into());
-            if !floor_defs.contains(&chamber_floor) {
-                modal_state.error_message =
-                    Some(format!("Unknown chamber floor '{chamber_floor}'."));
-                return;
-            }
-            let corridor_floor = vals
-                .get(5)
-                .filter(|s| !s.is_empty())
-                .cloned()
-                .unwrap_or_else(|| "dirt_path".into());
-            if !floor_defs.contains(&corridor_floor) {
-                modal_state.error_message =
-                    Some(format!("Unknown corridor floor '{corridor_floor}'."));
-                return;
-            }
-            let target_rooms: u32 = match vals.get(6).map(|s| s.as_str()) {
+            // Pickers (wall / chamber / corridor) are seeded with valid ids so
+            // selections can't be unknown — fall back to the legacy default if
+            // the picker is somehow empty.
+            let wall_type =
+                picker_value(&modal_state.picker_fields, 0).unwrap_or_else(|| "wall_s".into());
+            let chamber_floor =
+                picker_value(&modal_state.picker_fields, 1).unwrap_or_else(|| "cobblestone".into());
+            let corridor_floor =
+                picker_value(&modal_state.picker_fields, 2).unwrap_or_else(|| "dirt_path".into());
+            let target_rooms: u32 = match vals.get(3).map(|s| s.as_str()) {
                 Some("") | None => 8,
                 Some(s) => match s.parse::<u32>() {
                     Ok(v) if (1..=200).contains(&v) => v,
@@ -1618,7 +1666,7 @@ pub fn process_modal_confirm(
                     }
                 },
             };
-            let room_padding: i32 = match vals.get(7).map(|s| s.as_str()) {
+            let room_padding: i32 = match vals.get(4).map(|s| s.as_str()) {
                 Some("") | None => 4,
                 Some(s) => match s.parse::<i32>() {
                     Ok(v) if (0..=32).contains(&v) => v,
@@ -1628,7 +1676,7 @@ pub fn process_modal_confirm(
                     }
                 },
             };
-            let wander_pct: i32 = match vals.get(8).map(|s| s.as_str()) {
+            let wander_pct: i32 = match vals.get(5).map(|s| s.as_str()) {
                 Some("") | None => 55,
                 Some(s) => match s.parse::<i32>() {
                     Ok(v) if (0..=100).contains(&v) => v,
@@ -1638,7 +1686,7 @@ pub fn process_modal_confirm(
                     }
                 },
             };
-            let branch_pct: i32 = match vals.get(9).map(|s| s.as_str()) {
+            let branch_pct: i32 = match vals.get(6).map(|s| s.as_str()) {
                 Some("") | None => 50,
                 Some(s) => match s.parse::<i32>() {
                     Ok(v) if (0..=100).contains(&v) => v,
@@ -1648,7 +1696,7 @@ pub fn process_modal_confirm(
                     }
                 },
             };
-            let seed: Option<u64> = match vals.get(10).map(|s| s.as_str()) {
+            let seed: Option<u64> = match vals.get(7).map(|s| s.as_str()) {
                 Some("") | None => None,
                 Some(s) => match s.parse::<u64>() {
                     Ok(v) => Some(v),
@@ -2260,6 +2308,9 @@ pub fn apply_modal_confirmed(
             portal_buffer.portals = vec![];
             spawn_group_buffer.groups.clear();
             spawn_group_buffer.selected = None;
+            spawn_group_buffer.pending_new_spawn_group_template = None;
+            lighting_buffer.config = crate::world::map_layout::SpaceLightingDef::default();
+            lighting_buffer.selected_keyframe = None;
             vendor_stash_buffer.stashes.clear();
             vendor_stash_buffer.selected = None;
             vendor_stash_buffer.editing = None;
@@ -2345,6 +2396,9 @@ pub fn apply_modal_confirmed(
             portal_buffer.portals.clear();
             spawn_group_buffer.groups.clear();
             spawn_group_buffer.selected = None;
+            spawn_group_buffer.pending_new_spawn_group_template = None;
+            lighting_buffer.config = def.lighting.clone();
+            lighting_buffer.selected_keyframe = None;
             vendor_stash_buffer.stashes.clear();
             vendor_stash_buffer.selected = None;
             vendor_stash_buffer.editing = None;

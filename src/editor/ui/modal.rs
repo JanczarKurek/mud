@@ -5,8 +5,8 @@ use bevy::ui::{ComputedNode, UiGlobalTransform};
 use bevy::window::PrimaryWindow;
 
 use crate::editor::resources::{
-    BehaviorKind, LightingKeyframeField, ModalKind, ModalState, PickRectTarget, SpawnAreaKind,
-    SpawnGroupField,
+    BehaviorKind, LightingKeyframeField, ModalKind, ModalPickerField, ModalState, PickRectTarget,
+    SpawnAreaKind, SpawnGroupField,
 };
 use crate::editor::ui::color_picker::{
     ensure_hue_strip, ensure_sv_pad, hsv_to_rgb, rgb_to_hsv, EditorColorPickerAssets,
@@ -28,6 +28,12 @@ pub struct ModalTextField {
 #[derive(Component)]
 pub struct ModalListItem {
     pub index: usize,
+}
+
+#[derive(Component, Clone, Copy)]
+pub struct ModalPickerRow {
+    pub picker_index: usize,
+    pub option_index: usize,
 }
 
 #[derive(Component)]
@@ -174,10 +180,12 @@ pub fn spawn_or_rebuild_modal(
                     ThemedPanel,
                     Node {
                         width: Val::Px(380.0),
+                        max_height: Val::Percent(92.0),
                         flex_direction: FlexDirection::Column,
                         padding: UiRect::all(Val::Px(18.0)),
                         row_gap: Val::Px(10.0),
                         border: UiRect::all(Val::Px(1.0)),
+                        overflow: Overflow::clip_y(),
                         ..default()
                     },
                     ImageNode::new(theme.panel_frame.clone())
@@ -280,6 +288,11 @@ pub fn spawn_or_rebuild_modal(
                                         }
                                     });
                             });
+                    }
+
+                    // Picker fields (e.g. floor / object pickers).
+                    for (pi, picker) in modal_state.picker_fields.iter().enumerate() {
+                        spawn_picker_field_section(card, &palette, pi, picker);
                     }
 
                     // File list (FileOpen only)
@@ -403,6 +416,105 @@ fn spawn_modal_button<T: Component>(
                 },
                 TextColor(text),
             ));
+        });
+}
+
+fn spawn_picker_field_section(
+    parent: &mut ChildSpawnerCommands,
+    palette: &Palette,
+    picker_index: usize,
+    picker: &ModalPickerField,
+) {
+    parent
+        .spawn((Node {
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(3.0),
+            width: Val::Percent(100.0),
+            ..default()
+        },))
+        .with_children(|col| {
+            col.spawn((
+                Text::new(picker.label.clone()),
+                TextFont {
+                    font_size: 12.0,
+                    ..default()
+                },
+                TextColor(palette.text_muted),
+            ));
+
+            col.spawn((
+                Node {
+                    width: Val::Percent(100.0),
+                    max_height: Val::Px(140.0),
+                    flex_direction: FlexDirection::Column,
+                    overflow: Overflow::scroll_y(),
+                    border: UiRect::all(Val::Px(1.0)),
+                    ..default()
+                },
+                BorderColor::all(palette.border_idle),
+                BackgroundColor(Color::srgba(0.05, 0.03, 0.03, 0.90)),
+            ))
+            .with_children(|list| {
+                for (oi, opt) in picker.options.iter().enumerate() {
+                    let selected = picker.selected == oi;
+                    let bg = if selected {
+                        Color::srgba(0.18, 0.12, 0.06, 0.95)
+                    } else {
+                        Color::srgba(0.10, 0.07, 0.06, 0.80)
+                    };
+                    let border = if selected {
+                        palette.border_focus
+                    } else {
+                        Color::srgb(0.20, 0.15, 0.10)
+                    };
+                    list.spawn((
+                        Button,
+                        ModalPickerRow {
+                            picker_index,
+                            option_index: oi,
+                        },
+                        Node {
+                            width: Val::Percent(100.0),
+                            padding: UiRect::axes(Val::Px(8.0), Val::Px(5.0)),
+                            align_items: AlignItems::Center,
+                            column_gap: Val::Px(6.0),
+                            border: UiRect::bottom(Val::Px(1.0)),
+                            ..default()
+                        },
+                        BackgroundColor(bg),
+                        BorderColor::all(border),
+                    ))
+                    .with_children(|btn| {
+                        btn.spawn((
+                            Node {
+                                width: Val::Px(12.0),
+                                height: Val::Px(12.0),
+                                flex_shrink: 0.0,
+                                border: UiRect::all(Val::Px(1.0)),
+                                ..default()
+                            },
+                            BackgroundColor(opt.swatch),
+                            BorderColor::all(Color::srgb(0.40, 0.30, 0.20)),
+                        ));
+                        btn.spawn((
+                            Text::new(opt.label.clone()),
+                            TextFont {
+                                font_size: 12.0,
+                                ..default()
+                            },
+                            TextColor(if selected {
+                                palette.text_accent
+                            } else {
+                                palette.text_value
+                            }),
+                            Node {
+                                overflow: Overflow::clip_x(),
+                                ..default()
+                            },
+                        ));
+                    });
+                }
+            });
         });
 }
 
@@ -588,6 +700,22 @@ pub fn handle_modal_list_click(
     for (item, interaction) in &items {
         if *interaction == Interaction::Pressed {
             modal_state.selected_list_item = Some(item.index);
+        }
+    }
+}
+
+pub fn handle_modal_picker_click(
+    rows: Query<(&ModalPickerRow, &Interaction), (Changed<Interaction>, With<Button>)>,
+    mut modal_state: ResMut<ModalState>,
+) {
+    for (row, interaction) in &rows {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        if let Some(picker) = modal_state.picker_fields.get_mut(row.picker_index) {
+            if row.option_index < picker.options.len() {
+                picker.selected = row.option_index;
+            }
         }
     }
 }

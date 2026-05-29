@@ -48,9 +48,10 @@ use crate::editor::ui::mobs_panel::{
 use crate::editor::ui::modal::{
     apply_pick_rect_result_to_modal, handle_color_picker_hue_drag, handle_color_picker_sv_drag,
     handle_lighting_keyframe_field_click, handle_modal_buttons, handle_modal_keyboard_input,
-    handle_modal_list_click, handle_modal_text_field_click, handle_spawn_group_area_kind_click,
-    handle_spawn_group_behavior_kind_click, handle_spawn_group_field_click,
-    handle_spawn_group_pick_rect_click, spawn_or_rebuild_modal, sync_modal_error_text,
+    handle_modal_list_click, handle_modal_picker_click, handle_modal_text_field_click,
+    handle_spawn_group_area_kind_click, handle_spawn_group_behavior_kind_click,
+    handle_spawn_group_field_click, handle_spawn_group_pick_rect_click, spawn_or_rebuild_modal,
+    sync_modal_error_text,
 };
 use crate::editor::ui::palette::{
     handle_floor_palette_clicks, handle_palette_clicks, handle_palette_filter_click,
@@ -85,6 +86,11 @@ use crate::editor::ui::{
     handle_vendor_stashes_toggle_button_click, spawn_editor_hud, sync_editor_top_bar,
 };
 use crate::editor::undo::handle_undo_redo;
+use crate::world::animation::AnimatedSprite;
+use crate::world::components::{
+    ClientProjectedWorldObject, ClientRemotePlayerVisual, OverworldObject, WorldVisual,
+};
+use crate::world::resources::{ClientRemotePlayerProjectionState, ClientWorldProjectionState};
 
 pub struct EditorPlugin;
 
@@ -135,6 +141,44 @@ fn cleanup_editor_ghost_markers(
     }
 }
 
+/// Despawn presentation-only projected entities on entering the editor.
+/// `sync_client_world_projection` / `sync_remote_player_projection` are
+/// gated to `InGame`, so without this they remain as frozen "shadows" of the
+/// world the player just left.
+fn despawn_client_projections_on_editor_enter(
+    mut commands: Commands,
+    projected_objects: Query<Entity, With<ClientProjectedWorldObject>>,
+    remote_players: Query<Entity, With<ClientRemotePlayerVisual>>,
+    mut world_projection: ResMut<ClientWorldProjectionState>,
+    mut remote_projection: ResMut<ClientRemotePlayerProjectionState>,
+) {
+    for entity in projected_objects.iter().chain(remote_players.iter()) {
+        commands.entity(entity).despawn();
+    }
+    world_projection.entities.clear();
+    remote_projection.entities.clear();
+}
+
+/// Strip presentation components that `attach_editor_visuals` attached to
+/// authoritative `OverworldObject` entities. Uses `remove::<>` rather than
+/// despawn — the authoritative data (`OverworldObject`, `SpaceResident`,
+/// `TilePosition`, `Collider`, …) must survive into gameplay.
+fn strip_editor_visuals_on_exit(
+    mut commands: Commands,
+    query: Query<Entity, With<OverworldObject>>,
+) {
+    for entity in &query {
+        commands.entity(entity).remove::<(
+            Sprite,
+            Transform,
+            GlobalTransform,
+            WorldVisual,
+            AnimatedSprite,
+            bevy::sprite::Anchor,
+        )>();
+    }
+}
+
 impl Plugin for EditorPlugin {
     fn build(&self, app: &mut App) {
         // Building-preset asset type is editor-only (presets aren't read by
@@ -180,6 +224,7 @@ impl Plugin for EditorPlugin {
                 OnEnter(ClientAppState::MapEditor),
                 (
                     init_editor_context,
+                    despawn_client_projections_on_editor_enter,
                     reset_space_to_authored.after(init_editor_context),
                     // attach_editor_visuals only catches entities that existed
                     // *before* `reset_space_to_authored`'s despawns flush; the
@@ -199,6 +244,7 @@ impl Plugin for EditorPlugin {
                     cleanup_editor_floor_cells,
                     cleanup_editor_ghost_markers,
                     reset_editor_session_state,
+                    strip_editor_visuals_on_exit,
                 ),
             )
             // Camera / render. `.chain()` keeps both transform syncs strictly
@@ -301,6 +347,7 @@ impl Plugin for EditorPlugin {
                     handle_modal_keyboard_input.run_if(has_modal),
                     handle_modal_buttons,
                     handle_modal_list_click,
+                    handle_modal_picker_click,
                     handle_modal_text_field_click,
                     handle_spawn_group_field_click,
                     handle_spawn_group_area_kind_click,
