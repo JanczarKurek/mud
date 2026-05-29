@@ -3,7 +3,6 @@ pub mod character_sheet;
 pub mod chat_input;
 pub mod components;
 pub mod container_panel;
-pub mod nearby_npcs_panel;
 pub mod dialog;
 pub mod equipment_panel;
 pub mod item_details;
@@ -13,6 +12,8 @@ pub mod minimap;
 pub mod minimap_panel;
 pub mod mountable_panel;
 pub mod movable_window;
+pub mod nearby_npcs_panel;
+pub mod persistence;
 pub mod quickbar;
 pub mod recipe_book;
 pub mod resources;
@@ -44,7 +45,6 @@ use crate::app::state::ClientAppState;
 use crate::ui::backpack_panel::BackpackPanel;
 use crate::ui::chat_input::{handle_chat_click_focus, handle_chat_submissions, toggle_chat_focus};
 use crate::ui::container_panel::ContainerPanel;
-use crate::ui::nearby_npcs_panel::NearbyNpcsPanel;
 use crate::ui::dialog::{
     auto_pin_dialog_transcript_scroll, handle_dialog_panel_clicks,
     handle_dialog_transcript_scrolling, sync_dialog_panel_continue_button,
@@ -60,6 +60,8 @@ use crate::ui::minimap::{
 };
 use crate::ui::minimap_panel::MinimapPanel;
 use crate::ui::mountable_panel::{MountablePanelLifecycleSet, MountablePanelPlugin};
+use crate::ui::nearby_npcs_panel::NearbyNpcsPanel;
+use crate::ui::persistence::{load_ui_state_on_login, persist_ui_state, UiStateLoadedFor};
 use crate::ui::quickbar::{
     handle_bottom_panel_hide_button, handle_bottom_panel_hide_key, handle_quickbar_clicks,
     handle_quickbar_keybinds, load_quickbar_on_login, persist_quickbar,
@@ -80,22 +82,21 @@ use crate::ui::systems::{
     consume_level_up_toasts, handle_attack_targeting, handle_context_menu_actions,
     handle_context_menu_lock_actions, handle_context_menu_opening, handle_death_summary_dismiss,
     handle_docked_panel_close_buttons, handle_docked_panel_dragging, handle_docked_panel_resizing,
-    handle_docked_panel_scrolling, handle_movable_dragging, handle_spell_targeting,
-    handle_take_partial_buttons, handle_trade_context_menu_actions, handle_use_on_targeting,
-    manage_open_containers, print_right_sidebar_layout_debug, setup_native_custom_cursor,
-    sync_carry_weight_label, sync_chat_log, sync_container_slot_images,
+    handle_docked_panel_scrolling, handle_movable_dragging, handle_nearby_npc_row_clicks,
+    handle_spell_targeting, handle_take_partial_buttons, handle_trade_context_menu_actions,
+    handle_use_on_targeting, manage_open_containers, print_right_sidebar_layout_debug,
+    setup_native_custom_cursor, sync_carry_weight_label, sync_chat_log, sync_container_slot_images,
     sync_context_menu_attack_button, sync_context_menu_force_lock_button,
     sync_context_menu_hide_button, sync_context_menu_interact_button,
     sync_context_menu_offer_to_trade_button, sync_context_menu_open_button,
     sync_context_menu_pick_lock_button, sync_context_menu_root,
     sync_context_menu_take_partial_button, sync_context_menu_talk_button,
     sync_context_menu_trade_button, sync_context_menu_use_button, sync_context_menu_use_key_button,
-    handle_nearby_npc_row_clicks, sync_context_menu_use_on_button, sync_docked_panel_layout,
-    sync_nearby_npcs_panel,
-    sync_docked_panel_titles, sync_drag_preview, sync_equipment_slot_images,
-    sync_item_slot_button_visibility, sync_item_tooltip, sync_magic_effects_label,
-    sync_native_custom_cursor, sync_regen_buff_label, sync_take_partial_label, sync_vital_bars,
-    sync_xp_bar, tick_level_up_toasts, toggle_cursor_mode, update_take_partial_popup_visibility,
+    sync_context_menu_use_on_button, sync_docked_panel_layout, sync_docked_panel_titles,
+    sync_drag_preview, sync_equipment_slot_images, sync_item_slot_button_visibility,
+    sync_item_tooltip, sync_magic_effects_label, sync_native_custom_cursor, sync_nearby_npcs_panel,
+    sync_regen_buff_label, sync_take_partial_label, sync_vital_bars, sync_xp_bar,
+    tick_level_up_toasts, toggle_cursor_mode, update_take_partial_popup_visibility,
 };
 use crate::ui::theme::UiThemePlugin;
 use crate::ui::time_of_day_button::{
@@ -146,6 +147,7 @@ impl Plugin for UiPlugin {
         .insert_resource(TimeOfDayPopupState::default())
         .insert_resource(Quickbar::default())
         .insert_resource(QuickbarLoadedFor::default())
+        .insert_resource(UiStateLoadedFor::default())
         .insert_resource(BottomPanelVisibility::default())
         .add_systems(
             OnEnter(ClientAppState::InGame),
@@ -395,12 +397,14 @@ impl Plugin for UiPlugin {
             Update,
             (
                 load_quickbar_on_login,
+                load_ui_state_on_login,
                 sync_quickbar_visuals,
                 handle_quickbar_keybinds
                     .before(crate::game::CommandIntercept)
                     .run_if(bevy_terminal::terminal_not_focused),
                 handle_quickbar_clicks.before(handle_context_menu_opening),
                 persist_quickbar,
+                persist_ui_state.after(load_ui_state_on_login),
                 handle_bottom_panel_hide_button,
                 handle_bottom_panel_hide_key.run_if(bevy_terminal::terminal_not_focused),
                 unhide_on_console_open,
@@ -445,6 +449,7 @@ fn teardown_hud(
     mut trade_popup: ResMut<TradePopupState>,
     mut quickbar: ResMut<Quickbar>,
     mut quickbar_loaded: ResMut<QuickbarLoadedFor>,
+    mut ui_state_loaded: ResMut<UiStateLoadedFor>,
     mut bottom_visibility: ResMut<BottomPanelVisibility>,
 ) {
     for entity in &hud_roots {
@@ -459,5 +464,6 @@ fn teardown_hud(
     *trade_popup = TradePopupState::default();
     *quickbar = Quickbar::default();
     *quickbar_loaded = QuickbarLoadedFor::default();
+    *ui_state_loaded = UiStateLoadedFor::default();
     *bottom_visibility = BottomPanelVisibility::default();
 }

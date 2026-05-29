@@ -2543,8 +2543,9 @@ fn handle_move_item(
             }
 
             // No merge: find a valid drop tile and spawn a new world object.
-            let placed_block_size =
-                definitions.get(&type_id).map_or(0, |def| def.render.block_size);
+            let placed_block_size = definitions
+                .get(&type_id)
+                .map_or(0, |def| def.render.block_size);
             let Some(world_drop_tile) = find_nearest_valid_world_drop_tile(
                 target_tile,
                 None,
@@ -2761,8 +2762,9 @@ fn handle_take_from_stack(
                     }
                 }
                 ItemDestination::WorldTile(target_tile) => {
-                    let placed_block_size =
-                        definitions.get(&src_type_id).map_or(0, |def| def.render.block_size);
+                    let placed_block_size = definitions
+                        .get(&src_type_id)
+                        .map_or(0, |def| def.render.block_size);
                     let Some(world_drop_tile) = find_nearest_valid_world_drop_tile(
                         target_tile,
                         None,
@@ -4492,22 +4494,17 @@ fn resolve_step_with_climb(
 ) -> Option<TilePosition> {
     let (x, y) = target_xy;
     let column_members = || {
-        object_query
-            .iter()
-            .map(|(entity, resident, tile, object)| crate::world::stacks::ColumnMember {
+        object_query.iter().map(|(entity, resident, tile, object)| {
+            crate::world::stacks::ColumnMember {
                 entity,
                 resident,
                 tile,
                 object,
-            })
+            }
+        })
     };
-    let stack_top = crate::world::stacks::stack_top_z(
-        space_id,
-        x,
-        y,
-        column_members(),
-        definitions,
-    );
+    let stack_top =
+        crate::world::stacks::stack_top_z(space_id, x, y, column_members(), definitions);
 
     // Climb path: a block-sized stack in front of the player.
     if stack_top > current_z {
@@ -5304,14 +5301,14 @@ fn resolve_world_drop_tile(
     }
 
     let column_members = || {
-        object_query
-            .iter()
-            .map(|(entity, resident, tile, object)| crate::world::stacks::ColumnMember {
+        object_query.iter().map(|(entity, resident, tile, object)| {
+            crate::world::stacks::ColumnMember {
                 entity,
                 resident,
                 tile,
                 object,
-            })
+            }
+        })
     };
 
     let stack_top = crate::world::stacks::stack_top_z_excluding(
@@ -5339,11 +5336,7 @@ fn resolve_world_drop_tile(
         return None;
     }
 
-    if !crate::world::stacks::can_place_on_stack(
-        player_position.z,
-        stack_top,
-        placed_block_size,
-    ) {
+    if !crate::world::stacks::can_place_on_stack(player_position.z, stack_top, placed_block_size) {
         return None;
     }
 
@@ -5354,10 +5347,7 @@ fn resolve_world_drop_tile(
     // can't materialize a chest under someone's feet.
     let placed_top = stack_top + placed_block_size as i32;
     if collider_positions.iter().any(|c| {
-        c.x == target_tile.x
-            && c.y == target_tile.y
-            && c.z >= stack_top
-            && c.z < placed_top
+        c.x == target_tile.x && c.y == target_tile.y && c.z >= stack_top && c.z < placed_top
     }) {
         return None;
     }

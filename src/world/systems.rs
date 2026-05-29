@@ -5,8 +5,7 @@ use crate::player::components::Player;
 use crate::world::animation::{JustMoved, VisualOffset};
 use crate::world::components::{
     ClientProjectedWorldObject, ClientRemotePlayerVisual, CombatHealthBar, DisplayedVitalStats,
-    Facing, HealthBarDisplayPolicy, SpaceResident, TilePosition, ViewPosition,
-    WorldVisual,
+    Facing, HealthBarDisplayPolicy, SpaceResident, TilePosition, ViewPosition, WorldVisual,
 };
 use crate::world::direction::Direction;
 use crate::world::floors::{
@@ -293,8 +292,7 @@ pub fn sync_remote_player_projection(
             let dz = view.tile.z - old_tile.z;
             // Skip teleport-class xy jumps (keep the existing single-tile gate
             // for xy) but always smooth z changes.
-            let xy_step_animatable =
-                (dx != 0 || dy != 0) && dx.abs() <= 1 && dy.abs() <= 1;
+            let xy_step_animatable = (dx != 0 || dy != 0) && dx.abs() <= 1 && dy.abs() <= 1;
             let z_smoothable = dz != 0 && dz.abs() <= 4;
             if xy_step_animatable || z_smoothable {
                 let player_z_f = floor_transition.visual_player_z(visible_floors.player_z);

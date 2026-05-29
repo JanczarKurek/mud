@@ -104,11 +104,7 @@ where
 /// could step onto the top, you can place onto it. There is no extra cap
 /// on the resulting stack height; to keep building higher, climb the stack
 /// first (which raises your `player_z`, which in turn extends your reach).
-pub fn can_place_on_stack(
-    player_z: i32,
-    current_stack_top_z: i32,
-    _placed_block_size: u8,
-) -> bool {
+pub fn can_place_on_stack(player_z: i32, current_stack_top_z: i32, _placed_block_size: u8) -> bool {
     (current_stack_top_z - player_z).abs() <= 2
 }
 

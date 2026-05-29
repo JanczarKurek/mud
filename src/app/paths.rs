@@ -32,6 +32,7 @@ const WORLD_SNAPSHOT_REL: &str = "saves/world-state.json";
 const CLIENT_ASSETS_SUBDIR: &str = "assets";
 const ADMIN_SOCKET_FILE: &str = "admin.sock";
 const QUICKBAR_SUBDIR: &str = "quickbar";
+const UI_STATE_SUBDIR: &str = "ui_state";
 const CONFIG_SUBDIR: &str = "config";
 const SETTINGS_FILE: &str = "settings.json";
 
@@ -129,6 +130,18 @@ pub fn quickbar_path(runtime: AppRuntime, player_id: u64) -> Option<PathBuf> {
     Some(base.join(format!("{player_id}.json")))
 }
 
+/// Client-side per-character UI state JSON path (docked-panel layout and
+/// future presentation prefs). Same role as `quickbar_path` — pure
+/// presentation data the server never sees. `HeadlessServer` returns `None`.
+pub fn ui_state_path(runtime: AppRuntime, player_id: u64) -> Option<PathBuf> {
+    let base = match runtime {
+        AppRuntime::EmbeddedClient => data_root().join(EMBEDDED_SUBDIR).join(UI_STATE_SUBDIR),
+        AppRuntime::TcpClient => data_root().join(CLIENT_SUBDIR).join(UI_STATE_SUBDIR),
+        AppRuntime::HeadlessServer => return None,
+    };
+    Some(base.join(format!("{player_id}.json")))
+}
+
 /// Global client-side settings (keybindings, …). Unlike the quickbar this
 /// is **not** per-character: it's a single client-wide JSON file. The server
 /// never sees it, so it lives next to the role's other client data.
@@ -171,6 +184,18 @@ mod tests {
         assert_ne!(e, c);
         assert!(e.ends_with("config/settings.json"));
         assert!(c.ends_with("config/settings.json"));
+        assert!(e.to_string_lossy().contains(EMBEDDED_SUBDIR));
+        assert!(c.to_string_lossy().contains(CLIENT_SUBDIR));
+    }
+
+    #[test]
+    fn ui_state_path_is_client_only_and_disjoint() {
+        assert!(ui_state_path(AppRuntime::HeadlessServer, 7).is_none());
+        let e = ui_state_path(AppRuntime::EmbeddedClient, 7).unwrap();
+        let c = ui_state_path(AppRuntime::TcpClient, 7).unwrap();
+        assert_ne!(e, c);
+        assert!(e.ends_with("ui_state/7.json"));
+        assert!(c.ends_with("ui_state/7.json"));
         assert!(e.to_string_lossy().contains(EMBEDDED_SUBDIR));
         assert!(c.to_string_lossy().contains(CLIENT_SUBDIR));
     }

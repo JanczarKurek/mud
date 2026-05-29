@@ -5,10 +5,10 @@ use bevy::prelude::*;
 use bevy::ui::{ComputedNode, ScrollPosition, UiGlobalTransform};
 use bevy::window::{CursorIcon, CustomCursor, CustomCursorImage, PrimaryWindow};
 
-use crate::game::helpers::is_near_player;
 use crate::game::commands::{
     GameCommand, InspectTarget, ItemDestination, ItemReference, ItemSlotRef, UseTarget,
 };
+use crate::game::helpers::is_near_player;
 use crate::game::resources::{
     ClientGameState, GameUiEvent, InventoryState, PendingGameCommands, PendingGameUiEvents,
 };
@@ -18,14 +18,14 @@ use crate::scripting::resources::PythonConsoleState;
 use crate::ui::components::{
     BackpackSlotRow, ChatTerminal, ContainerSlotButton, ContainerSlotImage,
     ContextMenuAttackButton, ContextMenuInspectButton, ContextMenuOpenButton, ContextMenuRoot,
-    ContextMenuTakePartialButton, ContextMenuUseButton, ContextMenuUseOnButton,
-    DockedPanelBody, DockedPanelCanvas, DockedPanelCloseButton, DockedPanelDragHandle,
-    DockedPanelResizeHandle, DockedPanelRoot, DockedPanelTitle, DragPreviewImage, DragPreviewLabel,
-    DragPreviewQuantity, DragPreviewRoot, EquipmentSlotButton, EquipmentSlotImage, HealthFill,
-    ItemSlotButton, ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ItemTooltipLabel,
-    ItemTooltipRoot, ManaFill, NearbyNpcDot, NearbyNpcHpFill, NearbyNpcRow, NearbyNpcsList,
-    QuickbarSlotMarker, RightSidebarRoot, TakePartialAmountLabel, TakePartialCancelButton,
-    TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot,
+    ContextMenuTakePartialButton, ContextMenuUseButton, ContextMenuUseOnButton, DockedPanelBody,
+    DockedPanelCanvas, DockedPanelCloseButton, DockedPanelDragHandle, DockedPanelResizeHandle,
+    DockedPanelRoot, DockedPanelTitle, DragPreviewImage, DragPreviewLabel, DragPreviewQuantity,
+    DragPreviewRoot, EquipmentSlotButton, EquipmentSlotImage, HealthFill, ItemSlotButton,
+    ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot,
+    ManaFill, NearbyNpcDot, NearbyNpcHpFill, NearbyNpcRow, NearbyNpcsList, QuickbarSlotMarker,
+    RightSidebarRoot, TakePartialAmountLabel, TakePartialCancelButton, TakePartialConfirmButton,
+    TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot,
 };
 use crate::ui::resources::{
     ContextMenuState, ContextMenuTarget, CursorMode, CursorState, DockedPanelDragState,
@@ -490,9 +490,7 @@ pub fn sync_nearby_npcs_panel(
     for (hp, mut node, mut bg) in hp_query.iter_mut() {
         if let Some(npc) = client_state.world_objects.get(&hp.object_id) {
             let (ratio, has_vitals) = match npc.vitals {
-                Some(v) if v.max_health > 0.0 => {
-                    ((v.health / v.max_health).clamp(0.0, 1.0), true)
-                }
+                Some(v) if v.max_health > 0.0 => ((v.health / v.max_health).clamp(0.0, 1.0), true),
                 _ => (0.0, false),
             };
             node.width = percent(ratio * 100.0);
@@ -624,8 +622,7 @@ pub fn handle_nearby_npc_row_clicks(
             spell_targeting_state.source,
             spell_targeting_state.spell_id.clone(),
         ) {
-            if let Some(source_ref) =
-                context_target_to_item_reference(source, &docked_panel_state)
+            if let Some(source_ref) = context_target_to_item_reference(source, &docked_panel_state)
             {
                 pending_commands.push(GameCommand::CastSpellAt {
                     source: source_ref,
@@ -641,8 +638,7 @@ pub fn handle_nearby_npc_row_clicks(
 
         // Active use-on → use the source item on this NPC.
         if let Some(source) = use_on_state.source {
-            if let Some(source_ref) =
-                context_target_to_item_reference(source, &docked_panel_state)
+            if let Some(source_ref) = context_target_to_item_reference(source, &docked_panel_state)
             {
                 pending_commands.push(GameCommand::UseItemOn {
                     source: source_ref,
@@ -2051,9 +2047,7 @@ pub fn handle_context_menu_opening(
     // target — same context menu flags as right-clicking the NPC in the world.
     if let Some(npc_object_id) = nearby_npc_rows
         .iter()
-        .find(|(_, computed, transform)| {
-            point_in_ui_node(cursor_position, computed, transform)
-        })
+        .find(|(_, computed, transform)| point_in_ui_node(cursor_position, computed, transform))
         .map(|(row, _, _)| row.object_id)
     {
         if let Some(object) = client_state.world_objects.get(&npc_object_id) {
@@ -4226,4 +4220,3 @@ fn topmost_remote_player_at_cursor<'a>(
     }
     best
 }
-

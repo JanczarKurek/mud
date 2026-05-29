@@ -10,19 +10,18 @@ use crate::ui::components::{
     ContextMenuInspectButton, ContextMenuInteractButton, ContextMenuOfferToTradeButton,
     ContextMenuOpenButton, ContextMenuPickLockButton, ContextMenuRoot,
     ContextMenuTakePartialButton, ContextMenuTalkButton, ContextMenuTradeButton,
-    ContextMenuUseButton, ContextMenuUseKeyButton, ContextMenuUseOnButton,
-    NearbyNpcsList, NearbyNpcsPanelUndockButton,
-    DockedPanelBody, DockedPanelCanvas, DockedPanelCloseButton, DockedPanelDragHandle,
-    DockedPanelResizeHandle, DockedPanelRoot, DockedPanelTitle, DragPreviewImage, DragPreviewLabel,
-    DragPreviewQuantity, DragPreviewRoot, EquipmentPanelContent, EquipmentPanelUndockButton,
-    EquipmentSlotButton, EquipmentSlotImage, ExperienceFill, ExperienceLabel,
-    FloatingMinimapZoomInButton, FloatingMinimapZoomLabel, FloatingMinimapZoomOutButton,
-    HealthFill, HealthLabel, HudMinimapZoomInButton, HudMinimapZoomLabel, HudMinimapZoomOutButton,
-    HudRoot, ItemSlotButton, ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ItemTooltipLabel,
-    ItemTooltipRoot, MagicEffectsLabel, ManaFill, ManaLabel, MinimapCanvas, MinimapMode,
-    MinimapPanelUndockButton, MinimapView, PythonConsolePanel, PythonConsoleRestartButton,
-    PythonConsoleTerminal, RegenBuffLabel, RightSidebarRoot, StatusPanelContent,
-    StatusPanelUndockButton, TakePartialAmountLabel, TakePartialCancelButton,
+    ContextMenuUseButton, ContextMenuUseKeyButton, ContextMenuUseOnButton, DockedPanelBody,
+    DockedPanelCanvas, DockedPanelCloseButton, DockedPanelDragHandle, DockedPanelResizeHandle,
+    DockedPanelRoot, DockedPanelTitle, DragPreviewImage, DragPreviewLabel, DragPreviewQuantity,
+    DragPreviewRoot, EquipmentPanelContent, EquipmentPanelUndockButton, EquipmentSlotButton,
+    EquipmentSlotImage, ExperienceFill, ExperienceLabel, FloatingMinimapZoomInButton,
+    FloatingMinimapZoomLabel, FloatingMinimapZoomOutButton, HealthFill, HealthLabel,
+    HudMinimapZoomInButton, HudMinimapZoomLabel, HudMinimapZoomOutButton, HudRoot, ItemSlotButton,
+    ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot,
+    MagicEffectsLabel, ManaFill, ManaLabel, MinimapCanvas, MinimapMode, MinimapPanelUndockButton,
+    MinimapView, NearbyNpcsList, NearbyNpcsPanelUndockButton, PythonConsolePanel,
+    PythonConsoleRestartButton, PythonConsoleTerminal, RegenBuffLabel, RightSidebarRoot,
+    StatusPanelContent, StatusPanelUndockButton, TakePartialAmountLabel, TakePartialCancelButton,
     TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot,
     TradeButtonLabel, TradeColumn,
 };
@@ -996,10 +995,7 @@ fn spawn_nearby_npcs_panel(
 /// (re)spawned by `sync_nearby_npcs_panel` whenever the visible NPC set or
 /// its sort order changes. Shared between docked and floating variants via
 /// the `MountablePanel` impl.
-pub(crate) fn spawn_nearby_npcs_panel_body(
-    parent: &mut ChildSpawnerCommands,
-    palette: &Palette,
-) {
+pub(crate) fn spawn_nearby_npcs_panel_body(parent: &mut ChildSpawnerCommands, palette: &Palette) {
     parent.spawn((
         Node {
             width: percent(100.0),

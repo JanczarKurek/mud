@@ -243,8 +243,8 @@ pub fn apply_self_outcome(
     attacker_vitals: &mut VitalStats,
     attacker_effects: &mut MagicEffects,
 ) {
-    attacker_vitals.health =
-        (attacker_vitals.health + outcome.self_restore_health).clamp(0.0, attacker_vitals.max_health);
+    attacker_vitals.health = (attacker_vitals.health + outcome.self_restore_health)
+        .clamp(0.0, attacker_vitals.max_health);
     attacker_vitals.mana =
         (attacker_vitals.mana + outcome.self_restore_mana).clamp(0.0, attacker_vitals.max_mana);
     for spec in &outcome.self_buffs {
