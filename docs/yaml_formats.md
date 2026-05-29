@@ -1476,6 +1476,90 @@ Specific pouches in `assets/overworld_objects/`:
 - `herb_pouch` — 6 slots, `weight: 0.6` (`container_capacity: 6` overrides
   the base)
 
+### `npc_behavior` (NPC templates only)
+
+Intrinsic per-mob speed/aggro values copied onto each spawned NPC's
+`RoamingBehavior` / `HostileBehavior` components. The presence of this block
+is what marks a template as an NPC — the editor's Mobs palette and the spawn
+factory both treat `Some(_)` here as the "this is a mob" signal.
+
+```yaml
+npc_behavior:
+  step_interval_seconds: 1.0    # required; AI tick cadence (seconds)
+  step_interval_jitter_seconds: 0.0   # optional; randomized extra delay
+  idle_pause_chance: 0.3        # optional; per-step pause probability
+  momentum_bias: 0.6            # optional; tendency to keep walking same way
+  detect_distance_tiles: 7      # required; aggro acquisition range
+  disengage_distance_tiles: 11  # required; leash radius
+  alert_duration_seconds: 4.0   # optional; how long Alert state lingers
+  requires_line_of_sight: true  # optional; Bresenham LoS gate for aggro
+```
+
+Roam bounds and the hostile/passive toggle live on the map's spawn group, not
+here — see `spawn_groups` under section 1.
+
+### `spellcasting` (NPC templates only)
+
+NPCs with this block become spell casters. During each combat turn the AI
+walks `spells` in **declaration order** and casts the first entry whose
+cooldown is ready and whose conditions all pass; if none match, the NPC
+falls through to its physical `attack_profile`. First-match wins, so authors
+order the list highest-priority first (heal > CC > nuke > filler).
+
+```yaml
+spellcasting:
+  spells:
+    - spell_id: goblin_heal
+      cooldown_seconds: 25.0
+      target: self
+      conditions:
+        - !self_hp_below_fraction 0.4
+    - spell_id: sleep
+      cooldown_seconds: 18.0
+      target: target
+      conditions:
+        - !target_within_range 6
+        - !target_without_effect sleep
+        - !target_without_effect paralyze
+    - spell_id: fireball_minor
+      cooldown_seconds: 9.0
+      target: target_tile
+    - spell_id: magic_dart
+      cooldown_seconds: 3.0
+      target: target
+      conditions:
+        - !target_within_range 7
+```
+
+Per-entry fields:
+
+- `spell_id` (required) — id of the spell file under `assets/spells/`.
+- `cooldown_seconds` (required) — seconds between successful casts of this
+  entry. The NPC's first turn always satisfies the cooldown.
+- `target` (optional, default `target`) — one of `target` (single-target
+  spell on the combat target), `target_tile` (AoE / tile-target spell
+  centered on the target's tile), `self` (untargeted spell, e.g. self-heal).
+- `conditions` (optional) — list of YAML-tagged predicates that all must
+  pass for this entry to fire. Available conditions:
+  - `!target_within_range <tiles>` — Chebyshev distance to target ≤ N.
+  - `!target_visible <bool>` — accepted but currently a no-op (the AI tick
+    already gates `CombatTarget` on Bresenham LoS).
+  - `!target_hp_below_fraction <0..1>` — target HP / max ≤ fraction.
+  - `!self_hp_below_fraction <0..1>` — caster HP / max ≤ fraction.
+  - `!target_without_effect <effect_kind>` — target has **no** active
+    effect of this kind (`sleep`, `paralyze`, `burning`, ...).
+  - `!self_without_effect <effect_kind>` — caster has no active effect of
+    this kind on itself.
+
+NPC casts bypass the player's class/level gate and mana cost — design
+constraints come from cooldowns and conditions only. The spell's authored
+damage, AoE, buffs, and VFX all apply identically to player casts;
+`buffs_target` lands on the combat target's `MagicEffects` and
+`buffs_self` / `restore_health` land on the NPC. Tile-target AoE damage is
+intentionally narrowed to the actual `target_entity` so friendly fire on
+nearby NPCs doesn't surprise authors (per-tile VFX still play over the full
+radius).
+
 ## 3. Spell Definition YAML
 
 Path:

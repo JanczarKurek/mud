@@ -1,12 +1,20 @@
+use std::collections::HashSet;
+
 use bevy::prelude::*;
 
 use crate::combat::components::{AttackKind, AttackProfile, CombatLeash, CombatTarget};
 use crate::combat::damage::{DamageEvent, DamageSource, PendingDamageEvents};
 use crate::combat::damage_expr::DamageExpr;
 use crate::combat::damage_type::DamageType;
+use crate::combat::npc_casting::{
+    active_effect_kinds, apply_self_outcome, apply_target_buffs, build_npc_cast_outcome,
+    pick_npc_spell, NpcCastContext,
+};
 use crate::combat::resources::BattleTurnTimer;
 use crate::game::resources::{GameUiEvent, PendingGameUiEvents};
-use crate::magic::resources::{EffectSpec, SpellDefinitions};
+use crate::magic::effects::MagicEffects;
+use crate::magic::resources::{EffectKind, EffectSpec, SpellDefinition, SpellDefinitions};
+use crate::npc::spellcasting::{NpcSpellEntry, SpellcastingProfile};
 use crate::player::components::{
     AmmoConsumption, AttributeSet, ChatLog, DefenseStats, DerivedStats, Inventory, Player,
     PlayerId, PlayerIdentity, VitalStats, WeaponDamage,
@@ -30,6 +38,7 @@ struct CombatantSnapshot {
     damage_expr: DamageExpr,
     damage_type: DamageType,
     health: f32,
+    max_health: f32,
     is_player: bool,
     player_id: Option<u64>,
     ranged_projectile_sprite: Option<String>,
@@ -39,6 +48,13 @@ struct CombatantSnapshot {
     block_chance_pct: i32,
     has_shield: bool,
     level: u32,
+    /// Cloned for read-only spell selection during the per-attacker loop.
+    /// Cooldown writes (`last_cast_at`) are batched and applied via p3
+    /// after the loop.
+    spellcasting: Option<Vec<NpcSpellEntry>>,
+    /// Set of currently active effect kinds on this combatant (used by
+    /// `SelfWithoutEffect` / `TargetWithoutEffect` spell conditions).
+    active_effect_kinds: HashSet<EffectKind>,
 }
 
 /// Roll a uniform integer in `0..=max`. Uses the same nanosecond+salt pattern
@@ -142,6 +158,7 @@ pub fn clear_invalid_combat_targets(
     }
 }
 
+#[allow(clippy::type_complexity)]
 pub fn resolve_battle_turn(
     time: Res<Time>,
     mut battle_turn_timer: ResMut<BattleTurnTimer>,
@@ -160,12 +177,15 @@ pub fn resolve_battle_turn(
             Option<&Inventory>,
             Option<&DefenseStats>,
             Option<&Experience>,
+            Option<&SpellcastingProfile>,
+            Option<&MagicEffects>,
         )>,
         Query<(
-            &VitalStats,
+            &mut VitalStats,
             Option<&mut crate::magic::effects::MagicEffects>,
         )>,
         Query<&mut Inventory, With<Player>>,
+        Query<&mut SpellcastingProfile>,
     )>,
     definitions: Res<OverworldObjectDefinitions>,
     object_registry: Res<ObjectRegistry>,
@@ -173,6 +193,7 @@ pub fn resolve_battle_turn(
     mut chat_log_query: Query<&mut ChatLog, With<Player>>,
     mut ui_events: ResMut<PendingGameUiEvents>,
     mut pending_damage: ResMut<PendingDamageEvents>,
+    mut commands: Commands,
 ) {
     battle_turn_timer.remaining_seconds -= time.delta_secs();
     if battle_turn_timer.remaining_seconds > 0.0 {
@@ -201,6 +222,8 @@ pub fn resolve_battle_turn(
                 inventory,
                 defense_stats,
                 experience,
+                spellcasting,
+                magic_effects,
             )| {
                 let damage_expr = weapon_damage
                     .map(|wd| wd.0.clone())
@@ -255,6 +278,7 @@ pub fn resolve_battle_turn(
                     damage_expr,
                     damage_type: attack_profile.damage_type,
                     health: vital_stats.health,
+                    max_health: vital_stats.max_health,
                     is_player,
                     player_id,
                     ranged_projectile_sprite,
@@ -264,10 +288,18 @@ pub fn resolve_battle_turn(
                     block_chance_pct,
                     has_shield,
                     level,
+                    spellcasting: spellcasting.map(|p| p.spells.clone()),
+                    active_effect_kinds: active_effect_kinds(magic_effects),
                 }
             },
         )
         .collect();
+
+    // (entity, spell_index, new_last_cast_at) — drained after the main
+    // loop into p3 so SpellcastingProfile mutations don't conflict with the
+    // read-only p0 snapshot we're iterating from.
+    let mut npc_cast_updates: Vec<(Entity, usize, f32)> = Vec::new();
+    let now_seconds = time.elapsed_secs();
 
     for attacker in &combatants {
         let Some(target_entity) = attacker.target else {
@@ -287,6 +319,42 @@ pub fn resolve_battle_turn(
 
         if target.health <= 0.0 || target.space_id != attacker.space_id {
             continue;
+        }
+
+        // NPC spellcasting: takes priority over the physical attack. A
+        // successful cast skips melee/ranged dispatch for this turn.
+        if !attacker.is_player {
+            if let Some(spells) = attacker.spellcasting.as_ref() {
+                let ctx = NpcCastContext {
+                    now_seconds,
+                    attacker_position: attacker.position,
+                    attacker_health: attacker.health,
+                    attacker_max_health: attacker.max_health,
+                    attacker_active_effects: &attacker.active_effect_kinds,
+                    target_position: target.position,
+                    target_health: target.health,
+                    target_max_health: target.max_health,
+                    target_active_effects: &target.active_effect_kinds,
+                };
+                if let Some(spell_idx) = pick_npc_spell(spells, &ctx) {
+                    let entry = &spells[spell_idx];
+                    if let Some(spell) = spell_definitions.get(&entry.spell_id) {
+                        execute_npc_spell_cast(
+                            spell,
+                            entry.target_kind,
+                            attacker,
+                            target,
+                            &mut combat_queries,
+                            &mut ui_events,
+                            &mut pending_damage,
+                            &mut chat_log_query,
+                            &mut commands,
+                        );
+                        npc_cast_updates.push((attacker.entity, spell_idx, now_seconds));
+                        continue;
+                    }
+                }
+            }
         }
 
         if !is_target_in_range(
@@ -463,6 +531,135 @@ pub fn resolve_battle_turn(
             }
         }
     }
+
+    // Apply queued cooldown updates from NPC spell casts. Done after the
+    // main loop because p3 (SpellcastingProfile) shares the storage that
+    // p0 read above; ParamSet only lets one set be active at a time.
+    if !npc_cast_updates.is_empty() {
+        let mut profile_query = combat_queries.p3();
+        for (entity, idx, now) in npc_cast_updates {
+            if let Ok(mut profile) = profile_query.get_mut(entity) {
+                if let Some(entry) = profile.spells.get_mut(idx) {
+                    entry.last_cast_at = now;
+                }
+            }
+        }
+    }
+}
+
+/// Apply a single NPC spell cast: emit damage events, apply buffs to target
+/// and caster, restore caster HP/mana for self-casts, broadcast VFX and
+/// chat. Mirrors the player cast handler's effect-application surface but
+/// goes through the NPC-side primitives so player class/level/scroll gates
+/// don't interfere.
+#[allow(clippy::too_many_arguments)]
+fn execute_npc_spell_cast(
+    spell: &SpellDefinition,
+    target_kind: crate::npc::spellcasting::NpcSpellTargetKind,
+    attacker: &CombatantSnapshot,
+    target: &CombatantSnapshot,
+    combat_queries: &mut ParamSet<(
+        Query<(
+            Entity,
+            Option<&CombatTarget>,
+            &AttackProfile,
+            &SpaceResident,
+            &TilePosition,
+            &OverworldObject,
+            &DerivedStats,
+            &VitalStats,
+            Option<&WeaponDamage>,
+            Option<&PlayerIdentity>,
+            Option<&Inventory>,
+            Option<&DefenseStats>,
+            Option<&Experience>,
+            Option<&SpellcastingProfile>,
+            Option<&MagicEffects>,
+        )>,
+        Query<(
+            &mut VitalStats,
+            Option<&mut crate::magic::effects::MagicEffects>,
+        )>,
+        Query<&mut Inventory, With<Player>>,
+        Query<&mut SpellcastingProfile>,
+    )>,
+    ui_events: &mut PendingGameUiEvents,
+    pending_damage: &mut PendingDamageEvents,
+    chat_log_query: &mut Query<&mut ChatLog, With<Player>>,
+    commands: &mut Commands,
+) {
+    use crate::npc::spellcasting::NpcSpellTargetKind;
+
+    let outcome = build_npc_cast_outcome(
+        spell,
+        target_kind,
+        attacker.entity,
+        &attacker.name,
+        attacker.space_id,
+        attacker.position,
+        target.entity,
+        &target.name,
+        target.position,
+    );
+
+    for vfx in &outcome.vfx {
+        ui_events.push_broadcast(vfx.clone());
+    }
+    for damage in &outcome.damage_events {
+        pending_damage.push(damage.clone());
+    }
+    for msg in &outcome.chat_messages {
+        broadcast_chat_line(chat_log_query, msg.clone());
+    }
+
+    // Mutate the attacker (self-cast heal + self-buffs) and the target
+    // (target-buffs). For self-cast spells, attacker == target.
+    {
+        let mut entities_query = combat_queries.p1();
+        if matches!(target_kind, NpcSpellTargetKind::SelfCast) {
+            if let Ok((mut vitals, magic)) = entities_query.get_mut(attacker.entity) {
+                if let Some(mut effects) = magic {
+                    apply_self_outcome(&outcome, &mut vitals, &mut effects);
+                } else {
+                    // Lazily attach MagicEffects so self-buffs land.
+                    let mut new_effects = MagicEffects::default();
+                    apply_self_outcome(&outcome, &mut vitals, &mut new_effects);
+                    if !new_effects.is_empty() {
+                        commands.entity(attacker.entity).insert(new_effects);
+                    }
+                }
+            }
+        } else {
+            // Apply target buffs first (separate query borrow).
+            if !outcome.target_buffs.is_empty() {
+                if let Ok((_, magic)) = entities_query.get_mut(target.entity) {
+                    if let Some(mut effects) = magic {
+                        apply_target_buffs(&outcome, &mut effects);
+                    } else {
+                        let mut new_effects = MagicEffects::default();
+                        apply_target_buffs(&outcome, &mut new_effects);
+                        if !new_effects.is_empty() {
+                            commands.entity(target.entity).insert(new_effects);
+                        }
+                    }
+                }
+            }
+            // Then apply self-buffs / clears on the caster.
+            if !outcome.self_buffs.is_empty() || !outcome.self_clears.is_empty() {
+                if let Ok((mut vitals, magic)) = entities_query.get_mut(attacker.entity) {
+                    if let Some(mut effects) = magic {
+                        apply_self_outcome(&outcome, &mut vitals, &mut effects);
+                    } else {
+                        let mut new_effects = MagicEffects::default();
+                        apply_self_outcome(&outcome, &mut vitals, &mut new_effects);
+                        if !new_effects.is_empty() {
+                            commands.entity(attacker.entity).insert(new_effects);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn ranged_sprite_id(
@@ -577,6 +774,7 @@ mod tests {
             damage_expr: DamageExpr::melee_default(),
             damage_type: DamageType::Blunt,
             health: 100.0,
+            max_health: 100.0,
             is_player,
             player_id: None,
             ranged_projectile_sprite: None,
@@ -586,6 +784,8 @@ mod tests {
             block_chance_pct,
             has_shield,
             level,
+            spellcasting: None,
+            active_effect_kinds: HashSet::new(),
         }
     }
 

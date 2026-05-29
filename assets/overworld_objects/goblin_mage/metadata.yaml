@@ -1,0 +1,78 @@
+extends: npc
+name: Goblin Mage
+description: A hunched goblin in tattered purple robes, clutching a bone staff topped with a glowing crystal. Mutters incantations under its breath.
+level: 3
+loot:
+  corpse_despawn_seconds: 60
+  drops:
+    - type_id: magic_dart_scroll
+      quantity: 1
+      probability: 0.25
+    - type_id: copper_coin
+      quantity: 3
+      probability: 0.7
+stats:
+  strength: 6
+  agility: 10
+  constitution: 7
+  willpower: 13
+  charisma: 5
+  focus: 14
+damage: "1d3"
+attack_profile:
+  kind: ranged
+  damage_type: arcane
+base_range_tiles: 7
+hp: "1d6+20+constitution*2"
+npc_behavior:
+  step_interval_seconds: 1.0
+  detect_distance_tiles: 7
+  disengage_distance_tiles: 11
+spellcasting:
+  spells:
+    - spell_id: goblin_heal
+      cooldown_seconds: 25.0
+      target: self
+      conditions:
+        - !self_hp_below_fraction 0.4
+    - spell_id: sleep
+      cooldown_seconds: 18.0
+      target: target
+      conditions:
+        - !target_within_range 6
+        - !target_without_effect sleep
+        - !target_without_effect paralyze
+    - spell_id: fireball_minor
+      cooldown_seconds: 9.0
+      target: target_tile
+      conditions:
+        - !target_within_range 6
+    - spell_id: magic_dart
+      cooldown_seconds: 3.0
+      target: target
+      conditions:
+        - !target_within_range 7
+render:
+  debug_color: [110, 64, 144]
+  debug_size: 0.92
+  sprite_path: overworld_objects/goblin_mage/sprite.png
+  y_sort: true
+  animation:
+    sheet_path: overworld_objects/goblin_mage/sheet.png
+    frame_width: 32
+    frame_height: 48
+    sheet_columns: 4
+    sheet_rows: 2
+    clips:
+      idle:
+        row: 0
+        start_col: 0
+        frame_count: 4
+        fps: 3.0
+        looping: true
+      walk:
+        row: 1
+        start_col: 0
+        frame_count: 4
+        fps: 8.0
+        looping: true

@@ -1,0 +1,12 @@
+name: Lesser Fireball
+incantation: Exori Min Flam
+mana_cost: 12.0
+targeting: targeted_tile
+range_tiles: 6
+effects:
+  damage: 8.0
+  damage_type: fire
+  aoe:
+    radius_tiles: 1
+    vfx_on_tile: fire_hit
+  vfx_on_target_hit: fire_hit

@@ -1,0 +1,7 @@
+name: Goblin Mending
+incantation: Grixx Sana
+mana_cost: 0.0
+targeting: untargeted
+effects:
+  restore_health: 16.0
+  vfx_on_target_hit: heal_sparkle

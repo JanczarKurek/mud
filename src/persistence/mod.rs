@@ -974,6 +974,13 @@ fn load_world_from_snapshot(
             if !npc.magic_effects.is_empty() {
                 entity.insert(npc.magic_effects);
             }
+            if let Some(profile) = object_definitions
+                .get(&definition_id_for_lookup)
+                .and_then(|d| d.spellcasting.as_ref())
+                .map(|def| def.to_component())
+            {
+                entity.insert(profile);
+            }
             if let Some(target_object_id) = npc.combat_target_object_id {
                 pending_combat_targets.push((save_local_id, target_object_id));
             }

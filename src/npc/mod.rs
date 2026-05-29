@@ -1,5 +1,6 @@
 pub mod components;
 pub mod spawn_groups;
+pub mod spellcasting;
 pub mod systems;
 
 use bevy::prelude::*;

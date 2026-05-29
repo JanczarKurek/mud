@@ -184,6 +184,11 @@ pub struct OverworldObjectDefinition {
     /// the spawn factory both treat `Some(_)` as the "this is an NPC" signal.
     #[serde(default)]
     pub npc_behavior: Option<NpcBehaviorDefaults>,
+    /// NPC spellcasting profile. Combat checks this before falling through to
+    /// the physical `attack_profile` — see `npc::spellcasting` and
+    /// `combat::npc_casting`. `None` for non-casters (default).
+    #[serde(default)]
+    pub spellcasting: Option<crate::npc::spellcasting::SpellcastingDef>,
 }
 
 /// Intrinsic per-mob behavior values copied onto each spawned NPC's

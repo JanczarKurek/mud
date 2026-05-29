@@ -3630,6 +3630,23 @@ spawn_groups:
       min_y: 8
       max_x: 62
       max_y: 16
+- id: goblin_mage_circle
+  template: goblin_mage
+  max_count: 1
+  respawn_mean_seconds: 120.0
+  area:
+    bounds:
+      min_x: 49
+      min_y: 28
+      max_x: 58
+      max_y: 33
+  behavior:
+    kind: roam_and_chase
+    bounds:
+      min_x: 47
+      min_y: 26
+      max_x: 60
+      max_y: 34
 - id: cyclops_lair
   template: cyclops
   max_count: 1

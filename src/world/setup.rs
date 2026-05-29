@@ -352,6 +352,12 @@ pub fn spawn_overworld_object_instance(
                     },
                 ));
             }
+            if let Some(profile) = definition
+                .and_then(|d| d.spellcasting.as_ref())
+                .map(|def| def.to_component())
+            {
+                entity_commands.insert(profile);
+            }
         }
     }
 
