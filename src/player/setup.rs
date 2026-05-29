@@ -420,7 +420,7 @@ pub fn spawn_player_visual(
         None,
         1,
     );
-    let sprite_height = bundle.sprite_height;
+    let hud_anchor_height = bundle.hud_anchor_height;
     let uses_y_sort = bundle.world_visual.y_sort;
 
     commands.entity(entity).insert((
@@ -453,7 +453,7 @@ pub fn spawn_player_visual(
         commands.entity(entity).insert(anchor);
     }
 
-    attach_combat_health_bar(&mut commands, entity, world_config.tile_size, sprite_height);
+    attach_combat_health_bar(&mut commands, entity, world_config.tile_size, hud_anchor_height);
 }
 
 /// Marker inserted on the player entity once its recolor sprite layers have

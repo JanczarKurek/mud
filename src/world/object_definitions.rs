@@ -887,6 +887,14 @@ pub struct RenderMetadata {
     /// definition for hair / torso / trousers customization.
     #[serde(default)]
     pub recolor_layers: Vec<RecolorLayerDef>,
+    /// Logical character/object height in TILE units. Decouples HUD-style
+    /// placement (health bar, status icons) from the raw sprite frame height
+    /// so an oversized canvas — e.g. an iso-projected character whose visible
+    /// body only occupies 1 tile of vertical screen space inside a 96×96
+    /// frame — can declare its "real" height for hover-anchored UI to use.
+    /// `None` falls back to the sprite frame's pixel height (legacy behaviour).
+    #[serde(default)]
+    pub logical_height_tiles: Option<f32>,
 }
 
 /// One optional sprite layer stacked on top of an object's base sprite. `key`

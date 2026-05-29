@@ -882,27 +882,42 @@ fn handle_move_player(
         return;
     };
 
-    if movement_cooldown.remaining_seconds > 0.0 {
+    // Resolve magic effects up-front so facing can apply consistently even
+    // when the step is blocked by cooldown, a collider, or map bounds.
+    let magic = player_magic_effects.get(player_entity).ok();
+    let is_paralyzed = magic.is_some_and(|e| e.is_paralyzed());
+
+    let (effective_delta, drunk_cooldown_penalty) = if let Some(effects) = magic {
+        let deviation = effects.drunk_deviation_probability();
+        match deviation {
+            Some(probability) if drunk_should_deviate(player_entity, probability) => (
+                rotate_delta(delta, drunk_rotation_sign(player_entity)),
+                true,
+            ),
+            _ => (delta, false),
+        }
+    } else {
+        (delta, false)
+    };
+
+    // Rotate-on-blocked-move: turning is a free intent and shouldn't depend
+    // on whether the step actually resolves (cooldown, collider, map edge).
+    // Apply Facing up here so the player visibly turns toward what they bumped
+    // even when the step itself is rejected. Paralyze still blocks the turn —
+    // the character is held in place.
+    if !is_paralyzed {
+        if let Some(direction) = Direction::from_delta(effective_delta.x, effective_delta.y) {
+            commands.entity(player_entity).insert(Facing(direction));
+        }
+    }
+
+    if is_paralyzed {
         return;
     }
 
-    // Paralyze blocks movement entirely. Drunk fumbles the direction.
-    let (effective_delta, drunk_cooldown_penalty) =
-        if let Ok(effects) = player_magic_effects.get(player_entity) {
-            if effects.is_paralyzed() {
-                return;
-            }
-            let deviation = effects.drunk_deviation_probability();
-            match deviation {
-                Some(probability) if drunk_should_deviate(player_entity, probability) => (
-                    rotate_delta(delta, drunk_rotation_sign(player_entity)),
-                    true,
-                ),
-                _ => (delta, false),
-            }
-        } else {
-            (delta, false)
-        };
+    if movement_cooldown.remaining_seconds > 0.0 {
+        return;
+    }
 
     let Some(runtime_space) = space_manager.get(space_resident.space_id).cloned() else {
         return;
@@ -943,9 +958,7 @@ fn handle_move_player(
     }
     movement_cooldown.remaining_seconds = movement_cooldown.step_interval_seconds * cooldown_scale;
 
-    if let Some(direction) = Direction::from_delta(effective_delta.x, effective_delta.y) {
-        commands.entity(player_entity).insert(Facing(direction));
-    }
+    // Facing was already applied above, before the resolve_step check.
 
     let Some(space_definition) = authored_spaces.get(&runtime_space.authored_id) else {
         return;

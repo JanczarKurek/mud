@@ -391,7 +391,7 @@ pub fn sync_tile_transforms_editor(
             -10_000.0
         } else if world_visual.y_sort {
             let floor = crate::world::components::floor_index(tile_position.z);
-            crate::world::systems::y_sort_z(tile_position.y, floor, 0)
+            crate::world::systems::y_sort_z(tile_position.x, tile_position.y, floor, 0)
         } else {
             let floor = crate::world::components::floor_index(tile_position.z);
             crate::world::systems::flat_floor_z(world_visual.z_index, floor)
@@ -605,7 +605,7 @@ pub fn update_editor_cursor_ghost(
             // always visible. Y-sort objects use a dynamic z-band, so add to
             // the same band; flat objects use their static z_index.
             let z_base = if def.render.y_sort {
-                crate::world::systems::y_sort_z(tile.y, tile.z, 0)
+                crate::world::systems::y_sort_z(tile.x, tile.y, tile.z, 0)
             } else {
                 crate::world::systems::flat_floor_z(def.render.z_index, tile.z)
             };

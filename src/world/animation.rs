@@ -2,8 +2,11 @@ use bevy::prelude::*;
 
 use crate::game::resources::ClientGameState;
 use crate::player::components::Player;
-use crate::world::components::{ClientProjectedWorldObject, TilePosition};
-use crate::world::object_definitions::{AnimationSheetDef, OverworldObjectDefinitions};
+use crate::world::components::{ClientProjectedWorldObject, Facing, TilePosition};
+use crate::world::direction::Direction;
+use crate::world::object_definitions::{
+    AnimationClipDef, AnimationSheetDef, OverworldObjectDefinitions,
+};
 use crate::world::resources::{FloorTransitionOffset, ViewScrollOffset};
 use crate::world::WorldConfig;
 
@@ -64,6 +67,37 @@ fn apply_clip(
     animated.clip_row = row;
     animated.clip_start_col = start_col;
     animated.looping = looping;
+}
+
+fn facing_suffix(facing: Direction) -> &'static str {
+    match facing {
+        Direction::North => "_n",
+        Direction::South => "_s",
+        Direction::East => "_e",
+        Direction::West => "_w",
+    }
+}
+
+/// Resolve `base` (e.g. `"idle"` or `"walk"`) against the clip map, preferring
+/// the facing-suffixed variant (`"walk_n"`) when present. Falls back to the
+/// unsuffixed `base` so legacy sheets without per-direction clips keep working.
+fn resolved_clip<'a>(
+    clips: &'a std::collections::HashMap<String, AnimationClipDef>,
+    base: &str,
+    facing: Option<Direction>,
+) -> Option<(String, &'a AnimationClipDef)> {
+    if let Some(dir) = facing {
+        let key = format!("{base}{}", facing_suffix(dir));
+        if let Some(c) = clips.get(&key) {
+            return Some((key, c));
+        }
+    }
+    clips.get(base).map(|c| (base.to_string(), c))
+}
+
+/// `true` if the current clip is some variant of `walk` (`walk`, `walk_n`, …).
+fn is_walk_clip(name: &str) -> bool {
+    name == "walk" || name.starts_with("walk_")
 }
 
 // ── Systems ───────────────────────────────────────────────────────────────────
@@ -183,28 +217,28 @@ pub fn advance_animation_timers(
 /// Switches animated entities to their walk clip when they have `JustMoved`.
 pub fn trigger_movement_animation(
     definitions: Res<OverworldObjectDefinitions>,
-    mut world_obj_query: Query<(&mut AnimatedSprite, &ClientProjectedWorldObject, &JustMoved)>,
+    mut world_obj_query: Query<(
+        &mut AnimatedSprite,
+        &ClientProjectedWorldObject,
+        &JustMoved,
+        Option<&Facing>,
+    )>,
     mut player_query: Query<
-        (&mut AnimatedSprite, &JustMoved),
+        (&mut AnimatedSprite, &JustMoved, Option<&Facing>),
         (With<Player>, Without<ClientProjectedWorldObject>),
     >,
 ) {
     let try_walk = |animated: &mut AnimatedSprite,
-                    clips: &std::collections::HashMap<
-        String,
-        crate::world::object_definitions::AnimationClipDef,
-    >,
-                    atlas_columns: u32| {
-        let clip_name = if clips.contains_key("walk") {
-            "walk"
-        } else {
-            "idle"
-        };
-
-        if let Some(clip) = clips.get(clip_name) {
+                    clips: &std::collections::HashMap<String, AnimationClipDef>,
+                    atlas_columns: u32,
+                    facing: Option<Direction>| {
+        // Prefer a directional walk; fall back to plain walk; then to idle.
+        let resolved = resolved_clip(clips, "walk", facing)
+            .or_else(|| resolved_clip(clips, "idle", facing));
+        if let Some((clip_name, clip)) = resolved {
             apply_clip(
                 animated,
-                clip_name,
+                &clip_name,
                 atlas_columns,
                 clip.row,
                 clip.start_col,
@@ -215,24 +249,34 @@ pub fn trigger_movement_animation(
         }
     };
 
-    for (mut animated, world_obj, _just_moved) in &mut world_obj_query {
+    for (mut animated, world_obj, _just_moved, facing) in &mut world_obj_query {
         let Some(def) = definitions.get(&world_obj.definition_id) else {
             continue;
         };
         let Some(sheet) = &def.render.animation else {
             continue;
         };
-        try_walk(&mut animated, &sheet.clips, sheet.sheet_columns);
+        try_walk(
+            &mut animated,
+            &sheet.clips,
+            sheet.sheet_columns,
+            facing.map(|f| f.0),
+        );
     }
 
-    for (mut animated, _just_moved) in &mut player_query {
+    for (mut animated, _just_moved, facing) in &mut player_query {
         let Some(def) = definitions.get("player") else {
             continue;
         };
         let Some(sheet) = &def.render.animation else {
             continue;
         };
-        try_walk(&mut animated, &sheet.clips, sheet.sheet_columns);
+        try_walk(
+            &mut animated,
+            &sheet.clips,
+            sheet.sheet_columns,
+            facing.map(|f| f.0),
+        );
     }
 }
 
@@ -240,11 +284,15 @@ pub fn trigger_movement_animation(
 pub fn return_to_idle_animation(
     definitions: Res<OverworldObjectDefinitions>,
     mut world_obj_query: Query<
-        (&mut AnimatedSprite, &ClientProjectedWorldObject),
+        (
+            &mut AnimatedSprite,
+            &ClientProjectedWorldObject,
+            Option<&Facing>,
+        ),
         Without<JustMoved>,
     >,
     mut player_query: Query<
-        &mut AnimatedSprite,
+        (&mut AnimatedSprite, Option<&Facing>),
         (
             With<Player>,
             Without<JustMoved>,
@@ -253,29 +301,32 @@ pub fn return_to_idle_animation(
     >,
 ) {
     let try_idle = |animated: &mut AnimatedSprite,
-                    clips: &std::collections::HashMap<
-        String,
-        crate::world::object_definitions::AnimationClipDef,
-    >,
-                    atlas_columns: u32| {
-        if !animated.current_clip.starts_with("walk") {
+                    clips: &std::collections::HashMap<String, AnimationClipDef>,
+                    atlas_columns: u32,
+                    facing: Option<Direction>| {
+        let Some((clip_name, clip)) = resolved_clip(clips, "idle", facing) else {
+            return;
+        };
+        // Swap if we were walking, OR if the directional idle for the current
+        // facing differs from the clip we're currently playing (turn-in-place).
+        let needs_swap =
+            is_walk_clip(&animated.current_clip) || animated.current_clip != clip_name;
+        if !needs_swap {
             return;
         }
-        if let Some(clip) = clips.get("idle") {
-            apply_clip(
-                animated,
-                "idle",
-                atlas_columns,
-                clip.row,
-                clip.start_col,
-                clip.frame_count,
-                clip.fps,
-                clip.looping,
-            );
-        }
+        apply_clip(
+            animated,
+            &clip_name,
+            atlas_columns,
+            clip.row,
+            clip.start_col,
+            clip.frame_count,
+            clip.fps,
+            clip.looping,
+        );
     };
 
-    for (mut animated, world_obj) in &mut world_obj_query {
+    for (mut animated, world_obj, facing) in &mut world_obj_query {
         let Some(def) = definitions.get(&world_obj.definition_id) else {
             continue;
         };
@@ -283,10 +334,10 @@ pub fn return_to_idle_animation(
             continue;
         };
         let cols = sheet.sheet_columns;
-        try_idle(&mut animated, &sheet.clips, cols);
+        try_idle(&mut animated, &sheet.clips, cols, facing.map(|f| f.0));
     }
 
-    for mut animated in &mut player_query {
+    for (mut animated, facing) in &mut player_query {
         let Some(def) = definitions.get("player") else {
             continue;
         };
@@ -294,7 +345,7 @@ pub fn return_to_idle_animation(
             continue;
         };
         let cols = sheet.sheet_columns;
-        try_idle(&mut animated, &sheet.clips, cols);
+        try_idle(&mut animated, &sheet.clips, cols, facing.map(|f| f.0));
     }
 }
 

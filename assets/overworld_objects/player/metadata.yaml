@@ -7,21 +7,62 @@ render:
   debug_size: 0.95
   sprite_path: overworld_objects/player/sprite_large.png
   y_sort: true
+  # Frame is 96×96 px but the iso-projected character only occupies ~1.2 tiles
+  # of vertical screen space above the tile-south anchor. Tell HUD anchoring
+  # (health bar, status icons) to use that logical height instead of the raw
+  # frame, so the bar sits just above the head rather than ~1 tile too high.
+  logical_height_tiles: 1.2
   animation:
     sheet_path: overworld_objects/player/sheet.png
-    frame_width: 32
-    frame_height: 48
+    frame_width: 96
+    frame_height: 96
     sheet_columns: 4
-    sheet_rows: 2
+    sheet_rows: 8
     clips:
-      idle:
+      idle_s:
         row: 0
         start_col: 0
         frame_count: 4
         fps: 3.0
         looping: true
-      walk:
+      walk_s:
         row: 1
+        start_col: 0
+        frame_count: 4
+        fps: 8.0
+        looping: true
+      idle_n:
+        row: 2
+        start_col: 0
+        frame_count: 4
+        fps: 3.0
+        looping: true
+      walk_n:
+        row: 3
+        start_col: 0
+        frame_count: 4
+        fps: 8.0
+        looping: true
+      idle_e:
+        row: 4
+        start_col: 0
+        frame_count: 4
+        fps: 3.0
+        looping: true
+      walk_e:
+        row: 5
+        start_col: 0
+        frame_count: 4
+        fps: 8.0
+        looping: true
+      idle_w:
+        row: 6
+        start_col: 0
+        frame_count: 4
+        fps: 3.0
+        looping: true
+      walk_w:
+        row: 7
         start_col: 0
         frame_count: 4
         fps: 8.0

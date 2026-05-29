@@ -621,7 +621,7 @@ pub fn render_paste_ghost(
         let cx = (tile.x as f32 + fo.dx as f32 - editor_camera.center.x) * effective;
         let cy = (tile.y as f32 + fo.dy as f32 - editor_camera.center.y) * effective;
         let z_base = if def.render.y_sort {
-            crate::world::systems::y_sort_z(tile.y + fo.dy, fo.z, 0)
+            crate::world::systems::y_sort_z(tile.x + fo.dx, tile.y + fo.dy, fo.z, 0)
         } else {
             crate::world::systems::flat_floor_z(def.render.z_index, fo.z)
         };

@@ -355,14 +355,14 @@ pub const FLOOR_Z_STEP: f32 = 10.0;
 
 /// Per-floor screen shift in tile units, split into screen-X and screen-Y so
 /// the perspective ratio is configurable independently. Defaults give
-/// (−0.5, +0.5) tiles per floor = (−24, +24) px with tile_size=48: higher
+/// (−0.75, +0.5) tiles per floor = (−36, +24) px with tile_size=48: higher
 /// floors render up-LEFT, lower floors down-RIGHT.
 ///
 /// Mirror these constants in `scripts/wall_perspective.py` — wall sprite slope
 /// must match this shift so a wall stacked on floor +1 lands its base flush
 /// on the lower wall's top cap. After changing these values, regenerate the
 /// wall set: `python3 scripts/gen_wall_set.py`.
-pub const FLOOR_SHIFT_X_TILES: f32 = -0.5;
+pub const FLOOR_SHIFT_X_TILES: f32 = -0.75;
 pub const FLOOR_SHIFT_Y_TILES: f32 = 0.5;
 
 /// Alpha applied to objects flagged `hide_when_inside_facing = South|East`
@@ -393,14 +393,25 @@ pub fn floor_screen_offset(view_z: f32, player_z: f32, tile_size: f32) -> Vec2 {
 }
 
 /// Y-sorted entities live above all flat layers (ground, pickups).
-/// Lower tile_y = lower on screen = closer to viewer = higher z.
-/// `stack_index` breaks ties for tall objects stacked on the same tile
-/// (chest atop barrel). Each step is well below the 0.01 row spacing, so
-/// up to ~9 deep stacks remain correctly sorted.
-/// Floor offsets are additive and dominate y-sort so upper floors always
-/// render above lower ones when both are visible.
-pub fn y_sort_z(tile_y: i32, floor: i32, stack_index: i32) -> f32 {
-    floor as f32 * FLOOR_Z_STEP + 1.0 - tile_y as f32 * 0.01 + stack_index as f32 * 0.001
+///
+/// In this game's cabinet projection, the camera sits up-and-to-the-south-east,
+/// so two things are simultaneously "closer to viewer":
+///   * lower `tile_y` (south)  — primary axis
+///   * higher `tile_x` (east)  — secondary axis
+///
+/// Without the east-axis term, a player standing east of a wall on the same
+/// `tile_y` row would tie on z and could render *behind* the wall sprite —
+/// the player's iso position is "in front of" the wall.
+///
+/// `stack_index` is a tiebreaker for objects stacked on the SAME tile (chest
+/// atop barrel). Floor offsets are additive and dominate y-sort so upper
+/// floors always render above lower ones when both are visible.
+pub fn y_sort_z(tile_x: i32, tile_y: i32, floor: i32, stack_index: i32) -> f32 {
+    floor as f32 * FLOOR_Z_STEP
+        + 1.0
+        - tile_y as f32 * 0.01
+        + tile_x as f32 * 0.01
+        + stack_index as f32 * 0.001
 }
 
 /// Flat-layer z for a non-y-sorted entity (ground tiles, pickups). Combines
@@ -476,7 +487,7 @@ pub fn sync_tile_transforms(
         } else if world_visual.y_sort {
             // Use view.tile.z directly as the per-z tiebreak — objects stacked
             // higher in the column (e.g. chest on chest) render in front.
-            y_sort_z(view.tile.y, view_floor, view.tile.z)
+            y_sort_z(view.tile.x, view.tile.y, view_floor, view.tile.z)
         } else {
             flat_floor_z(world_visual.z_index, view_floor)
         };
@@ -584,7 +595,7 @@ pub fn sync_player_z(
         let _ = client_state.player_position;
         // Subtract half-tile epsilon so world objects at the same tile_y always render in front.
         let view_floor = crate::world::components::floor_index(view.tile.z);
-        let new_z = y_sort_z(view.tile.y, view_floor, 0) - 0.005;
+        let new_z = y_sort_z(view.tile.x, view.tile.y, view_floor, 0) - 0.005;
         if (transform.translation.z - new_z).abs() > 0.001 {
             info!(
                 "player z update: tile_y={} tile_z={} z_index={} -> z={}",
@@ -718,33 +729,33 @@ mod tests {
 
     #[test]
     fn floor_screen_offset_full_floor_above_is_full_shift() {
-        // Two half-blocks above the player = one full floor → half a tile up-LEFT.
+        // Two half-blocks above the player = one full floor → 0.75 tiles up-LEFT.
         let offset = floor_screen_offset(6.0, 4.0, 48.0);
-        assert_eq!(offset.x, -24.0);
+        assert_eq!(offset.x, -36.0);
         assert_eq!(offset.y, 24.0);
     }
 
     #[test]
     fn floor_screen_offset_full_floor_below_is_full_shift() {
-        // Two half-blocks below the player → half a tile down-right.
+        // Two half-blocks below the player → 0.75 tiles down-right.
         let offset = floor_screen_offset(2.0, 4.0, 48.0);
-        assert_eq!(offset.x, 24.0);
+        assert_eq!(offset.x, 36.0);
         assert_eq!(offset.y, -24.0);
     }
 
     #[test]
     fn floor_screen_offset_half_block_is_half_shift() {
-        // One half-block above the player = half a floor → quarter-tile shift.
+        // One half-block above the player = half a floor → 0.375-tile X / 0.25-tile Y shift.
         let offset = floor_screen_offset(5.0, 4.0, 48.0);
-        assert_eq!(offset.x, -12.0);
+        assert_eq!(offset.x, -18.0);
         assert_eq!(offset.y, 12.0);
     }
 
     #[test]
     fn y_sort_z_stack_index_breaks_ties() {
-        let bottom = y_sort_z(10, 0, 0);
-        let middle = y_sort_z(10, 0, 1);
-        let top = y_sort_z(10, 0, 2);
+        let bottom = y_sort_z(5, 10, 0, 0);
+        let middle = y_sort_z(5, 10, 0, 1);
+        let top = y_sort_z(5, 10, 0, 2);
         // Stack index bumps z so the upper item renders on top of the lower.
         assert!(top > middle);
         assert!(middle > bottom);
@@ -755,8 +766,17 @@ mod tests {
         // Stack tiebreak must not cross the row-spacing of 0.01, or stacked
         // objects on one tile would invert their sort versus a neighbour on
         // the next tile_y.
-        let stack_bump = y_sort_z(10, 0, 1) - y_sort_z(10, 0, 0);
-        let row_bump = y_sort_z(9, 0, 0) - y_sort_z(10, 0, 0);
+        let stack_bump = y_sort_z(5, 10, 0, 1) - y_sort_z(5, 10, 0, 0);
+        let row_bump = y_sort_z(5, 9, 0, 0) - y_sort_z(5, 10, 0, 0);
         assert!(stack_bump < row_bump);
+    }
+
+    #[test]
+    fn y_sort_z_east_tile_renders_above_west_on_same_row() {
+        // In the cabinet projection, east is closer to the camera than west,
+        // so a higher tile_x should sort above a lower tile_x at the same tile_y.
+        let west = y_sort_z(3, 10, 0, 0);
+        let east = y_sort_z(7, 10, 0, 0);
+        assert!(east > west);
     }
 }

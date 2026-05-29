@@ -368,11 +368,11 @@ pub fn attach_combat_health_bar(
     commands: &mut Commands,
     entity: Entity,
     tile_size: f32,
-    sprite_height: f32,
+    hud_anchor_height: f32,
 ) {
     let bar_width = tile_size * 0.72;
     let bar_height = 5.0;
-    let bar_y = sprite_height + 2.0;
+    let bar_y = hud_anchor_height + 2.0;
     let fill_width = bar_width - 2.0;
 
     let mut root_entity = Entity::PLACEHOLDER;
@@ -562,7 +562,7 @@ pub fn spawn_client_projected_world_object(
         state,
         quantity,
     );
-    let sprite_height = bundle.sprite_height;
+    let hud_anchor_height = bundle.hud_anchor_height;
     let mut entity_commands = commands.spawn((
         ClientProjectedWorldObject {
             object_id,
@@ -590,7 +590,7 @@ pub fn spawn_client_projected_world_object(
         commands.entity(entity).insert(HealthBarDisplayPolicy {
             always_visible: false,
         });
-        attach_combat_health_bar(commands, entity, world_config.tile_size, sprite_height);
+        attach_combat_health_bar(commands, entity, world_config.tile_size, hud_anchor_height);
     }
 
     entity
@@ -621,7 +621,7 @@ pub fn spawn_client_remote_player(
     // Remote-player ghost tint so the local player can distinguish their own
     // entity from other connected players visually.
     bundle.sprite.color = Color::srgba(0.82, 0.92, 1.0, 0.8);
-    let sprite_height = bundle.sprite_height;
+    let hud_anchor_height = bundle.hud_anchor_height;
 
     let mut entity_commands = commands.spawn((
         ClientRemotePlayerVisual {
@@ -649,7 +649,7 @@ pub fn spawn_client_remote_player(
     commands.entity(entity).insert(HealthBarDisplayPolicy {
         always_visible: false,
     });
-    attach_combat_health_bar(commands, entity, world_config.tile_size, sprite_height);
+    attach_combat_health_bar(commands, entity, world_config.tile_size, hud_anchor_height);
     entity
 }
 
@@ -674,11 +674,17 @@ pub struct ObjectVisualBundle {
     pub world_visual: WorldVisual,
     pub animated: Option<AnimatedSprite>,
     pub anchor: Option<bevy::sprite::Anchor>,
-    /// Height in pixels used for healthbar / `WorldVisual.sprite_height`.
-    /// Matches the animation frame height when present so non-square sprites
-    /// (e.g. 32×48) keep their proportions instead of falling back to a square
-    /// from `sprite_pixel_size`.
+    /// Height in pixels used for `WorldVisual.sprite_height`. Matches the
+    /// animation frame height when present so non-square sprites (e.g. 32×48)
+    /// keep their proportions instead of falling back to a square from
+    /// `sprite_pixel_size`.
     pub sprite_height: f32,
+    /// Pixel y-offset where bottom-anchored HUD elements (healthbar, status
+    /// icons) should sit above the entity's tile-south anchor. Honours the
+    /// definition's `logical_height_tiles` override; otherwise falls back to
+    /// `sprite_height` so legacy sprites that fill their frame keep their
+    /// previous placement.
+    pub hud_anchor_height: f32,
 }
 
 /// Single source of truth for "definition → render components". Replaces the
@@ -735,12 +741,19 @@ pub fn build_object_visual_bundle(
         None
     };
 
+    let hud_anchor_height = definition
+        .render
+        .logical_height_tiles
+        .map(|tiles| tiles * tile_size)
+        .unwrap_or(sprite_height);
+
     ObjectVisualBundle {
         sprite,
         world_visual,
         animated,
         anchor,
         sprite_height,
+        hud_anchor_height,
     }
 }
 
