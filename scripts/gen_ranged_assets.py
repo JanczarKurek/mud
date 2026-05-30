@@ -1,11 +1,11 @@
 """
 Generates sprite PNGs for ranged-combat assets:
-  - bow/sprite.png         (32x32 pickup icon)
-  - crossbow/sprite.png    (32x32 pickup icon)
   - arrow/sprite.png       (32x32 pickup icon)
   - bolt/sprite.png        (32x32 pickup icon)
   - archer_goblin/sprite.png (32x48 standing sprite)
   - archer_goblin/sheet.png  (4x2, 32x48 frames: idle + walk)
+
+(Bow and crossbow pickup icons live in gen_combat_gear_sprites.py.)
 
 The archer_goblin is a green-skinned goblin with a gray tunic, carrying a
 shortbow in its right hand.
@@ -32,74 +32,6 @@ def draw_rect(img, x, y, w, h, color):
 def draw_px(img, x, y, color):
     if 0 <= x < img.width and 0 <= y < img.height:
         img.putpixel((x, y), color)
-
-
-# ── Bow sprite (32x32 vertical shortbow) ──────────────────────────────────────
-def render_bow():
-    img = new_image(32, 32)
-    WOOD = (140, 95, 48, 255)
-    WOOD_HI = (186, 138, 82, 255)
-    WOOD_DARK = (92, 58, 26, 255)
-    STRING = (230, 224, 200, 255)
-    # Curved bow limbs approximated with offsets per y.
-    # Top half curves from x=16 at top to x=10 midway, bottom mirrors.
-    bow_col_by_y = {
-        2: 14, 3: 13, 4: 12, 5: 11, 6: 10, 7: 10, 8: 10, 9: 10,
-        10: 10, 11: 10, 12: 10, 13: 10, 14: 10, 15: 11,
-        16: 11, 17: 10, 18: 10, 19: 10, 20: 10, 21: 10,
-        22: 10, 23: 10, 24: 10, 25: 11, 26: 12, 27: 13, 28: 14,
-    }
-    # Main limb (thick 2px), darker shadow column on outside.
-    for y, x in bow_col_by_y.items():
-        draw_px(img, x, y, WOOD_DARK)
-        draw_px(img, x + 1, y, WOOD)
-        draw_px(img, x + 2, y, WOOD_HI)
-
-    # Nocks (tips).
-    draw_px(img, 15, 1, WOOD_DARK)
-    draw_px(img, 15, 30, WOOD_DARK)
-
-    # Bowstring — a straight line from top nock to bottom nock around x=18.
-    for y in range(2, 30):
-        draw_px(img, 18, y, STRING)
-
-    # Handle wrap in the middle.
-    draw_rect(img, 10, 14, 4, 4, WOOD_DARK)
-    draw_rect(img, 10, 15, 4, 2, WOOD)
-    return img
-
-
-# ── Crossbow sprite (32x32) ───────────────────────────────────────────────────
-def render_crossbow():
-    img = new_image(32, 32)
-    STOCK = (92, 68, 40, 255)
-    STOCK_HI = (136, 100, 60, 255)
-    STOCK_DARK = (60, 44, 24, 255)
-    METAL = (140, 140, 150, 255)
-    METAL_HI = (190, 190, 200, 255)
-    STRING = (230, 224, 200, 255)
-    # Stock: horizontal beam
-    draw_rect(img, 6, 14, 20, 4, STOCK)
-    draw_rect(img, 6, 14, 20, 1, STOCK_HI)
-    draw_rect(img, 6, 17, 20, 1, STOCK_DARK)
-    # Prod (bow arms) — horizontal curved top
-    for x in range(4, 28):
-        dy = 0
-        if x < 8 or x > 23:
-            dy = 2
-        elif x < 10 or x > 21:
-            dy = 1
-        draw_px(img, x, 10 - dy, METAL_HI)
-        draw_px(img, x, 11 - dy, METAL)
-    # Bowstring (straight when latched)
-    for x in range(4, 28):
-        draw_px(img, x, 12, STRING)
-    # Trigger guard
-    draw_rect(img, 14, 18, 3, 4, STOCK_DARK)
-    draw_px(img, 15, 21, METAL)
-    # Bolt notch
-    draw_rect(img, 18, 13, 6, 1, METAL)
-    return img
 
 
 # ── Arrow sprite (32x32 diagonal arrow) ───────────────────────────────────────
@@ -296,8 +228,6 @@ def render_archer_sheet():
 
 
 OUTPUTS = [
-    ("assets/overworld_objects/bow/sprite.png", render_bow),
-    ("assets/overworld_objects/crossbow/sprite.png", render_crossbow),
     ("assets/overworld_objects/arrow/sprite.png", render_arrow),
     ("assets/overworld_objects/bolt/sprite.png", render_bolt),
     ("assets/overworld_objects/archer_goblin/sprite.png", render_archer_frame),
