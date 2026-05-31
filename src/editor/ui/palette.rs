@@ -34,6 +34,22 @@ pub struct EditorFloorPaletteItem {
     pub floor_id: Option<String>,
 }
 
+/// Marker on the "Recent" strip's object-row container so a live-updating
+/// system can refresh it without rebuilding the entire palette panel.
+#[derive(Component)]
+pub struct EditorRecentObjectsRoot;
+
+/// Marker on the recent-floor strip's row container.
+#[derive(Component)]
+pub struct EditorRecentFloorsRoot;
+
+/// Tag for a category header in the object list. `name` is `None` for the
+/// "Uncategorized" bucket.
+#[derive(Component)]
+pub struct EditorPaletteCategoryHeader {
+    pub name: Option<String>,
+}
+
 pub fn spawn_palette_panel(
     parent: &mut ChildSpawnerCommands,
     definitions: &OverworldObjectDefinitions,
@@ -101,6 +117,18 @@ pub fn spawn_palette_panel(
                     ));
                 });
 
+            // "Recent" strip — populated/refreshed by `sync_recent_strip`
+            // each frame from `EditorState.recent_object_types`.
+            panel.spawn((
+                EditorRecentObjectsRoot,
+                Node {
+                    width: Val::Percent(100.0),
+                    flex_direction: FlexDirection::Column,
+                    flex_shrink: 0.0,
+                    ..default()
+                },
+            ));
+
             // Scrollable object list — shares remaining vertical space 50/50
             // with the floors list below via matching `flex_grow`. `min_height:
             // 0` lets flexbox actually shrink the list inside its scroll
@@ -121,56 +149,112 @@ pub fn spawn_palette_panel(
                     ScrollPosition::default(),
                 ))
                 .with_children(|list| {
-                    let mut type_ids: Vec<&str> = definitions.ids().collect();
-                    type_ids.sort();
+                    // Group objects by `category`. `None` falls into the
+                    // "Uncategorized" bucket which renders last. Within each
+                    // group rows are alphabetical.
+                    let mut by_category: std::collections::BTreeMap<
+                        Option<String>,
+                        Vec<&str>,
+                    > = std::collections::BTreeMap::new();
+                    for id in definitions.ids() {
+                        if let Some(def) = definitions.get(id) {
+                            by_category
+                                .entry(def.category.clone())
+                                .or_default()
+                                .push(id);
+                        }
+                    }
+                    // Build a stable ordering: named categories alphabetically
+                    // first, then the catch-all None bucket.
+                    let mut groups: Vec<(Option<String>, Vec<&str>)> =
+                        by_category.into_iter().collect();
+                    groups.sort_by(|a, b| match (&a.0, &b.0) {
+                        (Some(x), Some(y)) => x.cmp(y),
+                        (Some(_), None) => std::cmp::Ordering::Less,
+                        (None, Some(_)) => std::cmp::Ordering::Greater,
+                        (None, None) => std::cmp::Ordering::Equal,
+                    });
 
-                    for type_id in type_ids {
-                        let Some(def) = definitions.get(type_id) else {
-                            continue;
-                        };
-                        let color = def.debug_color();
-                        let display_name = def.name.clone();
-
+                    for (category, mut ids) in groups {
+                        ids.sort();
+                        // Only render a header if at least one of the named
+                        // groups exists (avoids a lonely "Uncategorized" label
+                        // on legacy maps with no categories authored yet).
+                        let header_label = category
+                            .clone()
+                            .unwrap_or_else(|| "Uncategorized".to_owned());
+                        let any_named = !category.is_none() || ids.is_empty();
+                        let _ = any_named;
                         list.spawn((
-                            Button,
-                            EditorPaletteItem {
-                                type_id: type_id.to_owned(),
-                                display_name: display_name.clone(),
+                            EditorPaletteCategoryHeader {
+                                name: category.clone(),
                             },
                             Node {
                                 width: Val::Percent(100.0),
-                                padding: UiRect::axes(Val::Px(8.0), Val::Px(5.0)),
-                                align_items: AlignItems::Center,
-                                column_gap: Val::Px(6.0),
-                                border: UiRect::bottom(Val::Px(1.0)),
+                                padding: UiRect::axes(Val::Px(8.0), Val::Px(3.0)),
                                 ..default()
                             },
-                            BackgroundColor(Color::srgba(0.10, 0.07, 0.06, 0.80)),
-                            BorderColor::all(Color::srgb(0.20, 0.15, 0.10)),
+                            BackgroundColor(Color::srgba(0.04, 0.03, 0.02, 0.85)),
                         ))
-                        .with_children(|btn| {
-                            btn.spawn((
-                                Node {
-                                    width: Val::Px(12.0),
-                                    height: Val::Px(12.0),
-                                    flex_shrink: 0.0,
-                                    ..default()
-                                },
-                                BackgroundColor(color),
-                            ));
-                            btn.spawn((
-                                Text::new(display_name),
+                        .with_children(|h| {
+                            h.spawn((
+                                Text::new(header_label),
                                 TextFont {
-                                    font_size: 11.0,
+                                    font_size: 10.0,
                                     ..default()
                                 },
-                                TextColor(Color::srgb(0.88, 0.84, 0.78)),
-                                Node {
-                                    overflow: Overflow::clip_x(),
-                                    ..default()
-                                },
+                                TextColor(Color::srgb(0.70, 0.55, 0.34)),
                             ));
                         });
+
+                        for type_id in ids {
+                            let Some(def) = definitions.get(type_id) else {
+                                continue;
+                            };
+                            let color = def.debug_color();
+                            let display_name = def.name.clone();
+
+                            list.spawn((
+                                Button,
+                                EditorPaletteItem {
+                                    type_id: type_id.to_owned(),
+                                    display_name: display_name.clone(),
+                                },
+                                Node {
+                                    width: Val::Percent(100.0),
+                                    padding: UiRect::axes(Val::Px(8.0), Val::Px(5.0)),
+                                    align_items: AlignItems::Center,
+                                    column_gap: Val::Px(6.0),
+                                    border: UiRect::bottom(Val::Px(1.0)),
+                                    ..default()
+                                },
+                                BackgroundColor(Color::srgba(0.10, 0.07, 0.06, 0.80)),
+                                BorderColor::all(Color::srgb(0.20, 0.15, 0.10)),
+                            ))
+                            .with_children(|btn| {
+                                btn.spawn((
+                                    Node {
+                                        width: Val::Px(12.0),
+                                        height: Val::Px(12.0),
+                                        flex_shrink: 0.0,
+                                        ..default()
+                                    },
+                                    BackgroundColor(color),
+                                ));
+                                btn.spawn((
+                                    Text::new(display_name),
+                                    TextFont {
+                                        font_size: 11.0,
+                                        ..default()
+                                    },
+                                    TextColor(Color::srgb(0.88, 0.84, 0.78)),
+                                    Node {
+                                        overflow: Overflow::clip_x(),
+                                        ..default()
+                                    },
+                                ));
+                            });
+                        }
                     }
                 });
 
@@ -194,6 +278,17 @@ pub fn spawn_palette_panel(
                         TextColor(Color::srgb(0.96, 0.84, 0.62)),
                     ));
                 });
+
+            // Recent floors strip — same shape as recent objects.
+            panel.spawn((
+                EditorRecentFloorsRoot,
+                Node {
+                    width: Val::Percent(100.0),
+                    flex_direction: FlexDirection::Column,
+                    flex_shrink: 0.0,
+                    ..default()
+                },
+            ));
 
             // Floor list (Erase + each FloorTilesetDefinition). Same flex
             // sizing as the objects list so they share remaining height 50/50.
@@ -426,8 +521,10 @@ pub fn handle_palette_clicks(
             if editor_state.selected_type_id.as_deref() == Some(&item.type_id) {
                 editor_state.selected_type_id = None;
             } else {
-                editor_state.selected_type_id = Some(item.type_id.clone());
+                let id = item.type_id.clone();
+                editor_state.selected_type_id = Some(id.clone());
                 editor_state.selected_object_id = None;
+                editor_state.touch_recent_object(&id);
             }
         }
     }
@@ -442,6 +539,9 @@ pub fn handle_floor_palette_clicks(
             editor_state.palette_filter_focused = false;
             editor_state.current_tool = EditorTool::FloorBrush;
             editor_state.selected_floor_type = item.floor_id.clone();
+            if let Some(id) = item.floor_id.as_deref() {
+                editor_state.touch_recent_floor(id);
+            }
         }
     }
 }
@@ -489,6 +589,206 @@ pub fn handle_palette_scrolling(
             scroll_position.y = (scroll_position.y + delta_y).clamp(0.0, max_offset.y);
             break;
         }
+    }
+}
+
+/// Marker on a recent-strip row so children clicks can switch the palette
+/// selection just like the full-list rows do. We reuse `EditorPaletteItem`
+/// and `EditorFloorPaletteItem` directly so existing handlers fire.
+#[derive(Component)]
+pub struct EditorRecentRow;
+
+/// Tag the strip container so the Recent rebuild knows which entity to
+/// despawn children of. Stored as a component since the recent VecDeque
+/// changes incrementally and a per-frame rebuild is cheap (≤ 12 rows).
+pub fn sync_recent_strip(
+    mut commands: Commands,
+    editor_state: Res<EditorState>,
+    definitions: Res<OverworldObjectDefinitions>,
+    floor_defs: Res<FloorTilesetDefinitions>,
+    objects_root: Query<Entity, With<EditorRecentObjectsRoot>>,
+    floors_root: Query<Entity, With<EditorRecentFloorsRoot>>,
+    existing_rows: Query<Entity, With<EditorRecentRow>>,
+    parents: Query<&ChildOf>,
+    mut last_signature: Local<Option<(Vec<String>, Vec<String>)>>,
+) {
+    let current_signature = (
+        editor_state
+            .recent_object_types
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>(),
+        editor_state
+            .recent_floor_types
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>(),
+    );
+    if last_signature.as_ref() == Some(&current_signature) {
+        return;
+    }
+    *last_signature = Some(current_signature.clone());
+
+    let Ok(objects_root) = objects_root.single() else {
+        return;
+    };
+    let Ok(floors_root) = floors_root.single() else {
+        return;
+    };
+
+    // Despawn old rows under either strip.
+    for entity in &existing_rows {
+        if let Ok(parent) = parents.get(entity) {
+            let p = parent.parent();
+            if p == objects_root || p == floors_root {
+                commands.entity(entity).despawn();
+            }
+        }
+    }
+
+    if !editor_state.recent_object_types.is_empty() {
+        commands.entity(objects_root).with_children(|root| {
+            root.spawn((
+                EditorRecentRow,
+                Node {
+                    width: Val::Percent(100.0),
+                    padding: UiRect::axes(Val::Px(8.0), Val::Px(3.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.04, 0.03, 0.02, 0.85)),
+            ))
+            .with_children(|h| {
+                h.spawn((
+                    Text::new("Recent"),
+                    TextFont {
+                        font_size: 10.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.70, 0.55, 0.34)),
+                ));
+            });
+
+            for type_id in &current_signature.0 {
+                let Some(def) = definitions.get(type_id) else {
+                    continue;
+                };
+                let color = def.debug_color();
+                root.spawn((
+                    Button,
+                    EditorRecentRow,
+                    EditorPaletteItem {
+                        type_id: type_id.clone(),
+                        display_name: def.name.clone(),
+                    },
+                    Node {
+                        width: Val::Percent(100.0),
+                        padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
+                        align_items: AlignItems::Center,
+                        column_gap: Val::Px(6.0),
+                        border: UiRect::bottom(Val::Px(1.0)),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.10, 0.07, 0.06, 0.80)),
+                    BorderColor::all(Color::srgb(0.20, 0.15, 0.10)),
+                ))
+                .with_children(|btn| {
+                    btn.spawn((
+                        Node {
+                            width: Val::Px(10.0),
+                            height: Val::Px(10.0),
+                            flex_shrink: 0.0,
+                            ..default()
+                        },
+                        BackgroundColor(color),
+                    ));
+                    btn.spawn((
+                        Text::new(def.name.clone()),
+                        TextFont {
+                            font_size: 11.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.88, 0.84, 0.78)),
+                        Node {
+                            overflow: Overflow::clip_x(),
+                            ..default()
+                        },
+                    ));
+                });
+            }
+        });
+    }
+
+    if !editor_state.recent_floor_types.is_empty() {
+        commands.entity(floors_root).with_children(|root| {
+            root.spawn((
+                EditorRecentRow,
+                Node {
+                    width: Val::Percent(100.0),
+                    padding: UiRect::axes(Val::Px(8.0), Val::Px(3.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.04, 0.03, 0.02, 0.85)),
+            ))
+            .with_children(|h| {
+                h.spawn((
+                    Text::new("Recent"),
+                    TextFont {
+                        font_size: 10.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.70, 0.55, 0.34)),
+                ));
+            });
+            for floor_id in &current_signature.1 {
+                let Some(def) = floor_defs.iter().find(|d| d.id == *floor_id) else {
+                    continue;
+                };
+                let color = def.debug_color();
+                let name = def.name.clone();
+                root.spawn((
+                    Button,
+                    EditorRecentRow,
+                    EditorFloorPaletteItem {
+                        floor_id: Some(floor_id.clone()),
+                    },
+                    Node {
+                        width: Val::Percent(100.0),
+                        padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
+                        align_items: AlignItems::Center,
+                        column_gap: Val::Px(6.0),
+                        border: UiRect::bottom(Val::Px(1.0)),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.10, 0.07, 0.06, 0.80)),
+                    BorderColor::all(Color::srgb(0.20, 0.15, 0.10)),
+                ))
+                .with_children(|btn| {
+                    btn.spawn((
+                        Node {
+                            width: Val::Px(10.0),
+                            height: Val::Px(10.0),
+                            flex_shrink: 0.0,
+                            border: UiRect::all(Val::Px(1.0)),
+                            ..default()
+                        },
+                        BackgroundColor(color),
+                        BorderColor::all(Color::srgb(0.40, 0.30, 0.20)),
+                    ));
+                    btn.spawn((
+                        Text::new(name),
+                        TextFont {
+                            font_size: 11.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.88, 0.84, 0.78)),
+                        Node {
+                            overflow: Overflow::clip_x(),
+                            ..default()
+                        },
+                    ));
+                });
+            }
+        });
     }
 }
 

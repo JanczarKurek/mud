@@ -196,9 +196,15 @@ fn commit_drag(
         .or_else(|| preset.default_floor.clone());
 
     let fragment = build_fragment(sel, preset, floor_id);
+    let active_floor_index = editor_state.current_editing_floor;
+    // `stamp_fragment` only reads cursor_tile.x / .y; it derives the object
+    // z from `active_floor_index * 2` and the floor-map z from
+    // `active_floor_index` directly. So the z on the cursor TilePosition is
+    // a don't-care, leave it as ground.
     if let Some(undo) = stamp_fragment(
         &fragment,
         TilePosition::ground(sel.min.x, sel.min.y),
+        active_floor_index,
         editor_context,
         object_registry,
         object_definitions,

@@ -131,11 +131,50 @@ impl ObjectRegistry {
 
     /// Re-register an object id that was allocated in a previous session (e.g.
     /// loaded from an account DB row) so future `allocate_runtime_id` calls do
-    /// not collide with it. Leaves existing properties untouched.
+    /// not collide with it. Preserves existing properties when the type is
+    /// unchanged; clears them (and behavior) when the type flips, since those
+    /// fields belonged to whatever object previously owned this id and are
+    /// stale by definition once the slot is reassigned.
     pub fn register_existing(&mut self, object_id: u64, type_id: impl Into<String>) {
-        self.type_ids.insert(object_id, type_id.into());
-        if !self.properties.contains_key(&object_id) {
+        let new_type = type_id.into();
+        let type_changed = match self.type_ids.insert(object_id, new_type.clone()) {
+            Some(prev) => prev != new_type,
+            None => false,
+        };
+        if type_changed {
             self.properties.insert(object_id, ObjectProperties::new());
+            self.behaviors.remove(&object_id);
+        } else if !self.properties.contains_key(&object_id) {
+            self.properties.insert(object_id, ObjectProperties::new());
+        }
+        if self.next_runtime_id <= object_id {
+            self.next_runtime_id = object_id + 1;
+        }
+    }
+
+    /// Replace any existing registry entry for `object_id` with the given
+    /// type / properties / behavior. Use when the registry needs to be
+    /// brought back in line with an authoritative source (e.g. file-open
+    /// rebuilding a space from its YAML); plain `register_existing` is fine
+    /// when properties should be left alone, but reset paths need the full
+    /// overwrite so they don't inherit state from a previous owner of the
+    /// id slot.
+    pub fn replace_existing(
+        &mut self,
+        object_id: u64,
+        type_id: impl Into<String>,
+        properties: ObjectProperties,
+        behavior: Option<MapBehavior>,
+    ) {
+        self.type_ids.insert(object_id, type_id.into());
+        self.properties.insert(object_id, properties);
+        match behavior {
+            Some(b) => {
+                self.behaviors.insert(object_id, b);
+            }
+            None => {
+                self.behaviors.remove(&object_id);
+            }
         }
         if self.next_runtime_id <= object_id {
             self.next_runtime_id = object_id + 1;
@@ -301,4 +340,72 @@ fn resolve_template_expression(
     }
 
     properties.get(property).cloned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::world::map_layout::TileRectangle;
+
+    fn props_with(key: &str, value: &str) -> ObjectProperties {
+        let mut p = ObjectProperties::new();
+        p.insert(key.to_owned(), value.to_owned());
+        p
+    }
+
+    /// Regression: `register_existing` used to leave stale properties on the
+    /// slot when the type flipped. The editor's file-open path could then
+    /// reassign id N from (e.g.) `wooden_door` to `water`, and the next save
+    /// would silently attach the door's `state: locked` onto the new water
+    /// entity. The fix clears properties + behavior whenever the type
+    /// actually changes.
+    #[test]
+    fn register_existing_clears_stale_properties_on_type_change() {
+        let mut registry = ObjectRegistry::default();
+        registry.replace_existing(
+            42,
+            "wooden_door",
+            props_with("state", "locked"),
+            Some(MapBehavior::Roam {
+                bounds: TileRectangle {
+                    min_x: 0,
+                    min_y: 0,
+                    max_x: 1,
+                    max_y: 1,
+                },
+            }),
+        );
+        // Same type → preserve.
+        registry.register_existing(42, "wooden_door");
+        assert_eq!(registry.type_id(42), Some("wooden_door"));
+        assert_eq!(
+            registry.properties(42).and_then(|p| p.get("state")),
+            Some(&"locked".to_owned())
+        );
+        assert!(registry.behavior(42).is_some());
+
+        // Type flip → clear.
+        registry.register_existing(42, "water");
+        assert_eq!(registry.type_id(42), Some("water"));
+        assert!(registry
+            .properties(42)
+            .map(|p| p.is_empty())
+            .unwrap_or(true));
+        assert!(registry.behavior(42).is_none());
+    }
+
+    /// `replace_existing` always overwrites — that's its point. It's the
+    /// hammer used by reset paths that need the registry slot to match an
+    /// authoritative source (the freshly-parsed YAML) regardless of what
+    /// the slot used to hold.
+    #[test]
+    fn replace_existing_overwrites_everything() {
+        let mut registry = ObjectRegistry::default();
+        registry.replace_existing(7, "scroll", props_with("text", "old"), None);
+        registry.replace_existing(7, "water", ObjectProperties::new(), None);
+        assert_eq!(registry.type_id(7), Some("water"));
+        assert!(registry.properties(7).unwrap().is_empty());
+        // next_runtime_id bumps so future allocate calls don't collide.
+        assert!(registry.next_runtime_id() > 7);
+    }
 }

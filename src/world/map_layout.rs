@@ -362,7 +362,16 @@ impl SpaceDefinitions {
 
     /// Load a single map YAML from `assets/maps/{authored_id}.yaml` and insert it.
     /// Returns `true` if successful. Skips validation assertions for portal destinations.
-    pub fn load_single_from_disk(&mut self, authored_id: &str) -> bool {
+    ///
+    /// `min_start_id` is the floor for newly-assigned runtime ids. Callers
+    /// that share an `ObjectRegistry` with the editor (file open, save-and-
+    /// reload) MUST pass `object_registry.next_runtime_id()` here — otherwise
+    /// the fresh ids from this re-parse can collide with ids the editor has
+    /// already allocated for user-placed objects, and the registry's stale
+    /// type / properties for those id slots will silently attach to the
+    /// newly-spawned (different-type) entities on the next reset. Pass `0`
+    /// when no shared registry exists yet (boot-time load).
+    pub fn load_single_from_disk(&mut self, authored_id: &str, min_start_id: u64) -> bool {
         let path = format!("assets/maps/{authored_id}.yaml");
         let Ok(yaml) = std::fs::read_to_string(&path) else {
             return false;
@@ -373,8 +382,9 @@ impl SpaceDefinitions {
         if def.authored_id.trim().is_empty() {
             def.authored_id = authored_id.to_owned();
         }
-        // Pick an id range that doesn't collide with other already-loaded spaces.
-        let start_id = self
+        // Pick an id range that doesn't collide with other already-loaded
+        // spaces OR with the caller's runtime registry (via `min_start_id`).
+        let other_spaces_max = self
             .spaces
             .iter()
             .filter(|(other_id, _)| other_id.as_str() != def.authored_id.as_str())
@@ -382,6 +392,7 @@ impl SpaceDefinitions {
             .max()
             .map(|m| m + 1)
             .unwrap_or(1);
+        let start_id = other_spaces_max.max(min_start_id);
         def.resolve_objects(start_id);
         self.spaces.insert(def.authored_id.clone(), def);
         true
@@ -701,6 +712,24 @@ impl SpaceDefinition {
             object_indices: HashMap::new(),
             authored_id_lookup: HashMap::new(),
         }
+    }
+
+    /// Z-floors that this space's `floors` section actually places tiles on,
+    /// plus the ground floor (always included so callers don't have to
+    /// special-case maps with only z=0 data). Used by instantiate_space and
+    /// the editor's reset path to know which `FloorMap`s to allocate.
+    pub fn referenced_floor_zs(&self) -> std::collections::BTreeSet<i32> {
+        let mut zs = std::collections::BTreeSet::new();
+        zs.insert(TilePosition::GROUND_FLOOR);
+        for placements in self.floors.values() {
+            for tile in &placements.placement {
+                zs.insert(tile.z);
+            }
+            for rect in &placements.rects {
+                zs.insert(rect.z);
+            }
+        }
+        zs
     }
 
     /// Build a fully-baked `FloorMap` for the given z-floor. The map is

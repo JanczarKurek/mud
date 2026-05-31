@@ -3,6 +3,7 @@
 //! approved plan for the design rationale.
 
 pub mod display;
+pub mod editor;
 pub mod gameplay;
 pub mod keycode_serde;
 pub mod model;
@@ -12,6 +13,7 @@ pub mod ui;
 use bevy::prelude::*;
 
 pub use display::DisplaySettings;
+pub use editor::{EditorAction, EditorHotkeyInput, EditorKeybindings};
 pub use gameplay::GameplaySettings;
 pub use model::{Action, Keybindings};
 pub use ui::SettingsUiState;
@@ -34,6 +36,7 @@ pub struct SettingsPlugin;
 impl Plugin for SettingsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Keybindings>()
+            .init_resource::<EditorKeybindings>()
             .init_resource::<DisplaySettings>()
             .init_resource::<GameplaySettings>()
             .init_resource::<SettingsUiState>()

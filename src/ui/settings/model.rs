@@ -157,11 +157,11 @@ impl Binding {
         Modifiers::from_input(input) == self.mods
     }
 
-    fn just_pressed(&self, input: &ButtonInput<KeyCode>) -> bool {
+    pub fn just_pressed(&self, input: &ButtonInput<KeyCode>) -> bool {
         input.just_pressed(self.key.0) && self.matches_mods(input)
     }
 
-    fn pressed(&self, input: &ButtonInput<KeyCode>) -> bool {
+    pub fn pressed(&self, input: &ButtonInput<KeyCode>) -> bool {
         input.pressed(self.key.0) && self.matches_mods(input)
     }
 }
@@ -175,21 +175,21 @@ pub struct Bindings {
 }
 
 impl Bindings {
-    fn one(b: Binding) -> Self {
+    pub fn one(b: Binding) -> Self {
         Self {
             primary: Some(b),
             secondary: None,
         }
     }
 
-    fn two(a: Binding, b: Binding) -> Self {
+    pub fn two(a: Binding, b: Binding) -> Self {
         Self {
             primary: Some(a),
             secondary: Some(b),
         }
     }
 
-    fn iter(&self) -> impl Iterator<Item = &Binding> {
+    pub fn iter(&self) -> impl Iterator<Item = &Binding> {
         self.primary.iter().chain(self.secondary.iter())
     }
 

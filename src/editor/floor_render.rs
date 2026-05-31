@@ -7,24 +7,28 @@
 //! resource (which the FloorBrush mutates directly) and positions them via
 //! `EditorCamera`.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use bevy::prelude::*;
 
-use crate::editor::resources::{EditorCamera, EditorContext};
-use crate::world::components::{SpaceId, TilePosition};
+use crate::editor::resources::{EditorCamera, EditorContext, EditorState};
+use crate::world::components::SpaceId;
 use crate::world::floor_definitions::FloorTilesetDefinitions;
 use crate::world::floor_map::FloorMaps;
 use crate::world::floor_render::{
     floor_grid_hash, rebuild_floor_render_cells_for_grid, spawn_render_cells_at_corner,
     FloorRenderCell, FloorRenderDirty, FloorRenderState, FloorTilesetAtlases,
 };
-use crate::world::systems::flat_floor_z;
+use crate::world::systems::{flat_floor_z, floor_screen_offset};
 use crate::world::WorldConfig;
 
 #[derive(Resource, Default, Clone, Debug)]
 pub struct EditorFloorRenderState {
-    pub built_for: Option<(SpaceId, u64)>,
+    /// One hash per `(space, z)` floor grid, mirroring the in-game
+    /// `FloorRenderState`. Multi-floor rendering means the editor now ships
+    /// cells for every floor in the active space at once — not just the
+    /// editing floor — so the up/down stack stays visible while you author.
+    pub built_for: HashMap<(SpaceId, i32), u64>,
 }
 
 /// Drives the editor's `FloorRenderCell` entities. Three paths:
@@ -35,6 +39,12 @@ pub struct EditorFloorRenderState {
 /// - **No-op** otherwise. A trailing hash check guards against external
 ///   mutations (e.g. a wholesale `FloorMap` swap on map switch) that bypass
 ///   the dirty queue.
+/// Mirror of `world::floor_render::build_floor_render_cells`, adapted to the
+/// editor's data sources: walks every `FloorMap` in the active space (so
+/// upper / lower stories stay visible alongside the active floor) and
+/// rebuilds cells per `(space, z)` when the grid's hash changes. A drained
+/// `FloorRenderDirty` queue drives an incremental corner-only rebuild for
+/// the paint-drag case, exactly like the in-game path.
 #[allow(clippy::too_many_arguments)]
 pub fn editor_build_floor_render_cells(
     mut commands: Commands,
@@ -45,88 +55,112 @@ pub fn editor_build_floor_render_cells(
     world_config: Res<WorldConfig>,
     floor_maps: Res<FloorMaps>,
     editor_context: Res<EditorContext>,
+    _editor_state: Res<EditorState>,
     mut render_state: ResMut<EditorFloorRenderState>,
     mut floor_dirty: ResMut<FloorRenderDirty>,
     existing: Query<(Entity, &FloorRenderCell)>,
 ) {
     let space_id = editor_context.space_id;
-    let z = TilePosition::GROUND_FLOOR;
-    let Some(grid) = floor_maps.get(space_id, z) else {
-        return;
-    };
 
-    // Drain dirty tiles for this (space, z); leave others (e.g. background
-    // spaces being edited via Python) for whoever's responsible to consume.
-    let mut dirty_tiles: Vec<(i32, i32)> = Vec::new();
+    // Sweep entries that no longer match the active space or whose z no
+    // longer has a backing FloorMap (e.g. after switching maps, or after a
+    // user deletes an upper floor).
+    let live_keys: HashSet<(SpaceId, i32)> = floor_maps
+        .iter()
+        .filter_map(|(sid, z, _)| (sid == space_id).then_some((sid, z)))
+        .collect();
+    let stale: Vec<(SpaceId, i32)> = render_state
+        .built_for
+        .keys()
+        .copied()
+        .filter(|key| !live_keys.contains(key))
+        .collect();
+    if !stale.is_empty() {
+        for key in &stale {
+            render_state.built_for.remove(key);
+        }
+        for (entity, cell) in &existing {
+            if stale
+                .iter()
+                .any(|(sid, z)| *sid == cell.space_id && *z == cell.z)
+            {
+                commands.entity(entity).despawn();
+            }
+        }
+    }
+
+    // Drain dirty tiles for the active space; partition by z.
+    let mut dirty_by_z: HashMap<i32, Vec<(i32, i32)>> = HashMap::new();
     floor_dirty.cells.retain(|(s, dz, x, y)| {
-        if *s == space_id && *dz == z {
-            dirty_tiles.push((*x, *y));
+        if *s == space_id {
+            dirty_by_z.entry(*dz).or_default().push((*x, *y));
             false
         } else {
             true
         }
     });
 
-    let need_full_rebuild = render_state
-        .built_for
-        .map_or(true, |(prev_space, _)| prev_space != space_id);
-
-    if need_full_rebuild {
-        for (entity, _) in &existing {
-            commands.entity(entity).despawn();
+    for (sid, z, grid) in floor_maps.iter() {
+        if sid != space_id {
+            continue;
         }
-        rebuild_floor_render_cells_for_grid(
-            &mut commands,
-            &asset_server,
-            &mut texture_atlas_layouts,
-            &mut atlases,
-            &floor_defs,
-            &world_config,
-            space_id,
-            z,
-            grid,
-        );
-    } else if !dirty_tiles.is_empty() {
-        // Each tile change touches the 4 corners that read it (NW/NE/SW/SE).
-        let mut corners: HashSet<(i32, i32)> = HashSet::new();
-        for (tx, ty) in &dirty_tiles {
-            for dy in 0..=1 {
-                for dx in 0..=1 {
-                    corners.insert((tx + dx, ty + dy));
+        let key = (sid, z);
+        let hash = floor_grid_hash(&grid.tiles);
+
+        // Incremental: a paint-drag on this z touched a handful of tiles;
+        // respawn only the 4 corners that read each one. Skip when the hash
+        // matches (no-op frame) or when we have no prior build (cold path
+        // below).
+        let dirty_tiles = dirty_by_z.remove(&z).unwrap_or_default();
+        let has_prior = render_state.built_for.contains_key(&key);
+        if !dirty_tiles.is_empty() && has_prior {
+            let mut corners: HashSet<(i32, i32)> = HashSet::new();
+            for (tx, ty) in &dirty_tiles {
+                for dy in 0..=1 {
+                    for dx in 0..=1 {
+                        corners.insert((tx + dx, ty + dy));
+                    }
                 }
             }
+            for (entity, cell) in &existing {
+                if cell.space_id == sid
+                    && cell.z == z
+                    && corners.contains(&(cell.rx, cell.ry))
+                {
+                    commands.entity(entity).despawn();
+                }
+            }
+            for (rx, ry) in corners {
+                if rx < 0 || ry < 0 || rx > grid.width || ry > grid.height {
+                    continue;
+                }
+                spawn_render_cells_at_corner(
+                    &mut commands,
+                    &asset_server,
+                    &mut texture_atlas_layouts,
+                    &mut atlases,
+                    &floor_defs,
+                    &world_config,
+                    sid,
+                    z,
+                    rx,
+                    ry,
+                    grid,
+                );
+            }
+            render_state.built_for.insert(key, hash);
+            continue;
+        }
+
+        // Full rebuild path: this z is new, or its hash changed under us.
+        if render_state.built_for.get(&key) == Some(&hash) {
+            continue;
         }
         for (entity, cell) in &existing {
-            if cell.space_id == space_id && cell.z == z && corners.contains(&(cell.rx, cell.ry)) {
+            if cell.space_id == sid && cell.z == z {
                 commands.entity(entity).despawn();
             }
         }
-        for (rx, ry) in corners {
-            if rx < 0 || ry < 0 || rx > grid.width || ry > grid.height {
-                continue;
-            }
-            spawn_render_cells_at_corner(
-                &mut commands,
-                &asset_server,
-                &mut texture_atlas_layouts,
-                &mut atlases,
-                &floor_defs,
-                &world_config,
-                space_id,
-                z,
-                rx,
-                ry,
-                grid,
-            );
-        }
-    } else {
-        let hash = floor_grid_hash(&grid.tiles);
-        if render_state.built_for == Some((space_id, hash)) {
-            return;
-        }
-        for (entity, _) in &existing {
-            commands.entity(entity).despawn();
-        }
         rebuild_floor_render_cells_for_grid(
             &mut commands,
             &asset_server,
@@ -134,34 +168,49 @@ pub fn editor_build_floor_render_cells(
             &mut atlases,
             &floor_defs,
             &world_config,
-            space_id,
+            sid,
             z,
             grid,
         );
+        render_state.built_for.insert(key, hash);
     }
-
-    render_state.built_for = Some((space_id, floor_grid_hash(&grid.tiles)));
 }
 
 pub fn editor_sync_floor_render_transforms(
     world_config: Res<WorldConfig>,
     editor_camera: Res<EditorCamera>,
     editor_context: Res<EditorContext>,
+    editor_state: Res<EditorState>,
     mut query: Query<(&FloorRenderCell, &mut Transform)>,
 ) {
     let effective_size = world_config.tile_size * editor_camera.zoom_level;
+    // Editor camera perspective is "standing on the active editing floor".
+    // Pass that floor's raw half-block z as `player_z` so the active floor
+    // sits centered and other floors shift like they do in-game — keeps the
+    // editor's diagonal floor stack identical to what the player will see.
+    let player_z = editor_state.active_object_raw_z() as f32;
     for (cell, mut transform) in &mut query {
         let visible = cell.space_id == editor_context.space_id;
-        let z = if !visible {
+        let z_sort = if !visible {
             -10_000.0
         } else {
             flat_floor_z(cell.priority_z, cell.z)
         };
-        let dx =
-            (cell.rx as f32 - 0.5 + cell.local_offset.x - editor_camera.center.x) * effective_size;
-        let dy =
-            (cell.ry as f32 - 0.5 + cell.local_offset.y - editor_camera.center.y) * effective_size;
-        transform.translation = Vec3::new(dx, dy, z);
+        // `cell.z` is in floor-index units; the floor_screen_offset math
+        // operates on raw half-block z, hence the `* 2`. Mirrors the in-game
+        // sync in `world::floor_render::sync_floor_render_transforms`.
+        let floor_offset = if visible {
+            floor_screen_offset((cell.z * 2) as f32, player_z, effective_size)
+        } else {
+            Vec2::ZERO
+        };
+        let dx = (cell.rx as f32 - 0.5 + cell.local_offset.x - editor_camera.center.x)
+            * effective_size
+            + floor_offset.x;
+        let dy = (cell.ry as f32 - 0.5 + cell.local_offset.y - editor_camera.center.y)
+            * effective_size
+            + floor_offset.y;
+        transform.translation = Vec3::new(dx, dy, z_sort);
         transform.scale = Vec3::splat(editor_camera.zoom_level);
     }
 }
@@ -179,6 +228,6 @@ pub fn cleanup_editor_floor_cells(
     for entity in &cells {
         commands.entity(entity).despawn();
     }
-    editor_render_state.built_for = None;
+    editor_render_state.built_for.clear();
     ingame_render_state.built_for.clear();
 }

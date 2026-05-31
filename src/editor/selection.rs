@@ -201,21 +201,17 @@ pub fn handle_editor_pick_rect_drag(
     });
 }
 
-/// Hotkey: `M` switches to the Select tool. Skipped when ctrl is held so it
-/// doesn't fire alongside Ctrl+M-style shortcuts in any future binding.
+/// Legacy single-letter switch to Select tool (default `M`).
 pub fn handle_editor_select_hotkey(
     keyboard: Res<ButtonInput<KeyCode>>,
+    editor_keys: Res<crate::ui::settings::EditorKeybindings>,
     modal_state: Res<crate::editor::resources::ModalState>,
     mut editor_state: ResMut<EditorState>,
 ) {
     if modal_state.active.is_some() || editor_state.palette_filter_focused {
         return;
     }
-    let ctrl = keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
-    if ctrl {
-        return;
-    }
-    if keyboard.just_pressed(KeyCode::KeyM) {
+    if editor_keys.just_pressed(crate::ui::settings::EditorAction::ToolSelectLegacy, &keyboard) {
         editor_state.current_tool = EditorTool::Select;
     }
 }

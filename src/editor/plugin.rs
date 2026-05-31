@@ -6,13 +6,20 @@ use crate::editor::building::{
 };
 use crate::editor::clipboard::{
     handle_clipboard_shortcuts, handle_editor_delete_key, handle_editor_paste_click,
-    render_paste_ghost,
+    handle_paste_transform_hotkeys, render_paste_ghost,
 };
 use crate::editor::dialog_index::EditorDialogIndex;
+use crate::editor::fill::{handle_editor_flood_fill, handle_editor_rect_fill};
 use crate::editor::floor_render::{
     cleanup_editor_floor_cells, editor_build_floor_render_cells,
     editor_sync_floor_render_transforms, EditorFloorRenderState,
 };
+use crate::editor::hotkeys::{
+    handle_editor_alt_recent_hotkeys, handle_editor_brush_radius_hotkeys,
+    handle_editor_eyedropper, handle_editor_fill_mode_hotkey,
+    handle_editor_floor_switch_hotkey, handle_editor_tool_number_hotkeys,
+};
+use crate::editor::status_bar::sync_status_bar;
 use crate::editor::resources::{
     EditorCamera, EditorClipboard, EditorCursorMarker, EditorLightingBuffer,
     EditorPasteGhostMarker, EditorPickRectResult, EditorPortalBuffer, EditorPropertyEditBuffer,
@@ -56,7 +63,7 @@ use crate::editor::ui::modal::{
 use crate::editor::ui::palette::{
     handle_floor_palette_clicks, handle_palette_clicks, handle_palette_filter_click,
     handle_palette_scrolling, sync_floor_palette_selection, sync_palette_filter_text,
-    sync_palette_selection,
+    sync_palette_selection, sync_recent_strip,
 };
 use crate::editor::ui::properties::{
     apply_pick_rect_to_instance_behavior, handle_add_property_button, handle_behavior_pick_bounds,
@@ -117,6 +124,9 @@ fn reset_editor_session_state(
     editor_state.lighting_panel_visible = false;
     editor_state.vendor_stashes_panel_visible = false;
     editor_state.tool_before_pick = None;
+    editor_state.current_editing_floor = 0;
+    editor_state.brush_radius = 1;
+    editor_state.fill_mode = crate::editor::resources::FillMode::Single;
     vendor_stash_buffer.editing = None;
     vendor_stash_buffer.edit_text.clear();
     vendor_stash_buffer.pending_ware_pick = None;
@@ -286,6 +296,35 @@ impl Plugin for EditorPlugin {
                     .run_if(in_state(ClientAppState::MapEditor))
                     .run_if(no_modal),
             )
+            // Phase A/B/C hotkey + fill systems. Number-row, brush radius,
+            // eyedropper, PgUp/PgDn, fill-mode toggle, recent-alt-N. These
+            // are tiny systems with clear gates and don't need to fight for
+            // ordering with the bigger handlers, so they sit on their own
+            // tuple.
+            .add_systems(
+                Update,
+                (
+                    handle_editor_tool_number_hotkeys,
+                    handle_editor_brush_radius_hotkeys,
+                    handle_editor_fill_mode_hotkey,
+                    handle_editor_eyedropper,
+                    handle_editor_floor_switch_hotkey,
+                    handle_editor_alt_recent_hotkeys,
+                    // Rect / flood fill bind to LMB; running them BEFORE the
+                    // standard left-click handler so that handler sees its
+                    // existing single-tile path when fill_mode is Single.
+                    handle_editor_rect_fill.before(handle_editor_left_click),
+                    handle_editor_flood_fill.before(handle_editor_left_click),
+                )
+                    .run_if(in_state(ClientAppState::MapEditor))
+                    .run_if(no_modal),
+            )
+            // Status bar always runs (even with a modal open) so cursor
+            // coordinates stay live.
+            .add_systems(
+                Update,
+                sync_status_bar.run_if(in_state(ClientAppState::MapEditor)),
+            )
             // Selection / clipboard input (split out so the previous tuple
             // stays under Bevy's `IntoSystemConfigs` arity limit). The paste
             // commit must run *before* the brush click handler so its early-
@@ -299,6 +338,7 @@ impl Plugin for EditorPlugin {
                     handle_clipboard_shortcuts,
                     handle_editor_delete_key,
                     handle_editor_paste_click.before(handle_editor_left_click),
+                    handle_paste_transform_hotkeys,
                 )
                     .run_if(in_state(ClientAppState::MapEditor))
                     .run_if(no_modal),
@@ -375,6 +415,7 @@ impl Plugin for EditorPlugin {
                     sync_editor_top_bar,
                     sync_palette_selection,
                     sync_palette_filter_text,
+                    sync_recent_strip,
                     handle_palette_clicks,
                     handle_palette_filter_click,
                     sync_floor_palette_selection,

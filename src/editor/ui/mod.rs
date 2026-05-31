@@ -222,6 +222,9 @@ pub fn spawn_editor_hud(
                     spawn_building_panel(row);
                     spawn_properties_panel(row);
                 });
+
+            // ── Status bar (bottom) ───────────────────────────────────────────
+            crate::editor::status_bar::spawn_status_bar(root);
         });
 }
 
@@ -504,7 +507,8 @@ pub fn handle_save_button_click(
                 &objects,
                 &floor_maps,
             );
-            space_definitions.load_single_from_disk(&editor_context.authored_id);
+            space_definitions
+                .load_single_from_disk(&editor_context.authored_id, object_registry.next_runtime_id());
             editor_state.dirty = false;
         }
     }

@@ -1,8 +1,16 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
+
+/// Maximum number of object/floor type ids kept in the recent-used strip.
+pub const RECENT_TYPES_CAP: usize = 12;
+
+/// Maximum size of the editor undo stack. Older ops are dropped from the
+/// bottom when this is exceeded so unbounded edit sessions don't grow
+/// memory without limit.
+pub const UNDO_STACK_CAP: usize = 256;
 
 use crate::world::components::{SpaceId, TilePosition};
 use crate::world::floor_definitions::FloorTypeId;
@@ -113,6 +121,33 @@ pub struct EditorState {
     /// Building-tool selections (preset, floor override, door-arm). Only
     /// consulted while `current_tool == BuildingDraw`.
     pub building: BuildingToolState,
+    /// Most-recently-clicked object/floor type ids, newest first. Bounded by
+    /// `RECENT_TYPES_CAP`. Rendered as a quick-access strip at the top of
+    /// the palette.
+    pub recent_object_types: VecDeque<String>,
+    pub recent_floor_types: VecDeque<String>,
+    /// Side length of the object/floor brush in tiles (1 = single tile).
+    pub brush_radius: u32,
+    /// Active editing floor for multi-floor maps. Ground floor is `0`; upper
+    /// floors are positive. PgUp/PgDn cycle this through the floors used by
+    /// the map.
+    pub current_editing_floor: i32,
+    /// Object-fill mode: when true, holding Shift while LMB-dragging the
+    /// Brush tool fills a rectangle on release. Toggled by `G` for the
+    /// flood-fill alternative.
+    pub fill_mode: FillMode,
+}
+
+/// Drag-fill mode for the object/floor brush. `Single` is the legacy
+/// per-tile paint behavior; `Rect` / `Flood` are opt-in via hotkey.
+#[derive(Default, PartialEq, Eq, Clone, Copy, Debug)]
+pub enum FillMode {
+    #[default]
+    Single,
+    /// Shift+drag with Brush or FloorBrush rectangles the region.
+    Rect,
+    /// Click with Brush or FloorBrush flood-fills the contiguous region.
+    Flood,
 }
 
 /// Per-session state for the building-draw tool: which preset is active,
@@ -148,6 +183,53 @@ impl EditorSelection {
     }
     pub fn contains(&self, x: i32, y: i32) -> bool {
         x >= self.min.x && x <= self.max.x && y >= self.min.y && y <= self.max.y
+    }
+}
+
+impl EditorState {
+    /// Push `type_id` to the front of `recent_object_types`, deduping and
+    /// capping at `RECENT_TYPES_CAP`. Newest entries appear first.
+    pub fn touch_recent_object(&mut self, type_id: &str) {
+        push_recent(&mut self.recent_object_types, type_id);
+    }
+
+    /// Mirror of `touch_recent_object` for floor type ids.
+    pub fn touch_recent_floor(&mut self, floor_id: &str) {
+        push_recent(&mut self.recent_floor_types, floor_id);
+    }
+
+    /// Effective brush radius for tile painting (always `>= 1`).
+    pub fn effective_brush_radius(&self) -> u32 {
+        self.brush_radius.max(1)
+    }
+
+    /// Convert `current_editing_floor` (a floor index, where 0 = ground,
+    /// 1 = second story, …) into the raw half-block z that
+    /// `TilePosition.z` lives in (`floor_index * 2`). Use this whenever
+    /// the editor places, queries, or compares **objects** on the active
+    /// floor. `FloorMaps` keys + `GameCommand::EditorSetFloorTile` already
+    /// use floor-index units, so they keep using `current_editing_floor`
+    /// directly.
+    pub fn active_object_raw_z(&self) -> i32 {
+        self.current_editing_floor * 2
+    }
+
+    /// True iff `tile_z` (raw half-block z, e.g. from `TilePosition.z`)
+    /// belongs to the active editing floor. Two half-blocks per floor —
+    /// raw z 0 and 1 both live on floor 0, raw z 2 and 3 live on floor 1,
+    /// and so on. Equivalent to `floor_index(tile_z) == current_editing_floor`.
+    pub fn tile_on_active_floor(&self, tile_z: i32) -> bool {
+        crate::world::components::floor_index(tile_z) == self.current_editing_floor
+    }
+}
+
+fn push_recent(queue: &mut VecDeque<String>, id: &str) {
+    if let Some(existing) = queue.iter().position(|s| s == id) {
+        queue.remove(existing);
+    }
+    queue.push_front(id.to_owned());
+    while queue.len() > RECENT_TYPES_CAP {
+        queue.pop_back();
     }
 }
 
@@ -830,10 +912,49 @@ impl UndoStack {
     pub fn push_undo(&mut self, op: UndoOp) {
         self.undo_ops.push(op);
         self.redo_ops.clear();
+        // Drop the oldest ops once we exceed the cap so an unbounded edit
+        // session can't grow memory without limit.
+        if self.undo_ops.len() > UNDO_STACK_CAP {
+            let drop_count = self.undo_ops.len() - UNDO_STACK_CAP;
+            self.undo_ops.drain(0..drop_count);
+        }
     }
 
     pub fn clear(&mut self) {
         self.undo_ops.clear();
         self.redo_ops.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Confirms the two unit systems: editing floor 0 (ground) → raw z 0,
+    /// floor 1 (second story) → raw z 2 — i.e. a `floor_plank` placed on
+    /// floor 1 actually lands at the z the engine's occlusion + visibility
+    /// scan expects, instead of at z=1 (a half-block-elevated decal on
+    /// floor 0).
+    #[test]
+    fn active_object_raw_z_doubles_floor_index() {
+        let mut state = EditorState::default();
+        assert_eq!(state.active_object_raw_z(), 0);
+        state.current_editing_floor = 1;
+        assert_eq!(state.active_object_raw_z(), 2);
+        state.current_editing_floor = 3;
+        assert_eq!(state.active_object_raw_z(), 6);
+    }
+
+    /// Both half-blocks of a floor count as "on that floor" — a chest
+    /// stacked on the floor's base z (raw z 3 on floor 1) still picks up
+    /// when the editor queries who's on floor 1.
+    #[test]
+    fn tile_on_active_floor_groups_half_blocks() {
+        let mut state = EditorState::default();
+        state.current_editing_floor = 1;
+        assert!(state.tile_on_active_floor(2)); // floor 1 base
+        assert!(state.tile_on_active_floor(3)); // floor 1 + half-block
+        assert!(!state.tile_on_active_floor(0)); // floor 0
+        assert!(!state.tile_on_active_floor(4)); // floor 2
     }
 }

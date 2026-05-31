@@ -98,11 +98,14 @@ pub fn instantiate_space(
         lighting: definition.lighting.clone(),
     };
     space_manager.insert_space(runtime_space);
-    floor_maps.insert(
-        space_id,
-        TilePosition::GROUND_FLOOR,
-        definition.build_floor_map(TilePosition::GROUND_FLOOR),
-    );
+    // Allocate a FloorMap for every z this space places tiles on, not just
+    // the ground floor. Without this, upper-floor placements from the YAML
+    // (cave_floor at z=1, etc.) never reach FloorMaps and so never get
+    // replicated to the client — the editor would paint them but in-game
+    // they'd be invisible.
+    for z in definition.referenced_floor_zs() {
+        floor_maps.insert(space_id, z, definition.build_floor_map(z));
+    }
 
     for object in &definition.resolved_objects {
         if definition.is_contained(object.id) {

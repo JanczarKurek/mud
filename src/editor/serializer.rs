@@ -186,27 +186,31 @@ pub fn serialize_and_save(
         })
         .collect::<Vec<_>>();
 
-    // Collect floor placements for the active space at z=0, grouped by floor
-    // type. Omit cells whose floor type equals the fill_floor_type since they
-    // round-trip through the fill at load time.
+    // Collect floor placements for every floor of the active space, grouped
+    // by floor type. Omit ground-floor cells whose floor type equals the
+    // `fill_floor_type` since they round-trip through the fill at load time;
+    // upper floors never get a fill, so every non-empty cell there is
+    // explicit.
     let mut floor_groups: HashMap<String, Vec<TileCoordinate>> = HashMap::new();
-    if let Some(map) = floor_maps.get(
-        ctx.space_id,
-        crate::world::components::TilePosition::GROUND_FLOOR,
-    ) {
+    for (space_id, z, map) in floor_maps.iter() {
+        if space_id != ctx.space_id {
+            continue;
+        }
         for y in 0..map.height {
             for x in 0..map.width {
                 let idx = (y * map.width + x) as usize;
                 let Some(floor) = map.tiles.get(idx).and_then(|t| t.as_ref()) else {
                     continue;
                 };
-                if *floor == ctx.fill_floor_type {
+                if z == crate::world::components::TilePosition::GROUND_FLOOR
+                    && *floor == ctx.fill_floor_type
+                {
                     continue;
                 }
                 floor_groups
                     .entry(floor.clone())
                     .or_default()
-                    .push(TileCoordinate { x, y, z: 0 });
+                    .push(TileCoordinate { x, y, z });
             }
         }
     }

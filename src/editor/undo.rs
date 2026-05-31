@@ -4,6 +4,7 @@ use crate::editor::resources::{
     EditorCamera, EditorPortalBuffer, EditorSpawnGroupBuffer, EditorState, ModalState, UndoOp,
     UndoStack,
 };
+use crate::ui::settings::{EditorAction, EditorHotkeyInput};
 use crate::editor::systems::insert_editor_visuals_pub;
 use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
 use crate::world::floor_map::FloorMaps;
@@ -15,7 +16,7 @@ use crate::world::WorldConfig;
 
 #[allow(clippy::too_many_arguments)]
 pub fn handle_undo_redo(
-    keyboard: Res<ButtonInput<KeyCode>>,
+    input: EditorHotkeyInput,
     modal_state: Res<ModalState>,
     mut undo_stack: ResMut<UndoStack>,
     mut editor_state: ResMut<EditorState>,
@@ -36,15 +37,10 @@ pub fn handle_undo_redo(
         return;
     }
 
-    let ctrl = keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
-    let shift = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
-
-    let do_undo =
-        editor_state.undo_requested || (ctrl && !shift && keyboard.just_pressed(KeyCode::KeyZ));
+    let do_undo = editor_state.undo_requested || input.just_pressed(EditorAction::Undo);
     let do_redo = editor_state.redo_requested
-        || ctrl
-            && (keyboard.just_pressed(KeyCode::KeyY)
-                || (shift && keyboard.just_pressed(KeyCode::KeyZ)));
+        || input.just_pressed(EditorAction::Redo)
+        || input.just_pressed(EditorAction::RedoAlt);
     editor_state.undo_requested = false;
     editor_state.redo_requested = false;
 

@@ -24,15 +24,22 @@ use crate::editor::resources::{
 use crate::game::commands::GameCommand;
 use crate::game::resources::PendingGameCommands;
 use crate::player::components::Player;
+use crate::ui::settings::{EditorAction, EditorKeybindings};
 use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
 use crate::world::floor_map::FloorMaps;
 use crate::world::object_registry::ObjectRegistry;
 
 /// Build a `MapFragment` from the contents of `selection`. `include_floors`
 /// false means produce an objects-only fragment (the Shift modifier).
+///
+/// `active_floor_index` is the editor's `current_editing_floor`. Objects
+/// are matched by `floor_index(tile.z) == active_floor_index` (any half-
+/// block stack within the floor counts); floor maps are looked up at
+/// that same floor-index key.
 pub fn fragment_from_selection(
     selection: EditorSelection,
     include_floors: bool,
+    active_floor_index: i32,
     objects: impl IntoIterator<Item = (u64, TilePosition)>,
     object_registry: &ObjectRegistry,
     floor_maps: &FloorMaps,
@@ -45,6 +52,13 @@ pub fn fragment_from_selection(
     };
     for (object_id, tile) in objects {
         if !selection.contains(tile.x, tile.y) {
+            continue;
+        }
+        // Only capture objects on the active editing floor; objects on
+        // other floors aren't selected by the marquee in the first place,
+        // but be defensive here so a future feature that surfaces other-
+        // floor objects to selection doesn't drag them into the clipboard.
+        if crate::world::components::floor_index(tile.z) != active_floor_index {
             continue;
         }
         let Some(type_id) = object_registry.type_id(object_id) else {
@@ -65,7 +79,7 @@ pub fn fragment_from_selection(
         });
     }
     if include_floors {
-        if let Some(map) = floor_maps.get(selection.space_id, TilePosition::GROUND_FLOOR) {
+        if let Some(map) = floor_maps.get(selection.space_id, active_floor_index) {
             for y in selection.min.y..=selection.max.y {
                 for x in selection.min.x..=selection.max.x {
                     let cell = map.get(x, y).cloned();
@@ -87,6 +101,7 @@ pub fn fragment_from_selection(
 #[allow(clippy::too_many_arguments)]
 pub fn handle_clipboard_shortcuts(
     keyboard: Res<ButtonInput<KeyCode>>,
+    editor_keys: Res<EditorKeybindings>,
     editor_context: Res<EditorContext>,
     object_registry: Res<ObjectRegistry>,
     floor_maps: Res<FloorMaps>,
@@ -100,14 +115,14 @@ pub fn handle_clipboard_shortcuts(
     if editor_state.palette_filter_focused {
         return;
     }
-    let ctrl = keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
-    if !ctrl {
-        return;
-    }
-    let shift = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
-    let copy = keyboard.just_pressed(KeyCode::KeyC);
-    let cut = keyboard.just_pressed(KeyCode::KeyX);
-    let paste = keyboard.just_pressed(KeyCode::KeyV);
+    // Order matters: the Shift variants must be checked before their plain
+    // siblings so Ctrl+Shift+C reports as objects-only rather than as Copy.
+    let copy_objects_only = editor_keys.just_pressed(EditorAction::CopyObjectsOnly, &keyboard);
+    let cut_objects_only = editor_keys.just_pressed(EditorAction::CutObjectsOnly, &keyboard);
+    let copy = copy_objects_only || editor_keys.just_pressed(EditorAction::Copy, &keyboard);
+    let cut = cut_objects_only || editor_keys.just_pressed(EditorAction::Cut, &keyboard);
+    let paste = editor_keys.just_pressed(EditorAction::Paste, &keyboard);
+    let shift = copy_objects_only || cut_objects_only;
 
     if !(copy || cut || paste) {
         return;
@@ -193,9 +208,11 @@ pub fn handle_clipboard_shortcuts(
     }
 
     let include_floors = !shift;
+    let active_floor_index = editor_state.current_editing_floor;
     let fragment = fragment_from_selection(
         selection,
         include_floors,
+        active_floor_index,
         object_entries.iter().map(|(id, tile, _)| (*id, *tile)),
         &object_registry,
         &floor_maps,
@@ -233,7 +250,7 @@ pub fn handle_clipboard_shortcuts(
         commands.entity(*entity).despawn();
     }
     if include_floors {
-        if let Some(map) = floor_maps.get(selection.space_id, TilePosition::GROUND_FLOOR) {
+        if let Some(map) = floor_maps.get(selection.space_id, active_floor_index) {
             for y in selection.min.y..=selection.max.y {
                 for x in selection.min.x..=selection.max.x {
                     let prev = map.get(x, y).cloned();
@@ -242,14 +259,14 @@ pub fn handle_clipboard_shortcuts(
                     }
                     composite_ops.push(UndoOp::SetFloor {
                         space_id: selection.space_id,
-                        z: TilePosition::GROUND_FLOOR,
+                        z: active_floor_index,
                         x,
                         y,
                         value: prev,
                     });
                     pending_commands.push(GameCommand::EditorSetFloorTile {
                         space_id: selection.space_id,
-                        z: TilePosition::GROUND_FLOOR,
+                        z: active_floor_index,
                         x,
                         y,
                         floor_type: None,
@@ -267,8 +284,10 @@ pub fn handle_clipboard_shortcuts(
 /// Delete key handler. Priority is single-object selection (mirrors the
 /// right-click delete path), falling back to the marquee region — objects
 /// only, never floors. Both paths push an undo op so Ctrl+Z restores.
+#[allow(clippy::too_many_arguments)]
 pub fn handle_editor_delete_key(
     keyboard: Res<ButtonInput<KeyCode>>,
+    editor_keys: Res<EditorKeybindings>,
     editor_context: Res<EditorContext>,
     object_registry: Res<ObjectRegistry>,
     mut editor_state: ResMut<EditorState>,
@@ -279,7 +298,7 @@ pub fn handle_editor_delete_key(
     if editor_state.palette_filter_focused {
         return;
     }
-    if !keyboard.just_pressed(KeyCode::Delete) {
+    if !editor_keys.just_pressed(EditorAction::Delete, &keyboard) {
         return;
     }
 
@@ -375,8 +394,14 @@ pub fn fragment_from_state(
         }
         object_entries.push((obj.object_id, *tile));
     }
-    let fragment =
-        fragment_from_selection(selection, true, object_entries, object_registry, floor_maps);
+    let fragment = fragment_from_selection(
+        selection,
+        true,
+        editor_state.current_editing_floor,
+        object_entries,
+        object_registry,
+        floor_maps,
+    );
     if fragment.objects.is_empty() && fragment.floors.iter().all(|f| f.floor_id.is_none()) {
         None
     } else {
@@ -393,6 +418,7 @@ pub fn fragment_from_state(
 pub fn stamp_fragment(
     fragment: &MapFragment,
     cursor_tile: TilePosition,
+    active_floor_index: i32,
     editor_context: &EditorContext,
     object_registry: &mut ObjectRegistry,
     object_definitions: &crate::world::object_definitions::OverworldObjectDefinitions,
@@ -406,9 +432,14 @@ pub fn stamp_fragment(
 ) -> Option<UndoOp> {
     let mut undo_ops: Vec<UndoOp> = Vec::new();
     let mut clipped_objects = 0u32;
+    // Objects live at raw half-block z (floor_index * 2). FragmentObjects'
+    // own `z` is the SOURCE raw z; we rebase onto the destination floor's
+    // base z so paste-on-different-floor lands at the right elevation.
+    let object_base_z = active_floor_index * 2;
 
     for fo in &fragment.objects {
-        let tile = TilePosition::new(cursor_tile.x + fo.dx, cursor_tile.y + fo.dy, fo.z);
+        let _ = fo.z;
+        let tile = TilePosition::new(cursor_tile.x + fo.dx, cursor_tile.y + fo.dy, object_base_z);
         if tile.x < 0
             || tile.y < 0
             || tile.x >= editor_context.map_width
@@ -456,21 +487,21 @@ pub fn stamp_fragment(
             continue;
         }
         let prev = floor_maps
-            .get(editor_context.space_id, TilePosition::GROUND_FLOOR)
+            .get(editor_context.space_id, active_floor_index)
             .and_then(|m| m.get(x, y).cloned());
         if prev == ff.floor_id {
             continue;
         }
         undo_ops.push(UndoOp::SetFloor {
             space_id: editor_context.space_id,
-            z: TilePosition::GROUND_FLOOR,
+            z: active_floor_index,
             x,
             y,
             value: prev,
         });
         pending_commands.push(GameCommand::EditorSetFloorTile {
             space_id: editor_context.space_id,
-            z: TilePosition::GROUND_FLOOR,
+            z: active_floor_index,
             x,
             y,
             floor_type: ff.floor_id.clone(),
@@ -490,6 +521,119 @@ pub fn stamp_fragment(
 /// Reset paste-mode (called by Esc / right-click handlers and on map exit).
 pub fn cancel_paste(editor_state: &mut EditorState) {
     editor_state.paste_state.active = false;
+}
+
+/// Rotate the fragment 90° clockwise. New width = old height. Each cell at
+/// (dx, dy) maps to (height - 1 - dy, dx).
+pub fn rotate_fragment_cw(fragment: &MapFragment) -> MapFragment {
+    let h = fragment.height;
+    let mut rotated = MapFragment {
+        width: fragment.height,
+        height: fragment.width,
+        objects: Vec::with_capacity(fragment.objects.len()),
+        floors: Vec::with_capacity(fragment.floors.len()),
+    };
+    for fo in &fragment.objects {
+        rotated.objects.push(FragmentObject {
+            dx: h - 1 - fo.dy,
+            dy: fo.dx,
+            z: fo.z,
+            type_id: fo.type_id.clone(),
+            properties: fo.properties.clone(),
+            behavior: fo.behavior.clone(),
+        });
+    }
+    for ff in &fragment.floors {
+        rotated.floors.push(FragmentFloor {
+            dx: h - 1 - ff.dy,
+            dy: ff.dx,
+            floor_id: ff.floor_id.clone(),
+        });
+    }
+    rotated
+}
+
+/// Mirror the fragment along the vertical axis. (dx, dy) → (width-1-dx, dy).
+pub fn flip_fragment_horizontal(fragment: &MapFragment) -> MapFragment {
+    let w = fragment.width;
+    let mut flipped = MapFragment {
+        width: fragment.width,
+        height: fragment.height,
+        objects: Vec::with_capacity(fragment.objects.len()),
+        floors: Vec::with_capacity(fragment.floors.len()),
+    };
+    for fo in &fragment.objects {
+        flipped.objects.push(FragmentObject {
+            dx: w - 1 - fo.dx,
+            dy: fo.dy,
+            z: fo.z,
+            type_id: fo.type_id.clone(),
+            properties: fo.properties.clone(),
+            behavior: fo.behavior.clone(),
+        });
+    }
+    for ff in &fragment.floors {
+        flipped.floors.push(FragmentFloor {
+            dx: w - 1 - ff.dx,
+            dy: ff.dy,
+            floor_id: ff.floor_id.clone(),
+        });
+    }
+    flipped
+}
+
+/// Mirror the fragment along the horizontal axis. (dx, dy) → (dx, height-1-dy).
+pub fn flip_fragment_vertical(fragment: &MapFragment) -> MapFragment {
+    let h = fragment.height;
+    let mut flipped = MapFragment {
+        width: fragment.width,
+        height: fragment.height,
+        objects: Vec::with_capacity(fragment.objects.len()),
+        floors: Vec::with_capacity(fragment.floors.len()),
+    };
+    for fo in &fragment.objects {
+        flipped.objects.push(FragmentObject {
+            dx: fo.dx,
+            dy: h - 1 - fo.dy,
+            z: fo.z,
+            type_id: fo.type_id.clone(),
+            properties: fo.properties.clone(),
+            behavior: fo.behavior.clone(),
+        });
+    }
+    for ff in &fragment.floors {
+        flipped.floors.push(FragmentFloor {
+            dx: ff.dx,
+            dy: h - 1 - ff.dy,
+            floor_id: ff.floor_id.clone(),
+        });
+    }
+    flipped
+}
+
+/// While paste mode is active: `R` rotates the clipboard fragment 90° CW,
+/// `H` flips horizontally, `V` flips vertically. The rotated fragment
+/// replaces the clipboard so the ghost preview reflects the new shape on
+/// the next frame.
+pub fn handle_paste_transform_hotkeys(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    editor_keys: Res<EditorKeybindings>,
+    editor_state: Res<EditorState>,
+    mut clipboard: ResMut<EditorClipboard>,
+) {
+    if !editor_state.paste_state.active {
+        return;
+    }
+    let Some(fragment) = clipboard.fragment.as_ref() else {
+        return;
+    };
+    if editor_keys.just_pressed(EditorAction::PasteRotateCw, &keyboard) {
+        clipboard.fragment = Some(rotate_fragment_cw(fragment));
+    } else if editor_keys.just_pressed(EditorAction::PasteFlipHorizontal, &keyboard) {
+        clipboard.fragment = Some(flip_fragment_horizontal(fragment));
+    } else if editor_keys.just_pressed(EditorAction::PasteFlipVertical, &keyboard) {
+        clipboard.fragment = Some(flip_fragment_vertical(fragment));
+    }
 }
 
 /// Translucent preview of the clipboard fragment under the cursor while
@@ -599,6 +743,12 @@ pub fn render_paste_ghost(
             Transform::from_xyz(cx, cy, 100.0),
         ));
     }
+    // Paste rebases all objects to the active floor (see `stamp_fragment`),
+    // so the preview should also use that floor's sort layer. The editor's
+    // perspective origin IS the active floor (see `sync_tile_transforms_editor`),
+    // so an object on the active floor receives no `floor_screen_offset` —
+    // preview position is flat at the cursor tile.
+    let active_floor_index = editor_state.current_editing_floor;
     for fo in &fragment.objects {
         let Some(def) = object_definitions.get(&fo.type_id) else {
             continue;
@@ -621,9 +771,14 @@ pub fn render_paste_ghost(
         let cx = (tile.x as f32 + fo.dx as f32 - editor_camera.center.x) * effective;
         let cy = (tile.y as f32 + fo.dy as f32 - editor_camera.center.y) * effective;
         let z_base = if def.render.y_sort {
-            crate::world::systems::y_sort_z(tile.x + fo.dx, tile.y + fo.dy, fo.z, 0)
+            crate::world::systems::y_sort_z(
+                tile.x + fo.dx,
+                tile.y + fo.dy,
+                active_floor_index,
+                0,
+            )
         } else {
-            crate::world::systems::flat_floor_z(def.render.z_index, fo.z)
+            crate::world::systems::flat_floor_z(def.render.z_index, active_floor_index)
         };
         let z = z_base + 50.0;
         let mut entity = commands.spawn((
@@ -688,9 +843,11 @@ pub fn handle_editor_paste_click(
     let Some(fragment) = clipboard.fragment.as_ref() else {
         return;
     };
+    let active_floor_index = editor_state.current_editing_floor;
     if let Some(undo) = stamp_fragment(
         fragment,
         tile,
+        active_floor_index,
         &editor_context,
         &mut object_registry,
         &object_definitions,
@@ -705,6 +862,9 @@ pub fn handle_editor_paste_click(
         undo_stack.push_undo(undo);
         editor_state.dirty = true;
     }
+    // Note: paste mode stays active across stamps (Esc / RMB cancels). This
+    // already gives stamp-repeat behavior for free; no Shift modifier is
+    // required.
 }
 
 fn cursor_tile(
@@ -848,21 +1008,27 @@ mod tests {
         let frag = fragment_from_selection(
             selection,
             true,
+            0, // active_z
             vec![
                 (id_a, TilePosition::ground(10, 20)),
-                (id_b, TilePosition::new(12, 21, 2)),
+                (id_b, TilePosition::ground(12, 21)),
                 // Out of selection — must be filtered.
                 (id_a, TilePosition::ground(0, 0)),
+                // Different floor — multi-floor filter excludes it.
+                (id_b, TilePosition::new(11, 20, 2)),
             ],
             &registry,
             &floor_maps,
         );
         assert_eq!(frag.width, 3);
         assert_eq!(frag.height, 2);
-        // Both objects in-selection are captured with relative coords.
+        // Both in-selection objects on the active floor are captured with
+        // relative coords.
         let dxs: Vec<(i32, i32, i32)> = frag.objects.iter().map(|o| (o.dx, o.dy, o.z)).collect();
         assert!(dxs.contains(&(0, 0, 0)));
-        assert!(dxs.contains(&(2, 1, 2)));
+        assert!(dxs.contains(&(2, 1, 0)));
+        // No object captured for the z=2 entry.
+        assert!(!dxs.iter().any(|(_, _, z)| *z == 2));
         // Floors include the whole bbox (3 * 2 = 6 cells).
         assert_eq!(frag.floors.len(), 6);
         let first = frag
@@ -871,5 +1037,111 @@ mod tests {
             .find(|f| f.dx == 0 && f.dy == 0)
             .expect("origin");
         assert_eq!(first.floor_id.as_deref(), Some("grass"));
+    }
+
+    #[test]
+    fn rotate_fragment_cw_swaps_dimensions() {
+        let frag = MapFragment {
+            width: 3,
+            height: 2,
+            objects: vec![FragmentObject {
+                dx: 0,
+                dy: 0,
+                z: 0,
+                type_id: "wall".into(),
+                properties: std::collections::HashMap::new(),
+                behavior: None,
+            }],
+            floors: vec![FragmentFloor {
+                dx: 2,
+                dy: 1,
+                floor_id: Some("grass".into()),
+            }],
+        };
+        let rotated = rotate_fragment_cw(&frag);
+        assert_eq!(rotated.width, 2);
+        assert_eq!(rotated.height, 3);
+        // Origin (0,0) in a 3x2 maps to (1, 0) when rotated 90° CW.
+        assert_eq!(rotated.objects[0].dx, 1);
+        assert_eq!(rotated.objects[0].dy, 0);
+        // (2, 1) in 3x2 maps to (0, 2).
+        assert_eq!(rotated.floors[0].dx, 0);
+        assert_eq!(rotated.floors[0].dy, 2);
+    }
+
+    #[test]
+    fn flip_horizontal_mirrors_x() {
+        let frag = MapFragment {
+            width: 4,
+            height: 1,
+            objects: vec![FragmentObject {
+                dx: 1,
+                dy: 0,
+                z: 0,
+                type_id: "rock".into(),
+                properties: std::collections::HashMap::new(),
+                behavior: None,
+            }],
+            floors: Vec::new(),
+        };
+        let flipped = flip_fragment_horizontal(&frag);
+        assert_eq!(flipped.width, 4);
+        // dx 1 in 4-wide → 4 - 1 - 1 = 2.
+        assert_eq!(flipped.objects[0].dx, 2);
+    }
+
+    #[test]
+    fn flip_vertical_mirrors_y() {
+        let frag = MapFragment {
+            width: 1,
+            height: 5,
+            objects: vec![FragmentObject {
+                dx: 0,
+                dy: 1,
+                z: 0,
+                type_id: "rock".into(),
+                properties: std::collections::HashMap::new(),
+                behavior: None,
+            }],
+            floors: Vec::new(),
+        };
+        let flipped = flip_fragment_vertical(&frag);
+        assert_eq!(flipped.height, 5);
+        assert_eq!(flipped.objects[0].dy, 3);
+    }
+
+    #[test]
+    fn rotate_cw_four_times_returns_to_original() {
+        let frag = MapFragment {
+            width: 3,
+            height: 2,
+            objects: vec![
+                FragmentObject {
+                    dx: 2,
+                    dy: 0,
+                    z: 0,
+                    type_id: "a".into(),
+                    properties: std::collections::HashMap::new(),
+                    behavior: None,
+                },
+                FragmentObject {
+                    dx: 0,
+                    dy: 1,
+                    z: 0,
+                    type_id: "b".into(),
+                    properties: std::collections::HashMap::new(),
+                    behavior: None,
+                },
+            ],
+            floors: Vec::new(),
+        };
+        let four = rotate_fragment_cw(&rotate_fragment_cw(&rotate_fragment_cw(&rotate_fragment_cw(&frag))));
+        assert_eq!(four.width, frag.width);
+        assert_eq!(four.height, frag.height);
+        let mut original: Vec<(i32, i32)> = frag.objects.iter().map(|o| (o.dx, o.dy)).collect();
+        let mut after: Vec<(i32, i32)> = four.objects.iter().map(|o| (o.dx, o.dy)).collect();
+        original.sort();
+        after.sort();
+        assert_eq!(original, after);
     }
 }

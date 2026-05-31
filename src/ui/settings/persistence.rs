@@ -13,6 +13,7 @@ use crate::app::paths::client_settings_path;
 use crate::app::plugin::AppRuntime;
 
 use super::display::{DisplaySettings, WindowModeSetting};
+use super::editor::{EditorAction, EditorKeybindings};
 use super::gameplay::GameplaySettings;
 use super::model::{Action, Bindings, Keybindings, MovementBindings};
 
@@ -28,7 +29,23 @@ struct SettingsFile {
     #[serde(default)]
     gameplay: GameplayFile,
     #[serde(default)]
+    editor: EditorFile,
+    #[serde(default)]
     servers: ServersFile,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+struct EditorFile {
+    /// Same shape as `ControlsFile::bindings` — a list of (action, binding)
+    /// pairs so missing entries fall back to their compiled defaults.
+    #[serde(default)]
+    bindings: Vec<EditorActionBinding>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct EditorActionBinding {
+    action: EditorAction,
+    binding: Bindings,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -149,6 +166,7 @@ pub struct SettingsLoaded(pub bool);
 pub fn load_settings(
     runtime: Res<AppRuntime>,
     mut keybindings: ResMut<Keybindings>,
+    mut editor_keys: ResMut<EditorKeybindings>,
     mut display: ResMut<DisplaySettings>,
     mut gameplay: ResMut<GameplaySettings>,
     mut servers: ResMut<SavedServerList>,
@@ -191,6 +209,14 @@ pub fn load_settings(
     );
     keybindings.dirty = false;
 
+    editor_keys.apply_overrides(
+        file.editor
+            .bindings
+            .into_iter()
+            .map(|ab| (ab.action, ab.binding)),
+    );
+    editor_keys.dirty = false;
+
     // Mutating through `ResMut` flags the resource changed, so
     // `apply_display_settings` picks the persisted values up on the first
     // frame even though `dirty` stays false (nothing to re-write yet).
@@ -213,15 +239,22 @@ pub fn load_settings(
 pub fn persist_settings(
     runtime: Res<AppRuntime>,
     mut keybindings: ResMut<Keybindings>,
+    mut editor_keys: ResMut<EditorKeybindings>,
     mut display: ResMut<DisplaySettings>,
     mut gameplay: ResMut<GameplaySettings>,
     mut servers: ResMut<SavedServerList>,
 ) {
-    if !keybindings.dirty && !display.dirty && !gameplay.dirty && !servers.dirty {
+    if !keybindings.dirty
+        && !editor_keys.dirty
+        && !display.dirty
+        && !gameplay.dirty
+        && !servers.dirty
+    {
         return;
     }
     let Some(path) = client_settings_path(*runtime) else {
         keybindings.dirty = false;
+        editor_keys.dirty = false;
         display.dirty = false;
         gameplay.dirty = false;
         servers.dirty = false;
@@ -245,6 +278,13 @@ pub fn persist_settings(
         gameplay: GameplayFile {
             auto_open_nearby_npcs_panel: gameplay.auto_open_nearby_npcs_panel,
         },
+        editor: EditorFile {
+            bindings: editor_keys
+                .entries()
+                .into_iter()
+                .map(|(action, binding)| EditorActionBinding { action, binding })
+                .collect(),
+        },
         servers: ServersFile {
             saved: servers.saved.clone(),
             selected_addr: servers.selected_addr.clone(),
@@ -263,6 +303,7 @@ pub fn persist_settings(
         Err(err) => warn!("failed to serialize settings: {err}"),
     }
     keybindings.dirty = false;
+    editor_keys.dirty = false;
     display.dirty = false;
     gameplay.dirty = false;
     servers.dirty = false;
@@ -291,6 +332,7 @@ mod tests {
             },
             display: DisplayFile::default(),
             gameplay: GameplayFile::default(),
+            editor: EditorFile::default(),
             servers: ServersFile {
                 saved: default_saved_servers(),
                 selected_addr: None,
@@ -355,6 +397,7 @@ mod tests {
             controls: ControlsFile::default(),
             display: DisplayFile::default(),
             gameplay: GameplayFile::default(),
+            editor: EditorFile::default(),
             servers: original,
         };
         let json = serde_json::to_string_pretty(&file).unwrap();
@@ -379,6 +422,68 @@ mod tests {
         );
         assert!(parsed.display.vsync);
         assert_eq!(parsed.display.ui_scale, 1.0);
+    }
+
+    #[test]
+    fn settings_file_without_editor_block_keeps_defaults() {
+        // Files written before the editor block was introduced must keep the
+        // default editor bindings on load.
+        let json = r#"{"controls":{"bindings":[],"movement":null},"display":{}}"#;
+        let parsed: SettingsFile = serde_json::from_str(json).unwrap();
+        assert!(parsed.editor.bindings.is_empty());
+
+        let mut ek = EditorKeybindings::default();
+        ek.apply_overrides(
+            parsed
+                .editor
+                .bindings
+                .into_iter()
+                .map(|ab| (ab.action, ab.binding)),
+        );
+        // Default for ToolBrush is Digit1.
+        assert_eq!(
+            ek.bindings(EditorAction::ToolBrush).primary,
+            Some(super::super::model::Binding::plain(KeyCode::Digit1))
+        );
+    }
+
+    #[test]
+    fn editor_bindings_round_trip() {
+        let mut ek = EditorKeybindings::default();
+        ek.rebind_action(
+            EditorAction::Eyedropper,
+            super::super::model::Binding::plain(KeyCode::KeyQ),
+        );
+        let file = SettingsFile {
+            controls: ControlsFile::default(),
+            display: DisplayFile::default(),
+            gameplay: GameplayFile::default(),
+            editor: EditorFile {
+                bindings: ek
+                    .entries()
+                    .into_iter()
+                    .map(|(action, binding)| EditorActionBinding { action, binding })
+                    .collect(),
+            },
+            servers: ServersFile {
+                saved: default_saved_servers(),
+                selected_addr: None,
+            },
+        };
+        let json = serde_json::to_string_pretty(&file).unwrap();
+        let parsed: SettingsFile = serde_json::from_str(&json).unwrap();
+        let mut restored = EditorKeybindings::default();
+        restored.apply_overrides(
+            parsed
+                .editor
+                .bindings
+                .into_iter()
+                .map(|ab| (ab.action, ab.binding)),
+        );
+        assert_eq!(
+            restored.bindings(EditorAction::Eyedropper).primary,
+            Some(super::super::model::Binding::plain(KeyCode::KeyQ))
+        );
     }
 
     #[test]

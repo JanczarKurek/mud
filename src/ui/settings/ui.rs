@@ -15,6 +15,7 @@ use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton};
 use crate::ui::theme::{Palette, UiThemeAssets};
 
 use super::display::{DisplayOption, DisplaySettings};
+use super::editor::{all_editor_actions, EditorAction, EditorKeybindings};
 use super::gameplay::{GameplayOption, GameplaySettings};
 use super::keycode_serde::is_modifier_key;
 use super::model::{all_actions, Action, Binding, Keybindings, Modifiers, MovementDir};
@@ -28,16 +29,23 @@ pub enum SettingsSection {
     Controls,
     Display,
     Gameplay,
+    Editor,
 }
 
 impl SettingsSection {
-    const ALL: [SettingsSection; 3] = [Self::Controls, Self::Display, Self::Gameplay];
+    const ALL: [SettingsSection; 4] = [
+        Self::Controls,
+        Self::Display,
+        Self::Gameplay,
+        Self::Editor,
+    ];
 
     fn label(self) -> &'static str {
         match self {
             Self::Controls => "Controls",
             Self::Display => "Display",
             Self::Gameplay => "Gameplay",
+            Self::Editor => "Editor",
         }
     }
 }
@@ -47,6 +55,7 @@ impl SettingsSection {
 pub enum CaptureTarget {
     Action(Action),
     Movement(MovementDir),
+    Editor(EditorAction),
 }
 
 #[derive(Resource, Default)]
@@ -293,6 +302,33 @@ pub fn spawn_settings_overlay(
                             for opt in GameplayOption::ALL {
                                 spawn_gameplay_option_row(
                                     sec, &theme, &palette, opt, btn_bg, btn_border, btn_text,
+                                );
+                            }
+                        });
+
+                        // Editor section (hidden until its tab is selected).
+                        list.spawn((
+                            SectionContent(SettingsSection::Editor),
+                            Node {
+                                width: percent(100.0),
+                                flex_direction: FlexDirection::Column,
+                                row_gap: px(4.0),
+                                display: Display::None,
+                                ..default()
+                            },
+                        ))
+                        .with_children(|sec| {
+                            spawn_section_header(sec, &palette, "Editor hotkeys");
+                            for action in all_editor_actions() {
+                                spawn_row(
+                                    sec,
+                                    &theme,
+                                    &palette,
+                                    &action.label(),
+                                    CaptureTarget::Editor(action),
+                                    btn_bg,
+                                    btn_border,
+                                    btn_text,
                                 );
                             }
                         });
@@ -632,6 +668,7 @@ pub fn sync_settings_overlay_visibility(
 pub fn sync_binding_row_labels(
     state: Res<SettingsUiState>,
     keybindings: Res<Keybindings>,
+    editor_keys: Res<EditorKeybindings>,
     mut labels: Query<(&BindingRowLabel, &mut Text)>,
 ) {
     for (label, mut text) in &mut labels {
@@ -641,6 +678,7 @@ pub fn sync_binding_row_labels(
             let mut base = match label.target {
                 CaptureTarget::Action(action) => keybindings.bindings(action).display(),
                 CaptureTarget::Movement(dir) => keybindings.movement.display(dir),
+                CaptureTarget::Editor(action) => editor_keys.bindings(action).display(),
             };
             if let Some((note_target, note)) = &state.note {
                 if *note_target == label.target {
@@ -676,6 +714,7 @@ pub fn capture_keybind(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut state: ResMut<SettingsUiState>,
     mut keybindings: ResMut<Keybindings>,
+    mut editor_keys: ResMut<EditorKeybindings>,
 ) {
     let Some(target) = state.capturing else {
         return;
@@ -696,19 +735,22 @@ pub fn capture_keybind(
             continue;
         }
 
+        let live_mods = Modifiers {
+            ctrl: keyboard.pressed(KeyCode::ControlLeft)
+                || keyboard.pressed(KeyCode::ControlRight),
+            shift: keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight),
+            alt: keyboard.pressed(KeyCode::AltLeft) || keyboard.pressed(KeyCode::AltRight),
+        };
+
         let evicted = match target {
             CaptureTarget::Action(action) => {
-                let mods = Modifiers {
-                    ctrl: keyboard.pressed(KeyCode::ControlLeft)
-                        || keyboard.pressed(KeyCode::ControlRight),
-                    shift: keyboard.pressed(KeyCode::ShiftLeft)
-                        || keyboard.pressed(KeyCode::ShiftRight),
-                    alt: keyboard.pressed(KeyCode::AltLeft) || keyboard.pressed(KeyCode::AltRight),
-                };
-                keybindings.rebind_action(action, Binding::new(key, mods))
+                keybindings.rebind_action(action, Binding::new(key, live_mods))
             }
             // Movement is always a plain (no-modifier) key.
             CaptureTarget::Movement(dir) => keybindings.rebind_movement(dir, key),
+            CaptureTarget::Editor(action) => {
+                editor_keys.rebind_action(action, Binding::new(key, live_mods))
+            }
         };
 
         state.note = evicted.map(|label| (target, label));
@@ -742,12 +784,16 @@ pub fn handle_settings_close_button(
 
 pub fn handle_settings_reset_button(
     mut keybindings: ResMut<Keybindings>,
+    mut editor_keys: ResMut<EditorKeybindings>,
     mut state: ResMut<SettingsUiState>,
     buttons: Query<&Interaction, (With<SettingsResetButton>, Changed<Interaction>)>,
 ) {
     for interaction in &buttons {
         if *interaction == Interaction::Pressed {
-            keybindings.reset_to_defaults();
+            match state.section {
+                SettingsSection::Editor => editor_keys.reset_to_defaults(),
+                _ => keybindings.reset_to_defaults(),
+            }
             state.capturing = None;
             state.note = None;
         }

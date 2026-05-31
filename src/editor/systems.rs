@@ -115,7 +115,7 @@ pub fn reset_space_contents_from_def(
     space_id: SpaceId,
     def: &crate::world::map_layout::SpaceDefinition,
     object_definitions: &OverworldObjectDefinitions,
-    object_registry: &ObjectRegistry,
+    object_registry: &mut ObjectRegistry,
     floor_maps: &mut FloorMaps,
     spawn_group_registry: &mut SpawnGroupRegistry,
     residents: &Query<(Entity, &SpaceResident), Without<Player>>,
@@ -134,11 +134,28 @@ pub fn reset_space_contents_from_def(
         .groups
         .retain(|key, _| key.space_id != space_id);
 
-    floor_maps.insert(
-        space_id,
-        TilePosition::GROUND_FLOOR,
-        def.build_floor_map(TilePosition::GROUND_FLOOR),
-    );
+    // Build floor maps for every z value referenced by the space
+    // definition. Ground floor (z=0) is always built; upper floors are
+    // built only when the definition has explicit placements on them.
+    for z in def.referenced_floor_zs() {
+        floor_maps.insert(space_id, z, def.build_floor_map(z));
+    }
+
+    // Re-sync the registry to the freshly-loaded definition BEFORE spawning
+    // entities. `load_single_from_disk` reassigns runtime ids on every
+    // re-parse, so the same numeric slot can map to a different type than
+    // the registry's previous owner. Without this overwrite, the next save
+    // would read stale (type, properties, behavior) from the registry and
+    // attach a `wooden_door`'s `state: locked` onto whatever new entity
+    // happens to land on that id.
+    for object in &def.resolved_objects {
+        object_registry.replace_existing(
+            object.id,
+            object.type_id.clone(),
+            object.properties.clone(),
+            object.behavior,
+        );
+    }
 
     for object in &def.resolved_objects {
         if def.is_contained(object.id) {
@@ -169,7 +186,7 @@ pub fn reset_space_to_authored(
     editor_context: Res<EditorContext>,
     space_definitions: Res<SpaceDefinitions>,
     object_definitions: Res<OverworldObjectDefinitions>,
-    object_registry: Res<ObjectRegistry>,
+    mut object_registry: ResMut<ObjectRegistry>,
     mut floor_maps: ResMut<FloorMaps>,
     mut reset_deps: EditorSpaceResetDeps,
 ) {
@@ -181,7 +198,7 @@ pub fn reset_space_to_authored(
         editor_context.space_id,
         def,
         &object_definitions,
-        &object_registry,
+        &mut object_registry,
         &mut floor_maps,
         &mut reset_deps.spawn_group_registry,
         &reset_deps.residents,
@@ -375,6 +392,7 @@ pub fn sync_tile_transforms_editor(
     world_config: Res<WorldConfig>,
     editor_camera: Res<EditorCamera>,
     editor_context: Res<EditorContext>,
+    editor_state: Res<EditorState>,
     mut query: Query<
         (
             &SpaceResident,
@@ -387,9 +405,13 @@ pub fn sync_tile_transforms_editor(
     >,
 ) {
     let effective_size = world_config.tile_size * editor_camera.zoom_level;
+    // Active floor = perspective origin (acts like the player's z in-game).
+    // Active-floor objects render centered; lower floors offset down-right,
+    // upper floors offset up-left — same look the player sees in-game.
+    let player_z = editor_state.active_object_raw_z() as f32;
     for (space_resident, tile_position, world_visual, mut transform, visual_offset) in &mut query {
         let is_active = space_resident.space_id == editor_context.space_id;
-        let z = if !is_active {
+        let z_sort = if !is_active {
             -10_000.0
         } else if world_visual.y_sort {
             let floor = crate::world::components::floor_index(tile_position.z);
@@ -397,6 +419,15 @@ pub fn sync_tile_transforms_editor(
         } else {
             let floor = crate::world::components::floor_index(tile_position.z);
             crate::world::systems::flat_floor_z(world_visual.z_index, floor)
+        };
+        let floor_offset = if is_active {
+            crate::world::systems::floor_screen_offset(
+                tile_position.z as f32,
+                player_z,
+                effective_size,
+            )
+        } else {
+            Vec2::ZERO
         };
         let bottom_anchored = (world_visual.y_sort || world_visual.block_size > 0)
             && !world_visual.rotation_by_facing;
@@ -407,11 +438,14 @@ pub fn sync_tile_transforms_editor(
         };
         let entity_offset = visual_offset.map_or(Vec2::ZERO, |o| o.current);
         transform.translation = Vec3::new(
-            (tile_position.x as f32 - editor_camera.center.x) * effective_size + entity_offset.x,
+            (tile_position.x as f32 - editor_camera.center.x) * effective_size
+                + entity_offset.x
+                + floor_offset.x,
             (tile_position.y as f32 - editor_camera.center.y) * effective_size
                 + anchor_y_offset
-                + entity_offset.y,
-            z,
+                + entity_offset.y
+                + floor_offset.y,
+            z_sort,
         );
         transform.scale = Vec3::splat(editor_camera.zoom_level);
     }
@@ -430,6 +464,16 @@ fn cursor_to_tile(
         (camera.center.x + offset.x / effective_size).round() as i32,
         (camera.center.y - offset.y / effective_size).round() as i32,
     )
+}
+
+/// Public re-export of [`cursor_to_tile`] for sibling editor modules.
+pub fn cursor_to_tile_pub(
+    cursor: Vec2,
+    window: &Window,
+    world_config: &WorldConfig,
+    camera: &EditorCamera,
+) -> TilePosition {
+    cursor_to_tile(cursor, window, world_config, camera)
 }
 
 // ── Mouse drag-pan ───────────────────────────────────────────────────────────
@@ -574,9 +618,19 @@ pub fn update_editor_cursor_ghost(
     } else {
         Color::srgba(1.0, 1.0, 0.4, 0.9)
     };
+    // Brush radius is reflected in the outline size for both object and floor
+    // brushes so the user sees the actual NxN footprint before clicking.
+    let radius = if matches!(
+        editor_state.current_tool,
+        EditorTool::Brush | EditorTool::FloorBrush
+    ) {
+        editor_state.effective_brush_radius() as f32
+    } else {
+        1.0
+    };
     gizmos.rect_2d(
         Isometry2d::from_translation(tile_center),
-        Vec2::splat(effective),
+        Vec2::splat(effective * radius),
         outline_color,
     );
 
@@ -603,13 +657,16 @@ pub fn update_editor_cursor_ghost(
             } else {
                 0.0
             };
-            // Sit just above any object on the same tile so the ghost is
-            // always visible. Y-sort objects use a dynamic z-band, so add to
-            // the same band; flat objects use their static z_index.
+            // Active floor sits at the editor's perspective origin (see
+            // `sync_tile_transforms_editor`), so an object placed on the
+            // active floor receives no `floor_screen_offset` — the ghost is
+            // a flat preview at the cursor tile. Sort layer uses
+            // `current_editing_floor` (floor-index), NOT raw `tile.z`.
+            let active_floor_index = editor_state.current_editing_floor;
             let z_base = if def.render.y_sort {
-                crate::world::systems::y_sort_z(tile.x, tile.y, tile.z, 0)
+                crate::world::systems::y_sort_z(tile.x, tile.y, active_floor_index, 0)
             } else {
-                crate::world::systems::flat_floor_z(def.render.z_index, tile.z)
+                crate::world::systems::flat_floor_z(def.render.z_index, active_floor_index)
             };
             let z = z_base + 50.0;
             let mut entity = commands.spawn((
@@ -683,7 +740,12 @@ pub fn handle_editor_left_click(
     if panel_roots.cursor_over(cursor, window.scale_factor()) {
         return;
     }
-    let tile = cursor_to_tile(cursor, window, &world_config, &editor_camera);
+    let mut tile = cursor_to_tile(cursor, window, &world_config, &editor_camera);
+    // Multi-floor: place / select on the active editing floor. Objects use
+    // raw half-block z (floor_index * 2) so authored walls/floor_planks
+    // actually align with the engine's floor system and trigger
+    // `occludes_floor_above` for the player below.
+    tile.z = editor_state.active_object_raw_z();
     if tile.x < 0
         || tile.y < 0
         || tile.x >= editor_context.map_width
@@ -697,6 +759,13 @@ pub fn handle_editor_left_click(
     // paste is active, it ran first this frame and already handled the
     // click; bail so we don't double-process.
     if editor_state.paste_state.active {
+        return;
+    }
+
+    // Rect / flood fill modes also run before this handler. When either is
+    // engaged the click belongs to the fill flow; the single-tile brush
+    // path below must not also fire.
+    if editor_state.fill_mode != crate::editor::resources::FillMode::Single {
         return;
     }
 
@@ -799,28 +868,67 @@ pub fn handle_editor_left_click(
         return;
     };
 
-    let object_id = object_registry.allocate_runtime_id(type_id.clone());
-    let entity = spawn_overworld_object(
-        &mut commands,
-        &definitions,
-        &object_registry,
-        object_id,
-        type_id,
-        None,
-        editor_context.space_id,
-        tile,
-        None,
-    );
-    insert_editor_visuals(
-        &mut commands.entity(entity),
-        &asset_server,
-        &mut texture_atlas_layouts,
-        def,
-        &world_config,
-        tile,
-        &editor_camera,
-    );
-    undo_stack.push_undo(UndoOp::Despawn { object_id });
+    // Brush radius: stamp NxN block centered on the clicked tile. Skip
+    // cells that are out of bounds or already occupied by the same type.
+    let radius = editor_state.effective_brush_radius() as i32;
+    let half = radius / 2;
+    let lo_dx = -half;
+    let hi_dx = radius - 1 - half;
+    let mut composite_ops: Vec<UndoOp> = Vec::new();
+    for dy in lo_dx..=hi_dx {
+        for dx in lo_dx..=hi_dx {
+            let stamp = TilePosition {
+                x: tile.x + dx,
+                y: tile.y + dy,
+                z: tile.z,
+            };
+            if stamp.x < 0
+                || stamp.y < 0
+                || stamp.x >= editor_context.map_width
+                || stamp.y >= editor_context.map_height
+            {
+                continue;
+            }
+            // Skip already-present matching object.
+            let occupied = existing_objects.iter().any(|(o, r, p)| {
+                r.space_id == editor_context.space_id
+                    && *p == stamp
+                    && o.definition_id == *type_id
+            });
+            if occupied {
+                continue;
+            }
+            let object_id = object_registry.allocate_runtime_id(type_id.clone());
+            let entity = spawn_overworld_object(
+                &mut commands,
+                &definitions,
+                &object_registry,
+                object_id,
+                type_id,
+                None,
+                editor_context.space_id,
+                stamp,
+                None,
+            );
+            insert_editor_visuals(
+                &mut commands.entity(entity),
+                &asset_server,
+                &mut texture_atlas_layouts,
+                def,
+                &world_config,
+                stamp,
+                &editor_camera,
+            );
+            composite_ops.push(UndoOp::Despawn { object_id });
+        }
+    }
+    if composite_ops.len() == 1 {
+        undo_stack.push_undo(composite_ops.pop().unwrap());
+    } else if !composite_ops.is_empty() {
+        undo_stack.push_undo(UndoOp::Composite { ops: composite_ops });
+    } else {
+        return;
+    }
     editor_state.dirty = true;
 }
 
@@ -869,7 +977,8 @@ pub fn handle_editor_right_click(
         return;
     }
 
-    let tile = cursor_to_tile(cursor, window, &world_config, &editor_camera);
+    let mut tile = cursor_to_tile(cursor, window, &world_config, &editor_camera);
+    tile.z = editor_state.active_object_raw_z();
 
     if editor_state.current_tool == EditorTool::FloorBrush {
         // FloorBrush erase is handled by `handle_editor_floor_brush_drag`.
@@ -945,6 +1054,11 @@ pub fn handle_editor_floor_brush_drag(
         *last_painted = None;
         return;
     }
+    // Defer to the rect/flood fill handlers when those modes are active.
+    if editor_state.fill_mode != crate::editor::resources::FillMode::Single {
+        *last_painted = None;
+        return;
+    }
     let left = mouse.pressed(MouseButton::Left);
     let right = mouse.pressed(MouseButton::Right);
     if !left && !right {
@@ -991,14 +1105,36 @@ pub fn handle_editor_floor_brush_drag(
     } else {
         None
     };
+    // Brush radius: paint an NxN block around each interpolated tile. For
+    // radius 1 this collapses to the legacy single-tile path.
+    let radius = editor_state.effective_brush_radius() as i32;
+    let half = radius / 2;
+    let lo_dx = -half;
+    let hi_dx = radius - 1 - half;
+    // Floor maps are keyed by floor_index; current_editing_floor is already
+    // in those units.
+    let floor_map_z = editor_state.current_editing_floor;
     for t in &to_paint {
-        pending_commands.push(GameCommand::EditorSetFloorTile {
-            space_id: editor_context.space_id,
-            z: TilePosition::GROUND_FLOOR,
-            x: t.x,
-            y: t.y,
-            floor_type: floor_type.clone(),
-        });
+        for dy in lo_dx..=hi_dx {
+            for dx in lo_dx..=hi_dx {
+                let nx = t.x + dx;
+                let ny = t.y + dy;
+                if nx < 0
+                    || ny < 0
+                    || nx >= editor_context.map_width
+                    || ny >= editor_context.map_height
+                {
+                    continue;
+                }
+                pending_commands.push(GameCommand::EditorSetFloorTile {
+                    space_id: editor_context.space_id,
+                    z: floor_map_z,
+                    x: nx,
+                    y: ny,
+                    floor_type: floor_type.clone(),
+                });
+            }
+        }
     }
     editor_state.dirty = true;
     *last_painted = Some(tile);
@@ -1196,6 +1332,7 @@ pub fn handle_editor_escape(
 /// `B` switches back to the object Brush.
 pub fn handle_editor_floor_brush_hotkey(
     keyboard: Res<ButtonInput<KeyCode>>,
+    editor_keys: Res<crate::ui::settings::EditorKeybindings>,
     modal_state: Res<ModalState>,
     mut editor_state: ResMut<EditorState>,
     floor_defs: Res<crate::world::floor_definitions::FloorTilesetDefinitions>,
@@ -1203,15 +1340,11 @@ pub fn handle_editor_floor_brush_hotkey(
     if modal_state.active.is_some() || editor_state.palette_filter_focused {
         return;
     }
-    let ctrl = keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
-    if ctrl {
-        return;
-    }
-    if keyboard.just_pressed(KeyCode::KeyB) {
+    if editor_keys.just_pressed(crate::ui::settings::EditorAction::ToolBrushLegacy, &keyboard) {
         editor_state.current_tool = EditorTool::Brush;
         return;
     }
-    if keyboard.just_pressed(KeyCode::KeyF) {
+    if editor_keys.just_pressed(crate::ui::settings::EditorAction::ToolFloorCycle, &keyboard) {
         // Collect floor ids in priority order for a stable cycle.
         let mut ids: Vec<(i32, String)> = floor_defs
             .iter()
@@ -1243,6 +1376,7 @@ pub fn handle_editor_floor_brush_hotkey(
 #[allow(clippy::too_many_arguments)]
 pub fn handle_editor_save(
     keyboard: Res<ButtonInput<KeyCode>>,
+    editor_keys: Res<crate::ui::settings::EditorKeybindings>,
     modal_state: Res<ModalState>,
     mut editor_state: ResMut<EditorState>,
     editor_context: Res<EditorContext>,
@@ -1261,9 +1395,7 @@ pub fn handle_editor_save(
     if modal_state.active.is_some() {
         return;
     }
-    let ctrl = keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
-    let shift = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
-    if ctrl && !shift && keyboard.just_pressed(KeyCode::KeyS) {
+    if editor_keys.just_pressed(crate::ui::settings::EditorAction::Save, &keyboard) {
         serialize_and_save(
             &editor_context,
             &portal_buffer,
@@ -1274,7 +1406,8 @@ pub fn handle_editor_save(
             &objects,
             &floor_maps,
         );
-        space_definitions.load_single_from_disk(&editor_context.authored_id);
+        space_definitions
+            .load_single_from_disk(&editor_context.authored_id, object_registry.next_runtime_id());
         editor_state.dirty = false;
         info!("Saved map '{}'", editor_context.authored_id);
     }
@@ -1284,11 +1417,13 @@ pub fn handle_editor_save(
 
 pub fn open_file_dialog_shortcut(
     keyboard: Res<ButtonInput<KeyCode>>,
+    editor_keys: Res<crate::ui::settings::EditorKeybindings>,
     editor_context: Res<EditorContext>,
     mut modal_state: ResMut<ModalState>,
 ) {
-    let ctrl = keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
-    if !ctrl || !keyboard.just_pressed(KeyCode::KeyO) || modal_state.active.is_some() {
+    if !editor_keys.just_pressed(crate::ui::settings::EditorAction::OpenMap, &keyboard)
+        || modal_state.active.is_some()
+    {
         return;
     }
     open_file_dialog_impl(&editor_context, &mut modal_state);
@@ -1296,12 +1431,13 @@ pub fn open_file_dialog_shortcut(
 
 pub fn open_save_as_shortcut(
     keyboard: Res<ButtonInput<KeyCode>>,
+    editor_keys: Res<crate::ui::settings::EditorKeybindings>,
     editor_context: Res<EditorContext>,
     mut modal_state: ResMut<ModalState>,
 ) {
-    let ctrl = keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
-    let shift = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
-    if !(ctrl && shift && keyboard.just_pressed(KeyCode::KeyS)) || modal_state.active.is_some() {
+    if !editor_keys.just_pressed(crate::ui::settings::EditorAction::SaveAs, &keyboard)
+        || modal_state.active.is_some()
+    {
         return;
     }
     open_save_as_impl(&editor_context, &mut modal_state);
@@ -2185,7 +2321,12 @@ pub fn apply_modal_confirmed(
         ModalConfirmed::FileOpen { authored_id } => {
             // Re-load from disk so the in-memory `SpaceDefinitions` matches the
             // file (and not, e.g., a stale entry from a prior session).
-            if !space_definitions.load_single_from_disk(&authored_id) {
+            // Pass the registry's next_runtime_id so freshly-resolved object
+            // ids never collide with ids already taken by entities the user
+            // placed in the current session.
+            if !space_definitions
+                .load_single_from_disk(&authored_id, object_registry.next_runtime_id())
+            {
                 warn!("Could not load map '{authored_id}' from disk");
                 return;
             }
@@ -2201,7 +2342,7 @@ pub fn apply_modal_confirmed(
                     id,
                     &def,
                     &object_definitions,
-                    &object_registry,
+                    &mut object_registry,
                     &mut floor_maps,
                     &mut reset_deps.spawn_group_registry,
                     &reset_deps.residents,
@@ -2262,7 +2403,8 @@ pub fn apply_modal_confirmed(
                 &objects_save,
                 &floor_maps,
             );
-            space_definitions.load_single_from_disk(&authored_id);
+            space_definitions
+                .load_single_from_disk(&authored_id, object_registry.next_runtime_id());
             editor_state.dirty = false;
             info!("Saved map as '{authored_id}'");
         }

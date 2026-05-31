@@ -778,11 +778,9 @@ fn load_world_from_snapshot(
     if dump_floor_maps.is_empty() {
         for runtime_space in space_manager.spaces.values() {
             if let Some(definition) = authored_spaces.get(&runtime_space.authored_id) {
-                floor_maps.insert(
-                    runtime_space.id,
-                    TilePosition::GROUND_FLOOR,
-                    definition.build_floor_map(TilePosition::GROUND_FLOOR),
-                );
+                for z in definition.referenced_floor_zs() {
+                    floor_maps.insert(runtime_space.id, z, definition.build_floor_map(z));
+                }
             }
         }
     } else {
@@ -796,6 +794,22 @@ fn load_world_from_snapshot(
                     tiles: dump_floor.tiles,
                 },
             );
+        }
+        // Backfill any authored z-floors the dump doesn't carry. Old dumps
+        // written before upper floors were supported only contain z=0; without
+        // this, brand-new YAML placements on z=1+ would stay invisible until
+        // the user deleted their world-state.json. New dumps will already
+        // include the upper-floor entries from `FloorMaps.iter()`, so this is
+        // a no-op for them.
+        for runtime_space in space_manager.spaces.values() {
+            let Some(definition) = authored_spaces.get(&runtime_space.authored_id) else {
+                continue;
+            };
+            for z in definition.referenced_floor_zs() {
+                if floor_maps.get(runtime_space.id, z).is_none() {
+                    floor_maps.insert(runtime_space.id, z, definition.build_floor_map(z));
+                }
+            }
         }
     }
 

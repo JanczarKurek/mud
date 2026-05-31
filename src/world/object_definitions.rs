@@ -22,6 +22,12 @@ use crate::world::direction::Direction;
 pub struct OverworldObjectDefinition {
     pub name: String,
     pub description: DescriptionField,
+    /// Optional palette grouping label. When set, the editor's object
+    /// palette renders all entries sharing a category together under a
+    /// collapsible section header. Free-form string; missing values fall
+    /// into the "Uncategorized" bucket.
+    #[serde(default)]
+    pub category: Option<String>,
     pub colliding: bool,
     pub movable: bool,
     #[serde(default)]
