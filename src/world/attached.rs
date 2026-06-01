@@ -20,6 +20,7 @@ use bevy::prelude::*;
 use crate::game::resources::ClientGameState;
 use crate::player::components::Player;
 use crate::world::components::{ClientProjectedWorldObject, ClientRemotePlayerVisual};
+use crate::world::WorldConfig;
 
 #[derive(Component, Clone, Copy, Debug)]
 pub struct AttachedToObject {
@@ -43,6 +44,7 @@ impl AttachedToObject {
 
 pub fn sync_attached_object_visuals(
     client_state: Res<ClientGameState>,
+    world_config: Res<WorldConfig>,
     projected_q: Query<(&ClientProjectedWorldObject, &Transform), Without<AttachedToObject>>,
     remote_q: Query<
         (&ClientRemotePlayerVisual, &Transform),
@@ -75,13 +77,21 @@ pub fn sync_attached_object_visuals(
         }
     }
 
+    // Players, NPCs, and other y-sorted targets use a BOTTOM_CENTER sprite
+    // anchor, so their `transform.y` sits at the tile's bottom edge (the
+    // `-tile_size/2` shift in `sync_tile_transforms` / `camera_follow`). VFX
+    // followers are CENTER-anchored, so copying that y verbatim would render
+    // them half a tile below the tile center. Lift by `tile_size/2` to put
+    // the follower's center at the target's tile center.
+    let anchor_lift = world_config.tile_size * 0.5;
+
     for (attach, mut tf) in &mut follower_q {
         let Some(target_translation) = targets.get(&attach.object_id) else {
             continue;
         };
         let new = Vec3::new(
             target_translation.x + attach.offset_pixels.x,
-            target_translation.y + attach.offset_pixels.y,
+            target_translation.y + attach.offset_pixels.y + anchor_lift,
             target_translation.z + attach.z_offset,
         );
         if tf.translation != new {
