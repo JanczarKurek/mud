@@ -235,6 +235,13 @@ pub fn trigger_movement_animation(
         let resolved =
             resolved_clip(clips, "walk", facing).or_else(|| resolved_clip(clips, "idle", facing));
         if let Some((clip_name, clip)) = resolved {
+            // Don't restart the clip if we're already playing it — otherwise
+            // every frame that `JustMoved` is present (now the whole step
+            // duration, not just the trigger frame) would reset `frame_index`
+            // to 0 and freeze the walk on its first frame.
+            if animated.current_clip == clip_name {
+                return;
+            }
             apply_clip(
                 animated,
                 &clip_name,
@@ -347,10 +354,31 @@ pub fn return_to_idle_animation(
     }
 }
 
-/// Removes the one-frame `JustMoved` marker from all entities.
-pub fn cleanup_just_moved(mut commands: Commands, query: Query<Entity, With<JustMoved>>) {
-    for entity in &query {
-        commands.entity(entity).remove::<JustMoved>();
+/// Removes `JustMoved` from an entity once its movement lerp has completed.
+/// Keeping the marker alive for the whole step (vs the one-frame design that
+/// used to live here) is what lets the walk clip actually cycle through its
+/// frames instead of flashing for one frame and immediately returning to idle.
+///
+/// "Movement done" is determined by the lerp that drives the entity's smooth
+/// scroll — `ViewScrollOffset` for the local player, the per-entity
+/// `VisualOffset` for projected world objects and remote players. A missing
+/// `VisualOffset` means `tick_visual_offsets` already despawned it, so the
+/// step is finished.
+pub fn cleanup_just_moved(
+    mut commands: Commands,
+    view_scroll: Res<ViewScrollOffset>,
+    player_query: Query<Entity, (With<Player>, With<JustMoved>)>,
+    other_query: Query<(Entity, Option<&VisualOffset>), (With<JustMoved>, Without<Player>)>,
+) {
+    if !view_scroll.lerp.is_active() {
+        for entity in &player_query {
+            commands.entity(entity).remove::<JustMoved>();
+        }
+    }
+    for (entity, visual_offset) in &other_query {
+        if visual_offset.is_none_or(|v| !v.lerp.is_active()) {
+            commands.entity(entity).remove::<JustMoved>();
+        }
     }
 }
 

@@ -264,7 +264,10 @@ impl Plugin for WorldClientPlugin {
                         .after(sync_client_world_projection)
                         .after(detect_player_movement),
                     return_to_idle_animation.after(trigger_movement_animation),
-                    cleanup_just_moved.after(return_to_idle_animation),
+                    cleanup_just_moved
+                        .after(return_to_idle_animation)
+                        .after(tick_view_scroll)
+                        .after(tick_visual_offsets),
                     tick_view_scroll.after(detect_player_movement),
                     tick_floor_transition.after(detect_player_movement),
                     tick_visual_offsets.after(detect_player_movement),
