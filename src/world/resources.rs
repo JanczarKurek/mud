@@ -2,14 +2,14 @@ use std::collections::HashMap;
 
 use bevy::prelude::*;
 
+use crate::world::lerp_anim::LinearLerp;
+
 /// Pixel offset added to all non-player entity translations each frame,
 /// driven by the local player's most recent tile move. Lerps to zero over
 /// the movement duration to produce a Tibia-style smooth viewport scroll.
 #[derive(Resource, Default, Clone, Debug)]
 pub struct ViewScrollOffset {
-    pub current: Vec2,
-    pub elapsed: f32,
-    pub duration: f32,
+    pub lerp: LinearLerp<Vec2>,
 }
 
 impl ViewScrollOffset {
@@ -18,31 +18,29 @@ impl ViewScrollOffset {
     /// fractional pixel positions: nearest-filtered UV sampling at the right
     /// edge can hit exactly 1.0 and round into the next cell. Snapping makes
     /// the world step in 1-px increments during a scroll, which is also what
-    /// retro pixel-art games do. Every consumer of `current` must use this
-    /// (or all use raw `current`) — mixing breaks visual alignment between
-    /// sprites and the darkness mask.
+    /// retro pixel-art games do. Every consumer of `lerp.current` must use
+    /// this (or all use raw `lerp.current`) — mixing breaks visual alignment
+    /// between sprites and the darkness mask.
     pub fn snapped(&self) -> Vec2 {
-        self.current.round()
+        self.lerp.current.round()
     }
 }
 
 /// Signed residual lerping the *visual* player_z back to the authoritative
 /// player_z after a floor change. Right after the player steps from `z=0` to
-/// `z=2`, `residual_z = -2.0` so `floor_screen_offset` is fed the old player_z
-/// and every entity still draws at its old perspective. As `residual_z` decays
-/// to zero, the world's perspective slides to the new floor.
+/// `z=2`, `lerp.current = -2.0` so `floor_screen_offset` is fed the old
+/// player_z and every entity still draws at its old perspective. As the
+/// residual decays to zero, the world's perspective slides to the new floor.
 #[derive(Resource, Default, Clone, Debug)]
 pub struct FloorTransitionOffset {
-    pub residual_z: f32,
-    pub elapsed: f32,
-    pub duration: f32,
+    pub lerp: LinearLerp<f32>,
 }
 
 impl FloorTransitionOffset {
     /// Visual player_z to feed `floor_screen_offset`, given the authoritative
     /// integer player_z from `VisibleFloorRange`.
     pub fn visual_player_z(&self, authoritative_player_z: i32) -> f32 {
-        authoritative_player_z as f32 + self.residual_z
+        authoritative_player_z as f32 + self.lerp.current
     }
 }
 

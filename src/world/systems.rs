@@ -39,6 +39,7 @@ pub fn sync_client_world_projection(
         &mut ViewPosition,
         &mut WorldVisual,
         &mut Facing,
+        Option<&mut VisualOffset>,
     )>,
 ) {
     let _t = crate::diagnostics::SystemTimer::new("sync_client_world_projection", 1.0);
@@ -105,6 +106,7 @@ pub fn sync_client_world_projection(
             mut view,
             mut world_visual,
             mut facing,
+            existing_visual_offset,
         )) = projected_query.get_mut(entity)
         else {
             let entity = spawn_client_projected_world_object(
@@ -156,17 +158,16 @@ pub fn sync_client_world_projection(
             let tile_delta = Vec2::new(-dx as f32 * tile_size, -dy as f32 * tile_size);
             let floor_delta = floor_screen_offset(old_tile.z as f32, player_z_f, tile_size)
                 - floor_screen_offset(view.tile.z as f32, player_z_f, tile_size);
-            let visual_offset = VisualOffset {
-                current: tile_delta + floor_delta,
-                elapsed: 0.0,
-                duration: 0.18,
-            };
-            if dx != 0 || dy != 0 {
-                commands
-                    .entity(query_entity)
-                    .insert((JustMoved { dx, dy }, visual_offset));
+            let displacement = tile_delta + floor_delta;
+            if let Some(mut existing) = existing_visual_offset {
+                existing.lerp.push(displacement, 0.18);
             } else {
-                commands.entity(query_entity).insert(visual_offset);
+                let mut fresh = VisualOffset::default();
+                fresh.lerp.push(displacement, 0.18);
+                commands.entity(query_entity).insert(fresh);
+            }
+            if dx != 0 || dy != 0 {
+                commands.entity(query_entity).insert(JustMoved { dx, dy });
             }
         }
         if let Some(vitals) = object.vitals {
@@ -220,6 +221,7 @@ pub fn sync_remote_player_projection(
         &mut ViewPosition,
         &mut WorldVisual,
         &mut Facing,
+        Option<&mut VisualOffset>,
     )>,
 ) {
     for remote_player in client_state.remote_players.values() {
@@ -247,6 +249,7 @@ pub fn sync_remote_player_projection(
             mut view,
             mut world_visual,
             mut facing,
+            existing_visual_offset,
         )) = projected_query.get_mut(entity)
         else {
             let entity = spawn_client_remote_player(
@@ -308,17 +311,16 @@ pub fn sync_remote_player_projection(
                 } else {
                     Vec2::ZERO
                 };
-                let visual_offset = VisualOffset {
-                    current: tile_delta + floor_delta,
-                    elapsed: 0.0,
-                    duration: 0.18,
-                };
-                if xy_step_animatable {
-                    commands
-                        .entity(query_entity)
-                        .insert((JustMoved { dx, dy }, visual_offset));
+                let displacement = tile_delta + floor_delta;
+                if let Some(mut existing) = existing_visual_offset {
+                    existing.lerp.push(displacement, 0.18);
                 } else {
-                    commands.entity(query_entity).insert(visual_offset);
+                    let mut fresh = VisualOffset::default();
+                    fresh.lerp.push(displacement, 0.18);
+                    commands.entity(query_entity).insert(fresh);
+                }
+                if xy_step_animatable {
+                    commands.entity(query_entity).insert(JustMoved { dx, dy });
                 }
             }
         }
@@ -505,7 +507,7 @@ pub fn sync_tile_transforms(
             0.0
         };
 
-        let entity_offset = visual_offset.map_or(Vec2::ZERO, |o| o.current);
+        let entity_offset = visual_offset.map_or(Vec2::ZERO, |o| o.lerp.current);
         // Single offset source: each half-block of z = half a floor of
         // perspective shift. This produces both cross-floor (full-block) and
         // intra-floor (half-block stack) diagonal shifts from one formula.

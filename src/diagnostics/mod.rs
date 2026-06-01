@@ -974,12 +974,13 @@ fn update_expanded_overlay(
                 color.0 = Color::WHITE;
             }
             ExpandedField::Scroll => {
-                let active = scroll.duration > 0.0 && scroll.elapsed < scroll.duration;
+                let lerp = &scroll.lerp;
+                let active = lerp.duration > 0.0 && lerp.elapsed < lerp.duration;
                 if active {
-                    let pct = (scroll.elapsed / scroll.duration * 100.0).clamp(0.0, 100.0);
+                    let pct = (lerp.elapsed / lerp.duration * 100.0).clamp(0.0, 100.0);
                     text.0 = format!(
                         "Scroll lerp: {pct:>3.0}%  ({:.3}/{:.3}s)  offset=({:.0}, {:.0})",
-                        scroll.elapsed, scroll.duration, scroll.current.x, scroll.current.y,
+                        lerp.elapsed, lerp.duration, lerp.current.x, lerp.current.y,
                     );
                     color.0 = Color::srgb(0.7, 0.85, 1.0);
                 } else {
@@ -1076,7 +1077,8 @@ fn log_snapshot(
         .and_then(|d| d.value())
         .unwrap_or(0.0) as i64;
     let stats = buf.stats();
-    let scroll_active = scroll.duration > 0.0 && scroll.elapsed < scroll.duration;
+    let scroll_active =
+        scroll.lerp.duration > 0.0 && scroll.lerp.elapsed < scroll.lerp.duration;
 
     let stats_str = match stats {
         Some(s) => format!(
@@ -1117,9 +1119,9 @@ fn log_snapshot(
             "running"
         },
         if scroll_active { "ACTIVE" } else { "idle" },
-        scroll.elapsed,
-        scroll.duration,
-        scroll.current.x,
-        scroll.current.y,
+        scroll.lerp.elapsed,
+        scroll.lerp.duration,
+        scroll.lerp.current.x,
+        scroll.lerp.current.y,
     );
 }

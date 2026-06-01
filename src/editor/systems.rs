@@ -442,7 +442,7 @@ pub fn sync_tile_transforms_editor(
         } else {
             0.0
         };
-        let entity_offset = visual_offset.map_or(Vec2::ZERO, |o| o.current);
+        let entity_offset = visual_offset.map_or(Vec2::ZERO, |o| o.lerp.current);
         transform.translation = Vec3::new(
             (tile_position.x as f32 - editor_camera.center.x) * effective_size
                 + entity_offset.x

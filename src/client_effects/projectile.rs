@@ -83,7 +83,7 @@ pub fn advance_projectiles(
             (projectile.to_tile.x - player_tile.x) as f32 * tile_size,
             (projectile.to_tile.y - player_tile.y) as f32 * tile_size,
         );
-        let pos = from.lerp(to, t) + view_scroll.current;
+        let pos = from.lerp(to, t) + view_scroll.lerp.current;
         transform.translation.x = pos.x;
         transform.translation.y = pos.y;
         if t >= 1.0 {

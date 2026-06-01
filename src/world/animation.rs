@@ -4,6 +4,7 @@ use crate::game::resources::ClientGameState;
 use crate::player::components::Player;
 use crate::world::components::{ClientProjectedWorldObject, Facing, TilePosition};
 use crate::world::direction::Direction;
+use crate::world::lerp_anim::LinearLerp;
 use crate::world::object_definitions::{
     AnimationClipDef, AnimationSheetDef, OverworldObjectDefinitions,
 };
@@ -40,9 +41,7 @@ pub struct JustMoved {
 /// move. Added to the entity's tile-based translation by `sync_tile_transforms`.
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct VisualOffset {
-    pub current: Vec2,
-    pub elapsed: f32,
-    pub duration: f32,
+    pub lerp: LinearLerp<Vec2>,
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -357,30 +356,12 @@ pub fn cleanup_just_moved(mut commands: Commands, query: Query<Entity, With<Just
 
 /// Advances the player-movement-driven viewport scroll offset toward zero.
 pub fn tick_view_scroll(time: Res<Time>, mut offset: ResMut<ViewScrollOffset>) {
-    if offset.duration <= 0.0 || offset.current == Vec2::ZERO {
-        return;
-    }
-    offset.elapsed += time.delta_secs();
-    // Decay at a constant rate proportional to 1/duration. Over the full duration
-    // this reduces the offset to near zero; we then snap to exactly zero.
-    let decay = time.delta_secs() / offset.duration;
-    offset.current *= 1.0 - decay.min(1.0);
-    if offset.elapsed >= offset.duration {
-        offset.current = Vec2::ZERO;
-    }
+    offset.lerp.tick(time.delta_secs());
 }
 
 /// Advances the local player's floor-transition residual toward zero.
 pub fn tick_floor_transition(time: Res<Time>, mut offset: ResMut<FloorTransitionOffset>) {
-    if offset.duration <= 0.0 || offset.residual_z == 0.0 {
-        return;
-    }
-    offset.elapsed += time.delta_secs();
-    let decay = time.delta_secs() / offset.duration;
-    offset.residual_z *= 1.0 - decay.min(1.0);
-    if offset.elapsed >= offset.duration || offset.residual_z.abs() < 0.01 {
-        offset.residual_z = 0.0;
-    }
+    offset.lerp.tick(time.delta_secs());
 }
 
 /// Advances per-entity visual offsets toward zero.
@@ -389,15 +370,10 @@ pub fn tick_visual_offsets(
     mut commands: Commands,
     mut query: Query<(Entity, &mut VisualOffset)>,
 ) {
+    let dt = time.delta_secs();
     for (entity, mut offset) in &mut query {
-        if offset.duration <= 0.0 {
-            commands.entity(entity).remove::<VisualOffset>();
-            continue;
-        }
-        offset.elapsed += time.delta_secs();
-        let decay = time.delta_secs() / offset.duration;
-        offset.current *= 1.0 - decay.min(1.0);
-        if offset.elapsed >= offset.duration || offset.current.length() < 0.5 {
+        offset.lerp.tick(dt);
+        if !offset.lerp.is_active() {
             commands.entity(entity).remove::<VisualOffset>();
         }
     }
@@ -426,12 +402,11 @@ pub fn detect_player_movement(
         // Animate single-tile xy steps; skip xy teleports (portal jumps).
         let xy_step = (dx != 0 || dy != 0) && dx.abs() <= 1 && dy.abs() <= 1;
         if xy_step {
-            view_scroll.current = Vec2::new(
+            let displacement = Vec2::new(
                 dx as f32 * world_config.tile_size,
                 dy as f32 * world_config.tile_size,
             );
-            view_scroll.elapsed = 0.0;
-            view_scroll.duration = 0.18;
+            view_scroll.lerp.push(displacement, 0.18);
 
             if let Ok(entity) = player_query.single() {
                 commands.entity(entity).insert(JustMoved { dx, dy });
@@ -441,9 +416,7 @@ pub fn detect_player_movement(
         // half-block stack step). The visual player_z lags behind by `-dz`
         // and decays back to 0 over the same duration as an xy step.
         if dz != 0 && dz.abs() <= 4 {
-            floor_transition.residual_z = -dz as f32;
-            floor_transition.elapsed = 0.0;
-            floor_transition.duration = 0.18;
+            floor_transition.lerp.push(-dz as f32, 0.18);
         }
     }
 
