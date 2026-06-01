@@ -90,6 +90,7 @@ pub struct CommandOutputs<'w, 's> {
 pub struct SpaceAuthority<'w> {
     pub space_manager: ResMut<'w, SpaceManager>,
     pub floor_maps: ResMut<'w, FloorMaps>,
+    pub floor_defs: Res<'w, crate::world::floor_definitions::FloorTilesetDefinitions>,
 }
 
 pub fn tick_player_movement_cooldowns(
@@ -170,7 +171,9 @@ pub fn process_rotate_commands(
 pub fn process_floor_commands(
     mut pending_commands: ResMut<PendingGameCommands>,
     mut floor_maps: ResMut<FloorMaps>,
+    space_manager: Res<crate::world::resources::SpaceManager>,
     mut floor_dirty: ResMut<crate::world::floor_render::FloorRenderDirty>,
+    mut pending_stack_settle: ResMut<crate::world::stacks::PendingStackSettleEvents>,
 ) {
     let original_len = pending_commands.commands.len();
     let mut remaining = Vec::with_capacity(original_len);
@@ -185,24 +188,56 @@ pub fn process_floor_commands(
                 y,
                 floor_type,
             } => {
-                if let Some(map) = floor_maps.get_mut(space_id, z) {
-                    if map.set(x, y, floor_type) {
-                        // Notify the editor's render system which tile changed
-                        // so it can do a per-corner incremental rebuild instead
-                        // of redrawing the whole grid every paint.
-                        floor_dirty.cells.push((space_id, z, x, y));
-                    } else {
+                // Bootstrap an upper-floor FloorMap on first paint. Floor 0
+                // is always allocated by `world::setup`; upper floors are
+                // allocated lazily here so the editor's FloorBrush can paint
+                // any z without a separate "create floor" step.
+                if floor_maps.get(space_id, z).is_none() {
+                    let Some(runtime_space) = space_manager.get(space_id) else {
                         bevy::log::warn!(
-                            "EditorSetFloorTile: ({},{}) out of bounds for space {} z={}",
-                            x,
-                            y,
+                            "EditorSetFloorTile: unknown space {} (z={})",
                             space_id.0,
                             z
                         );
+                        continue;
+                    };
+                    floor_maps.insert(
+                        space_id,
+                        z,
+                        crate::world::floor_map::FloorMap::new_filled(
+                            runtime_space.width,
+                            runtime_space.height,
+                            None,
+                        ),
+                    );
+                }
+
+                // Track whether this is a deletion at an upper floor so we
+                // can fire a settle event (items above a removed upper-floor
+                // tile must drop).
+                let is_upper_floor_delete = floor_type.is_none() && z > 0;
+
+                let map = floor_maps
+                    .get_mut(space_id, z)
+                    .expect("FloorMap was just allocated above if missing");
+                if map.set(x, y, floor_type) {
+                    floor_dirty.cells.push((space_id, z, x, y));
+                    if is_upper_floor_delete {
+                        // Items resting on the removed FloorMap tile no longer
+                        // have support; let the settle pass drop them to the
+                        // next supported z below.
+                        pending_stack_settle.push(crate::world::stacks::SettleStackEvent {
+                            space_id,
+                            x,
+                            y,
+                            removed_entity: None,
+                        });
                     }
                 } else {
                     bevy::log::warn!(
-                        "EditorSetFloorTile: no floor map for space {} z={}",
+                        "EditorSetFloorTile: ({},{}) out of bounds for space {} z={}",
+                        x,
+                        y,
                         space_id.0,
                         z
                     );
@@ -291,6 +326,7 @@ pub fn process_game_commands(
                     &command_outputs.player_magic_effects,
                     &authored_spaces,
                     &definitions,
+                    &space_authority.floor_defs,
                     &object_registry,
                     &mut space_authority.space_manager,
                     &mut space_authority.floor_maps,
@@ -467,6 +503,8 @@ pub fn process_game_commands(
                     &collider_positions,
                     &mut object_registry,
                     &definitions,
+                    &space_authority.floor_maps,
+                    &space_authority.floor_defs,
                     &world_config,
                     &command_outputs.player_carry,
                     &command_outputs.hidden_query,
@@ -497,6 +535,8 @@ pub fn process_game_commands(
                     &quantity_query,
                     &mut object_registry,
                     &definitions,
+                    &space_authority.floor_maps,
+                    &space_authority.floor_defs,
                     &world_config,
                     &command_outputs.player_carry,
                     &command_outputs.hidden_query,
@@ -844,6 +884,7 @@ fn handle_take_item(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 fn handle_move_player(
     player_entity: Entity,
     delta: MoveDelta,
@@ -869,6 +910,7 @@ fn handle_move_player(
     player_magic_effects: &Query<&mut crate::magic::effects::MagicEffects, With<Player>>,
     authored_spaces: &SpaceDefinitions,
     definitions: &OverworldObjectDefinitions,
+    floor_defs: &crate::world::floor_definitions::FloorTilesetDefinitions,
     object_registry: &ObjectRegistry,
     space_manager: &mut SpaceManager,
     floor_maps: &mut FloorMaps,
@@ -935,6 +977,8 @@ fn handle_move_player(
         collider_positions,
         object_query,
         definitions,
+        floor_maps,
+        floor_defs,
     ) else {
         return;
     };
@@ -2342,6 +2386,8 @@ fn handle_move_item(
     collider_positions: &[TilePosition],
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
+    floor_maps: &crate::world::floor_map::FloorMaps,
+    floor_defs: &crate::world::floor_definitions::FloorTilesetDefinitions,
     world_config: &WorldConfig,
     max_carry_query: &Query<&MaxCarryWeight, With<Player>>,
     hidden_query: &Query<&crate::world::hidden::Hidden, Without<Player>>,
@@ -2464,6 +2510,8 @@ fn handle_move_item(
                     object_query,
                     collider_positions,
                     definitions,
+                    floor_maps,
+                    floor_defs,
                     world_config,
                 ) {
                     commands.entity(entity).insert(resolved);
@@ -2569,6 +2617,8 @@ fn handle_move_item(
                 object_query,
                 collider_positions,
                 definitions,
+                floor_maps,
+                floor_defs,
                 world_config,
             ) else {
                 restore_stack_to_slot_ref(
@@ -2611,6 +2661,7 @@ fn handle_move_item(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 fn handle_take_from_stack(
     player_entity: Entity,
     source: ItemReference,
@@ -2643,6 +2694,8 @@ fn handle_take_from_stack(
     quantity_query: &Query<&Quantity>,
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
+    floor_maps: &crate::world::floor_map::FloorMaps,
+    floor_defs: &crate::world::floor_definitions::FloorTilesetDefinitions,
     world_config: &WorldConfig,
     max_carry_query: &Query<&MaxCarryWeight, With<Player>>,
     hidden_query: &Query<&crate::world::hidden::Hidden, Without<Player>>,
@@ -2788,6 +2841,8 @@ fn handle_take_from_stack(
                         object_query,
                         collider_positions,
                         definitions,
+                        floor_maps,
+                        floor_defs,
                         world_config,
                     ) else {
                         return;
@@ -4442,6 +4497,8 @@ fn is_walkable_tile(
         Without<Player>,
     >,
     definitions: &OverworldObjectDefinitions,
+    floor_maps: &crate::world::floor_map::FloorMaps,
+    floor_defs: &crate::world::floor_definitions::FloorTilesetDefinitions,
 ) -> bool {
     if collider_positions
         .iter()
@@ -4463,6 +4520,22 @@ fn is_walkable_tile(
                 .is_some_and(|def| def.render.walkable_surface && def.render.block_size == 0)
         });
     if flat_walkable_here {
+        return true;
+    }
+
+    // Painted upper-floor FloorMap tile at `target.z` makes that raw z a
+    // valid landing surface — same role `floor_plank` objects used to play
+    // before the FloorMap migration. Only the canonical "top-of-floor" raw z
+    // (= floor_idx * 2) counts; half-blocks between floors aren't landings.
+    let floor_idx = crate::world::components::floor_index(target.z);
+    if target.z == floor_idx * 2
+        && crate::world::floors::floormap_tile_walkable(
+            floor_maps.get(space_id, floor_idx),
+            floor_defs,
+            target.x,
+            target.y,
+        )
+    {
         return true;
     }
 
@@ -4510,6 +4583,8 @@ fn resolve_step_with_climb(
         Without<Player>,
     >,
     definitions: &OverworldObjectDefinitions,
+    floor_maps: &crate::world::floor_map::FloorMaps,
+    floor_defs: &crate::world::floor_definitions::FloorTilesetDefinitions,
 ) -> Option<TilePosition> {
     let (x, y) = target_xy;
     let column_members = || {
@@ -4522,14 +4597,23 @@ fn resolve_step_with_climb(
             }
         })
     };
-    let stack_top =
-        crate::world::stacks::stack_top_z(space_id, x, y, column_members(), definitions);
+    let stack_top = crate::world::stacks::stack_top_z(
+        space_id,
+        x,
+        y,
+        column_members(),
+        definitions,
+        floor_maps,
+        floor_defs,
+    );
 
-    // Climb path: a block-sized stack in front of the player.
-    if stack_top > current_z {
-        if stack_top - current_z > 1 {
-            return None;
-        }
+    // Climb path: a block-sized object or painted upper floor sits taller
+    // than the player. Try to climb onto it if the gap is within reach. If
+    // the climb is rejected (gap too tall, top not walkable, blocked above),
+    // fall through to the flat path — so a player can still walk *under* an
+    // unreachable surface (e.g. a wooden_floor at z=2 above a doorway at z=0)
+    // even when they can't climb onto it.
+    if stack_top > current_z && stack_top - current_z <= 1 {
         let stack_top_walkable = crate::world::stacks::stack_top_is_walkable(
             space_id,
             x,
@@ -4537,24 +4621,24 @@ fn resolve_step_with_climb(
             Entity::PLACEHOLDER,
             column_members(),
             definitions,
+            floor_maps,
+            floor_defs,
         );
-        if !stack_top_walkable {
-            return None;
+        if stack_top_walkable {
+            let above = TilePosition::new(x, y, stack_top);
+            let blocked_above = collider_positions.iter().any(|p| *p == above);
+            let ceiling_above = object_query
+                .iter()
+                .filter(|(_, resident, tile, _)| resident.space_id == space_id && **tile == above)
+                .any(|(_, _, _, object)| {
+                    definitions.get(&object.definition_id).is_some_and(|def| {
+                        def.render.walkable_surface && def.render.block_size == 0
+                    })
+                });
+            if !blocked_above && !ceiling_above {
+                return Some(above);
+            }
         }
-        let above = TilePosition::new(x, y, stack_top);
-        let blocked_above = collider_positions.iter().any(|p| *p == above);
-        let ceiling_above = object_query
-            .iter()
-            .filter(|(_, resident, tile, _)| resident.space_id == space_id && **tile == above)
-            .any(|(_, _, _, object)| {
-                definitions
-                    .get(&object.definition_id)
-                    .is_some_and(|def| def.render.walkable_surface && def.render.block_size == 0)
-            });
-        if blocked_above || ceiling_above {
-            return None;
-        }
-        return Some(above);
     }
 
     // Flat path: target is at-or-below current_z. Try `current_z` first
@@ -4567,6 +4651,8 @@ fn resolve_step_with_climb(
         collider_positions,
         object_query,
         definitions,
+        floor_maps,
+        floor_defs,
     ) {
         return Some(here);
     }
@@ -4579,6 +4665,8 @@ fn resolve_step_with_climb(
                 collider_positions,
                 object_query,
                 definitions,
+                floor_maps,
+                floor_defs,
             ) {
                 return Some(below);
             }
@@ -5070,26 +5158,42 @@ mod tests {
         assert_eq!(inv.backpack_slots[1], None);
     }
 
+    /// Paint a `wooden_floor` tile at `(x, y, floor_idx=1)` in `current_space_id`,
+    /// bootstrapping the FloorMap on first use. Used by the upper-floor tests
+    /// in place of the now-removed `floor_plank` object.
+    fn paint_upper_floor(app: &mut App, x: i32, y: i32) {
+        let space_id = app.world().resource::<WorldConfig>().current_space_id;
+        let (w, h) = {
+            let sm = app
+                .world()
+                .resource::<crate::world::resources::SpaceManager>();
+            let s = sm.get(space_id).expect("space exists");
+            (s.width, s.height)
+        };
+        let mut floor_maps = app
+            .world_mut()
+            .resource_mut::<crate::world::floor_map::FloorMaps>();
+        if floor_maps.get(space_id, 1).is_none() {
+            floor_maps.insert(
+                space_id,
+                1,
+                crate::world::floor_map::FloorMap::new_filled(w, h, None),
+            );
+        }
+        let map = floor_maps.get_mut(space_id, 1).unwrap();
+        let _ = map.set(x, y, Some("wooden_floor".to_string()));
+    }
+
     #[test]
     fn upper_floor_walk_requires_walkable_surface_or_drops_down() {
         let mut app = setup_server_app();
         // Player already on floor 1 (raw z=2 in half-block units) standing on
-        // a plank; no plank to the east.
+        // a painted upper floor; nothing painted to the east.
         let player = spawn_player(&mut app, 1, 10, 10);
         app.world_mut()
             .entity_mut(player)
             .insert(TilePosition::new(10, 10, 2));
-
-        let plank_id = app
-            .world_mut()
-            .resource_mut::<ObjectRegistry>()
-            .allocate_runtime_id("floor_plank");
-        spawn_world_object(
-            &mut app,
-            "floor_plank",
-            plank_id,
-            TilePosition::new(10, 10, 2),
-        );
+        paint_upper_floor(&mut app, 10, 10);
 
         // Walk east into "empty air" on floor 1 — Tibia-style, the player
         // drops to the ground floor (z=0) underneath rather than being
@@ -5108,7 +5212,166 @@ mod tests {
         assert_eq!(
             tile,
             TilePosition::new(11, 10, 0),
-            "player should drop off the plank to the ground floor"
+            "player should drop off the upper floor to the ground"
+        );
+    }
+
+    /// Canonical climb-onto-upper-floor scenario: a stair_low + stair_high
+    /// chain at the building's edge with a `wooden_floor` painted at floor
+    /// index 1 just past the high stair. The player should climb the stairs
+    /// (z=0 → z=1 → z=2) and then step onto the painted upper floor and
+    /// stay at z=2 — not drop back to z=0.
+    #[test]
+    fn climbing_stair_chain_lands_on_painted_upper_floor() {
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+        // Geometry: player at (10, 10) walks east.
+        //   (11, 10): stair_e_low — block_size=1, top at z=1.
+        //   (12, 10): stair_e_high — block_size=2, top at z=2.
+        //   (13, 10): wooden_floor painted at floor index 1 (raw z=2).
+        let low_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("stair_e_low");
+        spawn_world_object(
+            &mut app,
+            "stair_e_low",
+            low_id,
+            TilePosition::ground(11, 10),
+        );
+        let high_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("stair_e_high");
+        spawn_world_object(
+            &mut app,
+            "stair_e_high",
+            high_id,
+            TilePosition::ground(12, 10),
+        );
+        paint_upper_floor(&mut app, 13, 10);
+
+        // Three eastward steps.
+        for _ in 0..3 {
+            app.world_mut()
+                .resource_mut::<PendingGameCommands>()
+                .push_for_player(
+                    crate::player::components::PlayerId(1),
+                    GameCommand::MovePlayer {
+                        delta: MoveDelta { x: 1, y: 0 },
+                    },
+                );
+            // Clear movement cooldown between steps so the move actually
+            // resolves on the next tick.
+            if let Some(mut cd) = app.world_mut().get_mut::<MovementCooldown>(player) {
+                cd.remaining_seconds = 0.0;
+            }
+            app.update();
+        }
+
+        let tile = *app.world().get::<TilePosition>(player).unwrap();
+        assert_eq!(
+            tile,
+            TilePosition::new(13, 10, 2),
+            "player should climb stair_low → stair_high → wooden_floor and stay at z=2"
+        );
+    }
+
+    /// The migrated `assets/maps/overworld.yaml` must produce a `FloorMap`
+    /// at floor index 1 that paints `wooden_floor` over the upper storey of
+    /// the spawn-area building (x=2..7, y=2..7). If this fails, the in-game
+    /// `is_indoor_tile` predicate has no data to chew on and the upper floor
+    /// would render through the player when they step inside.
+    #[test]
+    fn overworld_yaml_paints_wooden_floor_on_upper_storey() {
+        let app = setup_server_app();
+        let space_id = app.world().resource::<WorldConfig>().current_space_id;
+        let floor_maps = app.world().resource::<crate::world::floor_map::FloorMaps>();
+        let upper = floor_maps
+            .get(space_id, 1)
+            .expect("FloorMap at floor index 1 must exist after loading overworld.yaml");
+        for (x, y) in [(2, 2), (5, 5), (7, 6), (3, 7)] {
+            assert_eq!(
+                upper.get(x, y).map(String::as_str),
+                Some("wooden_floor"),
+                "expected wooden_floor at ({x}, {y}) on floor 1"
+            );
+        }
+        assert!(
+            upper.get(3, 3).is_none(),
+            "(3, 3) on floor 1 should be a gap (door / wall hole), not painted"
+        );
+    }
+
+    /// A painted upper floor at z=2 in a doorway must NOT block a player
+    /// walking under it at ground level. The climb gate would naively bail
+    /// out (gap=2 > 1 unclimbable), but the resolver must fall through to
+    /// the flat path so ground-level traversal still works under the floor.
+    #[test]
+    fn walking_under_an_upper_floor_at_ground_level_is_not_blocked() {
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+        // Paint an upper floor on the tile directly east of the player.
+        paint_upper_floor(&mut app, 11, 10);
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                crate::player::components::PlayerId(1),
+                GameCommand::MovePlayer {
+                    delta: MoveDelta { x: 1, y: 0 },
+                },
+            );
+        app.update();
+
+        let tile = *app.world().get::<TilePosition>(player).unwrap();
+        assert_eq!(
+            tile,
+            TilePosition::ground(11, 10),
+            "ground-level player should walk under the upper floor, not get blocked by it"
+        );
+    }
+
+    /// When an upper-floor `FloorMap` tile is erased, anything resting on it
+    /// must drop to the next supported z below. This is the core reason the
+    /// upper-floor representation migrated from `floor_plank` objects (which
+    /// could be picked up and triggered the existing stack settle) to
+    /// `FloorMap` tiles (whose deletion now fires the same settle via
+    /// `process_floor_commands`).
+    #[test]
+    fn removing_upper_floor_drops_items_above() {
+        let mut app = setup_server_app();
+        paint_upper_floor(&mut app, 10, 10);
+
+        // Place an item at raw z=2 sitting on the painted upper floor.
+        let apple_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("apple");
+        let apple = spawn_world_object(&mut app, "apple", apple_id, TilePosition::new(10, 10, 2));
+        let space_id = app.world().resource::<WorldConfig>().current_space_id;
+
+        // Erase the upper-floor tile via the editor command path — same hook
+        // the FloorBrush eraser uses in `MapEditor`.
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .commands
+            .push(crate::game::resources::QueuedGameCommand {
+                player_id: Some(PlayerId(1)),
+                command: GameCommand::EditorSetFloorTile {
+                    space_id,
+                    z: 1,
+                    x: 10,
+                    y: 10,
+                    floor_type: None,
+                },
+            });
+        app.update();
+
+        let tile = *app.world().get::<TilePosition>(apple).unwrap();
+        assert_eq!(
+            tile.z, 0,
+            "item should drop to ground after the upper floor under it was erased"
         );
     }
 
@@ -5124,7 +5387,12 @@ mod tests {
             .world_mut()
             .resource_mut::<ObjectRegistry>()
             .allocate_runtime_id("iron_chest");
-        spawn_world_object(&mut app, "iron_chest", chest_id, TilePosition::ground(11, 10));
+        spawn_world_object(
+            &mut app,
+            "iron_chest",
+            chest_id,
+            TilePosition::ground(11, 10),
+        );
 
         app.world_mut()
             .resource_mut::<PendingGameCommands>()
@@ -5174,49 +5442,6 @@ mod tests {
             tile,
             TilePosition::ground(10, 10),
             "full-block barrel should be unclimbable in one step"
-        );
-    }
-
-    #[test]
-    fn auto_climb_blocked_when_ceiling_above() {
-        let mut app = setup_server_app();
-        let player = spawn_player(&mut app, 1, 10, 10);
-
-        // Chest east of the player → would normally auto-climb to z=1. But
-        // there's a floor plank directly above the chest (at z=1) acting as
-        // a ceiling, so the climb must be refused — the player would bonk.
-        let chest_id = app
-            .world_mut()
-            .resource_mut::<ObjectRegistry>()
-            .allocate_runtime_id("iron_chest");
-        spawn_world_object(&mut app, "iron_chest", chest_id, TilePosition::ground(11, 10));
-        let plank_id = app
-            .world_mut()
-            .resource_mut::<ObjectRegistry>()
-            .allocate_runtime_id("floor_plank");
-        // Ceiling sits directly above the chest top.
-        spawn_world_object(
-            &mut app,
-            "floor_plank",
-            plank_id,
-            TilePosition::new(11, 10, 1),
-        );
-
-        app.world_mut()
-            .resource_mut::<PendingGameCommands>()
-            .push_for_player(
-                crate::player::components::PlayerId(1),
-                GameCommand::MovePlayer {
-                    delta: MoveDelta { x: 1, y: 0 },
-                },
-            );
-        app.update();
-
-        let tile = *app.world().get::<TilePosition>(player).unwrap();
-        assert_eq!(
-            tile,
-            TilePosition::ground(10, 10),
-            "ceiling above the barrel should block the climb"
         );
     }
 
@@ -5324,6 +5549,7 @@ mod tests {
 ///     surface (you can't drop onto a wall);
 ///   * for moves, `dragged_entity` is excluded from the column so an
 ///     object doesn't stack on itself.
+#[allow(clippy::too_many_arguments)]
 fn resolve_world_drop_tile(
     target_tile: TilePosition,
     origin_tile: Option<TilePosition>,
@@ -5337,6 +5563,8 @@ fn resolve_world_drop_tile(
     >,
     collider_positions: &[TilePosition],
     definitions: &OverworldObjectDefinitions,
+    floor_maps: &crate::world::floor_map::FloorMaps,
+    floor_defs: &crate::world::floor_definitions::FloorTilesetDefinitions,
     world_config: &WorldConfig,
 ) -> Option<TilePosition> {
     if target_tile.x < 0
@@ -5370,6 +5598,8 @@ fn resolve_world_drop_tile(
         dragged_entity,
         column_members(),
         definitions,
+        floor_maps,
+        floor_defs,
     );
 
     let resolved = TilePosition::new(target_tile.x, target_tile.y, stack_top);
@@ -5384,6 +5614,8 @@ fn resolve_world_drop_tile(
         dragged_entity,
         column_members(),
         definitions,
+        floor_maps,
+        floor_defs,
     ) {
         return None;
     }
@@ -5407,6 +5639,7 @@ fn resolve_world_drop_tile(
     Some(resolved)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn find_nearest_valid_world_drop_tile(
     target_tile: TilePosition,
     origin_tile: Option<TilePosition>,
@@ -5420,6 +5653,8 @@ fn find_nearest_valid_world_drop_tile(
     >,
     collider_positions: &[TilePosition],
     definitions: &OverworldObjectDefinitions,
+    floor_maps: &crate::world::floor_map::FloorMaps,
+    floor_defs: &crate::world::floor_definitions::FloorTilesetDefinitions,
     world_config: &WorldConfig,
 ) -> Option<TilePosition> {
     let mut candidates = Vec::new();
@@ -5447,6 +5682,8 @@ fn find_nearest_valid_world_drop_tile(
             object_query,
             collider_positions,
             definitions,
+            floor_maps,
+            floor_defs,
             world_config,
         )
     })

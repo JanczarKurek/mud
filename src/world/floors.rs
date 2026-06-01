@@ -4,32 +4,65 @@ use std::collections::HashSet;
 use crate::game::resources::ClientGameState;
 use crate::world::components::{floor_index, SpaceId};
 use crate::world::direction::Direction;
+use crate::world::floor_definitions::FloorTilesetDefinitions;
+use crate::world::floor_map::FloorMap;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 
 /// How many floors above the player we'll scan upward in search of an
 /// `occludes_floor_above` tile. The scan terminates as soon as a covering tile
 /// is found, so this only sets the depth for an *uncovered* player (e.g.
-/// standing outside in the open). Generous enough for the tallest authored
-/// buildings — `floor_maps` is *not* a reliable upper bound because in this
-/// codebase only the ground floor gets a `FloorMap` entry; upper-story floors,
-/// walls, and roofs live in `world_objects` at the same z.
-const MAX_FLOORS_ABOVE: i32 = 16;
+/// standing outside in the open).
+pub const MAX_FLOORS_ABOVE: i32 = 16;
 
-/// True iff floor `floor_idx` at `(x, y)` is "indoor" — i.e. some object on
-/// the next floor up (`floor_idx + 1`) at `(x, y)` has
-/// `render.occludes_floor_above = true`. Callers with a raw `z` should pass
-/// `floor_index(z)`. The same predicate powers floor-roof culling
+/// True iff a FloorMap tile (if any) at `(x, y)` in `floor` carries an
+/// `occludes_floor_above` flag on its tileset definition. Painted upper-floor
+/// tiles act as roofs to the floor below — the same role `floor_plank` objects
+/// used to fill before the FloorMap migration.
+pub fn floormap_tile_occludes(
+    floor: Option<&FloorMap>,
+    floor_defs: &FloorTilesetDefinitions,
+    x: i32,
+    y: i32,
+) -> bool {
+    floor
+        .and_then(|m| m.get(x, y))
+        .and_then(|id| floor_defs.get(id))
+        .is_some_and(|def| def.occludes_floor_above)
+}
+
+/// True iff a FloorMap tile at `(x, y)` in `floor` carries `walkable_surface`.
+/// Drives upper-floor walkability and stack-support: a painted floor at z=2
+/// makes raw z=2 a valid landing surface even when no walkable object lives
+/// there.
+pub fn floormap_tile_walkable(
+    floor: Option<&FloorMap>,
+    floor_defs: &FloorTilesetDefinitions,
+    x: i32,
+    y: i32,
+) -> bool {
+    floor
+        .and_then(|m| m.get(x, y))
+        .and_then(|id| floor_defs.get(id))
+        .is_some_and(|def| def.walkable_surface)
+}
+
+/// True iff floor `floor_idx` at `(x, y)` is "indoor" — i.e. covered by an
+/// occluder on the next floor up (`floor_idx + 1`). An occluder is either an
+/// object with `render.occludes_floor_above = true` or a painted FloorMap tile
+/// whose tileset has `occludes_floor_above = true`. Callers with a raw `z`
+/// should pass `floor_index(z)`. The same predicate powers floor-roof culling
 /// (`recompute_visible_floors`) and outdoor-light occlusion in the lighting
 /// system.
 pub fn is_indoor_tile(
     state: &ClientGameState,
     definitions: &OverworldObjectDefinitions,
+    floor_defs: &FloorTilesetDefinitions,
     space_id: SpaceId,
     x: i32,
     y: i32,
     floor_idx: i32,
 ) -> bool {
-    state.world_objects.values().any(|object| {
+    let object_occludes = state.world_objects.values().any(|object| {
         if object.position.space_id != space_id
             || floor_index(object.tile_position.z) != floor_idx + 1
         {
@@ -41,7 +74,16 @@ pub fn is_indoor_tile(
         definitions
             .get(&object.definition_id)
             .is_some_and(|def| def.render.occludes_floor_above)
-    })
+    });
+    if object_occludes {
+        return true;
+    }
+    floormap_tile_occludes(
+        state.floor_maps.get(&(space_id, floor_idx + 1)),
+        floor_defs,
+        x,
+        y,
+    )
 }
 
 /// Cached set of indoor tiles for the current frame. Rebuilt in
@@ -71,6 +113,7 @@ impl IndoorTileMap {
 pub fn recompute_indoor_tile_map(
     client_state: Res<ClientGameState>,
     definitions: Res<OverworldObjectDefinitions>,
+    floor_defs: Res<FloorTilesetDefinitions>,
     mut map: ResMut<IndoorTileMap>,
 ) {
     let _t = crate::diagnostics::SystemTimer::new("recompute_indoor_tile_map", 1.0);
@@ -89,6 +132,19 @@ pub fn recompute_indoor_tile_map(
             tile.y,
             floor_index(tile.z) - 1,
         ));
+    }
+    // FloorMap tiles whose tileset has `occludes_floor_above` cover the floor
+    // immediately below them, the same way object occluders do. This is what
+    // makes painted upper-storey floors hide the ground floor.
+    for ((space_id, floor_idx), grid) in client_state.floor_maps.iter() {
+        let target_floor = *floor_idx - 1;
+        for y in 0..grid.height {
+            for x in 0..grid.width {
+                if floormap_tile_occludes(Some(grid), &floor_defs, x, y) {
+                    map.tiles.insert((*space_id, x, y, target_floor));
+                }
+            }
+        }
     }
 }
 
@@ -148,6 +204,7 @@ impl VisibleFloorRange {
 pub fn recompute_visible_floors(
     client_state: Res<ClientGameState>,
     definitions: Res<OverworldObjectDefinitions>,
+    floor_defs: Res<FloorTilesetDefinitions>,
     mut range: ResMut<VisibleFloorRange>,
 ) {
     let _t = crate::diagnostics::SystemTimer::new("recompute_visible_floors", 1.0);
@@ -172,6 +229,7 @@ pub fn recompute_visible_floors(
         let covered = is_indoor_tile(
             &client_state,
             &definitions,
+            &floor_defs,
             space_id,
             player_x,
             player_y,
@@ -354,6 +412,7 @@ render:
         let mut app = App::new();
         app.insert_resource(state);
         app.insert_resource(defs);
+        app.insert_resource(FloorTilesetDefinitions::default());
         app.insert_resource(IndoorTileMap::default());
         app.add_systems(Update, recompute_indoor_tile_map);
         app.update();
@@ -362,6 +421,114 @@ render:
         assert!(map.contains(SpaceId(7), 5, 5, 0));
         assert!(!map.contains(SpaceId(7), 5, 5, 1));
         assert!(!map.contains(SpaceId(7), 4, 5, 0));
+    }
+
+    /// A painted FloorMap tile on the floor above the player should mark the
+    /// player's floor as indoor — same role as a `floor_plank` object used to
+    /// play, now driven by the floor tileset's `occludes_floor_above` flag.
+    #[test]
+    fn recompute_populates_indoor_tile_for_painted_upper_floor() {
+        use crate::game::resources::ClientGameState;
+        use crate::world::floor_definitions::{FloorTilesetDefinition, FloorTilesetDefinitions};
+        use crate::world::floor_map::FloorMap;
+        use std::collections::HashMap;
+
+        let space = SpaceId(9);
+        let mut state = ClientGameState::default();
+        // Paint one tile of "wooden_floor" at (5, 5) on floor 1 — should mark
+        // floor 0 at (5, 5) as indoor.
+        let mut grid = FloorMap::new_filled(10, 10, None);
+        grid.set(5, 5, Some("wooden_floor".to_string()));
+        state.floor_maps.insert((space, 1), grid);
+
+        let defs = OverworldObjectDefinitions::new_for_test(HashMap::new());
+        let mut floor_by_id = HashMap::new();
+        floor_by_id.insert(
+            "wooden_floor".to_string(),
+            FloorTilesetDefinition {
+                id: "wooden_floor".to_string(),
+                name: "Wooden Floor".to_string(),
+                priority: 100,
+                tile_size_px: 16,
+                atlas_path: None,
+                debug_color: [0, 0, 0],
+                occludes_floor_above: true,
+                walkable_surface: true,
+                variants: HashMap::new(),
+                ripple: None,
+            },
+        );
+        let floor_defs = FloorTilesetDefinitions::for_test(floor_by_id, HashMap::new());
+
+        let mut app = App::new();
+        app.insert_resource(state);
+        app.insert_resource(defs);
+        app.insert_resource(floor_defs);
+        app.insert_resource(IndoorTileMap::default());
+        app.add_systems(Update, recompute_indoor_tile_map);
+        app.update();
+
+        let map = app.world().resource::<IndoorTileMap>();
+        assert!(map.contains(space, 5, 5, 0));
+        assert!(!map.contains(space, 4, 5, 0));
+        assert!(!map.contains(space, 5, 5, 1));
+    }
+
+    /// Player on floor 0 directly under a painted upper-floor tile must have
+    /// `highest_visible` clamped to 0 — the wooden_floor at floor 1 acts as
+    /// a roof. Mirrors the in-game scenario where a player walks under a
+    /// `wooden_floor`-painted upper storey.
+    #[test]
+    fn visible_floor_range_clamps_under_painted_upper_floor() {
+        use crate::game::resources::ClientGameState;
+        use crate::world::components::{SpacePosition, TilePosition};
+        use crate::world::floor_definitions::{FloorTilesetDefinition, FloorTilesetDefinitions};
+        use crate::world::floor_map::FloorMap;
+        use std::collections::HashMap;
+
+        let space = SpaceId(11);
+        let mut state = ClientGameState {
+            player_position: Some(SpacePosition::new(space, TilePosition::new(5, 5, 0))),
+            ..Default::default()
+        };
+        state.floor_maps.insert((space, 0), FloorMap::default());
+        let mut upper = FloorMap::new_filled(10, 10, None);
+        upper.set(5, 5, Some("wooden_floor".to_string()));
+        state.floor_maps.insert((space, 1), upper);
+
+        let defs = OverworldObjectDefinitions::new_for_test(HashMap::new());
+        let mut floor_by_id = HashMap::new();
+        floor_by_id.insert(
+            "wooden_floor".to_string(),
+            FloorTilesetDefinition {
+                id: "wooden_floor".to_string(),
+                name: "Wooden Floor".to_string(),
+                priority: 100,
+                tile_size_px: 16,
+                atlas_path: None,
+                debug_color: [0, 0, 0],
+                occludes_floor_above: true,
+                walkable_surface: true,
+                variants: HashMap::new(),
+                ripple: None,
+            },
+        );
+        let floor_defs = FloorTilesetDefinitions::for_test(floor_by_id, HashMap::new());
+
+        let mut app = App::new();
+        app.insert_resource(state);
+        app.insert_resource(defs);
+        app.insert_resource(floor_defs);
+        app.insert_resource(VisibleFloorRange::default());
+        app.add_systems(Update, recompute_visible_floors);
+        app.update();
+
+        let range = *app.world().resource::<VisibleFloorRange>();
+        assert_eq!(range.player_floor, 0);
+        assert_eq!(
+            range.highest_visible, 0,
+            "painted upper floor at (player.x, player.y, floor=1) must clamp highest_visible"
+        );
     }
 
     /// With the player on a high floor and the space's ground floor at
@@ -392,6 +559,7 @@ render:
         let mut app = App::new();
         app.insert_resource(state);
         app.insert_resource(defs);
+        app.insert_resource(FloorTilesetDefinitions::default());
         app.insert_resource(VisibleFloorRange::default());
         app.add_systems(Update, recompute_visible_floors);
         app.update();

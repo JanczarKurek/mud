@@ -552,6 +552,22 @@ mod tests {
     }
 
     /// Exercises the real on-disk loader. Catches YAML/path/canonicalisation
+    /// `wooden_floor` is the upper-storey tileset that replaced the legacy
+    /// `floor_plank` object. It must parse with both `occludes_floor_above`
+    /// and `walkable_surface` set — `recompute_visible_floors` and
+    /// `is_walkable_tile` rely on those flags from disk to drive the
+    /// FloorMap-based upper-floor behavior.
+    #[test]
+    fn loads_wooden_floor_with_upper_floor_flags() {
+        let defs = FloorTilesetDefinitions::load_from_disk();
+        let def = defs.get("wooden_floor").expect("wooden_floor must load");
+        assert!(
+            def.occludes_floor_above,
+            "wooden_floor must occlude the floor below"
+        );
+        assert!(def.walkable_surface, "wooden_floor must be walkable");
+    }
+
     /// regressions in the bundled `assets/floors/transitions/` folder.
     #[test]
     fn loads_smoke_test_transition_from_disk() {

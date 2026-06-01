@@ -19,6 +19,7 @@ use crate::world::floor_render::{
     floor_grid_hash, rebuild_floor_render_cells_for_grid, spawn_render_cells_at_corner,
     FloorRenderCell, FloorRenderDirty, FloorRenderState, FloorTilesetAtlases,
 };
+use crate::world::floors::VisibleFloorRange;
 use crate::world::systems::{flat_floor_z, floor_screen_offset};
 use crate::world::WorldConfig;
 
@@ -178,6 +179,7 @@ pub fn editor_sync_floor_render_transforms(
     editor_camera: Res<EditorCamera>,
     editor_context: Res<EditorContext>,
     editor_state: Res<EditorState>,
+    visible_range: Res<VisibleFloorRange>,
     mut query: Query<(&FloorRenderCell, &mut Transform)>,
 ) {
     let effective_size = world_config.tile_size * editor_camera.zoom_level;
@@ -187,7 +189,11 @@ pub fn editor_sync_floor_render_transforms(
     // editor's diagonal floor stack identical to what the player will see.
     let player_z = editor_state.active_object_raw_z() as f32;
     for (cell, mut transform) in &mut query {
-        let visible = cell.space_id == editor_context.space_id;
+        // `cell.z` is a floor index (see `editor_build_floor_render_cells`),
+        // so the in-game `VisibleFloorRange::contains` check applies directly.
+        // Cells outside the cursor-derived visible range collapse into the
+        // same "off-screen z=-10000" branch already used for wrong-space cells.
+        let visible = cell.space_id == editor_context.space_id && visible_range.contains(cell.z);
         let z_sort = if !visible {
             -10_000.0
         } else {

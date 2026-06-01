@@ -393,6 +393,7 @@ pub fn sync_tile_transforms_editor(
     editor_camera: Res<EditorCamera>,
     editor_context: Res<EditorContext>,
     editor_state: Res<EditorState>,
+    visible_range: Res<crate::world::floors::VisibleFloorRange>,
     mut query: Query<
         (
             &SpaceResident,
@@ -410,7 +411,12 @@ pub fn sync_tile_transforms_editor(
     // upper floors offset up-left — same look the player sees in-game.
     let player_z = editor_state.active_object_raw_z() as f32;
     for (space_resident, tile_position, world_visual, mut transform, visual_offset) in &mut query {
-        let is_active = space_resident.space_id == editor_context.space_id;
+        // Objects on hidden floors collapse into the same "off-screen z=-10000"
+        // branch as wrong-space objects. `VisibleFloorRange` is written each
+        // frame by `editor_recompute_visible_floors` from the cursor tile.
+        let object_floor = crate::world::components::floor_index(tile_position.z);
+        let is_active = space_resident.space_id == editor_context.space_id
+            && visible_range.contains(object_floor);
         let z_sort = if !is_active {
             -10_000.0
         } else if world_visual.y_sort {

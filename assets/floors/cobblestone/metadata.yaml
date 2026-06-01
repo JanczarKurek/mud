@@ -4,6 +4,7 @@ priority: 30
 tile_size_px: 16
 atlas_path: floors/cobblestone/tileset.png
 debug_color: [148, 142, 134]
+occludes_floor_above: true
 variants:
   1: [1, 1, 1, 1]
   2: [1, 1, 1, 1]

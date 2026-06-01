@@ -1,7 +1,26 @@
 use bevy::prelude::*;
 
 use crate::world::components::{OverworldObject, SpaceId, SpaceResident, TilePosition};
+use crate::world::floor_definitions::FloorTilesetDefinitions;
+use crate::world::floor_map::FloorMaps;
+use crate::world::floors::{floormap_tile_walkable, MAX_FLOORS_ABOVE};
 use crate::world::object_definitions::OverworldObjectDefinitions;
+
+/// Raw z (half-block units) of every painted FloorMap walkable surface in
+/// column `(space, x, y)`. Returns an empty Vec when no upper floors are
+/// painted there. Ground (z=0) is *not* included — callers add it implicitly.
+fn floormap_supports_in_column(
+    floor_maps: &FloorMaps,
+    floor_defs: &FloorTilesetDefinitions,
+    space: SpaceId,
+    x: i32,
+    y: i32,
+) -> Vec<i32> {
+    (1..=MAX_FLOORS_ABOVE)
+        .filter(|fi| floormap_tile_walkable(floor_maps.get(space, *fi), floor_defs, x, y))
+        .map(|fi| fi * 2)
+        .collect()
+}
 
 /// One member of a tile column as seen by the stack helpers. The helpers
 /// take an iterator of these so they're agnostic to Bevy `Query` filter
@@ -14,22 +33,35 @@ pub struct ColumnMember<'a> {
     pub object: &'a OverworldObject,
 }
 
-/// `z` of the surface above the topmost block at column `(space, x, y)` —
-/// i.e. the `z` a newly placed object's *feet* would occupy. Returns `0`
-/// (ground) when no block-sized objects sit on the column. Half-blocks
-/// contribute `+1` z, full blocks `+2`; flat (`block_size == 0`) objects
-/// don't change the stack top.
+/// `z` of the surface above the topmost block or painted upper floor at
+/// column `(space, x, y)` — i.e. the `z` a newly placed object's *feet*
+/// would occupy. Returns `0` (ground) when the column is empty and no upper
+/// FloorMap tile covers it. Half-blocks contribute `+1` z, full blocks `+2`;
+/// flat (`block_size == 0`) objects don't change the stack top, but painted
+/// FloorMap tiles do — a walkable FloorMap tile on floor N raises the stack
+/// top to `N * 2`.
 pub fn stack_top_z<'a, I>(
     space: SpaceId,
     x: i32,
     y: i32,
     members: I,
     definitions: &OverworldObjectDefinitions,
+    floor_maps: &FloorMaps,
+    floor_defs: &FloorTilesetDefinitions,
 ) -> i32
 where
     I: IntoIterator<Item = ColumnMember<'a>>,
 {
-    stack_top_z_excluding(space, x, y, Entity::PLACEHOLDER, members, definitions)
+    stack_top_z_excluding(
+        space,
+        x,
+        y,
+        Entity::PLACEHOLDER,
+        members,
+        definitions,
+        floor_maps,
+        floor_defs,
+    )
 }
 
 /// Same as [`stack_top_z`] but excludes `exclude` from the column. Used by
@@ -42,11 +74,13 @@ pub fn stack_top_z_excluding<'a, I>(
     exclude: Entity,
     members: I,
     definitions: &OverworldObjectDefinitions,
+    floor_maps: &FloorMaps,
+    floor_defs: &FloorTilesetDefinitions,
 ) -> i32
 where
     I: IntoIterator<Item = ColumnMember<'a>>,
 {
-    members
+    let object_top = members
         .into_iter()
         .filter(|m| {
             m.entity != exclude && m.resident.space_id == space && m.tile.x == x && m.tile.y == y
@@ -59,13 +93,20 @@ where
             Some(m.tile.z + def.render.block_size as i32)
         })
         .max()
-        .unwrap_or(0)
+        .unwrap_or(0);
+    let floor_top = floormap_supports_in_column(floor_maps, floor_defs, space, x, y)
+        .into_iter()
+        .max()
+        .unwrap_or(0);
+    object_top.max(floor_top)
 }
 
-/// True iff the topmost block at column `(space, x, y)` (excluding
-/// `exclude`) has a walkable top — i.e. it's safe to stack onto. A column
-/// with only flat objects, or no objects at all, returns true (drop onto
-/// ground). A column whose top object is a wall returns false.
+/// True iff the topmost surface at column `(space, x, y)` (excluding
+/// `exclude`) is walkable — i.e. it's safe to stack onto. A column with only
+/// flat objects, or no objects at all, returns true (drop onto ground). A
+/// column whose top *object* is a wall returns false. A painted FloorMap tile
+/// on top wins by raw z and contributes its tileset's `walkable_surface` flag
+/// (currently always `true` for any authored upper floor).
 pub fn stack_top_is_walkable<'a, I>(
     space: SpaceId,
     x: i32,
@@ -73,11 +114,13 @@ pub fn stack_top_is_walkable<'a, I>(
     exclude: Entity,
     members: I,
     definitions: &OverworldObjectDefinitions,
+    floor_maps: &FloorMaps,
+    floor_defs: &FloorTilesetDefinitions,
 ) -> bool
 where
     I: IntoIterator<Item = ColumnMember<'a>>,
 {
-    let topmost = members
+    let object_top = members
         .into_iter()
         .filter(|m| {
             m.entity != exclude && m.resident.space_id == space && m.tile.x == x && m.tile.y == y
@@ -93,7 +136,22 @@ where
             ))
         })
         .max_by_key(|(top, _)| *top);
-    topmost.map(|(_, walkable)| walkable).unwrap_or(true)
+    let floor_top = floormap_supports_in_column(floor_maps, floor_defs, space, x, y)
+        .into_iter()
+        .max();
+    match (object_top, floor_top) {
+        (Some((oz, ow)), Some(fz)) => {
+            if oz >= fz {
+                ow
+            } else {
+                // Painted FloorMap currently always has walkable_surface = true.
+                true
+            }
+        }
+        (Some((_, ow)), None) => ow,
+        (None, Some(_)) => true,
+        (None, None) => true,
+    }
 }
 
 /// True iff a player at z=`player_z` can place a `placed_block_size`-tall
@@ -152,6 +210,8 @@ pub fn settle_pending_stacks(
     mut pending: ResMut<PendingStackSettleEvents>,
     mut object_query: Query<(Entity, &SpaceResident, &mut TilePosition, &OverworldObject)>,
     definitions: Res<OverworldObjectDefinitions>,
+    floor_maps: Res<FloorMaps>,
+    floor_defs: Res<FloorTilesetDefinitions>,
 ) {
     if pending.events.is_empty() {
         return;
@@ -191,10 +251,28 @@ pub fn settle_pending_stacks(
         }
         let new_stack_top = next_z;
 
-        // Pass 2: drop any other entity in the column that's floating above
-        // the new top. Collect first to avoid holding an iter borrow while
-        // mutating via `get_mut`.
-        let floaters: Vec<Entity> = object_query
+        // Pass 2: drop any floater that isn't sitting on a supported z. Support
+        // = ground (0), the new block stack top, or any painted-FloorMap
+        // walkable surface in this column. A player standing on an upper-floor
+        // wooden_floor at z=2 must stay at z=2 even when no block-sized object
+        // sits beneath them; previously they'd snap back to z=0.
+        let mut supports: Vec<i32> = vec![0, new_stack_top];
+        supports.extend(floormap_supports_in_column(
+            &floor_maps,
+            &floor_defs,
+            event.space_id,
+            event.x,
+            event.y,
+        ));
+        let landing_for = |z: i32| -> i32 {
+            supports
+                .iter()
+                .copied()
+                .filter(|s| *s <= z)
+                .max()
+                .unwrap_or(0)
+        };
+        let floaters: Vec<(Entity, i32)> = object_query
             .iter()
             .filter(|(entity, resident, tile, _)| {
                 Some(*entity) != event.removed_entity
@@ -202,13 +280,15 @@ pub fn settle_pending_stacks(
                     && resident.space_id == event.space_id
                     && tile.x == event.x
                     && tile.y == event.y
-                    && tile.z > new_stack_top
             })
-            .map(|(entity, _, _, _)| entity)
+            .filter_map(|(entity, _, tile, _)| {
+                let landing = landing_for(tile.z);
+                (landing < tile.z).then_some((entity, landing))
+            })
             .collect();
-        for entity in floaters {
+        for (entity, landing) in floaters {
             if let Ok((_, _, mut tile, _)) = object_query.get_mut(entity) {
-                tile.z = new_stack_top;
+                tile.z = landing;
             }
         }
     }

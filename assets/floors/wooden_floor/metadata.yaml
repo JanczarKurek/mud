@@ -1,0 +1,7 @@
+id: wooden_floor
+name: Wooden Floor
+priority: 100
+tile_size_px: 16
+debug_color: [156, 118, 72]
+occludes_floor_above: true
+walkable_surface: true

@@ -252,7 +252,9 @@ impl Plugin for WorldClientPlugin {
                         consume_floor_render_dirty
                             .after(apply_game_events_to_client_state)
                             .after(build_floor_render_cells),
-                        sync_floor_render_transforms.after(detect_player_movement),
+                        sync_floor_render_transforms
+                            .after(detect_player_movement)
+                            .after(recompute_visible_floors),
                     ),
                     // Animation + camera systems
                     attach_animated_sprite.after(sync_client_world_projection),

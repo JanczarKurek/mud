@@ -3,6 +3,7 @@ pub mod clipboard;
 pub mod dialog_index;
 pub mod fill;
 pub mod floor_render;
+pub mod floors_editor;
 pub mod hotkeys;
 pub mod plugin;
 pub mod resources;

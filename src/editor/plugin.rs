@@ -14,6 +14,9 @@ use crate::editor::floor_render::{
     cleanup_editor_floor_cells, editor_build_floor_render_cells,
     editor_sync_floor_render_transforms, EditorFloorRenderState,
 };
+use crate::editor::floors_editor::{
+    editor_recompute_visible_floors, sync_editor_hover_tile, EditorHoverTile,
+};
 use crate::editor::hotkeys::{
     handle_editor_alt_recent_hotkeys, handle_editor_brush_radius_hotkeys, handle_editor_eyedropper,
     handle_editor_fill_mode_hotkey, handle_editor_floor_switch_hotkey,
@@ -227,6 +230,7 @@ impl Plugin for EditorPlugin {
             .init_resource::<EditorPickRectResult>()
             .init_resource::<EditorDialogIndex>()
             .init_resource::<EditorFloorRenderState>()
+            .init_resource::<EditorHoverTile>()
             .init_resource::<EditorClipboard>()
             .init_resource::<EditorTemplatesIndex>()
             .init_resource::<EditorColorPickerAssets>()
@@ -272,6 +276,8 @@ impl Plugin for EditorPlugin {
                     handle_editor_middle_drag_pan.run_if(no_modal),
                     handle_editor_zoom,
                     attach_editor_visuals,
+                    sync_editor_hover_tile,
+                    editor_recompute_visible_floors,
                     editor_build_floor_render_cells,
                     editor_sync_floor_render_transforms,
                     sync_tile_transforms_editor,

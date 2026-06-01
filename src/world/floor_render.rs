@@ -648,7 +648,13 @@ pub fn sync_floor_render_transforms(
     // player. The camera follows the player (`world::camera::camera_follow`),
     // so screen-relative positioning falls out of `sprite_world - camera_world`.
     for (cell, mut transform, mut sprite) in &mut query {
-        let visible = cell.space_id == player_position.space_id;
+        // Cull cells outside the active space OR outside the visible-floor
+        // range. The range gate is what makes a painted upper floor disappear
+        // when the player walks under it — without it, the cell renders
+        // regardless of `recompute_visible_floors` clamping `highest_visible`
+        // down to the player's floor. Editor's sync does the same check
+        // (`src/editor/floor_render.rs`).
+        let visible = cell.space_id == player_position.space_id && visible_floors.contains(cell.z);
         let z = if !visible {
             -10_000.0
         } else {
@@ -657,11 +663,15 @@ pub fn sync_floor_render_transforms(
         // `cell.z` is an integer floor index; convert to half-block z so the
         // shared `floor_screen_offset` (which is fractional in half-block z)
         // produces the correct shift relative to the player's half-block z.
-        let floor_offset = floor_screen_offset(
-            (cell.z * 2) as f32,
-            floor_transition.visual_player_z(visible_floors.player_z),
-            world_config.tile_size,
-        );
+        let floor_offset = if visible {
+            floor_screen_offset(
+                (cell.z * 2) as f32,
+                floor_transition.visual_player_z(visible_floors.player_z),
+                world_config.tile_size,
+            )
+        } else {
+            Vec2::ZERO
+        };
         let dx =
             (cell.rx as f32 - 0.5 + cell.local_offset.x) * world_config.tile_size + floor_offset.x;
         let dy =

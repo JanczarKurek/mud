@@ -430,6 +430,7 @@ pub fn sync_tile_transforms(
     visible_floors: Res<VisibleFloorRange>,
     floor_transition: Res<FloorTransitionOffset>,
     definitions: Res<OverworldObjectDefinitions>,
+    floor_defs: Res<crate::world::floor_definitions::FloorTilesetDefinitions>,
     indoor: Res<IndoorTileMap>,
     mut query: Query<
         (
@@ -455,6 +456,7 @@ pub fn sync_tile_transforms(
     let player_is_inside = is_indoor_tile(
         &client_state,
         &definitions,
+        &floor_defs,
         player_position.space_id,
         player_position.tile_position.x,
         player_position.tile_position.y,
