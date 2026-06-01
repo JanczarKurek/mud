@@ -52,7 +52,10 @@ use crate::ui::dialog::{
     DialogPanelRenderState,
 };
 use crate::ui::equipment_panel::EquipmentPanel;
-use crate::ui::menu_bar::{apply_menu_actions, handle_menu_bar_clicks, sync_menu_dropdowns};
+use crate::ui::menu_bar::{
+    apply_menu_actions, handle_menu_bar_clicks, sync_menu_dropdowns, sync_menu_toggle_labels,
+    update_coordinate_readout,
+};
 use crate::ui::minimap::{
     handle_floating_minimap_pan, handle_minimap_keybinds, handle_minimap_scroll_wheel,
     handle_minimap_zoom_buttons, reset_floating_minimap_pan_when_mounted, sync_minimap_zoom_labels,
@@ -71,8 +74,8 @@ use crate::ui::quickbar::{
 use crate::ui::resources::{
     ActiveDialogState, BottomPanelVisibility, ContextMenuState, CursorState, DockedPanelDragState,
     DockedPanelResizeState, DockedPanelState, DragState, FloatingMinimapPan, FloatingMinimapZoom,
-    HudMinimapSettings, OpenMenuState, PendingMenuActions, Quickbar, SpellTargetingState,
-    TakePartialState, TradePopupState, UseOnState,
+    HoveredTile, HudMinimapSettings, OpenMenuState, PendingMenuActions, Quickbar, ShowCoordinates,
+    SpellTargetingState, TakePartialState, TradePopupState, UseOnState,
 };
 use crate::ui::setup::spawn_hud;
 use crate::ui::sprite_state::sync_object_state_visuals;
@@ -96,7 +99,8 @@ use crate::ui::systems::{
     sync_drag_preview, sync_equipment_slot_images, sync_item_slot_button_visibility,
     sync_item_tooltip, sync_magic_effects_label, sync_native_custom_cursor, sync_nearby_npcs_panel,
     sync_regen_buff_label, sync_take_partial_label, sync_vital_bars, sync_xp_bar,
-    tick_level_up_toasts, toggle_cursor_mode, update_take_partial_popup_visibility,
+    tick_level_up_toasts, toggle_cursor_mode, update_hovered_tile,
+    update_take_partial_popup_visibility,
 };
 use crate::ui::theme::UiThemePlugin;
 use crate::ui::time_of_day_button::{
@@ -140,6 +144,8 @@ impl Plugin for UiPlugin {
         .insert_resource(FloatingMinimapPan::default())
         .insert_resource(OpenMenuState::default())
         .insert_resource(PendingMenuActions::default())
+        .insert_resource(ShowCoordinates::default())
+        .insert_resource(HoveredTile::default())
         .insert_resource(ActiveDialogState::default())
         .insert_resource(DialogPanelRenderState::default())
         .insert_resource(TradePanelRenderState::default())
@@ -353,6 +359,9 @@ impl Plugin for UiPlugin {
                 handle_menu_bar_clicks,
                 sync_menu_dropdowns.after(handle_menu_bar_clicks),
                 apply_menu_actions.after(handle_menu_bar_clicks),
+                sync_menu_toggle_labels.after(apply_menu_actions),
+                update_hovered_tile,
+                update_coordinate_readout.after(update_hovered_tile),
             )
                 .run_if(in_state(ClientAppState::InGame)),
         )

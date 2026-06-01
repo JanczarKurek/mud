@@ -15,11 +15,10 @@ use crate::editor::floor_render::{
     editor_sync_floor_render_transforms, EditorFloorRenderState,
 };
 use crate::editor::hotkeys::{
-    handle_editor_alt_recent_hotkeys, handle_editor_brush_radius_hotkeys,
-    handle_editor_eyedropper, handle_editor_fill_mode_hotkey,
-    handle_editor_floor_switch_hotkey, handle_editor_tool_number_hotkeys,
+    handle_editor_alt_recent_hotkeys, handle_editor_brush_radius_hotkeys, handle_editor_eyedropper,
+    handle_editor_fill_mode_hotkey, handle_editor_floor_switch_hotkey,
+    handle_editor_tool_number_hotkeys,
 };
-use crate::editor::status_bar::sync_status_bar;
 use crate::editor::resources::{
     EditorCamera, EditorClipboard, EditorCursorMarker, EditorLightingBuffer,
     EditorPasteGhostMarker, EditorPickRectResult, EditorPortalBuffer, EditorPropertyEditBuffer,
@@ -29,6 +28,7 @@ use crate::editor::selection::{
     handle_editor_pick_rect_drag, handle_editor_select_drag, handle_editor_select_hotkey,
     render_selection,
 };
+use crate::editor::status_bar::sync_status_bar;
 use crate::editor::systems::{
     apply_lighting_keyframe_confirmed, apply_modal_confirmed, attach_editor_visuals,
     handle_editor_camera_pan, handle_editor_escape, handle_editor_floor_brush_drag,

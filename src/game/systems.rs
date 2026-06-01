@@ -4430,8 +4430,9 @@ fn inspect_distance_tiles(a: TilePosition, b: TilePosition) -> i32 {
 ///     `walkable_surface: true`, `block_size == 0`), or
 ///   - a walkable block below whose top reaches `target.z` (i.e. an object
 ///     at `(x, y, target.z - bs)` with `walkable_surface: true` and
-///     `block_size: bs`, for `bs ∈ {1, 2}`). Half-blocks (chests) climb to
-///     `+1` z, full blocks (barrels) climb to `+2`.
+///     `block_size: bs`, for `bs ∈ {1, 2}`). The walkability check itself
+///     is height-agnostic; the actual climb cap (≤ 1 z per step) is
+///     enforced in [`resolve_step_with_climb`].
 fn is_walkable_tile(
     target: TilePosition,
     space_id: crate::world::components::SpaceId,
@@ -4486,8 +4487,13 @@ fn is_walkable_tile(
 ///
 /// Everything is decided by the target column's `stack_top`:
 ///   * `stack_top > current_z` (something blocks above): climb to `stack_top`
-///     iff the gap is `≤ 2` half-blocks AND the top is walkable. A stack of
-///     two chests (top = 2) is one +2 climb, identical to climbing a barrel.
+///     iff the gap is `≤ 1` half-block AND the top is walkable. A full block
+///     (barrel, wall, `stair_*_high` — `block_size: 2`) takes you `+2` in one
+///     step and so cannot be climbed directly; you have to approach from an
+///     adjacent half-block (chest, `stone_step`, `stair_*_low` — `block_size: 1`)
+///     or stacked surface that closes the gap to 1. The canonical two-tile
+///     ramp between floors is a `stair_*_low` (top z=1) next to a
+///     `stair_*_high` (top z=2) facing the same direction.
 ///   * `stack_top == current_z`: walk flat at `current_z`.
 ///   * `stack_top < current_z` (cliff edge): fall to the highest walkable
 ///     surface ≤ `current_z`. Falling off a barrel onto a chest leaves you
@@ -4521,7 +4527,7 @@ fn resolve_step_with_climb(
 
     // Climb path: a block-sized stack in front of the player.
     if stack_top > current_z {
-        if stack_top - current_z > 2 {
+        if stack_top - current_z > 1 {
             return None;
         }
         let stack_top_walkable = crate::world::stacks::stack_top_is_walkable(
@@ -5111,9 +5117,42 @@ mod tests {
         let mut app = setup_server_app();
         let player = spawn_player(&mut app, 1, 10, 10);
 
-        // A barrel directly east of the player. Barrel is colliding and has
-        // walkable_surface (top is walkable). Walking east should snap the
-        // player to (11, 10, 1) — atop the barrel.
+        // An iron chest directly east of the player. Chest collides and has
+        // walkable_surface (top is walkable) with block_size = 1, so walking
+        // east should snap the player to (11, 10, 1) — atop the chest.
+        let chest_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("iron_chest");
+        spawn_world_object(&mut app, "iron_chest", chest_id, TilePosition::ground(11, 10));
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                crate::player::components::PlayerId(1),
+                GameCommand::MovePlayer {
+                    delta: MoveDelta { x: 1, y: 0 },
+                },
+            );
+        app.update();
+
+        let tile = *app.world().get::<TilePosition>(player).unwrap();
+        assert_eq!(
+            tile,
+            TilePosition::new(11, 10, 1),
+            "player should auto-climb onto the chest (half-block = +1 in half-block z units)"
+        );
+    }
+
+    #[test]
+    fn auto_climb_refuses_full_block_step() {
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+
+        // A barrel directly east of the player. Barrel is a full block
+        // (block_size = 2), so its top sits +2 above the player. With the
+        // one-z-at-a-time climb cap that exceeds the limit — the player
+        // should bump into it and stay put.
         let barrel_id = app
             .world_mut()
             .resource_mut::<ObjectRegistry>()
@@ -5133,8 +5172,8 @@ mod tests {
         let tile = *app.world().get::<TilePosition>(player).unwrap();
         assert_eq!(
             tile,
-            TilePosition::new(11, 10, 2),
-            "player should auto-climb onto the barrel (full block = +2 in half-block z units)"
+            TilePosition::ground(10, 10),
+            "full-block barrel should be unclimbable in one step"
         );
     }
 
@@ -5143,24 +5182,24 @@ mod tests {
         let mut app = setup_server_app();
         let player = spawn_player(&mut app, 1, 10, 10);
 
-        // Barrel east of the player → would normally auto-climb. But there's
-        // a floor plank directly above the barrel (at z+1) acting as a
-        // ceiling, so the climb must be refused — the player would bonk.
-        let barrel_id = app
+        // Chest east of the player → would normally auto-climb to z=1. But
+        // there's a floor plank directly above the chest (at z=1) acting as
+        // a ceiling, so the climb must be refused — the player would bonk.
+        let chest_id = app
             .world_mut()
             .resource_mut::<ObjectRegistry>()
-            .allocate_runtime_id("barrel");
-        spawn_world_object(&mut app, "barrel", barrel_id, TilePosition::ground(11, 10));
+            .allocate_runtime_id("iron_chest");
+        spawn_world_object(&mut app, "iron_chest", chest_id, TilePosition::ground(11, 10));
         let plank_id = app
             .world_mut()
             .resource_mut::<ObjectRegistry>()
             .allocate_runtime_id("floor_plank");
-        // Ceiling sits on floor 1 (raw z=2), directly above the barrel.
+        // Ceiling sits directly above the chest top.
         spawn_world_object(
             &mut app,
             "floor_plank",
             plank_id,
-            TilePosition::new(11, 10, 2),
+            TilePosition::new(11, 10, 1),
         );
 
         app.world_mut()

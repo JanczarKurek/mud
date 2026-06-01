@@ -152,10 +152,8 @@ pub fn spawn_palette_panel(
                     // Group objects by `category`. `None` falls into the
                     // "Uncategorized" bucket which renders last. Within each
                     // group rows are alphabetical.
-                    let mut by_category: std::collections::BTreeMap<
-                        Option<String>,
-                        Vec<&str>,
-                    > = std::collections::BTreeMap::new();
+                    let mut by_category: std::collections::BTreeMap<Option<String>, Vec<&str>> =
+                        std::collections::BTreeMap::new();
                     for id in definitions.ids() {
                         if let Some(def) = definitions.get(id) {
                             by_category

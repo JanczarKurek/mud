@@ -507,8 +507,10 @@ pub fn handle_save_button_click(
                 &objects,
                 &floor_maps,
             );
-            space_definitions
-                .load_single_from_disk(&editor_context.authored_id, object_registry.next_runtime_id());
+            space_definitions.load_single_from_disk(
+                &editor_context.authored_id,
+                object_registry.next_runtime_id(),
+            );
             editor_state.dirty = false;
         }
     }

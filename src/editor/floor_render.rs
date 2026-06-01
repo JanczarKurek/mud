@@ -123,10 +123,7 @@ pub fn editor_build_floor_render_cells(
                 }
             }
             for (entity, cell) in &existing {
-                if cell.space_id == sid
-                    && cell.z == z
-                    && corners.contains(&(cell.rx, cell.ry))
-                {
+                if cell.space_id == sid && cell.z == z && corners.contains(&(cell.rx, cell.ry)) {
                     commands.entity(entity).despawn();
                 }
             }

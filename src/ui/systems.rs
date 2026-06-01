@@ -29,8 +29,8 @@ use crate::ui::components::{
 };
 use crate::ui::resources::{
     ContextMenuState, ContextMenuTarget, CursorMode, CursorState, DockedPanelDragState,
-    DockedPanelKind, DockedPanelResizeState, DockedPanelState, DragSource, DragState, Quickbar,
-    SpellTargetingState, TakePartialState, UseOnState,
+    DockedPanelKind, DockedPanelResizeState, DockedPanelState, DragSource, DragState, HoveredTile,
+    Quickbar, ShowCoordinates, SpellTargetingState, TakePartialState, UseOnState,
 };
 use crate::world::components::TilePosition;
 use crate::world::object_definitions::OverworldObjectDefinitions;
@@ -4219,4 +4219,36 @@ fn topmost_remote_player_at_cursor<'a>(
         }
     }
     best
+}
+
+/// Caches the tile under the mouse cursor into `HoveredTile` while the
+/// coordinate readout is enabled. Skips the work entirely when
+/// `ShowCoordinates` is off so we don't pay for it during normal play.
+pub fn update_hovered_tile(
+    show_coords: Res<ShowCoordinates>,
+    mut hovered: ResMut<HoveredTile>,
+    window_q: Query<&Window, With<PrimaryWindow>>,
+    world_config: Res<WorldConfig>,
+    client_state: Res<crate::game::resources::ClientGameState>,
+) {
+    if !show_coords.0 {
+        if hovered.0.is_some() {
+            hovered.0 = None;
+        }
+        return;
+    }
+    let Ok(window) = window_q.single() else {
+        hovered.0 = None;
+        return;
+    };
+    let Some(cursor) = window.cursor_position() else {
+        hovered.0 = None;
+        return;
+    };
+    let Some(player) = client_state.player_tile_position else {
+        hovered.0 = None;
+        return;
+    };
+    let tile = cursor_to_ground_tile(window, cursor, &player, &world_config);
+    hovered.0 = Some(tile);
 }

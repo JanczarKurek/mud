@@ -46,7 +46,12 @@ pub fn handle_editor_tool_number_hotkeys(
     vendor_stash_buffer: Res<crate::editor::resources::EditorVendorStashBuffer>,
     mut editor_state: ResMut<EditorState>,
 ) {
-    if !hotkeys_allowed(&editor_state, &modal_state, &prop_buffer, &vendor_stash_buffer) {
+    if !hotkeys_allowed(
+        &editor_state,
+        &modal_state,
+        &prop_buffer,
+        &vendor_stash_buffer,
+    ) {
         return;
     }
     let new_tool = if editor_keys.just_pressed(EditorAction::ToolBrush, &keyboard) {
@@ -76,7 +81,12 @@ pub fn handle_editor_brush_radius_hotkeys(
     vendor_stash_buffer: Res<crate::editor::resources::EditorVendorStashBuffer>,
     mut editor_state: ResMut<EditorState>,
 ) {
-    if !hotkeys_allowed(&editor_state, &modal_state, &prop_buffer, &vendor_stash_buffer) {
+    if !hotkeys_allowed(
+        &editor_state,
+        &modal_state,
+        &prop_buffer,
+        &vendor_stash_buffer,
+    ) {
         return;
     }
     let current = editor_state.effective_brush_radius();
@@ -97,7 +107,12 @@ pub fn handle_editor_fill_mode_hotkey(
     vendor_stash_buffer: Res<crate::editor::resources::EditorVendorStashBuffer>,
     mut editor_state: ResMut<EditorState>,
 ) {
-    if !hotkeys_allowed(&editor_state, &modal_state, &prop_buffer, &vendor_stash_buffer) {
+    if !hotkeys_allowed(
+        &editor_state,
+        &modal_state,
+        &prop_buffer,
+        &vendor_stash_buffer,
+    ) {
         return;
     }
     if editor_keys.just_pressed(EditorAction::CycleFillMode, &keyboard) {
@@ -128,7 +143,12 @@ pub fn handle_editor_eyedropper(
     objects: Query<(&OverworldObject, &SpaceResident, &TilePosition), Without<Player>>,
     panel_roots: EditorPanelRoots,
 ) {
-    if !hotkeys_allowed(&editor_state, &modal_state, &prop_buffer, &vendor_stash_buffer) {
+    if !hotkeys_allowed(
+        &editor_state,
+        &modal_state,
+        &prop_buffer,
+        &vendor_stash_buffer,
+    ) {
         return;
     }
     if !editor_keys.just_pressed(EditorAction::Eyedropper, &keyboard) {
@@ -141,7 +161,8 @@ pub fn handle_editor_eyedropper(
     if panel_roots.cursor_over(cursor, window.scale_factor()) {
         return;
     }
-    let tile = crate::editor::systems::cursor_to_tile_pub(cursor, window, &world_config, &editor_camera);
+    let tile =
+        crate::editor::systems::cursor_to_tile_pub(cursor, window, &world_config, &editor_camera);
     if tile.x < 0
         || tile.y < 0
         || tile.x >= editor_context.map_width
@@ -196,7 +217,12 @@ pub fn handle_editor_floor_switch_hotkey(
     editor_context: Res<EditorContext>,
     mut floor_maps: ResMut<crate::world::floor_map::FloorMaps>,
 ) {
-    if !hotkeys_allowed(&editor_state, &modal_state, &prop_buffer, &vendor_stash_buffer) {
+    if !hotkeys_allowed(
+        &editor_state,
+        &modal_state,
+        &prop_buffer,
+        &vendor_stash_buffer,
+    ) {
         return;
     }
     // Cap at floor 8 (arbitrary; the engine has no hard upper limit but
@@ -232,7 +258,12 @@ pub fn handle_editor_alt_recent_hotkeys(
     vendor_stash_buffer: Res<crate::editor::resources::EditorVendorStashBuffer>,
     mut editor_state: ResMut<EditorState>,
 ) {
-    if !hotkeys_allowed(&editor_state, &modal_state, &prop_buffer, &vendor_stash_buffer) {
+    if !hotkeys_allowed(
+        &editor_state,
+        &modal_state,
+        &prop_buffer,
+        &vendor_stash_buffer,
+    ) {
         return;
     }
     let mut picked: Option<usize> = None;

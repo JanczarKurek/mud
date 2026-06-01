@@ -33,12 +33,7 @@ pub enum SettingsSection {
 }
 
 impl SettingsSection {
-    const ALL: [SettingsSection; 4] = [
-        Self::Controls,
-        Self::Display,
-        Self::Gameplay,
-        Self::Editor,
-    ];
+    const ALL: [SettingsSection; 4] = [Self::Controls, Self::Display, Self::Gameplay, Self::Editor];
 
     fn label(self) -> &'static str {
         match self {
@@ -736,8 +731,7 @@ pub fn capture_keybind(
         }
 
         let live_mods = Modifiers {
-            ctrl: keyboard.pressed(KeyCode::ControlLeft)
-                || keyboard.pressed(KeyCode::ControlRight),
+            ctrl: keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight),
             shift: keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight),
             alt: keyboard.pressed(KeyCode::AltLeft) || keyboard.pressed(KeyCode::AltRight),
         };

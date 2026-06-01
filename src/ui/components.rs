@@ -702,4 +702,29 @@ pub struct MenuDropdownRoot {
 #[derive(Component)]
 pub struct MenuDropdownEntryButton {
     pub action: MenuAction,
+    /// When `Some`, the entry's text label is rewritten each frame with an
+    /// `[X]` / `[ ]` prefix reflecting the current state of the referenced
+    /// toggle. `None` for one-shot actions (e.g. Quit, Log Snapshot).
+    pub toggle_indicator: Option<ToggleSource>,
 }
+
+/// Which boolean state a dropdown entry's `[X]`/`[ ]` prefix reflects.
+/// `sync_menu_toggle_labels` resolves each variant to the matching field on
+/// `PerfOverlayState`, `DiagnosticPause`, or `ShowCoordinates`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ToggleSource {
+    Grid,
+    FpsCompact,
+    FpsExpanded,
+    PauseSim,
+    HideFloor,
+    HideDarkness,
+    HideObjects,
+    ShowCoords,
+}
+
+/// Marker on the right-aligned coordinate text node spawned at the end of
+/// the menu bar. Visibility and label content are managed by
+/// `update_coordinate_readout`.
+#[derive(Component)]
+pub struct CoordinateReadout;

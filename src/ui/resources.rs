@@ -805,6 +805,7 @@ pub enum MenuBarId {
     View,
     Window,
     Help,
+    Debug,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -819,6 +820,16 @@ pub enum MenuAction {
     OpenSettings,
     Logout,
     Quit,
+    ToggleGrid,
+    ToggleFpsCompact,
+    ToggleFpsExpanded,
+    TogglePauseSim,
+    ToggleHideFloor,
+    ToggleHideDarkness,
+    ToggleHideObjects,
+    ToggleShowCoords,
+    LogSnapshot,
+    CycleVsync,
 }
 
 #[derive(Resource, Default)]
@@ -830,6 +841,16 @@ pub struct OpenMenuState {
 pub struct PendingMenuActions {
     pub actions: Vec<MenuAction>,
 }
+
+/// Gates the coordinate readout on the right side of the menu bar. Toggled
+/// by the Debug menu's "Show Coords" entry.
+#[derive(Resource, Default)]
+pub struct ShowCoordinates(pub bool);
+
+/// Tile under the mouse cursor, computed each frame while `ShowCoordinates`
+/// is enabled. `None` when the cursor is outside the primary window.
+#[derive(Resource, Default, Clone, Copy)]
+pub struct HoveredTile(pub Option<TilePosition>);
 
 /// Floating-popup state for the trade window. The window itself is a
 /// `MovableWindow` — it's spawned dynamically when `session_id` becomes

@@ -891,9 +891,7 @@ pub fn handle_editor_left_click(
             }
             // Skip already-present matching object.
             let occupied = existing_objects.iter().any(|(o, r, p)| {
-                r.space_id == editor_context.space_id
-                    && *p == stamp
-                    && o.definition_id == *type_id
+                r.space_id == editor_context.space_id && *p == stamp && o.definition_id == *type_id
             });
             if occupied {
                 continue;
@@ -1340,7 +1338,10 @@ pub fn handle_editor_floor_brush_hotkey(
     if modal_state.active.is_some() || editor_state.palette_filter_focused {
         return;
     }
-    if editor_keys.just_pressed(crate::ui::settings::EditorAction::ToolBrushLegacy, &keyboard) {
+    if editor_keys.just_pressed(
+        crate::ui::settings::EditorAction::ToolBrushLegacy,
+        &keyboard,
+    ) {
         editor_state.current_tool = EditorTool::Brush;
         return;
     }
@@ -1406,8 +1407,10 @@ pub fn handle_editor_save(
             &objects,
             &floor_maps,
         );
-        space_definitions
-            .load_single_from_disk(&editor_context.authored_id, object_registry.next_runtime_id());
+        space_definitions.load_single_from_disk(
+            &editor_context.authored_id,
+            object_registry.next_runtime_id(),
+        );
         editor_state.dirty = false;
         info!("Saved map '{}'", editor_context.authored_id);
     }

@@ -1,0 +1,13 @@
+extends: obstacle
+name: Stone Stairs (south, upper)
+description: The upper step of a staircase ascending to the south.
+render:
+  z_index: 0.28
+  debug_color: [165, 150, 130]
+  debug_size: 1.0
+  sprite_path: overworld_objects/stair_s_high/sprite.png
+  sprite_width_tiles: 1.0
+  sprite_height_tiles: 1.5
+  block_size: 2
+  walkable_surface: true
+  stack_order: 30

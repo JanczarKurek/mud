@@ -7,9 +7,7 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
-use crate::editor::resources::{
-    EditorCamera, EditorContext, EditorState, EditorTool, FillMode,
-};
+use crate::editor::resources::{EditorCamera, EditorContext, EditorState, EditorTool, FillMode};
 use crate::editor::systems::cursor_to_tile_pub;
 use crate::editor::ui::EditorPanelRoots;
 use crate::player::components::Player;

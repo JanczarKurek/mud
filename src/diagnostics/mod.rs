@@ -68,6 +68,7 @@ impl Plugin for DiagnosticsPlugin {
         .init_resource::<FrameTimeBuffer>()
         .init_resource::<SpikeTracker>()
         .init_resource::<DiagnosticPause>()
+        .init_resource::<PendingDebugActions>()
         .add_systems(Startup, spawn_overlays)
         .add_systems(First, clear_frame_timings)
         .add_systems(PreUpdate, mark_pre_update_start)
@@ -125,6 +126,27 @@ pub struct PerfOverlayState {
     pub darkness_hidden: bool,
     pub objects_hidden: bool,
     pub grid_visible: bool,
+}
+
+/// Externally-queued debug effects, drained by `handle_overlay_input` each
+/// frame. The Debug menu in the top bar pushes here so menu items and F-keys
+/// share one effect path.
+#[derive(Resource, Default)]
+pub struct PendingDebugActions {
+    pub actions: Vec<DebugAction>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DebugAction {
+    ToggleGrid,
+    ToggleFpsCompact,
+    ToggleFpsExpanded,
+    TogglePauseSim,
+    ToggleHideFloor,
+    ToggleHideDarkness,
+    ToggleHideObjects,
+    LogSnapshot,
+    CycleVsync,
 }
 
 #[derive(Resource, Default)]
@@ -291,8 +313,10 @@ fn track_spikes(time: Res<Time<Real>>, mut tracker: ResMut<SpikeTracker>) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_overlay_input(
     keys: Res<ButtonInput<KeyCode>>,
+    mut pending: ResMut<PendingDebugActions>,
     mut state: ResMut<PerfOverlayState>,
     diagnostics: Res<DiagnosticsStore>,
     buf: Res<FrameTimeBuffer>,
@@ -304,121 +328,190 @@ fn handle_overlay_input(
     objects_q: Query<Entity, With<ClientProjectedWorldObject>>,
     mut commands: Commands,
 ) {
+    let mut queued = std::mem::take(&mut pending.actions);
+
     if keys.just_pressed(KeyCode::F2) {
-        state.grid_visible = !state.grid_visible;
-        info!(
-            "Diagnostics: debug grid {} (F2)",
-            if state.grid_visible { "ON" } else { "OFF" }
-        );
+        queued.push(DebugAction::ToggleGrid);
     }
     if keys.just_pressed(KeyCode::F3) {
-        state.compact_visible = !state.compact_visible;
+        queued.push(DebugAction::ToggleFpsCompact);
     }
     if keys.just_pressed(KeyCode::F4) {
-        state.expanded_visible = !state.expanded_visible;
+        queued.push(DebugAction::ToggleFpsExpanded);
+    }
+    if keys.just_pressed(KeyCode::F5) {
+        queued.push(DebugAction::LogSnapshot);
+    }
+    if keys.just_pressed(KeyCode::F6) {
+        queued.push(DebugAction::CycleVsync);
+    }
+    if keys.just_pressed(KeyCode::F8) {
+        queued.push(DebugAction::TogglePauseSim);
+    }
+    if keys.just_pressed(KeyCode::F10) {
+        queued.push(DebugAction::ToggleHideFloor);
+    }
+    if keys.just_pressed(KeyCode::F11) {
+        queued.push(DebugAction::ToggleHideDarkness);
+    }
+    if keys.just_pressed(KeyCode::F12) {
+        queued.push(DebugAction::ToggleHideObjects);
     }
 
     let mut window = window_q.single_mut().ok();
     let present_mode = window.as_deref().map(|w| w.present_mode);
 
-    if keys.just_pressed(KeyCode::F5) {
-        log_snapshot(&diagnostics, &buf, &scroll, present_mode, pause.simulation);
-    }
-    if keys.just_pressed(KeyCode::F6) {
-        if let Some(window) = window.as_deref_mut() {
-            // Cycle Fifo → Immediate → Mailbox → Fifo. Mailbox is "uncapped
-            // GPU, no tearing" — wgpu queues frames in a triple buffer and
-            // present picks the latest. Different driver/compositor path from
-            // Immediate, useful when Immediate still appears to be syncing.
-            let new_mode = match window.present_mode {
-                PresentMode::Fifo | PresentMode::AutoVsync | PresentMode::FifoRelaxed => {
-                    PresentMode::Immediate
-                }
-                PresentMode::Immediate => PresentMode::Mailbox,
-                _ => PresentMode::Fifo,
-            };
-            window.present_mode = new_mode;
-            info!(
-                "Diagnostics: present_mode -> {:?} (vsync {})",
-                new_mode,
-                if is_vsync(new_mode) { "ON" } else { "OFF" }
-            );
-        }
-    }
-    if keys.just_pressed(KeyCode::F8) {
-        pause.simulation = !pause.simulation;
-        info!(
-            "Diagnostics: simulation {} (F8)",
-            if pause.simulation {
-                "PAUSED"
-            } else {
-                "RUNNING"
+    for action in queued.drain(..) {
+        match action {
+            DebugAction::ToggleGrid => apply_grid_toggle(&mut state),
+            DebugAction::ToggleFpsCompact => apply_fps_compact_toggle(&mut state),
+            DebugAction::ToggleFpsExpanded => apply_fps_expanded_toggle(&mut state),
+            DebugAction::TogglePauseSim => apply_pause_toggle(&mut pause),
+            DebugAction::ToggleHideFloor => {
+                apply_floor_hide_toggle(&mut state, &mut commands, &floor_q);
             }
-        );
-    }
-    if keys.just_pressed(KeyCode::F10) {
-        state.floor_hidden = !state.floor_hidden;
-        let target = if state.floor_hidden {
-            Visibility::Hidden
-        } else {
-            Visibility::Visible
-        };
-        let mut count = 0usize;
-        for entity in &floor_q {
-            commands.entity(entity).insert(target);
-            count += 1;
+            DebugAction::ToggleHideDarkness => {
+                apply_darkness_hide_toggle(&mut state, &mut commands, &darkness_q);
+            }
+            DebugAction::ToggleHideObjects => {
+                apply_objects_hide_toggle(&mut state, &mut commands, &objects_q);
+            }
+            DebugAction::LogSnapshot => {
+                log_snapshot(&diagnostics, &buf, &scroll, present_mode, pause.simulation);
+            }
+            DebugAction::CycleVsync => {
+                if let Some(window) = window.as_deref_mut() {
+                    apply_cycle_vsync(window);
+                }
+            }
         }
-        info!(
-            "Diagnostics: floor cells {} ({} entities)",
-            if state.floor_hidden {
-                "HIDDEN"
-            } else {
-                "VISIBLE"
-            },
-            count,
-        );
     }
-    if keys.just_pressed(KeyCode::F11) {
-        state.darkness_hidden = !state.darkness_hidden;
-        let target = if state.darkness_hidden {
-            Visibility::Hidden
+}
+
+fn apply_grid_toggle(state: &mut PerfOverlayState) {
+    state.grid_visible = !state.grid_visible;
+    info!(
+        "Diagnostics: debug grid {}",
+        if state.grid_visible { "ON" } else { "OFF" }
+    );
+}
+
+fn apply_fps_compact_toggle(state: &mut PerfOverlayState) {
+    state.compact_visible = !state.compact_visible;
+}
+
+fn apply_fps_expanded_toggle(state: &mut PerfOverlayState) {
+    state.expanded_visible = !state.expanded_visible;
+}
+
+fn apply_pause_toggle(pause: &mut DiagnosticPause) {
+    pause.simulation = !pause.simulation;
+    info!(
+        "Diagnostics: simulation {}",
+        if pause.simulation {
+            "PAUSED"
         } else {
-            Visibility::Visible
-        };
-        for entity in &darkness_q {
-            commands.entity(entity).insert(target);
+            "RUNNING"
         }
-        info!(
-            "Diagnostics: darkness overlay {}",
-            if state.darkness_hidden {
-                "HIDDEN"
-            } else {
-                "VISIBLE"
-            },
-        );
+    );
+}
+
+fn apply_floor_hide_toggle(
+    state: &mut PerfOverlayState,
+    commands: &mut Commands,
+    floor_q: &Query<Entity, With<FloorRenderCell>>,
+) {
+    state.floor_hidden = !state.floor_hidden;
+    let target = if state.floor_hidden {
+        Visibility::Hidden
+    } else {
+        Visibility::Visible
+    };
+    let mut count = 0usize;
+    for entity in floor_q {
+        commands.entity(entity).insert(target);
+        count += 1;
     }
-    if keys.just_pressed(KeyCode::F12) {
-        state.objects_hidden = !state.objects_hidden;
-        let target = if state.objects_hidden {
-            Visibility::Hidden
+    info!(
+        "Diagnostics: floor cells {} ({} entities)",
+        if state.floor_hidden {
+            "HIDDEN"
         } else {
-            Visibility::Visible
-        };
-        let mut count = 0usize;
-        for entity in &objects_q {
-            commands.entity(entity).insert(target);
-            count += 1;
-        }
-        info!(
-            "Diagnostics: projected world objects {} ({} entities)",
-            if state.objects_hidden {
-                "HIDDEN"
-            } else {
-                "VISIBLE"
-            },
-            count,
-        );
+            "VISIBLE"
+        },
+        count,
+    );
+}
+
+fn apply_darkness_hide_toggle(
+    state: &mut PerfOverlayState,
+    commands: &mut Commands,
+    darkness_q: &Query<Entity, With<DarknessOverlay>>,
+) {
+    state.darkness_hidden = !state.darkness_hidden;
+    let target = if state.darkness_hidden {
+        Visibility::Hidden
+    } else {
+        Visibility::Visible
+    };
+    for entity in darkness_q {
+        commands.entity(entity).insert(target);
     }
+    info!(
+        "Diagnostics: darkness overlay {}",
+        if state.darkness_hidden {
+            "HIDDEN"
+        } else {
+            "VISIBLE"
+        },
+    );
+}
+
+fn apply_objects_hide_toggle(
+    state: &mut PerfOverlayState,
+    commands: &mut Commands,
+    objects_q: &Query<Entity, With<ClientProjectedWorldObject>>,
+) {
+    state.objects_hidden = !state.objects_hidden;
+    let target = if state.objects_hidden {
+        Visibility::Hidden
+    } else {
+        Visibility::Visible
+    };
+    let mut count = 0usize;
+    for entity in objects_q {
+        commands.entity(entity).insert(target);
+        count += 1;
+    }
+    info!(
+        "Diagnostics: projected world objects {} ({} entities)",
+        if state.objects_hidden {
+            "HIDDEN"
+        } else {
+            "VISIBLE"
+        },
+        count,
+    );
+}
+
+/// Cycle Fifo → Immediate → Mailbox → Fifo. Mailbox is "uncapped GPU, no
+/// tearing" — wgpu queues frames in a triple buffer and present picks the
+/// latest. Different driver/compositor path from Immediate, useful when
+/// Immediate still appears to be syncing.
+fn apply_cycle_vsync(window: &mut Window) {
+    let new_mode = match window.present_mode {
+        PresentMode::Fifo | PresentMode::AutoVsync | PresentMode::FifoRelaxed => {
+            PresentMode::Immediate
+        }
+        PresentMode::Immediate => PresentMode::Mailbox,
+        _ => PresentMode::Fifo,
+    };
+    window.present_mode = new_mode;
+    info!(
+        "Diagnostics: present_mode -> {:?} (vsync {})",
+        new_mode,
+        if is_vsync(new_mode) { "ON" } else { "OFF" }
+    );
 }
 
 /// F2 overlay — draws the tile grid as gizmo lines over the visible viewport.

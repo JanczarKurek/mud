@@ -2,16 +2,19 @@ use bevy::app::AppExit;
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, UiGlobalTransform};
 
-use crate::app::state::{ClientAppState, LocalSelectedCharacter};
+use crate::app::state::{ClientAppState, DiagnosticPause, LocalSelectedCharacter};
+use crate::diagnostics::{DebugAction, PendingDebugActions, PerfOverlayState};
 use crate::game::resources::ClientGameState;
 use crate::network::resources::{PendingPlayerSave, PendingPlayerSaves, TcpClientConnection};
 use crate::player::components::{Player, PlayerIdentity};
 use crate::ui::components::{
-    HudRoot, MenuBarItemButton, MenuBarRoot, MenuDropdownEntryButton, MenuDropdownRoot,
+    CoordinateReadout, HudRoot, MenuBarItemButton, MenuBarRoot, MenuDropdownEntryButton,
+    MenuDropdownRoot, ToggleSource,
 };
 use crate::ui::mountable_panel::PanelMountMode;
 use crate::ui::resources::{
-    DockedPanelState, MenuAction, MenuBarId, MinimapPanelMode, OpenMenuState, PendingMenuActions,
+    DockedPanelState, HoveredTile, MenuAction, MenuBarId, MinimapPanelMode, OpenMenuState,
+    PendingMenuActions, ShowCoordinates,
 };
 use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton, ThemedPanel};
 use crate::ui::theme::{Palette, UiThemeAssets};
@@ -21,7 +24,31 @@ pub const MENU_BAR_HEIGHT: f32 = 26.0;
 struct MenuDefinition {
     id: MenuBarId,
     label: &'static str,
-    entries: &'static [(&'static str, MenuAction)],
+    entries: &'static [MenuEntry],
+}
+
+struct MenuEntry {
+    label: &'static str,
+    action: MenuAction,
+    /// When `Some`, the entry's first three characters are rewritten each
+    /// frame with `[X]` / `[ ]` based on the referenced toggle.
+    toggle: Option<ToggleSource>,
+}
+
+const fn entry(label: &'static str, action: MenuAction) -> MenuEntry {
+    MenuEntry {
+        label,
+        action,
+        toggle: None,
+    }
+}
+
+const fn toggle_entry(label: &'static str, action: MenuAction, toggle: ToggleSource) -> MenuEntry {
+    MenuEntry {
+        label,
+        action,
+        toggle: Some(toggle),
+    }
 }
 
 const MENU_DEFINITIONS: &[MenuDefinition] = &[
@@ -29,22 +56,22 @@ const MENU_DEFINITIONS: &[MenuDefinition] = &[
         id: MenuBarId::File,
         label: "File",
         entries: &[
-            ("Settings", MenuAction::OpenSettings),
-            ("Logout", MenuAction::Logout),
-            ("Quit", MenuAction::Quit),
+            entry("Settings", MenuAction::OpenSettings),
+            entry("Logout", MenuAction::Logout),
+            entry("Quit", MenuAction::Quit),
         ],
     },
     MenuDefinition {
         id: MenuBarId::View,
         label: "View",
         entries: &[
-            ("Full Map  (M)", MenuAction::ToggleFullMap),
-            ("Minimap", MenuAction::ToggleMinimap),
-            ("Inventory", MenuAction::ToggleBackpack),
-            ("Character", MenuAction::ToggleStatus),
-            ("Equipment", MenuAction::ToggleEquipment),
-            ("Nearby NPCs", MenuAction::ToggleNearbyNpcs),
-            ("Log  (L)", MenuAction::ToggleLog),
+            entry("Full Map  (M)", MenuAction::ToggleFullMap),
+            entry("Minimap", MenuAction::ToggleMinimap),
+            entry("Inventory", MenuAction::ToggleBackpack),
+            entry("Character", MenuAction::ToggleStatus),
+            entry("Equipment", MenuAction::ToggleEquipment),
+            entry("Nearby NPCs", MenuAction::ToggleNearbyNpcs),
+            entry("Log  (L)", MenuAction::ToggleLog),
         ],
     },
     MenuDefinition {
@@ -56,6 +83,54 @@ const MENU_DEFINITIONS: &[MenuDefinition] = &[
         id: MenuBarId::Help,
         label: "Help",
         entries: &[],
+    },
+    MenuDefinition {
+        id: MenuBarId::Debug,
+        label: "Debug",
+        entries: &[
+            toggle_entry(
+                "[ ] Grid           F2",
+                MenuAction::ToggleGrid,
+                ToggleSource::Grid,
+            ),
+            toggle_entry(
+                "[ ] FPS            F3",
+                MenuAction::ToggleFpsCompact,
+                ToggleSource::FpsCompact,
+            ),
+            toggle_entry(
+                "[ ] FPS Expanded   F4",
+                MenuAction::ToggleFpsExpanded,
+                ToggleSource::FpsExpanded,
+            ),
+            toggle_entry(
+                "[ ] Pause Sim      F8",
+                MenuAction::TogglePauseSim,
+                ToggleSource::PauseSim,
+            ),
+            toggle_entry(
+                "[ ] Hide Floor     F10",
+                MenuAction::ToggleHideFloor,
+                ToggleSource::HideFloor,
+            ),
+            toggle_entry(
+                "[ ] Hide Darkness  F11",
+                MenuAction::ToggleHideDarkness,
+                ToggleSource::HideDarkness,
+            ),
+            toggle_entry(
+                "[ ] Hide Objects   F12",
+                MenuAction::ToggleHideObjects,
+                ToggleSource::HideObjects,
+            ),
+            toggle_entry(
+                "[ ] Show Coords",
+                MenuAction::ToggleShowCoords,
+                ToggleSource::ShowCoords,
+            ),
+            entry("    Log Snapshot   F5", MenuAction::LogSnapshot),
+            entry("    Cycle Vsync    F6", MenuAction::CycleVsync),
+        ],
     },
 ];
 
@@ -111,6 +186,28 @@ pub fn spawn_menu_bar(commands: &mut Commands, theme: &UiThemeAssets, palette: &
                     ));
                 });
             }
+
+            // Flex spacer pushes the coordinate readout to the right edge.
+            bar.spawn(Node {
+                flex_grow: 1.0,
+                ..default()
+            });
+
+            bar.spawn((
+                CoordinateReadout,
+                Text::new(""),
+                TextFont {
+                    font_size: 13.0,
+                    ..default()
+                },
+                TextColor(ghost_text),
+                Node {
+                    margin: UiRect::axes(Val::Px(12.0), Val::Px(4.0)),
+                    align_self: AlignSelf::Center,
+                    ..default()
+                },
+                Visibility::Hidden,
+            ));
         });
 
     for definition in MENU_DEFINITIONS {
@@ -143,12 +240,15 @@ pub fn spawn_menu_bar(commands: &mut Commands, theme: &UiThemeAssets, palette: &
                 GlobalZIndex(i32::MAX - 19),
             ))
             .with_children(|dropdown| {
-                for (label, action) in definition.entries {
+                for menu_entry in definition.entries {
                     dropdown
                         .spawn((
                             Button,
                             ThemedButton::new(ButtonStyle::Ghost),
-                            MenuDropdownEntryButton { action: *action },
+                            MenuDropdownEntryButton {
+                                action: menu_entry.action,
+                                toggle_indicator: menu_entry.toggle,
+                            },
                             Node {
                                 padding: UiRect::axes(Val::Px(10.0), Val::Px(6.0)),
                                 width: Val::Percent(100.0),
@@ -158,7 +258,7 @@ pub fn spawn_menu_bar(commands: &mut Commands, theme: &UiThemeAssets, palette: &
                         ))
                         .with_children(|entry| {
                             entry.spawn((
-                                Text::new(*label),
+                                Text::new(menu_entry.label),
                                 TextFont {
                                     font_size: 14.0,
                                     ..default()
@@ -239,9 +339,14 @@ pub fn sync_menu_dropdowns(
             if item.menu != dropdown.menu {
                 continue;
             }
-            let center = transform.translation;
-            let size = computed.size();
-            let left = center.x - size.x * 0.5;
+            // `transform.translation` and `computed.size()` are in physical
+            // pixels, but `Val::Px` is interpreted as logical pixels — on
+            // HiDPI (scale_factor = 2.0) leaving the conversion off pushes
+            // every dropdown twice as far right as the button it anchors to.
+            let inv = computed.inverse_scale_factor();
+            let center_x = transform.translation.x * inv;
+            let width = computed.size().x * inv;
+            let left = center_x - width * 0.5;
             node.left = Val::Px(left);
             node.top = Val::Px(MENU_BAR_HEIGHT);
         }
@@ -263,6 +368,8 @@ pub fn apply_menu_actions(
     palette: Option<Res<Palette>>,
     movable_windows: Query<(Entity, &crate::ui::movable_window::MovableWindow)>,
     mut settings_ui: ResMut<crate::ui::settings::SettingsUiState>,
+    mut pending_debug: ResMut<PendingDebugActions>,
+    mut show_coords: ResMut<ShowCoordinates>,
 ) {
     for action in pending.actions.drain(..) {
         match action {
@@ -323,7 +430,105 @@ pub fn apply_menu_actions(
             MenuAction::Quit => {
                 app_exit.write(AppExit::Success);
             }
+            MenuAction::ToggleGrid => pending_debug.actions.push(DebugAction::ToggleGrid),
+            MenuAction::ToggleFpsCompact => {
+                pending_debug.actions.push(DebugAction::ToggleFpsCompact);
+            }
+            MenuAction::ToggleFpsExpanded => {
+                pending_debug.actions.push(DebugAction::ToggleFpsExpanded);
+            }
+            MenuAction::TogglePauseSim => {
+                pending_debug.actions.push(DebugAction::TogglePauseSim);
+            }
+            MenuAction::ToggleHideFloor => {
+                pending_debug.actions.push(DebugAction::ToggleHideFloor);
+            }
+            MenuAction::ToggleHideDarkness => {
+                pending_debug.actions.push(DebugAction::ToggleHideDarkness);
+            }
+            MenuAction::ToggleHideObjects => {
+                pending_debug.actions.push(DebugAction::ToggleHideObjects);
+            }
+            MenuAction::LogSnapshot => pending_debug.actions.push(DebugAction::LogSnapshot),
+            MenuAction::CycleVsync => pending_debug.actions.push(DebugAction::CycleVsync),
+            MenuAction::ToggleShowCoords => {
+                show_coords.0 = !show_coords.0;
+            }
         }
+    }
+}
+
+/// Rewrites the `[X]` / `[ ]` prefix on every dropdown entry tagged with a
+/// `ToggleSource`, mirroring the underlying boolean state. Cheap: ~10 entries,
+/// runs every frame but only mutates text when the value actually flipped.
+pub fn sync_menu_toggle_labels(
+    entries: Query<(&MenuDropdownEntryButton, &Children)>,
+    mut texts: Query<&mut Text>,
+    perf: Res<PerfOverlayState>,
+    pause: Res<DiagnosticPause>,
+    show_coords: Res<ShowCoordinates>,
+) {
+    for (entry, children) in &entries {
+        let Some(source) = entry.toggle_indicator else {
+            continue;
+        };
+        let on = match source {
+            ToggleSource::Grid => perf.grid_visible,
+            ToggleSource::FpsCompact => perf.compact_visible,
+            ToggleSource::FpsExpanded => perf.expanded_visible,
+            ToggleSource::PauseSim => pause.simulation,
+            ToggleSource::HideFloor => perf.floor_hidden,
+            ToggleSource::HideDarkness => perf.darkness_hidden,
+            ToggleSource::HideObjects => perf.objects_hidden,
+            ToggleSource::ShowCoords => show_coords.0,
+        };
+        let prefix = if on { "[X]" } else { "[ ]" };
+        for &child in children {
+            let Ok(mut text) = texts.get_mut(child) else {
+                continue;
+            };
+            if text.0.len() < 3 {
+                continue;
+            }
+            if &text.0[..3] != prefix {
+                text.0.replace_range(..3, prefix);
+            }
+        }
+    }
+}
+
+/// Updates the right-aligned coordinate readout on the menu bar. Hidden
+/// entirely when `ShowCoordinates` is off so the menu bar stays clean for
+/// non-debug sessions.
+pub fn update_coordinate_readout(
+    show_coords: Res<ShowCoordinates>,
+    client_state: Res<ClientGameState>,
+    hovered: Res<HoveredTile>,
+    mut readout: Query<(&mut Text, &mut Visibility), With<CoordinateReadout>>,
+) {
+    let Ok((mut text, mut visibility)) = readout.single_mut() else {
+        return;
+    };
+    if !show_coords.0 {
+        if *visibility != Visibility::Hidden {
+            *visibility = Visibility::Hidden;
+        }
+        return;
+    }
+    if *visibility != Visibility::Inherited {
+        *visibility = Visibility::Inherited;
+    }
+    let player = match client_state.player_tile_position {
+        Some(p) => format!("You: {},{},{}", p.x, p.y, p.z),
+        None => "You: -".to_string(),
+    };
+    let cursor = match hovered.0 {
+        Some(p) => format!("Cursor: {},{},{}", p.x, p.y, p.z),
+        None => "Cursor: -".to_string(),
+    };
+    let new = format!("{}    {}", player, cursor);
+    if text.0 != new {
+        text.0 = new;
     }
 }
 

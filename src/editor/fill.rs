@@ -114,11 +114,7 @@ pub fn handle_editor_rect_fill(
                     {
                         continue;
                     }
-                    let tile = TilePosition {
-                        x,
-                        y,
-                        z: object_z,
-                    };
+                    let tile = TilePosition { x, y, z: object_z };
                     // Skip cells that already have an object of the same type
                     // to keep rect-fill idempotent.
                     let occupied = existing_objects.iter().any(|(o, r, p)| {
@@ -273,11 +269,7 @@ pub fn handle_editor_flood_fill(
                 return;
             };
             for (x, y) in cells {
-                let tile = TilePosition {
-                    x,
-                    y,
-                    z: object_z,
-                };
+                let tile = TilePosition { x, y, z: object_z };
                 let object_id = object_registry.allocate_runtime_id(type_id.clone());
                 let _ = spawn_overworld_object(
                     &mut commands,

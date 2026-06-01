@@ -7,7 +7,7 @@ render:
   debug_size: 1.0
   sprite_path: overworld_objects/stone_step/sprite.png
   sprite_width_tiles: 1.0
-  sprite_height_tiles: 1.5
-  block_size: 2
+  sprite_height_tiles: 1.0
+  block_size: 1
   walkable_surface: true
   stack_order: 30

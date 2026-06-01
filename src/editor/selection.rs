@@ -211,7 +211,10 @@ pub fn handle_editor_select_hotkey(
     if modal_state.active.is_some() || editor_state.palette_filter_focused {
         return;
     }
-    if editor_keys.just_pressed(crate::ui::settings::EditorAction::ToolSelectLegacy, &keyboard) {
+    if editor_keys.just_pressed(
+        crate::ui::settings::EditorAction::ToolSelectLegacy,
+        &keyboard,
+    ) {
         editor_state.current_tool = EditorTool::Select;
     }
 }

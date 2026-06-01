@@ -771,12 +771,7 @@ pub fn render_paste_ghost(
         let cx = (tile.x as f32 + fo.dx as f32 - editor_camera.center.x) * effective;
         let cy = (tile.y as f32 + fo.dy as f32 - editor_camera.center.y) * effective;
         let z_base = if def.render.y_sort {
-            crate::world::systems::y_sort_z(
-                tile.x + fo.dx,
-                tile.y + fo.dy,
-                active_floor_index,
-                0,
-            )
+            crate::world::systems::y_sort_z(tile.x + fo.dx, tile.y + fo.dy, active_floor_index, 0)
         } else {
             crate::world::systems::flat_floor_z(def.render.z_index, active_floor_index)
         };
@@ -1135,7 +1130,9 @@ mod tests {
             ],
             floors: Vec::new(),
         };
-        let four = rotate_fragment_cw(&rotate_fragment_cw(&rotate_fragment_cw(&rotate_fragment_cw(&frag))));
+        let four = rotate_fragment_cw(&rotate_fragment_cw(&rotate_fragment_cw(
+            &rotate_fragment_cw(&frag),
+        )));
         assert_eq!(four.width, frag.width);
         assert_eq!(four.height, frag.height);
         let mut original: Vec<(i32, i32)> = frag.objects.iter().map(|o| (o.dx, o.dy)).collect();
