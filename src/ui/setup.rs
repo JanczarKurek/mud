@@ -14,7 +14,7 @@ use crate::ui::components::{
     DockedPanelCanvas, DockedPanelCloseButton, DockedPanelDragHandle, DockedPanelResizeHandle,
     DockedPanelRoot, DockedPanelTitle, DragPreviewImage, DragPreviewLabel, DragPreviewQuantity,
     DragPreviewRoot, EquipmentPanelContent, EquipmentPanelUndockButton, EquipmentSlotButton,
-    EquipmentSlotImage, ExperienceFill, ExperienceLabel, FloatingMinimapZoomInButton,
+    EquipmentSlotImage, EquipmentSlotLabel, ExperienceFill, ExperienceLabel, FloatingMinimapZoomInButton,
     FloatingMinimapZoomLabel, FloatingMinimapZoomOutButton, HealthFill, HealthLabel,
     HudMinimapZoomInButton, HudMinimapZoomLabel, HudMinimapZoomOutButton, HudRoot, ItemSlotButton,
     ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot,
@@ -1382,8 +1382,8 @@ fn spawn_equipment_slot(
         .with_children(|slot_node| {
             slot_node.spawn((
                 Node {
-                    width: px(24.0),
-                    height: px(24.0),
+                    width: px(32.0),
+                    height: px(32.0),
                     position_type: PositionType::Absolute,
                     ..default()
                 },
@@ -1403,6 +1403,7 @@ fn spawn_equipment_slot(
                         ..default()
                     },
                     TextColor(palette.text_label_slot),
+                    EquipmentSlotLabel { slot },
                 ));
             }
         });

@@ -97,6 +97,11 @@ pub struct TradeSlotButton;
 pub struct EquipmentSlotImage;
 
 #[derive(Component)]
+pub struct EquipmentSlotLabel {
+    pub slot: crate::world::object_definitions::EquipmentSlot,
+}
+
+#[derive(Component)]
 pub struct ContainerSlotImage;
 
 #[derive(Component)]

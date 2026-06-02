@@ -21,7 +21,7 @@ use crate::ui::components::{
     ContextMenuTakePartialButton, ContextMenuUseButton, ContextMenuUseOnButton, DockedPanelBody,
     DockedPanelCanvas, DockedPanelCloseButton, DockedPanelDragHandle, DockedPanelResizeHandle,
     DockedPanelRoot, DockedPanelTitle, DragPreviewImage, DragPreviewLabel, DragPreviewQuantity,
-    DragPreviewRoot, EquipmentSlotButton, EquipmentSlotImage, HealthFill, ItemSlotButton,
+    DragPreviewRoot, EquipmentSlotButton, EquipmentSlotImage, EquipmentSlotLabel, HealthFill, ItemSlotButton,
     ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot,
     ManaFill, NearbyNpcDot, NearbyNpcHpFill, NearbyNpcRow, NearbyNpcsList, QuickbarSlotMarker,
     RightSidebarRoot, TakePartialAmountLabel, TakePartialCancelButton, TakePartialConfirmButton,
@@ -2626,35 +2626,40 @@ pub fn sync_equipment_slot_images(
         (&ItemSlotImage, &mut ImageNode, &mut Visibility),
         With<EquipmentSlotImage>,
     >,
+    mut label_query: Query<(&EquipmentSlotLabel, &mut Visibility), Without<EquipmentSlotImage>>,
 ) {
     for (slot, mut image_node, mut visibility) in &mut image_query {
-        let item = match slot.kind {
-            ItemSlotKind::Equipment(slot) => client_state.inventory.equipment_item(slot).cloned(),
-            ItemSlotKind::Backpack(_)
-            | ItemSlotKind::OpenContainer { .. }
-            | ItemSlotKind::PouchInBackpack { .. }
-            | ItemSlotKind::TradeUs { .. }
-            | ItemSlotKind::TradeThem { .. }
-            | ItemSlotKind::MerchantWare { .. } => None,
+        let equipment_slot = match slot.kind {
+            ItemSlotKind::Equipment(s) => Some(s),
+            _ => None,
         };
-        let Some(item) = item else {
-            *visibility = Visibility::Hidden;
-            continue;
-        };
+        let item = equipment_slot.and_then(|s| client_state.inventory.equipment_item(s).cloned());
 
-        let Some(definition) = definitions.get(&item.type_id) else {
-            *visibility = Visibility::Hidden;
-            continue;
-        };
+        let sprite_path = item.as_ref().and_then(|item| {
+            let definition = definitions.get(&item.type_id)?;
+            let state = item.properties.get("state").map(String::as_str);
+            definition.sprite_path_for_state(state).map(str::to_owned)
+        });
 
-        let state = item.properties.get("state").map(String::as_str);
-        let Some(sprite_path) = definition.sprite_path_for_state(state).map(str::to_owned) else {
+        if let Some(sprite_path) = sprite_path {
+            image_node.image = asset_server.load(sprite_path);
+            *visibility = Visibility::Visible;
+        } else {
             *visibility = Visibility::Hidden;
-            continue;
-        };
+        }
 
-        image_node.image = asset_server.load(sprite_path);
-        *visibility = Visibility::Visible;
+        if let Some(equipment_slot) = equipment_slot {
+            let occupied = matches!(*visibility, Visibility::Visible);
+            for (label, mut label_vis) in &mut label_query {
+                if label.slot == equipment_slot {
+                    *label_vis = if occupied {
+                        Visibility::Hidden
+                    } else {
+                        Visibility::Inherited
+                    };
+                }
+            }
+        }
     }
 }
 
