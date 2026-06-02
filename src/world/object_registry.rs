@@ -332,14 +332,25 @@ fn resolve_template_expression(
     properties: &ObjectProperties,
     spell_definitions: &SpellDefinitions,
 ) -> Option<String> {
-    let property = expression.strip_prefix("properties.")?;
+    // `{properties.foo|fallback text}` resolves to the property value, or
+    // `fallback text` when the property is missing/empty. Used by book/
+    // tombstone metadata so untitled instances still get a readable name.
+    let (head, fallback) = match expression.split_once('|') {
+        Some((head, fb)) => (head, Some(fb.to_owned())),
+        None => (expression, None),
+    };
+    let property = head.strip_prefix("properties.")?;
     if let Some(property_name) = property.strip_suffix(".name") {
-        let property_value = properties.get(property_name)?;
-        let spell = spell_definitions.get(property_value)?;
-        return Some(spell.name.clone());
+        if let Some(property_value) = properties.get(property_name) {
+            if let Some(spell) = spell_definitions.get(property_value) {
+                return Some(spell.name.clone());
+            }
+        }
+        return fallback;
     }
 
-    properties.get(property).cloned()
+    let direct = properties.get(property).cloned().filter(|s| !s.is_empty());
+    direct.or(fallback)
 }
 
 #[cfg(test)]
@@ -392,6 +403,36 @@ mod tests {
             .map(|p| p.is_empty())
             .unwrap_or(true));
         assert!(registry.behavior(42).is_none());
+    }
+
+    #[test]
+    fn template_fallback_uses_default_when_property_missing() {
+        let props = ObjectProperties::new();
+        let spells = SpellDefinitions::default();
+        // Missing property → fallback string substitutes.
+        assert_eq!(
+            render_template(Some(&props), "{properties.title|Untitled}", &spells, 1),
+            "Untitled"
+        );
+        // Present property wins over fallback.
+        let p = props_with("title", "Spellbook");
+        assert_eq!(
+            render_template(Some(&p), "{properties.title|Untitled}", &spells, 1),
+            "Spellbook"
+        );
+        // Empty string is treated as "missing" so the fallback kicks in —
+        // matches how the book/tombstone description templates collapse
+        // gracefully on un-engraved instances.
+        let p = props_with("inscription_line", "");
+        assert_eq!(
+            render_template(
+                Some(&p),
+                "A sword. {properties.inscription_line|}",
+                &spells,
+                1
+            ),
+            "A sword. "
+        );
     }
 
     /// `replace_existing` always overwrites — that's its point. It's the

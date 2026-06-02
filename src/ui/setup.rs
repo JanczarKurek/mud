@@ -460,6 +460,13 @@ pub fn spawn_hud(
             );
             spawn_context_button(menu, &theme, &palette, "Use Key", ContextMenuUseKeyButton);
             spawn_context_button(menu, &theme, &palette, "Hide", ContextMenuHideButton);
+            spawn_context_button(
+                menu,
+                &theme,
+                &palette,
+                "Read",
+                crate::ui::components::ContextMenuReadButton,
+            );
         });
 
     spawn_take_partial_popup(&mut commands, &theme, &palette);

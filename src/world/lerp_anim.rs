@@ -5,11 +5,7 @@ use bevy::math::Vec2;
 /// need: copy-by-value, zero default, add for accumulation, scalar multiply
 /// for the lerp, and equality so we can early-out when the residual is zero.
 pub trait OffsetField:
-    Copy
-    + Default
-    + PartialEq
-    + std::ops::Add<Output = Self>
-    + std::ops::Mul<f32, Output = Self>
+    Copy + Default + PartialEq + std::ops::Add<Output = Self> + std::ops::Mul<f32, Output = Self>
 {
 }
 

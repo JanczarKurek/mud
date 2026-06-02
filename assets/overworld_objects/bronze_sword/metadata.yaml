@@ -1,8 +1,9 @@
 extends: equipment
 name: Bronze Sword
 weight: 2.0
-description: A simple bronze sword with a broad beginner blade.
+description: "A simple bronze sword with a broad beginner blade. {properties.inscription_line|}"
 equipment_slot: weapon
+engravable: true
 attack_profile:
   kind: melee
   damage_type: cut

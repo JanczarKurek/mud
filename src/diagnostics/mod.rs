@@ -1077,8 +1077,7 @@ fn log_snapshot(
         .and_then(|d| d.value())
         .unwrap_or(0.0) as i64;
     let stats = buf.stats();
-    let scroll_active =
-        scroll.lerp.duration > 0.0 && scroll.lerp.elapsed < scroll.lerp.duration;
+    let scroll_active = scroll.lerp.duration > 0.0 && scroll.lerp.elapsed < scroll.lerp.duration;
 
     let stats_str = match stats {
         Some(s) => format!(

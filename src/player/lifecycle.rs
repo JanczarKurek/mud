@@ -20,9 +20,11 @@ use crate::player::components::{
 use crate::player::progression::{xp_for_level, Experience};
 use crate::world::components::{Facing, SpaceId, SpaceResident, TilePosition, ViewPosition};
 use crate::world::loot::spawn_corpse_for_player;
+use crate::world::map_layout::ObjectProperties;
 use crate::world::object_definitions::{EquipmentSlot, OverworldObjectDefinitions};
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::resources::SpaceManager;
+use crate::world::setup::spawn_overworld_object;
 use crate::world::WorldConfig;
 
 /// Queued death events. Combat detects HP→0 and pushes here; the death
@@ -64,6 +66,9 @@ type DeathHandlerPlayerQuery<'w, 's> = Query<
 /// Default per-equipment-slot drop chance applied on death (`progression.md`
 /// §8 rule 3). `[tunable]`.
 pub const SLOT_DROP_CHANCE_PERCENT: u32 = 10;
+
+/// Asset id for the tombstone spawned on player death.
+const TOMBSTONE_TYPE_ID: &str = "tombstone";
 
 /// Drain `PendingPlayerDeaths` and resolve each one: spawn a corpse with the
 /// player's gear, reset HP/MP, clear active buffs, and teleport the player to
@@ -111,6 +116,31 @@ pub fn handle_player_deaths(
             death.tile_position,
             dropped,
         );
+
+        // Drop a tombstone alongside the corpse so the world remembers who
+        // fell here. Auto-engraved + read-only; persists in the world
+        // snapshot via the standard runtime-object path.
+        if definitions.get(TOMBSTONE_TYPE_ID).is_some() {
+            let mut tombstone_props = ObjectProperties::new();
+            tombstone_props.insert("title".to_owned(), format!("Tombstone of {}", death.name));
+            tombstone_props.insert(
+                "text".to_owned(),
+                format!("Here lies {}, fallen in battle.", death.name),
+            );
+            let tombstone_id = object_registry
+                .allocate_runtime_id_with_properties(TOMBSTONE_TYPE_ID.to_owned(), tombstone_props);
+            spawn_overworld_object(
+                &mut commands,
+                &definitions,
+                &object_registry,
+                tombstone_id,
+                TOMBSTONE_TYPE_ID,
+                None,
+                death.space_id,
+                death.tile_position,
+                None,
+            );
+        }
 
         // XP-zero rule: lose all progress *into* the current level, but never
         // de-level. progression.md §8 rule 1.

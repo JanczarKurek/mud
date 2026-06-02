@@ -1,0 +1,10 @@
+extends: static_world
+name: "{properties.title|Tombstone}"
+colliding: false
+text_kind: tombstone
+description: "{properties.text|A weathered tombstone, its inscription faded beyond reading.}"
+render:
+  z_index: 0.30
+  debug_color: [120, 120, 130]
+  debug_size: 0.75
+  sprite_path: overworld_objects/tombstone/sprite.png

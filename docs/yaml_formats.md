@@ -575,6 +575,21 @@ The `text` value supports three count placeholders in addition to the normal `{p
 - Meaning: names of per-instance properties that this object definition expects to receive
 - Intended for generic item types that are specialized by instance state, such as scrolls carrying different spells
 
+### `text_kind`
+- Type: string (one of `book`, `tombstone`, `engraving`)
+- Optional: yes
+- Default: unset
+- Meaning: marks this definition as a persistent-text artifact. Drives the right-click "Read" verb and the title of the reader-editor window.
+  - `book` — read + write (write requires a `pen` in inventory). Per-instance `title` / `text` / `author_name` live in `properties`.
+  - `tombstone` — read-only. Spawned on player death with auto-engraved `title` / `text`.
+  - `engraving` — typically inferred from `engravable: true` on items; setting it explicitly on world objects is unusual.
+
+### `engravable`
+- Type: boolean
+- Optional: yes
+- Default: `false`
+- Meaning: when true, players carrying a `pen` can right-click → Read → Edit to set a one-time `properties["inscription"]` (≤ 32 chars). The handler also writes `properties["inscription_line"]` (a pre-formatted sentence), so descriptions can interpolate `{properties.inscription_line|}` and stay tidy when the item has not been inscribed.
+
 ### `stats`
 - Type: mapping
 - Optional: yes
@@ -1097,6 +1112,7 @@ Notes:
 - `name`, `description`, and `spell_id` support `{properties.<field>}` templating.
 - `{properties.<field>.name}` resolves the property value as a spell ID and inserts that spell's display name.
 - `description` additionally supports `{count}`, `{count_written}`, and `{count_customary}` placeholders that resolve to the current world-object or inventory stack quantity.
+- `{properties.<field>|<fallback text>}` substitutes the fallback string when the property is missing or empty. The fallback runs through the rest of the template untouched, so `"{properties.inscription_line|}"` collapses to nothing for un-inscribed items.
 
 Equippable item example:
 

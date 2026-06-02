@@ -43,6 +43,10 @@ pub struct ContextMenuState {
     /// object is not already hidden, and the actor has at least 1 rank of
     /// Stealth. Drives the "Hide" right-click action.
     pub can_hide: bool,
+    /// True when the hovered target carries persistent text (book /
+    /// tombstone) or is `engravable`. Drives the "Read" right-click action;
+    /// the writing-edit affordance lives inside the resulting panel.
+    pub can_read: bool,
 }
 
 impl ContextMenuState {
@@ -77,6 +81,7 @@ impl ContextMenuState {
         self.can_force_lock = false;
         self.can_use_key = false;
         self.can_hide = false;
+        self.can_read = false;
     }
 
     /// Set the three lock-related verb flags. Called by the context-menu
@@ -95,6 +100,11 @@ impl ContextMenuState {
         self.can_hide = can_hide;
     }
 
+    /// Set the read-verb flag (books / tombstones / engravable items).
+    pub fn set_can_read(&mut self, can_read: bool) {
+        self.can_read = can_read;
+    }
+
     pub fn hide(&mut self) {
         self.target = None;
         self.can_open = false;
@@ -109,6 +119,7 @@ impl ContextMenuState {
         self.can_force_lock = false;
         self.can_use_key = false;
         self.can_hide = false;
+        self.can_read = false;
     }
 
     pub fn is_visible(&self) -> bool {

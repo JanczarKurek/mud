@@ -1,0 +1,13 @@
+extends: pickup
+name: Pen
+weight: 0.05
+description:
+  - text: "A quill pen. Lets you write in books or engrave items."
+    stack_size: [1, 1]
+  - text: "{count_written} quill pens."
+    stack_size: [2, ~]
+render:
+  z_index: 0.24
+  debug_color: [220, 200, 160]
+  debug_size: 0.3
+  sprite_path: overworld_objects/pen/sprite.png

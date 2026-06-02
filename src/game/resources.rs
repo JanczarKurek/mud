@@ -109,6 +109,20 @@ pub enum GameUiEvent {
         target_object_id: u64,
         amount: i32,
     },
+    /// Open the book/tombstone/inscription reader-editor panel on the client.
+    /// Server emits this in response to `GameCommand::ReadBook` after
+    /// validating reach + reading the target's `properties` snapshot. The
+    /// payload carries the current text; subsequent changes ride on
+    /// `WorldObjectUpserted` / `InventoryChanged` so the panel re-fetches
+    /// when the user clicks "Read" again.
+    OpenBookPanel {
+        source: crate::game::commands::ItemReference,
+        kind: crate::world::object_definitions::TextKind,
+        title: String,
+        text: String,
+        author_name: Option<String>,
+        can_edit: bool,
+    },
 }
 
 /// Anchor for a `VfxSpawn` event. `Tile` parks the effect at a static world

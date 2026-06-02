@@ -195,6 +195,36 @@ pub struct OverworldObjectDefinition {
     /// `combat::npc_casting`. `None` for non-casters (default).
     #[serde(default)]
     pub spellcasting: Option<crate::npc::spellcasting::SpellcastingDef>,
+    /// Marks this object as a persistent-text artifact (book, tombstone, …).
+    /// Drives the "Read" context-menu verb and, for `Book`, the "Edit" affordance
+    /// inside the read panel. Text lives in `properties["title"]` /
+    /// `properties["text"]` / `properties["author_name"]` — see
+    /// `src/game/systems.rs::handle_read_book` and `handle_write_book`.
+    #[serde(default)]
+    pub text_kind: Option<TextKind>,
+    /// When true, players carrying a pen can right-click to set
+    /// `properties["inscription"]` on this item (once). Used for naming swords
+    /// / armor. The inscription itself is rendered into descriptions by the
+    /// `render_template` path via the `{properties.inscription}` placeholder.
+    #[serde(default)]
+    pub engravable: bool,
+}
+
+/// Kind of persistent-text artifact. Drives UI titles and which verbs (read /
+/// write) are surfaced. Stateless flag — the per-instance text lives in
+/// `properties`.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum TextKind {
+    /// Read + write (with pen). Title + body editable.
+    Book,
+    /// Read-only. Auto-engraved on spawn (typically at player death).
+    Tombstone,
+    /// Read + one-time write (with pen). Used by the engrave flow on
+    /// inventory items; reuses the book panel with `title` doubling as the
+    /// inscription field.
+    Engraving,
 }
 
 /// Intrinsic per-mob behavior values copied onto each spawned NPC's
@@ -1435,6 +1465,61 @@ mod tests {
 
     fn parse_def(yaml: &str) -> OverworldObjectDefinition {
         serde_yaml::from_str::<OverworldObjectDefinition>(yaml).expect("yaml parses")
+    }
+
+    #[test]
+    fn text_kind_round_trips() {
+        let yaml = r#"
+name: Book
+description: A book.
+colliding: false
+movable: true
+storable: true
+text_kind: book
+render:
+  z_index: 0.0
+  debug_color: [0, 0, 0]
+  debug_size: 1.0
+"#;
+        let def = parse_def(yaml);
+        assert_eq!(def.text_kind, Some(TextKind::Book));
+        assert!(!def.engravable);
+    }
+
+    #[test]
+    fn engravable_round_trips() {
+        let yaml = r#"
+name: Sword
+description: A sword.
+colliding: false
+movable: true
+storable: true
+engravable: true
+render:
+  z_index: 0.0
+  debug_color: [0, 0, 0]
+  debug_size: 1.0
+"#;
+        let def = parse_def(yaml);
+        assert!(def.engravable);
+        assert_eq!(def.text_kind, None);
+    }
+
+    #[test]
+    fn book_pen_tombstone_assets_parse() {
+        let defs = OverworldObjectDefinitions::load_from_disk();
+        let book = defs.get("book").expect("book.yaml loads");
+        assert_eq!(book.text_kind, Some(TextKind::Book));
+        let pen = defs.get("pen").expect("pen.yaml loads");
+        assert_eq!(pen.text_kind, None);
+        assert!(!pen.engravable);
+        let tombstone = defs.get("tombstone").expect("tombstone.yaml loads");
+        assert_eq!(tombstone.text_kind, Some(TextKind::Tombstone));
+        let sword = defs.get("bronze_sword").expect("bronze_sword.yaml loads");
+        assert!(
+            sword.engravable,
+            "bronze_sword should have engravable: true"
+        );
     }
 
     #[test]

@@ -42,6 +42,7 @@ pub fn apply_game_ui_events(
     mut docked_panel_state: ResMut<DockedPanelState>,
     mut trade_popup_state: ResMut<crate::ui::resources::TradePopupState>,
     mut dialog_state: ResMut<crate::ui::resources::ActiveDialogState>,
+    mut book_panel_state: ResMut<crate::ui::book_panel::BookPanelState>,
 ) {
     let events = std::mem::take(&mut pending_ui_events.events);
 
@@ -105,6 +106,16 @@ pub fn apply_game_ui_events(
             // popup animation. The chat log already narrates these (see
             // `resolve_battle_turn`), so silent-consume is fine for now.
             GameUiEvent::AttackDodged { .. } | GameUiEvent::AttackBlocked { .. } => {}
+            GameUiEvent::OpenBookPanel {
+                source,
+                kind,
+                title,
+                text,
+                author_name,
+                can_edit,
+            } => {
+                book_panel_state.open(source, kind, title, text, author_name, can_edit);
+            }
         }
     }
 }
@@ -1258,6 +1269,20 @@ pub fn sync_context_menu_hide_button(
     };
 }
 
+pub fn sync_context_menu_read_button(
+    context_menu_state: Res<ContextMenuState>,
+    mut button_query: Query<&mut Node, With<crate::ui::components::ContextMenuReadButton>>,
+) {
+    let Ok(mut node) = button_query.single_mut() else {
+        return;
+    };
+    node.display = if context_menu_state.can_read {
+        Display::Flex
+    } else {
+        Display::None
+    };
+}
+
 pub fn sync_context_menu_talk_button(
     context_menu_state: Res<ContextMenuState>,
     mut button_query: Query<&mut Node, With<crate::ui::components::ContextMenuTalkButton>>,
@@ -1665,6 +1690,45 @@ pub fn handle_context_menu_lock_actions(
         pending_commands.push(GameCommand::HideObject { object_id });
         context_menu_state.hide();
     }
+}
+
+/// Read-button handler. Split out from the main context-menu actions so we
+/// can resolve `ItemReference` from both World and Slot targets without
+/// pushing the parent ParamSet over Bevy's query cap.
+pub fn handle_context_menu_read_action(
+    mouse_input: Res<ButtonInput<MouseButton>>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    docked_panel_state: Res<DockedPanelState>,
+    mut context_menu_state: ResMut<ContextMenuState>,
+    mut pending_commands: ResMut<PendingGameCommands>,
+    button_query: Query<
+        (&ComputedNode, &UiGlobalTransform),
+        With<crate::ui::components::ContextMenuReadButton>,
+    >,
+) {
+    if !mouse_input.just_pressed(MouseButton::Left) || !context_menu_state.is_visible() {
+        return;
+    }
+    if !context_menu_state.can_read {
+        return;
+    }
+    let Ok(window) = window_query.single() else {
+        return;
+    };
+    let Some(cursor_position) = window.cursor_position() else {
+        return;
+    };
+    if !is_cursor_over_button(cursor_position, &button_query) {
+        return;
+    }
+    let Some(target) = context_menu_state.target else {
+        return;
+    };
+    let Some(source) = context_target_to_item_reference(target, &docked_panel_state) else {
+        return;
+    };
+    pending_commands.push(GameCommand::ReadBook { source });
+    context_menu_state.hide();
 }
 
 /// Trade-related context-menu buttons (Trade / Offer to Trade) live in a
@@ -2084,6 +2148,8 @@ pub fn handle_context_menu_opening(
                     &definitions,
                     &client_state,
                 ));
+                context_menu_state
+                    .set_can_read(can_read_target(&object.definition_id, &definitions));
             }
             return;
         }
@@ -2131,6 +2197,7 @@ pub fn handle_context_menu_opening(
                 false,
                 None,
             );
+            context_menu_state.set_can_read(can_read_target(&stack.type_id, &definitions));
             info!(
                 "context_open_slot_success slot={slot_kind:?} type_id={} can_use={can_use}",
                 stack.type_id
@@ -2241,6 +2308,7 @@ pub fn handle_context_menu_opening(
                 &definitions,
                 &client_state,
             ));
+            context_menu_state.set_can_read(can_read_target(&object.definition_id, &definitions));
         }
         info!(
             "context_open_world_success object_id={} has_container={} can_use={} can_attack={} near={}",
@@ -2251,6 +2319,15 @@ pub fn handle_context_menu_opening(
 
     info!("context_open_no_target");
     context_menu_state.hide();
+}
+
+/// True when `type_id`'s definition declares `text_kind` (book / tombstone)
+/// or `engravable: true`. Drives the "Read" context-menu verb visibility for
+/// both world objects and inventory slots.
+fn can_read_target(type_id: &str, definitions: &OverworldObjectDefinitions) -> bool {
+    definitions
+        .get(type_id)
+        .is_some_and(|def| def.text_kind.is_some() || def.engravable)
 }
 
 pub fn sync_docked_panel_layout(

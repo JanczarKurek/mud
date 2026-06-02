@@ -396,4 +396,27 @@ pub enum GameCommand {
     },
     /// Admin-only: restore health and mana to their respective maxes.
     AdminFullHeal,
+    /// Player-invoked Read on a book/tombstone/inscription. Server validates
+    /// adjacency (world) or ownership (inventory), then emits an
+    /// `OpenBookPanel` UI event to that peer with the captured text snapshot.
+    ReadBook {
+        source: ItemReference,
+    },
+    /// Player-invoked Write on a book. Requires a pen in inventory (unless
+    /// the book is itself in the actor's inventory — in which case the pen
+    /// must still be present; the gating is symmetric). Server clamps title
+    /// to 64 chars, body to 4096, strips control chars, and writes
+    /// `properties["title"]`, `properties["text"]`, `properties["author_name"]`.
+    WriteBook {
+        source: ItemReference,
+        title: String,
+        text: String,
+    },
+    /// Player-invoked Engrave on an `engravable: true` item. Requires a pen
+    /// in inventory and rejects re-engraving an already-inscribed item. Sets
+    /// `properties["inscription"]` (clamped to 32 chars).
+    Engrave {
+        source: ItemReference,
+        inscription: String,
+    },
 }

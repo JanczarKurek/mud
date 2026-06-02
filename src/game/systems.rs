@@ -686,6 +686,47 @@ pub fn process_game_commands(
                     "process_game_commands saw an allocate-skill command — check system ordering"
                 );
             }
+            GameCommand::ReadBook { source } => {
+                handle_read_book(
+                    player_entity,
+                    source,
+                    &object_query,
+                    &mut player_queries.p2(),
+                    &object_registry,
+                    &definitions,
+                    &mut command_outputs.ui_events,
+                );
+            }
+            GameCommand::WriteBook {
+                source,
+                title,
+                text,
+            } => {
+                handle_write_book(
+                    player_entity,
+                    source,
+                    &title,
+                    &text,
+                    &object_query,
+                    &mut player_queries.p2(),
+                    &mut object_registry,
+                    &definitions,
+                );
+            }
+            GameCommand::Engrave {
+                source,
+                inscription,
+            } => {
+                handle_engrave(
+                    player_entity,
+                    source,
+                    &inscription,
+                    &object_query,
+                    &mut player_queries.p2(),
+                    &mut object_registry,
+                    &definitions,
+                );
+            }
             GameCommand::AdminGrantXp { .. }
             | GameCommand::AdminSetLevel { .. }
             | GameCommand::AdminGrantSkillPoints { .. }
@@ -1191,6 +1232,498 @@ fn handle_open_container(
 
     container_viewers.insert(object_id, player_identity.id);
     ui_events.push(player_identity.id, GameUiEvent::OpenContainer { object_id });
+}
+
+/// Asset definition id of the writing tool consumed/required by `WriteBook`
+/// and `Engrave`. Players must carry one in their backpack (or have it
+/// equipped) to inscribe text. Lives in inventory, never consumed by use.
+const PEN_TYPE_ID: &str = "pen";
+
+/// Convention keys on `ObjectProperties` for persistent-text artifacts.
+const PROP_BOOK_TITLE: &str = "title";
+const PROP_BOOK_TEXT: &str = "text";
+const PROP_BOOK_AUTHOR: &str = "author_name";
+const PROP_BOOK_AUTHOR_LINE: &str = "author_line";
+const PROP_ENGRAVING_INSCRIPTION: &str = "inscription";
+const PROP_ENGRAVING_INSCRIPTION_LINE: &str = "inscription_line";
+
+const BOOK_TITLE_MAX_CHARS: usize = 64;
+const BOOK_TEXT_MAX_CHARS: usize = 4096;
+const INSCRIPTION_MAX_CHARS: usize = 32;
+
+/// Strip ASCII control chars (except newline/tab for body text) and truncate
+/// to `max_chars`. Keeps text safe for the UI font (no non-ASCII glyph
+/// support per project conventions) and bounded so a malicious client can't
+/// blow up the wire payload.
+fn sanitize_text(input: &str, max_chars: usize, allow_newlines: bool) -> String {
+    let mut out = String::with_capacity(input.len().min(max_chars));
+    for ch in input.chars() {
+        if out.chars().count() >= max_chars {
+            break;
+        }
+        if ch.is_control() {
+            if allow_newlines && (ch == '\n' || ch == '\t') {
+                out.push(ch);
+            }
+            continue;
+        }
+        out.push(ch);
+    }
+    out
+}
+
+/// Number of `PEN_TYPE_ID` instances the player currently carries across
+/// their backpack + equipment. Used as a gate on write/engrave verbs.
+fn player_has_pen(inventory: &InventoryState) -> bool {
+    if inventory
+        .backpack_slots
+        .iter()
+        .filter_map(|s| s.as_ref())
+        .any(|stack| stack.type_id == PEN_TYPE_ID)
+    {
+        return true;
+    }
+    inventory
+        .equipment_slots
+        .iter()
+        .filter_map(|(_, item)| item.as_ref())
+        .any(|item| item.type_id == PEN_TYPE_ID)
+}
+
+/// Resolve `source` to `(type_id, properties_snapshot, optional world_tile)`.
+/// World objects look up via `object_query` + `object_registry`; inventory
+/// slots read straight off the player's `Inventory`.
+fn resolve_text_source(
+    source: ItemReference,
+    player_entity: Entity,
+    object_query: &Query<
+        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
+        Without<Player>,
+    >,
+    player_query: &Query<
+        (
+            Entity,
+            &PlayerIdentity,
+            &mut InventoryState,
+            &mut ChatLogState,
+            &mut SpaceResident,
+            &mut TilePosition,
+            &mut MovementCooldown,
+            &mut VitalStats,
+            Option<&CombatTarget>,
+        ),
+        With<Player>,
+    >,
+    object_registry: &ObjectRegistry,
+) -> Option<(String, ObjectProperties, Option<TilePosition>)> {
+    match source {
+        ItemReference::WorldObject(object_id) => {
+            let Ok((_, _, _, _, space_resident, _, _, _, _)) = player_query.get(player_entity)
+            else {
+                return None;
+            };
+            let (_, tile) = find_object_entity(object_id, space_resident.space_id, object_query)?;
+            let type_id = object_registry.type_id(object_id)?.to_owned();
+            let properties = object_registry
+                .properties(object_id)
+                .cloned()
+                .unwrap_or_default();
+            Some((type_id, properties, Some(tile)))
+        }
+        ItemReference::Slot(ItemSlotRef::Backpack(idx)) => {
+            let Ok((_, _, inventory, _, _, _, _, _, _)) = player_query.get(player_entity) else {
+                return None;
+            };
+            let stack = inventory.backpack_slots.get(idx)?.as_ref()?;
+            Some((stack.type_id.clone(), stack.properties.clone(), None))
+        }
+        ItemReference::Slot(ItemSlotRef::Equipment(slot)) => {
+            let Ok((_, _, inventory, _, _, _, _, _, _)) = player_query.get(player_entity) else {
+                return None;
+            };
+            let item = inventory.equipment_item(slot)?;
+            Some((item.type_id.clone(), item.properties.clone(), None))
+        }
+        // Pouch sub-slots and container slots aren't book-source paths for
+        // MVP — a book sitting inside a pouch must be moved into the
+        // backpack to be read. Easy to extend later if it turns up as a
+        // limitation.
+        ItemReference::Slot(_) => None,
+    }
+}
+
+/// Write `mutator(&mut ObjectProperties)` against whatever bag holds the
+/// resolved item — registry for world objects, inventory stack/equipped
+/// item for slots. Returns `true` on success.
+fn mutate_text_source(
+    source: ItemReference,
+    player_entity: Entity,
+    object_query: &Query<
+        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
+        Without<Player>,
+    >,
+    player_query: &mut Query<
+        (
+            Entity,
+            &PlayerIdentity,
+            &mut InventoryState,
+            &mut ChatLogState,
+            &mut SpaceResident,
+            &mut TilePosition,
+            &mut MovementCooldown,
+            &mut VitalStats,
+            Option<&CombatTarget>,
+        ),
+        With<Player>,
+    >,
+    object_registry: &mut ObjectRegistry,
+    mutator: impl FnOnce(&mut ObjectProperties),
+) -> bool {
+    match source {
+        ItemReference::WorldObject(object_id) => {
+            let Ok((_, _, _, _, space_resident, _, _, _, _)) = player_query.get(player_entity)
+            else {
+                return false;
+            };
+            if find_object_entity(object_id, space_resident.space_id, object_query).is_none() {
+                return false;
+            }
+            let Some(props) = object_registry.properties_mut(object_id) else {
+                return false;
+            };
+            mutator(props);
+            true
+        }
+        ItemReference::Slot(ItemSlotRef::Backpack(idx)) => {
+            let Ok((_, _, mut inventory, _, _, _, _, _, _)) = player_query.get_mut(player_entity)
+            else {
+                return false;
+            };
+            let Some(slot) = inventory.backpack_slots.get_mut(idx) else {
+                return false;
+            };
+            let Some(stack) = slot.as_mut() else {
+                return false;
+            };
+            mutator(&mut stack.properties);
+            true
+        }
+        ItemReference::Slot(ItemSlotRef::Equipment(slot)) => {
+            let Ok((_, _, mut inventory, _, _, _, _, _, _)) = player_query.get_mut(player_entity)
+            else {
+                return false;
+            };
+            for (equipment_slot, item_opt) in inventory.equipment_slots.iter_mut() {
+                if *equipment_slot != slot {
+                    continue;
+                }
+                let Some(item) = item_opt.as_mut() else {
+                    return false;
+                };
+                mutator(&mut item.properties);
+                return true;
+            }
+            false
+        }
+        ItemReference::Slot(_) => false,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_read_book(
+    player_entity: Entity,
+    source: ItemReference,
+    object_query: &Query<
+        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
+        Without<Player>,
+    >,
+    player_query: &mut Query<
+        (
+            Entity,
+            &PlayerIdentity,
+            &mut InventoryState,
+            &mut ChatLogState,
+            &mut SpaceResident,
+            &mut TilePosition,
+            &mut MovementCooldown,
+            &mut VitalStats,
+            Option<&CombatTarget>,
+        ),
+        With<Player>,
+    >,
+    object_registry: &ObjectRegistry,
+    definitions: &OverworldObjectDefinitions,
+    ui_events: &mut PendingGameUiEvents,
+) {
+    let Some((type_id, properties, world_tile)) = resolve_text_source(
+        source,
+        player_entity,
+        object_query,
+        player_query,
+        object_registry,
+    ) else {
+        return;
+    };
+    let Some(definition) = definitions.get(&type_id) else {
+        return;
+    };
+
+    let Ok((_, identity, inventory, mut chat_log, _, player_tile, _, _, _)) =
+        player_query.get_mut(player_entity)
+    else {
+        return;
+    };
+
+    // Adjacency gate on world targets only — inventory items are owned, no
+    // reach check needed.
+    if let Some(target_tile) = world_tile {
+        if !is_near_player(&player_tile, &target_tile) {
+            chat_log.push_narrator("That's too far away to read.");
+            return;
+        }
+    }
+
+    let kind = match definition.text_kind {
+        Some(k) => k,
+        None if definition.engravable => crate::world::object_definitions::TextKind::Engraving,
+        None => {
+            chat_log.push_narrator("There is nothing to read on that.");
+            return;
+        }
+    };
+
+    let title = properties
+        .get(PROP_BOOK_TITLE)
+        .cloned()
+        .unwrap_or_else(|| match kind {
+            crate::world::object_definitions::TextKind::Book => "Untitled".to_owned(),
+            crate::world::object_definitions::TextKind::Tombstone => "Tombstone".to_owned(),
+            crate::world::object_definitions::TextKind::Engraving => definition.name.clone(),
+        });
+    let text = match kind {
+        crate::world::object_definitions::TextKind::Engraving => properties
+            .get(PROP_ENGRAVING_INSCRIPTION)
+            .cloned()
+            .unwrap_or_default(),
+        _ => properties.get(PROP_BOOK_TEXT).cloned().unwrap_or_default(),
+    };
+    let author_name = properties.get(PROP_BOOK_AUTHOR).cloned();
+
+    let already_engraved = !properties
+        .get(PROP_ENGRAVING_INSCRIPTION)
+        .map(String::is_empty)
+        .unwrap_or(true);
+
+    let can_edit = match kind {
+        crate::world::object_definitions::TextKind::Book => player_has_pen(&inventory),
+        crate::world::object_definitions::TextKind::Engraving => {
+            !already_engraved && player_has_pen(&inventory)
+        }
+        crate::world::object_definitions::TextKind::Tombstone => false,
+    };
+
+    ui_events.push(
+        identity.id,
+        GameUiEvent::OpenBookPanel {
+            source,
+            kind,
+            title,
+            text,
+            author_name,
+            can_edit,
+        },
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_write_book(
+    player_entity: Entity,
+    source: ItemReference,
+    title: &str,
+    text: &str,
+    object_query: &Query<
+        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
+        Without<Player>,
+    >,
+    player_query: &mut Query<
+        (
+            Entity,
+            &PlayerIdentity,
+            &mut InventoryState,
+            &mut ChatLogState,
+            &mut SpaceResident,
+            &mut TilePosition,
+            &mut MovementCooldown,
+            &mut VitalStats,
+            Option<&CombatTarget>,
+        ),
+        With<Player>,
+    >,
+    object_registry: &mut ObjectRegistry,
+    definitions: &OverworldObjectDefinitions,
+) {
+    let Some((type_id, _, world_tile)) = resolve_text_source(
+        source,
+        player_entity,
+        object_query,
+        player_query,
+        object_registry,
+    ) else {
+        return;
+    };
+    let Some(definition) = definitions.get(&type_id) else {
+        return;
+    };
+    if definition.text_kind != Some(crate::world::object_definitions::TextKind::Book) {
+        return;
+    }
+
+    let Ok((_, _identity, inventory, mut chat_log, _, player_tile, _, _, _)) =
+        player_query.get_mut(player_entity)
+    else {
+        return;
+    };
+
+    if let Some(target_tile) = world_tile {
+        if !is_near_player(&player_tile, &target_tile) {
+            chat_log.push_narrator("That's too far away to write in.");
+            return;
+        }
+    }
+
+    if !player_has_pen(&inventory) {
+        chat_log.push_narrator("You need a pen to write in this.");
+        return;
+    }
+
+    let sanitized_title = sanitize_text(title, BOOK_TITLE_MAX_CHARS, false);
+    let sanitized_text = sanitize_text(text, BOOK_TEXT_MAX_CHARS, true);
+
+    // Resolve the author name from the player's identity. We grab the
+    // already-borrowed-immutably name out of `identity` after the immutable
+    // borrow scope ends.
+    let author_name = {
+        let Ok((_, identity, _, _, _, _, _, _, _)) = player_query.get(player_entity) else {
+            return;
+        };
+        identity.display_name.clone()
+    };
+
+    mutate_text_source(
+        source,
+        player_entity,
+        object_query,
+        player_query,
+        object_registry,
+        |props| {
+            if sanitized_title.is_empty() {
+                props.remove(PROP_BOOK_TITLE);
+            } else {
+                props.insert(PROP_BOOK_TITLE.to_owned(), sanitized_title);
+            }
+            if sanitized_text.is_empty() {
+                props.remove(PROP_BOOK_TEXT);
+            } else {
+                props.insert(PROP_BOOK_TEXT.to_owned(), sanitized_text);
+            }
+            if author_name.is_empty() {
+                props.remove(PROP_BOOK_AUTHOR);
+                props.remove(PROP_BOOK_AUTHOR_LINE);
+            } else {
+                props.insert(PROP_BOOK_AUTHOR.to_owned(), author_name.clone());
+                props.insert(
+                    PROP_BOOK_AUTHOR_LINE.to_owned(),
+                    format!("Written by {author_name}."),
+                );
+            }
+        },
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_engrave(
+    player_entity: Entity,
+    source: ItemReference,
+    inscription: &str,
+    object_query: &Query<
+        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
+        Without<Player>,
+    >,
+    player_query: &mut Query<
+        (
+            Entity,
+            &PlayerIdentity,
+            &mut InventoryState,
+            &mut ChatLogState,
+            &mut SpaceResident,
+            &mut TilePosition,
+            &mut MovementCooldown,
+            &mut VitalStats,
+            Option<&CombatTarget>,
+        ),
+        With<Player>,
+    >,
+    object_registry: &mut ObjectRegistry,
+    definitions: &OverworldObjectDefinitions,
+) {
+    let Some((type_id, properties, world_tile)) = resolve_text_source(
+        source,
+        player_entity,
+        object_query,
+        player_query,
+        object_registry,
+    ) else {
+        return;
+    };
+    let Some(definition) = definitions.get(&type_id) else {
+        return;
+    };
+    if !definition.engravable {
+        return;
+    }
+    let already_engraved = properties
+        .get(PROP_ENGRAVING_INSCRIPTION)
+        .map(|s| !s.is_empty())
+        .unwrap_or(false);
+    if already_engraved {
+        return;
+    }
+
+    let Ok((_, _, inventory, mut chat_log, _, player_tile, _, _, _)) =
+        player_query.get_mut(player_entity)
+    else {
+        return;
+    };
+    if let Some(target_tile) = world_tile {
+        if !is_near_player(&player_tile, &target_tile) {
+            chat_log.push_narrator("That's too far away to engrave.");
+            return;
+        }
+    }
+    if !player_has_pen(&inventory) {
+        chat_log.push_narrator("You need a pen to engrave that.");
+        return;
+    }
+
+    let sanitized = sanitize_text(inscription, INSCRIPTION_MAX_CHARS, false);
+    if sanitized.is_empty() {
+        return;
+    }
+
+    mutate_text_source(
+        source,
+        player_entity,
+        object_query,
+        player_query,
+        object_registry,
+        |props| {
+            props.insert(PROP_ENGRAVING_INSCRIPTION.to_owned(), sanitized.clone());
+            props.insert(
+                PROP_ENGRAVING_INSCRIPTION_LINE.to_owned(),
+                format!("It is inscribed: '{sanitized}'."),
+            );
+        },
+    );
 }
 
 #[allow(clippy::too_many_arguments)]

@@ -277,6 +277,13 @@ pub struct ContextMenuUseKeyButton;
 #[derive(Component)]
 pub struct ContextMenuHideButton;
 
+/// Read button — visible when the hovered target carries persistent text
+/// (book / tombstone) or is `engravable`. Sends `GameCommand::ReadBook`
+/// on click; the server responds with `OpenBookPanel` which spawns the
+/// reader-editor window (where the actual write/engrave flow lives).
+#[derive(Component)]
+pub struct ContextMenuReadButton;
+
 #[derive(Component)]
 pub struct DialogPanelRoot;
 

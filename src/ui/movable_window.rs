@@ -76,6 +76,11 @@ pub enum MovableWindowId {
     /// `object_id` is resolved on demand via
     /// `DockedPanelState::container_object_id_for_panel`.
     ContainerPanel { panel_id: usize },
+    /// Singleton book / tombstone / engraving reader-editor window.
+    /// Spawned in response to `GameUiEvent::OpenBookPanel`; only one is
+    /// open at a time (re-opening a different book replaces the snapshot
+    /// in `BookPanelState`).
+    Book,
 }
 
 #[derive(Component)]
