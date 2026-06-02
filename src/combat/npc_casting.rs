@@ -17,7 +17,7 @@ use bevy::prelude::*;
 
 use crate::combat::damage::{DamageEvent, DamageSource};
 use crate::game::resources::{GameUiEvent, VfxAnchor};
-use crate::magic::effects::MagicEffects;
+use crate::magic::effects::{apply_effects_lazy, MagicEffects};
 use crate::magic::resources::{EffectKind, SpellDefinition};
 use crate::npc::spellcasting::{NpcSpellCondition, NpcSpellEntry, NpcSpellTargetKind};
 use crate::player::components::VitalStats;
@@ -238,30 +238,51 @@ pub fn build_npc_cast_outcome(
 /// Apply the parts of `NpcCastOutcome` that target the attacker itself
 /// (restore HP/mana, self buffs/clears). Caller drains the other queues
 /// (damage, target buffs, VFX) into their respective resources/queries.
+///
+/// `attacker_effects` is `Option<&mut MagicEffects>` so NPCs that spawn
+/// without the component still receive self-buffs: `apply_effects_lazy`
+/// inserts a fresh component via `Commands` on the next flush. Clears are
+/// skipped when no component exists — there's nothing to remove.
 pub fn apply_self_outcome(
     outcome: &NpcCastOutcome,
+    attacker_entity: Entity,
     attacker_vitals: &mut VitalStats,
-    attacker_effects: &mut MagicEffects,
+    mut attacker_effects: Option<&mut MagicEffects>,
+    commands: &mut Commands,
 ) {
     attacker_vitals.health = (attacker_vitals.health + outcome.self_restore_health)
         .clamp(0.0, attacker_vitals.max_health);
     attacker_vitals.mana =
         (attacker_vitals.mana + outcome.self_restore_mana).clamp(0.0, attacker_vitals.max_mana);
-    for spec in &outcome.self_buffs {
-        attacker_effects.apply(*spec, None);
+    if let Some(effects) = attacker_effects.as_deref_mut() {
+        for kind in &outcome.self_clears {
+            effects.clear(*kind);
+        }
     }
-    for kind in &outcome.self_clears {
-        attacker_effects.clear(*kind);
-    }
+    apply_effects_lazy(
+        attacker_entity,
+        &outcome.self_buffs,
+        None,
+        attacker_effects,
+        commands,
+    );
 }
 
-/// Apply queued target buffs to the target's `MagicEffects`. Lazily attaches
-/// the component via the caller if it's missing (caller handles since we
-/// can't take `Commands` here easily).
-pub fn apply_target_buffs(outcome: &NpcCastOutcome, target_effects: &mut MagicEffects) {
-    for spec in &outcome.target_buffs {
-        target_effects.apply(*spec, None);
-    }
+/// Apply queued target buffs to the target's `MagicEffects`, lazily
+/// attaching the component when missing.
+pub fn apply_target_buffs(
+    outcome: &NpcCastOutcome,
+    target_entity: Entity,
+    target_effects: Option<&mut MagicEffects>,
+    commands: &mut Commands,
+) {
+    apply_effects_lazy(
+        target_entity,
+        &outcome.target_buffs,
+        None,
+        target_effects,
+        commands,
+    );
 }
 
 /// Build a `HashSet<EffectKind>` of *currently active* effect kinds.

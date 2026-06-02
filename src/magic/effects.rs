@@ -332,6 +332,49 @@ pub fn tick_dot_effects(
     }
 }
 
+/// Apply each spec in `specs` to `entity`'s `MagicEffects`, lazily attaching
+/// a fresh component via `Commands::insert` when `existing` is `None`. The
+/// canonical "apply a magical effect to any actor" entry point — callers
+/// don't need to know whether the entity (player, NPC, future summon) was
+/// spawned with a `MagicEffects` component or not, which closes the gap
+/// where step triggers and NPC self-buff casts silently dropped effects
+/// against entities that hadn't been hit before.
+///
+/// `existing` should be the result of a `&mut MagicEffects` query on
+/// `entity` (or `None` when no such component exists). The helper does no
+/// querying itself, so it composes with both standalone
+/// `Query<&mut MagicEffects>` (use `q.get_mut(e).ok().as_deref_mut()`) and
+/// `ParamSet` joins that already carry `Option<&mut MagicEffects>`.
+pub fn apply_effects_lazy(
+    entity: Entity,
+    specs: &[EffectSpec],
+    caster: Option<PlayerId>,
+    existing: Option<&mut MagicEffects>,
+    commands: &mut Commands,
+) {
+    if specs.is_empty() {
+        return;
+    }
+    match existing {
+        Some(effects) => {
+            for spec in specs {
+                effects.apply(*spec, caster);
+            }
+        }
+        None => {
+            let mut new_effects = MagicEffects::default();
+            for spec in specs {
+                new_effects.apply(*spec, caster);
+            }
+            // Only attach when something actually landed — a list of all
+            // zero-duration specs must not insert an empty component.
+            if !new_effects.is_empty() {
+                commands.entity(entity).insert(new_effects);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -607,5 +650,88 @@ mod tests {
         effects.apply(spec(EffectKind::Burning, 5.0, 0.0), None);
         effects.apply(spec(EffectKind::Sleep, 0.0, 0.0), None);
         assert!(effects.active.is_empty());
+    }
+
+    #[test]
+    fn apply_effects_lazy_mutates_existing_in_place() {
+        // When the target already carries `MagicEffects`, the helper must
+        // funnel into it directly — the lazy-attach branch is only for
+        // entities without the component.
+        let mut app = App::new();
+        let entity = app.world_mut().spawn(MagicEffects::default()).id();
+        let specs = vec![spec(EffectKind::Burning, 4.0, 2.0)];
+        app.add_systems(
+            Update,
+            move |mut commands: Commands, mut q: Query<&mut MagicEffects>| {
+                let existing = q.get_mut(entity).ok();
+                apply_effects_lazy(
+                    entity,
+                    &specs,
+                    None,
+                    existing.map(|m| m.into_inner()),
+                    &mut commands,
+                );
+            },
+        );
+        app.update();
+        let effects = app.world().get::<MagicEffects>(entity).unwrap();
+        assert_eq!(effects.active.len(), 1);
+        assert_eq!(effects.active[0].kind, EffectKind::Burning);
+    }
+
+    #[test]
+    fn apply_effects_lazy_attaches_when_missing() {
+        // NPCs spawn without `MagicEffects`; an on_stepped trigger applying
+        // `burning` to one must still land. The helper inserts the component
+        // via Commands on the next flush.
+        let mut app = App::new();
+        let entity = app.world_mut().spawn_empty().id();
+        let specs = vec![spec(EffectKind::Burning, 3.0, 2.0)];
+        app.add_systems(
+            Update,
+            move |mut commands: Commands, mut q: Query<&mut MagicEffects>| {
+                let existing = q.get_mut(entity).ok();
+                apply_effects_lazy(
+                    entity,
+                    &specs,
+                    None,
+                    existing.map(|m| m.into_inner()),
+                    &mut commands,
+                );
+            },
+        );
+        app.update();
+        let effects = app
+            .world()
+            .get::<MagicEffects>(entity)
+            .expect("MagicEffects should have been lazily attached");
+        assert_eq!(effects.active.len(), 1);
+        assert_eq!(effects.active[0].kind, EffectKind::Burning);
+    }
+
+    #[test]
+    fn apply_effects_lazy_does_not_attach_empty_component() {
+        // A list of all-zero-duration specs is a no-op inside
+        // `MagicEffects::apply`. The helper must not leave an empty
+        // `MagicEffects` component on entities that didn't already have one,
+        // since the projection layer would then start replicating it.
+        let mut app = App::new();
+        let entity = app.world_mut().spawn_empty().id();
+        let specs = vec![spec(EffectKind::Burning, 5.0, 0.0)];
+        app.add_systems(
+            Update,
+            move |mut commands: Commands, mut q: Query<&mut MagicEffects>| {
+                let existing = q.get_mut(entity).ok();
+                apply_effects_lazy(
+                    entity,
+                    &specs,
+                    None,
+                    existing.map(|m| m.into_inner()),
+                    &mut commands,
+                );
+            },
+        );
+        app.update();
+        assert!(app.world().get::<MagicEffects>(entity).is_none());
     }
 }

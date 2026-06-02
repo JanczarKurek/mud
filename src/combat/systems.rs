@@ -472,13 +472,10 @@ pub fn resolve_battle_turn(
             vfx_override,
         });
 
-        // Damage wakes a sleeping target (and clears any pending Sleep
-        // entry). NPCs keep their CombatTarget so they re-engage immediately.
-        // Done here (before on-hit rolls re-apply Sleep) to preserve the
-        // existing semantic where a Sleep on-hit can re-sleep the target.
-        if let Some(effects) = target_magic.as_mut() {
-            effects.clear(crate::magic::resources::EffectKind::Sleep);
-        }
+        // Sleep-wakes-on-damage is handled centrally in
+        // `apply_pending_damage` so every damage source — melee, ranged,
+        // spell, DoT, environment — wakes the target uniformly. NPCs keep
+        // their CombatTarget so they re-engage immediately after waking.
         broadcast_chat_line(
             &mut chat_log_query,
             format!(
@@ -490,43 +487,49 @@ pub fn resolve_battle_turn(
         );
 
         // Roll the attacker's on-hit effects. Each entry is rolled
-        // independently; effects only apply when the target carries a
-        // `MagicEffects` component (every player/NPC does).
+        // independently; rolled specs go through `apply_effects_lazy` so a
+        // flaming weapon striking a freshly-spawned NPC (no `MagicEffects`
+        // component yet) still ignites it.
         if let Some(on_hit_effects) = definitions
             .get(&attacker.definition_id)
             .and_then(|def| def.attack_profile.as_ref())
             .map(|profile| profile.on_hit_effects.as_slice())
         {
             if !on_hit_effects.is_empty() {
-                if let Some(effects) = target_magic.as_mut() {
-                    for (i, on_hit) in on_hit_effects.iter().enumerate() {
-                        let salt = attacker.object_id.wrapping_add((i as u64) << 16);
-                        if !roll_chance(on_hit.chance, salt) {
-                            continue;
-                        }
-                        let caster = if attacker.is_player {
-                            attacker.player_id.map(PlayerId)
-                        } else {
-                            None
-                        };
-                        effects.apply(
-                            EffectSpec {
-                                kind: on_hit.kind,
-                                magnitude: on_hit.magnitude,
-                                seconds: on_hit.seconds,
-                                secondary_magnitude: on_hit.secondary_magnitude,
-                            },
-                            caster,
-                        );
-                        broadcast_chat_line(
-                            &mut chat_log_query,
-                            format!(
-                                "[{} is afflicted by {}]",
-                                target.name,
-                                effect_kind_display_name(on_hit.kind)
-                            ),
-                        );
+                let caster = if attacker.is_player {
+                    attacker.player_id.map(PlayerId)
+                } else {
+                    None
+                };
+                let mut rolled_specs: Vec<EffectSpec> = Vec::new();
+                for (i, on_hit) in on_hit_effects.iter().enumerate() {
+                    let salt = attacker.object_id.wrapping_add((i as u64) << 16);
+                    if !roll_chance(on_hit.chance, salt) {
+                        continue;
                     }
+                    rolled_specs.push(EffectSpec {
+                        kind: on_hit.kind,
+                        magnitude: on_hit.magnitude,
+                        seconds: on_hit.seconds,
+                        secondary_magnitude: on_hit.secondary_magnitude,
+                    });
+                    broadcast_chat_line(
+                        &mut chat_log_query,
+                        format!(
+                            "[{} is afflicted by {}]",
+                            target.name,
+                            effect_kind_display_name(on_hit.kind)
+                        ),
+                    );
+                }
+                if !rolled_specs.is_empty() {
+                    crate::magic::effects::apply_effects_lazy(
+                        target_entity,
+                        &rolled_specs,
+                        caster,
+                        target_magic.as_deref_mut(),
+                        &mut commands,
+                    );
                 }
             }
         }
@@ -614,48 +617,39 @@ fn execute_npc_spell_cast(
 
     // Mutate the attacker (self-cast heal + self-buffs) and the target
     // (target-buffs). For self-cast spells, attacker == target.
+    // `apply_self_outcome` and `apply_target_buffs` handle the lazy-attach
+    // path internally via `apply_effects_lazy`, so NPCs spawned without a
+    // `MagicEffects` component still pick one up the first time a buff
+    // lands.
     {
         let mut entities_query = combat_queries.p1();
         if matches!(target_kind, NpcSpellTargetKind::SelfCast) {
-            if let Ok((mut vitals, magic)) = entities_query.get_mut(attacker.entity) {
-                if let Some(mut effects) = magic {
-                    apply_self_outcome(&outcome, &mut vitals, &mut effects);
-                } else {
-                    // Lazily attach MagicEffects so self-buffs land.
-                    let mut new_effects = MagicEffects::default();
-                    apply_self_outcome(&outcome, &mut vitals, &mut new_effects);
-                    if !new_effects.is_empty() {
-                        commands.entity(attacker.entity).insert(new_effects);
-                    }
-                }
+            if let Ok((mut vitals, mut magic)) = entities_query.get_mut(attacker.entity) {
+                apply_self_outcome(
+                    &outcome,
+                    attacker.entity,
+                    &mut vitals,
+                    magic.as_deref_mut(),
+                    commands,
+                );
             }
         } else {
             // Apply target buffs first (separate query borrow).
             if !outcome.target_buffs.is_empty() {
-                if let Ok((_, magic)) = entities_query.get_mut(target.entity) {
-                    if let Some(mut effects) = magic {
-                        apply_target_buffs(&outcome, &mut effects);
-                    } else {
-                        let mut new_effects = MagicEffects::default();
-                        apply_target_buffs(&outcome, &mut new_effects);
-                        if !new_effects.is_empty() {
-                            commands.entity(target.entity).insert(new_effects);
-                        }
-                    }
+                if let Ok((_, mut magic)) = entities_query.get_mut(target.entity) {
+                    apply_target_buffs(&outcome, target.entity, magic.as_deref_mut(), commands);
                 }
             }
             // Then apply self-buffs / clears on the caster.
             if !outcome.self_buffs.is_empty() || !outcome.self_clears.is_empty() {
-                if let Ok((mut vitals, magic)) = entities_query.get_mut(attacker.entity) {
-                    if let Some(mut effects) = magic {
-                        apply_self_outcome(&outcome, &mut vitals, &mut effects);
-                    } else {
-                        let mut new_effects = MagicEffects::default();
-                        apply_self_outcome(&outcome, &mut vitals, &mut new_effects);
-                        if !new_effects.is_empty() {
-                            commands.entity(attacker.entity).insert(new_effects);
-                        }
-                    }
+                if let Ok((mut vitals, mut magic)) = entities_query.get_mut(attacker.entity) {
+                    apply_self_outcome(
+                        &outcome,
+                        attacker.entity,
+                        &mut vitals,
+                        magic.as_deref_mut(),
+                        commands,
+                    );
                 }
             }
         }

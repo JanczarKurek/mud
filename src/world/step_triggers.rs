@@ -24,7 +24,7 @@ use bevy::prelude::*;
 use crate::combat::damage::{DamageEvent, DamageSource, PendingDamageEvents};
 use crate::combat::damage_expr::DamageExpr;
 use crate::combat::damage_type::DamageType;
-use crate::magic::effects::MagicEffects;
+use crate::magic::effects::{apply_effects_lazy, MagicEffects};
 use crate::magic::resources::EffectSpec;
 use crate::npc::components::Npc;
 use crate::player::components::{AttributeSet, ChatLog, Player, PlayerId, PlayerIdentity};
@@ -279,12 +279,18 @@ pub fn process_step_triggers(
     }
 
     // Phase 2: apply effects to the stepper's MagicEffects and queue damage.
+    // `apply_effects_lazy` covers NPC steppers that spawned without a
+    // `MagicEffects` component — the direct `get_mut` we used to do here
+    // silently dropped them, so fire/poison tiles only ever hurt players.
     for w in &work {
-        if let Ok(mut effects) = stepper_effects.get_mut(w.stepper) {
-            for spec in &w.effect_specs {
-                effects.apply(*spec, w.hazard_owner);
-            }
-        }
+        let mut existing = stepper_effects.get_mut(w.stepper).ok();
+        apply_effects_lazy(
+            w.stepper,
+            &w.effect_specs,
+            w.hazard_owner,
+            existing.as_deref_mut(),
+            &mut commands,
+        );
         let source = match w.hazard_owner {
             Some(pid) => DamageSource::OwnedByPlayer(pid),
             None => DamageSource::Environment,
@@ -477,13 +483,18 @@ pub fn process_continuous_step_triggers(
         }
     }
 
-    // Phase 2: apply gathered effects.
+    // Phase 2: apply gathered effects. Same lazy-attach path as
+    // `process_step_triggers` — NPCs standing on a continuous hazard like
+    // `blazing_fire` get a `MagicEffects` component on the first tick.
     for w in &work {
-        if let Ok(mut effects) = stepper_effects.get_mut(w.stepper) {
-            for spec in &w.effect_specs {
-                effects.apply(*spec, w.hazard_owner);
-            }
-        }
+        let mut existing = stepper_effects.get_mut(w.stepper).ok();
+        apply_effects_lazy(
+            w.stepper,
+            &w.effect_specs,
+            w.hazard_owner,
+            existing.as_deref_mut(),
+            &mut commands,
+        );
         let source = match w.hazard_owner {
             Some(pid) => DamageSource::OwnedByPlayer(pid),
             None => DamageSource::Environment,

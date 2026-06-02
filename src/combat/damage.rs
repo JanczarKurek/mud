@@ -22,7 +22,8 @@ use bevy::prelude::*;
 
 use crate::combat::damage_type::DamageType;
 use crate::game::resources::{GameUiEvent, PendingGameUiEvents, VfxAnchor};
-use crate::magic::resources::SpellDefinitions;
+use crate::magic::effects::MagicEffects;
+use crate::magic::resources::{EffectKind, SpellDefinitions};
 use crate::npc::components::Npc;
 use crate::player::components::{ChatLog, Player, PlayerId, PlayerIdentity, VitalStats};
 use crate::player::lifecycle::{PendingPlayerDeath, PendingPlayerDeaths};
@@ -92,6 +93,7 @@ type DamageTargetQuery<'w, 's> = Query<
         Option<&'static Player>,
         Option<&'static Npc>,
         Option<&'static Experience>,
+        Option<&'static mut MagicEffects>,
     ),
 >;
 
@@ -127,6 +129,7 @@ pub fn apply_pending_damage(
             is_player,
             is_npc,
             target_experience,
+            mut target_effects,
         )) = targets.get_mut(event.target)
         else {
             continue;
@@ -139,6 +142,14 @@ pub fn apply_pending_damage(
         }
 
         target_vitals.health = (target_vitals.health - event.amount).max(0.0);
+
+        // Damage wakes a sleeping target — any damage source, not just
+        // melee. This used to live in `tick_battle` and only fired for
+        // melee/ranged hits, so spell damage (e.g. goblin mage casting at
+        // a slept player) silently kept the target asleep.
+        if let Some(effects) = target_effects.as_mut() {
+            effects.clear(EffectKind::Sleep);
+        }
 
         if target_vitals.health > 0.0 {
             // Survivor: emit the damage-type-keyed hit VFX. Death plays

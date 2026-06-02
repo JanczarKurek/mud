@@ -969,6 +969,7 @@ fn handle_move_player(
     // when the step is blocked by cooldown, a collider, or map bounds.
     let magic = player_magic_effects.get(player_entity).ok();
     let is_paralyzed = magic.is_some_and(|e| e.is_paralyzed());
+    let is_asleep = magic.is_some_and(|e| e.is_asleep());
 
     let (effective_delta, drunk_cooldown_penalty) = if let Some(effects) = magic {
         let deviation = effects.drunk_deviation_probability();
@@ -986,15 +987,15 @@ fn handle_move_player(
     // Rotate-on-blocked-move: turning is a free intent and shouldn't depend
     // on whether the step actually resolves (cooldown, collider, map edge).
     // Apply Facing up here so the player visibly turns toward what they bumped
-    // even when the step itself is rejected. Paralyze still blocks the turn —
-    // the character is held in place.
-    if !is_paralyzed {
+    // even when the step itself is rejected. Paralyze and Sleep still block
+    // the turn — the character is held in place.
+    if !is_paralyzed && !is_asleep {
         if let Some(direction) = Direction::from_delta(effective_delta.x, effective_delta.y) {
             commands.entity(player_entity).insert(Facing(direction));
         }
     }
 
-    if is_paralyzed {
+    if is_paralyzed || is_asleep {
         return;
     }
 
@@ -2416,12 +2417,18 @@ fn handle_cast_spell_at(
         return;
     }
 
-    // Paralyzed casters can't form the incantation. Cheaper to read effects
-    // through the dedicated query than to thread a separate parameter.
+    // Paralyzed or sleeping casters can't form the incantation. Cheaper to
+    // read effects through the dedicated query than to thread a separate
+    // parameter.
     if let Ok(effects) = player_magic_effects_query.get(player_entity) {
         if effects.is_paralyzed() {
             chat_log_state
                 .push_narrator(format!("You're paralyzed and can't cast {}.", spell.name));
+            return;
+        }
+        if effects.is_asleep() {
+            chat_log_state
+                .push_narrator(format!("You're asleep and can't cast {}.", spell.name));
             return;
         }
     }
@@ -2617,6 +2624,11 @@ fn handle_cast_spell_at_tile(
         if effects.is_paralyzed() {
             chat_log_state
                 .push_narrator(format!("You're paralyzed and can't cast {}.", spell.name));
+            return;
+        }
+        if effects.is_asleep() {
+            chat_log_state
+                .push_narrator(format!("You're asleep and can't cast {}.", spell.name));
             return;
         }
     }
@@ -2861,9 +2873,11 @@ fn perpendicular_line_offsets(caster: TilePosition, target: TilePosition) -> [(i
     }
 }
 
-/// Inserts (or merges) `MagicEffects` on an NPC target. Lazily attaches the
-/// component if missing. `caster` is the player who applied the buff — it
-/// drives XP attribution if the buff/debuff is a DoT.
+/// Inserts (or merges) `MagicEffects` on an NPC target. `caster` is the
+/// player who applied the buff — it drives XP attribution if the
+/// buff/debuff is a DoT. Routes through `apply_effects_lazy` so the
+/// lazy-attach guard (skip insertion when all specs were zero-duration
+/// no-ops) is consistent with every other site that applies effects.
 fn apply_buffs_target(
     target_entity: Entity,
     specs: &[crate::magic::resources::EffectSpec],
@@ -2874,17 +2888,14 @@ fn apply_buffs_target(
     >,
     commands: &mut Commands,
 ) {
-    if let Ok(mut effects) = npc_magic_effects_query.get_mut(target_entity) {
-        for spec in specs {
-            effects.apply(*spec, caster);
-        }
-    } else {
-        let mut new_effects = crate::magic::effects::MagicEffects::default();
-        for spec in specs {
-            new_effects.apply(*spec, caster);
-        }
-        commands.entity(target_entity).insert(new_effects);
-    }
+    let mut existing = npc_magic_effects_query.get_mut(target_entity).ok();
+    crate::magic::effects::apply_effects_lazy(
+        target_entity,
+        specs,
+        caster,
+        existing.as_deref_mut(),
+        commands,
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
