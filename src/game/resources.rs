@@ -123,6 +123,25 @@ pub enum GameUiEvent {
         author_name: Option<String>,
         can_edit: bool,
     },
+    /// A short floating text bubble shown over a speaker for a few seconds.
+    /// One-shot presentation signal — fires for player `/say`, NPC aggro
+    /// barks, and ambient mutters. The client looks up `speaker_object_id`
+    /// via `ClientGameState` and attaches the bubble via `AttachedToObject`.
+    SpeechBubble {
+        speaker_object_id: u64,
+        text: String,
+        style: SpeechBubbleStyle,
+    },
+}
+
+/// Visual treatment for a floating speech bubble. Drives backdrop color and
+/// (optionally) font weight on the client. Server picks based on the source:
+/// `Say` for player chat, `Bark` for NPC aggro, `Mutter` for ambient.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum SpeechBubbleStyle {
+    Say,
+    Bark,
+    Mutter,
 }
 
 /// Anchor for a `VfxSpawn` event. `Tile` parks the effect at a static world

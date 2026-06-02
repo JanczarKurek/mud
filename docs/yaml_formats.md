@@ -1514,6 +1514,25 @@ npc_behavior:
 Roam bounds and the hostile/passive toggle live on the map's spawn group, not
 here — see `spawn_groups` under section 1.
 
+### `barks` (NPC templates only)
+
+Lists of short utterances the NPC may emit as floating speech bubbles over
+its sprite. `aggro` entries fire on the Wander → Pursue transition when the
+NPC first sees a player; `mutter` entries fire on a low-probability per-tick
+roll while wandering. Both lists are optional; an NPC with neither stays
+silent. A per-NPC cooldown (8 seconds) limits any given mob to one bubble
+at a time. ASCII-only — the default font can't render symbols/emoji.
+
+```yaml
+barks:
+  aggro:
+    - "Grraah!"
+    - "Skin and bones!"
+  mutter:
+    - "*grumbles*"
+    - "Hungry..."
+```
+
 ### `spellcasting` (NPC templates only)
 
 NPCs with this block become spell casters. During each combat turn the AI

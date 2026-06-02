@@ -21,6 +21,14 @@ npc_behavior:
   step_interval_seconds: 0.9
   detect_distance_tiles: 5
   disengage_distance_tiles: 8
+barks:
+  aggro:
+    - "*rattle*"
+    - "Join us..."
+    - "*hollow clatter*"
+  mutter:
+    - "*creaks*"
+    - "*bones grinding*"
 render:
   debug_color: [218, 210, 185]
   debug_size: 0.88

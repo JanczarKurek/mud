@@ -195,6 +195,10 @@ pub struct OverworldObjectDefinition {
     /// `combat::npc_casting`. `None` for non-casters (default).
     #[serde(default)]
     pub spellcasting: Option<crate::npc::spellcasting::SpellcastingDef>,
+    /// Lists of short utterances this NPC may emit as floating speech
+    /// bubbles. Defaults to empty (NPC stays silent); see `BarkDef`.
+    #[serde(default)]
+    pub barks: BarkDef,
     /// Marks this object as a persistent-text artifact (book, tombstone, …).
     /// Drives the "Read" context-menu verb and, for `Book`, the "Edit" affordance
     /// inside the read panel. Text lives in `properties["title"]` /
@@ -264,6 +268,19 @@ fn default_alert_duration_seconds() -> f32 {
 
 fn default_requires_line_of_sight() -> bool {
     true
+}
+
+/// Lists of short utterances for an NPC's floating speech bubbles. Both
+/// lists default to empty, which leaves the NPC silent. The server picks a
+/// random entry from `aggro` on Wander → Pursue transitions, and from
+/// `mutter` on a low-probability roll while wandering.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct BarkDef {
+    #[serde(default)]
+    pub aggro: Vec<String>,
+    #[serde(default)]
+    pub mutter: Vec<String>,
 }
 
 /// Authoring block for the player-driven Hide action.

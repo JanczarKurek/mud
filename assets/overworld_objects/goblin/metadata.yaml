@@ -24,6 +24,15 @@ npc_behavior:
   step_interval_seconds: 0.9
   detect_distance_tiles: 5
   disengage_distance_tiles: 8
+barks:
+  aggro:
+    - "Grraah!"
+    - "Skin and bones!"
+    - "Stab! Stab!"
+  mutter:
+    - "*grumbles*"
+    - "Hungry..."
+    - "Where shiny things?"
 render:
   debug_color:
   - 92

@@ -3,8 +3,8 @@ use bevy::prelude::*;
 use crate::combat::components::{AttackProfile, CombatLeash};
 use crate::combat::damage_expr::DamageExpr;
 use crate::npc::components::{
-    AiMemory, AiState, HostileBehavior, Npc, RoamBounds, RoamingBehavior, RoamingRandomState,
-    RoamingStepTimer,
+    AiMemory, AiState, Barks, HostileBehavior, Npc, RoamBounds, RoamingBehavior,
+    RoamingRandomState, RoamingStepTimer,
 };
 use crate::persistence::WorldSnapshotStatus;
 use crate::player::components::InventoryStack;
@@ -354,6 +354,14 @@ pub fn spawn_overworld_object_instance(
                         max_distance_tiles: disengage,
                     },
                 ));
+            }
+            if let Some(def) = definition {
+                if !def.barks.aggro.is_empty() || !def.barks.mutter.is_empty() {
+                    entity_commands.insert(Barks {
+                        aggro: def.barks.aggro.clone(),
+                        mutter: def.barks.mutter.clone(),
+                    });
+                }
             }
             if let Some(profile) = definition
                 .and_then(|d| d.spellcasting.as_ref())

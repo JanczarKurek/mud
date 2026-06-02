@@ -112,4 +112,17 @@ pub struct AiMemory {
     /// Last cardinal/diagonal step the NPC took during Wander, used by the
     /// momentum bias. `None` immediately after spawn or after a pause.
     pub last_step: Option<IVec2>,
+    /// `time.elapsed_secs()` at which this NPC last emitted any speech
+    /// bubble. Used to rate-limit ambient mutters so a chatty NPC doesn't
+    /// spam the bubble overlay. Zero on spawn means "never spoken".
+    pub last_bark_seconds: f32,
+}
+
+/// Pools of utterances the AI can draw from for floating speech bubbles.
+/// Resolved from the NPC's `BarkDef` at spawn time. Component is omitted
+/// entirely for NPCs whose definition has no bark lists.
+#[derive(Component, Clone, Debug, Default)]
+pub struct Barks {
+    pub aggro: Vec<String>,
+    pub mutter: Vec<String>,
 }

@@ -85,6 +85,11 @@ pub fn apply_game_ui_events(
             other @ GameUiEvent::VfxSpawn { .. } => {
                 pending_ui_events.events.push(other);
             }
+            // Floating speech bubbles are consumed by the speech_bubble
+            // client-effects system. Re-queue so it sees the event.
+            other @ GameUiEvent::SpeechBubble { .. } => {
+                pending_ui_events.events.push(other);
+            }
             // Recipe UI events are consumed by recipe-book systems
             // registered in `CraftingClientPlugin` (Step 6). Re-queue
             // them so those systems see them this frame.

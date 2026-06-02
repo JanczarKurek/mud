@@ -18,6 +18,14 @@ npc_behavior:
   step_interval_seconds: 0.5
   detect_distance_tiles: 4
   disengage_distance_tiles: 6
+barks:
+  aggro:
+    - "*hiss*"
+    - "*screech*"
+    - "*chittering*"
+  mutter:
+    - "*sniff sniff*"
+    - "*scratching*"
 render:
   debug_color: [130, 105, 80]
   debug_size: 0.70

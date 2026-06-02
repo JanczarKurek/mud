@@ -6,9 +6,12 @@ use bevy::prelude::*;
 use crate::combat::components::{AttackKind, AttackProfile, CombatTarget};
 use crate::game::shop::Shopkeeper;
 use crate::magic::effects::MagicEffects;
+use crate::game::resources::{GameUiEvent, PendingGameUiEvents, SpeechBubbleStyle};
 use crate::npc::components::{
-    AiMemory, AiState, HostileBehavior, Npc, RoamingBehavior, RoamingRandomState, RoamingStepTimer,
+    AiMemory, AiState, Barks, HostileBehavior, Npc, RoamingBehavior, RoamingRandomState,
+    RoamingStepTimer,
 };
+use crate::world::components::OverworldObject;
 use crate::player::components::Player;
 use crate::world::components::{Collider, Facing, SpaceId, SpaceResident, TilePosition};
 use crate::world::direction::Direction;
@@ -23,6 +26,16 @@ const SHOPKEEPER_PAUSE_RADIUS_TILES: i32 = 2;
 /// In open terrain the Chebyshev heuristic keeps expansions close to
 /// O(distance); the cap bounds worst-case routing around obstacles.
 const ASTAR_EXPANSION_CAP: usize = 400;
+
+/// Probability per Wander tick that an NPC with mutter lines speaks one. Low
+/// by design — most ticks should be silent so the bubble overlay stays a
+/// flavor punctuation rather than constant chatter.
+const MUTTER_PROBABILITY: f32 = 0.05;
+
+/// Minimum seconds between two bubbles from the same NPC. Caps spam even
+/// when several rolls succeed in a row, and prevents an aggro bark from
+/// being immediately stepped on by a mutter.
+const BUBBLE_COOLDOWN_SECONDS: f32 = 8.0;
 
 /// Spatial index of static blocker tiles, rebuilt at the top of
 /// `update_roaming_npcs`. Replaces a per-NPC × per-candidate-tile linear scan
@@ -51,10 +64,13 @@ pub fn update_roaming_npcs(
             Option<&mut Facing>,
             Has<Shopkeeper>,
             Option<&MagicEffects>,
+            Option<&Barks>,
+            Option<&OverworldObject>,
         ),
         (With<Npc>, Without<Player>),
     >,
     mut pending_steps: ResMut<crate::world::step_triggers::PendingStepEvents>,
+    mut ui_events: Option<ResMut<PendingGameUiEvents>>,
     mut commands: Commands,
 ) {
     let elapsed = time.elapsed_secs();
@@ -93,6 +109,8 @@ pub fn update_roaming_npcs(
         mut facing,
         is_shopkeeper,
         magic_effects,
+        barks,
+        overworld_object,
     ) in &mut npc_query
     {
         timer.remaining_seconds = (timer.remaining_seconds - time.delta_secs()).max(0.0);
@@ -155,6 +173,7 @@ pub fn update_roaming_npcs(
             player_tiles: &player_tiles,
             random_state: &mut random_state,
             elapsed,
+            barks,
         });
 
         *ai_state = outcome.next_state;
@@ -190,6 +209,19 @@ pub fn update_roaming_npcs(
             }
         }
 
+        if let Some(bark) = outcome.bark {
+            if let (Some(ui_events), Some(overworld_object)) =
+                (ui_events.as_deref_mut(), overworld_object)
+            {
+                ui_events.push_broadcast(GameUiEvent::SpeechBubble {
+                    speaker_object_id: overworld_object.object_id,
+                    text: bark.text,
+                    style: bark.style,
+                });
+                ai_memory.last_bark_seconds = elapsed;
+            }
+        }
+
         let base_interval = sample_step_interval(behavior, &mut random_state);
         let interval = if outcome.idle_pause {
             base_interval * 1.5
@@ -219,6 +251,12 @@ struct StepAiInput<'a> {
     player_tiles: &'a PlayerTileSet,
     random_state: &'a mut RoamingRandomState,
     elapsed: f32,
+    barks: Option<&'a Barks>,
+}
+
+struct PendingBark {
+    text: String,
+    style: SpeechBubbleStyle,
 }
 
 struct AiOutcome {
@@ -227,6 +265,7 @@ struct AiOutcome {
     target: TargetChange,
     move_to: Option<TilePosition>,
     idle_pause: bool,
+    bark: Option<PendingBark>,
 }
 
 enum TargetChange {
@@ -265,19 +304,32 @@ fn tick_wander(input: &mut StepAiInput<'_>) -> AiOutcome {
             // CombatTarget — ensure we mark the component regardless of what
             // the pursue/engage helper decided about target re-affirmation.
             outcome.target = TargetChange::Set(target_entity);
+            outcome.bark = pick_bark(input, BarkKind::Aggro);
             return outcome;
         }
     }
+
+    // Low-probability ambient mutter while wandering. Gated by a per-NPC
+    // cooldown so an unlucky streak doesn't produce a chatty NPC.
+    let mutter = if next_random_f32(input.random_state) < MUTTER_PROBABILITY {
+        pick_bark(input, BarkKind::Mutter)
+    } else {
+        None
+    };
 
     // No target — wander with momentum + idle pauses.
     let roll = next_random_f32(input.random_state);
     if roll < input.behavior.idle_pause_chance {
         return AiOutcome {
             next_state: AiState::Wander,
-            next_memory: AiMemory { last_step: None },
+            next_memory: AiMemory {
+                last_step: None,
+                ..input.memory
+            },
             target: TargetChange::Keep,
             move_to: None,
             idle_pause: true,
+            bark: mutter,
         };
     }
 
@@ -313,10 +365,12 @@ fn tick_wander(input: &mut StepAiInput<'_>) -> AiOutcome {
             next_memory: AiMemory {
                 last_step: step
                     .map(|p| IVec2::new(p.x - input.tile_position.x, p.y - input.tile_position.y)),
+                ..input.memory
             },
             target: TargetChange::Keep,
             move_to: step,
             idle_pause: false,
+            bark: mutter,
         };
     }
 
@@ -357,20 +411,26 @@ fn tick_wander(input: &mut StepAiInput<'_>) -> AiOutcome {
             next_state: AiState::Wander,
             next_memory: AiMemory {
                 last_step: Some(delta),
+                ..input.memory
             },
             target: TargetChange::Keep,
             move_to: Some(target_position),
             idle_pause: false,
+            bark: mutter,
         };
     }
 
     // Fully boxed in — stand still, clear momentum so we re-roll next tick.
     AiOutcome {
         next_state: AiState::Wander,
-        next_memory: AiMemory { last_step: None },
+        next_memory: AiMemory {
+            last_step: None,
+            ..input.memory
+        },
         target: TargetChange::Keep,
         move_to: None,
         idle_pause: false,
+        bark: mutter,
     }
 }
 
@@ -401,10 +461,14 @@ fn tick_alert(
     if input.elapsed >= expires_at_seconds {
         return AiOutcome {
             next_state: AiState::Wander,
-            next_memory: AiMemory { last_step: None },
+            next_memory: AiMemory {
+                last_step: None,
+                ..input.memory
+            },
             target: TargetChange::Keep,
             move_to: None,
             idle_pause: false,
+            bark: None,
         };
     }
 
@@ -439,10 +503,14 @@ fn tick_alert(
             last_seen,
             expires_at_seconds,
         },
-        next_memory: AiMemory { last_step: None },
+        next_memory: AiMemory {
+            last_step: None,
+            ..input.memory
+        },
         target: TargetChange::Keep,
         move_to: next,
         idle_pause: false,
+        bark: None,
     }
 }
 
@@ -453,29 +521,41 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
     else {
         return AiOutcome {
             next_state: AiState::Wander,
-            next_memory: AiMemory { last_step: None },
+            next_memory: AiMemory {
+                last_step: None,
+                ..input.memory
+            },
             target: TargetChange::Clear,
             move_to: None,
             idle_pause: false,
+            bark: None,
         };
     };
     if target_space != input.space_id {
         return AiOutcome {
             next_state: AiState::Wander,
-            next_memory: AiMemory { last_step: None },
+            next_memory: AiMemory {
+                last_step: None,
+                ..input.memory
+            },
             target: TargetChange::Clear,
             move_to: None,
             idle_pause: false,
+            bark: None,
         };
     }
 
     let Some(hostile) = input.hostile_behavior else {
         return AiOutcome {
             next_state: AiState::Wander,
-            next_memory: AiMemory { last_step: None },
+            next_memory: AiMemory {
+                last_step: None,
+                ..input.memory
+            },
             target: TargetChange::Clear,
             move_to: None,
             idle_pause: false,
+            bark: None,
         };
     };
 
@@ -488,10 +568,14 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
                 last_seen: target_pos,
                 expires_at_seconds: input.elapsed + hostile.alert_duration_seconds,
             },
-            next_memory: AiMemory { last_step: None },
+            next_memory: AiMemory {
+                last_step: None,
+                ..input.memory
+            },
             target: TargetChange::Clear,
             move_to: None,
             idle_pause: false,
+            bark: None,
         };
     }
 
@@ -509,10 +593,14 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
                 last_seen: target_pos,
                 expires_at_seconds: input.elapsed + hostile.alert_duration_seconds,
             },
-            next_memory: AiMemory { last_step: None },
+            next_memory: AiMemory {
+                last_step: None,
+                ..input.memory
+            },
             target: TargetChange::Clear,
             move_to: None,
             idle_pause: false,
+            bark: None,
         };
     }
 
@@ -551,10 +639,14 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
         });
         return AiOutcome {
             next_state: AiState::Pursue { target },
-            next_memory: AiMemory { last_step: None },
+            next_memory: AiMemory {
+                last_step: None,
+                ..input.memory
+            },
             target: next_target,
             move_to,
             idle_pause: false,
+            bark: None,
         };
     }
 
@@ -576,10 +668,14 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
 
     AiOutcome {
         next_state: AiState::Engage { target },
-        next_memory: AiMemory { last_step: None },
+        next_memory: AiMemory {
+            last_step: None,
+            ..input.memory
+        },
         target: next_target,
         move_to,
         idle_pause: false,
+        bark: None,
     }
 }
 
@@ -609,6 +705,38 @@ fn attack_range_for(profile: Option<&AttackProfile>) -> i32 {
         Some(AttackKind::Ranged { range_tiles }) => range_tiles.max(1),
         _ => 1,
     }
+}
+
+#[derive(Clone, Copy)]
+enum BarkKind {
+    Aggro,
+    Mutter,
+}
+
+/// Pull a random utterance from the NPC's `Barks` pool of the requested
+/// kind, honoring the per-NPC cooldown. Returns `None` if the pool is empty
+/// or the cooldown hasn't elapsed.
+fn pick_bark(input: &mut StepAiInput<'_>, kind: BarkKind) -> Option<PendingBark> {
+    let barks = input.barks?;
+    let pool = match kind {
+        BarkKind::Aggro => &barks.aggro,
+        BarkKind::Mutter => &barks.mutter,
+    };
+    if pool.is_empty() {
+        return None;
+    }
+    if input.elapsed - input.memory.last_bark_seconds < BUBBLE_COOLDOWN_SECONDS {
+        return None;
+    }
+    let pick = (next_random_f32(input.random_state) * pool.len() as f32) as usize;
+    let pick = pick.min(pool.len() - 1);
+    Some(PendingBark {
+        text: pool[pick].clone(),
+        style: match kind {
+            BarkKind::Aggro => SpeechBubbleStyle::Bark,
+            BarkKind::Mutter => SpeechBubbleStyle::Mutter,
+        },
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1492,6 +1620,7 @@ mod tests {
                 AiState::default(),
                 AiMemory {
                     last_step: Some(IVec2::new(0, 1)),
+                    ..Default::default()
                 },
             ))
             .id();
