@@ -258,6 +258,7 @@ render:
             OverworldObject {
                 object_id: 1,
                 definition_id: "roof".to_string(),
+                placement_seq: 0,
             },
             SpaceResident { space_id: SPACE },
             TilePosition::new(x, y, z),

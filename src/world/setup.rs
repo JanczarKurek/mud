@@ -519,6 +519,7 @@ pub fn spawn_overworld_object(
         OverworldObject {
             object_id,
             definition_id: definition_id.to_owned(),
+            placement_seq: 0,
         },
         SpaceResident { space_id },
         tile_position,

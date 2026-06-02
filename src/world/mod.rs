@@ -143,6 +143,26 @@ impl Plugin for WorldServerPlugin {
         )
         .add_systems(
             Update,
+            // Stamp `placement_seq` onto freshly-spawned `OverworldObject`s
+            // before the projection serializes them, so the very first
+            // `WorldObjectUpserted` for a new item already carries the right
+            // LIFO ordering. Independent of `simulation_active` so items
+            // spawned at world-load (before sim starts) are also stamped.
+            crate::world::stacks::stamp_placement_seq_on_spawn
+                .after(crate::game::systems::process_game_commands)
+                .before(crate::game::projection::collect_game_events_from_authority),
+        )
+        .add_systems(
+            Update,
+            // Mirror the authoritative placement_seq to a presentation-side
+            // `RenderStackOrder` component so the renderer can break z-ties
+            // (e.g. multiple flat items at z=0) in LIFO order. Must run after
+            // the stamp system so the fresh seq is visible to `Changed`.
+            crate::world::stacks::sync_render_stack_order
+                .after(crate::world::stacks::stamp_placement_seq_on_spawn),
+        )
+        .add_systems(
+            Update,
             // The "while standing on" half of the step-trigger pipeline.
             // Ordered after the one-shot path so an entry hit always lands
             // before the very next periodic tick on the same frame.

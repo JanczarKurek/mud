@@ -4233,8 +4233,12 @@ fn cursor_hits_tile(
 /// Find the topmost world object whose rendered tile is under the cursor and
 /// passes `predicate`. Per-object perspective projection (`cursor_hits_tile`)
 /// means objects at any `z` are picked correctly — including a ground chest
-/// while the player stands on another chest. Ties broken by higher `z`
-/// (visible top of the stack wins).
+/// while the player stands on another chest. Ties broken by `(z, placement_seq)`:
+/// higher `z` wins, and within the same `z` the most-recently-placed item
+/// wins (LIFO). Without the `placement_seq` tiebreaker, `block_size == 0`
+/// items on the same tile would all share `z = 0` and pickup would resolve
+/// to whichever the HashMap iterator yielded first — non-deterministic and
+/// not necessarily matching the visual top.
 fn topmost_object_at_cursor<'a, F>(
     client_state: &'a ClientGameState,
     window: &Window,
@@ -4262,8 +4266,9 @@ where
         ) {
             continue;
         }
+        let key = (object.tile_position.z, object.placement_seq);
         if best
-            .map(|b| object.tile_position.z > b.tile_position.z)
+            .map(|b| key > (b.tile_position.z, b.placement_seq))
             .unwrap_or(true)
         {
             best = Some(object);

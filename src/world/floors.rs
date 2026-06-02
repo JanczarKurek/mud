@@ -406,6 +406,7 @@ render:
                 is_hidden: false,
                 is_hostile: false,
                 is_targeting_local_player: false,
+                placement_seq: 0,
             },
         );
 

@@ -5275,6 +5275,7 @@ mod tests {
                 OverworldObject {
                     object_id,
                     definition_id: "player".to_owned(),
+                    placement_seq: 0,
                 },
                 SpaceResident {
                     space_id: current_space_id,
@@ -5303,6 +5304,7 @@ mod tests {
             OverworldObject {
                 object_id,
                 definition_id: type_id.to_owned(),
+                placement_seq: 0,
             },
             SpaceResident {
                 space_id: current_space_id,
@@ -5645,6 +5647,116 @@ mod tests {
             inv.equipment_item(EquipmentSlot::Weapon)
                 .map(|i| &i.type_id),
             Some(&"herb_knife".to_owned()),
+        );
+    }
+
+    #[test]
+    fn dropping_two_items_stamps_later_with_higher_placement_seq() {
+        // Reproduces the user's bug: drop pickaxe, then pen on the same tile.
+        // The pen (last dropped) must end up with a higher `placement_seq`
+        // than the pickaxe so the LIFO tiebreak picks it up first.
+        use crate::world::components::SpaceResident;
+
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+
+        {
+            let mut inv = app.world_mut().get_mut::<Inventory>(player).unwrap();
+            inv.backpack_slots[0] = Some(InventoryStack::item(
+                "pickaxe".to_owned(),
+                ObjectProperties::new(),
+                1,
+            ));
+            inv.backpack_slots[1] = Some(InventoryStack::item(
+                "pen".to_owned(),
+                ObjectProperties::new(),
+                1,
+            ));
+        }
+
+        let drop_tile = TilePosition::ground(11, 10);
+
+        // Drop pickaxe first.
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                PlayerId(1),
+                GameCommand::MoveItem {
+                    source: ItemReference::Slot(ItemSlotRef::Backpack(0)),
+                    destination: ItemDestination::WorldTile(drop_tile),
+                },
+            );
+        app.update();
+
+        // Drop pen second.
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                PlayerId(1),
+                GameCommand::MoveItem {
+                    source: ItemReference::Slot(ItemSlotRef::Backpack(1)),
+                    destination: ItemDestination::WorldTile(drop_tile),
+                },
+            );
+        app.update();
+
+        let space_id = app
+            .world()
+            .get::<SpaceResident>(player)
+            .unwrap()
+            .space_id;
+
+        let mut q = app
+            .world_mut()
+            .query::<(&OverworldObject, &SpaceResident, &TilePosition)>();
+        let found_at_tile: Vec<(String, u64)> = q
+            .iter(app.world())
+            .filter(|(_, resident, tile)| {
+                resident.space_id == space_id && tile.x == drop_tile.x && tile.y == drop_tile.y
+            })
+            .map(|(o, _, _)| (o.definition_id.clone(), o.placement_seq))
+            .collect();
+        let pickaxe_seq = found_at_tile
+            .iter()
+            .find(|(id, _)| id == "pickaxe")
+            .map(|(_, s)| *s)
+            .expect("pickaxe spawned on tile");
+        let pen_seq = found_at_tile
+            .iter()
+            .find(|(id, _)| id == "pen")
+            .map(|(_, s)| *s)
+            .expect("pen spawned on tile");
+        assert!(
+            pen_seq > pickaxe_seq,
+            "pen should have higher placement_seq than pickaxe at drop tile: \
+             pen={pen_seq} pickaxe={pickaxe_seq}",
+        );
+
+        // Sanity check the client-side projection at the same drop tile.
+        let client_state = app.world().resource::<ClientGameState>();
+        let pen_state = client_state
+            .world_objects
+            .values()
+            .find(|o| {
+                o.definition_id == "pen"
+                    && o.tile_position.x == drop_tile.x
+                    && o.tile_position.y == drop_tile.y
+            })
+            .expect("dropped pen replicated to client");
+        let pickaxe_state = client_state
+            .world_objects
+            .values()
+            .find(|o| {
+                o.definition_id == "pickaxe"
+                    && o.tile_position.x == drop_tile.x
+                    && o.tile_position.y == drop_tile.y
+            })
+            .expect("dropped pickaxe replicated to client");
+        assert!(
+            pen_state.placement_seq > pickaxe_state.placement_seq,
+            "client-side placement_seq: pen={} pickaxe={}",
+            pen_state.placement_seq,
+            pickaxe_state.placement_seq,
         );
     }
 

@@ -223,6 +223,7 @@ render:
             OverworldObject {
                 object_id,
                 definition_id: "trinket".to_string(),
+                placement_seq: 0,
             },
             SpaceResident { space_id: space },
             object_tile,

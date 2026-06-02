@@ -1523,6 +1523,7 @@ mod tests {
                 OverworldObject {
                     object_id,
                     definition_id: "player".to_owned(),
+                    placement_seq: 0,
                 },
                 crate::world::components::SpaceResident {
                     space_id: current_space_id,
@@ -1548,6 +1549,7 @@ mod tests {
             OverworldObject {
                 object_id,
                 definition_id: type_id.to_owned(),
+                placement_seq: 0,
             },
             crate::world::components::SpaceResident {
                 space_id: current_space_id,

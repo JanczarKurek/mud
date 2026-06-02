@@ -24,6 +24,7 @@ use crate::game::projection::{
 };
 use crate::game::resources::{
     ClientGameState, ContainerViewers, PendingGameCommands, PendingGameEvents, PendingGameUiEvents,
+    PlacementSeqCounter,
 };
 use crate::game::systems::{
     process_floor_commands, process_game_commands, process_rotate_commands,
@@ -56,6 +57,7 @@ impl Plugin for GameServerPlugin {
             .insert_resource(PendingDiscoveryEvents::default())
             .insert_resource(ClientGameState::default())
             .insert_resource(ContainerViewers::default())
+            .insert_resource(PlacementSeqCounter::default())
             .insert_resource(ActiveTrades::default())
             .configure_sets(
                 Update,

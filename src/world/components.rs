@@ -86,6 +86,13 @@ pub struct ViewPosition {
 pub struct OverworldObject {
     pub object_id: u64,
     pub definition_id: String,
+    /// Monotonic placement counter. Each time this object's tile is set or
+    /// changed, it gets a fresh value from `PlacementSeqCounter`. Used as a
+    /// tiebreaker in both the renderer and the pickup selector so the
+    /// most-recently-placed item at a given `(x, y, z)` ends up visually on
+    /// top *and* is the one picked first (LIFO). Runtime-only — re-stamped
+    /// in load order on world load, no save-format change.
+    pub placement_seq: u64,
 }
 
 /// Authoritative discrete-state marker for objects whose definition declares
@@ -153,6 +160,15 @@ pub struct ClientRemotePlayerVisual {
     pub player_id: PlayerId,
     pub object_id: u64,
 }
+
+/// Renderer-only mirror of `OverworldObject::placement_seq` (authoritative
+/// entities in EmbeddedClient mode) or `ClientWorldObjectState::placement_seq`
+/// (projected entities in TcpClient mode). `y_sort_z` adds a tiny term from
+/// this so two items sharing the same `tile.z` render in placement order.
+/// Lives on the presentation side so `sync_tile_transforms` can read it via
+/// the same `Option<&...>` query for both authoritative and projected entities.
+#[derive(Component, Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RenderStackOrder(pub u64);
 
 #[derive(Component)]
 pub struct Movable;

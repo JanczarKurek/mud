@@ -308,6 +308,7 @@ pub fn spawn_player_from_dump(
             OverworldObject {
                 object_id,
                 definition_id: "player".to_owned(),
+                placement_seq: 0,
             },
             SpaceResident { space_id },
             dump.tile_position,
@@ -373,6 +374,7 @@ pub fn spawn_player_authoritative_in_space(
             OverworldObject {
                 object_id,
                 definition_id: "player".to_owned(),
+                placement_seq: 0,
             },
             SpaceResident { space_id },
             tile_position,

@@ -5,7 +5,8 @@ use crate::player::components::Player;
 use crate::world::animation::{JustMoved, VisualOffset};
 use crate::world::components::{
     ClientProjectedWorldObject, ClientRemotePlayerVisual, CombatHealthBar, DisplayedVitalStats,
-    Facing, HealthBarDisplayPolicy, SpaceResident, TilePosition, ViewPosition, WorldVisual,
+    Facing, HealthBarDisplayPolicy, RenderStackOrder, SpaceResident, TilePosition, ViewPosition,
+    WorldVisual,
 };
 use crate::world::direction::Direction;
 use crate::world::floors::{
@@ -187,6 +188,12 @@ pub fn sync_client_world_projection(
         if facing.0 != object.facing {
             facing.0 = object.facing;
         }
+        // Mirror the authoritative `placement_seq` onto a `RenderStackOrder`
+        // component so `sync_tile_transforms` can use it as a y-sort
+        // tiebreaker. `insert` overwrites if the component already exists.
+        commands
+            .entity(query_entity)
+            .insert(RenderStackOrder(object.placement_seq));
     }
 
     let stale_object_ids = projection_state
@@ -406,12 +413,21 @@ pub fn floor_screen_offset(view_z: f32, player_z: f32, tile_size: f32) -> Vec2 {
 /// the player's iso position is "in front of" the wall.
 ///
 /// `stack_index` is a tiebreaker for objects stacked on the SAME tile (chest
-/// atop barrel). Floor offsets are additive and dominate y-sort so upper
-/// floors always render above lower ones when both are visible.
-pub fn y_sort_z(tile_x: i32, tile_y: i32, floor: i32, stack_index: i32) -> f32 {
+/// atop barrel). `placement_seq` is a finer tiebreaker for items sharing the
+/// same `(tile, stack_index)` — most relevant for flat (`block_size == 0`)
+/// items, which all end up at `stack_index = 0`. Last-placed gets the highest
+/// `placement_seq`, so it renders on top (LIFO), matching pickup order.
+/// Floor offsets are additive and dominate y-sort so upper floors always
+/// render above lower ones when both are visible.
+pub fn y_sort_z(tile_x: i32, tile_y: i32, floor: i32, stack_index: i32, placement_seq: u64) -> f32 {
+    // `placement_seq * 1e-5` stays inside the `stack_index * 1e-3` step so
+    // a placement-seq bump can never reorder a stack_index ordering. `% 100`
+    // caps the term inside that envelope even when the counter grows large
+    // over a long session.
     floor as f32 * FLOOR_Z_STEP + 1.0 - tile_y as f32 * 0.01
         + tile_x as f32 * 0.01
         + stack_index as f32 * 0.001
+        + (placement_seq % 100) as f32 * 0.00001
 }
 
 /// Flat-layer z for a non-y-sorted entity (ground tiles, pickups). Combines
@@ -442,6 +458,7 @@ pub fn sync_tile_transforms(
             Option<&mut Sprite>,
             Option<&VisualOffset>,
             Option<&Facing>,
+            Option<&RenderStackOrder>,
         ),
         Without<Player>,
     >,
@@ -479,17 +496,28 @@ pub fn sync_tile_transforms(
     // floor-relative up-left offset, plus per-entity `VisualOffset` lerp and
     // any stack offset. Camera follow handles the player-centered scroll, so
     // stable entities still never get marked changed when nothing moves.
-    for (view, world_visual, mut transform, mut sprite, visual_offset, facing) in &mut query {
+    for (view, world_visual, mut transform, mut sprite, visual_offset, facing, stack_order) in
+        &mut query
+    {
         let is_active = view.space_id == player_position.space_id;
         let view_floor = crate::world::components::floor_index(view.tile.z);
         let floor_visible = visible_floors.contains(view_floor);
+        let placement_seq = stack_order.copied().unwrap_or_default().0;
 
         let z = if !is_active || !floor_visible {
             -10_000.0
         } else if world_visual.y_sort {
             // Use view.tile.z directly as the per-z tiebreak — objects stacked
             // higher in the column (e.g. chest on chest) render in front.
-            y_sort_z(view.tile.x, view.tile.y, view_floor, view.tile.z)
+            // `placement_seq` is a finer tiebreak for items sharing the same
+            // (tile, z) — e.g. multiple flat items dropped on one floor tile.
+            y_sort_z(
+                view.tile.x,
+                view.tile.y,
+                view_floor,
+                view.tile.z,
+                placement_seq,
+            )
         } else {
             flat_floor_z(world_visual.z_index, view_floor)
         };
@@ -597,7 +625,7 @@ pub fn sync_player_z(
         let _ = client_state.player_position;
         // Subtract half-tile epsilon so world objects at the same tile_y always render in front.
         let view_floor = crate::world::components::floor_index(view.tile.z);
-        let new_z = y_sort_z(view.tile.x, view.tile.y, view_floor, 0) - 0.005;
+        let new_z = y_sort_z(view.tile.x, view.tile.y, view_floor, 0, 0) - 0.005;
         if (transform.translation.z - new_z).abs() > 0.001 {
             info!(
                 "player z update: tile_y={} tile_z={} z_index={} -> z={}",
@@ -755,9 +783,9 @@ mod tests {
 
     #[test]
     fn y_sort_z_stack_index_breaks_ties() {
-        let bottom = y_sort_z(5, 10, 0, 0);
-        let middle = y_sort_z(5, 10, 0, 1);
-        let top = y_sort_z(5, 10, 0, 2);
+        let bottom = y_sort_z(5, 10, 0, 0, 0);
+        let middle = y_sort_z(5, 10, 0, 1, 0);
+        let top = y_sort_z(5, 10, 0, 2, 0);
         // Stack index bumps z so the upper item renders on top of the lower.
         assert!(top > middle);
         assert!(middle > bottom);
@@ -768,8 +796,8 @@ mod tests {
         // Stack tiebreak must not cross the row-spacing of 0.01, or stacked
         // objects on one tile would invert their sort versus a neighbour on
         // the next tile_y.
-        let stack_bump = y_sort_z(5, 10, 0, 1) - y_sort_z(5, 10, 0, 0);
-        let row_bump = y_sort_z(5, 9, 0, 0) - y_sort_z(5, 10, 0, 0);
+        let stack_bump = y_sort_z(5, 10, 0, 1, 0) - y_sort_z(5, 10, 0, 0, 0);
+        let row_bump = y_sort_z(5, 9, 0, 0, 0) - y_sort_z(5, 10, 0, 0, 0);
         assert!(stack_bump < row_bump);
     }
 
@@ -777,8 +805,26 @@ mod tests {
     fn y_sort_z_east_tile_renders_above_west_on_same_row() {
         // In the cabinet projection, east is closer to the camera than west,
         // so a higher tile_x should sort above a lower tile_x at the same tile_y.
-        let west = y_sort_z(3, 10, 0, 0);
-        let east = y_sort_z(7, 10, 0, 0);
+        let west = y_sort_z(3, 10, 0, 0, 0);
+        let east = y_sort_z(7, 10, 0, 0, 0);
         assert!(east > west);
+    }
+
+    #[test]
+    fn y_sort_z_placement_seq_breaks_z_ties() {
+        // Two items at the same (x, y, floor, stack_index) but different
+        // placement_seq: the higher seq must sort above (LIFO).
+        let earlier = y_sort_z(5, 10, 0, 0, 1);
+        let later = y_sort_z(5, 10, 0, 0, 7);
+        assert!(later > earlier);
+    }
+
+    #[test]
+    fn y_sort_z_placement_seq_step_smaller_than_stack_step() {
+        // The placement-seq term must stay inside the per-`stack_index` step
+        // so a placement bump can never reorder a `stack_index` ordering.
+        let seq_bump = y_sort_z(5, 10, 0, 0, 1) - y_sort_z(5, 10, 0, 0, 0);
+        let stack_bump = y_sort_z(5, 10, 0, 1, 0) - y_sort_z(5, 10, 0, 0, 0);
+        assert!(seq_bump < stack_bump);
     }
 }

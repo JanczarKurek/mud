@@ -263,6 +263,7 @@ mod tests {
             OverworldObject {
                 object_id: 100,
                 definition_id: "wooden_door".into(),
+                placement_seq: 0,
             },
             SpaceResident { space_id },
             TilePosition::ground(2, 3),
@@ -273,6 +274,7 @@ mod tests {
             OverworldObject {
                 object_id: 200,
                 definition_id: "rat".into(),
+                placement_seq: 0,
             },
             SpaceResident { space_id },
             TilePosition::ground(5, 5),

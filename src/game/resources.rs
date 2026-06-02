@@ -321,6 +321,11 @@ pub struct ClientWorldObjectState {
     /// `compute_events_for_peer`.
     #[serde(default)]
     pub is_targeting_local_player: bool,
+    /// Monotonic server-side placement stamp. Tiebreaker after `tile_position.z`
+    /// for both the renderer and the pickup selector, so the most-recently
+    /// placed item at a tile is visually on top and is picked up first.
+    #[serde(default)]
+    pub placement_seq: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -548,6 +553,31 @@ pub enum GameEvent {
 #[derive(Resource, Default)]
 pub struct PendingGameEvents {
     pub events: Vec<GameEvent>,
+}
+
+/// Server-side monotonic counter stamped onto every world-object placement.
+/// Drives last-placed-wins (LIFO) stack ordering for items sharing the same
+/// `(space, x, y, z)` — most relevant for flat (`block_size == 0`) items, which
+/// otherwise all collapse to `z = 0`. The renderer and the pickup selector
+/// both use `(tile.z, placement_seq)` as the ordering key so visual top
+/// matches pickup top. Runtime-only; no persistence.
+#[derive(Resource, Default)]
+pub struct PlacementSeqCounter(u64);
+
+impl PlacementSeqCounter {
+    /// Returns a fresh seq and increments. Call this from every site that
+    /// places an `OverworldObject` onto a tile or moves it between tiles.
+    pub fn next(&mut self) -> u64 {
+        let v = self.0;
+        self.0 = self.0.wrapping_add(1);
+        v
+    }
+
+    /// Current counter value (next `next()` returns this). For tests / debug.
+    #[cfg(test)]
+    pub fn current(&self) -> u64 {
+        self.0
+    }
 }
 
 /// Tracks which players currently have a container's panel open. Drives the

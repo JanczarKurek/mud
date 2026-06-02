@@ -704,6 +704,7 @@ pub fn compute_events_for_peer(
             is_hidden: hidden.is_some(),
             is_hostile: has_hostile,
             is_targeting_local_player,
+            placement_seq: object.placement_seq,
         };
 
         if previous.world_objects.get(&object.object_id) != Some(&projected_object) {

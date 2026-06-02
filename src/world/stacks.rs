@@ -1,6 +1,9 @@
 use bevy::prelude::*;
 
-use crate::world::components::{OverworldObject, SpaceId, SpaceResident, TilePosition};
+use crate::game::resources::PlacementSeqCounter;
+use crate::world::components::{
+    OverworldObject, RenderStackOrder, SpaceId, SpaceResident, TilePosition,
+};
 use crate::world::floor_definitions::FloorTilesetDefinitions;
 use crate::world::floor_map::FloorMaps;
 use crate::world::floors::{floormap_tile_walkable, MAX_FLOORS_ABOVE};
@@ -294,9 +297,97 @@ pub fn settle_pending_stacks(
     }
 }
 
+/// Stamps a fresh `placement_seq` onto every newly-spawned `OverworldObject`.
+/// Runs once per Bevy tick; `Added<OverworldObject>` makes it a no-op for
+/// entities whose component was attached in a prior tick, so it doesn't fight
+/// `settle_pending_stacks` (which only mutates `TilePosition.z`) and doesn't
+/// re-stamp moving players/NPCs each step. The single point of seq
+/// assignment — production placement paths (world load, NPC corpse drops,
+/// inventory→world drops, editor placements) all funnel through fresh
+/// `spawn` calls, which `Added` catches uniformly.
+pub fn stamp_placement_seq_on_spawn(
+    counter: Option<ResMut<PlacementSeqCounter>>,
+    mut query: Query<&mut OverworldObject, Added<OverworldObject>>,
+) {
+    let Some(mut counter) = counter else {
+        return;
+    };
+    for mut object in query.iter_mut() {
+        object.placement_seq = counter.next();
+    }
+}
+
+/// Mirrors `OverworldObject::placement_seq` to a `RenderStackOrder` component
+/// on the same entity so `sync_tile_transforms` can use a single
+/// `Option<&RenderStackOrder>` query for both authoritative entities (this
+/// path) and TcpClient projected entities (handled in
+/// `sync_client_world_projection`).
+pub fn sync_render_stack_order(
+    mut commands: Commands,
+    query: Query<(Entity, &OverworldObject, Option<&RenderStackOrder>), Changed<OverworldObject>>,
+) {
+    for (entity, object, existing) in &query {
+        let next = RenderStackOrder(object.placement_seq);
+        if existing.copied() != Some(next) {
+            commands.entity(entity).insert(next);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stamp_places_unique_seq_per_spawn() {
+        let mut app = App::new();
+        app.insert_resource(PlacementSeqCounter::default());
+        app.add_systems(Update, stamp_placement_seq_on_spawn);
+
+        let space_id = SpaceId(1);
+        let e1 = app
+            .world_mut()
+            .spawn((
+                OverworldObject {
+                    object_id: 10,
+                    definition_id: "pickaxe".to_string(),
+                    placement_seq: 0,
+                },
+                SpaceResident { space_id },
+                TilePosition::ground(5, 5),
+            ))
+            .id();
+        app.update();
+        let seq1 = app
+            .world()
+            .entity(e1)
+            .get::<OverworldObject>()
+            .unwrap()
+            .placement_seq;
+
+        let e2 = app
+            .world_mut()
+            .spawn((
+                OverworldObject {
+                    object_id: 11,
+                    definition_id: "pen".to_string(),
+                    placement_seq: 0,
+                },
+                SpaceResident { space_id },
+                TilePosition::ground(5, 5),
+            ))
+            .id();
+        app.update();
+        let seq2 = app
+            .world()
+            .entity(e2)
+            .get::<OverworldObject>()
+            .unwrap()
+            .placement_seq;
+
+        // Later spawn must get a strictly higher seq so LIFO tiebreak works.
+        assert!(seq2 > seq1, "second seq {seq2} should exceed first {seq1}");
+    }
 
     #[test]
     fn can_place_respects_reach() {

@@ -889,6 +889,7 @@ fn load_world_from_snapshot(
             OverworldObject {
                 object_id: runtime_id,
                 definition_id: object.definition_id,
+                placement_seq: 0,
             },
             SpaceResident { space_id },
             crate::world::components::Facing(resolved_facing),
