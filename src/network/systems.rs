@@ -1509,6 +1509,7 @@ mod tests {
                 ChatLog::default(),
                 base_stats,
                 derived_stats,
+                crate::player::skills::SkillSheet::default(),
                 VitalStats::full(max_health, max_mana),
                 MovementCooldown::default(),
                 (

@@ -698,6 +698,9 @@ pub enum CursorMode {
     /// fireball) where the cast center is the floor itself.
     SpellTargetTile,
     AttackTarget,
+    /// Athletic jump target selection (Shift+J). The next left-click resolves
+    /// to a tile within `JUMP_MAX_RANGE` and submits `GameCommand::JumpTo`.
+    JumpTarget,
 }
 
 impl CursorMode {}
@@ -712,12 +715,22 @@ pub struct CursorState {
     /// definition field use that, everything else falls back to the default.
     /// Cleared together with the mode via `reset_to_default`.
     pub use_on_sprite: Option<String>,
+    /// World tile the jump-targeting reticle is locked to. Set on cursor
+    /// movement and cleared on mode exit; lets the highlight stay on the
+    /// chosen world tile (and the DC keep updating) as the player walks.
+    pub jump_target_tile: Option<TilePosition>,
+    /// Last cursor screen position observed while resolving `jump_target_tile`.
+    /// Comparing against the current `window.cursor_position()` tells the
+    /// system "the user moved the cursor" without needing event readers.
+    pub jump_last_cursor: Option<Vec2>,
 }
 
 impl CursorState {
     pub fn reset_to_default(&mut self) {
         self.mode = CursorMode::Default;
         self.use_on_sprite = None;
+        self.jump_target_tile = None;
+        self.jump_last_cursor = None;
     }
 }
 

@@ -226,6 +226,7 @@ fn two_clients_receive_snapshots_and_see_each_other_move() {
 
     client_one.send(ClientMessage::Command(GameCommand::MovePlayer {
         delta: MoveDelta { x: 1, y: 0 },
+        climb: false,
     }));
 
     let updated_one = wait_for_snapshot(&mut app, &mut client_one, |snapshot| {
@@ -289,6 +290,7 @@ fn reconnecting_same_account_restores_character_position() {
 
     client.send(ClientMessage::Command(GameCommand::MovePlayer {
         delta: MoveDelta { x: 1, y: 0 },
+        climb: false,
     }));
     let moved = wait_for_snapshot(&mut app, &mut client, |snapshot| {
         snapshot.player_tile_position != Some(starting_tile)

@@ -90,22 +90,23 @@ use crate::ui::systems::{
     consume_level_up_toasts, handle_attack_targeting, handle_context_menu_actions,
     handle_context_menu_lock_actions, handle_context_menu_opening, handle_context_menu_read_action,
     handle_death_summary_dismiss, handle_docked_panel_close_buttons, handle_docked_panel_dragging,
-    handle_docked_panel_resizing, handle_docked_panel_scrolling, handle_movable_dragging,
-    handle_nearby_npc_row_clicks, handle_spell_targeting, handle_take_partial_buttons,
-    handle_trade_context_menu_actions, handle_use_on_targeting, manage_open_containers,
-    print_right_sidebar_layout_debug, setup_native_custom_cursor, sync_carry_weight_label,
-    sync_chat_log, sync_container_slot_images, sync_context_menu_attack_button,
-    sync_context_menu_force_lock_button, sync_context_menu_hide_button,
-    sync_context_menu_interact_button, sync_context_menu_offer_to_trade_button,
-    sync_context_menu_open_button, sync_context_menu_pick_lock_button,
-    sync_context_menu_read_button, sync_context_menu_root, sync_context_menu_take_partial_button,
-    sync_context_menu_talk_button, sync_context_menu_trade_button, sync_context_menu_use_button,
-    sync_context_menu_use_key_button, sync_context_menu_use_on_button, sync_docked_panel_layout,
-    sync_docked_panel_titles, sync_drag_preview, sync_equipment_slot_images,
-    sync_item_slot_button_visibility, sync_item_tooltip, sync_magic_effects_label,
-    sync_native_custom_cursor, sync_nearby_npcs_panel, sync_regen_buff_label,
-    sync_take_partial_label, sync_vital_bars, sync_xp_bar, tick_level_up_toasts,
-    toggle_cursor_mode, update_hovered_tile, update_take_partial_popup_visibility,
+    handle_docked_panel_resizing, handle_docked_panel_scrolling, handle_jump_targeting,
+    handle_movable_dragging, handle_nearby_npc_row_clicks, handle_spell_targeting,
+    handle_take_partial_buttons, handle_trade_context_menu_actions, handle_use_on_targeting,
+    manage_open_containers, print_right_sidebar_layout_debug, setup_native_custom_cursor,
+    sync_carry_weight_label, sync_chat_log, sync_container_slot_images,
+    sync_context_menu_attack_button, sync_context_menu_force_lock_button,
+    sync_context_menu_hide_button, sync_context_menu_interact_button,
+    sync_context_menu_offer_to_trade_button, sync_context_menu_open_button,
+    sync_context_menu_pick_lock_button, sync_context_menu_read_button, sync_context_menu_root,
+    sync_context_menu_take_partial_button, sync_context_menu_talk_button,
+    sync_context_menu_trade_button, sync_context_menu_use_button, sync_context_menu_use_key_button,
+    sync_context_menu_use_on_button, sync_docked_panel_layout, sync_docked_panel_titles,
+    sync_drag_preview, sync_equipment_slot_images, sync_item_slot_button_visibility,
+    sync_item_tooltip, sync_jump_targeting_ui, sync_magic_effects_label, sync_native_custom_cursor,
+    sync_nearby_npcs_panel, sync_regen_buff_label, sync_take_partial_label, sync_vital_bars,
+    sync_xp_bar, tick_level_up_toasts, toggle_cursor_mode, update_hovered_tile,
+    update_take_partial_popup_visibility,
 };
 use crate::ui::theme::UiThemePlugin;
 use crate::ui::time_of_day_button::{
@@ -325,6 +326,10 @@ impl Plugin for UiPlugin {
         )
         .add_systems(
             Update,
+            handle_jump_targeting.run_if(in_state(ClientAppState::InGame)),
+        )
+        .add_systems(
+            Update,
             handle_movable_dragging.run_if(in_state(ClientAppState::InGame)),
         )
         .add_systems(
@@ -340,11 +345,19 @@ impl Plugin for UiPlugin {
                 .after(handle_use_on_targeting)
                 .after(handle_spell_targeting)
                 .after(handle_attack_targeting)
+                .after(handle_jump_targeting)
                 .run_if(in_state(ClientAppState::InGame)),
         )
         .add_systems(
             Update,
             (sync_drag_preview, sync_item_tooltip).run_if(in_state(ClientAppState::InGame)),
+        )
+        .add_systems(
+            Update,
+            sync_jump_targeting_ui
+                .after(toggle_cursor_mode)
+                .after(handle_jump_targeting)
+                .run_if(in_state(ClientAppState::InGame)),
         )
         .add_systems(
             Update,

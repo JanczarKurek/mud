@@ -4,15 +4,15 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 use bevy::prelude::*;
 
 use crate::combat::components::{AttackKind, AttackProfile, CombatTarget};
+use crate::game::resources::{GameUiEvent, PendingGameUiEvents, SpeechBubbleStyle};
 use crate::game::shop::Shopkeeper;
 use crate::magic::effects::MagicEffects;
-use crate::game::resources::{GameUiEvent, PendingGameUiEvents, SpeechBubbleStyle};
 use crate::npc::components::{
     AiMemory, AiState, Barks, HostileBehavior, Npc, RoamingBehavior, RoamingRandomState,
     RoamingStepTimer,
 };
-use crate::world::components::OverworldObject;
 use crate::player::components::Player;
+use crate::world::components::OverworldObject;
 use crate::world::components::{Collider, Facing, SpaceId, SpaceResident, TilePosition};
 use crate::world::direction::Direction;
 

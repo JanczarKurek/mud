@@ -43,6 +43,8 @@ pub enum Action {
     FullMapZoomOut,
     CursorUseOnToggle,
     CursorAttackToggle,
+    /// Toggle the jump-target cursor (Shift+J by default).
+    Jump,
     FocusChat,
     TogglePythonConsole,
 }
@@ -67,6 +69,7 @@ impl Action {
             Action::FullMapZoomOut => "Full map: zoom out".to_owned(),
             Action::CursorUseOnToggle => "Toggle use-on cursor".to_owned(),
             Action::CursorAttackToggle => "Toggle attack-target cursor".to_owned(),
+            Action::Jump => "Toggle jump-target cursor".to_owned(),
             Action::FocusChat => "Focus chat input".to_owned(),
             Action::TogglePythonConsole => "Toggle Python console".to_owned(),
         }
@@ -349,6 +352,7 @@ pub fn all_actions() -> Vec<Action> {
         Action::FullMapZoomOut,
         Action::CursorUseOnToggle,
         Action::CursorAttackToggle,
+        Action::Jump,
         Action::FocusChat,
         Action::TogglePythonConsole,
     ]);
@@ -436,6 +440,17 @@ impl Default for Keybindings {
         map.insert(
             Action::CursorAttackToggle,
             Bindings::one(Binding::ctrl(KeyCode::KeyA)),
+        );
+        map.insert(
+            Action::Jump,
+            Bindings::one(Binding::new(
+                KeyCode::KeyJ,
+                Modifiers {
+                    ctrl: false,
+                    shift: true,
+                    alt: false,
+                },
+            )),
         );
         map.insert(
             Action::FocusChat,

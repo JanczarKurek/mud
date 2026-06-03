@@ -221,7 +221,9 @@ pub fn move_player_on_grid(
         return;
     };
 
-    pending_commands.push(GameCommand::MovePlayer { delta });
+    let climb = keyboard_input.pressed(KeyCode::ShiftLeft)
+        || keyboard_input.pressed(KeyCode::ShiftRight);
+    pending_commands.push(GameCommand::MovePlayer { delta, climb });
 }
 
 /// `H` (no modifier) sets the player's respawn point to their current tile.

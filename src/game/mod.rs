@@ -8,6 +8,7 @@ pub mod resources;
 pub mod shop;
 pub mod systems;
 pub mod trade;
+pub mod traversal;
 
 use bevy::prelude::*;
 

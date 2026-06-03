@@ -14,14 +14,15 @@ use crate::ui::components::{
     DockedPanelCanvas, DockedPanelCloseButton, DockedPanelDragHandle, DockedPanelResizeHandle,
     DockedPanelRoot, DockedPanelTitle, DragPreviewImage, DragPreviewLabel, DragPreviewQuantity,
     DragPreviewRoot, EquipmentPanelContent, EquipmentPanelUndockButton, EquipmentSlotButton,
-    EquipmentSlotImage, EquipmentSlotLabel, ExperienceFill, ExperienceLabel, FloatingMinimapZoomInButton,
-    FloatingMinimapZoomLabel, FloatingMinimapZoomOutButton, HealthFill, HealthLabel,
-    HudMinimapZoomInButton, HudMinimapZoomLabel, HudMinimapZoomOutButton, HudRoot, ItemSlotButton,
-    ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot,
-    MagicEffectsLabel, ManaFill, ManaLabel, MinimapCanvas, MinimapMode, MinimapPanelUndockButton,
-    MinimapView, NearbyNpcsList, NearbyNpcsPanelUndockButton, PythonConsolePanel,
-    PythonConsoleRestartButton, PythonConsoleTerminal, RegenBuffLabel, RightSidebarRoot,
-    StatusPanelContent, StatusPanelUndockButton, TakePartialAmountLabel, TakePartialCancelButton,
+    EquipmentSlotImage, EquipmentSlotLabel, ExperienceFill, ExperienceLabel,
+    FloatingMinimapZoomInButton, FloatingMinimapZoomLabel, FloatingMinimapZoomOutButton,
+    HealthFill, HealthLabel, HudMinimapZoomInButton, HudMinimapZoomLabel, HudMinimapZoomOutButton,
+    HudRoot, ItemSlotButton, ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ItemTooltipLabel,
+    ItemTooltipRoot, JumpInfoBoxLabel, JumpInfoBoxRoot, JumpTileHighlight, MagicEffectsLabel,
+    ManaFill, ManaLabel, MinimapCanvas, MinimapMode, MinimapPanelUndockButton, MinimapView,
+    NearbyNpcsList, NearbyNpcsPanelUndockButton, PythonConsolePanel, PythonConsoleRestartButton,
+    PythonConsoleTerminal, RegenBuffLabel, RightSidebarRoot, StatusPanelContent,
+    StatusPanelUndockButton, TakePartialAmountLabel, TakePartialCancelButton,
     TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot,
     TradeButtonLabel, TradeColumn,
 };
@@ -384,6 +385,65 @@ pub fn spawn_hud(
             tooltip.spawn((
                 Text::new(""),
                 ItemTooltipLabel,
+                TextFont {
+                    font_size: 14.0,
+                    ..default()
+                },
+                TextColor(palette.text_primary),
+            ));
+        });
+
+    // Jump-targeting tile highlight: a single semi-transparent rectangle that
+    // tracks the snapped cursor tile while `CursorMode::JumpTarget` is active.
+    // `sync_jump_targeting_ui` repositions and recolours it each frame; it's
+    // hidden in every other cursor mode.
+    commands.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            left: px(-400.0),
+            top: px(-400.0),
+            width: px(0.0),
+            height: px(0.0),
+            border: UiRect::all(px(2.0)),
+            ..default()
+        },
+        JumpTileHighlight,
+        HudRoot,
+        Visibility::Hidden,
+        GlobalZIndex(i32::MAX - 5),
+        BackgroundColor(Color::srgba(1.0, 0.92, 0.2, 0.28)),
+        BorderColor::all(Color::srgba(1.0, 0.85, 0.1, 0.9)),
+    ));
+
+    // Jump-targeting info box: floats near the cursor and reports "Athletics
+    // +X vs DC Y" plus the rough success odds for the targeted tile. Same
+    // panel styling as `ItemTooltipRoot`.
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: px(-400.0),
+                top: px(-400.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                padding: UiRect::axes(px(8.0), px(4.0)),
+                border: UiRect::all(px(1.0)),
+                ..default()
+            },
+            JumpInfoBoxRoot,
+            HudRoot,
+            Visibility::Hidden,
+            GlobalZIndex(i32::MAX - 4),
+            ImageNode::new(theme.panel_frame.clone())
+                .with_mode(theme.panel_image_mode())
+                .with_color(Color::WHITE),
+            BackgroundColor(Color::NONE),
+            BorderColor::all(palette.border_accent),
+        ))
+        .with_children(|info| {
+            info.spawn((
+                Text::new(""),
+                JumpInfoBoxLabel,
                 TextFont {
                     font_size: 14.0,
                     ..default()

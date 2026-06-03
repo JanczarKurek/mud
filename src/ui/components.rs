@@ -177,6 +177,20 @@ pub struct ItemTooltipRoot;
 #[derive(Component)]
 pub struct ItemTooltipLabel;
 
+/// Yellow rectangle overlaid on the tile the player is targeting while in
+/// `CursorMode::JumpTarget`. Hidden in all other cursor modes.
+#[derive(Component)]
+pub struct JumpTileHighlight;
+
+/// Floating box positioned near the cursor in `CursorMode::JumpTarget` that
+/// reports the Athletics bonus, jump DC, and approximate success odds for
+/// the tile currently under the cursor.
+#[derive(Component)]
+pub struct JumpInfoBoxRoot;
+
+#[derive(Component)]
+pub struct JumpInfoBoxLabel;
+
 #[derive(Component)]
 pub struct PythonConsolePanel;
 

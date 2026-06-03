@@ -80,6 +80,19 @@ pub enum InspectTarget {
 pub enum GameCommand {
     MovePlayer {
         delta: MoveDelta,
+        /// Player consents to an Athletics climb if the step would resolve
+        /// as `dz_climbed > CLIMB_FREE_DZ`. Driven by SHIFT in the keyboard
+        /// input handler. Without this, only flat steps, the 1-half-block
+        /// auto-step, and falls are legal — taller ledges silently block.
+        climb: bool,
+    },
+    /// Athletic jump to a tile within `JUMP_MAX_RANGE`. Server validates
+    /// same-space + range, rolls an Athletics check whose DC scales with
+    /// `ceil(hypot(dx, dy)) + dz_up_half_blocks` (Euclidean XY), and either
+    /// teleports the player to the landing column or lands them short along
+    /// the line. Either path may trigger fall damage on the landing dz.
+    JumpTo {
+        target_tile: TilePosition,
     },
     /// Rotate a nearby world object that has the `Rotatable` component.
     /// Server validates adjacency + rotatable flag, then advances the object's

@@ -81,6 +81,20 @@ pub struct CommandOutputs<'w, 's> {
     /// hasn't detected yet. Bundled here to keep `process_game_commands`
     /// under Bevy's parameter cap.
     pub hidden_query: Query<'w, 's, &'static crate::world::hidden::Hidden, Without<Player>>,
+    /// Read-only access to `BaseStats` + `SkillSheet` for Athletics-driven
+    /// traversal checks (climb gate in `handle_move_player`, full jump roll
+    /// in `handle_jump_to`, fall save in `apply_fall_damage`). Kept separate
+    /// from the main player ParamSet so it doesn't ripple through every
+    /// other command handler that takes the same player query shape.
+    pub player_athletics: Query<
+        'w,
+        's,
+        (
+            &'static crate::player::components::BaseStats,
+            &'static crate::player::skills::SkillSheet,
+        ),
+        With<Player>,
+    >,
 }
 
 /// Bundle of resources needed together when a command may cause space
@@ -310,7 +324,7 @@ pub fn process_game_commands(
         };
 
         match queued_command.command {
-            GameCommand::MovePlayer { delta } => {
+            GameCommand::MovePlayer { delta, climb } => {
                 let Some(source_space_id) = player_space_id(player_entity, &player_queries.p1())
                 else {
                     continue;
@@ -320,10 +334,12 @@ pub fn process_game_commands(
                 handle_move_player(
                     player_entity,
                     delta,
+                    climb,
                     &collider_positions,
                     &object_query,
                     &mut player_queries.p2(),
                     &command_outputs.player_magic_effects,
+                    &command_outputs.player_athletics,
                     &authored_spaces,
                     &definitions,
                     &space_authority.floor_defs,
@@ -333,6 +349,28 @@ pub fn process_game_commands(
                     encumbered,
                     &mut commands,
                     &mut command_outputs.pending_steps,
+                    &mut command_outputs.pending_damage,
+                );
+            }
+            GameCommand::JumpTo { target_tile } => {
+                let Some(source_space_id) = player_space_id(player_entity, &player_queries.p1())
+                else {
+                    continue;
+                };
+                let collider_positions = colliders_in_space(source_space_id, &player_queries.p0());
+                handle_jump_to(
+                    player_entity,
+                    target_tile,
+                    &collider_positions,
+                    &object_query,
+                    &mut player_queries.p2(),
+                    &command_outputs.player_athletics,
+                    &definitions,
+                    &space_authority.floor_defs,
+                    &space_authority.space_manager,
+                    &space_authority.floor_maps,
+                    &mut command_outputs.pending_steps,
+                    &mut command_outputs.pending_damage,
                 );
             }
             GameCommand::SetCombatTarget { target_object_id } => {
@@ -925,10 +963,10 @@ fn handle_take_item(
 }
 
 #[allow(clippy::too_many_arguments)]
-#[allow(clippy::too_many_arguments)]
 fn handle_move_player(
     player_entity: Entity,
     delta: MoveDelta,
+    climb: bool,
     collider_positions: &[TilePosition],
     object_query: &Query<
         (Entity, &SpaceResident, &TilePosition, &OverworldObject),
@@ -949,6 +987,13 @@ fn handle_move_player(
         With<Player>,
     >,
     player_magic_effects: &Query<&mut crate::magic::effects::MagicEffects, With<Player>>,
+    player_athletics: &Query<
+        (
+            &crate::player::components::BaseStats,
+            &crate::player::skills::SkillSheet,
+        ),
+        With<Player>,
+    >,
     authored_spaces: &SpaceDefinitions,
     definitions: &OverworldObjectDefinitions,
     floor_defs: &crate::world::floor_definitions::FloorTilesetDefinitions,
@@ -958,12 +1003,25 @@ fn handle_move_player(
     encumbered: bool,
     commands: &mut Commands,
     pending_steps: &mut crate::world::step_triggers::PendingStepEvents,
+    pending_damage: &mut PendingDamageEvents,
 ) {
-    let Ok((_, _, _, _, mut space_resident, mut tile_position, mut movement_cooldown, _, _)) =
-        player_query.get_mut(player_entity)
+    let Ok((
+        _,
+        _,
+        _,
+        mut chat_log,
+        mut space_resident,
+        mut tile_position,
+        mut movement_cooldown,
+        _,
+        _,
+    )) = player_query.get_mut(player_entity)
     else {
         return;
     };
+    // Players without a skill sheet (e.g. legacy test fixtures) skip the
+    // Athletics gate entirely — the climb / fall paths become free.
+    let athletics = player_athletics.get(player_entity).ok();
 
     // Resolve magic effects up-front so facing can apply consistently even
     // when the step is blocked by cooldown, a collider, or map bounds.
@@ -1012,7 +1070,7 @@ fn handle_move_player(
         (tile_position.y + effective_delta.y).clamp(0, runtime_space.height - 1),
     );
 
-    let Some(target_position) = resolve_step_with_climb(
+    let Some(step) = resolve_step_with_climb(
         target_xy,
         tile_position.z,
         space_resident.space_id,
@@ -1025,12 +1083,64 @@ fn handle_move_player(
         return;
     };
 
+    // Climbing is opt-in: tall ledges only resolve while SHIFT is held. Without
+    // it the step silently aborts (no cooldown burn) so a stray direction-key
+    // press near a barrel doesn't roll a stealth Athletics check.
+    if step.dz_climbed > crate::game::traversal::CLIMB_FREE_DZ && !climb {
+        return;
+    }
+
+    // Tall ledges (`> CLIMB_FREE_DZ`) need an Athletics check. On failure the
+    // step is aborted, but the movement cooldown still ticks — slipping off a
+    // ledge takes a beat to recover.
+    if step.dz_climbed > crate::game::traversal::CLIMB_FREE_DZ {
+        if let Some((base_stats, skill_sheet)) = athletics {
+            let dc = crate::game::traversal::climb_dc(step.dz_climbed);
+            let result = crate::player::skills::skill_check(
+                skill_sheet,
+                &base_stats.attributes,
+                crate::player::skills::Skill::Athletics,
+                dc,
+                0,
+            );
+            if !result.success {
+                chat_log.push_narrator(format!(
+                    "You fail to pull yourself up (Athletics {} vs DC {}).",
+                    result.total, dc
+                ));
+                movement_cooldown.remaining_seconds = movement_cooldown.step_interval_seconds;
+                return;
+            }
+            chat_log.push_narrator(format!(
+                "You scramble up the ledge (Athletics {} vs DC {}).",
+                result.total, dc
+            ));
+        }
+    }
+
+    let target_position = step.landed;
     *tile_position = target_position;
     pending_steps.push(crate::world::step_triggers::StepEvent {
         entity: player_entity,
         space_id: space_resident.space_id,
         tile: target_position,
     });
+
+    // Fall damage: any descent of more than `FALL_THRESHOLD_DZ` half-blocks
+    // takes quadratic damage, halved by a successful Athletics save.
+    if step.dz_fell > crate::game::traversal::FALL_THRESHOLD_DZ {
+        if let Some((base_stats, skill_sheet)) = athletics {
+            crate::game::traversal::apply_fall_damage(
+                pending_damage,
+                &mut chat_log,
+                player_entity,
+                skill_sheet,
+                &base_stats.attributes,
+                step.dz_fell,
+            );
+        }
+    }
+
     let mut cooldown_scale = if encumbered { 2.0 } else { 1.0 };
     if let Ok(effects) = player_magic_effects.get(player_entity) {
         cooldown_scale *= effects.haste_multiplier();
@@ -1072,6 +1182,268 @@ fn handle_move_player(
         space_id: destination_space_id,
         tile: *tile_position,
     });
+}
+
+/// Resolve the highest walkable surface in the column at `(x, y)` that the
+/// player can land on if they fall from `from_z`. Returns the resolved
+/// `TilePosition` (cascading down from `from_z` if needed), or `None` when no
+/// walkable surface exists.
+#[allow(clippy::too_many_arguments)]
+fn resolve_landing_at(
+    x: i32,
+    y: i32,
+    from_z: i32,
+    space_id: crate::world::components::SpaceId,
+    collider_positions: &[TilePosition],
+    object_query: &Query<
+        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
+        Without<Player>,
+    >,
+    definitions: &OverworldObjectDefinitions,
+    floor_maps: &crate::world::floor_map::FloorMaps,
+    floor_defs: &crate::world::floor_definitions::FloorTilesetDefinitions,
+) -> Option<TilePosition> {
+    for z in (0..=from_z).rev() {
+        let candidate = TilePosition::new(x, y, z);
+        if is_walkable_tile(
+            candidate,
+            space_id,
+            collider_positions,
+            object_query,
+            definitions,
+            floor_maps,
+            floor_defs,
+        ) {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_jump_to(
+    player_entity: Entity,
+    target_tile: TilePosition,
+    collider_positions: &[TilePosition],
+    object_query: &Query<
+        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
+        Without<Player>,
+    >,
+    player_query: &mut Query<
+        (
+            Entity,
+            &PlayerIdentity,
+            &mut InventoryState,
+            &mut ChatLogState,
+            &mut SpaceResident,
+            &mut TilePosition,
+            &mut MovementCooldown,
+            &mut VitalStats,
+            Option<&CombatTarget>,
+        ),
+        With<Player>,
+    >,
+    player_athletics: &Query<
+        (
+            &crate::player::components::BaseStats,
+            &crate::player::skills::SkillSheet,
+        ),
+        With<Player>,
+    >,
+    definitions: &OverworldObjectDefinitions,
+    floor_defs: &crate::world::floor_definitions::FloorTilesetDefinitions,
+    space_manager: &SpaceManager,
+    floor_maps: &FloorMaps,
+    pending_steps: &mut crate::world::step_triggers::PendingStepEvents,
+    pending_damage: &mut PendingDamageEvents,
+) {
+    use crate::game::traversal;
+    let Ok((_, _, _, mut chat_log, space_resident, mut tile_position, mut movement_cooldown, _, _)) =
+        player_query.get_mut(player_entity)
+    else {
+        return;
+    };
+    // A jump without a skill sheet (legacy fixture) has no Athletics to roll
+    // — refuse the action rather than guessing what "no check" should mean.
+    let Ok((base_stats, skill_sheet)) = player_athletics.get(player_entity) else {
+        return;
+    };
+
+    if movement_cooldown.remaining_seconds > 0.0 {
+        return;
+    }
+
+    let Some(runtime_space) = space_manager.get(space_resident.space_id) else {
+        return;
+    };
+
+    // Range gate: XY-only cost must sit between MIN..=MAX. Out-of-bounds
+    // targets and same-tile jumps are rejected silently — the client gates
+    // these too, so reaching the server is a bug, not a player mistake.
+    let dx = target_tile.x - tile_position.x;
+    let dy = target_tile.y - tile_position.y;
+    let xy_cost = traversal::jump_cost(dx, dy, 0);
+    if !(traversal::JUMP_MIN_RANGE..=traversal::JUMP_MAX_RANGE).contains(&xy_cost) {
+        return;
+    }
+    if target_tile.x < 0
+        || target_tile.x >= runtime_space.width
+        || target_tile.y < 0
+        || target_tile.y >= runtime_space.height
+    {
+        return;
+    }
+
+    // Resolve the actual landing column top — the client's `target_tile.z` is
+    // a hint, but a falling jump's true landing is the highest walkable
+    // surface above ground. Start from the column top and cascade down.
+    let column_members = || {
+        object_query.iter().map(|(entity, resident, tile, object)| {
+            crate::world::stacks::ColumnMember {
+                entity,
+                resident,
+                tile,
+                object,
+            }
+        })
+    };
+    let stack_top = crate::world::stacks::stack_top_z(
+        space_resident.space_id,
+        target_tile.x,
+        target_tile.y,
+        column_members(),
+        definitions,
+        floor_maps,
+        floor_defs,
+    );
+    let stack_top_walkable = crate::world::stacks::stack_top_is_walkable(
+        space_resident.space_id,
+        target_tile.x,
+        target_tile.y,
+        Entity::PLACEHOLDER,
+        column_members(),
+        definitions,
+        floor_maps,
+        floor_defs,
+    );
+    let landing_z = if stack_top_walkable {
+        stack_top
+    } else {
+        // Fall through to whatever walkable surface sits below the column top.
+        let Some(below) = resolve_landing_at(
+            target_tile.x,
+            target_tile.y,
+            stack_top,
+            space_resident.space_id,
+            collider_positions,
+            object_query,
+            definitions,
+            floor_maps,
+            floor_defs,
+        ) else {
+            chat_log.push_narrator("You can't see a place to land there.");
+            return;
+        };
+        below.z
+    };
+
+    let dz_down = (tile_position.z - landing_z).max(0);
+    let cost = traversal::jump_cost(dx, dy, landing_z - tile_position.z);
+
+    // The upward component is folded into the cost; the cap covers both
+    // pure-horizontal and vertical-heavy jumps so a 1-tile + 3 half-block
+    // ledge can't slip past as "in range".
+    if cost > traversal::JUMP_MAX_RANGE {
+        chat_log.push_narrator("That ledge is too high to leap onto.");
+        return;
+    }
+
+    let dc = traversal::jump_dc(dx, dy, landing_z - tile_position.z);
+    let result = crate::player::skills::skill_check(
+        skill_sheet,
+        &base_stats.attributes,
+        crate::player::skills::Skill::Athletics,
+        dc,
+        0,
+    );
+
+    let (landed, fell) = if result.success {
+        chat_log.push_narrator(format!(
+            "You leap across (Athletics {} vs DC {}).",
+            result.total, dc
+        ));
+        (
+            TilePosition::new(target_tile.x, target_tile.y, landing_z),
+            dz_down,
+        )
+    } else {
+        // Margin of failure → how many tiles short along the XY line.
+        // Cap by the Chebyshev step count, not the cost, since each
+        // `step_back_toward` walks one tile along whichever axis is longest.
+        let margin = (dc - result.total).max(1);
+        let max_steps = dx.abs().max(dy.abs());
+        let short_tiles = ((margin + 4) / 5).min(max_steps);
+        let (mut sx, mut sy) = (target_tile.x, target_tile.y);
+        for _ in 0..short_tiles {
+            let stepped = crate::game::traversal::step_back_toward(
+                (sx, sy),
+                (tile_position.x, tile_position.y),
+            );
+            sx = stepped.0;
+            sy = stepped.1;
+        }
+        // Cascade down from the original jump apex — falling short of a
+        // ledge drops you to the floor.
+        let apex_z = tile_position.z.max(landing_z);
+        let Some(short_landing) = resolve_landing_at(
+            sx,
+            sy,
+            apex_z,
+            space_resident.space_id,
+            collider_positions,
+            object_query,
+            definitions,
+            floor_maps,
+            floor_defs,
+        ) else {
+            chat_log.push_narrator(format!(
+                "Your jump fails (Athletics {} vs DC {}) and you scramble back.",
+                result.total, dc
+            ));
+            // No safe landing in the line — refuse the move outright.
+            movement_cooldown.remaining_seconds = movement_cooldown.step_interval_seconds;
+            return;
+        };
+        chat_log.push_narrator(format!(
+            "Your jump falls short (Athletics {} vs DC {}).",
+            result.total, dc
+        ));
+        let fell = (tile_position.z - short_landing.z).max(0);
+        (short_landing, fell)
+    };
+
+    *tile_position = landed;
+    pending_steps.push(crate::world::step_triggers::StepEvent {
+        entity: player_entity,
+        space_id: space_resident.space_id,
+        tile: landed,
+    });
+
+    if fell > traversal::FALL_THRESHOLD_DZ {
+        traversal::apply_fall_damage(
+            pending_damage,
+            &mut chat_log,
+            player_entity,
+            skill_sheet,
+            &base_stats.attributes,
+            fell,
+        );
+    }
+
+    // Jumps share the movement cooldown so spam-jumping is rate-limited the
+    // same way walking is. Diagonal scaling is folded into `cost`.
+    movement_cooldown.remaining_seconds =
+        movement_cooldown.step_interval_seconds * (cost.max(1) as f32);
 }
 
 /// Sample a deterministic boolean for drunken fumbling. The nanosecond +
@@ -2427,8 +2799,7 @@ fn handle_cast_spell_at(
             return;
         }
         if effects.is_asleep() {
-            chat_log_state
-                .push_narrator(format!("You're asleep and can't cast {}.", spell.name));
+            chat_log_state.push_narrator(format!("You're asleep and can't cast {}.", spell.name));
             return;
         }
     }
@@ -2627,8 +2998,7 @@ fn handle_cast_spell_at_tile(
             return;
         }
         if effects.is_asleep() {
-            chat_log_state
-                .push_narrator(format!("You're asleep and can't cast {}.", spell.name));
+            chat_log_state.push_narrator(format!("You're asleep and can't cast {}.", spell.name));
             return;
         }
     }
@@ -5102,21 +5472,18 @@ fn is_walkable_tile(
 /// Tibia-style step resolver: when the player tries to step onto
 /// `(target_xy, current_z)`, work out where they actually land.
 ///
-/// Everything is decided by the target column's `stack_top`:
-///   * `stack_top > current_z` (something blocks above): climb to `stack_top`
-///     iff the gap is `≤ 1` half-block AND the top is walkable. A full block
-///     (barrel, wall, `stair_*_high` — `block_size: 2`) takes you `+2` in one
-///     step and so cannot be climbed directly; you have to approach from an
-///     adjacent half-block (chest, `stone_step`, `stair_*_low` — `block_size: 1`)
-///     or stacked surface that closes the gap to 1. The canonical two-tile
-///     ramp between floors is a `stair_*_low` (top z=1) next to a
-///     `stair_*_high` (top z=2) facing the same direction.
-///   * `stack_top == current_z`: walk flat at `current_z`.
-///   * `stack_top < current_z` (cliff edge): fall to the highest walkable
-///     surface ≤ `current_z`. Falling off a barrel onto a chest leaves you
-///     on the chest, not the ground.
-///   * Tiles with only flat decals (no block-sized objects) act like ground
-///     at the existing z (or the player's current z if no obstruction).
+/// Resolution order:
+///   1. **Flat path** at `current_z` — walking under a painted upper floor,
+///      stepping laterally onto a same-z tile, or stepping onto a flat
+///      walkable decal. Tried first so ground-level passage under an
+///      unreachable surface isn't accidentally treated as an attempted climb.
+///   2. **Climb** — flat path blocked at `current_z` *and* the column's
+///      `stack_top` reaches above. Allowed up to `CLIMB_MAX_DZ` half-blocks;
+///      the caller (e.g. `handle_move_player`) gates on Athletics when
+///      `dz_climbed > CLIMB_FREE_DZ`.
+///   3. **Descent** — cliff edge. Cascade down to the highest walkable
+///      surface ≤ `current_z`; `StepResolution.dz_fell` surfaces the drop so
+///      the caller can apply fall damage.
 fn resolve_step_with_climb(
     target_xy: (i32, i32),
     current_z: i32,
@@ -5129,8 +5496,32 @@ fn resolve_step_with_climb(
     definitions: &OverworldObjectDefinitions,
     floor_maps: &crate::world::floor_map::FloorMaps,
     floor_defs: &crate::world::floor_definitions::FloorTilesetDefinitions,
-) -> Option<TilePosition> {
+) -> Option<crate::game::traversal::StepResolution> {
     let (x, y) = target_xy;
+
+    // 1. Flat path at `current_z`. Walking under an upper floor, stepping
+    //    laterally, or onto a flat walkable decal resolves here without
+    //    disturbing z.
+    let here = TilePosition::new(x, y, current_z);
+    if is_walkable_tile(
+        here,
+        space_id,
+        collider_positions,
+        object_query,
+        definitions,
+        floor_maps,
+        floor_defs,
+    ) {
+        return Some(crate::game::traversal::StepResolution {
+            landed: here,
+            dz_climbed: 0,
+            dz_fell: 0,
+        });
+    }
+
+    // 2. Climb path. Reached only when the flat path is blocked (collider at
+    //    `current_z`). Anything up to `CLIMB_MAX_DZ` half-blocks resolves;
+    //    the caller rolls Athletics if `dz_climbed > CLIMB_FREE_DZ`.
     let column_members = || {
         object_query.iter().map(|(entity, resident, tile, object)| {
             crate::world::stacks::ColumnMember {
@@ -5150,14 +5541,7 @@ fn resolve_step_with_climb(
         floor_maps,
         floor_defs,
     );
-
-    // Climb path: a block-sized object or painted upper floor sits taller
-    // than the player. Try to climb onto it if the gap is within reach. If
-    // the climb is rejected (gap too tall, top not walkable, blocked above),
-    // fall through to the flat path — so a player can still walk *under* an
-    // unreachable surface (e.g. a wooden_floor at z=2 above a doorway at z=0)
-    // even when they can't climb onto it.
-    if stack_top > current_z && stack_top - current_z <= 1 {
+    if stack_top > current_z && stack_top - current_z <= crate::game::traversal::CLIMB_MAX_DZ {
         let stack_top_walkable = crate::world::stacks::stack_top_is_walkable(
             space_id,
             x,
@@ -5180,26 +5564,16 @@ fn resolve_step_with_climb(
                     })
                 });
             if !blocked_above && !ceiling_above {
-                return Some(above);
+                return Some(crate::game::traversal::StepResolution {
+                    landed: above,
+                    dz_climbed: stack_top - current_z,
+                    dz_fell: 0,
+                });
             }
         }
     }
 
-    // Flat path: target is at-or-below current_z. Try `current_z` first
-    // (lateral step or flat decal), then fall to the highest walkable surface
-    // below. Ground (`z=0`) is walkable iff there's no collider there.
-    let here = TilePosition::new(x, y, current_z);
-    if is_walkable_tile(
-        here,
-        space_id,
-        collider_positions,
-        object_query,
-        definitions,
-        floor_maps,
-        floor_defs,
-    ) {
-        return Some(here);
-    }
+    // 3. Descent. Cascade down to the highest walkable surface ≤ current_z.
     if current_z > 0 {
         for z in (0..current_z).rev() {
             let below = TilePosition::new(x, y, z);
@@ -5212,7 +5586,11 @@ fn resolve_step_with_climb(
                 floor_maps,
                 floor_defs,
             ) {
-                return Some(below);
+                return Some(crate::game::traversal::StepResolution {
+                    landed: below,
+                    dz_climbed: 0,
+                    dz_fell: current_z - z,
+                });
             }
         }
     }
@@ -5235,6 +5613,7 @@ mod tests {
         BaseStats, ChatLog, DefenseStats, DerivedStats, Inventory, MovementCooldown, Player,
         PlayerId, PlayerIdentity, VitalStats, WeaponDamage,
     };
+    use crate::player::skills::SkillSheet;
     use crate::player::PlayerServerPlugin;
     use crate::world::components::{Collider, OverworldObject};
     use crate::world::object_registry::ObjectRegistry;
@@ -5269,8 +5648,7 @@ mod tests {
                 PlayerIdentity::new(PlayerId(player_id)),
                 Inventory::default(),
                 ChatLog::default(),
-                base_stats,
-                derived_stats,
+                (base_stats, derived_stats, SkillSheet::default()),
                 VitalStats::full(max_health, max_mana),
                 MovementCooldown::default(),
                 (
@@ -5387,6 +5765,7 @@ mod tests {
                 crate::player::components::PlayerId(1),
                 GameCommand::MovePlayer {
                     delta: MoveDelta { x: 1, y: 0 },
+                    climb: false,
                 },
             );
 
@@ -5487,6 +5866,7 @@ mod tests {
                 crate::player::components::PlayerId(1),
                 GameCommand::MovePlayer {
                     delta: MoveDelta { x: 1, y: 0 },
+                    climb: false,
                 },
             );
 
@@ -5711,11 +6091,7 @@ mod tests {
             );
         app.update();
 
-        let space_id = app
-            .world()
-            .get::<SpaceResident>(player)
-            .unwrap()
-            .space_id;
+        let space_id = app.world().get::<SpaceResident>(player).unwrap().space_id;
 
         let mut q = app
             .world_mut()
@@ -5860,6 +6236,7 @@ mod tests {
                 crate::player::components::PlayerId(1),
                 GameCommand::MovePlayer {
                     delta: MoveDelta { x: 1, y: 0 },
+                    climb: false,
                 },
             );
         app.update();
@@ -5915,6 +6292,7 @@ mod tests {
                     crate::player::components::PlayerId(1),
                     GameCommand::MovePlayer {
                         delta: MoveDelta { x: 1, y: 0 },
+                        climb: false,
                     },
                 );
             // Clear movement cooldown between steps so the move actually
@@ -5976,6 +6354,7 @@ mod tests {
                 crate::player::components::PlayerId(1),
                 GameCommand::MovePlayer {
                     delta: MoveDelta { x: 1, y: 0 },
+                    climb: false,
                 },
             );
         app.update();
@@ -6056,6 +6435,7 @@ mod tests {
                 crate::player::components::PlayerId(1),
                 GameCommand::MovePlayer {
                     delta: MoveDelta { x: 1, y: 0 },
+                    climb: false,
                 },
             );
         app.update();
@@ -6069,14 +6449,16 @@ mod tests {
     }
 
     #[test]
-    fn auto_climb_refuses_full_block_step() {
+    fn full_block_climb_resolves_to_top_or_stays_put() {
+        // Walking into a barrel (block_size = 2, walkable top) while
+        // SHIFT is held (climb: true) triggers an Athletics check (DC 10).
+        // The d20 roll is RNG-driven so the outcome is one of two: scrambled
+        // up onto the barrel (z = 2) or failed climb (player unchanged). Both
+        // are valid — the test asserts we don't end up in some other column
+        // on the barrel's tile.
         let mut app = setup_server_app();
         let player = spawn_player(&mut app, 1, 10, 10);
 
-        // A barrel directly east of the player. Barrel is a full block
-        // (block_size = 2), so its top sits +2 above the player. With the
-        // one-z-at-a-time climb cap that exceeds the limit — the player
-        // should bump into it and stay put.
         let barrel_id = app
             .world_mut()
             .resource_mut::<ObjectRegistry>()
@@ -6089,6 +6471,40 @@ mod tests {
                 crate::player::components::PlayerId(1),
                 GameCommand::MovePlayer {
                     delta: MoveDelta { x: 1, y: 0 },
+                    climb: true,
+                },
+            );
+        app.update();
+
+        let tile = *app.world().get::<TilePosition>(player).unwrap();
+        assert!(
+            tile == TilePosition::ground(10, 10) || tile == TilePosition::new(11, 10, 2),
+            "barrel climb should leave the player either in place or on top — got {tile:?}"
+        );
+    }
+
+    /// Without SHIFT (`climb: false`), walking into a barrel (dz_climbed = 2,
+    /// above `CLIMB_FREE_DZ`) must silently block — no Athletics check, no
+    /// movement, no chat noise. The outcome is deterministic regardless of
+    /// the d20 roll.
+    #[test]
+    fn shift_required_to_climb_tall_ledge() {
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+
+        let barrel_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("barrel");
+        spawn_world_object(&mut app, "barrel", barrel_id, TilePosition::ground(11, 10));
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                crate::player::components::PlayerId(1),
+                GameCommand::MovePlayer {
+                    delta: MoveDelta { x: 1, y: 0 },
+                    climb: false,
                 },
             );
         app.update();
@@ -6097,7 +6513,7 @@ mod tests {
         assert_eq!(
             tile,
             TilePosition::ground(10, 10),
-            "full-block barrel should be unclimbable in one step"
+            "without SHIFT, walking into a barrel must leave the player in place"
         );
     }
 
@@ -6120,6 +6536,7 @@ mod tests {
                 crate::player::components::PlayerId(1),
                 GameCommand::MovePlayer {
                     delta: MoveDelta { x: 1, y: 0 },
+                    climb: false,
                 },
             );
         app.update();

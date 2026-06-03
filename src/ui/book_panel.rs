@@ -13,9 +13,7 @@
 
 use bevy::input::keyboard::{KeyCode, KeyboardInput};
 use bevy::prelude::*;
-use bevy_terminal::{
-    spawn_text_edit_with, TerminalFocus, TextEdit, TextEditRoot, TextEditSubmit,
-};
+use bevy_terminal::{spawn_text_edit_with, TerminalFocus, TextEdit, TextEditRoot, TextEditSubmit};
 
 use crate::game::commands::{GameCommand, ItemReference};
 use crate::game::resources::PendingGameCommands;

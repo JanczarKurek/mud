@@ -21,10 +21,11 @@ use crate::ui::components::{
     ContextMenuTakePartialButton, ContextMenuUseButton, ContextMenuUseOnButton, DockedPanelBody,
     DockedPanelCanvas, DockedPanelCloseButton, DockedPanelDragHandle, DockedPanelResizeHandle,
     DockedPanelRoot, DockedPanelTitle, DragPreviewImage, DragPreviewLabel, DragPreviewQuantity,
-    DragPreviewRoot, EquipmentSlotButton, EquipmentSlotImage, EquipmentSlotLabel, HealthFill, ItemSlotButton,
-    ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot,
-    ManaFill, NearbyNpcDot, NearbyNpcHpFill, NearbyNpcRow, NearbyNpcsList, QuickbarSlotMarker,
-    RightSidebarRoot, TakePartialAmountLabel, TakePartialCancelButton, TakePartialConfirmButton,
+    DragPreviewRoot, EquipmentSlotButton, EquipmentSlotImage, EquipmentSlotLabel, HealthFill,
+    ItemSlotButton, ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ItemTooltipLabel,
+    ItemTooltipRoot, JumpInfoBoxLabel, JumpInfoBoxRoot, JumpTileHighlight, ManaFill, NearbyNpcDot,
+    NearbyNpcHpFill, NearbyNpcRow, NearbyNpcsList, QuickbarSlotMarker, RightSidebarRoot,
+    TakePartialAmountLabel, TakePartialCancelButton, TakePartialConfirmButton,
     TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot,
 };
 use crate::ui::resources::{
@@ -151,6 +152,7 @@ pub fn toggle_cursor_mode(
             CursorMode::SpellTarget => CursorMode::SpellTarget,
             CursorMode::SpellTargetTile => CursorMode::SpellTargetTile,
             CursorMode::AttackTarget => CursorMode::AttackTarget,
+            CursorMode::JumpTarget => CursorMode::JumpTarget,
         };
     }
 
@@ -158,6 +160,13 @@ pub fn toggle_cursor_mode(
         cursor_state.mode = match cursor_state.mode {
             CursorMode::AttackTarget => CursorMode::Default,
             _ => CursorMode::AttackTarget,
+        };
+    }
+
+    if keybindings.just_pressed(Action::Jump, &keyboard_input) {
+        cursor_state.mode = match cursor_state.mode {
+            CursorMode::JumpTarget => CursorMode::Default,
+            _ => CursorMode::JumpTarget,
         };
     }
 }
@@ -228,6 +237,7 @@ fn cursor_icon_for_state(
         CursorMode::SpellTarget => "cursors/spell_target_cursor.png".to_owned(),
         CursorMode::SpellTargetTile => "cursors/spell_target_cursor.png".to_owned(),
         CursorMode::AttackTarget => "cursors/attack_cursor.png".to_owned(),
+        CursorMode::JumpTarget => "cursors/spell_target_cursor.png".to_owned(),
     };
 
     CursorIcon::Custom(CustomCursor::Image(CustomCursorImage {
@@ -2026,6 +2036,210 @@ pub fn handle_attack_targeting(
         target_object_id: Some(target_object_id),
     });
 
+    cursor_state.reset_to_default();
+}
+
+/// Update the yellow tile highlight and the "Athletics +X vs DC Y" info box
+/// while `CursorMode::JumpTarget` is active. Both UI elements stay hidden
+/// outside that mode. The DC display is computed from `ClientGameState`
+/// (skill ranks + replicated attributes), so embedded and remote clients see
+/// the same numbers the server will roll against.
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+pub fn sync_jump_targeting_ui(
+    mut cursor_state: ResMut<CursorState>,
+    client_state: Res<ClientGameState>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    world_config: Res<WorldConfig>,
+    ui_scale: Res<UiScale>,
+    mut highlight_query: Query<
+        (
+            &mut Node,
+            &mut Visibility,
+            &mut BackgroundColor,
+            &mut BorderColor,
+        ),
+        (With<JumpTileHighlight>, Without<JumpInfoBoxRoot>),
+    >,
+    mut info_query: Query<
+        (&mut Node, &mut Visibility),
+        (With<JumpInfoBoxRoot>, Without<JumpTileHighlight>),
+    >,
+    mut info_label_query: Query<&mut Text, With<JumpInfoBoxLabel>>,
+) {
+    use crate::game::traversal::{jump_cost, jump_dc, JUMP_MAX_RANGE, JUMP_MIN_RANGE};
+    use crate::player::classes::ability_mod;
+    use crate::player::skills::Skill;
+
+    let Ok((mut highlight_node, mut highlight_vis, mut highlight_bg, mut highlight_border)) =
+        highlight_query.single_mut()
+    else {
+        return;
+    };
+    let Ok((mut info_node, mut info_vis)) = info_query.single_mut() else {
+        return;
+    };
+    let Ok(mut info_label) = info_label_query.single_mut() else {
+        return;
+    };
+
+    if cursor_state.mode != CursorMode::JumpTarget {
+        *highlight_vis = Visibility::Hidden;
+        *info_vis = Visibility::Hidden;
+        return;
+    }
+
+    let Ok(window) = window_query.single() else {
+        return;
+    };
+    let Some(cursor_position) = window.cursor_position() else {
+        *highlight_vis = Visibility::Hidden;
+        *info_vis = Visibility::Hidden;
+        return;
+    };
+    let Some(player_position) = client_state.player_tile_position else {
+        *highlight_vis = Visibility::Hidden;
+        *info_vis = Visibility::Hidden;
+        return;
+    };
+
+    // Tile-lock: the reticle latches onto a world tile when the cursor first
+    // moves over it, and stays put while the character walks. That way the
+    // displayed DC/range refresh as the player closes on or retreats from the
+    // chosen tile, instead of being glued to the cursor's screen offset (which
+    // would never change since the camera follows the player).
+    let cursor_moved = cursor_state.jump_last_cursor != Some(cursor_position);
+    if cursor_moved || cursor_state.jump_target_tile.is_none() {
+        cursor_state.jump_target_tile = Some(cursor_to_tile(
+            window,
+            cursor_position,
+            &player_position,
+            &world_config,
+        ));
+        cursor_state.jump_last_cursor = Some(cursor_position);
+    }
+    let target_tile = cursor_state.jump_target_tile.unwrap();
+    let dx = target_tile.x - player_position.x;
+    let dy = target_tile.y - player_position.y;
+    let xy_cost = jump_cost(dx, dy, 0);
+
+    // Position the tile highlight at the snapped tile's screen rect. Tile
+    // sprites are centered at `window_center + (tile - player) * tile_size`
+    // in logical/cursor pixels; the highlight Node sits in the same pixel
+    // space (cursor_to_val_px keeps it scaled correctly under UiScale).
+    let tile_size = world_config.tile_size;
+    let window_center = Vec2::new(window.width() * 0.5, window.height() * 0.5);
+    let center_logical = Vec2::new(
+        window_center.x + (target_tile.x - player_position.x) as f32 * tile_size,
+        window_center.y - (target_tile.y - player_position.y) as f32 * tile_size,
+    );
+    let top_left = center_logical - Vec2::splat(tile_size * 0.5);
+    let top_left_ui = cursor_to_val_px(top_left, &ui_scale);
+    let size_ui = tile_size / ui_scale.0.max(0.0001);
+
+    highlight_node.left = px(top_left_ui.x);
+    highlight_node.top = px(top_left_ui.y);
+    highlight_node.width = px(size_ui);
+    highlight_node.height = px(size_ui);
+
+    let in_range = (JUMP_MIN_RANGE..=JUMP_MAX_RANGE).contains(&xy_cost);
+    if in_range {
+        *highlight_bg = BackgroundColor(Color::srgba(1.0, 0.92, 0.2, 0.28));
+        *highlight_border = BorderColor::all(Color::srgba(1.0, 0.85, 0.1, 0.95));
+    } else {
+        *highlight_bg = BackgroundColor(Color::srgba(0.85, 0.25, 0.25, 0.22));
+        *highlight_border = BorderColor::all(Color::srgba(0.95, 0.35, 0.35, 0.85));
+    }
+    *highlight_vis = Visibility::Visible;
+
+    // Position the info box just below+right of the cursor, like
+    // `sync_item_tooltip`. Keep the same offsets so both feel coherent.
+    let anchor = cursor_to_val_px(cursor_position, &ui_scale);
+    info_node.left = px(anchor.x + 18.0);
+    info_node.top = px(anchor.y + 18.0);
+    *info_vis = Visibility::Visible;
+
+    info_label.0 = if xy_cost == 0 {
+        "Pick a tile to jump to.".to_owned()
+    } else if !in_range {
+        format!("Out of range (cost {xy_cost}, max {JUMP_MAX_RANGE}).")
+    } else {
+        let ranks = client_state.skill_ranks[Skill::Athletics.index()] as i32;
+        let str_mod = client_state
+            .attributes
+            .as_ref()
+            .map(|a| ability_mod(a.strength))
+            .unwrap_or(0);
+        let bonus = ranks + str_mod;
+        // Approximate cost: we don't know the landing column's z client-side,
+        // so we display the flat-jump DC. A vertical jump may roll a higher
+        // DC on the server; close enough for player feedback.
+        let dc = jump_dc(dx, dy, 0);
+        // d20 + bonus ≥ dc → success roll range = max(1, 21 - (dc - bonus)).
+        let need = (dc - bonus).clamp(1, 20);
+        let success_pct = ((21 - need).max(0) * 5).min(100);
+        format!(
+            "Athletics {sign}{bonus} vs DC {dc}  (~{success_pct}%)",
+            sign = if bonus >= 0 { "+" } else { "" }
+        )
+    };
+}
+
+pub fn handle_jump_targeting(
+    mouse_input: Res<ButtonInput<MouseButton>>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    world_config: Res<WorldConfig>,
+    context_menu_state: Res<ContextMenuState>,
+    client_state: Res<ClientGameState>,
+    mut pending_commands: ResMut<PendingGameCommands>,
+    mut cursor_state: ResMut<CursorState>,
+) {
+    use crate::game::traversal::{jump_cost, JUMP_MAX_RANGE, JUMP_MIN_RANGE};
+
+    if cursor_state.mode != CursorMode::JumpTarget {
+        return;
+    }
+
+    if keyboard_input.just_pressed(KeyCode::Escape) || mouse_input.just_pressed(MouseButton::Right)
+    {
+        cursor_state.reset_to_default();
+        return;
+    }
+
+    if context_menu_state.is_visible() || !mouse_input.just_pressed(MouseButton::Left) {
+        return;
+    }
+
+    // Prefer the tile-locked target (synced by `sync_jump_targeting_ui`) so
+    // the click resolves to whatever world tile the reticle is sitting on,
+    // not the cursor's instantaneous screen position. The fallback handles
+    // the rare frame where the sync system hasn't run yet (initial entry).
+    let target_tile = if let Some(t) = cursor_state.jump_target_tile {
+        t
+    } else {
+        let Ok(window) = window_query.single() else {
+            return;
+        };
+        let Some(cursor_position) = window.cursor_position() else {
+            return;
+        };
+        let Some(player_position) = client_state.player_tile_position else {
+            return;
+        };
+        cursor_to_tile(window, cursor_position, &player_position, &world_config)
+    };
+    let Some(player_position) = client_state.player_tile_position else {
+        return;
+    };
+    let dx = target_tile.x - player_position.x;
+    let dy = target_tile.y - player_position.y;
+    let xy_cost = jump_cost(dx, dy, 0);
+    if !(JUMP_MIN_RANGE..=JUMP_MAX_RANGE).contains(&xy_cost) {
+        // Out-of-range click stays in jump mode so the player can retarget.
+        return;
+    }
+
+    pending_commands.push(GameCommand::JumpTo { target_tile });
     cursor_state.reset_to_default();
 }
 
