@@ -10,5 +10,6 @@ render:
   sprite_height_tiles: 1.021
   occludes_floor_above: true
   block_size: 2
+  walkable_surface: true
   hide_when_inside_facing: south
   stack_order: 50

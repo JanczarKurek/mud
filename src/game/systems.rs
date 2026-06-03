@@ -1294,9 +1294,10 @@ fn handle_jump_to(
         return;
     }
 
-    // Resolve the actual landing column top — the client's `target_tile.z` is
-    // a hint, but a falling jump's true landing is the highest walkable
-    // surface above ground. Start from the column top and cascade down.
+    let source = (tile_position.x, tile_position.y);
+    let source_z = tile_position.z;
+    let target = (target_tile.x, target_tile.y);
+
     let column_members = || {
         object_query.iter().map(|(entity, resident, tile, object)| {
             crate::world::stacks::ColumnMember {
@@ -1307,32 +1308,50 @@ fn handle_jump_to(
             }
         })
     };
-    let stack_top = crate::world::stacks::stack_top_z(
-        space_resident.space_id,
-        target_tile.x,
-        target_tile.y,
-        column_members(),
-        definitions,
-        floor_maps,
-        floor_defs,
+
+    // Single Athletics roll up-front; the path sweep picks the farthest tile
+    // whose per-tile DC the roll already cleared. dc=0 so `success` is unused.
+    let roll = crate::player::skills::skill_check(
+        skill_sheet,
+        &base_stats.attributes,
+        crate::player::skills::Skill::Athletics,
+        0,
+        0,
     );
-    let stack_top_walkable = crate::world::stacks::stack_top_is_walkable(
-        space_resident.space_id,
-        target_tile.x,
-        target_tile.y,
-        Entity::PLACEHOLDER,
-        column_members(),
-        definitions,
-        floor_maps,
-        floor_defs,
-    );
-    let landing_z = if stack_top_walkable {
-        stack_top
-    } else {
-        // Fall through to whatever walkable surface sits below the column top.
-        let Some(below) = resolve_landing_at(
-            target_tile.x,
-            target_tile.y,
+
+    // Walk the straight line from source to target tile-by-tile. At each step
+    // track `apex_dz` — the highest obstacle the arc has had to clear so far,
+    // measured above the source z. The cost to land on the current tile is
+    // `jump_cost(dx, dy, max(apex_dz, landing_dz))` because the arc must
+    // crest whichever is higher.
+    let path = traversal::bresenham_line(source, target);
+    let mut apex_dz: i32 = 0;
+    let mut best: Option<(TilePosition, i32 /* cost */, i32 /* dc */)> = None;
+    let mut target_dc: i32 = traversal::jump_dc(dx, dy, 0); // fallback for narration
+
+    for (xi, yi) in path.iter().copied() {
+        let dxi = xi - source.0;
+        let dyi = yi - source.1;
+
+        // Apex of this tile's column (whether walkable on top or not — solid
+        // props still need to be cleared).
+        let stack_top = crate::world::stacks::stack_top_z(
+            space_resident.space_id,
+            xi,
+            yi,
+            column_members(),
+            definitions,
+            floor_maps,
+            floor_defs,
+        );
+        let stack_dz = (stack_top - source_z).max(0);
+
+        // Landing candidate: cascade down from stack_top until we find a
+        // walkable surface. None ⇒ this tile is not a landing option, but it
+        // still contributes to the apex for subsequent tiles.
+        let landing = resolve_landing_at(
+            xi,
+            yi,
             stack_top,
             space_resident.space_id,
             collider_positions,
@@ -1340,87 +1359,50 @@ fn handle_jump_to(
             definitions,
             floor_maps,
             floor_defs,
-        ) else {
-            chat_log.push_narrator("You can't see a place to land there.");
-            return;
-        };
-        below.z
-    };
+        );
 
-    let dz_down = (tile_position.z - landing_z).max(0);
-    let cost = traversal::jump_cost(dx, dy, landing_z - tile_position.z);
+        if let Some(landing_pos) = landing {
+            let landing_dz = (landing_pos.z - source_z).max(0);
+            let max_clear = apex_dz.max(landing_dz);
+            let cost = traversal::jump_cost(dxi, dyi, max_clear);
+            let dc = traversal::jump_dc(dxi, dyi, max_clear);
+            if (xi, yi) == target {
+                target_dc = dc;
+            }
+            if cost <= traversal::JUMP_MAX_RANGE && roll.total >= dc {
+                best = Some((landing_pos, cost, dc));
+            }
+        } else if (xi, yi) == target {
+            // No walkable landing at the target tile — still surface a
+            // path-aware DC for narration using the obstacle-clear cost.
+            target_dc = traversal::jump_dc(dxi, dyi, apex_dz);
+        }
 
-    // The upward component is folded into the cost; the cap covers both
-    // pure-horizontal and vertical-heavy jumps so a 1-tile + 3 half-block
-    // ledge can't slip past as "in range".
-    if cost > traversal::JUMP_MAX_RANGE {
-        chat_log.push_narrator("That ledge is too high to leap onto.");
-        return;
+        // Fold this tile's stack into apex for the NEXT tile's clearance.
+        apex_dz = apex_dz.max(stack_dz);
     }
 
-    let dc = traversal::jump_dc(dx, dy, landing_z - tile_position.z);
-    let result = crate::player::skills::skill_check(
-        skill_sheet,
-        &base_stats.attributes,
-        crate::player::skills::Skill::Athletics,
-        dc,
-        0,
-    );
+    let Some((landed, cost, dc)) = best else {
+        chat_log.push_narrator(format!(
+            "Your jump fails (Athletics {} vs DC {}) — you can't find a foothold.",
+            roll.total, target_dc
+        ));
+        movement_cooldown.remaining_seconds = movement_cooldown.step_interval_seconds;
+        return;
+    };
 
-    let (landed, fell) = if result.success {
+    let fell = (source_z - landed.z).max(0);
+    if (landed.x, landed.y) == target {
         chat_log.push_narrator(format!(
             "You leap across (Athletics {} vs DC {}).",
-            result.total, dc
+            roll.total, dc
         ));
-        (
-            TilePosition::new(target_tile.x, target_tile.y, landing_z),
-            dz_down,
-        )
     } else {
-        // Margin of failure → how many tiles short along the XY line.
-        // Cap by the Chebyshev step count, not the cost, since each
-        // `step_back_toward` walks one tile along whichever axis is longest.
-        let margin = (dc - result.total).max(1);
-        let max_steps = dx.abs().max(dy.abs());
-        let short_tiles = ((margin + 4) / 5).min(max_steps);
-        let (mut sx, mut sy) = (target_tile.x, target_tile.y);
-        for _ in 0..short_tiles {
-            let stepped = crate::game::traversal::step_back_toward(
-                (sx, sy),
-                (tile_position.x, tile_position.y),
-            );
-            sx = stepped.0;
-            sy = stepped.1;
-        }
-        // Cascade down from the original jump apex — falling short of a
-        // ledge drops you to the floor.
-        let apex_z = tile_position.z.max(landing_z);
-        let Some(short_landing) = resolve_landing_at(
-            sx,
-            sy,
-            apex_z,
-            space_resident.space_id,
-            collider_positions,
-            object_query,
-            definitions,
-            floor_maps,
-            floor_defs,
-        ) else {
-            chat_log.push_narrator(format!(
-                "Your jump fails (Athletics {} vs DC {}) and you scramble back.",
-                result.total, dc
-            ));
-            // No safe landing in the line — refuse the move outright.
-            movement_cooldown.remaining_seconds = movement_cooldown.step_interval_seconds;
-            return;
-        };
         chat_log.push_narrator(format!(
-            "Your jump falls short (Athletics {} vs DC {}).",
-            result.total, dc
+            "Your jump falls short — you land at ({}, {}) (Athletics {} vs DC {}).",
+            landed.x, landed.y, roll.total, target_dc
         ));
-        let fell = (tile_position.z - short_landing.z).max(0);
-        (short_landing, fell)
-    };
+    }
 
     *tile_position = landed;
     pending_steps.push(crate::world::step_triggers::StepEvent {
@@ -6522,13 +6504,14 @@ mod tests {
         let mut app = setup_server_app();
         let player = spawn_player(&mut app, 1, 10, 10);
 
-        // A wall directly east. Walls collide and have NO walkable_surface,
-        // so the move should be blocked outright (no climb, no drop).
-        let wall_id = app
+        // A tree directly east. Trees collide as flat z=0 obstacles with no
+        // climbable top (block_size 0, default walkable_surface false), so the
+        // move should be blocked outright — no climb, no drop.
+        let tree_id = app
             .world_mut()
             .resource_mut::<ObjectRegistry>()
-            .allocate_runtime_id("wall_s");
-        spawn_world_object(&mut app, "wall_s", wall_id, TilePosition::ground(11, 10));
+            .allocate_runtime_id("tree");
+        spawn_world_object(&mut app, "tree", tree_id, TilePosition::ground(11, 10));
 
         app.world_mut()
             .resource_mut::<PendingGameCommands>()
@@ -6546,6 +6529,104 @@ mod tests {
             tile,
             TilePosition::ground(10, 10),
             "player should be blocked by a non-climbable wall"
+        );
+    }
+
+    /// Jumping ONTO a wall is now legal — wall tops are walkable. Outcome
+    /// depends on the Athletics roll: lands at z = 2 (wall top), or remains
+    /// at the source if the roll missed DC.
+    #[test]
+    fn jump_onto_wall_lands_on_top_or_stays_put() {
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+
+        let wall_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("wall_s");
+        spawn_world_object(&mut app, "wall_s", wall_id, TilePosition::ground(11, 10));
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                crate::player::components::PlayerId(1),
+                GameCommand::JumpTo {
+                    target_tile: TilePosition::ground(11, 10),
+                },
+            );
+        app.update();
+
+        let tile = *app.world().get::<TilePosition>(player).unwrap();
+        assert!(
+            tile == TilePosition::ground(10, 10) || tile == TilePosition::new(11, 10, 2),
+            "jump at wall should land on top or stay put — got {tile:?}"
+        );
+    }
+
+    /// Jumping over a 2-half-block wall to a tile 3 away exceeds the
+    /// path-aware cost cap (`ceil(hypot(3,0)) + 2 = 5 > JUMP_MAX_RANGE`). The
+    /// player must end at one of the reachable path tiles (source, the empty
+    /// tile just before the wall, or atop the wall) — never at the target.
+    #[test]
+    fn jump_over_tall_wall_cannot_reach_target() {
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+
+        let wall_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("wall_s");
+        spawn_world_object(&mut app, "wall_s", wall_id, TilePosition::ground(12, 10));
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                crate::player::components::PlayerId(1),
+                GameCommand::JumpTo {
+                    target_tile: TilePosition::ground(13, 10),
+                },
+            );
+        app.update();
+
+        let tile = *app.world().get::<TilePosition>(player).unwrap();
+        let allowed = [
+            TilePosition::ground(10, 10), // failed roll, no movement
+            TilePosition::ground(11, 10), // landed short of the wall
+            TilePosition::new(12, 10, 2), // landed atop the wall
+        ];
+        assert!(
+            allowed.contains(&tile),
+            "tall wall blocks reaching the far side — got {tile:?}, allowed {allowed:?}"
+        );
+    }
+
+    /// Diagonal jumps walk a Bresenham line. With no obstacles in the way,
+    /// the player ends at the source, the midpoint of the diagonal, or the
+    /// target depending on the Athletics roll.
+    #[test]
+    fn diagonal_jump_walks_bresenham_path() {
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                crate::player::components::PlayerId(1),
+                GameCommand::JumpTo {
+                    target_tile: TilePosition::ground(12, 12),
+                },
+            );
+        app.update();
+
+        let tile = *app.world().get::<TilePosition>(player).unwrap();
+        let allowed = [
+            TilePosition::ground(10, 10), // roll missed even the first step
+            TilePosition::ground(11, 11), // landed at the midpoint
+            TilePosition::ground(12, 12), // cleared the full diagonal
+        ];
+        assert!(
+            allowed.contains(&tile),
+            "diagonal jump must land on a Bresenham path tile — got {tile:?}"
         );
     }
 

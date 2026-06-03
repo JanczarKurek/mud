@@ -2051,6 +2051,7 @@ pub fn sync_jump_targeting_ui(
     window_query: Query<&Window, With<PrimaryWindow>>,
     world_config: Res<WorldConfig>,
     ui_scale: Res<UiScale>,
+    definitions: Res<OverworldObjectDefinitions>,
     mut highlight_query: Query<
         (
             &mut Node,
@@ -2066,7 +2067,9 @@ pub fn sync_jump_targeting_ui(
     >,
     mut info_label_query: Query<&mut Text, With<JumpInfoBoxLabel>>,
 ) {
-    use crate::game::traversal::{jump_cost, jump_dc, JUMP_MAX_RANGE, JUMP_MIN_RANGE};
+    use crate::game::traversal::{
+        bresenham_line, jump_cost, jump_dc, JUMP_MAX_RANGE, JUMP_MIN_RANGE,
+    };
     use crate::player::classes::ability_mod;
     use crate::player::skills::Skill;
 
@@ -2170,10 +2173,74 @@ pub fn sync_jump_targeting_ui(
             .map(|a| ability_mod(a.strength))
             .unwrap_or(0);
         let bonus = ranks + str_mod;
-        // Approximate cost: we don't know the landing column's z client-side,
-        // so we display the flat-jump DC. A vertical jump may roll a higher
-        // DC on the server; close enough for player feedback.
-        let dc = jump_dc(dx, dy, 0);
+        // Mirror the server's path-aware DC: walk the Bresenham line from
+        // player → target, summing the highest obstacle the arc has to clear.
+        // The replicated `world_objects` map gives us every projected stack;
+        // floor-maps painted above are skipped — the server is authoritative
+        // and the tooltip is just close-enough player feedback.
+        let space_id = client_state
+            .player_position
+            .map(|p| p.space_id)
+            .or(client_state.current_space.as_ref().map(|s| s.space_id));
+        let source_z = player_position.z;
+        let mut apex_dz = 0i32;
+        let mut target_landing_dz = 0i32;
+        if let Some(space_id) = space_id {
+            let stack_top_at = |x: i32, y: i32| -> i32 {
+                client_state
+                    .world_objects
+                    .values()
+                    .filter(|obj| {
+                        obj.position.space_id == space_id
+                            && obj.tile_position.x == x
+                            && obj.tile_position.y == y
+                    })
+                    .filter_map(|obj| {
+                        let def = definitions.get(&obj.definition_id)?;
+                        if def.render.block_size == 0 {
+                            return None;
+                        }
+                        Some(obj.tile_position.z + def.render.block_size as i32)
+                    })
+                    .max()
+                    .unwrap_or(0)
+            };
+            let walkable_top_at = |x: i32, y: i32| -> Option<i32> {
+                client_state
+                    .world_objects
+                    .values()
+                    .filter(|obj| {
+                        obj.position.space_id == space_id
+                            && obj.tile_position.x == x
+                            && obj.tile_position.y == y
+                    })
+                    .filter_map(|obj| {
+                        let def = definitions.get(&obj.definition_id)?;
+                        if def.render.block_size == 0 || !def.render.walkable_surface {
+                            return None;
+                        }
+                        Some(obj.tile_position.z + def.render.block_size as i32)
+                    })
+                    .max()
+            };
+            let path = bresenham_line(
+                (player_position.x, player_position.y),
+                (target_tile.x, target_tile.y),
+            );
+            for (i, (x, y)) in path.iter().copied().enumerate() {
+                if i + 1 == path.len() {
+                    // Target tile: prefer a walkable top here as landing;
+                    // fall through to ground (z=0) when the column's top
+                    // is not walkable.
+                    target_landing_dz = (walkable_top_at(x, y).unwrap_or(0) - source_z).max(0);
+                } else {
+                    // Intermediate tile: feeds apex regardless of walkability.
+                    apex_dz = apex_dz.max((stack_top_at(x, y) - source_z).max(0));
+                }
+            }
+        }
+        let max_clear = apex_dz.max(target_landing_dz);
+        let dc = jump_dc(dx, dy, max_clear);
         // d20 + bonus ≥ dc → success roll range = max(1, 21 - (dc - bonus)).
         let need = (dc - bonus).clamp(1, 20);
         let success_pct = ((21 - need).max(0) * 5).min(100);

@@ -221,8 +221,8 @@ pub fn move_player_on_grid(
         return;
     };
 
-    let climb = keyboard_input.pressed(KeyCode::ShiftLeft)
-        || keyboard_input.pressed(KeyCode::ShiftRight);
+    let climb =
+        keyboard_input.pressed(KeyCode::ShiftLeft) || keyboard_input.pressed(KeyCode::ShiftRight);
     pending_commands.push(GameCommand::MovePlayer { delta, climb });
 }
 
