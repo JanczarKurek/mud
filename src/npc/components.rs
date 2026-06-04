@@ -104,6 +104,14 @@ pub enum AiState {
     Pursue { target: Entity },
     /// Have a target and in attack range. Hold (melee) or kite (ranged).
     Engage { target: Entity },
+    /// Took damage from a target we can't reach (the player camped a ledge
+    /// we can't climb to). Move away from `from` and try to break line of
+    /// sight. Expires to Wander at `expires_at_seconds` if no new damage
+    /// arrives and the attacker can't see us.
+    Flee {
+        from: Entity,
+        expires_at_seconds: f32,
+    },
 }
 
 /// Per-NPC scratch memory the FSM reads and writes between ticks.
@@ -126,3 +134,9 @@ pub struct Barks {
     pub aggro: Vec<String>,
     pub mutter: Vec<String>,
 }
+
+/// Elapsed-seconds timestamp of the last time this entity took damage.
+/// Inserted by `apply_pending_damage` on every successful damage application.
+/// Drives the AI's flee-trigger ("hurt recently AND can't reach attacker").
+#[derive(Component, Clone, Copy, Debug)]
+pub struct LastDamagedAt(pub f32);

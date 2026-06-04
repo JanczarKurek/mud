@@ -24,7 +24,7 @@ use crate::combat::damage_type::DamageType;
 use crate::game::resources::{GameUiEvent, PendingGameUiEvents, VfxAnchor};
 use crate::magic::effects::MagicEffects;
 use crate::magic::resources::{EffectKind, SpellDefinitions};
-use crate::npc::components::Npc;
+use crate::npc::components::{LastDamagedAt, Npc};
 use crate::player::components::{ChatLog, Player, PlayerId, PlayerIdentity, VitalStats};
 use crate::player::lifecycle::{PendingPlayerDeath, PendingPlayerDeaths};
 use crate::player::progression::{xp_grant_for_kill, Experience, PendingXpGrant, PendingXpGrants};
@@ -102,6 +102,7 @@ type DamageTargetQuery<'w, 's> = Query<
 /// `collect_game_events_from_authority`.
 #[allow(clippy::too_many_arguments)]
 pub fn apply_pending_damage(
+    time: Res<Time>,
     mut pending: ResMut<PendingDamageEvents>,
     mut targets: DamageTargetQuery,
     definitions: Res<OverworldObjectDefinitions>,
@@ -115,6 +116,7 @@ pub fn apply_pending_damage(
     player_identity_query: Query<&PlayerIdentity, With<Player>>,
     mut commands: Commands,
 ) {
+    let now = time.elapsed_secs();
     if pending.events.is_empty() {
         return;
     }
@@ -142,6 +144,13 @@ pub fn apply_pending_damage(
         }
 
         target_vitals.health = (target_vitals.health - event.amount).max(0.0);
+
+        // Stamp the damage time so AI can detect "hurt recently" without
+        // tracking HP deltas frame-to-frame. Inserted/overwritten on every
+        // hit; the AI uses (now - LastDamagedAt) <= window to flee.
+        commands
+            .entity(event.target)
+            .insert(LastDamagedAt(now));
 
         // Damage wakes a sleeping target — any damage source, not just
         // melee. This used to live in `tick_battle` and only fired for

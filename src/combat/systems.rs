@@ -20,7 +20,7 @@ use crate::player::components::{
     PlayerId, PlayerIdentity, VitalStats, WeaponDamage,
 };
 use crate::player::progression::Experience;
-use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
+use crate::world::components::{tile_distance_3d, OverworldObject, SpaceResident, TilePosition};
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
 
@@ -84,17 +84,28 @@ fn roll_d20(salt: u64) -> i32 {
     ((mixed % 20) as i32) + 1
 }
 
-/// Returns the attack roll's total: `d20 + ability_mod + (NPC ? level : 0)`.
-/// Players currently use no BAB — see `docs/progression.md` §7.1 (BAB lands in
-/// a later progression batch).
-fn attack_roll_total(attacker: &CombatantSnapshot, salt: u64) -> i32 {
-    roll_d20(salt)
+/// Returns the attack roll's total: `d20 + ability_mod + (NPC ? level : 0)
+/// + elevation_mod` (the elevation bonus is ranged-only — melee and spells
+/// get no high/low ground term).
+fn attack_roll_total(
+    attacker: &CombatantSnapshot,
+    target: &CombatantSnapshot,
+    salt: u64,
+) -> i32 {
+    let mut total = roll_d20(salt)
         + crate::combat::formulas::attack_to_hit_bonus(
             attacker.attack_profile.kind,
             attacker.attributes,
             attacker.is_player,
             attacker.level,
-        )
+        );
+    if matches!(attacker.attack_profile.kind, AttackKind::Ranged { .. }) {
+        total += crate::combat::formulas::elevation_to_hit_mod(
+            attacker.position.z,
+            target.position.z,
+        );
+    }
+    total
 }
 
 fn dodge_dc(target: &CombatantSnapshot) -> i32 {
@@ -397,7 +408,7 @@ pub fn resolve_battle_turn(
 
         // Stage 1: to-hit roll vs dodge DC. Misses spend ammo and play the
         // projectile but deal no damage.
-        let attack_total = attack_roll_total(attacker, attacker.object_id);
+        let attack_total = attack_roll_total(attacker, target, attacker.object_id);
         let dc = dodge_dc(target);
         if attack_total < dc {
             ui_events.push_broadcast(GameUiEvent::AttackDodged {
@@ -701,13 +712,21 @@ fn is_target_in_range(
     attacker_position: &TilePosition,
     target_position: &TilePosition,
 ) -> bool {
-    let distance = chebyshev_distance(attacker_position, target_position);
-    if distance == 0 {
+    if attacker_position == target_position {
         return false;
     }
+    let dx = (attacker_position.x - target_position.x).abs();
+    let dy = (attacker_position.y - target_position.y).abs();
+    let dz = (attacker_position.z - target_position.z).abs();
+    let xy = dx.max(dy);
     match attack_kind {
-        AttackKind::Melee => distance <= 1,
-        AttackKind::Ranged { range_tiles } => distance <= range_tiles,
+        // Melee reaches one tile in XY and at most one half-block in Z. A
+        // player on a half-block ledge is still in range of a goblin standing
+        // next to it; a player on the floor above (dz=2) is not.
+        AttackKind::Melee => xy <= 1 && dz <= 1,
+        // Ranged counts Z as XY: dz=2 (one full floor) equals one tile of
+        // horizontal distance. Verticality is part of the range budget.
+        AttackKind::Ranged { range_tiles } => xy.max(dz) <= range_tiles,
     }
 }
 
@@ -722,11 +741,12 @@ fn combatant_name(
         .unwrap_or_else(|| overworld_object.definition_id.clone())
 }
 
+/// Chebyshev distance treating each half-block of Z as one tile. Used by the
+/// combat leash check (so an NPC chasing a player who climbs a ledge doesn't
+/// instantly drop target) and by chat radius. See `tile_distance_3d` in
+/// `world::components`.
 pub(crate) fn chebyshev_distance(a: &TilePosition, b: &TilePosition) -> i32 {
-    if a.z != b.z {
-        return i32::MAX;
-    }
-    (a.x - b.x).abs().max((a.y - b.y).abs())
+    tile_distance_3d(*a, *b)
 }
 
 #[cfg(test)]
@@ -824,10 +844,12 @@ mod tests {
 
     #[test]
     fn attack_roll_total_player_skips_level_bonus() {
-        // Player STR 14 → +2 mod. Roll is d20 + 2, in [3, 22].
+        // Player STR 14 → +2 mod. Roll is d20 + 2, in [3, 22]. Melee, so
+        // elevation is irrelevant — pick any target snapshot.
         let attacker = snapshot(14, 10, 5, true, 0, 0, 0, 0, false);
+        let target = snapshot(10, 10, 1, false, 0, 0, 0, 0, false);
         for salt in 0..30 {
-            let total = attack_roll_total(&attacker, salt);
+            let total = attack_roll_total(&attacker, &target, salt);
             assert!(
                 (3..=22).contains(&total),
                 "player attack {total} out of [3,22] (salt={salt})"
@@ -839,11 +861,69 @@ mod tests {
     fn attack_roll_total_npc_adds_level() {
         // NPC level 6, STR 12 → +1 mod. Roll is d20 + 1 + 6, in [8, 27].
         let attacker = snapshot(12, 10, 6, false, 0, 0, 0, 0, false);
+        let target = snapshot(10, 10, 1, true, 0, 0, 0, 0, false);
         for salt in 0..30 {
-            let total = attack_roll_total(&attacker, salt);
+            let total = attack_roll_total(&attacker, &target, salt);
             assert!(
                 (8..=27).contains(&total),
                 "npc attack {total} out of [8,27] (salt={salt})"
+            );
+        }
+    }
+
+    #[test]
+    fn ranged_attack_roll_adds_elevation_bonus() {
+        // AGI 10 → +0 mod. Ranged shooter standing 2 half-blocks above target:
+        // d20 + 0 + 2 (elevation) in [3, 22]. Player so no level bonus.
+        let mut attacker = snapshot(10, 10, 1, true, 0, 0, 0, 0, false);
+        attacker.attack_profile = AttackProfile {
+            kind: AttackKind::Ranged { range_tiles: 5 },
+            damage_type: DamageType::Pierce,
+        };
+        attacker.position = TilePosition::new(0, 0, 2);
+        let target = snapshot(10, 10, 1, false, 0, 0, 0, 0, false);
+        for salt in 0..30 {
+            let total = attack_roll_total(&attacker, &target, salt);
+            assert!(
+                (3..=22).contains(&total),
+                "ranged attack {total} out of [3,22] (salt={salt}) — elevation bonus +2"
+            );
+        }
+    }
+
+    #[test]
+    fn ranged_attack_roll_subtracts_when_shooting_up() {
+        // Shooter on ground, target two half-blocks up. Should subtract 2.
+        // AGI 10 → +0 mod. d20 + 0 - 2 in [-1, 18].
+        let mut attacker = snapshot(10, 10, 1, true, 0, 0, 0, 0, false);
+        attacker.attack_profile = AttackProfile {
+            kind: AttackKind::Ranged { range_tiles: 5 },
+            damage_type: DamageType::Pierce,
+        };
+        attacker.position = TilePosition::new(0, 0, 0);
+        let mut target = snapshot(10, 10, 1, false, 0, 0, 0, 0, false);
+        target.position = TilePosition::new(0, 0, 2);
+        for salt in 0..30 {
+            let total = attack_roll_total(&attacker, &target, salt);
+            assert!(
+                (-1..=18).contains(&total),
+                "ranged-upward attack {total} out of [-1, 18] (salt={salt})"
+            );
+        }
+    }
+
+    #[test]
+    fn melee_attack_roll_ignores_elevation() {
+        // Melee attacker 2 half-blocks above target — elevation must not
+        // apply. STR 10 → +0 mod. d20 + 0 in [1, 20].
+        let mut attacker = snapshot(10, 10, 1, true, 0, 0, 0, 0, false);
+        attacker.position = TilePosition::new(0, 0, 2);
+        let target = snapshot(10, 10, 1, false, 0, 0, 0, 0, false);
+        for salt in 0..30 {
+            let total = attack_roll_total(&attacker, &target, salt);
+            assert!(
+                (1..=20).contains(&total),
+                "melee attack {total} out of [1, 20] (salt={salt}) — elevation must be ignored"
             );
         }
     }

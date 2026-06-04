@@ -21,7 +21,7 @@ use crate::magic::effects::{apply_effects_lazy, MagicEffects};
 use crate::magic::resources::{EffectKind, SpellDefinition};
 use crate::npc::spellcasting::{NpcSpellCondition, NpcSpellEntry, NpcSpellTargetKind};
 use crate::player::components::VitalStats;
-use crate::world::components::{SpaceId, TilePosition};
+use crate::world::components::{tile_distance_3d, SpaceId, TilePosition};
 
 /// Read-only snapshot of an NPC caster + its target, supplied to
 /// `pick_npc_spell`.
@@ -298,10 +298,7 @@ pub fn active_effect_kinds(effects: Option<&MagicEffects>) -> HashSet<EffectKind
 }
 
 fn chebyshev_distance(a: TilePosition, b: TilePosition) -> i32 {
-    if a.z != b.z {
-        return i32::MAX;
-    }
-    (a.x - b.x).abs().max((a.y - b.y).abs())
+    tile_distance_3d(a, b)
 }
 
 #[cfg(test)]

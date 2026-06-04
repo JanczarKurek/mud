@@ -42,6 +42,18 @@ pub fn weapon_damage_range(expr: &DamageExpr, attrs: AttributeSet) -> (i32, i32)
     (expr.min_damage(&attrs), expr.max_damage(&attrs))
 }
 
+/// To-hit modifier from elevation difference, applied to **ranged physical**
+/// attacks only (melee and spells unaffected). `z` is in half-block units;
+/// `+ELEVATION_BONUS_PER_HALF_BLOCK` per half-block the attacker stands above
+/// the target, clamped to `±ELEVATION_BONUS_CAP`. Shooting upward incurs a
+/// matching penalty.
+pub fn elevation_to_hit_mod(attacker_z: i32, target_z: i32) -> i32 {
+    const ELEVATION_BONUS_PER_HALF_BLOCK: i32 = 1;
+    const ELEVATION_BONUS_CAP: i32 = 3;
+    let dz = attacker_z - target_z;
+    (dz * ELEVATION_BONUS_PER_HALF_BLOCK).clamp(-ELEVATION_BONUS_CAP, ELEVATION_BONUS_CAP)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -129,5 +141,34 @@ mod tests {
         let expr = DamageExpr::parse("STR/2 + 4").unwrap();
         // No dice. STR 12 → 6, bonus 4 → both min and max are 10.
         assert_eq!(weapon_damage_range(&expr, attrs(12, 10)), (10, 10));
+    }
+
+    #[test]
+    fn elevation_mod_zero_at_same_z() {
+        assert_eq!(elevation_to_hit_mod(2, 2), 0);
+    }
+
+    #[test]
+    fn elevation_mod_positive_when_above_target() {
+        // 2 half-blocks above (one full floor) → +2.
+        assert_eq!(elevation_to_hit_mod(2, 0), 2);
+        // 3 half-blocks above → +3 (one short of the cap).
+        assert_eq!(elevation_to_hit_mod(3, 0), 3);
+    }
+
+    #[test]
+    fn elevation_mod_negative_when_below_target() {
+        // Shooting up one half-block → -1.
+        assert_eq!(elevation_to_hit_mod(0, 1), -1);
+        // Two full floors below → -3 cap.
+        assert_eq!(elevation_to_hit_mod(0, 5), -3);
+    }
+
+    #[test]
+    fn elevation_mod_caps_at_plus_minus_three() {
+        // 10 half-blocks up — still +3 (cap).
+        assert_eq!(elevation_to_hit_mod(10, 0), 3);
+        // 10 half-blocks down — still -3 (cap).
+        assert_eq!(elevation_to_hit_mod(0, 10), -3);
     }
 }

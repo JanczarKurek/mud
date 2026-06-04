@@ -4,6 +4,8 @@ priority: 40
 tile_size_px: 16
 atlas_path: floors/cave_floor/tileset.png
 debug_color: [71, 58, 48]
+occludes_floor_above: true
+walkable_surface: true
 variants:
   1: [1, 1, 1]
   2: [1, 1, 1]

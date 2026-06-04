@@ -50,6 +50,24 @@ pub fn floor_index(z: i32) -> i32 {
     z.div_euclid(2)
 }
 
+/// Chebyshev distance in tile space, treating each half-block of `z` as one
+/// tile. So a player two half-blocks up (one full floor) reads as one tile
+/// away even when XY-aligned. Used by combat range gates (melee with a separate
+/// `|dz|<=1` rule, ranged + spells via this metric) and NPC pathfinding.
+pub fn tile_distance_3d(a: TilePosition, b: TilePosition) -> i32 {
+    (a.x - b.x)
+        .abs()
+        .max((a.y - b.y).abs())
+        .max((a.z - b.z).abs())
+}
+
+/// Chebyshev distance in XY only, ignoring `z`. Use where only horizontal
+/// positioning matters at a fixed plane (NPC kite/strafe candidate scoring
+/// when the candidate is the NPC's same-z neighbor).
+pub fn tile_distance_xy(a: TilePosition, b: TilePosition) -> i32 {
+    (a.x - b.x).abs().max((a.y - b.y).abs())
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SpacePosition {
     pub space_id: SpaceId,

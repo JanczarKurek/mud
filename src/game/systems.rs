@@ -18,8 +18,8 @@ use crate::player::components::{
     MovementCooldown, Player, PlayerId, PlayerIdentity, VitalStats,
 };
 use crate::world::components::{
-    Collider, Container, Facing, Movable, OverworldObject, Quantity, Rotatable, SpaceResident,
-    TilePosition,
+    tile_distance_3d, Collider, Container, Facing, Movable, OverworldObject, Quantity, Rotatable,
+    SpaceResident, TilePosition,
 };
 use crate::world::direction::Direction;
 use crate::world::floor_map::FloorMaps;
@@ -5355,11 +5355,12 @@ fn apply_spell_self_effects(
     }
 }
 
+/// Chebyshev tile distance for spell range gates. Re-exports the canonical
+/// `tile_distance_3d` so a player on a ledge can target an enemy on the floor
+/// below within the same `range_tiles` budget. AoE radius lookups still
+/// iterate at a fixed Z, so they're unaffected by the relaxation.
 fn chebyshev_distance_tiles(a: TilePosition, b: TilePosition) -> i32 {
-    if a.z != b.z {
-        return i32::MAX;
-    }
-    (a.x - b.x).abs().max((a.y - b.y).abs())
+    tile_distance_3d(a, b)
 }
 
 /// Distance metric for inspect/perception: like Chebyshev but with elevation

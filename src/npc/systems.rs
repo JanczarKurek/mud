@@ -8,12 +8,15 @@ use crate::game::resources::{GameUiEvent, PendingGameUiEvents, SpeechBubbleStyle
 use crate::game::shop::Shopkeeper;
 use crate::magic::effects::MagicEffects;
 use crate::npc::components::{
-    AiMemory, AiState, Barks, HostileBehavior, Npc, RoamingBehavior, RoamingRandomState,
-    RoamingStepTimer,
+    AiMemory, AiState, Barks, HostileBehavior, LastDamagedAt, Npc, RoamingBehavior,
+    RoamingRandomState, RoamingStepTimer,
 };
-use crate::player::components::Player;
+use crate::player::classes::ability_mod;
+use crate::player::components::{DerivedStats, Player};
 use crate::world::components::OverworldObject;
-use crate::world::components::{Collider, Facing, SpaceId, SpaceResident, TilePosition};
+use crate::world::components::{
+    tile_distance_3d, Collider, Facing, SpaceId, SpaceResident, TilePosition,
+};
 use crate::world::direction::Direction;
 
 /// Shopkeepers stop wandering when a player is within this many tiles, so the
@@ -36,6 +39,15 @@ const MUTTER_PROBABILITY: f32 = 0.05;
 /// when several rolls succeed in a row, and prevents an aggro bark from
 /// being immediately stepped on by a mutter.
 const BUBBLE_COOLDOWN_SECONDS: f32 = 8.0;
+
+/// How recently the NPC must have taken damage from its current target for the
+/// "can't reach + hurt" flee trigger to fire. Keeps NPCs from fleeing every
+/// time a player merely stands somewhere they can't path to.
+const FLEE_RECENT_DAMAGE_WINDOW_SECS: f32 = 4.0;
+
+/// Total time the Flee stance lasts before reverting to Wander. Refreshes
+/// every tick the NPC re-spots the attacker.
+const FLEE_DURATION_SECS: f32 = 6.0;
 
 /// Spatial index of static blocker tiles, rebuilt at the top of
 /// `update_roaming_npcs`. Replaces a per-NPC × per-candidate-tile linear scan
@@ -69,6 +81,8 @@ pub fn update_roaming_npcs(
         ),
         (With<Npc>, Without<Player>),
     >,
+    last_damaged_query: Query<&LastDamagedAt, With<Npc>>,
+    derived_stats_query: Query<&DerivedStats, With<Npc>>,
     mut pending_steps: ResMut<crate::world::step_triggers::PendingStepEvents>,
     mut ui_events: Option<ResMut<PendingGameUiEvents>>,
     mut commands: Commands,
@@ -113,6 +127,7 @@ pub fn update_roaming_npcs(
         overworld_object,
     ) in &mut npc_query
     {
+        let last_damaged_at = last_damaged_query.get(entity).ok().map(|t| t.0);
         timer.remaining_seconds = (timer.remaining_seconds - time.delta_secs()).max(0.0);
         if timer.remaining_seconds > 0.0 {
             continue;
@@ -158,7 +173,7 @@ pub fn update_roaming_npcs(
             }
         }
 
-        let outcome = step_ai(StepAiInput {
+        let mut outcome = step_ai(StepAiInput {
             entity,
             space_id: resident.space_id,
             tile_position: *tile_position,
@@ -174,7 +189,27 @@ pub fn update_roaming_npcs(
             random_state: &mut random_state,
             elapsed,
             barks,
+            last_damaged_at,
         });
+
+        // Athletics gate on any step that climbs more than the free auto-step
+        // (dz>1). NPCs without a `DerivedStats` use STR 10 → +0 mod, matching
+        // the player default. A failed roll forfeits the step for this tick;
+        // the NPC may retry next tick with a different d20 roll.
+        if let Some(landed) = outcome.move_to {
+            let dz = landed.z - tile_position.z;
+            if dz > crate::game::traversal::CLIMB_FREE_DZ {
+                let strength = derived_stats_query
+                    .get(entity)
+                    .map(|d| d.attributes.strength)
+                    .unwrap_or(10);
+                let dc = crate::game::traversal::climb_dc(dz);
+                let roll = (next_random_index(&mut random_state, 20) as i32) + 1;
+                if roll + ability_mod(strength) < dc {
+                    outcome.move_to = None;
+                }
+            }
+        }
 
         *ai_state = outcome.next_state;
         *ai_memory = outcome.next_memory;
@@ -252,6 +287,10 @@ struct StepAiInput<'a> {
     random_state: &'a mut RoamingRandomState,
     elapsed: f32,
     barks: Option<&'a Barks>,
+    /// Elapsed-seconds timestamp of the last damage we took; `None` if we've
+    /// never been hit. Used to gate the Flee transition so an NPC only flees
+    /// from an unreachable target that has recently hurt them.
+    last_damaged_at: Option<f32>,
 }
 
 struct PendingBark {
@@ -283,6 +322,10 @@ fn step_ai(mut input: StepAiInput<'_>) -> AiOutcome {
         } => tick_alert(&mut input, last_seen, expires_at_seconds),
         AiState::Pursue { target } => tick_pursue_or_engage(&mut input, target, false),
         AiState::Engage { target } => tick_pursue_or_engage(&mut input, target, true),
+        AiState::Flee {
+            from,
+            expires_at_seconds,
+        } => tick_flee(&mut input, from, expires_at_seconds),
     }
 }
 
@@ -615,7 +658,7 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
     if !now_engaged {
         // Pursue: A* toward target, target tile treated as walkable for the
         // pathfinder so it doesn't dead-end against the player's own tile.
-        let move_to = astar_next_step(
+        let astar = astar_next_step(
             input.entity,
             input.space_id,
             input.tile_position,
@@ -624,8 +667,36 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
             input.npc_tiles,
             input.player_tiles,
             Some(target_pos),
-        )
-        .or_else(|| {
+        );
+
+        // Flee trigger: A* couldn't find a path *and* the target has hurt us
+        // recently. Catches "player camped on a ledge we can't climb while
+        // shooting down" — without this, the NPC would stand still eating
+        // arrows. Greedy seek isn't enough to disprove reachability (it might
+        // make local progress while still being permanently stuck), so we
+        // gate strictly on A*.
+        if astar.is_none()
+            && input
+                .last_damaged_at
+                .is_some_and(|t| input.elapsed - t <= FLEE_RECENT_DAMAGE_WINDOW_SECS)
+        {
+            return AiOutcome {
+                next_state: AiState::Flee {
+                    from: target,
+                    expires_at_seconds: input.elapsed + FLEE_DURATION_SECS,
+                },
+                next_memory: AiMemory {
+                    last_step: None,
+                    ..input.memory
+                },
+                target: TargetChange::Clear,
+                move_to: None,
+                idle_pause: false,
+                bark: None,
+            };
+        }
+
+        let move_to = astar.or_else(|| {
             choose_seek_step(
                 input.entity,
                 input.space_id,
@@ -674,6 +745,105 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
         },
         target: next_target,
         move_to,
+        idle_pause: false,
+        bark: None,
+    }
+}
+
+/// Run a flee tick: pick the best (no-LoS, distant) neighbor away from
+/// `from`. Expires to Wander when `expires_at_seconds` has elapsed or the
+/// attacker leaves the space. Refreshes the timer while LoS to `from` is
+/// still possible — staying visible means the NPC is still being chased and
+/// shouldn't stop fleeing yet.
+fn tick_flee(input: &mut StepAiInput<'_>, from: Entity, expires_at_seconds: f32) -> AiOutcome {
+    let attacker = input
+        .players
+        .iter()
+        .copied()
+        .find(|(e, _, _)| *e == from);
+    let Some((_, attacker_space, attacker_pos)) = attacker else {
+        return AiOutcome {
+            next_state: AiState::Wander,
+            next_memory: AiMemory {
+                last_step: None,
+                ..input.memory
+            },
+            target: TargetChange::Clear,
+            move_to: None,
+            idle_pause: false,
+            bark: None,
+        };
+    };
+    let attacker_lost = attacker_space != input.space_id;
+    if attacker_lost || input.elapsed >= expires_at_seconds {
+        return AiOutcome {
+            next_state: AiState::Wander,
+            next_memory: AiMemory {
+                last_step: None,
+                ..input.memory
+            },
+            target: TargetChange::Clear,
+            move_to: None,
+            idle_pause: false,
+            bark: None,
+        };
+    }
+
+    // Refresh the timer while the attacker can still see us — they're
+    // still chasing, so the flee shouldn't time out.
+    let still_in_sight =
+        has_line_of_sight(input.tile_position, attacker_pos, input.space_id, input.blockers);
+    let next_expires_at = if still_in_sight {
+        input.elapsed + FLEE_DURATION_SECS
+    } else {
+        expires_at_seconds
+    };
+
+    // Pick the neighbor that maximizes (no-LoS, distance-from-attacker).
+    let mut best: Option<(TilePosition, (i32, i32))> = None;
+    for dy in -1..=1 {
+        for dx in -1..=1 {
+            if dx == 0 && dy == 0 {
+                continue;
+            }
+            let Some(candidate) =
+                resolve_npc_step(input.space_id, input.tile_position, dx, dy, input.blockers)
+            else {
+                continue;
+            };
+            if is_blocked_position(
+                input.entity,
+                input.space_id,
+                candidate,
+                input.blockers,
+                input.npc_tiles,
+                Some(input.player_tiles),
+                None,
+            ) {
+                continue;
+            }
+            let los =
+                has_line_of_sight(candidate, attacker_pos, input.space_id, input.blockers);
+            let los_score = if los { 0 } else { 1 };
+            let dist_score = chebyshev_distance(candidate, attacker_pos);
+            let score = (los_score, dist_score);
+            if best.is_none_or(|(_, existing)| score > existing) {
+                best = Some((candidate, score));
+            }
+        }
+    }
+
+    AiOutcome {
+        next_state: AiState::Flee {
+            from,
+            expires_at_seconds: next_expires_at,
+        },
+        next_memory: AiMemory {
+            last_step: None,
+            ..input.memory
+        },
+        target: TargetChange::Clear,
+        move_to: best.map(|(pos, _)| pos),
         idle_pause: false,
         bark: None,
     }
@@ -832,13 +1002,16 @@ fn strafe_step(
 ) -> Option<TilePosition> {
     let current_distance = chebyshev_distance(tile_position, target_pos);
     let mut best: Option<(TilePosition, i32)> = None;
-    for y in -1..=1 {
-        for x in -1..=1 {
-            if x == 0 && y == 0 {
+    for dy in -1..=1 {
+        for dx in -1..=1 {
+            if dx == 0 && dy == 0 {
                 continue;
             }
-            let candidate =
-                TilePosition::new(tile_position.x + x, tile_position.y + y, tile_position.z);
+            let Some(candidate) =
+                resolve_npc_step(space_id, tile_position, dx, dy, blockers)
+            else {
+                continue;
+            };
             if is_blocked_position(
                 entity,
                 space_id,
@@ -863,6 +1036,8 @@ fn strafe_step(
 }
 
 /// Greedy 8-way seek (kept as a fast fallback when A* runs out of budget).
+/// Uses the same Z-aware step resolver as A*, so cross-floor seeks behave
+/// consistently between the two paths.
 fn choose_seek_step(
     entity: Entity,
     space_id: SpaceId,
@@ -873,34 +1048,32 @@ fn choose_seek_step(
     player_tiles: Option<&PlayerTileSet>,
     goal_override: Option<TilePosition>,
 ) -> Option<TilePosition> {
-    let mut candidate_offsets = Vec::with_capacity(8);
-    for y in -1..=1 {
-        for x in -1..=1 {
-            if x == 0 && y == 0 {
+    let mut candidates: Vec<TilePosition> = Vec::with_capacity(8);
+    for dy in -1..=1 {
+        for dx in -1..=1 {
+            if dx == 0 && dy == 0 {
                 continue;
             }
-            candidate_offsets.push(IVec2::new(x, y));
+            if let Some(landed) =
+                resolve_npc_step(space_id, tile_position, dx, dy, blockers)
+            {
+                candidates.push(landed);
+            }
         }
     }
 
-    candidate_offsets.sort_by_key(|delta| {
-        let candidate = TilePosition::new(
-            tile_position.x + delta.x,
-            tile_position.y + delta.y,
-            tile_position.z,
-        );
+    candidates.sort_by_key(|candidate| {
         (
-            chebyshev_distance(candidate, seek_target),
-            i32::from(delta.x != 0 && delta.y != 0),
+            chebyshev_distance(*candidate, seek_target),
+            // Slightly penalize diagonal-XY steps when distances tie, same
+            // tiebreak as the previous IVec2-based version.
+            i32::from(
+                candidate.x - tile_position.x != 0 && candidate.y - tile_position.y != 0,
+            ),
         )
     });
 
-    for delta in candidate_offsets {
-        let target_position = TilePosition::new(
-            tile_position.x + delta.x,
-            tile_position.y + delta.y,
-            tile_position.z,
-        );
+    for target_position in candidates {
         if is_blocked_position(
             entity,
             space_id,
@@ -968,6 +1141,70 @@ impl PartialOrd for AstarNode {
     }
 }
 
+/// Resolve a single NPC step in direction `(dx, dy)` from `from`, accounting
+/// for Z-traversal. Returns the destination tile or `None` when no valid
+/// landing exists.
+///
+/// Uses the BlockerIndex-only world model (Colliders are both walls and
+/// standable surfaces — a wall's top is its highest Collider z plus one).
+/// No floor-map or walkable-decal awareness; an NPC walking sideways on an
+/// upper-floor surface relies on the absence of a Collider, matching the
+/// pre-Z-aware behavior.
+///
+/// Resolution order:
+/// 1. **Flat** at `from.z` — if the lateral tile is not blocked, step
+///    laterally. Identical to the pre-Z-aware behavior.
+/// 2. **Climb up** by `dz ∈ [1, CLIMB_MAX_DZ]` — when flat is blocked, scan
+///    upward for the first unblocked tile that has a supporting Collider
+///    just below it (chest top, wall top, etc.). Includes the dz=1 free
+///    auto-step.
+/// 3. **Step down** by 1 — when the lateral tile is unblocked at `from.z`
+///    AND the tile one half-block below is also unblocked AND supported,
+///    prefer the lower landing so an NPC can hop off a half-block ledge to
+///    chase a fleeing target. Multi-step falls are deliberately omitted —
+///    if a path requires a longer drop, the Flee mechanic handles it.
+fn resolve_npc_step(
+    space_id: SpaceId,
+    from: TilePosition,
+    dx: i32,
+    dy: i32,
+    blockers: &BlockerIndex,
+) -> Option<TilePosition> {
+    let x = from.x + dx;
+    let y = from.y + dy;
+    let cz = from.z;
+
+    let flat = TilePosition::new(x, y, cz);
+    let flat_blocked = blockers.contains(&(space_id, flat));
+
+    if !flat_blocked {
+        // Prefer descending one half-block if the lateral tile is also
+        // unblocked at cz-1 and supported (or ground). Otherwise stay flat.
+        if cz > 0 {
+            let below = TilePosition::new(x, y, cz - 1);
+            let below_supported = cz - 1 == 0
+                || blockers.contains(&(space_id, TilePosition::new(x, y, cz - 2)));
+            if !blockers.contains(&(space_id, below)) && below_supported {
+                return Some(below);
+            }
+        }
+        return Some(flat);
+    }
+
+    // Flat blocked. Climb up to CLIMB_MAX_DZ.
+    for nz in (cz + 1)..=(cz + crate::game::traversal::CLIMB_MAX_DZ) {
+        let up = TilePosition::new(x, y, nz);
+        if blockers.contains(&(space_id, up)) {
+            continue;
+        }
+        if blockers.contains(&(space_id, TilePosition::new(x, y, nz - 1))) {
+            return Some(up);
+        }
+    }
+
+    None
+}
+
 fn astar_next_step(
     entity: Entity,
     space_id: SpaceId,
@@ -979,9 +1216,6 @@ fn astar_next_step(
     goal_override: Option<TilePosition>,
 ) -> Option<TilePosition> {
     if start == goal {
-        return None;
-    }
-    if start.z != goal.z {
         return None;
     }
 
@@ -1040,7 +1274,9 @@ fn astar_next_step(
         deltas.sort_by_key(|&(ddx, ddy)| neighbor_alignment_penalty(ddx, ddy, gdx, gdy));
 
         for (dx, dy) in deltas {
-            let neighbor = TilePosition::new(current.x + dx, current.y + dy, current.z);
+            let Some(neighbor) = resolve_npc_step(space_id, current, dx, dy, blockers) else {
+                continue;
+            };
             if is_blocked_position(
                 entity,
                 space_id,
@@ -1052,7 +1288,10 @@ fn astar_next_step(
             ) {
                 continue;
             }
-            let tentative_g = current_g + 1; // Chebyshev: uniform cost.
+            // Step cost: 1 + dz_up so A* prefers flat routes when both
+            // exist. Descents (dz<0) are free — gravity does the work.
+            let dz_up = (neighbor.z - current.z).max(0);
+            let tentative_g = current_g + 1 + dz_up;
             let existing = g_score.get(&neighbor).copied().unwrap_or(i32::MAX);
             if tentative_g < existing {
                 came_from.insert(neighbor, current);
@@ -1075,49 +1314,38 @@ fn astar_next_step(
 // Line of sight (Bresenham across blocker tiles)
 // ---------------------------------------------------------------------------
 
+/// 3D line of sight across the voxel grid. Walks a parametric line from `from`
+/// (exclusive) to `to` (exclusive) using the largest of `|dx|`, `|dy|`, and
+/// `|dz|` (half-block units) as the step count, and tests each interpolated
+/// (x, y, z) cell against `blockers`. Source and destination are treated as
+/// non-blocking by themselves — only *strictly between* tiles block the line.
 fn has_line_of_sight(
     from: TilePosition,
     to: TilePosition,
     space_id: SpaceId,
     blockers: &BlockerIndex,
 ) -> bool {
-    if from.z != to.z {
-        return false;
-    }
     if from == to {
         return true;
     }
-
-    let mut x = from.x;
-    let mut y = from.y;
-    let dx = (to.x - x).abs();
-    let dy = (to.y - y).abs();
-    let sx = if from.x < to.x { 1 } else { -1 };
-    let sy = if from.y < to.y { 1 } else { -1 };
-    let mut err = dx - dy;
-
-    loop {
-        if x == to.x && y == to.y {
-            return true;
-        }
-        let e2 = 2 * err;
-        if e2 > -dy {
-            err -= dy;
-            x += sx;
-        }
-        if e2 < dx {
-            err += dx;
-            y += sy;
-        }
-        if x == to.x && y == to.y {
-            return true;
-        }
-        // Don't treat the source or destination as blocking themselves.
-        let here = TilePosition::new(x, y, from.z);
+    let dx = to.x - from.x;
+    let dy = to.y - from.y;
+    let dz = to.z - from.z;
+    let steps = dx.abs().max(dy.abs()).max(dz.abs());
+    if steps <= 1 {
+        return true;
+    }
+    for step in 1..steps {
+        let t = step as f64 / steps as f64;
+        let x = from.x + (dx as f64 * t).round() as i32;
+        let y = from.y + (dy as f64 * t).round() as i32;
+        let z = from.z + (dz as f64 * t).round() as i32;
+        let here = TilePosition::new(x, y, z);
         if blockers.contains(&(space_id, here)) {
             return false;
         }
     }
+    true
 }
 
 // ---------------------------------------------------------------------------
@@ -1229,10 +1457,7 @@ fn neighbor_alignment_penalty(ddx: i32, ddy: i32, gdx: i32, gdy: i32) -> i32 {
 }
 
 fn chebyshev_distance(a: TilePosition, b: TilePosition) -> i32 {
-    if a.z != b.z {
-        return i32::MAX;
-    }
-    (a.x - b.x).abs().max((a.y - b.y).abs())
+    tile_distance_3d(a, b)
 }
 
 fn next_random_index(random_state: &mut RoamingRandomState, modulo: usize) -> usize {
@@ -1471,8 +1696,11 @@ mod tests {
 
     #[test]
     fn archer_cornered_stands_still_or_strafes() {
-        // Player adjacent, all retreat tiles blocked. With strafe-fallback,
-        // the archer may strafe to a tile that maintains current distance.
+        // Player adjacent, all retreat tiles blocked. With Z-aware
+        // pathfinding the archer can climb onto a 1-block obstacle, so we
+        // stack the cornering colliders 5 half-blocks tall — beyond the
+        // CLIMB_MAX_DZ ceiling — to actually trap it. The intent is unchanged:
+        // an NPC with no escape route stands still.
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
         app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
@@ -1481,13 +1709,15 @@ mod tests {
         let archer = spawn_archer(&mut app, TilePosition::ground(5, 5), 6);
 
         for (x, y) in [(4, 4), (5, 4), (6, 4), (4, 5), (6, 5), (4, 6), (6, 6)] {
-            app.world_mut().spawn((
-                Collider,
-                SpaceResident {
-                    space_id: TEST_SPACE,
-                },
-                TilePosition::ground(x, y),
-            ));
+            for z in 0..=crate::game::traversal::CLIMB_MAX_DZ {
+                app.world_mut().spawn((
+                    Collider,
+                    SpaceResident {
+                        space_id: TEST_SPACE,
+                    },
+                    TilePosition::new(x, y, z),
+                ));
+            }
         }
 
         app.add_systems(Update, update_roaming_npcs);
@@ -1522,22 +1752,109 @@ mod tests {
     }
 
     #[test]
-    fn npc_does_not_chase_player_on_different_floor() {
+    fn npc_now_targets_player_on_different_floor() {
+        // Z-aware combat: an NPC at ground level with a clear line of sight
+        // sets a CombatTarget on a player one floor up. The pre-elevation
+        // behaviour rejected this — kept here as a regression to prevent
+        // sliding back into the cross-Z silo.
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
         app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
 
-        // Player on floor 1 (raw z=2 in half-block units), NPC on ground floor.
-        spawn_player(&mut app, 1, TilePosition::new(5, 6, 2));
+        let player = spawn_player(&mut app, 1, TilePosition::new(5, 6, 2));
         let npc = spawn_melee(&mut app, TilePosition::ground(5, 5));
 
         app.add_systems(Update, update_roaming_npcs);
         app.update();
 
-        assert!(
-            app.world().get::<CombatTarget>(npc).is_none(),
-            "NPC should not target a player on a different floor"
+        let target = app.world().get::<CombatTarget>(npc);
+        assert_eq!(
+            target.map(|t| t.entity),
+            Some(player),
+            "NPC should now target a player one floor above"
         );
+    }
+
+    #[test]
+    fn resolve_npc_step_climbs_onto_a_chest() {
+        // A single-tile chest (Collider at z=0) stands east of the NPC.
+        // resolve_npc_step should treat the chest top (z=1) as a valid
+        // landing — that's the dz=1 auto-step the player gets for free.
+        let mut blockers: BlockerIndex = HashSet::new();
+        blockers.insert((TEST_SPACE, TilePosition::ground(6, 5)));
+
+        let landed =
+            resolve_npc_step(TEST_SPACE, TilePosition::ground(5, 5), 1, 0, &blockers).unwrap();
+        assert_eq!(landed, TilePosition::new(6, 5, 1));
+    }
+
+    #[test]
+    fn resolve_npc_step_refuses_unsupported_climb() {
+        // (6, 5, 1) is unblocked but has no supporting collider at z=0 —
+        // there's nothing to stand on. Flat (6, 5, 0) is what we land on.
+        let mut blockers: BlockerIndex = HashSet::new();
+        // No colliders at all → flat z=0 is the answer.
+        let landed =
+            resolve_npc_step(TEST_SPACE, TilePosition::ground(5, 5), 1, 0, &blockers).unwrap();
+        assert_eq!(landed, TilePosition::ground(6, 5));
+
+        // Now add a Collider only at z=1 (floating wall fragment) but
+        // leave z=0 open. NPC steps onto flat z=0 as before — the floating
+        // collider doesn't change the landing.
+        blockers.insert((TEST_SPACE, TilePosition::new(6, 5, 1)));
+        let landed =
+            resolve_npc_step(TEST_SPACE, TilePosition::ground(5, 5), 1, 0, &blockers).unwrap();
+        assert_eq!(landed, TilePosition::ground(6, 5));
+    }
+
+    #[test]
+    fn cross_floor_line_of_sight_traces_through_voxels() {
+        // Source (0,0,0) → target (3,0,2). With no blockers, LoS holds.
+        let blockers: BlockerIndex = HashSet::new();
+        assert!(has_line_of_sight(
+            TilePosition::ground(0, 0),
+            TilePosition::new(3, 0, 2),
+            TEST_SPACE,
+            &blockers,
+        ));
+
+        // A wall slab at the interpolated midpoint blocks the line. With
+        // dx=3, dz=2 the steps land at (1,0,1), (2,0,1), so a blocker at
+        // (2,0,1) sits squarely on the arc.
+        let mut wall: BlockerIndex = HashSet::new();
+        wall.insert((TEST_SPACE, TilePosition::new(2, 0, 1)));
+        assert!(!has_line_of_sight(
+            TilePosition::ground(0, 0),
+            TilePosition::new(3, 0, 2),
+            TEST_SPACE,
+            &wall,
+        ));
+    }
+
+    #[test]
+    fn astar_climbs_a_chest_to_reach_player() {
+        // Player on top of a chest 1 tile east; NPC starts west of the chest.
+        // The chest is a Collider at (6, 5, 0); the player perches at (6, 5, 1).
+        // A* should choose to climb the chest (dz=1, free auto-step) rather
+        // than rejecting the path because it crosses Z.
+        let mut blockers: BlockerIndex = HashSet::new();
+        blockers.insert((TEST_SPACE, TilePosition::ground(6, 5)));
+        let npc_tiles: NpcTileIndex = HashMap::new();
+        let player_tiles: PlayerTileSet = HashSet::new();
+
+        let next = astar_next_step(
+            Entity::PLACEHOLDER,
+            TEST_SPACE,
+            TilePosition::ground(5, 5),
+            TilePosition::new(6, 5, 1),
+            &blockers,
+            &npc_tiles,
+            &player_tiles,
+            Some(TilePosition::new(6, 5, 1)),
+        )
+        .expect("A* should find a path that climbs onto the chest");
+        // First (and only) step lands on the chest top — adjacency-1.
+        assert_eq!(next, TilePosition::new(6, 5, 1));
     }
 
     #[test]
