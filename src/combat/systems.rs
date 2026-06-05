@@ -201,6 +201,19 @@ pub fn resolve_battle_turn(
     definitions: Res<OverworldObjectDefinitions>,
     object_registry: Res<ObjectRegistry>,
     spell_definitions: Res<SpellDefinitions>,
+    collider_query: Query<
+        (
+            &SpaceResident,
+            &TilePosition,
+            Option<&OverworldObject>,
+        ),
+        (
+            With<crate::world::components::Collider>,
+            Without<Player>,
+        ),
+    >,
+    floor_maps: Option<Res<crate::world::floor_map::FloorMaps>>,
+    floor_defs: Option<Res<crate::world::floor_definitions::FloorTilesetDefinitions>>,
     mut chat_log_query: Query<&mut ChatLog, With<Player>>,
     mut ui_events: ResMut<PendingGameUiEvents>,
     mut pending_damage: ResMut<PendingDamageEvents>,
@@ -214,6 +227,17 @@ pub fn resolve_battle_turn(
     while battle_turn_timer.remaining_seconds <= 0.0 {
         battle_turn_timer.remaining_seconds += battle_turn_timer.interval_seconds;
     }
+
+    // Rebuilt every battle tick so painted-floor ceilings block ranged shots
+    // and spells exactly like they block NPC vision. Excluding the player from
+    // the collider query is intentional — we don't want the player's own body
+    // to occlude their shot to a target on the next tile.
+    let los_blockers = crate::world::spatial::build_los_blockers(
+        collider_query.iter(),
+        Some(&definitions),
+        floor_maps.as_deref(),
+        floor_defs.as_deref(),
+    );
 
     let combatants: Vec<CombatantSnapshot> = combat_queries
         .p0()
@@ -377,6 +401,29 @@ pub fn resolve_battle_turn(
         }
 
         let is_ranged = matches!(attacker.attack_profile.kind, AttackKind::Ranged { .. });
+        // Ranged attacks need a clear voxel line — without this, a player
+        // standing on the upper floor can shoot through the ceiling at an
+        // enemy on floor 0. Melee already implies adjacency in `is_target_in_range`
+        // so we skip the check for it. `los_blockers` covers walls (with
+        // `block_size` inflated), object colliders, and painted ceilings.
+        if is_ranged
+            && attacker.space_id == target.space_id
+            && !crate::world::spatial::has_line_of_sight(
+                attacker.position,
+                target.position,
+                attacker.space_id,
+                &los_blockers,
+            )
+        {
+            if attacker.is_player {
+                broadcast_chat_line(
+                    &mut chat_log_query,
+                    format!("[{} has no clear shot]", attacker.name),
+                );
+            }
+            continue;
+        }
+
         if is_ranged && attacker.is_player {
             let mut inventory_query = combat_queries.p2();
             let Ok(mut inventory) = inventory_query.get_mut(attacker.entity) else {

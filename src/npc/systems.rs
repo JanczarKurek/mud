@@ -18,6 +18,7 @@ use crate::world::components::{
     tile_distance_3d, Collider, Facing, SpaceId, SpaceResident, TilePosition,
 };
 use crate::world::direction::Direction;
+use crate::world::spatial::{self, has_line_of_sight, BlockerIndex};
 
 /// Shopkeepers stop wandering when a player is within this many tiles, so the
 /// trade context menu and any open trade panel don't snap closed every time a
@@ -52,14 +53,20 @@ const FLEE_DURATION_SECS: f32 = 6.0;
 /// Spatial index of static blocker tiles, rebuilt at the top of
 /// `update_roaming_npcs`. Replaces a per-NPC × per-candidate-tile linear scan
 /// of every collider in the world (~thousands), which produced a 20+ ms spike
-/// every step interval when all NPCs synchronized on the same frame.
-type BlockerIndex = HashSet<(SpaceId, TilePosition)>;
+/// every step interval when all NPCs synchronized on the same frame. The
+/// type is defined in `crate::world::spatial` and shared with combat.
 type NpcTileIndex = HashMap<(SpaceId, TilePosition), Entity>;
 type PlayerTileSet = HashSet<(SpaceId, TilePosition)>;
 
 pub fn update_roaming_npcs(
     time: Res<Time>,
-    blocker_query: Query<(&SpaceResident, &TilePosition), (With<Collider>, Without<Npc>)>,
+    blocker_query: Query<
+        (&SpaceResident, &TilePosition, Option<&OverworldObject>),
+        (With<Collider>, Without<Npc>),
+    >,
+    definitions: Option<Res<crate::world::object_definitions::OverworldObjectDefinitions>>,
+    floor_maps: Option<Res<crate::world::floor_map::FloorMaps>>,
+    floor_defs: Option<Res<crate::world::floor_definitions::FloorTilesetDefinitions>>,
     player_query: Query<(Entity, &SpaceResident, &TilePosition), (With<Player>, Without<Npc>)>,
     mut npc_query: Query<
         (
@@ -94,10 +101,16 @@ pub fn update_roaming_npcs(
         .map(|(entity, resident, tile_position)| (entity, resident.space_id, *tile_position))
         .collect();
 
-    let blockers: BlockerIndex = blocker_query
-        .iter()
-        .map(|(resident, position)| (resident.space_id, *position))
-        .collect();
+    // Movement vs. line-of-sight indices — see `crate::world::spatial` for
+    // the semantics. Movement is what we pass to `resolve_npc_step` so cascade
+    // descent finds an upper-floor surface to land on; LoS is what we pass to
+    // `has_line_of_sight` so vision rays stop at painted ceilings.
+    let (blockers, los_blockers) = spatial::build_indices(
+        blocker_query.iter(),
+        definitions.as_deref(),
+        floor_maps.as_deref(),
+        floor_defs.as_deref(),
+    );
 
     let npc_tiles: NpcTileIndex = npc_query
         .iter()
@@ -184,6 +197,7 @@ pub fn update_roaming_npcs(
             attack_profile,
             players: &players,
             blockers: &blockers,
+            los_blockers: &los_blockers,
             npc_tiles: &npc_tiles,
             player_tiles: &player_tiles,
             random_state: &mut random_state,
@@ -210,6 +224,29 @@ pub fn update_roaming_npcs(
                 }
             }
         }
+
+        // Per-tick AI trace. Run with `RUST_LOG=mud2::npc::systems=debug`
+        // (or `RUST_LOG=debug` in the embedded client) to see the per-NPC
+        // state-machine decisions: previous → next state, target change,
+        // resolved move tile, and the NPC's identity. One line per NPC per
+        // step interval — verbose but invaluable when an enemy gets stuck.
+        let prev_state = *ai_state;
+        let npc_label = overworld_object
+            .map(|object| {
+                format!("{}#{}", object.definition_id, object.object_id)
+            })
+            .unwrap_or_else(|| format!("npc{:?}", entity));
+        debug!(
+            target: "npc_ai",
+            "{npc_label}@{x},{y},{z}: {prev:?} → {next:?} target={target:?} move={move_to:?}",
+            x = tile_position.x,
+            y = tile_position.y,
+            z = tile_position.z,
+            prev = prev_state,
+            next = outcome.next_state,
+            target = outcome.target,
+            move_to = outcome.move_to,
+        );
 
         *ai_state = outcome.next_state;
         *ai_memory = outcome.next_memory;
@@ -282,6 +319,7 @@ struct StepAiInput<'a> {
     attack_profile: Option<&'a AttackProfile>,
     players: &'a [(Entity, SpaceId, TilePosition)],
     blockers: &'a BlockerIndex,
+    los_blockers: &'a BlockerIndex,
     npc_tiles: &'a NpcTileIndex,
     player_tiles: &'a PlayerTileSet,
     random_state: &'a mut RoamingRandomState,
@@ -307,6 +345,7 @@ struct AiOutcome {
     bark: Option<PendingBark>,
 }
 
+#[derive(Debug)]
 enum TargetChange {
     Keep,
     Set(Entity),
@@ -339,7 +378,7 @@ fn tick_wander(input: &mut StepAiInput<'_>) -> AiOutcome {
             input.space_id,
             hostile,
             input.players,
-            input.blockers,
+            input.los_blockers,
             hostile.detect_distance_tiles,
         ) {
             let mut outcome = tick_pursue_or_engage(input, target_entity, false);
@@ -628,7 +667,7 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
             input.tile_position,
             target_pos,
             input.space_id,
-            input.blockers,
+            input.los_blockers,
         )
     {
         return AiOutcome {
@@ -792,7 +831,7 @@ fn tick_flee(input: &mut StepAiInput<'_>, from: Entity, expires_at_seconds: f32)
     // Refresh the timer while the attacker can still see us — they're
     // still chasing, so the flee shouldn't time out.
     let still_in_sight =
-        has_line_of_sight(input.tile_position, attacker_pos, input.space_id, input.blockers);
+        has_line_of_sight(input.tile_position, attacker_pos, input.space_id, input.los_blockers);
     let next_expires_at = if still_in_sight {
         input.elapsed + FLEE_DURATION_SECS
     } else {
@@ -823,7 +862,7 @@ fn tick_flee(input: &mut StepAiInput<'_>, from: Entity, expires_at_seconds: f32)
                 continue;
             }
             let los =
-                has_line_of_sight(candidate, attacker_pos, input.space_id, input.blockers);
+                has_line_of_sight(candidate, attacker_pos, input.space_id, input.los_blockers);
             let los_score = if los { 0 } else { 1 };
             let dist_score = chebyshev_distance(candidate, attacker_pos);
             let score = (los_score, dist_score);
@@ -1147,9 +1186,11 @@ impl PartialOrd for AstarNode {
 ///
 /// Uses the BlockerIndex-only world model (Colliders are both walls and
 /// standable surfaces — a wall's top is its highest Collider z plus one).
-/// No floor-map or walkable-decal awareness; an NPC walking sideways on an
-/// upper-floor surface relies on the absence of a Collider, matching the
-/// pre-Z-aware behavior.
+/// `update_roaming_npcs` inflates each Collider over its definition's full
+/// `block_size`, so a 2-half-block wall blocks both z and z+1 and the NPC
+/// can't laterally clip through the upper half. No floor-map or walkable-
+/// decal awareness; an NPC walking sideways on an upper-floor surface relies
+/// on the absence of a Collider, matching the pre-Z-aware behavior.
 ///
 /// Resolution order:
 /// 1. **Flat** at `from.z` — if the lateral tile is not blocked, step
@@ -1158,11 +1199,11 @@ impl PartialOrd for AstarNode {
 ///    upward for the first unblocked tile that has a supporting Collider
 ///    just below it (chest top, wall top, etc.). Includes the dz=1 free
 ///    auto-step.
-/// 3. **Step down** by 1 — when the lateral tile is unblocked at `from.z`
-///    AND the tile one half-block below is also unblocked AND supported,
-///    prefer the lower landing so an NPC can hop off a half-block ledge to
-///    chase a fleeing target. Multi-step falls are deliberately omitted —
-///    if a path requires a longer drop, the Flee mechanic handles it.
+/// 3. **Cascade descent** — when the lateral tile is unblocked at `from.z`,
+///    walk straight down to the highest support strictly below `cz` (or the
+///    ground at z=0). Mirrors the player's `resolve_step_with_climb` descent
+///    so an NPC that steps off a wall top into empty air falls to the
+///    floor instead of hovering.
 fn resolve_npc_step(
     space_id: SpaceId,
     from: TilePosition,
@@ -1178,21 +1219,31 @@ fn resolve_npc_step(
     let flat_blocked = blockers.contains(&(space_id, flat));
 
     if !flat_blocked {
-        // Prefer descending one half-block if the lateral tile is also
-        // unblocked at cz-1 and supported (or ground). Otherwise stay flat.
+        // Cascade down to the highest support strictly below `cz` (or ground
+        // at z=0). This mirrors the player's `resolve_step_with_climb`
+        // descent branch: an NPC that walks off a wall top into empty air
+        // falls all the way to the floor instead of hovering at z=cz.
         if cz > 0 {
-            let below = TilePosition::new(x, y, cz - 1);
-            let below_supported = cz - 1 == 0
-                || blockers.contains(&(space_id, TilePosition::new(x, y, cz - 2)));
-            if !blockers.contains(&(space_id, below)) && below_supported {
-                return Some(below);
+            let mut landing_z = 0;
+            for z in (0..cz).rev() {
+                if blockers.contains(&(space_id, TilePosition::new(x, y, z))) {
+                    landing_z = z + 1;
+                    break;
+                }
+            }
+            if landing_z < cz {
+                return Some(TilePosition::new(x, y, landing_z));
             }
         }
         return Some(flat);
     }
 
-    // Flat blocked. Climb up to CLIMB_MAX_DZ.
-    for nz in (cz + 1)..=(cz + crate::game::traversal::CLIMB_MAX_DZ) {
+    // Flat blocked. Auto-climb caps at CLIMB_FREE_DZ to match the player's
+    // no-SHIFT behavior: half-block steps (chests, stair_n_low, stone_step)
+    // resolve, full-block walls don't. Without this cap an NPC would freely
+    // scale a 2-half-block wall — visually wrong, and the destination on
+    // top of the wall has no real support so the NPC ends up hovering.
+    for nz in (cz + 1)..=(cz + crate::game::traversal::CLIMB_FREE_DZ) {
         let up = TilePosition::new(x, y, nz);
         if blockers.contains(&(space_id, up)) {
             continue;
@@ -1310,43 +1361,8 @@ fn astar_next_step(
     None
 }
 
-// ---------------------------------------------------------------------------
-// Line of sight (Bresenham across blocker tiles)
-// ---------------------------------------------------------------------------
-
-/// 3D line of sight across the voxel grid. Walks a parametric line from `from`
-/// (exclusive) to `to` (exclusive) using the largest of `|dx|`, `|dy|`, and
-/// `|dz|` (half-block units) as the step count, and tests each interpolated
-/// (x, y, z) cell against `blockers`. Source and destination are treated as
-/// non-blocking by themselves — only *strictly between* tiles block the line.
-fn has_line_of_sight(
-    from: TilePosition,
-    to: TilePosition,
-    space_id: SpaceId,
-    blockers: &BlockerIndex,
-) -> bool {
-    if from == to {
-        return true;
-    }
-    let dx = to.x - from.x;
-    let dy = to.y - from.y;
-    let dz = to.z - from.z;
-    let steps = dx.abs().max(dy.abs()).max(dz.abs());
-    if steps <= 1 {
-        return true;
-    }
-    for step in 1..steps {
-        let t = step as f64 / steps as f64;
-        let x = from.x + (dx as f64 * t).round() as i32;
-        let y = from.y + (dy as f64 * t).round() as i32;
-        let z = from.z + (dz as f64 * t).round() as i32;
-        let here = TilePosition::new(x, y, z);
-        if blockers.contains(&(space_id, here)) {
-            return false;
-        }
-    }
-    true
-}
+// Line-of-sight lives in `crate::world::spatial::has_line_of_sight`; we
+// re-export it at the top of the file so call sites can stay terse.
 
 // ---------------------------------------------------------------------------
 // Wander direction sampling
