@@ -69,3 +69,15 @@
 **Root cause**: `sync_remote_player_projection` updated `TilePosition` but did not insert `VisualOffset` / `JustMoved` components the way `sync_client_world_projection` did for world objects.
 
 **Fix**: Added the same `VisualOffset` + `JustMoved` insertion block to `sync_remote_player_projection` in `src/world/systems.rs` (guarded by `dx.abs() <= 1 && dy.abs() <= 1` to skip teleports).
+
+---
+
+## NPC freezes on an upper floor — attacks only when the player is directly adjacent
+
+**Symptom**: A hostile NPC (e.g. fire elemental) chases the player up stairs to the second floor, then stops. It attacks when the player stands right next to it, but stands still and does nothing the moment the player steps one tile farther away (distance 2) on the same floor.
+
+**Root cause**: A line-of-sight bug, not pathfinding. The "adjacent works, distance-2 fails" threshold is the signature of an LoS gate — `has_line_of_sight` short-circuits to `true` for any ray ≤ 1 tile. Painted upper floors that occlude (the normal case — `wooden_floor`, `cave_floor` set both `occludes_floor_above` and `walkable_surface`) inserted their LoS occluder at `surface_z = floor_idx * 2`, which is *exactly the z where entities stand on that floor* (floor 1 = z=2). So any horizontal ray between two entities on the same upper floor passed through an occluding tile at z=2 and read as blocked. Combined with an index mismatch — `tick_alert` re-detected with the movement index (no occluder) while the pursue `lost_los` gate used the LoS index (occluder) — the NPC entered a detect→abort freeze loop instead of just failing to aggro.
+
+**Fix**: In `apply_floor_layer` (`src/world/spatial.rs`), insert the floor occluder at `support_z` (= `surface_z - 1`, the between-floor half-block) instead of `surface_z`. Vertical/cross-floor rays still pass through the odd between-floor z and stay blocked; horizontal same-floor rays at the even surface z no longer hit it. Also aligned `tick_alert` (`src/npc/systems.rs`) to re-detect with `los_blockers`, matching `tick_wander` and the `lost_los` gate.
+
+**Gotcha to remember**: entities stand on floor *N* at the **even** z `N*2`; the floor *slab/ceiling* belongs at the **odd** between-floor z `N*2 - 1`. Never put a movement/LoS blocker that represents a floor on the even surface z, or you block the entities standing on it. Regression tests: `world::spatial::tests::{floor_occluder_sits_below_the_walking_surface, same_floor_horizontal_los_is_clear_above_occluding_floor, vertical_los_through_occluding_floor_is_blocked}` and `npc::systems::tests::los_npc_pursues_across_occluding_upper_floor`.

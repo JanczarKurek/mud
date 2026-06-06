@@ -448,10 +448,16 @@ pub fn sync_nearby_npcs_panel(
             .unwrap_or(crate::world::hidden::DEFAULT_INSPECT_RANGE)
             + 2
     };
+    // The scanner senses only the player's own floor by default — an enemy a
+    // floor below or above stays hidden here (the minimap already floor-filters
+    // its dots the same way). A future "sense other floors" skill would widen
+    // this predicate.
+    let player_floor = crate::world::components::floor_index(player_tile.z);
     let mut npcs: Vec<&crate::game::resources::ClientWorldObjectState> = client_state
         .world_objects
         .values()
         .filter(|o| o.is_npc)
+        .filter(|o| crate::world::components::floor_index(o.tile_position.z) == player_floor)
         .filter(|o| chebyshev_distance(player_tile, o.tile_position) <= nearby_window(o))
         .collect();
     npcs.sort_by_key(|o| {

@@ -87,11 +87,7 @@ fn roll_d20(salt: u64) -> i32 {
 /// Returns the attack roll's total: `d20 + ability_mod + (NPC ? level : 0)
 /// + elevation_mod` (the elevation bonus is ranged-only — melee and spells
 /// get no high/low ground term).
-fn attack_roll_total(
-    attacker: &CombatantSnapshot,
-    target: &CombatantSnapshot,
-    salt: u64,
-) -> i32 {
+fn attack_roll_total(attacker: &CombatantSnapshot, target: &CombatantSnapshot, salt: u64) -> i32 {
     let mut total = roll_d20(salt)
         + crate::combat::formulas::attack_to_hit_bonus(
             attacker.attack_profile.kind,
@@ -100,10 +96,8 @@ fn attack_roll_total(
             attacker.level,
         );
     if matches!(attacker.attack_profile.kind, AttackKind::Ranged { .. }) {
-        total += crate::combat::formulas::elevation_to_hit_mod(
-            attacker.position.z,
-            target.position.z,
-        );
+        total +=
+            crate::combat::formulas::elevation_to_hit_mod(attacker.position.z, target.position.z);
     }
     total
 }
@@ -202,15 +196,8 @@ pub fn resolve_battle_turn(
     object_registry: Res<ObjectRegistry>,
     spell_definitions: Res<SpellDefinitions>,
     collider_query: Query<
-        (
-            &SpaceResident,
-            &TilePosition,
-            Option<&OverworldObject>,
-        ),
-        (
-            With<crate::world::components::Collider>,
-            Without<Player>,
-        ),
+        (&SpaceResident, &TilePosition, Option<&OverworldObject>),
+        (With<crate::world::components::Collider>, Without<Player>),
     >,
     floor_maps: Option<Res<crate::world::floor_map::FloorMaps>>,
     floor_defs: Option<Res<crate::world::floor_definitions::FloorTilesetDefinitions>>,
@@ -754,7 +741,7 @@ fn broadcast_chat_line(chat_log_query: &mut Query<&mut ChatLog, With<Player>>, m
     }
 }
 
-fn is_target_in_range(
+pub(crate) fn is_target_in_range(
     attack_kind: AttackKind,
     attacker_position: &TilePosition,
     target_position: &TilePosition,

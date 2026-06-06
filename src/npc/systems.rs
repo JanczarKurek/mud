@@ -4,6 +4,7 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 use bevy::prelude::*;
 
 use crate::combat::components::{AttackKind, AttackProfile, CombatTarget};
+use crate::combat::systems::is_target_in_range;
 use crate::game::resources::{GameUiEvent, PendingGameUiEvents, SpeechBubbleStyle};
 use crate::game::shop::Shopkeeper;
 use crate::magic::effects::MagicEffects;
@@ -15,7 +16,7 @@ use crate::player::classes::ability_mod;
 use crate::player::components::{DerivedStats, Player};
 use crate::world::components::OverworldObject;
 use crate::world::components::{
-    tile_distance_3d, Collider, Facing, SpaceId, SpaceResident, TilePosition,
+    floor_index, tile_distance_3d, Collider, Facing, SpaceId, SpaceResident, TilePosition,
 };
 use crate::world::direction::Direction;
 use crate::world::spatial::{self, has_line_of_sight, BlockerIndex};
@@ -49,6 +50,29 @@ const FLEE_RECENT_DAMAGE_WINDOW_SECS: f32 = 4.0;
 /// Total time the Flee stance lasts before reverting to Wander. Refreshes
 /// every tick the NPC re-spots the attacker.
 const FLEE_DURATION_SECS: f32 = 6.0;
+
+/// Grace window an NPC keeps pursuing a target that just changed floors: it
+/// heads to where it last saw them (via Alert) and climbs after them if the
+/// stairs are close enough to reach in time, otherwise the Alert decays to
+/// Wander. Longer than the default alert so a nearby staircase is actually
+/// climbable before giving up. The window + walk speed is what makes
+/// "follow only if the stairs are near" emergent. Tune by playtest.
+const CROSS_FLOOR_FOLLOW_SECS: f32 = 8.0;
+
+/// Grace window an Engage/Pursue keeps its CombatTarget after a *soft* contact
+/// loss (line of sight breaks, or the target brushes just past the leash
+/// radius). Refreshed every healthy tick, so it measures time since the last
+/// solid contact, not since aggro. While inside it the NPC holds the target and
+/// keeps pressing toward its live position via A*, only dropping to Alert once
+/// the window lapses with contact still broken.
+///
+/// Several seconds by design: a hostile monster should *commit* to a chase and
+/// keep coming for a few seconds after losing sight (around a pillar, through a
+/// doorway, behind a brief occlusion) rather than instantly forgetting you.
+/// This must also comfortably exceed a single AI step interval (~1s for most
+/// NPCs) — otherwise the window expires before the NPC's next tick and the
+/// hysteresis never actually fires. Tune by playtest.
+const CONTACT_GRACE_SECS: f32 = 3.0;
 
 /// Spatial index of static blocker tiles, rebuilt at the top of
 /// `update_roaming_npcs`. Replaces a per-NPC × per-candidate-tile linear scan
@@ -232,9 +256,7 @@ pub fn update_roaming_npcs(
         // step interval — verbose but invaluable when an enemy gets stuck.
         let prev_state = *ai_state;
         let npc_label = overworld_object
-            .map(|object| {
-                format!("{}#{}", object.definition_id, object.object_id)
-            })
+            .map(|object| format!("{}#{}", object.definition_id, object.object_id))
             .unwrap_or_else(|| format!("npc{:?}", entity));
         debug!(
             target: "npc_ai",
@@ -524,13 +546,20 @@ fn tick_alert(
     // While alert, re-detect at the *engage* radius (hysteresis). Lets a
     // briefly-hidden player snap back into pursuit before the alert decays.
     // Act on the new state immediately, same as Wander → Pursue.
+    //
+    // Use the LoS index (not the movement index): visibility here must agree
+    // with `tick_wander`'s acquisition (`:nearest_visible_player` with
+    // `los_blockers`) and the `lost_los` gate in `tick_pursue_or_engage`.
+    // Detecting with the movement index while the pursue gate checks the LoS
+    // index lets an NPC "see" a target it then immediately declares out of
+    // contact, freezing it in a detect→abort loop.
     if let Some(hostile) = input.hostile_behavior {
         if let Some((target_entity, _)) = nearest_visible_player(
             input.tile_position,
             input.space_id,
             hostile,
             input.players,
-            input.blockers,
+            input.los_blockers,
             hostile.disengage_distance_tiles,
         ) {
             let mut outcome = tick_pursue_or_engage(input, target_entity, false);
@@ -642,87 +671,100 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
     };
 
     let distance = chebyshev_distance(input.tile_position, target_pos);
-
-    // Leash: too far → drop to Alert with last-seen.
-    if distance > hostile.disengage_distance_tiles {
-        return AiOutcome {
-            next_state: AiState::Alert {
-                last_seen: target_pos,
-                expires_at_seconds: input.elapsed + hostile.alert_duration_seconds,
-            },
-            next_memory: AiMemory {
-                last_step: None,
-                ..input.memory
-            },
-            target: TargetChange::Clear,
-            move_to: None,
-            idle_pause: false,
-            bark: None,
-        };
-    }
-
-    // Line of sight maintenance.
-    if hostile.requires_line_of_sight
-        && !has_line_of_sight(
-            input.tile_position,
-            target_pos,
-            input.space_id,
-            input.los_blockers,
-        )
-    {
-        return AiOutcome {
-            next_state: AiState::Alert {
-                last_seen: target_pos,
-                expires_at_seconds: input.elapsed + hostile.alert_duration_seconds,
-            },
-            next_memory: AiMemory {
-                last_step: None,
-                ..input.memory
-            },
-            target: TargetChange::Clear,
-            move_to: None,
-            idle_pause: false,
-            bark: None,
-        };
-    }
-
-    let attack_range = attack_range_for(input.attack_profile);
-    let now_engaged = distance <= attack_range;
+    // Single source of truth for "can I hit them": the exact predicate combat
+    // uses to resolve an attack. Deriving engagement from anything else risks
+    // the AI abandoning a target it is physically able to strike — which is how
+    // the z=1↔z=2 stair oscillation arose (a `floor_index` cross-floor check
+    // fired on a target one half-block away that was squarely in melee reach).
+    let now_engaged = is_target_in_range(
+        attack_kind_of(input.attack_profile),
+        &input.tile_position,
+        &target_pos,
+    );
     let next_target = if engaged != now_engaged {
         TargetChange::Set(target) // Re-affirm; cheap, keeps CombatTarget present.
     } else {
         TargetChange::Keep
     };
 
-    if !now_engaged {
-        // Pursue: A* toward target, target tile treated as walkable for the
-        // pathfinder so it doesn't dead-end against the player's own tile.
-        let astar = astar_next_step(
-            input.entity,
-            input.space_id,
+    // In attack range → hold (melee) or kite (ranged) and let combat resolve the
+    // hit. Decided *before* the cross-floor / leash / LoS drops below: if we can
+    // strike them this tick we never let those gates yank the CombatTarget out
+    // from under an active engagement. Refreshes the contact-grace window.
+    if now_engaged {
+        let move_to = match input.attack_profile.map(|p| p.kind) {
+            Some(AttackKind::Ranged { range_tiles }) => kite_step(
+                input.entity,
+                input.space_id,
+                input.tile_position,
+                target_pos,
+                range_tiles,
+                hostile.disengage_distance_tiles,
+                input.blockers,
+                input.npc_tiles,
+                input.player_tiles,
+            ),
+            _ => None, // Melee: stand adjacent.
+        };
+
+        return AiOutcome {
+            next_state: AiState::Engage { target },
+            next_memory: AiMemory {
+                last_step: None,
+                contact_grace_until: input.elapsed + CONTACT_GRACE_SECS,
+                ..input.memory
+            },
+            target: next_target,
+            move_to,
+            idle_pause: false,
+            bark: None,
+        };
+    }
+
+    // Not in range. A target more than one auto-climb step up/down is on a real
+    // floor we can't reach without stairs: lose direct contact (drop the
+    // CombatTarget → red dot off) but fall into Alert aimed at their last tile so
+    // we head for the stairwell and climb after them. `tick_alert` re-detects
+    // once we reach their floor and decays to Wander if the stairs are too far. A
+    // single half-block (z=1↔z=2) is climbable, so it is *not* cross-floor — fall
+    // through and pursue normally; `resolve_npc_step` auto-climbs it.
+    let dz = (input.tile_position.z - target_pos.z).abs();
+    if dz > crate::game::traversal::CLIMB_FREE_DZ {
+        return AiOutcome {
+            next_state: AiState::Alert {
+                last_seen: target_pos,
+                expires_at_seconds: input.elapsed + CROSS_FLOOR_FOLLOW_SECS,
+            },
+            next_memory: AiMemory {
+                last_step: None,
+                ..input.memory
+            },
+            target: TargetChange::Clear,
+            move_to: None,
+            idle_pause: false,
+            bark: None,
+        };
+    }
+
+    // Soft contact loss (leash exceeded or line of sight broken). A grace window
+    // — refreshed on every healthy tick — lets a one-tick LoS flicker or a brush
+    // past the leash ride through without strobing the CombatTarget: while inside
+    // it we hold the target and keep closing on their last position, and only
+    // once it lapses do we drop to Alert.
+    let lost_leash = distance > hostile.disengage_distance_tiles;
+    let lost_los = hostile.requires_line_of_sight
+        && !has_line_of_sight(
             input.tile_position,
             target_pos,
-            input.blockers,
-            input.npc_tiles,
-            input.player_tiles,
-            Some(target_pos),
+            input.space_id,
+            input.los_blockers,
         );
-
-        // Flee trigger: A* couldn't find a path *and* the target has hurt us
-        // recently. Catches "player camped on a ledge we can't climb while
-        // shooting down" — without this, the NPC would stand still eating
-        // arrows. Greedy seek isn't enough to disprove reachability (it might
-        // make local progress while still being permanently stuck), so we
-        // gate strictly on A*.
-        if astar.is_none()
-            && input
-                .last_damaged_at
-                .is_some_and(|t| input.elapsed - t <= FLEE_RECENT_DAMAGE_WINDOW_SECS)
-        {
+    if lost_leash || lost_los {
+        if input.elapsed >= input.memory.contact_grace_until {
             return AiOutcome {
-                next_state: AiState::Flee {
-                    from: target,
-                    expires_at_seconds: input.elapsed + FLEE_DURATION_SECS,
+                next_state: AiState::Alert {
+                    last_seen: target_pos,
+                    expires_at_seconds: input.elapsed + hostile.alert_duration_seconds,
                 },
                 next_memory: AiMemory {
                     last_step: None,
@@ -734,8 +776,19 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
                 bark: None,
             };
         }
-
-        let move_to = astar.or_else(|| {
+        // Within grace: keep the target, keep pressing toward their last tile.
+        // Don't refresh the window — let it lapse if contact stays broken.
+        let move_to = astar_next_step(
+            input.entity,
+            input.space_id,
+            input.tile_position,
+            target_pos,
+            input.blockers,
+            input.npc_tiles,
+            input.player_tiles,
+            Some(target_pos),
+        )
+        .or_else(|| {
             choose_seek_step(
                 input.entity,
                 input.space_id,
@@ -753,33 +806,70 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
                 last_step: None,
                 ..input.memory
             },
-            target: next_target,
+            target: TargetChange::Keep,
             move_to,
             idle_pause: false,
             bark: None,
         };
     }
 
-    // Engaged: melee holds; ranged kites.
-    let move_to = match input.attack_profile.map(|p| p.kind) {
-        Some(AttackKind::Ranged { range_tiles }) => kite_step(
+    // Healthy pursuit: A* toward target, target tile treated as walkable for the
+    // pathfinder so it doesn't dead-end against the player's own tile.
+    let astar = astar_next_step(
+        input.entity,
+        input.space_id,
+        input.tile_position,
+        target_pos,
+        input.blockers,
+        input.npc_tiles,
+        input.player_tiles,
+        Some(target_pos),
+    );
+
+    // Flee trigger: A* couldn't find a path *and* the target has hurt us
+    // recently. Catches "player camped on a ledge we can't climb while
+    // shooting down" — without this, the NPC would stand still eating
+    // arrows. Greedy seek isn't enough to disprove reachability (it might
+    // make local progress while still being permanently stuck), so we
+    // gate strictly on A*.
+    if astar.is_none()
+        && input
+            .last_damaged_at
+            .is_some_and(|t| input.elapsed - t <= FLEE_RECENT_DAMAGE_WINDOW_SECS)
+    {
+        return AiOutcome {
+            next_state: AiState::Flee {
+                from: target,
+                expires_at_seconds: input.elapsed + FLEE_DURATION_SECS,
+            },
+            next_memory: AiMemory {
+                last_step: None,
+                ..input.memory
+            },
+            target: TargetChange::Clear,
+            move_to: None,
+            idle_pause: false,
+            bark: None,
+        };
+    }
+
+    let move_to = astar.or_else(|| {
+        choose_seek_step(
             input.entity,
             input.space_id,
             input.tile_position,
             target_pos,
-            range_tiles,
-            hostile.disengage_distance_tiles,
             input.blockers,
             input.npc_tiles,
-            input.player_tiles,
-        ),
-        _ => None, // Melee: stand adjacent.
-    };
-
+            Some(input.player_tiles),
+            Some(target_pos),
+        )
+    });
     AiOutcome {
-        next_state: AiState::Engage { target },
+        next_state: AiState::Pursue { target },
         next_memory: AiMemory {
             last_step: None,
+            contact_grace_until: input.elapsed + CONTACT_GRACE_SECS,
             ..input.memory
         },
         target: next_target,
@@ -795,11 +885,7 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
 /// still possible — staying visible means the NPC is still being chased and
 /// shouldn't stop fleeing yet.
 fn tick_flee(input: &mut StepAiInput<'_>, from: Entity, expires_at_seconds: f32) -> AiOutcome {
-    let attacker = input
-        .players
-        .iter()
-        .copied()
-        .find(|(e, _, _)| *e == from);
+    let attacker = input.players.iter().copied().find(|(e, _, _)| *e == from);
     let Some((_, attacker_space, attacker_pos)) = attacker else {
         return AiOutcome {
             next_state: AiState::Wander,
@@ -830,8 +916,12 @@ fn tick_flee(input: &mut StepAiInput<'_>, from: Entity, expires_at_seconds: f32)
 
     // Refresh the timer while the attacker can still see us — they're
     // still chasing, so the flee shouldn't time out.
-    let still_in_sight =
-        has_line_of_sight(input.tile_position, attacker_pos, input.space_id, input.los_blockers);
+    let still_in_sight = has_line_of_sight(
+        input.tile_position,
+        attacker_pos,
+        input.space_id,
+        input.los_blockers,
+    );
     let next_expires_at = if still_in_sight {
         input.elapsed + FLEE_DURATION_SECS
     } else {
@@ -900,6 +990,18 @@ fn nearest_visible_player(
         .iter()
         .copied()
         .filter(|(_, player_space_id, _)| *player_space_id == space_id)
+        // No sensing across a *full* floor by default: an NPC detects players on
+        // its own floor, plus anything within one auto-climb half-block (so a
+        // player on the stair step right beside it — z=1↔z=2, which straddles a
+        // `floor_index` boundary yet is in melee reach — is seen, matching the
+        // combat reach rule). The half-block allowance keeps the stairwell
+        // line-of-sight leak closed: a player a full floor up (dz≥2) through an
+        // open stair hole still fails this gate. A future "sense other floors"
+        // skill would widen the band further.
+        .filter(|(_, _, position)| {
+            floor_index(position.z) == floor_index(tile_position.z)
+                || (position.z - tile_position.z).abs() <= crate::game::traversal::CLIMB_FREE_DZ
+        })
         .filter(|(_, _, position)| chebyshev_distance(tile_position, *position) <= radius)
         .filter(|(_, _, position)| {
             !hostile.requires_line_of_sight
@@ -909,11 +1011,11 @@ fn nearest_visible_player(
         .map(|(entity, _, position)| (entity, position))
 }
 
-fn attack_range_for(profile: Option<&AttackProfile>) -> i32 {
-    match profile.map(|p| p.kind) {
-        Some(AttackKind::Ranged { range_tiles }) => range_tiles.max(1),
-        _ => 1,
-    }
+/// The NPC's attack kind, defaulting an absent profile to `Melee`. Feeds the
+/// shared `is_target_in_range` reach test so an unarmed NPC engages at melee
+/// reach rather than not at all.
+fn attack_kind_of(profile: Option<&AttackProfile>) -> AttackKind {
+    profile.map(|p| p.kind).unwrap_or(AttackKind::Melee)
 }
 
 #[derive(Clone, Copy)]
@@ -1046,8 +1148,7 @@ fn strafe_step(
             if dx == 0 && dy == 0 {
                 continue;
             }
-            let Some(candidate) =
-                resolve_npc_step(space_id, tile_position, dx, dy, blockers)
+            let Some(candidate) = resolve_npc_step(space_id, tile_position, dx, dy, blockers)
             else {
                 continue;
             };
@@ -1093,9 +1194,7 @@ fn choose_seek_step(
             if dx == 0 && dy == 0 {
                 continue;
             }
-            if let Some(landed) =
-                resolve_npc_step(space_id, tile_position, dx, dy, blockers)
-            {
+            if let Some(landed) = resolve_npc_step(space_id, tile_position, dx, dy, blockers) {
                 candidates.push(landed);
             }
         }
@@ -1106,9 +1205,7 @@ fn choose_seek_step(
             chebyshev_distance(*candidate, seek_target),
             // Slightly penalize diagonal-XY steps when distances tie, same
             // tiebreak as the previous IVec2-based version.
-            i32::from(
-                candidate.x - tile_position.x != 0 && candidate.y - tile_position.y != 0,
-            ),
+            i32::from(candidate.x - tile_position.x != 0 && candidate.y - tile_position.y != 0),
         )
     });
 
@@ -1609,6 +1706,101 @@ mod tests {
             .id()
     }
 
+    /// Melee NPC that requires line of sight — for the contact-grace tests.
+    fn spawn_melee_los(app: &mut App, position: TilePosition) -> Entity {
+        let mut hostile = default_hostile(20, 20);
+        hostile.requires_line_of_sight = true;
+        app.world_mut()
+            .spawn((
+                Npc,
+                SpaceResident {
+                    space_id: TEST_SPACE,
+                },
+                position,
+                default_roaming(
+                    RoamBounds {
+                        min_x: 0,
+                        min_y: 0,
+                        max_x: 20,
+                        max_y: 20,
+                    },
+                    0.1,
+                ),
+                hostile,
+                AttackProfile::melee(),
+                RoamingStepTimer {
+                    remaining_seconds: 0.0,
+                },
+                RoamingRandomState { seed: 1 },
+                AiState::default(),
+                AiMemory::default(),
+            ))
+            .id()
+    }
+
+    /// Regression: an NPC and player standing on the same occluding upper floor
+    /// (both at z=2) must still see each other beyond melee range. The floor's
+    /// line-of-sight slab used to sit on the walking surface (z=2), blocking
+    /// every non-adjacent same-floor ray, so an LoS-gated NPC froze — attacking
+    /// only when the player was directly adjacent. With the slab lowered to the
+    /// between-floor half-block (z=1), the NPC acquires and pursues.
+    #[test]
+    fn los_npc_pursues_across_occluding_upper_floor() {
+        use crate::world::floor_definitions::{FloorTilesetDefinition, FloorTilesetDefinitions};
+        use crate::world::floor_map::{FloorMap, FloorMaps};
+        use std::collections::HashMap;
+
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+
+        // Paint floor index 1 with a walkable, occluding floor across the area.
+        let mut maps = FloorMaps::default();
+        maps.insert(
+            TEST_SPACE,
+            1,
+            FloorMap::new_filled(20, 20, Some("wooden_floor".to_string())),
+        );
+        let mut floor_by_id = HashMap::new();
+        floor_by_id.insert(
+            "wooden_floor".to_string(),
+            FloorTilesetDefinition {
+                id: "wooden_floor".to_string(),
+                name: "Wooden Floor".to_string(),
+                priority: 100,
+                tile_size_px: 16,
+                atlas_path: None,
+                debug_color: [0, 0, 0],
+                occludes_floor_above: true,
+                walkable_surface: true,
+                variants: HashMap::new(),
+                ripple: None,
+            },
+        );
+        app.insert_resource(maps);
+        app.insert_resource(FloorTilesetDefinitions::for_test(floor_by_id, HashMap::new()));
+
+        // Player and NPC on the second floor (z=2), four tiles apart along x.
+        spawn_player(&mut app, 1, TilePosition::new(9, 5, 2));
+        let npc = spawn_melee_los(&mut app, TilePosition::new(5, 5, 2));
+
+        app.add_systems(Update, update_roaming_npcs);
+        app.update();
+
+        // The NPC must have acquired the player it can see across the floor and
+        // stepped toward them (east, staying on the upper floor) — not frozen.
+        assert!(
+            app.world().get::<CombatTarget>(npc).is_some(),
+            "LoS NPC should acquire a player it can see across the same floor"
+        );
+        let pos = *app.world().get::<TilePosition>(npc).unwrap();
+        assert_eq!(pos.z, 2, "NPC should stay on the upper floor (z=2)");
+        assert!(
+            pos.x > 5,
+            "NPC should step toward the player (east), got {pos:?}"
+        );
+    }
+
     #[test]
     fn hostile_npc_targets_the_nearest_player() {
         let mut app = App::new();
@@ -1768,26 +1960,345 @@ mod tests {
     }
 
     #[test]
-    fn npc_now_targets_player_on_different_floor() {
-        // Z-aware combat: an NPC at ground level with a clear line of sight
-        // sets a CombatTarget on a player one floor up. The pre-elevation
-        // behaviour rejected this — kept here as a regression to prevent
-        // sliding back into the cross-Z silo.
+    fn npc_does_not_target_player_a_floor_up() {
+        // No cross-floor sensing by default: a player a full floor above (z=2,
+        // floor 1) with no stairs is out of reach and should not be detected —
+        // even with a clear vertical line. (This test used to assert the
+        // opposite; that "targets you through the floor" behavior is the bug
+        // we're removing. Half-block steps within a floor still target — see
+        // `npc_targets_player_on_a_half_block_step`.)
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
         app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
 
-        let player = spawn_player(&mut app, 1, TilePosition::new(5, 6, 2));
+        spawn_player(&mut app, 1, TilePosition::new(5, 6, 2));
         let npc = spawn_melee(&mut app, TilePosition::ground(5, 5));
 
         app.add_systems(Update, update_roaming_npcs);
         app.update();
 
-        let target = app.world().get::<CombatTarget>(npc);
+        assert!(
+            app.world().get::<CombatTarget>(npc).is_none(),
+            "NPC should not target a player a full floor above it"
+        );
+    }
+
+    #[test]
+    fn npc_targets_player_on_a_half_block_step() {
+        // Regression guard for the floor gate: a player perched on a half-block
+        // step / chest (z=1) is still on floor 0 (`floor_index(1) == 0`), so the
+        // NPC at z=0 detects and targets them. The gate keys on `floor_index`,
+        // not raw z, precisely so Tibia-style auto-step combat keeps working.
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+
+        let player = spawn_player(&mut app, 1, TilePosition::new(5, 6, 1));
+        let npc = spawn_melee(&mut app, TilePosition::ground(5, 5));
+
+        app.add_systems(Update, update_roaming_npcs);
+        app.update();
+
         assert_eq!(
-            target.map(|t| t.entity),
+            app.world().get::<CombatTarget>(npc).map(|t| t.entity),
             Some(player),
-            "NPC should now target a player one floor above"
+            "NPC should target a player on a half-block step (same floor)"
+        );
+    }
+
+    #[test]
+    fn npc_drops_target_to_alert_when_player_changes_floor() {
+        // A chased player who escapes up a floor isn't dropped instantly: the
+        // NPC loses direct contact (CombatTarget cleared → red dot off) but
+        // falls into Alert aimed at their last tile, so it heads for the stairs
+        // and follows if they're near.
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+
+        let player = spawn_player(&mut app, 1, TilePosition::ground(5, 6));
+        let npc = spawn_melee(&mut app, TilePosition::ground(5, 5));
+
+        app.add_systems(Update, update_roaming_npcs);
+        app.update();
+        assert_eq!(
+            app.world().get::<CombatTarget>(npc).map(|t| t.entity),
+            Some(player),
+            "NPC should engage the adjacent same-floor player first"
+        );
+
+        // Player escapes one floor up; force another AI tick.
+        *app.world_mut().get_mut::<TilePosition>(player).unwrap() = TilePosition::new(5, 6, 2);
+        app.world_mut()
+            .get_mut::<RoamingStepTimer>(npc)
+            .unwrap()
+            .remaining_seconds = 0.0;
+        app.update();
+
+        assert!(
+            app.world().get::<CombatTarget>(npc).is_none(),
+            "crossing a floor should clear the CombatTarget (red dot off)"
+        );
+        assert!(
+            matches!(app.world().get::<AiState>(npc), Some(AiState::Alert { .. })),
+            "crossing a floor should drop to Alert (follow), not instantly to Wander"
+        );
+    }
+
+    #[test]
+    fn nearest_visible_player_ignores_other_floors() {
+        // Unit-level proof of the detection gate: same XY, only z differs.
+        let hostile = default_hostile(20, 20);
+        let blockers: BlockerIndex = HashSet::new();
+        let npc = TilePosition::ground(5, 5);
+
+        let upstairs = vec![(Entity::PLACEHOLDER, TEST_SPACE, TilePosition::new(5, 6, 2))];
+        assert!(
+            nearest_visible_player(npc, TEST_SPACE, &hostile, &upstairs, &blockers, 20).is_none(),
+            "a player a floor up must be invisible to detection"
+        );
+
+        let same_floor = vec![(Entity::PLACEHOLDER, TEST_SPACE, TilePosition::new(5, 6, 1))];
+        assert!(
+            nearest_visible_player(npc, TEST_SPACE, &hostile, &same_floor, &blockers, 20).is_some(),
+            "a player on a half-block step (same floor) stays visible"
+        );
+    }
+
+    #[test]
+    fn nearest_visible_player_sees_one_half_block_across_floor_boundary() {
+        // The widened detection band: an NPC on the lower step (z=1, floor 0)
+        // now senses a player on the upper step (z=2, floor 1) right beside it —
+        // one auto-climb half-block away, matching melee reach. A genuine full
+        // floor up (dz=2) still fails the gate, so the stairwell LoS leak stays
+        // closed.
+        let hostile = default_hostile(20, 20);
+        let blockers: BlockerIndex = HashSet::new();
+        let npc = TilePosition::new(5, 5, 1);
+
+        let half_block_up = vec![(Entity::PLACEHOLDER, TEST_SPACE, TilePosition::new(5, 6, 2))];
+        assert!(
+            nearest_visible_player(npc, TEST_SPACE, &hostile, &half_block_up, &blockers, 20)
+                .is_some(),
+            "a player one half-block up (z=1→z=2) must be visible (melee reach)"
+        );
+
+        let full_floor_up = vec![(Entity::PLACEHOLDER, TEST_SPACE, TilePosition::new(5, 6, 3))];
+        assert!(
+            nearest_visible_player(npc, TEST_SPACE, &hostile, &full_floor_up, &blockers, 20)
+                .is_none(),
+            "a player a full floor up (z=1→z=3, dz=2) stays invisible"
+        );
+    }
+
+    #[test]
+    fn npc_holds_engagement_on_stair_step_no_oscillation() {
+        // The reported bug: the player camps the upper stair step (z=2, floor 1)
+        // and the NPC settles on the step below (z=1, floor 0). The pair is one
+        // half-block apart — squarely in melee reach (dz=1) yet straddling the
+        // `floor_index` boundary. The NPC must hold a stable Engage and never
+        // flap to Alert / drop the CombatTarget, tick after tick.
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+
+        let player = spawn_player(&mut app, 1, TilePosition::new(5, 6, 2));
+        let npc = spawn_melee(&mut app, TilePosition::new(5, 5, 1));
+
+        app.add_systems(Update, update_roaming_npcs);
+
+        for tick in 0..6 {
+            app.world_mut()
+                .get_mut::<RoamingStepTimer>(npc)
+                .unwrap()
+                .remaining_seconds = 0.0;
+            app.update();
+
+            assert!(
+                matches!(
+                    app.world().get::<AiState>(npc),
+                    Some(AiState::Engage { .. })
+                ),
+                "tick {tick}: NPC should stay Engaged with the player one step \
+                 above, not flap to {:?}",
+                app.world().get::<AiState>(npc),
+            );
+            assert_eq!(
+                app.world().get::<CombatTarget>(npc).map(|t| t.entity),
+                Some(player),
+                "tick {tick}: CombatTarget must stay locked (no red-dot strobe)"
+            );
+            assert_eq!(
+                *app.world().get::<TilePosition>(npc).unwrap(),
+                TilePosition::new(5, 5, 1),
+                "tick {tick}: melee NPC holds its step, doesn't climb onto the player"
+            );
+        }
+    }
+
+    #[test]
+    fn half_block_up_target_is_pursued_not_dropped() {
+        // A target one half-block up but out of melee reach (xy=2, dz=1) is NOT
+        // "cross-floor": a single auto-climb step closes it. The NPC stays in
+        // Pursue with the target locked, rather than dropping to the cross-floor
+        // Alert that the old `floor_index` gate triggered here.
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+
+        let player = spawn_player(&mut app, 1, TilePosition::new(5, 7, 2));
+        let npc = spawn_melee(&mut app, TilePosition::new(5, 5, 1));
+
+        app.add_systems(Update, update_roaming_npcs);
+        app.update();
+
+        assert!(
+            matches!(
+                app.world().get::<AiState>(npc),
+                Some(AiState::Pursue { .. })
+            ),
+            "a half-block-up target should be pursued, got {:?}",
+            app.world().get::<AiState>(npc),
+        );
+        assert_eq!(
+            app.world().get::<CombatTarget>(npc).map(|t| t.entity),
+            Some(player),
+            "pursuit should keep the CombatTarget on a half-block-up target"
+        );
+    }
+
+    #[test]
+    fn los_flicker_within_grace_keeps_target() {
+        // With LoS required, a single tick of broken sight must NOT immediately
+        // drop the target: the contact-grace window holds the CombatTarget and
+        // keeps the NPC in Pursue. (Pre-hysteresis this strobed straight to
+        // Alert the instant the ray was occluded.)
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+
+        let player = spawn_player(&mut app, 1, TilePosition::ground(5, 9));
+        let npc = spawn_melee_los(&mut app, TilePosition::ground(5, 5));
+
+        app.add_systems(Update, update_roaming_npcs);
+        app.update(); // clear LoS → acquire + Pursue, grace armed.
+        assert_eq!(
+            app.world().get::<CombatTarget>(npc).map(|t| t.entity),
+            Some(player),
+            "NPC should acquire the visible player on the first tick"
+        );
+
+        // Hold the grace window wide open, break LoS with a wall, tick again.
+        app.world_mut()
+            .get_mut::<AiMemory>(npc)
+            .unwrap()
+            .contact_grace_until = 1.0e9;
+        app.world_mut().spawn((
+            Collider,
+            SpaceResident {
+                space_id: TEST_SPACE,
+            },
+            TilePosition::ground(5, 7),
+        ));
+        app.world_mut()
+            .get_mut::<RoamingStepTimer>(npc)
+            .unwrap()
+            .remaining_seconds = 0.0;
+        app.update();
+
+        assert!(
+            matches!(
+                app.world().get::<AiState>(npc),
+                Some(AiState::Pursue { .. })
+            ),
+            "within grace, a broken LoS should keep pursuing, got {:?}",
+            app.world().get::<AiState>(npc),
+        );
+        assert_eq!(
+            app.world().get::<CombatTarget>(npc).map(|t| t.entity),
+            Some(player),
+            "within grace, the CombatTarget must persist through a LoS flicker"
+        );
+    }
+
+    #[test]
+    fn los_loss_past_grace_drops_to_alert() {
+        // Once the grace window lapses with sight still broken, the NPC concedes
+        // contact: CombatTarget cleared and state drops to Alert (it heads for
+        // the last-seen tile rather than chasing blind).
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+
+        spawn_player(&mut app, 1, TilePosition::ground(5, 9));
+        let npc = spawn_melee_los(&mut app, TilePosition::ground(5, 5));
+
+        app.add_systems(Update, update_roaming_npcs);
+        app.update(); // acquire + Pursue.
+
+        // Expire the grace window (deadline in the past) and break LoS.
+        app.world_mut()
+            .get_mut::<AiMemory>(npc)
+            .unwrap()
+            .contact_grace_until = 0.0;
+        app.world_mut().spawn((
+            Collider,
+            SpaceResident {
+                space_id: TEST_SPACE,
+            },
+            TilePosition::ground(5, 7),
+        ));
+        app.world_mut()
+            .get_mut::<RoamingStepTimer>(npc)
+            .unwrap()
+            .remaining_seconds = 0.0;
+        app.update();
+
+        assert!(
+            matches!(app.world().get::<AiState>(npc), Some(AiState::Alert { .. })),
+            "past grace, broken LoS should drop to Alert, got {:?}",
+            app.world().get::<AiState>(npc),
+        );
+        assert!(
+            app.world().get::<CombatTarget>(npc).is_none(),
+            "past grace, the CombatTarget should be cleared"
+        );
+    }
+
+    #[test]
+    fn astar_climbs_stairs_to_reach_player_on_upper_floor() {
+        // A staircase east of the NPC leads to a player on floor 1. Modeled in
+        // the blocker grid the way `update_roaming_npcs` inflates real objects:
+        //   (6,5,0)         stair_*_low  (block_size 1 → blocks z=0)
+        //   (7,5,0),(7,5,1) stair_*_high (block_size 2 → blocks z=0..1)
+        //   (8,5,1)         upper-floor support (player stands on it at z=2)
+        // A* should take the first climbing step onto the low stair rather than
+        // dead-ending under the player — this is what lets the cross-floor Alert
+        // follow a target up the stairs.
+        let mut blockers: BlockerIndex = HashSet::new();
+        blockers.insert((TEST_SPACE, TilePosition::new(6, 5, 0)));
+        blockers.insert((TEST_SPACE, TilePosition::new(7, 5, 0)));
+        blockers.insert((TEST_SPACE, TilePosition::new(7, 5, 1)));
+        blockers.insert((TEST_SPACE, TilePosition::new(8, 5, 1)));
+        let npc_tiles: NpcTileIndex = HashMap::new();
+        let player_tiles: PlayerTileSet = HashSet::new();
+
+        let goal = TilePosition::new(8, 5, 2);
+        let next = astar_next_step(
+            Entity::PLACEHOLDER,
+            TEST_SPACE,
+            TilePosition::ground(5, 5),
+            goal,
+            &blockers,
+            &npc_tiles,
+            &player_tiles,
+            Some(goal),
+        )
+        .expect("A* should find a stair route to the upper floor");
+        assert_eq!(
+            next,
+            TilePosition::new(6, 5, 1),
+            "first step should climb onto the low stair"
         );
     }
 

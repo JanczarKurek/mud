@@ -124,6 +124,12 @@ pub struct AiMemory {
     /// bubble. Used to rate-limit ambient mutters so a chatty NPC doesn't
     /// spam the bubble overlay. Zero on spawn means "never spoken".
     pub last_bark_seconds: f32,
+    /// Elapsed-seconds deadline through which a Pursue/Engage keeps its
+    /// CombatTarget after a soft contact loss (LoS flicker or a brush past the
+    /// leash). Refreshed on every healthy contact tick; when `elapsed` passes
+    /// it while contact is still broken, the NPC drops to Alert. Zero on spawn
+    /// means "no live contact".
+    pub contact_grace_until: f32,
 }
 
 /// Pools of utterances the AI can draw from for floating speech bubbles.

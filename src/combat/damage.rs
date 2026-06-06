@@ -148,9 +148,7 @@ pub fn apply_pending_damage(
         // Stamp the damage time so AI can detect "hurt recently" without
         // tracking HP deltas frame-to-frame. Inserted/overwritten on every
         // hit; the AI uses (now - LastDamagedAt) <= window to flee.
-        commands
-            .entity(event.target)
-            .insert(LastDamagedAt(now));
+        commands.entity(event.target).insert(LastDamagedAt(now));
 
         // Damage wakes a sleeping target — any damage source, not just
         // melee. This used to live in `tick_battle` and only fired for

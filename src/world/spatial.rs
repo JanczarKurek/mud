@@ -9,11 +9,20 @@
 //!   an NPC at the upper-floor surface (`z = floor_idx * 2`) instead of
 //!   falling through to z=0.
 //! * `LosBlockers` — what a vision ray can't *pass through*. Strict superset
-//!   of `MovementBlockers`: it adds the floor surface itself
-//!   (`z = floor_idx * 2`) for any painted floor with `occludes_floor_above`.
-//!   Without this, a player on floor 2 can shoot an enemy on floor 0 because
-//!   the only blockers between them are walls (which are interior to the
-//!   building footprint), not the ceiling tile.
+//!   of `MovementBlockers`: it adds the floor *slab* — at the between-floor
+//!   half-block `z = floor_idx * 2 - 1` (`support_z`), the same z the walkable
+//!   support pseudo-blocker uses — for any painted floor with
+//!   `occludes_floor_above`. Without this, a player on floor 2 can shoot an
+//!   enemy on floor 0 because the only blockers between them are walls (which
+//!   are interior to the building footprint), not the ceiling tile.
+//!
+//!   The slab sits at `support_z`, NOT at the walking surface `z = floor_idx*2`,
+//!   on purpose: a vertical/cross-floor ray always passes through the odd
+//!   between-floor z and is correctly blocked, while a horizontal ray between
+//!   two entities standing *on* the floor (both at the even surface z) is not —
+//!   so an NPC and player on the same upper floor can see each other beyond
+//!   melee range. Placing the occluder on the surface plane instead made every
+//!   non-adjacent same-floor line of sight read as blocked.
 //!
 //! Both indices are rebuilt every server tick. The HashSet rebuild is O(N) in
 //! the number of colliders + painted-floor cells — much cheaper than the
@@ -37,7 +46,11 @@ pub type BlockerIndex = HashSet<(SpaceId, TilePosition)>;
 pub type SpatialColliderQuery<'w, 's> = Query<
     'w,
     's,
-    (&'static SpaceResident, &'static TilePosition, Option<&'static OverworldObject>),
+    (
+        &'static SpaceResident,
+        &'static TilePosition,
+        Option<&'static OverworldObject>,
+    ),
     (With<Collider>, Without<Npc>),
 >;
 
@@ -47,16 +60,29 @@ pub type SpatialColliderQuery<'w, 's> = Query<
 pub type CombatColliderQuery<'w, 's> = Query<
     'w,
     's,
-    (&'static SpaceResident, &'static TilePosition, Option<&'static OverworldObject>),
+    (
+        &'static SpaceResident,
+        &'static TilePosition,
+        Option<&'static OverworldObject>,
+    ),
     (With<Collider>, Without<Player>),
 >;
 
 /// Inflate each collider over its definition's `block_size`. A wall with
 /// `block_size: 2` at `z` occupies `(z, z+1)` and must show up in the index at
 /// both half-blocks, otherwise NPCs treat the wall as 1 half-block tall.
-fn inflate_blockers<'a, I>(colliders: I, definitions: Option<&OverworldObjectDefinitions>) -> BlockerIndex
+fn inflate_blockers<'a, I>(
+    colliders: I,
+    definitions: Option<&OverworldObjectDefinitions>,
+) -> BlockerIndex
 where
-    I: Iterator<Item = (&'a SpaceResident, &'a TilePosition, Option<&'a OverworldObject>)>,
+    I: Iterator<
+        Item = (
+            &'a SpaceResident,
+            &'a TilePosition,
+            Option<&'a OverworldObject>,
+        ),
+    >,
 {
     colliders
         .flat_map(|(resident, position, overworld_object)| {
@@ -68,9 +94,7 @@ where
                 .max(1);
             let space = resident.space_id;
             let base = *position;
-            (0..extent).map(move |dz| {
-                (space, TilePosition::new(base.x, base.y, base.z + dz))
-            })
+            (0..extent).map(move |dz| (space, TilePosition::new(base.x, base.y, base.z + dz)))
         })
         .collect()
 }
@@ -99,7 +123,12 @@ fn apply_floor_layer(
                     los_blockers.insert((space_id, TilePosition::new(x, y, support_z)));
                 }
                 if floormap_tile_occludes(Some(grid), floor_defs, x, y) {
-                    los_blockers.insert((space_id, TilePosition::new(x, y, surface_z)));
+                    // Slab at the between-floor half-block (`support_z`), not the
+                    // walking surface (`surface_z`): blocks vertical cross-floor
+                    // rays (which pass through this odd z) without blocking
+                    // horizontal vision between two entities standing on this
+                    // floor (both at the even `surface_z`).
+                    los_blockers.insert((space_id, TilePosition::new(x, y, support_z)));
                 }
             }
         }
@@ -115,7 +144,13 @@ pub fn build_indices<'a, I>(
     floor_defs: Option<&FloorTilesetDefinitions>,
 ) -> (BlockerIndex, BlockerIndex)
 where
-    I: Iterator<Item = (&'a SpaceResident, &'a TilePosition, Option<&'a OverworldObject>)>,
+    I: Iterator<
+        Item = (
+            &'a SpaceResident,
+            &'a TilePosition,
+            Option<&'a OverworldObject>,
+        ),
+    >,
 {
     let blockers = inflate_blockers(colliders, definitions);
     let mut movement = blockers.clone();
@@ -136,7 +171,13 @@ pub fn build_los_blockers<'a, I>(
     floor_defs: Option<&FloorTilesetDefinitions>,
 ) -> BlockerIndex
 where
-    I: Iterator<Item = (&'a SpaceResident, &'a TilePosition, Option<&'a OverworldObject>)>,
+    I: Iterator<
+        Item = (
+            &'a SpaceResident,
+            &'a TilePosition,
+            Option<&'a OverworldObject>,
+        ),
+    >,
 {
     let mut blockers = inflate_blockers(colliders, definitions);
     if let (Some(maps), Some(defs)) = (floor_maps, floor_defs) {
@@ -181,4 +222,88 @@ pub fn has_line_of_sight(
         }
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::world::floor_definitions::{FloorTilesetDefinition, FloorTilesetDefinitions};
+    use crate::world::floor_map::{FloorMap, FloorMaps};
+    use crate::world::object_definitions::OverworldObjectDefinitions;
+    use std::collections::HashMap;
+
+    const TEST_SPACE: SpaceId = SpaceId(0);
+
+    /// Build the movement + LoS indices for a 10×10 walkable, occluding floor
+    /// painted at floor index 1 (surface z=2, support/between-floor z=1), with
+    /// no colliders.
+    fn build_floor1_indices() -> (BlockerIndex, BlockerIndex) {
+        let mut maps = FloorMaps::default();
+        maps.insert(
+            TEST_SPACE,
+            1,
+            FloorMap::new_filled(10, 10, Some("wooden_floor".to_string())),
+        );
+
+        let mut floor_by_id = HashMap::new();
+        floor_by_id.insert(
+            "wooden_floor".to_string(),
+            FloorTilesetDefinition {
+                id: "wooden_floor".to_string(),
+                name: "Wooden Floor".to_string(),
+                priority: 100,
+                tile_size_px: 16,
+                atlas_path: None,
+                debug_color: [0, 0, 0],
+                occludes_floor_above: true,
+                walkable_surface: true,
+                variants: HashMap::new(),
+                ripple: None,
+            },
+        );
+        let defs = FloorTilesetDefinitions::for_test(floor_by_id, HashMap::new());
+
+        build_indices(
+            std::iter::empty::<(&SpaceResident, &TilePosition, Option<&OverworldObject>)>(),
+            None::<&OverworldObjectDefinitions>,
+            Some(&maps),
+            Some(&defs),
+        )
+    }
+
+    #[test]
+    fn floor_occluder_sits_below_the_walking_surface() {
+        let (_movement, los) = build_floor1_indices();
+        // The slab lives at the between-floor half-block (support_z = 1), NOT on
+        // the walking surface (surface_z = 2). This is the whole fix.
+        assert!(los.contains(&(TEST_SPACE, TilePosition::new(3, 0, 1))));
+        assert!(!los.contains(&(TEST_SPACE, TilePosition::new(3, 0, 2))));
+    }
+
+    #[test]
+    fn same_floor_horizontal_los_is_clear_above_occluding_floor() {
+        let (_movement, los) = build_floor1_indices();
+        // Two entities standing on floor 1 (both at z=2), three tiles apart,
+        // have a clear line over their own floor. The surface-z occluder used to
+        // break this, freezing LoS-gated NPCs at anything past melee range.
+        assert!(has_line_of_sight(
+            TilePosition::new(0, 0, 2),
+            TilePosition::new(3, 0, 2),
+            TEST_SPACE,
+            &los,
+        ));
+    }
+
+    #[test]
+    fn vertical_los_through_occluding_floor_is_blocked() {
+        let (_movement, los) = build_floor1_indices();
+        // A ray punching straight down through the floor (z=2 → z=0) passes the
+        // between-floor z=1 slab and stays blocked — the occluder's real job.
+        assert!(!has_line_of_sight(
+            TilePosition::new(0, 0, 2),
+            TilePosition::ground(0, 0),
+            TEST_SPACE,
+            &los,
+        ));
+    }
 }
