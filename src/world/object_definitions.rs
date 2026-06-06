@@ -948,6 +948,14 @@ pub struct RenderMetadata {
     /// `None` falls back to the sprite frame's pixel height (legacy behaviour).
     #[serde(default)]
     pub logical_height_tiles: Option<f32>,
+    /// Optional sub-tile rectangle, in tile fractions `[x0, y0, x1, y1]` with
+    /// x = west→east and y = south→north (matching world axes), that restricts
+    /// where floor is drawn on this object's tile: floor renders **only** inside
+    /// the rectangle. Used by walls to keep floor on the interior side of the
+    /// slab so it meets the wall flush, leaving the exterior strip free. `None`
+    /// = no restriction (floor fills the whole tile as usual).
+    #[serde(default)]
+    pub floor_mask_rect: Option<[f32; 4]>,
 }
 
 /// One optional sprite layer stacked on top of an object's base sprite. `key`

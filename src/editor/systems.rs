@@ -1103,9 +1103,10 @@ pub fn handle_editor_floor_brush_drag(
     }
 
     // LMB takes precedence if both buttons are held — matches typical
-    // tile-editor expectations (paint over erase).
+    // tile-editor expectations (paint over erase). The selected flavor (e.g.
+    // `Flooring`) is folded into the painted id here.
     let floor_type = if left {
-        editor_state.selected_floor_type.clone()
+        editor_state.selected_floor_painted_id()
     } else {
         None
     };

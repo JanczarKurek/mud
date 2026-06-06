@@ -932,6 +932,14 @@ The `text` value supports three count placeholders in addition to the normal `{p
 - Block-sized objects (`block_size > 0`) are rendered bottom-anchored (sprite footprint sits on the tile, art rises upward), unless `rotation_by_facing` is set — rotated sprites stay center-anchored
 - Stacking: when an object is dropped on a tile already holding block-sized objects, it lands on top of the column (its feet at the stack top). The stack-top must be within `±1` z of the player and the resulting new top within `+2` z of the player's feet — caps how high you can build from where you're standing
 
+### `floor_mask_rect`
+- Type: array of 4 floats `[x0, y0, x1, y1]` or omitted
+- Optional: yes
+- Default: omitted (floor fills the whole tile as usual)
+- Meaning: a sub-tile rectangle, in tile fractions with `x` = west→east and `y` = south→north (matching world axes; `0` = the tile's min edge, `1` = the max edge), that restricts where the floor is drawn on this object's tile. Floor renders **only** inside the rectangle.
+- Used by the directional walls (`wall_s`, `wall_e`, corners, …) to keep floor on the interior side of the slab so it meets the wall flush, leaving the exterior strip free for other terrain. Example: `wall_s` (interior to the north, slab inset `0.25`) uses `[0.0, 0.25, 1.0, 1.0]` — floor is cut south of the slab line.
+- The floor renderer applies the clip per-quadrant (the floor dual-grid renders at tile corners); a tile with no overlapping mask is unaffected. Implementation: `FloorMaskMap` + `clip_quadrant` in `src/world/floor_render.rs`.
+
 ### `hide_when_inside_facing`
 - Type: string (`north`, `south`, `east`, `west`) or omitted
 - Optional: yes
@@ -1987,6 +1995,12 @@ Notes:
 - Validation is strict: directory name must match `id`, `tile_size_px > 0`, every `variants` key in `1..=15`, every weight list non-empty with `> 0` weights. Failures panic at load.
 - Floor tilesets are loaded from every scan dir returned by `AssetResolver` (bundled `assets/` plus any synced asset cache for TCP clients).
 - The transition atlas between two floors is authored separately under `assets/floors/transitions/`; defining a new floor type does not by itself produce a transition with any other floor.
+
+### Flavors (runtime-derived)
+
+- Every floor tileset automatically gains one or more **flavors** — programmatic treatments of its base art generated in memory at load (no YAML authoring, no extra files). The map editor's floor palette has a **Flavor** toggle that applies the selected flavor to whatever tileset the floor brush paints.
+- A flavored floor is addressed by the derived id `"<base>#<flavor>"` (e.g. `cave_floor#flooring`). These ids are saved into map files like any other floor id and resolve back to their base definition's metadata at load; only the atlas image differs. Because `#` can never appear in an on-disk floor id (it must equal its directory name), derived ids never collide with authored ones.
+- The first flavor, `flooring`, makes each rendered floor tile a solid square of the floor's interior texture that fills its grid cell exactly, so it meets the full-tile wall footprints flush (no overhang, no gap). Each authoring tile's mask-set quadrants are filled from the variant block's solid interior tile (mask `0xF`) — from its *opposite* quadrant, since the dual-grid draws each corner cell point-reflected — and unset quadrants are cleared. Implementation: `src/world/floor_flavors.rs` (`FloorFlavor`, `apply_flooring`, `generate_floor_flavor_atlases`).
 
 ## 5. Floor Transition Metadata YAML
 

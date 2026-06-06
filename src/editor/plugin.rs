@@ -11,7 +11,7 @@ use crate::editor::clipboard::{
 use crate::editor::dialog_index::EditorDialogIndex;
 use crate::editor::fill::{handle_editor_flood_fill, handle_editor_rect_fill};
 use crate::editor::floor_render::{
-    cleanup_editor_floor_cells, editor_build_floor_render_cells,
+    cleanup_editor_floor_cells, editor_build_floor_render_cells, editor_recompute_floor_mask_map,
     editor_sync_floor_render_transforms, EditorFloorRenderState,
 };
 use crate::editor::floors_editor::{
@@ -64,9 +64,10 @@ use crate::editor::ui::modal::{
     sync_modal_error_text,
 };
 use crate::editor::ui::palette::{
-    handle_floor_palette_clicks, handle_palette_clicks, handle_palette_filter_click,
-    handle_palette_scrolling, sync_floor_palette_selection, sync_palette_filter_text,
-    sync_palette_selection, sync_recent_strip,
+    handle_floor_flavor_toggle_clicks, handle_floor_palette_clicks, handle_palette_clicks,
+    handle_palette_filter_click, handle_palette_scrolling, sync_floor_flavor_toggle,
+    sync_floor_palette_selection, sync_palette_filter_text, sync_palette_selection,
+    sync_recent_strip,
 };
 use crate::editor::ui::properties::{
     apply_pick_rect_to_instance_behavior, handle_add_property_button, handle_behavior_pick_bounds,
@@ -258,6 +259,13 @@ impl Plugin for EditorPlugin {
                     cleanup_editor_floor_cells,
                     cleanup_editor_ghost_markers,
                     reset_editor_session_state,
+                    // Discard unsaved edits on exit so they never leak into the
+                    // runtime world snapshot — Ctrl+S (which refreshes
+                    // `SpaceDefinitions`) is the only way edits persist. Mirrors
+                    // the reset that runs on editor *entry*. Ordered before the
+                    // visual strip so it despawns the edited objects before the
+                    // strip queries them (avoids remove-on-despawning entities).
+                    reset_space_to_authored.before(strip_editor_visuals_on_exit),
                     strip_editor_visuals_on_exit,
                 ),
             )
@@ -278,6 +286,7 @@ impl Plugin for EditorPlugin {
                     attach_editor_visuals,
                     sync_editor_hover_tile,
                     editor_recompute_visible_floors,
+                    editor_recompute_floor_mask_map,
                     editor_build_floor_render_cells,
                     editor_sync_floor_render_transforms,
                     sync_tile_transforms_editor,
@@ -426,6 +435,8 @@ impl Plugin for EditorPlugin {
                     handle_palette_filter_click,
                     sync_floor_palette_selection,
                     handle_floor_palette_clicks,
+                    sync_floor_flavor_toggle,
+                    handle_floor_flavor_toggle_clicks,
                     handle_palette_scrolling,
                     sync_properties_panel,
                     handle_property_row_click,

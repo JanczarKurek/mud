@@ -26,6 +26,21 @@ use crate::world::WorldConfig;
 pub(crate) const MASK_TO_AUTHORING_INDEX: [usize; 16] =
     [12, 0, 13, 3, 15, 11, 4, 2, 8, 14, 1, 5, 9, 7, 10, 6];
 
+/// Inverse of [`MASK_TO_AUTHORING_INDEX`]: maps an authoring-layout tile index
+/// (0..=15) back to the 4-corner bitmask it depicts (NW=1, NE=2, SW=4, SE=8).
+/// Computed at compile time so it can never drift from the forward table.
+/// Used by `crate::world::floor_flavors` to know which quadrants of each
+/// authoring tile carry floor pixels.
+pub(crate) const AUTHORING_INDEX_TO_MASK: [u8; 16] = {
+    let mut inv = [0u8; 16];
+    let mut mask = 0usize;
+    while mask < 16 {
+        inv[MASK_TO_AUTHORING_INDEX[mask]] = mask as u8;
+        mask += 1;
+    }
+    inv
+};
+
 /// Marks a presentation-only entity that represents one render-cell of one
 /// floor type at a world-tile *corner*. Render cells live at half-tile offsets
 /// (rx, ry) - 0.5 in world coordinates and read the 4 surrounding world tiles.
@@ -74,6 +89,81 @@ pub struct FloorRenderState {
 #[derive(Resource, Default, Clone, Debug)]
 pub struct FloorRenderDirty {
     pub cells: Vec<(SpaceId, i32, i32, i32)>,
+}
+
+/// Diagnostics toggle (F9): when `debug_color_only` is set, floors render as
+/// flat `debug_color` blocks (the per-quadrant fallback) instead of their atlas
+/// art, so you can see exactly which floor type covers each tile. Both the
+/// in-game and editor build systems watch this and rebuild on change.
+#[derive(Resource, Default, Clone, Copy, Debug)]
+pub struct FloorDebugRender {
+    pub debug_color_only: bool,
+}
+
+/// Per-tile floor clip rectangles contributed by objects (walls) that declare a
+/// `render.floor_mask_rect`. Keyed by `(space, floor_index, x, y)`; the value is
+/// `[x0, y0, x1, y1]` in tile fractions (x = west→east, y = south→north). Floor
+/// on that tile is drawn **only** inside the rectangle, letting walls keep floor
+/// on the interior side of their slab and free the exterior strip.
+///
+/// Rebuilt each frame from the world's objects (in-game from `ClientGameState`,
+/// in the editor from authoritative `OverworldObject`s).
+#[derive(Resource, Default, Clone, Debug)]
+pub struct FloorMaskMap {
+    pub rects: HashMap<(SpaceId, i32, i32, i32), [f32; 4]>,
+}
+
+impl FloorMaskMap {
+    pub fn get(&self, space_id: SpaceId, z: i32, x: i32, y: i32) -> Option<[f32; 4]> {
+        self.rects.get(&(space_id, z, x, y)).copied()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.rects.is_empty()
+    }
+}
+
+/// Quadrant table for the masked-render path: `(mask bit, src col, src row, tile
+/// dx, tile dy)`. A corner cell's source quadrant `(col,row)` — col 0=west/left,
+/// row 0=north/top — maps to the quarter of tile `(rx+dx, ry+dy)` nearest the
+/// corner, matching the dual-grid bit→tile rule (1=(rx-1,ry-1) … 8=(rx,ry)) and
+/// the un-flipped source orientation (top=north, left=west).
+pub(crate) const MASK_QUADRANTS: [(u8, usize, usize, i32, i32); 4] = [
+    (1, 0, 1, -1, -1), // bottom-left  → tile (rx-1, ry-1)
+    (2, 1, 1, 0, -1),  // bottom-right → tile (rx,   ry-1)
+    (4, 0, 0, -1, 0),  // top-left     → tile (rx-1, ry)
+    (8, 1, 0, 0, 0),   // top-right    → tile (rx,   ry)
+];
+
+/// Intersects a corner-cell quadrant with a tile's floor-mask rectangle and
+/// returns the clipped `(world_rect, src_rect)`, or `None` if the mask removes
+/// the quadrant entirely. All rects are `[min_x, min_y, max_x, max_y]`; world
+/// rects are in tile units (y = north-positive) and `src_rect` is in atlas
+/// pixels (y = top-positive). Within a quadrant world +y (north) maps to src −y
+/// (top), so the y axis is flipped when cropping the source.
+pub(crate) fn clip_quadrant(
+    quad_world: [f32; 4],
+    src_quad: [f32; 4],
+    mask_world: [f32; 4],
+) -> Option<([f32; 4], [f32; 4])> {
+    let x0 = quad_world[0].max(mask_world[0]);
+    let y0 = quad_world[1].max(mask_world[1]);
+    let x1 = quad_world[2].min(mask_world[2]);
+    let y1 = quad_world[3].min(mask_world[3]);
+    if x1 <= x0 || y1 <= y0 {
+        return None;
+    }
+    let qw = quad_world[2] - quad_world[0];
+    let qh = quad_world[3] - quad_world[1];
+    let sw = src_quad[2] - src_quad[0];
+    let sh = src_quad[3] - src_quad[1];
+    // x: world east ↔ src right (same direction).
+    let sx0 = src_quad[0] + (x0 - quad_world[0]) / qw * sw;
+    let sx1 = src_quad[0] + (x1 - quad_world[0]) / qw * sw;
+    // y: world north (max y) ↔ src top (min y) — flipped.
+    let sy_top = src_quad[1] + (quad_world[3] - y1) / qh * sh;
+    let sy_bot = src_quad[1] + (quad_world[3] - y0) / qh * sh;
+    Some(([x0, y0, x1, y1], [sx0, sy_top, sx1, sy_bot]))
 }
 
 /// Within a floor band, lower-priority floors render below higher-priority
@@ -136,6 +226,7 @@ pub fn pick_variant(space_id: SpaceId, rx: i32, ry: i32, weights: &[u32]) -> usi
     weights.len() - 1
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn build_floor_render_cells(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -146,9 +237,20 @@ pub fn build_floor_render_cells(
     world_config: Res<WorldConfig>,
     visible_floors: Res<VisibleFloorRange>,
     mut render_state: ResMut<FloorRenderState>,
+    flavor_gen: Res<crate::world::floor_flavors::FloorFlavorGeneration>,
+    floor_debug: Res<FloorDebugRender>,
+    floor_mask: Res<FloorMaskMap>,
+    mut seen_flavor_gen: Local<u64>,
     existing: Query<(Entity, &FloorRenderCell)>,
 ) {
     let _t = crate::diagnostics::SystemTimer::new("build_floor_render_cells", 1.0);
+    // A flavored atlas was (re)generated, the floor-debug toggle flipped, or the
+    // floor-mask map changed — drop cached hashes so every floor rebuilds (picks
+    // up the new image, the flat debug-colour view, or new wall clip rects).
+    if *seen_flavor_gen != flavor_gen.0 || floor_debug.is_changed() || floor_mask.is_changed() {
+        render_state.built_for.clear();
+        *seen_flavor_gen = flavor_gen.0;
+    }
     let Some(space) = client_state.current_space.as_ref() else {
         return;
     };
@@ -212,9 +314,11 @@ pub fn build_floor_render_cells(
             &mut atlases,
             &floor_defs,
             &world_config,
+            &floor_mask,
             current_space_id,
             z,
             grid,
+            floor_debug.debug_color_only,
         );
 
         render_state.built_for.insert(key, hash);
@@ -234,9 +338,11 @@ pub fn rebuild_floor_render_cells_for_grid(
     atlases: &mut FloorTilesetAtlases,
     floor_defs: &FloorTilesetDefinitions,
     world_config: &WorldConfig,
+    floor_mask: &FloorMaskMap,
     space_id: SpaceId,
     z: i32,
     grid: &FloorMap,
+    debug: bool,
 ) {
     for ry in 0..=grid.height {
         for rx in 0..=grid.width {
@@ -247,11 +353,13 @@ pub fn rebuild_floor_render_cells_for_grid(
                 atlases,
                 floor_defs,
                 world_config,
+                floor_mask,
                 space_id,
                 z,
                 rx,
                 ry,
                 grid,
+                debug,
             );
         }
     }
@@ -315,15 +423,41 @@ pub fn classify_corner<'a>(
         }
     }
 
-    // `HashMap` iteration order is randomized per process, so without an
-    // explicit sort the two HardEdges cells get spawned in arbitrary order
-    // each rebuild — they then receive different entity IDs and Bevy's
-    // equal-z 2D sort flips, causing the same corner to look different on
-    // each repaint. Sort by (priority asc, id asc) — same canonical ordering
-    // used by `canonicalise_pair` for transitions, so the spawn code can
-    // assign a small order-based z bump to break ties between equal-priority
-    // floors (HARDEDGE_TIEBREAK_STEP) and the alphabetically later one
-    // (e.g. grass over cave_floor when both are priority 0) reliably wins.
+    CornerRenderPlan::HardEdges(hard_edge_entries(floor_defs, nw, ne, sw, se))
+}
+
+/// Per-type `(floor_id, mask)` entries for a corner, sorted by `(priority asc,
+/// id asc)`. This is the `HardEdges` payload — one entry per distinct floor
+/// type, with the bits set for the quadrants it occupies. Shared by
+/// `classify_corner`'s fallback and the floor-debug-color path (which forces
+/// hard edges so each floor type shows in its own `debug_color`).
+///
+/// The deterministic sort matters: `HashMap` iteration order is randomized per
+/// process, so without it the cells spawn in arbitrary order, get different
+/// entity IDs, and Bevy's equal-z 2D sort flips — making the same corner look
+/// different on each repaint. The order also feeds `HARDEDGE_TIEBREAK_STEP` so
+/// the alphabetically later floor (e.g. grass over cave_floor at equal
+/// priority) reliably wins.
+pub fn hard_edge_entries<'a>(
+    floor_defs: &'a FloorTilesetDefinitions,
+    nw: Option<&'a FloorTypeId>,
+    ne: Option<&'a FloorTypeId>,
+    sw: Option<&'a FloorTypeId>,
+    se: Option<&'a FloorTypeId>,
+) -> Vec<(&'a FloorTypeId, u8)> {
+    let mut bits_per_type: HashMap<&'a FloorTypeId, u8> = HashMap::new();
+    if let Some(t) = nw {
+        *bits_per_type.entry(t).or_default() |= 1;
+    }
+    if let Some(t) = ne {
+        *bits_per_type.entry(t).or_default() |= 2;
+    }
+    if let Some(t) = sw {
+        *bits_per_type.entry(t).or_default() |= 4;
+    }
+    if let Some(t) = se {
+        *bits_per_type.entry(t).or_default() |= 8;
+    }
     let mut entries: Vec<(&FloorTypeId, u8)> =
         bits_per_type.into_iter().filter(|(_, m)| *m != 0).collect();
     entries.sort_by(|a, b| {
@@ -331,7 +465,7 @@ pub fn classify_corner<'a>(
         let pb = floor_defs.get(b.0).map(|d| d.priority).unwrap_or(0);
         pa.cmp(&pb).then(a.0.cmp(b.0))
     });
-    CornerRenderPlan::HardEdges(entries)
+    entries
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -342,11 +476,13 @@ pub(crate) fn spawn_render_cells_at_corner(
     atlases: &mut FloorTilesetAtlases,
     floor_defs: &FloorTilesetDefinitions,
     world_config: &WorldConfig,
+    floor_mask: &FloorMaskMap,
     space_id: SpaceId,
     z: i32,
     rx: i32,
     ry: i32,
     grid: &FloorMap,
+    debug: bool,
 ) {
     // Bitmask convention: NW=1, NE=2, SW=4, SE=8.
     let nw = sample(grid, rx - 1, ry - 1);
@@ -354,7 +490,15 @@ pub(crate) fn spawn_render_cells_at_corner(
     let sw = sample(grid, rx - 1, ry);
     let se = sample(grid, rx, ry);
 
-    match classify_corner(floor_defs, nw, ne, sw, se) {
+    // Floor-debug mode forces the per-type hard-edge path so every floor shows
+    // in its own `debug_color` (transitions/atlas art are bypassed).
+    let plan = if debug {
+        CornerRenderPlan::HardEdges(hard_edge_entries(floor_defs, nw, ne, sw, se))
+    } else {
+        classify_corner(floor_defs, nw, ne, sw, se)
+    };
+
+    match plan {
         CornerRenderPlan::Transition {
             low,
             high,
@@ -375,6 +519,7 @@ pub(crate) fn spawn_render_cells_at_corner(
                 layouts_assets,
                 atlases,
                 world_config,
+                floor_mask,
                 space_id,
                 z,
                 rx,
@@ -383,6 +528,7 @@ pub(crate) fn spawn_render_cells_at_corner(
                 low_def,
                 0xF,
                 base_z,
+                debug,
             );
             spawn_transition_cell(
                 commands,
@@ -414,6 +560,7 @@ pub(crate) fn spawn_render_cells_at_corner(
                     layouts_assets,
                     atlases,
                     world_config,
+                    floor_mask,
                     space_id,
                     z,
                     rx,
@@ -422,6 +569,7 @@ pub(crate) fn spawn_render_cells_at_corner(
                     def,
                     *mask,
                     priority_z,
+                    debug,
                 );
             }
         }
@@ -435,6 +583,7 @@ fn spawn_floor_cell(
     layouts_assets: &mut Assets<TextureAtlasLayout>,
     atlases: &mut FloorTilesetAtlases,
     world_config: &WorldConfig,
+    floor_mask: &FloorMaskMap,
     space_id: SpaceId,
     z: i32,
     rx: i32,
@@ -443,61 +592,93 @@ fn spawn_floor_cell(
     def: &FloorTilesetDefinition,
     mask: u8,
     priority_z: f32,
+    debug: bool,
 ) {
-    if let Some(atlas_path) = &def.atlas_path {
-        let image_handle = atlases
-            .images
-            .entry(floor_id.clone())
-            .or_insert_with(|| asset_server.load(atlas_path))
-            .clone();
-        let max_variants = def.max_variants() as u32;
-        let layout_handle = atlases
-            .layouts
-            .entry(floor_id.clone())
-            .or_insert_with(|| {
-                let layout = TextureAtlasLayout::from_grid(
-                    UVec2::splat(def.tile_size_px),
-                    4,
-                    4 * max_variants,
-                    None,
-                    None,
+    // Floor-debug mode (F9): skip the atlas and fall through to the flat
+    // `debug_color` path below so each floor type is visible per tile.
+    if !debug {
+        if let Some(atlas_path) = &def.atlas_path {
+            let image_handle = atlases
+                .images
+                .entry(floor_id.clone())
+                .or_insert_with(|| asset_server.load(atlas_path))
+                .clone();
+            let weights = def.variant_weights(mask);
+            let variant = pick_variant(space_id, rx, ry, weights);
+            let idx = MASK_TO_AUTHORING_INDEX[mask as usize & 0xF] + variant * 16;
+
+            // If any contributing quadrant lands on a floor-masked tile, render
+            // the cell as per-quadrant sprites clipped to those masks instead of
+            // one full-cell atlas sprite.
+            let masked = MASK_QUADRANTS.iter().any(|(bit, _, _, dx, dy)| {
+                mask & bit != 0 && floor_mask.get(space_id, z, rx + dx, ry + dy).is_some()
+            });
+            if masked {
+                spawn_masked_floor_quadrants(
+                    commands,
+                    &image_handle,
+                    world_config,
+                    floor_mask,
+                    space_id,
+                    z,
+                    rx,
+                    ry,
+                    floor_id,
+                    def,
+                    mask,
+                    idx,
+                    priority_z,
                 );
-                layouts_assets.add(layout)
-            })
-            .clone();
-        let weights = def.variant_weights(mask);
-        let variant = pick_variant(space_id, rx, ry, weights);
-        let sprite = Sprite {
-            image: image_handle,
-            custom_size: Some(Vec2::splat(world_config.tile_size)),
-            texture_atlas: Some(TextureAtlas {
-                layout: layout_handle,
-                index: MASK_TO_AUTHORING_INDEX[mask as usize & 0xF] + variant * 16,
-            }),
-            ..default()
-        };
-        commands.spawn((
-            FloorRenderCell {
-                space_id,
-                z,
-                rx,
-                ry,
-                floor_type: floor_id.clone(),
-                priority_z,
-                local_offset: Vec2::ZERO,
-            },
-            sprite,
-            Transform::from_xyz(0.0, 0.0, flat_floor_z(priority_z, z)),
-            Visibility::default(),
-        ));
-        return;
+                return;
+            }
+
+            let max_variants = def.max_variants() as u32;
+            let layout_handle = atlases
+                .layouts
+                .entry(floor_id.clone())
+                .or_insert_with(|| {
+                    let layout = TextureAtlasLayout::from_grid(
+                        UVec2::splat(def.tile_size_px),
+                        4,
+                        4 * max_variants,
+                        None,
+                        None,
+                    );
+                    layouts_assets.add(layout)
+                })
+                .clone();
+            let sprite = Sprite {
+                image: image_handle,
+                custom_size: Some(Vec2::splat(world_config.tile_size)),
+                texture_atlas: Some(TextureAtlas {
+                    layout: layout_handle,
+                    index: idx,
+                }),
+                ..default()
+            };
+            commands.spawn((
+                FloorRenderCell {
+                    space_id,
+                    z,
+                    rx,
+                    ry,
+                    floor_type: floor_id.clone(),
+                    priority_z,
+                    local_offset: Vec2::ZERO,
+                },
+                sprite,
+                Transform::from_xyz(0.0, 0.0, flat_floor_z(priority_z, z)),
+                Visibility::default(),
+            ));
+            return;
+        }
     }
 
-    // Debug fallback: no authored atlas, only `debug_color`. Spawn one
-    // quarter-tile sprite per set mask bit so the placeholder colour fills
-    // only its contributing quadrants — otherwise a 1-tile cave_floor on
-    // grass would render four full-tile brown squares overdrawing the
-    // surrounding grass at every boundary corner.
+    // Flat `debug_color` path: reached when a floor has no authored atlas, OR
+    // when floor-debug mode (F9) is on. Spawn one quarter-tile sprite per set
+    // mask bit so the colour fills only its contributing quadrants — otherwise
+    // a 1-tile cave_floor on grass would render four full-tile brown squares
+    // overdrawing the surrounding grass at every boundary corner.
     if mask == 0xF {
         // Interior corner (every neighbour is the same type) — one sprite
         // covering the whole cell. Saves three entities vs. the per-bit path.
@@ -542,6 +723,96 @@ fn spawn_floor_cell(
                 local_offset: offset,
             },
             Sprite::from_color(def.debug_color(), Vec2::splat(half)),
+            Transform::from_xyz(0.0, 0.0, flat_floor_z(priority_z, z)),
+            Visibility::default(),
+        ));
+    }
+}
+
+/// Renders a floor cell as up-to-four per-quadrant sprites, each clipped to its
+/// tile's `floor_mask_rect` (full tile if unmasked). Used in place of the single
+/// full-cell atlas sprite when any contributing quadrant lands on a masked tile,
+/// so floor only draws inside the wall's interior rectangle. Each quadrant draws
+/// the matching sub-region of the atlas tile `idx` via `Sprite::rect`.
+#[allow(clippy::too_many_arguments)]
+fn spawn_masked_floor_quadrants(
+    commands: &mut Commands,
+    image_handle: &Handle<Image>,
+    world_config: &WorldConfig,
+    floor_mask: &FloorMaskMap,
+    space_id: SpaceId,
+    z: i32,
+    rx: i32,
+    ry: i32,
+    floor_id: &FloorTypeId,
+    def: &FloorTilesetDefinition,
+    mask: u8,
+    idx: usize,
+    priority_z: f32,
+) {
+    let t = def.tile_size_px as f32;
+    let half = t / 2.0;
+    let tcol = (idx % 4) as f32;
+    let trow = (idx / 4) as f32;
+    let cell_cx = rx as f32 - 0.5;
+    let cell_cy = ry as f32 - 0.5;
+
+    for (bit, col, row, dx, dy) in MASK_QUADRANTS {
+        if mask & bit == 0 {
+            continue;
+        }
+        // Quadrant world rect (tile units): col 0=west → [rx-1, rx-0.5];
+        // row 0=north → [ry-0.5, ry].
+        let qx0 = (rx as f32 - 1.0) + col as f32 * 0.5;
+        let qy0 = (ry as f32 - 1.0) + (1 - row) as f32 * 0.5;
+        let quad_world = [qx0, qy0, qx0 + 0.5, qy0 + 0.5];
+        // Source quadrant pixel rect within the atlas tile at `idx`.
+        let sx0 = tcol * t + col as f32 * half;
+        let sy0 = trow * t + row as f32 * half;
+        let src_quad = [sx0, sy0, sx0 + half, sy0 + half];
+        // The tile this quadrant belongs to, and its mask (full tile if none).
+        let tx = rx + dx;
+        let ty = ry + dy;
+        let mask_world = match floor_mask.get(space_id, z, tx, ty) {
+            Some(m) => [
+                tx as f32 - 0.5 + m[0],
+                ty as f32 - 0.5 + m[1],
+                tx as f32 - 0.5 + m[2],
+                ty as f32 - 0.5 + m[3],
+            ],
+            None => [
+                tx as f32 - 0.5,
+                ty as f32 - 0.5,
+                tx as f32 + 0.5,
+                ty as f32 + 0.5,
+            ],
+        };
+        let Some((cw, cs)) = clip_quadrant(quad_world, src_quad, mask_world) else {
+            continue;
+        };
+        let center = Vec2::new((cw[0] + cw[2]) * 0.5, (cw[1] + cw[3]) * 0.5);
+        let local_offset = Vec2::new(center.x - cell_cx, center.y - cell_cy);
+        let size = Vec2::new(
+            (cw[2] - cw[0]) * world_config.tile_size,
+            (cw[3] - cw[1]) * world_config.tile_size,
+        );
+        let sprite = Sprite {
+            image: image_handle.clone(),
+            custom_size: Some(size),
+            rect: Some(Rect::new(cs[0], cs[1], cs[2], cs[3])),
+            ..default()
+        };
+        commands.spawn((
+            FloorRenderCell {
+                space_id,
+                z,
+                rx,
+                ry,
+                floor_type: floor_id.clone(),
+                priority_z,
+                local_offset,
+            },
+            sprite,
             Transform::from_xyz(0.0, 0.0, flat_floor_z(priority_z, z)),
             Visibility::default(),
         ));
@@ -924,5 +1195,72 @@ mod tests {
         assert_eq!(MASK_TO_AUTHORING_INDEX[0], 12);
         assert_eq!(MASK_TO_AUTHORING_INDEX[1], 0);
         assert_eq!(MASK_TO_AUTHORING_INDEX[15], 6);
+    }
+
+    #[test]
+    fn authoring_index_to_mask_is_exact_inverse() {
+        for mask in 0u8..16 {
+            let idx = MASK_TO_AUTHORING_INDEX[mask as usize];
+            assert_eq!(
+                AUTHORING_INDEX_TO_MASK[idx], mask,
+                "inverse mismatch at mask {mask}"
+            );
+        }
+        // ...and the inverse of the inverse round-trips by authoring index.
+        for idx in 0usize..16 {
+            let mask = AUTHORING_INDEX_TO_MASK[idx];
+            assert_eq!(MASK_TO_AUTHORING_INDEX[mask as usize], idx);
+        }
+    }
+
+    #[test]
+    fn clip_quadrant_full_overlap_is_identity() {
+        // A mask covering the whole tile leaves the quadrant untouched.
+        let (w, s) = clip_quadrant(
+            [0.0, 0.0, 0.5, 0.5],
+            [0.0, 0.0, 8.0, 8.0],
+            [-1.0, -1.0, 2.0, 2.0],
+        )
+        .unwrap();
+        assert_eq!(w, [0.0, 0.0, 0.5, 0.5]);
+        assert_eq!(s, [0.0, 0.0, 8.0, 8.0]);
+    }
+
+    #[test]
+    fn clip_quadrant_crops_south_strip_to_top_of_source() {
+        // Mask keeps the north half (y >= 0.25). World +y(north) ↔ src top, so
+        // the kept world half maps to the TOP half of the source quadrant.
+        let (w, s) = clip_quadrant(
+            [0.0, 0.0, 0.5, 0.5],
+            [0.0, 0.0, 8.0, 8.0],
+            [0.0, 0.25, 1.0, 1.0],
+        )
+        .unwrap();
+        assert_eq!(w, [0.0, 0.25, 0.5, 0.5], "north half kept");
+        assert_eq!(s, [0.0, 0.0, 8.0, 4.0], "north → top half of source");
+    }
+
+    #[test]
+    fn clip_quadrant_crops_east_strip_to_right_of_source() {
+        // Mask keeps the east half (x >= 0.25). World +x(east) ↔ src right.
+        let (w, s) = clip_quadrant(
+            [0.0, 0.0, 0.5, 0.5],
+            [0.0, 0.0, 8.0, 8.0],
+            [0.25, -1.0, 2.0, 2.0],
+        )
+        .unwrap();
+        assert_eq!(w, [0.25, 0.0, 0.5, 0.5], "east half kept");
+        assert_eq!(s, [4.0, 0.0, 8.0, 8.0], "east → right half of source");
+    }
+
+    #[test]
+    fn clip_quadrant_no_overlap_returns_none() {
+        // Mask entirely south of a north quadrant → nothing rendered.
+        assert!(clip_quadrant(
+            [0.0, 0.5, 0.5, 1.0],
+            [0.0, 0.0, 8.0, 8.0],
+            [0.0, 0.0, 1.0, 0.4],
+        )
+        .is_none());
     }
 }

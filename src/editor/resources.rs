@@ -13,7 +13,7 @@ pub const RECENT_TYPES_CAP: usize = 12;
 pub const UNDO_STACK_CAP: usize = 256;
 
 use crate::world::components::{SpaceId, TilePosition};
-use crate::world::floor_definitions::FloorTypeId;
+use crate::world::floor_definitions::{derive_floor_id, FloorFlavor, FloorTypeId};
 use crate::world::map_layout::{
     AmbientKeyframe, MapBehavior, PortalDefinition, SpaceLightingDef, SpawnGroupDef, TileRectangle,
     VendorStashDef,
@@ -98,8 +98,13 @@ pub struct EditorState {
     /// Set by undo/redo toolbar buttons; consumed by handle_undo_redo.
     pub undo_requested: bool,
     pub redo_requested: bool,
-    /// Floor-type id painted by the FloorBrush tool. `None` = clear the tile.
+    /// Base floor-type id painted by the FloorBrush tool. `None` = clear the
+    /// tile. The flavor in `selected_floor_flavor` is applied on top of this
+    /// when resolving the id actually painted.
     pub selected_floor_type: Option<String>,
+    /// Flavor (treatment) applied to the painted floor — e.g. `Flooring`
+    /// squares the tiles to the wall grid. `Base` paints the raw tileset.
+    pub selected_floor_flavor: FloorFlavor,
     /// Active marquee selection (Select tool result, persisted across tool
     /// switches). Cleared by Esc or by starting a new drag.
     pub selection: Option<EditorSelection>,
@@ -196,6 +201,14 @@ impl EditorState {
     /// Mirror of `touch_recent_object` for floor type ids.
     pub fn touch_recent_floor(&mut self, floor_id: &str) {
         push_recent(&mut self.recent_floor_types, floor_id);
+    }
+
+    /// The floor id the FloorBrush should actually paint: the selected base
+    /// type mapped through the active flavor. `None` (eraser) stays `None`.
+    pub fn selected_floor_painted_id(&self) -> Option<FloorTypeId> {
+        self.selected_floor_type
+            .as_deref()
+            .map(|base| derive_floor_id(base, self.selected_floor_flavor))
     }
 
     /// Effective brush radius for tile painting (always `>= 1`).

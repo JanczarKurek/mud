@@ -12,14 +12,19 @@ use std::collections::{HashMap, HashSet};
 use bevy::prelude::*;
 
 use crate::editor::resources::{EditorCamera, EditorContext, EditorState};
-use crate::world::components::SpaceId;
+use crate::world::components::{
+    floor_index, OverworldObject, SpaceId, SpaceResident, TilePosition,
+};
 use crate::world::floor_definitions::FloorTilesetDefinitions;
 use crate::world::floor_map::FloorMaps;
 use crate::world::floor_render::{
     floor_grid_hash, rebuild_floor_render_cells_for_grid, spawn_render_cells_at_corner,
-    FloorRenderCell, FloorRenderDirty, FloorRenderState, FloorTilesetAtlases,
+    FloorDebugRender, FloorMaskMap, FloorRenderCell, FloorRenderDirty, FloorRenderState,
+    FloorTilesetAtlases,
 };
 use crate::world::floors::VisibleFloorRange;
+use crate::world::object_definitions::OverworldObjectDefinitions;
+use crate::world::object_registry::ObjectRegistry;
 use crate::world::systems::{flat_floor_z, floor_screen_offset};
 use crate::world::WorldConfig;
 
@@ -59,9 +64,22 @@ pub fn editor_build_floor_render_cells(
     _editor_state: Res<EditorState>,
     mut render_state: ResMut<EditorFloorRenderState>,
     mut floor_dirty: ResMut<FloorRenderDirty>,
+    flavor_gen: Res<crate::world::floor_flavors::FloorFlavorGeneration>,
+    floor_debug: Res<FloorDebugRender>,
+    floor_mask: Res<FloorMaskMap>,
+    mut seen_flavor_gen: Local<u64>,
     existing: Query<(Entity, &FloorRenderCell)>,
 ) {
     let space_id = editor_context.space_id;
+    let debug = floor_debug.debug_color_only;
+
+    // A flavored atlas was (re)generated, the floor-debug toggle flipped, or the
+    // floor-mask map changed — drop cached hashes so every floor rebuilds
+    // (mirrors the in-game system).
+    if *seen_flavor_gen != flavor_gen.0 || floor_debug.is_changed() || floor_mask.is_changed() {
+        render_state.built_for.clear();
+        *seen_flavor_gen = flavor_gen.0;
+    }
 
     // Sweep entries that no longer match the active space or whose z no
     // longer has a backing FloorMap (e.g. after switching maps, or after a
@@ -139,11 +157,13 @@ pub fn editor_build_floor_render_cells(
                     &mut atlases,
                     &floor_defs,
                     &world_config,
+                    &floor_mask,
                     sid,
                     z,
                     rx,
                     ry,
                     grid,
+                    debug,
                 );
             }
             render_state.built_for.insert(key, hash);
@@ -166,9 +186,11 @@ pub fn editor_build_floor_render_cells(
             &mut atlases,
             &floor_defs,
             &world_config,
+            &floor_mask,
             sid,
             z,
             grid,
+            debug,
         );
         render_state.built_for.insert(key, hash);
     }
@@ -215,6 +237,38 @@ pub fn editor_sync_floor_render_transforms(
             + floor_offset.y;
         transform.translation = Vec3::new(dx, dy, z_sort);
         transform.scale = Vec3::splat(editor_camera.zoom_level);
+    }
+}
+
+/// Editor-side counterpart of `world::floors::recompute_floor_mask_map`: builds
+/// [`FloorMaskMap`] from the authoritative `OverworldObject`s the editor mutates
+/// directly (the in-game version reads the replicated `ClientGameState`, which
+/// isn't populated in the editor). Compare-and-set so it only marks the resource
+/// changed — forcing a floor rebuild — when the clip rects actually differ.
+pub fn editor_recompute_floor_mask_map(
+    object_registry: Res<ObjectRegistry>,
+    definitions: Res<OverworldObjectDefinitions>,
+    objects: Query<(&OverworldObject, &SpaceResident, &TilePosition)>,
+    mut map: ResMut<FloorMaskMap>,
+) {
+    let mut next = HashMap::new();
+    for (object, resident, tile) in &objects {
+        let Some(type_id) = object_registry.type_id(object.object_id) else {
+            continue;
+        };
+        let Some(rect) = definitions
+            .get(type_id)
+            .and_then(|def| def.render.floor_mask_rect)
+        else {
+            continue;
+        };
+        next.insert(
+            (resident.space_id, floor_index(tile.z), tile.x, tile.y),
+            rect,
+        );
+    }
+    if map.rects != next {
+        map.rects = next;
     }
 }
 

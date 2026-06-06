@@ -144,7 +144,7 @@ pub fn handle_editor_rect_fill(
             let _ = def;
         }
         EditorTool::FloorBrush => {
-            let floor_type = editor_state.selected_floor_type.clone();
+            let floor_type = editor_state.selected_floor_painted_id();
             for y in min_y..=max_y {
                 for x in min_x..=max_x {
                     if x < 0
@@ -286,7 +286,7 @@ pub fn handle_editor_flood_fill(
             }
         }
         EditorTool::FloorBrush => {
-            let floor_type = editor_state.selected_floor_type.clone();
+            let floor_type = editor_state.selected_floor_painted_id();
             for (x, y) in cells {
                 pending_commands.push(GameCommand::EditorSetFloorTile {
                     space_id: editor_context.space_id,

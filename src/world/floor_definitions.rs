@@ -13,6 +13,84 @@ pub type FloorTypeId = String;
 /// lower-priority floor type (alphabetical id tiebreak on equal priority).
 pub type TransitionPairKey = (FloorTypeId, FloorTypeId);
 
+/// Separator between a base floor id and its flavor suffix inside a derived id
+/// (`"<base>#<suffix>"`). `#` never appears in on-disk tileset ids — those must
+/// equal their directory name — so derived ids never collide with authored ones.
+pub const FLAVOR_SEPARATOR: char = '#';
+
+/// A programmatic treatment applied to a base floor tileset to produce a
+/// *derived* floor type. The base art is transformed in memory at load time
+/// (see `crate::world::floor_flavors`); the derived floor is addressed by the id
+/// `derive_floor_id(base, flavor)` so it round-trips through map YAML like any
+/// other floor id and renders through the normal path with its own atlas handle.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum FloorFlavor {
+    /// The untreated tileset, addressed by its bare id.
+    #[default]
+    Base,
+    /// Trims each tile's overhang and normalizes its content to the tile
+    /// footprint so the floor lines up flush with the wall grid.
+    Flooring,
+}
+
+impl FloorFlavor {
+    /// All flavors in editor display order, `Base` first.
+    pub const ALL: &'static [FloorFlavor] = &[FloorFlavor::Base, FloorFlavor::Flooring];
+
+    /// Non-base flavors — the ones that own a generated atlas.
+    pub fn non_base() -> impl Iterator<Item = FloorFlavor> {
+        Self::ALL
+            .iter()
+            .copied()
+            .filter(|f| *f != FloorFlavor::Base)
+    }
+
+    /// Stable id suffix; `None` for `Base` (no suffix).
+    pub fn suffix(self) -> Option<&'static str> {
+        match self {
+            FloorFlavor::Base => None,
+            FloorFlavor::Flooring => Some("flooring"),
+        }
+    }
+
+    /// Human label for the editor flavor toggle.
+    pub fn label(self) -> &'static str {
+        match self {
+            FloorFlavor::Base => "None",
+            FloorFlavor::Flooring => "Flooring",
+        }
+    }
+
+    /// Parses a flavor from its id suffix.
+    pub fn from_suffix(suffix: &str) -> Option<FloorFlavor> {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|f| f.suffix() == Some(suffix))
+    }
+}
+
+/// Builds the floor id that addresses `base` under `flavor`. `Base` returns the
+/// bare id unchanged.
+pub fn derive_floor_id(base: &str, flavor: FloorFlavor) -> FloorTypeId {
+    match flavor.suffix() {
+        None => base.to_owned(),
+        Some(suffix) => format!("{base}{FLAVOR_SEPARATOR}{suffix}"),
+    }
+}
+
+/// Splits a (possibly derived) floor id into its base id and flavor. An absent
+/// or unrecognized suffix yields `(id, Base)`.
+pub fn split_floor_id(id: &str) -> (&str, FloorFlavor) {
+    match id.split_once(FLAVOR_SEPARATOR) {
+        Some((base, suffix)) => match FloorFlavor::from_suffix(suffix) {
+            Some(flavor) => (base, flavor),
+            None => (id, FloorFlavor::Base),
+        },
+        None => (id, FloorFlavor::Base),
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct FloorTilesetDefinition {
@@ -267,8 +345,20 @@ impl FloorTilesetDefinitions {
         Self { by_id, transitions }
     }
 
+    /// Looks up a floor definition. Derived flavor ids (`"<base>#<flavor>"`)
+    /// resolve to their base definition — the render metadata (tile size,
+    /// variants, priority, colour) is identical; only the atlas image differs,
+    /// and that is keyed separately by the full derived id in
+    /// `FloorTilesetAtlases`.
     pub fn get(&self, id: &str) -> Option<&FloorTilesetDefinition> {
-        self.by_id.get(id)
+        if let Some(def) = self.by_id.get(id) {
+            return Some(def);
+        }
+        let (base, flavor) = split_floor_id(id);
+        if flavor != FloorFlavor::Base {
+            return self.by_id.get(base);
+        }
+        None
     }
 
     pub fn ids(&self) -> impl Iterator<Item = &str> {
@@ -280,7 +370,7 @@ impl FloorTilesetDefinitions {
     }
 
     pub fn contains(&self, id: &str) -> bool {
-        self.by_id.contains_key(id)
+        self.get(id).is_some()
     }
 
     pub fn transitions(
@@ -458,6 +548,44 @@ fn load_transitions(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn derive_and_split_floor_id_round_trip() {
+        assert_eq!(
+            derive_floor_id("cave_floor", FloorFlavor::Base),
+            "cave_floor"
+        );
+        assert_eq!(
+            derive_floor_id("cave_floor", FloorFlavor::Flooring),
+            "cave_floor#flooring"
+        );
+        assert_eq!(
+            split_floor_id("cave_floor"),
+            ("cave_floor", FloorFlavor::Base)
+        );
+        assert_eq!(
+            split_floor_id("cave_floor#flooring"),
+            ("cave_floor", FloorFlavor::Flooring)
+        );
+        // Unknown suffix is treated as a plain (base) id, not a flavor.
+        assert_eq!(
+            split_floor_id("cave_floor#bogus"),
+            ("cave_floor#bogus", FloorFlavor::Base)
+        );
+    }
+
+    #[test]
+    fn get_resolves_derived_id_to_base_def() {
+        let defs = defs_with(&[("grass", 0)], &[]);
+        let base = defs.get("grass").expect("base present");
+        let derived = defs
+            .get("grass#flooring")
+            .expect("derived resolves to base def");
+        assert_eq!(base.id, derived.id, "derived get returns the base def");
+        assert!(defs.contains("grass#flooring"));
+        assert!(!defs.contains("grass#bogus"));
+        assert!(defs.get("missing#flooring").is_none());
+    }
 
     fn ts(id: &str, priority: i32) -> FloorTilesetDefinition {
         FloorTilesetDefinition {

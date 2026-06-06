@@ -8,6 +8,7 @@ pub mod direction;
 pub mod dungeon_gen;
 pub mod floor_animation;
 pub mod floor_definitions;
+pub mod floor_flavors;
 pub mod floor_map;
 pub mod floor_render;
 pub mod floors;
@@ -51,13 +52,15 @@ use crate::world::floor_animation::{
     FloorRippleAtlases, FloorRippleScheduler,
 };
 use crate::world::floor_definitions::FloorTilesetDefinitions;
+use crate::world::floor_flavors::{generate_floor_flavor_atlases, FloorFlavorGeneration};
 use crate::world::floor_map::FloorMaps;
 use crate::world::floor_render::{
     build_floor_render_cells, consume_floor_render_dirty, sync_floor_render_transforms,
-    FloorRenderDirty, FloorRenderState, FloorTilesetAtlases,
+    FloorDebugRender, FloorMaskMap, FloorRenderDirty, FloorRenderState, FloorTilesetAtlases,
 };
 use crate::world::floors::{
-    recompute_indoor_tile_map, recompute_visible_floors, IndoorTileMap, VisibleFloorRange,
+    recompute_floor_mask_map, recompute_indoor_tile_map, recompute_visible_floors, IndoorTileMap,
+    VisibleFloorRange,
 };
 use crate::world::fog_render::{setup_fog_overlay, update_fog_overlay, FogOfWarMaterial};
 use crate::world::lighting::{advance_world_clock, sync_object_light_components, WorldClock};
@@ -220,6 +223,9 @@ impl Plugin for WorldClientPlugin {
             .insert_resource(FloorTilesetDefinitions::load_from_disk())
             .insert_resource(FloorTilesetAtlases::default())
             .insert_resource(FloorRenderState::default())
+            .insert_resource(FloorFlavorGeneration::default())
+            .insert_resource(FloorDebugRender::default())
+            .insert_resource(FloorMaskMap::default())
             .insert_resource(FloorRenderDirty::default())
             .insert_resource(FloorRippleAtlases::default())
             .insert_resource(FloorRippleScheduler::default())
@@ -265,6 +271,12 @@ impl Plugin for WorldClientPlugin {
                             .after(apply_game_events_to_client_state)
                             .before(sync_tile_transforms)
                             .before(sync_floor_render_transforms),
+                        // Per-tile floor clip rects from wall objects; must run
+                        // before the floor build so a wall's clip is applied the
+                        // same frame.
+                        recompute_floor_mask_map
+                            .after(apply_game_events_to_client_state)
+                            .before(build_floor_render_cells),
                         sync_tile_transforms.after(detect_player_movement),
                         sync_player_z,
                         sync_combat_health_bars,
@@ -338,6 +350,11 @@ impl Plugin for WorldClientPlugin {
                     // Single registration avoids ambiguous SystemTypeSet for
                     // `despawn_finished_ripples.after(advance_animation_timers)`.
                     advance_animation_timers.run_if(in_game_or_editor),
+                    // Derive flavored floor atlases (e.g. `*#flooring`) from
+                    // base tilesets once their pixels are loaded. Runs in both
+                    // gameplay and editor; bumps `FloorFlavorGeneration` so the
+                    // floor-render build systems rebuild against the new atlas.
+                    generate_floor_flavor_atlases.run_if(in_game_or_editor),
                 ),
             );
 

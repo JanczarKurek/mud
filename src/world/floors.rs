@@ -6,6 +6,7 @@ use crate::world::components::{floor_index, SpaceId};
 use crate::world::direction::Direction;
 use crate::world::floor_definitions::FloorTilesetDefinitions;
 use crate::world::floor_map::FloorMap;
+use crate::world::floor_render::FloorMaskMap;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 
 /// How many floors above the player we'll scan upward in search of an
@@ -145,6 +146,42 @@ pub fn recompute_indoor_tile_map(
                 }
             }
         }
+    }
+}
+
+/// Rebuilds [`FloorMaskMap`] from the replicated world objects: any object whose
+/// definition declares `render.floor_mask_rect` contributes a clip rectangle for
+/// the floor on its tile (used in-game; the editor has its own variant reading
+/// authoritative objects). Cheap — runs each frame, clears and refills.
+pub fn recompute_floor_mask_map(
+    client_state: Res<ClientGameState>,
+    definitions: Res<OverworldObjectDefinitions>,
+    mut map: ResMut<FloorMaskMap>,
+) {
+    let _t = crate::diagnostics::SystemTimer::new("recompute_floor_mask_map", 1.0);
+    let mut next = std::collections::HashMap::new();
+    for object in client_state.world_objects.values() {
+        let Some(rect) = definitions
+            .get(&object.definition_id)
+            .and_then(|def| def.render.floor_mask_rect)
+        else {
+            continue;
+        };
+        let tile = object.tile_position;
+        next.insert(
+            (
+                object.position.space_id,
+                floor_index(tile.z),
+                tile.x,
+                tile.y,
+            ),
+            rect,
+        );
+    }
+    // Only mark the resource changed (which forces a floor rebuild) when the set
+    // of clip rects actually differs — this runs every frame.
+    if map.rects != next {
+        map.rects = next;
     }
 }
 

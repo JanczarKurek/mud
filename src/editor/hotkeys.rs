@@ -195,9 +195,13 @@ pub fn handle_editor_eyedropper(
         floor_maps.get(editor_context.space_id, editor_state.current_editing_floor)
     {
         if let Some(floor_id) = floor_grid.get(tile.x, tile.y).cloned() {
+            // The painted id may be a derived flavor (`<base>#<flavor>`);
+            // recover both so the eyedropper restores the brush exactly.
+            let (base, flavor) = crate::world::floor_definitions::split_floor_id(&floor_id);
             editor_state.current_tool = EditorTool::FloorBrush;
-            editor_state.selected_floor_type = Some(floor_id.clone());
-            editor_state.touch_recent_floor(&floor_id);
+            editor_state.selected_floor_type = Some(base.to_owned());
+            editor_state.selected_floor_flavor = flavor;
+            editor_state.touch_recent_floor(base);
         }
     }
     let _ = object_registry;

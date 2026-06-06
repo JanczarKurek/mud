@@ -16,6 +16,10 @@
 //!   `simulation_active` (NPC AI, combat, regen, dialog tick, ...). If frame
 //!   spikes vanish under F8, the cause is simulation-side; if they persist,
 //!   it's presentation/render.
+//! - **F9** toggles floor rendering between the atlas art and a flat
+//!   `debug_color` view (one solid block per floor type, per tile). Useful for
+//!   debugging floor coverage/flavors without the autotile art in the way.
+//!   Works in gameplay and the map editor.
 //! - **F10** toggles visibility on all `FloorRenderCell`s (the biggest single
 //!   render-cost archetype, 4k+ entities). Despawning is irreversible; flipping
 //!   `Visibility::Hidden` is enough to drop them from the render extract path.
@@ -48,7 +52,7 @@ use bevy::window::{PresentMode, PrimaryWindow};
 use crate::app::state::{ClientAppState, DiagnosticPause};
 use crate::world::components::ClientProjectedWorldObject;
 use crate::world::darkness::DarknessOverlay;
-use crate::world::floor_render::FloorRenderCell;
+use crate::world::floor_render::{FloorDebugRender, FloorRenderCell};
 use crate::world::resources::ViewScrollOffset;
 use crate::world::WorldConfig;
 
@@ -143,6 +147,7 @@ pub enum DebugAction {
     ToggleFpsExpanded,
     TogglePauseSim,
     ToggleHideFloor,
+    ToggleFloorDebugColor,
     ToggleHideDarkness,
     ToggleHideObjects,
     LogSnapshot,
@@ -322,6 +327,7 @@ fn handle_overlay_input(
     buf: Res<FrameTimeBuffer>,
     scroll: Res<ViewScrollOffset>,
     mut pause: ResMut<DiagnosticPause>,
+    mut floor_debug: ResMut<FloorDebugRender>,
     mut window_q: Query<&mut Window, With<PrimaryWindow>>,
     floor_q: Query<Entity, With<FloorRenderCell>>,
     darkness_q: Query<Entity, With<DarknessOverlay>>,
@@ -348,6 +354,9 @@ fn handle_overlay_input(
     if keys.just_pressed(KeyCode::F8) {
         queued.push(DebugAction::TogglePauseSim);
     }
+    if keys.just_pressed(KeyCode::F9) {
+        queued.push(DebugAction::ToggleFloorDebugColor);
+    }
     if keys.just_pressed(KeyCode::F10) {
         queued.push(DebugAction::ToggleHideFloor);
     }
@@ -369,6 +378,17 @@ fn handle_overlay_input(
             DebugAction::TogglePauseSim => apply_pause_toggle(&mut pause),
             DebugAction::ToggleHideFloor => {
                 apply_floor_hide_toggle(&mut state, &mut commands, &floor_q);
+            }
+            DebugAction::ToggleFloorDebugColor => {
+                floor_debug.debug_color_only = !floor_debug.debug_color_only;
+                info!(
+                    "Diagnostics: floor render = {}",
+                    if floor_debug.debug_color_only {
+                        "DEBUG COLOR"
+                    } else {
+                        "ATLAS"
+                    }
+                );
             }
             DebugAction::ToggleHideDarkness => {
                 apply_darkness_hide_toggle(&mut state, &mut commands, &darkness_q);

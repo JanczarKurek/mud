@@ -86,6 +86,8 @@ SPECS = [
         "name": "North Wall",
         "description": "Horizontal wall slab on the north edge of its tile (interior is to the south).",
         "arms": [{"axis": "y", "pos": _N, "t0": 0.0, "t1": 1.0}],
+        # Floor is kept only on the interior (south) side of the slab.
+        "floor_mask": [0.0, 0.0, 1.0, _N],
         "hide_facing": "south",
     },
     {
@@ -93,6 +95,8 @@ SPECS = [
         "name": "South Wall",
         "description": "Horizontal wall slab on the south edge of its tile (interior is to the north).",
         "arms": [{"axis": "y", "pos": _S, "t0": 0.0, "t1": 1.0}],
+        # Floor is kept only on the interior (north) side of the slab.
+        "floor_mask": [0.0, _S, 1.0, 1.0],
         "hide_facing": "south",
     },
     {
@@ -100,6 +104,8 @@ SPECS = [
         "name": "East Wall",
         "description": "Vertical wall slab on the east edge of its tile (interior is to the west).",
         "arms": [{"axis": "x", "pos": _E, "t0": 0.0, "t1": 1.0}],
+        # Floor is kept only on the interior (west) side of the slab.
+        "floor_mask": [0.0, 0.0, _E, 1.0],
         "hide_facing": "east",
     },
     {
@@ -107,6 +113,8 @@ SPECS = [
         "name": "West Wall",
         "description": "Vertical wall slab on the west edge of its tile (interior is to the east).",
         "arms": [{"axis": "x", "pos": _W, "t0": 0.0, "t1": 1.0}],
+        # Floor is kept only on the interior (east) side of the slab.
+        "floor_mask": [_W, 0.0, 1.0, 1.0],
         "hide_facing": "east",
     },
     # ── Four corners (world coords). Each is stamped at the building tile
@@ -124,6 +132,8 @@ SPECS = [
             # tile edge inward to the meeting point.
             {"axis": "x", "pos": _E, "t0": 0.0, "t1": _N},
         ],
+        # Interior is south-west: floor kept on fy<_N and fx<_E.
+        "floor_mask": [0.0, 0.0, _E, _N],
     },
     {
         "id": "wall_corner_nw",
@@ -133,6 +143,8 @@ SPECS = [
             {"axis": "y", "pos": _N, "t0": _W, "t1": 1.0},
             {"axis": "x", "pos": _W, "t0": 0.0, "t1": _N},
         ],
+        # Interior is south-east: floor kept on fy<_N and fx>_W.
+        "floor_mask": [_W, 0.0, 1.0, _N],
     },
     {
         "id": "wall_corner_se",
@@ -142,6 +154,8 @@ SPECS = [
             {"axis": "y", "pos": _S, "t0": 0.0, "t1": _E},
             {"axis": "x", "pos": _E, "t0": _S, "t1": 1.0},
         ],
+        # Interior is north-west: floor kept on fy>_S and fx<_E.
+        "floor_mask": [0.0, _S, _E, 1.0],
     },
     {
         "id": "wall_corner_sw",
@@ -151,6 +165,8 @@ SPECS = [
             {"axis": "y", "pos": _S, "t0": _W, "t1": 1.0},
             {"axis": "x", "pos": _W, "t0": _S, "t1": 1.0},
         ],
+        # Interior is north-east: floor kept on fy>_S and fx>_W.
+        "floor_mask": [_W, _S, 1.0, 1.0],
     },
 ]
 
@@ -281,8 +297,9 @@ render:
   sprite_width_tiles: {w_tiles}
   sprite_height_tiles: {h_tiles}
   occludes_floor_above: true
-  display_height: {display_height}
-{hide_line}  stack_order: 50
+  block_size: 2
+  walkable_surface: true
+{mask_line}{hide_line}  stack_order: 50
 """
 
 
@@ -304,13 +321,18 @@ def write_metadata(spec, cw, ch):
         if spec.get("hide_facing")
         else ""
     )
+    mask_line = ""
+    if spec.get("floor_mask"):
+        m = spec["floor_mask"]
+        nums = ", ".join(f"{round(v, 3)}" for v in m)
+        mask_line = f"  floor_mask_rect: [{nums}]\n"
     content = META_TEMPLATE.format(
         name=spec["name"],
         description=spec["description"],
         sprite_path=sprite_path,
         w_tiles=_fmt_tiles(cw),
         h_tiles=_fmt_tiles(ch),
-        display_height=_fmt_tiles(WALL_HEIGHT_FLOORS * TILE_PX),
+        mask_line=mask_line,
         hide_line=hide_line,
     )
     with open(path, "w") as f:

@@ -5,7 +5,7 @@ use bevy::ui::{ComputedNode, ScrollPosition, UiGlobalTransform};
 use bevy::window::PrimaryWindow;
 
 use crate::editor::resources::{EditorState, EditorTool};
-use crate::world::floor_definitions::FloorTilesetDefinitions;
+use crate::world::floor_definitions::{FloorFlavor, FloorTilesetDefinitions};
 use crate::world::object_definitions::OverworldObjectDefinitions;
 
 #[derive(Component)]
@@ -32,6 +32,14 @@ pub struct EditorPaletteFilterBox;
 #[derive(Component, Clone)]
 pub struct EditorFloorPaletteItem {
     pub floor_id: Option<String>,
+}
+
+/// One button in the floor-flavor toggle strip. Selecting it sets
+/// `EditorState.selected_floor_flavor`, which is folded into the painted floor
+/// id by `EditorState::selected_floor_painted_id`.
+#[derive(Component, Clone, Copy)]
+pub struct EditorFloorFlavorToggle {
+    pub flavor: FloorFlavor,
 }
 
 /// Marker on the "Recent" strip's object-row container so a live-updating
@@ -277,6 +285,31 @@ pub fn spawn_palette_panel(
                     ));
                 });
 
+            // Flavor toggle: applies a programmatic treatment (e.g. Flooring)
+            // to whatever tileset the floor brush paints.
+            panel
+                .spawn((Node {
+                    width: Val::Percent(100.0),
+                    padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
+                    align_items: AlignItems::Center,
+                    column_gap: Val::Px(6.0),
+                    flex_shrink: 0.0,
+                    ..default()
+                },))
+                .with_children(|row| {
+                    row.spawn((
+                        Text::new("Flavor:"),
+                        TextFont {
+                            font_size: 11.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.78, 0.74, 0.68)),
+                    ));
+                    for &flavor in FloorFlavor::ALL {
+                        spawn_flavor_toggle(row, flavor);
+                    }
+                });
+
             // Recent floors strip — same shape as recent objects.
             panel.spawn((
                 EditorRecentFloorsRoot,
@@ -367,6 +400,83 @@ fn spawn_floor_row(
             },
         ));
     });
+}
+
+/// Spawns one button in the floor-flavor toggle strip. Active state is painted
+/// by [`sync_floor_flavor_toggle`].
+fn spawn_flavor_toggle(row: &mut ChildSpawnerCommands, flavor: FloorFlavor) {
+    row.spawn((
+        Button,
+        EditorFloorFlavorToggle { flavor },
+        Node {
+            padding: UiRect::axes(Val::Px(8.0), Val::Px(3.0)),
+            border: UiRect::all(Val::Px(1.0)),
+            ..default()
+        },
+        BackgroundColor(Color::srgba(0.10, 0.07, 0.06, 0.80)),
+        BorderColor::all(Color::srgb(0.20, 0.15, 0.10)),
+    ))
+    .with_children(|btn| {
+        btn.spawn((
+            Text::new(flavor.label()),
+            TextFont {
+                font_size: 11.0,
+                ..default()
+            },
+            TextColor(Color::srgb(0.88, 0.84, 0.78)),
+        ));
+    });
+}
+
+/// Sets `selected_floor_flavor` when a flavor toggle is clicked.
+pub fn handle_floor_flavor_toggle_clicks(
+    mut editor_state: ResMut<EditorState>,
+    items: Query<(&EditorFloorFlavorToggle, &Interaction), (Changed<Interaction>, With<Button>)>,
+) {
+    for (item, interaction) in &items {
+        if *interaction == Interaction::Pressed {
+            editor_state.palette_filter_focused = false;
+            editor_state.selected_floor_flavor = item.flavor;
+        }
+    }
+}
+
+/// Highlights the active flavor toggle each frame.
+pub fn sync_floor_flavor_toggle(
+    editor_state: Res<EditorState>,
+    mut items: Query<
+        (
+            &EditorFloorFlavorToggle,
+            &Interaction,
+            &mut BackgroundColor,
+            &mut BorderColor,
+        ),
+        With<Button>,
+    >,
+) {
+    for (item, interaction, mut bg, mut border) in &mut items {
+        let selected = item.flavor == editor_state.selected_floor_flavor;
+        let (bg_color, border_color) = match (*interaction, selected) {
+            (Interaction::Pressed, _) => {
+                (Color::srgb(0.50, 0.28, 0.12), Color::srgb(0.98, 0.84, 0.58))
+            }
+            (Interaction::Hovered, true) => {
+                (Color::srgb(0.35, 0.20, 0.10), Color::srgb(0.98, 0.84, 0.58))
+            }
+            (Interaction::Hovered, false) => {
+                (Color::srgb(0.20, 0.13, 0.10), Color::srgb(0.60, 0.45, 0.28))
+            }
+            (Interaction::None, true) => {
+                (Color::srgb(0.28, 0.16, 0.08), Color::srgb(0.90, 0.76, 0.50))
+            }
+            (Interaction::None, false) => (
+                Color::srgba(0.10, 0.07, 0.06, 0.80),
+                Color::srgb(0.20, 0.15, 0.10),
+            ),
+        };
+        bg.0 = bg_color;
+        *border = BorderColor::all(border_color);
+    }
 }
 
 pub fn sync_palette_selection(

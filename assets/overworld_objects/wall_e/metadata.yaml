@@ -11,5 +11,6 @@ render:
   occludes_floor_above: true
   block_size: 2
   walkable_surface: true
+  floor_mask_rect: [0.0, 0.0, 0.75, 1.0]
   hide_when_inside_facing: east
   stack_order: 50
