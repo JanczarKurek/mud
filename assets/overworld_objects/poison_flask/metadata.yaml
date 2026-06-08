@@ -1,0 +1,28 @@
+extends: consumable
+name: Vial of Black Poison
+weight: 0.3
+description: A vial of viscous black poison. Apply it to a melee weapon to envenom its next 20 strikes.
+use_texts:
+  - You carefully coat your weapon with the black poison.
+use_on_texts:
+  - You smear the black poison along {target}.
+use_effects:
+  grants_item_modifier:
+    type_ex: weapon_coating
+    lvl: 1
+    label: "Poisoned (20 hits)"
+    effect:
+      kind: on_hit
+      chance: 1.0
+      spec:
+        kind: poisoned
+        magnitude: 3.0
+        seconds: 6.0
+    duration:
+      kind: charges
+      remaining: 20
+render:
+  z_index: 0.24
+  debug_color: [40, 30, 50]
+  debug_size: 0.45
+  sprite_path: overworld_objects/poison_flask/sprite.png

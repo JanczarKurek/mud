@@ -12,6 +12,7 @@ use bevy::text::{Justify, LineBreak, TextLayout};
 use bevy::window::PrimaryWindow;
 
 use crate::app::state::ClientAppState;
+use crate::combat::modifiers::ModifierEffect;
 use crate::game::resources::ClientGameState;
 use crate::magic::resources::{SpellDefinitions, SpellTargeting};
 use crate::player::components::{InventoryStack, CHARGES_KEY};
@@ -213,6 +214,10 @@ fn populate_item_details(
         spawn_on_hit_effects_section(parent, palette, def);
     }
 
+    // Per-instance enchantments live on the stack, not the definition, so this
+    // section renders regardless of whether the definition resolved.
+    spawn_enchantments_section(parent, palette, stack);
+
     spawn_description_section(parent, palette, definitions, spell_definitions, stack);
 }
 
@@ -392,6 +397,7 @@ fn spawn_spell_section(
     let targeting = match spell.targeting {
         SpellTargeting::Targeted => "Targeted",
         SpellTargeting::TargetedTile => "Tile-Target",
+        SpellTargeting::TargetedItem => "Item-Target",
         SpellTargeting::Untargeted => "Self",
     };
     rows.push(("Targeting".to_owned(), targeting.to_owned()));
@@ -556,6 +562,90 @@ fn spawn_on_hit_effects_section(
             },
             TextColor(palette.text_value),
         ));
+    }
+}
+
+/// Render the per-instance enchantments carried on this specific item stack,
+/// each with its remaining duration / charges. Reads only the projected
+/// `InventoryStack` (no authoritative component access), honoring the
+/// EmbeddedClient invariant.
+fn spawn_enchantments_section(
+    parent: &mut ChildSpawnerCommands,
+    palette: &Palette,
+    stack: &InventoryStack,
+) {
+    if stack.modifiers.is_empty() {
+        return;
+    }
+    spawn_section_header(parent, palette, "Enchantments");
+    for modifier in &stack.modifiers {
+        let name = if modifier.label.is_empty() {
+            modifier_effect_summary(&modifier.effect)
+        } else {
+            modifier.label.clone()
+        };
+        spawn_colored_property_row(
+            parent,
+            palette,
+            &name,
+            &modifier.duration.describe(),
+            Color::srgb(0.70, 0.60, 0.95),
+        );
+    }
+}
+
+/// One-line fallback summary of a modifier effect, used when the modifier has
+/// no authored `label`.
+fn modifier_effect_summary(effect: &ModifierEffect) -> String {
+    match effect {
+        ModifierEffect::BonusDamage {
+            dice,
+            bonus,
+            damage_type,
+        } => {
+            let dice_str = match dice {
+                Some((count, sides)) => format!("{count}d{sides}"),
+                None => String::new(),
+            };
+            let bonus_str = if *bonus != 0 {
+                format!("{bonus:+}")
+            } else {
+                String::new()
+            };
+            format!("+{dice_str}{bonus_str} {} dmg", damage_type.display_name())
+        }
+        ModifierEffect::OnHit { chance, spec } => {
+            format!(
+                "{}% {:?} on hit",
+                (chance * 100.0).round() as i32,
+                spec.kind
+            )
+        }
+        ModifierEffect::WielderStats {
+            attributes,
+            armor,
+            dodge_bonus,
+        } => {
+            let parts: Vec<String> = [
+                ("STR", attributes.strength),
+                ("AGI", attributes.agility),
+                ("CON", attributes.constitution),
+                ("WIL", attributes.willpower),
+                ("CHA", attributes.charisma),
+                ("FOC", attributes.focus),
+                ("Armor", *armor),
+                ("Dodge", *dodge_bonus),
+            ]
+            .into_iter()
+            .filter(|(_, v)| *v != 0)
+            .map(|(name, v)| format!("{v:+} {name}"))
+            .collect();
+            if parts.is_empty() {
+                "stat bonus".to_owned()
+            } else {
+                parts.join(", ")
+            }
+        }
     }
 }
 

@@ -3,6 +3,7 @@ use bevy::prelude::*;
 
 use crate::combat::components::AttackProfile;
 use crate::combat::damage_expr::DamageExpr;
+use crate::combat::modifiers::ModifierEffect;
 use crate::game::commands::{GameCommand, MoveDelta, RotationDirection};
 use crate::game::resources::{ClientGameState, InventoryState, PendingGameCommands};
 use crate::player::classes::Class;
@@ -89,6 +90,23 @@ pub fn refresh_derived_player_stats(
             max_mana += definition.stats.max_mana;
             storage_slots += definition.stats.storage_slots;
             dodge_total += definition.dodge_bonus;
+
+            // Fold per-instance enchantment stat bonuses. Applies on every
+            // equipped slot, so armor/ring `WielderStats` enchants work too —
+            // not just weapons. Flows into the same derived attributes the
+            // projection already diffs, so it replicates with no new event.
+            for modifier in &item.modifiers {
+                if let ModifierEffect::WielderStats {
+                    attributes: bonus,
+                    armor,
+                    dodge_bonus,
+                } = &modifier.effect
+                {
+                    attributes.add_assign(*bonus);
+                    armor_total += armor;
+                    dodge_total += dodge_bonus;
+                }
+            }
 
             match slot {
                 EquipmentSlot::Weapon => {

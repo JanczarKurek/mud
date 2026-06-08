@@ -1,0 +1,9 @@
+extends: pickup
+name: Empower Weapon Scroll
+weight: 0.1
+description: A scroll heavy with runic might. Reading it permanently strengthens the wielder of a weapon.
+spell_id: empower_weapon
+render:
+  debug_color: [196, 176, 120]
+  debug_size: 0.45
+  sprite_path: overworld_objects/scroll/sprite.png

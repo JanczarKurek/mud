@@ -68,6 +68,12 @@ pub struct SpellEffects {
     /// override with `"heal_sparkle"`.
     #[serde(default)]
     pub vfx_on_target_hit: Option<String>,
+    /// Enchant the targeted item (any of the caster's inventory/equipment
+    /// slots) with this modifier. Only meaningful for `targeted_item` spells.
+    /// Routed through `combat::modifiers::apply_modifier`, so the per-item
+    /// TYPE_EX/LVL anti-stack rule applies.
+    #[serde(default)]
+    pub enchant_item: Option<crate::combat::modifiers::ItemModifier>,
 }
 
 impl SpellEffects {
@@ -180,6 +186,10 @@ pub enum SpellTargeting {
     /// Player picks a tile (entity optional). Used for AoE and patterned
     /// summons like firewall.
     TargetedTile,
+    /// Player picks one of their own inventory/equipment items (the next slot
+    /// click resolves to an `ItemSlotRef`). Used by item-enchant spells; the
+    /// only effect honored is `effects.enchant_item`.
+    TargetedItem,
     /// No picker — casts on the caster's tile / self.
     Untargeted,
 }

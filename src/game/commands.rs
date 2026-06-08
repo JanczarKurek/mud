@@ -66,6 +66,10 @@ pub enum ItemDestination {
 pub enum UseTarget {
     Player,
     Object(u64),
+    /// One of the using player's own inventory/equipment items. Used to apply
+    /// a consumable's `grants_item_modifier` enchantment to a chosen item
+    /// (e.g. coating a weapon with a poison flask).
+    ItemSlot(ItemSlotRef),
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -166,6 +170,15 @@ pub enum GameCommand {
         source: ItemReference,
         spell_id: String,
         target_tile: TilePosition,
+    },
+    /// Item-target cast. Used by `SpellTargeting::TargetedItem` spells
+    /// (weapon enchants). The server validates the spell, then applies its
+    /// `effects.enchant_item` modifier to the item at `target` via the
+    /// TYPE_EX/LVL anti-stack rule.
+    CastSpellAtItem {
+        source: ItemReference,
+        spell_id: String,
+        target: ItemSlotRef,
     },
     MoveItem {
         source: ItemReference,

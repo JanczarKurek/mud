@@ -14,3 +14,14 @@ impl Default for BattleTurnTimer {
         }
     }
 }
+
+/// Deferred charge-consumption queue for item modifiers. `resolve_battle_turn`
+/// builds combatant snapshots read-only, so it cannot mutate the attacker's
+/// `Inventory` in place; instead it records `(attacker_entity, type_ex)` for
+/// each `Charges` modifier that successfully applied this turn, and
+/// `apply_pending_modifier_consumption` drains the queue afterward. Mirrors the
+/// `PendingDamageEvents` deferred-write pattern.
+#[derive(Resource, Default)]
+pub struct PendingModifierConsumption {
+    pub spent: Vec<(Entity, String)>,
+}

@@ -6,11 +6,12 @@ use crate::combat::components::{AttackKind, AttackProfile, CombatLeash, CombatTa
 use crate::combat::damage::{DamageEvent, DamageSource, PendingDamageEvents};
 use crate::combat::damage_expr::DamageExpr;
 use crate::combat::damage_type::DamageType;
+use crate::combat::modifiers::{roll_bonus_damage, ItemModifier, ModifierDuration, ModifierEffect};
 use crate::combat::npc_casting::{
     active_effect_kinds, apply_self_outcome, apply_target_buffs, build_npc_cast_outcome,
     pick_npc_spell, NpcCastContext,
 };
-use crate::combat::resources::BattleTurnTimer;
+use crate::combat::resources::{BattleTurnTimer, PendingModifierConsumption};
 use crate::game::resources::{GameUiEvent, PendingGameUiEvents};
 use crate::magic::effects::MagicEffects;
 use crate::magic::resources::{EffectKind, EffectSpec, SpellDefinition, SpellDefinitions};
@@ -55,6 +56,10 @@ struct CombatantSnapshot {
     /// Set of currently active effect kinds on this combatant (used by
     /// `SelfWithoutEffect` / `TargetWithoutEffect` spell conditions).
     active_effect_kinds: HashSet<EffectKind>,
+    /// Per-instance modifiers on this combatant's equipped weapon. Empty for
+    /// NPCs and for players wielding an un-enchanted weapon. Read-only here;
+    /// charge consumption is deferred via `PendingModifierConsumption`.
+    weapon_modifiers: Vec<ItemModifier>,
 }
 
 /// Roll a uniform integer in `0..=max`. Uses the same nanosecond+salt pattern
@@ -204,6 +209,7 @@ pub fn resolve_battle_turn(
     mut chat_log_query: Query<&mut ChatLog, With<Player>>,
     mut ui_events: ResMut<PendingGameUiEvents>,
     mut pending_damage: ResMut<PendingDamageEvents>,
+    mut pending_modifier_consumption: ResMut<PendingModifierConsumption>,
     mut commands: Commands,
 ) {
     battle_turn_timer.remaining_seconds -= time.delta_secs();
@@ -256,6 +262,12 @@ pub fn resolve_battle_turn(
                     inv.equipment_item(crate::world::object_definitions::EquipmentSlot::Ammo)
                         .map(|item| item.type_id.clone())
                 });
+                let weapon_modifiers = inventory
+                    .and_then(|inv| {
+                        inv.equipment_item(crate::world::object_definitions::EquipmentSlot::Weapon)
+                    })
+                    .map(|item| item.modifiers.clone())
+                    .unwrap_or_default();
                 let ranged_projectile_sprite = ranged_sprite_id(
                     is_player,
                     ammo_type_id.as_deref(),
@@ -312,6 +324,7 @@ pub fn resolve_battle_turn(
                     level,
                     spellcasting: spellcasting.map(|p| p.spells.clone()),
                     active_effect_kinds: active_effect_kinds(magic_effects),
+                    weapon_modifiers,
                 }
             },
         )
@@ -517,6 +530,48 @@ pub fn resolve_battle_turn(
             vfx_override,
         });
 
+        // Modifier-driven bonus elemental damage. Each `BonusDamage`
+        // enchantment on the attacker's equipped weapon lands as its own
+        // `DamageEvent` so the element shows its own number and hit VFX
+        // (`vfx_override: None` falls back to `damage_type.default_hit_vfx_id`).
+        for (i, m) in attacker.weapon_modifiers.iter().enumerate() {
+            let ModifierEffect::BonusDamage {
+                dice,
+                bonus,
+                damage_type,
+            } = &m.effect
+            else {
+                continue;
+            };
+            let salt = attacker.object_id.wrapping_add(0x00B0_0000 + i as u64);
+            let extra = roll_bonus_damage(*dice, *bonus, salt).max(0);
+            if extra == 0 {
+                continue;
+            }
+            pending_damage.push(DamageEvent {
+                target: target_entity,
+                amount: extra as f32,
+                source: damage_source,
+                damage_type: *damage_type,
+                vfx_override: None,
+            });
+            broadcast_chat_line(
+                &mut chat_log_query,
+                format!(
+                    "[{}'s {} sears {} for {extra} {} damage]",
+                    attacker.name,
+                    enchantment_label(m),
+                    target.name,
+                    damage_type.display_name()
+                ),
+            );
+            if matches!(m.duration, ModifierDuration::Charges { .. }) {
+                pending_modifier_consumption
+                    .spent
+                    .push((attacker.entity, m.type_ex.clone()));
+            }
+        }
+
         // Sleep-wakes-on-damage is handled centrally in
         // `apply_pending_damage` so every damage source — melee, ranged,
         // spell, DoT, environment — wakes the target uniformly. NPCs keep
@@ -531,52 +586,80 @@ pub fn resolve_battle_turn(
             ),
         );
 
-        // Roll the attacker's on-hit effects. Each entry is rolled
-        // independently; rolled specs go through `apply_effects_lazy` so a
-        // flaming weapon striking a freshly-spawned NPC (no `MagicEffects`
+        // Roll the attacker's on-hit effects, from both the weapon definition
+        // and any per-instance modifiers on the equipped weapon. Each entry is
+        // rolled independently; rolled specs go through `apply_effects_lazy` so
+        // a flaming weapon striking a freshly-spawned NPC (no `MagicEffects`
         // component yet) still ignites it.
+        let caster = if attacker.is_player {
+            attacker.player_id.map(PlayerId)
+        } else {
+            None
+        };
+        let mut rolled_specs: Vec<EffectSpec> = Vec::new();
+
         if let Some(on_hit_effects) = definitions
             .get(&attacker.definition_id)
             .and_then(|def| def.attack_profile.as_ref())
             .map(|profile| profile.on_hit_effects.as_slice())
         {
-            if !on_hit_effects.is_empty() {
-                let caster = if attacker.is_player {
-                    attacker.player_id.map(PlayerId)
-                } else {
-                    None
-                };
-                let mut rolled_specs: Vec<EffectSpec> = Vec::new();
-                for (i, on_hit) in on_hit_effects.iter().enumerate() {
-                    let salt = attacker.object_id.wrapping_add((i as u64) << 16);
-                    if !roll_chance(on_hit.chance, salt) {
-                        continue;
-                    }
-                    rolled_specs.push(EffectSpec {
-                        kind: on_hit.kind,
-                        magnitude: on_hit.magnitude,
-                        seconds: on_hit.seconds,
-                        secondary_magnitude: on_hit.secondary_magnitude,
-                    });
-                    broadcast_chat_line(
-                        &mut chat_log_query,
-                        format!(
-                            "[{} is afflicted by {}]",
-                            target.name,
-                            effect_kind_display_name(on_hit.kind)
-                        ),
-                    );
+            for (i, on_hit) in on_hit_effects.iter().enumerate() {
+                let salt = attacker.object_id.wrapping_add((i as u64) << 16);
+                if !roll_chance(on_hit.chance, salt) {
+                    continue;
                 }
-                if !rolled_specs.is_empty() {
-                    crate::magic::effects::apply_effects_lazy(
-                        target_entity,
-                        &rolled_specs,
-                        caster,
-                        target_magic.as_deref_mut(),
-                        &mut commands,
-                    );
-                }
+                rolled_specs.push(EffectSpec {
+                    kind: on_hit.kind,
+                    magnitude: on_hit.magnitude,
+                    seconds: on_hit.seconds,
+                    secondary_magnitude: on_hit.secondary_magnitude,
+                });
+                broadcast_chat_line(
+                    &mut chat_log_query,
+                    format!(
+                        "[{} is afflicted by {}]",
+                        target.name,
+                        effect_kind_display_name(on_hit.kind)
+                    ),
+                );
             }
+        }
+
+        // Per-instance `OnHit` modifiers (enchantments). Distinct salt offset
+        // so they roll independently from the definition effects above. A
+        // successful application spends one charge on charge-limited modifiers.
+        for (i, m) in attacker.weapon_modifiers.iter().enumerate() {
+            let ModifierEffect::OnHit { chance, spec } = &m.effect else {
+                continue;
+            };
+            let salt = attacker.object_id.wrapping_add(0x00E0_0000 + i as u64);
+            if !roll_chance(*chance, salt) {
+                continue;
+            }
+            rolled_specs.push(*spec);
+            broadcast_chat_line(
+                &mut chat_log_query,
+                format!(
+                    "[{} is afflicted by {}]",
+                    target.name,
+                    effect_kind_display_name(spec.kind)
+                ),
+            );
+            if matches!(m.duration, ModifierDuration::Charges { .. }) {
+                pending_modifier_consumption
+                    .spent
+                    .push((attacker.entity, m.type_ex.clone()));
+            }
+        }
+
+        if !rolled_specs.is_empty() {
+            crate::magic::effects::apply_effects_lazy(
+                target_entity,
+                &rolled_specs,
+                caster,
+                target_magic.as_deref_mut(),
+                &mut commands,
+            );
         }
     }
 
@@ -592,6 +675,54 @@ pub fn resolve_battle_turn(
                 }
             }
         }
+    }
+}
+
+/// Player-facing name for a modifier in combat chat, falling back to a generic
+/// word when the modifier carries no label.
+fn enchantment_label(m: &ItemModifier) -> &str {
+    if m.label.is_empty() {
+        "enchantment"
+    } else {
+        &m.label
+    }
+}
+
+/// Drain charge-consumption requests recorded by `resolve_battle_turn` and
+/// decrement the matching `Charges` modifier on each attacker's equipped
+/// weapon, removing it at zero. Deferred out of the battle loop because that
+/// loop iterates a read-only combatant snapshot and cannot hold a mutable
+/// `Inventory` borrow. Mutating `Inventory` here replicates via
+/// `InventoryChanged`. Runs only when there is something to drain, so it never
+/// spuriously dirties the component.
+pub fn apply_pending_modifier_consumption(
+    mut pending: ResMut<PendingModifierConsumption>,
+    mut inventory_query: Query<&mut Inventory, With<Player>>,
+) {
+    if pending.spent.is_empty() {
+        return;
+    }
+    for (entity, type_ex) in pending.spent.drain(..) {
+        let Ok(mut inventory) = inventory_query.get_mut(entity) else {
+            continue;
+        };
+        let Some(weapon) =
+            inventory.equipment_item_mut(crate::world::object_definitions::EquipmentSlot::Weapon)
+        else {
+            continue;
+        };
+        weapon.modifiers.retain_mut(|m| {
+            if m.type_ex != type_ex {
+                return true;
+            }
+            match &mut m.duration {
+                ModifierDuration::Charges { remaining } => {
+                    *remaining = remaining.saturating_sub(1);
+                    *remaining > 0
+                }
+                _ => true,
+            }
+        });
     }
 }
 
@@ -834,6 +965,7 @@ mod tests {
             level,
             spellcasting: None,
             active_effect_kinds: HashSet::new(),
+            weapon_modifiers: Vec::new(),
         }
     }
 

@@ -76,6 +76,28 @@ pub fn seed_starter_inventory(inventory: &mut Inventory) {
             ));
         }
     }
+    // Seed an enchantment demo kit: a melee weapon to equip plus the two
+    // weapon-enchant scrolls and a poison flask, so the item-modifier system is
+    // immediately demoable. Equip the sword, then read a scroll / use the flask
+    // and pick the weapon as the target.
+    for type_id in [
+        "bronze_sword",
+        "flame_weapon_scroll",
+        "empower_weapon_scroll",
+        "poison_flask",
+    ] {
+        if let Some(slot) = inventory
+            .backpack_slots
+            .iter_mut()
+            .find(|slot| slot.is_none())
+        {
+            *slot = Some(InventoryStack::item(
+                type_id.to_owned(),
+                ObjectProperties::new(),
+                1,
+            ));
+        }
+    }
 }
 
 /// Spawn the **projected** local-player entity for TcpClient mode. The

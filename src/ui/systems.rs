@@ -31,7 +31,8 @@ use crate::ui::components::{
 use crate::ui::resources::{
     ContextMenuState, ContextMenuTarget, CursorMode, CursorState, DockedPanelDragState,
     DockedPanelKind, DockedPanelResizeState, DockedPanelState, DragSource, DragState, HoveredTile,
-    Quickbar, ShowCoordinates, SpellTargetingState, TakePartialState, UseOnState,
+    ItemTargetingState, Quickbar, ShowCoordinates, SpellTargetingState, TakePartialState,
+    UseOnState,
 };
 use crate::world::components::TilePosition;
 use crate::world::object_definitions::OverworldObjectDefinitions;
@@ -151,6 +152,7 @@ pub fn toggle_cursor_mode(
             CursorMode::UseOn => CursorMode::Default,
             CursorMode::SpellTarget => CursorMode::SpellTarget,
             CursorMode::SpellTargetTile => CursorMode::SpellTargetTile,
+            CursorMode::ItemTarget => CursorMode::ItemTarget,
             CursorMode::AttackTarget => CursorMode::AttackTarget,
             CursorMode::JumpTarget => CursorMode::JumpTarget,
         };
@@ -236,6 +238,7 @@ fn cursor_icon_for_state(
             .unwrap_or_else(|| "cursors/use_on_cursor.png".to_owned()),
         CursorMode::SpellTarget => "cursors/spell_target_cursor.png".to_owned(),
         CursorMode::SpellTargetTile => "cursors/spell_target_cursor.png".to_owned(),
+        CursorMode::ItemTarget => "cursors/spell_target_cursor.png".to_owned(),
         CursorMode::AttackTarget => "cursors/attack_cursor.png".to_owned(),
         CursorMode::JumpTarget => "cursors/spell_target_cursor.png".to_owned(),
     };
@@ -1410,6 +1413,7 @@ pub fn handle_context_menu_actions(
         ResMut<CursorState>,
         ResMut<UseOnState>,
         ResMut<SpellTargetingState>,
+        ResMut<ItemTargetingState>,
     ),
     mut menu_queries: ParamSet<(
         Query<(&ComputedNode, &UiGlobalTransform), With<ContextMenuAttackButton>>,
@@ -1435,6 +1439,7 @@ pub fn handle_context_menu_actions(
         mut cursor_state,
         mut use_on_state,
         mut spell_targeting_state,
+        mut item_targeting_state,
     ) = ui_state;
     let Ok(window) = window_query.single() else {
         return;
@@ -1528,9 +1533,34 @@ pub fn handle_context_menu_actions(
                             context_menu_state.hide();
                             return;
                         }
+                        SpellTargeting::TargetedItem => {
+                            item_targeting_state.source = Some(target);
+                            item_targeting_state.spell_id = Some(spell_id);
+                            cursor_state.mode = CursorMode::ItemTarget;
+                            context_menu_state.hide();
+                            return;
+                        }
                         SpellTargeting::Untargeted => {}
                     }
                 }
+            }
+
+            // Modifier-granting consumable (e.g. poison flask): like an
+            // item-target spell, the player picks the item to enchant. We
+            // enter the same targeting mode but with `spell_id = None`, so the
+            // click dispatches `UseItemOn { target: ItemSlot }` instead.
+            if target_grants_item_modifier(
+                target,
+                &client_state,
+                &docked_panel_state,
+                &object_registry,
+                &definitions,
+            ) {
+                item_targeting_state.source = Some(target);
+                item_targeting_state.spell_id = None;
+                cursor_state.mode = CursorMode::ItemTarget;
+                context_menu_state.hide();
+                return;
             }
 
             if let Some(source) = context_target_to_item_reference(target, &docked_panel_state) {
@@ -1982,6 +2012,122 @@ pub fn handle_spell_targeting(
     cursor_state.reset_to_default();
 }
 
+/// Resolve a `CursorMode::ItemTarget` session: the next left-click on one of
+/// the player's own inventory/equipment slots picks the item to enchant.
+/// Dispatches `CastSpellAtItem` (item-target spell) or `UseItemOn` with
+/// `UseTarget::ItemSlot` (modifier-granting consumable like a poison flask),
+/// depending on whether `item_targeting_state.spell_id` is set. ESC, a
+/// right-click, or a click that misses every slot cancels / is ignored.
+#[allow(clippy::too_many_arguments)]
+pub fn handle_item_targeting(
+    mouse_input: Res<ButtonInput<MouseButton>>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    state_resources: (Res<ContextMenuState>, Res<DockedPanelState>),
+    mut pending_commands: ResMut<PendingGameCommands>,
+    mut cursor_state: ResMut<CursorState>,
+    mut item_targeting_state: ResMut<ItemTargetingState>,
+    mut slot_queries: ParamSet<(
+        Query<
+            (
+                &ItemSlotButton,
+                &ComputedNode,
+                &UiGlobalTransform,
+                Option<&Visibility>,
+            ),
+            (With<Button>, With<EquipmentSlotButton>),
+        >,
+        Query<
+            (
+                &ItemSlotButton,
+                &ComputedNode,
+                &UiGlobalTransform,
+                Option<&Visibility>,
+            ),
+            (With<Button>, With<ContainerSlotButton>),
+        >,
+        Query<
+            (
+                &ItemSlotImage,
+                &ComputedNode,
+                &UiGlobalTransform,
+                Option<&Visibility>,
+            ),
+            With<EquipmentSlotImage>,
+        >,
+        Query<
+            (
+                &ItemSlotImage,
+                &ComputedNode,
+                &UiGlobalTransform,
+                Option<&Visibility>,
+            ),
+            With<ContainerSlotImage>,
+        >,
+    )>,
+) {
+    if cursor_state.mode != CursorMode::ItemTarget {
+        return;
+    }
+    let (context_menu_state, docked_panel_state) = state_resources;
+    let Some(source_target) = item_targeting_state.source else {
+        // Mode set without a source — recover to the default cursor.
+        cursor_state.reset_to_default();
+        return;
+    };
+
+    if keyboard_input.just_pressed(KeyCode::Escape) || mouse_input.just_pressed(MouseButton::Right)
+    {
+        item_targeting_state.source = None;
+        item_targeting_state.spell_id = None;
+        cursor_state.reset_to_default();
+        return;
+    }
+
+    if context_menu_state.is_visible() || !mouse_input.just_pressed(MouseButton::Left) {
+        return;
+    }
+
+    let Ok(window) = window_query.single() else {
+        return;
+    };
+    let Some(cursor_position) = window.cursor_position() else {
+        return;
+    };
+
+    // A click that lands on no slot is ignored — keep targeting active so the
+    // player can try again (matches "click the item you want to enchant").
+    let Some(slot_kind) = hovered_slot_kind_from_ui(cursor_position, &mut slot_queries) else {
+        return;
+    };
+    let Some(target_slot) = item_slot_kind_to_ref(slot_kind, &docked_panel_state) else {
+        return;
+    };
+    let Some(source) = context_target_to_item_reference(source_target, &docked_panel_state) else {
+        item_targeting_state.source = None;
+        item_targeting_state.spell_id = None;
+        cursor_state.reset_to_default();
+        return;
+    };
+
+    if let Some(spell_id) = item_targeting_state.spell_id.clone() {
+        pending_commands.push(GameCommand::CastSpellAtItem {
+            source,
+            spell_id,
+            target: target_slot,
+        });
+    } else {
+        pending_commands.push(GameCommand::UseItemOn {
+            source,
+            target: UseTarget::ItemSlot(target_slot),
+        });
+    }
+
+    item_targeting_state.source = None;
+    item_targeting_state.spell_id = None;
+    cursor_state.reset_to_default();
+}
+
 pub fn handle_attack_targeting(
     mouse_input: Res<ButtonInput<MouseButton>>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
@@ -2329,6 +2475,7 @@ pub fn handle_context_menu_opening(
     docked_panel_state: Res<DockedPanelState>,
     mut use_on_state: ResMut<UseOnState>,
     mut spell_targeting_state: ResMut<SpellTargetingState>,
+    mut item_targeting_state: ResMut<ItemTargetingState>,
     mut cursor_state: ResMut<CursorState>,
     nearby_npc_rows: Query<(&NearbyNpcRow, &ComputedNode, &UiGlobalTransform)>,
     mut slot_queries: ParamSet<(
@@ -2394,6 +2541,14 @@ pub fn handle_context_menu_opening(
 
     if use_on_state.source.is_some() {
         use_on_state.source = None;
+        cursor_state.reset_to_default();
+        context_menu_state.hide();
+        return;
+    }
+
+    if item_targeting_state.source.is_some() {
+        item_targeting_state.source = None;
+        item_targeting_state.spell_id = None;
         cursor_state.reset_to_default();
         context_menu_state.hide();
         return;
@@ -3085,7 +3240,11 @@ pub fn handle_movable_dragging(
     mouse_input: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     world_config: Res<WorldConfig>,
-    interaction_state: (Res<ContextMenuState>, Res<UseOnState>),
+    interaction_state: (
+        Res<ContextMenuState>,
+        Res<UseOnState>,
+        Res<ItemTargetingState>,
+    ),
     client_state: Res<ClientGameState>,
     docked_panel_state: Res<DockedPanelState>,
     trade_popup_state: Res<crate::ui::resources::TradePopupState>,
@@ -3132,7 +3291,7 @@ pub fn handle_movable_dragging(
         >,
     )>,
 ) {
-    let (context_menu_state, use_on_state) = interaction_state;
+    let (context_menu_state, use_on_state, item_targeting_state) = interaction_state;
     let Ok(window) = window_query.single() else {
         return;
     };
@@ -3160,6 +3319,12 @@ pub fn handle_movable_dragging(
     }
 
     if use_on_state.source.is_some() {
+        return;
+    }
+
+    // While the player is picking an item to enchant, a left-click on a slot
+    // is a target selection (handled by `handle_item_targeting`), not a drag.
+    if item_targeting_state.source.is_some() {
         return;
     }
 
@@ -4344,6 +4509,31 @@ fn can_use_on(
     // *targeted* spell route through `CursorMode::SpellTarget` separately at
     // click time (see `handle_context_menu_clicks`).
     definition.is_usable()
+}
+
+/// True when the context-menu target item's definition grants an item modifier
+/// on use (e.g. a poison flask). Tells the "Use" handler to enter item-target
+/// mode (so the player picks the item to enchant) instead of dispatching
+/// `UseItem` immediately.
+fn target_grants_item_modifier(
+    target: ContextMenuTarget,
+    client_state: &ClientGameState,
+    docked_panel_state: &DockedPanelState,
+    object_registry: &ObjectRegistry,
+    definitions: &OverworldObjectDefinitions,
+) -> bool {
+    let type_id = match target {
+        ContextMenuTarget::World(object_id) => {
+            object_registry.type_id(object_id).map(str::to_owned)
+        }
+        ContextMenuTarget::Slot(slot_kind) => {
+            stack_in_slot_kind(client_state, docked_panel_state, slot_kind)
+                .map(|stack| stack.type_id.clone())
+        }
+    };
+    type_id
+        .and_then(|t| definitions.get(&t))
+        .is_some_and(|d| d.use_effects.grants_item_modifier.is_some())
 }
 
 fn context_target_to_item_reference(

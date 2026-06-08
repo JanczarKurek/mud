@@ -769,6 +769,12 @@ The `text` value supports three count placeholders in addition to the normal `{p
 - Default: `0.0`
 - Meaning: how long (in seconds) the regen-rate buff persists after consumption. Re-eating extends the remaining duration; the multiplier snaps to `max(current, new)` so a stronger buff isn't diluted by a follow-up.
 
+### `grants_item_modifier`
+- Type: mapping ([`ItemModifier`](#item-modifiers-enchantments))
+- Optional: yes
+- Default: none
+- Meaning: when the item is used, the player picks one of their own inventory/equipment items and this modifier is applied to it (e.g. a poison flask coating a weapon). Using the item enters an item-target cursor mode; the next slot click resolves the target. The source item is consumed only when the enchantment actually applies (a weaker modifier rejected by the anti-stack rule wastes nothing). Makes the item `usable`.
+
 ### `use_texts`
 - Type: list of strings
 - Optional: yes
@@ -1635,6 +1641,9 @@ Top-level fields:
   - `targeted_tile` — player picks a *tile* (entity optional); range is
     checked against the caster's own tile. Used by AoE spells and
     pattern-summon spells (`fireball`, `firewall`).
+  - `targeted_item` — player picks one of their *own inventory/equipment
+    items*; the only effect honored is `enchant_item`. Used by weapon-enchant
+    spells (`flame_weapon`, `empower_weapon`).
 
 ### `range_tiles`
 - Type: integer
@@ -1766,6 +1775,15 @@ Top-level fields:
 - Meaning: VFX definition id played on the target object when a targeted spell
   resolves. Untargeted spells do not trigger this.
 
+### `enchant_item`
+- Type: mapping ([`ItemModifier`](#item-modifiers-enchantments))
+- Optional: yes
+- Default: none
+- Meaning: only honored for `targeting: targeted_item` spells. Applies this
+  modifier to the item the caster picks. Routed through the same anti-stack
+  rule as item-granted modifiers. Mana is spent and any scroll consumed only
+  when the enchantment actually applies.
+
 `EffectKind` values (used in `buffs_self`, `buffs_target`, and `clears_self`):
 
 | Kind | Magnitude semantics | Notes |
@@ -1843,6 +1861,85 @@ class_access: [Wizard]
 min_caster_level: 1
 effects:
   damage: 18.0
+```
+
+## Item modifiers (enchantments)
+
+An `ItemModifier` is a per-instance enchantment attached to a specific item
+(not the shared definition). It is referenced by a spell's
+[`enchant_item`](#enchant_item) and a consumable's
+[`grants_item_modifier`](#grants_item_modifier). Modifiers live on the item
+instance, persist with the character save, and (for the wielder-stat and
+on-hit kinds) take effect while the item is equipped.
+
+Fields:
+- `type_ex` (string, required): exclusivity group. Anti-stack is scoped per
+  item per `type_ex` — at most one modifier of a given `type_ex` survives on an
+  item.
+- `lvl` (int, required): rank within the `type_ex` group. Applying a **stronger**
+  `lvl` overrides a weaker one; a **weaker** `lvl` is rejected (can't worsen a
+  `+2` with a `+1`); an **equal** `lvl` refreshes the duration without stacking.
+- `label` (string, optional): player-facing name shown in chat and the item
+  tooltip (e.g. `"Flaming (+1d6 fire)"`).
+- `effect` (mapping, required): internally tagged by `kind`:
+  - `kind: bonus_damage` — extra damage dealt on every hit as its own
+    `DamageEvent` (own number + element VFX). Fields: `dice` (optional `[count,
+    sides]`, e.g. `[1, 6]`), `bonus` (optional int), `damage_type` (a
+    `DamageType`, e.g. `fire`).
+  - `kind: on_hit` — chance to apply a magical effect to the struck target.
+    Fields: `chance` (float `0.0..=1.0`), `spec` (an `EffectSpec`: `{ kind,
+    magnitude, seconds, secondary_magnitude? }`).
+  - `kind: wielder_stats` — flat bonus to the wielder while the item is
+    equipped. Fields: `attributes` (a full `AttributeSet` — all six of
+    `strength`/`agility`/`constitution`/`willpower`/`charisma`/`focus`),
+    `armor` (int), `dodge_bonus` (int).
+- `duration` (mapping, required): internally tagged by `kind`:
+  - `kind: permanent`
+  - `kind: timed` with `remaining_seconds` (float). Counts down only while the
+    item is equipped, in whole-second steps.
+  - `kind: charges` with `remaining` (int). One charge is spent per **successful
+    application** (e.g. each landed poison), and the modifier is removed at zero.
+
+Example (a `targeted_item` enchant spell — `flame_weapon`):
+
+```yaml
+name: Flame Weapon
+incantation: Ignis Acies
+mana_cost: 14.0
+targeting: targeted_item
+effects:
+  enchant_item:
+    type_ex: weapon_elemental
+    lvl: 1
+    label: "Flaming (+1d6 fire)"
+    effect:
+      kind: bonus_damage
+      dice: [1, 6]
+      bonus: 0
+      damage_type: fire
+    duration:
+      kind: timed
+      remaining_seconds: 120.0
+```
+
+Example (a consumable that coats a weapon — `poison_flask`):
+
+```yaml
+use_effects:
+  grants_item_modifier:
+    type_ex: weapon_coating
+    lvl: 1
+    label: "Poisoned (20 hits)"
+    effect:
+      kind: on_hit
+      chance: 1.0
+      spec:
+        kind: poisoned
+        magnitude: 3.0
+        seconds: 6.0
+    duration:
+      kind: charges
+      remaining: 20
 ```
 
 ## 4. Floor Tileset Metadata YAML

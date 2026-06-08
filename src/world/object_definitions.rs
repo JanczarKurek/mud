@@ -800,6 +800,11 @@ pub struct UseEffects {
     /// `max(current, new)` so a stronger buff isn't diluted by a weaker one.
     #[serde(default)]
     pub regen_duration_seconds: f32,
+    /// When set, using this item grants the modifier to a targeted item (the
+    /// player picks the target slot). Drives enchant consumables like the
+    /// poison flask. Applied via `combat::modifiers::apply_modifier`.
+    #[serde(default)]
+    pub grants_item_modifier: Option<crate::combat::modifiers::ItemModifier>,
 }
 
 fn default_regen_multiplier() -> f32 {
@@ -1034,6 +1039,7 @@ impl OverworldObjectDefinition {
         self.use_effects.restore_health > 0.0
             || self.use_effects.restore_mana > 0.0
             || self.use_effects.regen_duration_seconds > 0.0
+            || self.use_effects.grants_item_modifier.is_some()
             || self.spell_id.is_some()
             || self.learns_recipe.is_some()
             || self.max_charges.is_some()

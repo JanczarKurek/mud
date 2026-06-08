@@ -3,6 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::combat::components::CombatTarget;
 use crate::combat::damage::{DamageEvent, DamageSource, PendingDamageEvents};
+use crate::combat::modifiers::{apply_modifier, ApplyOutcome, ItemModifier};
 use crate::game::commands::{
     GameCommand, InspectTarget, ItemDestination, ItemReference, ItemSlotRef, MoveDelta, UseTarget,
 };
@@ -517,6 +518,28 @@ pub fn process_game_commands(
                     &spell_definitions,
                     &mut command_outputs.ui_events,
                     &mut command_outputs.pending_damage,
+                    &mut commands,
+                );
+            }
+            GameCommand::CastSpellAtItem {
+                source,
+                spell_id,
+                target,
+            } => {
+                handle_cast_spell_at_item(
+                    player_entity,
+                    source,
+                    &spell_id,
+                    target,
+                    &mut container_query,
+                    &object_query,
+                    &mut player_queries.p2(),
+                    &mut command_outputs.player_magic_effects,
+                    &command_outputs.player_class_level,
+                    &mut object_registry,
+                    &definitions,
+                    &spell_definitions,
+                    &mut command_outputs.ui_events,
                     &mut commands,
                 );
             }
@@ -2641,6 +2664,116 @@ fn handle_use_item_on(
                 &target_name,
             ));
         }
+        UseTarget::ItemSlot(target_slot) => {
+            let Ok((_, _, mut inventory_state, mut chat_log_state, _, _, _, _, _)) =
+                player_query.get_mut(player_entity)
+            else {
+                return;
+            };
+            let Some(source_view) = item_reference_view(
+                source,
+                &inventory_state,
+                container_query,
+                object_query,
+                object_registry,
+            ) else {
+                return;
+            };
+            let Some(modifier) = definitions
+                .get(&source_view.type_id)
+                .and_then(|def| def.use_effects.grants_item_modifier.clone())
+            else {
+                chat_log_state.push_narrator("Nothing happens.");
+                return;
+            };
+            // Only consume the source item if the enchantment actually applied
+            // (don't waste a flask on an already-better-enchanted weapon).
+            if apply_item_enchantment(
+                &mut inventory_state,
+                target_slot,
+                modifier,
+                &mut chat_log_state,
+            ) {
+                consume_or_decrement_charge(
+                    source,
+                    &mut inventory_state,
+                    container_query,
+                    object_query,
+                    object_registry,
+                    definitions,
+                    commands,
+                );
+            }
+        }
+    }
+}
+
+/// Resolve a target item slot to its mutable per-instance modifier list.
+/// Supports the player's own backpack, equipment, and pouch sub-slots —
+/// `Container` slots (world objects) are not addressable here and return
+/// `None`. Returns `None` for empty or out-of-range slots too.
+fn item_modifiers_at_mut(
+    inventory: &mut InventoryState,
+    slot: ItemSlotRef,
+) -> Option<&mut Vec<ItemModifier>> {
+    match slot {
+        ItemSlotRef::Backpack(index) => inventory
+            .backpack_slots
+            .get_mut(index)?
+            .as_mut()
+            .map(|stack| &mut stack.modifiers),
+        ItemSlotRef::Equipment(equipment_slot) => inventory
+            .equipment_item_mut(equipment_slot)
+            .map(|item| &mut item.modifiers),
+        ItemSlotRef::PouchInBackpack {
+            backpack_slot,
+            sub_slot,
+        } => inventory
+            .backpack_slots
+            .get_mut(backpack_slot)?
+            .as_mut()?
+            .contained_slots
+            .as_mut()?
+            .get_mut(sub_slot)?
+            .as_mut()
+            .map(|stack| &mut stack.modifiers),
+        ItemSlotRef::Container { .. } => None,
+    }
+}
+
+/// Apply an enchantment modifier to the item at `slot` via the TYPE_EX/LVL
+/// anti-stack rule and report the outcome to the player. Returns `true` when
+/// the modifier was added/upgraded/refreshed (so callers consume the source),
+/// `false` when it was rejected or the slot was invalid.
+fn apply_item_enchantment(
+    inventory: &mut InventoryState,
+    slot: ItemSlotRef,
+    modifier: ItemModifier,
+    chat_log_state: &mut ChatLogState,
+) -> bool {
+    let label = if modifier.label.is_empty() {
+        "The enchantment".to_owned()
+    } else {
+        modifier.label.clone()
+    };
+    let Some(mods) = item_modifiers_at_mut(inventory, slot) else {
+        chat_log_state.push_narrator("There is nothing there to enchant.");
+        return false;
+    };
+    match apply_modifier(mods, modifier) {
+        ApplyOutcome::Added | ApplyOutcome::Upgraded => {
+            chat_log_state.push_narrator(format!("[{label} now imbues the item.]"));
+            true
+        }
+        ApplyOutcome::Refreshed => {
+            chat_log_state.push_narrator(format!("[{label} is renewed.]"));
+            true
+        }
+        ApplyOutcome::Rejected => {
+            chat_log_state
+                .push_narrator("A stronger enchantment of that kind already holds the item.");
+            false
+        }
     }
 }
 
@@ -2675,6 +2808,131 @@ fn find_tool_gate_verb_on_target(
         return Some(interaction.verb.clone());
     }
     None
+}
+
+/// Cast a `targeted_item` spell: apply its `effects.enchant_item` modifier to
+/// the caster's chosen item slot. Mirrors the eligibility / mana / scroll-
+/// consume surface of `handle_cast_spell_at`, but the "target" is one of the
+/// caster's own items rather than a world object. Mana is spent and the scroll
+/// consumed only when the enchantment actually takes (so a rejected weaker
+/// enchant wastes nothing).
+#[allow(clippy::too_many_arguments)]
+fn handle_cast_spell_at_item(
+    player_entity: Entity,
+    source: ItemReference,
+    spell_id: &str,
+    target_slot: ItemSlotRef,
+    container_query: &mut Query<&mut Container>,
+    object_query: &Query<
+        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
+        Without<Player>,
+    >,
+    player_query: &mut Query<
+        (
+            Entity,
+            &PlayerIdentity,
+            &mut InventoryState,
+            &mut ChatLogState,
+            &mut SpaceResident,
+            &mut TilePosition,
+            &mut MovementCooldown,
+            &mut VitalStats,
+            Option<&CombatTarget>,
+        ),
+        With<Player>,
+    >,
+    player_magic_effects_query: &mut Query<&mut crate::magic::effects::MagicEffects, With<Player>>,
+    player_class_level: &Query<
+        (
+            Option<&crate::player::classes::Class>,
+            Option<&crate::player::progression::Experience>,
+        ),
+        With<Player>,
+    >,
+    object_registry: &mut ObjectRegistry,
+    definitions: &OverworldObjectDefinitions,
+    spell_definitions: &SpellDefinitions,
+    ui_events: &mut PendingGameUiEvents,
+    commands: &mut Commands,
+) {
+    let Some(spell) = spell_definitions.get(spell_id) else {
+        return;
+    };
+    let Some(modifier) = spell.effects.enchant_item.clone() else {
+        return;
+    };
+    let Ok((
+        _,
+        _,
+        mut inventory_state,
+        mut chat_log_state,
+        player_space_resident,
+        player_position,
+        _,
+        mut player_vitals,
+        _,
+    )) = player_query.get_mut(player_entity)
+    else {
+        return;
+    };
+
+    // Class + level gating. Same scroll-bypass rule as `handle_cast_spell_at`.
+    let is_scroll = true;
+    let (class, level) = player_class_level
+        .get(player_entity)
+        .map(|(c, e)| (c.copied(), e.map_or(1, |exp| exp.level)))
+        .unwrap_or((None, 1));
+    if let Err(reason) = check_caster_eligibility(spell, is_scroll, class, level) {
+        chat_log_state.push_narrator(reason);
+        return;
+    }
+
+    if let Ok(effects) = player_magic_effects_query.get(player_entity) {
+        if effects.is_paralyzed() {
+            chat_log_state
+                .push_narrator(format!("You're paralyzed and can't cast {}.", spell.name));
+            return;
+        }
+        if effects.is_asleep() {
+            chat_log_state.push_narrator(format!("You're asleep and can't cast {}.", spell.name));
+            return;
+        }
+    }
+
+    if player_vitals.mana < spell.mana_cost {
+        chat_log_state.push_narrator(format!("Not enough mana to cast {}.", spell.name));
+        return;
+    }
+
+    // Apply first; only spend mana / consume the scroll if it took effect.
+    if !apply_item_enchantment(
+        &mut inventory_state,
+        target_slot,
+        modifier,
+        &mut chat_log_state,
+    ) {
+        return;
+    }
+    player_vitals.mana = (player_vitals.mana - spell.mana_cost).max(0.0);
+    let cast_vfx_id = spell
+        .effects
+        .vfx_on_cast
+        .clone()
+        .unwrap_or_else(|| "cast_flash".to_owned());
+    ui_events.push_broadcast(GameUiEvent::VfxSpawn {
+        definition_id: cast_vfx_id,
+        anchor: VfxAnchor::tile(player_space_resident.space_id, *player_position),
+    });
+    chat_log_state.push_line(format!("[Player]: \"{}\"", spell.incantation));
+    consume_or_decrement_charge(
+        source,
+        &mut inventory_state,
+        container_query,
+        object_query,
+        object_registry,
+        definitions,
+        commands,
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4335,7 +4593,12 @@ fn stack_in_slot_ref(
             } else {
                 1
             };
-            InventoryStack::item(item.type_id.clone(), item.properties.clone(), quantity)
+            InventoryStack::with_modifiers(
+                item.type_id.clone(),
+                item.properties.clone(),
+                quantity,
+                item.modifiers.clone(),
+            )
         }),
         ItemSlotRef::Container {
             object_id,
@@ -4381,9 +4644,14 @@ fn take_item_from_slot_ref(
             } else {
                 1
             };
-            inventory_state
-                .take_equipment_item(slot)
-                .map(|item| InventoryStack::item(item.type_id, item.properties, quantity))
+            inventory_state.take_equipment_item(slot).map(|item| {
+                InventoryStack::with_modifiers(
+                    item.type_id,
+                    item.properties,
+                    quantity,
+                    item.modifiers,
+                )
+            })
         }
         ItemSlotRef::Container {
             object_id,
@@ -4598,6 +4866,7 @@ fn restore_stack_to_slot_ref(
                 EquippedItem {
                     type_id: stack.type_id,
                     properties: stack.properties,
+                    modifiers: stack.modifiers,
                 },
             );
             if slot == EquipmentSlot::Ammo {
@@ -5168,6 +5437,7 @@ fn place_item_in_equipment_slot(
         EquippedItem {
             type_id: stack.type_id,
             properties: stack.properties,
+            modifiers: stack.modifiers,
         },
     );
     if placed && slot == EquipmentSlot::Ammo {
@@ -5934,6 +6204,7 @@ mod tests {
                 EquippedItem {
                     type_id: "herb_knife".to_owned(),
                     properties: ObjectProperties::new(),
+                    modifiers: Vec::new(),
                 },
             );
         }
@@ -5989,6 +6260,7 @@ mod tests {
                 EquippedItem {
                     type_id: "herb_knife".to_owned(),
                     properties: ObjectProperties::new(),
+                    modifiers: Vec::new(),
                 },
             );
         }

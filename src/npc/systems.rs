@@ -1778,7 +1778,10 @@ mod tests {
             },
         );
         app.insert_resource(maps);
-        app.insert_resource(FloorTilesetDefinitions::for_test(floor_by_id, HashMap::new()));
+        app.insert_resource(FloorTilesetDefinitions::for_test(
+            floor_by_id,
+            HashMap::new(),
+        ));
 
         // Player and NPC on the second floor (z=2), four tiles apart along x.
         spawn_player(&mut app, 1, TilePosition::new(9, 5, 2));

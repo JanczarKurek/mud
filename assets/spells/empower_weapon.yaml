@@ -1,0 +1,24 @@
+name: Empower Weapon
+incantation: Fortis Aeternum
+mana_cost: 40.0
+targeting: targeted_item
+min_caster_level: 0
+effects:
+  vfx_on_cast: cast_flash
+  enchant_item:
+    type_ex: weapon_might
+    lvl: 1
+    label: "+1 STR"
+    effect:
+      kind: wielder_stats
+      attributes:
+        strength: 1
+        agility: 0
+        constitution: 0
+        willpower: 0
+        charisma: 0
+        focus: 0
+      armor: 0
+      dodge_bonus: 0
+    duration:
+      kind: permanent

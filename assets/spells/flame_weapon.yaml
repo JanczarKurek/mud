@@ -1,0 +1,19 @@
+name: Flame Weapon
+incantation: Ignis Acies
+mana_cost: 14.0
+targeting: targeted_item
+min_caster_level: 0
+effects:
+  vfx_on_cast: cast_flash
+  enchant_item:
+    type_ex: weapon_elemental
+    lvl: 1
+    label: "Flaming (+1d6 fire)"
+    effect:
+      kind: bonus_damage
+      dice: [1, 6]
+      bonus: 0
+      damage_type: fire
+    duration:
+      kind: timed
+      remaining_seconds: 120.0

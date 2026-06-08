@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::combat::damage_expr::DamageExpr;
+use crate::combat::modifiers::ItemModifier;
 use crate::world::components::SpaceId;
 use crate::world::map_layout::ObjectProperties;
 use crate::world::object_definitions::{EquipmentSlot, OverworldObjectDefinitions};
@@ -184,6 +185,10 @@ pub struct InventoryStack {
     pub quantity: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contained_slots: Option<Vec<Option<InventoryStack>>>,
+    /// Per-instance enchantments on this item. Empty for the vast majority of
+    /// items; `#[serde(default)]` keeps older saves backward-compatible.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub modifiers: Vec<ItemModifier>,
 }
 
 /// Key under `ObjectProperties` (string-keyed map) where a per-instance
@@ -202,6 +207,25 @@ impl InventoryStack {
             properties,
             quantity,
             contained_slots: None,
+            modifiers: Vec::new(),
+        }
+    }
+
+    /// Like [`InventoryStack::item`] but preserves per-instance `modifiers`.
+    /// Used by the equip↔unequip transition sites so enchantments survive
+    /// moving an item between an equipment slot and the backpack.
+    pub fn with_modifiers(
+        type_id: impl Into<String>,
+        properties: ObjectProperties,
+        quantity: u32,
+        modifiers: Vec<ItemModifier>,
+    ) -> Self {
+        Self {
+            type_id: type_id.into(),
+            properties,
+            quantity,
+            contained_slots: None,
+            modifiers,
         }
     }
 
@@ -229,6 +253,9 @@ pub struct EquippedItem {
     pub type_id: String,
     #[serde(default)]
     pub properties: ObjectProperties,
+    /// Per-instance enchantments. See [`InventoryStack::modifiers`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub modifiers: Vec<ItemModifier>,
 }
 
 impl EquippedItem {
@@ -236,6 +263,7 @@ impl EquippedItem {
         Self {
             type_id: type_id.into(),
             properties: ObjectProperties::new(),
+            modifiers: Vec::new(),
         }
     }
 }
@@ -269,6 +297,18 @@ impl Inventory {
             .find_map(|(equipment_slot, item)| {
                 if *equipment_slot == slot {
                     item.as_ref()
+                } else {
+                    None
+                }
+            })
+    }
+
+    pub fn equipment_item_mut(&mut self, slot: EquipmentSlot) -> Option<&mut EquippedItem> {
+        self.equipment_slots
+            .iter_mut()
+            .find_map(|(equipment_slot, item)| {
+                if *equipment_slot == slot {
+                    item.as_mut()
                 } else {
                     None
                 }
@@ -333,10 +373,11 @@ impl Inventory {
 
     pub fn ammo_stack(&self) -> Option<InventoryStack> {
         let item = self.equipment_item(EquipmentSlot::Ammo)?;
-        Some(InventoryStack::item(
+        Some(InventoryStack::with_modifiers(
             item.type_id.clone(),
             item.properties.clone(),
             self.ammo_quantity,
+            item.modifiers.clone(),
         ))
     }
 

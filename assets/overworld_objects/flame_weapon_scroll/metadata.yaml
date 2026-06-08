@@ -1,0 +1,9 @@
+extends: pickup
+name: Flame Weapon Scroll
+weight: 0.1
+description: A scroll wreathed in scorch marks. Reading it sheathes a weapon in flame for a time.
+spell_id: flame_weapon
+render:
+  debug_color: [216, 140, 90]
+  debug_size: 0.45
+  sprite_path: overworld_objects/scroll/sprite.png

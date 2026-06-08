@@ -687,6 +687,17 @@ pub struct SpellTargetingState {
     pub spell_id: Option<String>,
 }
 
+/// Active item-target session (`CursorMode::ItemTarget`): the next click on an
+/// inventory/equipment slot resolves to an `ItemSlotRef` and dispatches an
+/// enchant. `spell_id` is `Some` for a `TargetedItem` spell (→ `CastSpellAtItem`)
+/// and `None` for a modifier-granting consumable like a poison flask
+/// (→ `UseItemOn` with `UseTarget::ItemSlot`).
+#[derive(Resource, Default)]
+pub struct ItemTargetingState {
+    pub source: Option<ContextMenuTarget>,
+    pub spell_id: Option<String>,
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum CursorMode {
     #[default]
@@ -697,6 +708,10 @@ pub enum CursorMode {
     /// entity. Used for `SpellTargeting::TargetedTile` spells (firewall,
     /// fireball) where the cast center is the floor itself.
     SpellTargetTile,
+    /// The next left-click on one of the player's own inventory/equipment
+    /// slots resolves to an `ItemSlotRef` and applies an enchantment (from an
+    /// item-target spell or a modifier-granting consumable).
+    ItemTarget,
     AttackTarget,
     /// Athletic jump target selection (Shift+J). The next left-click resolves
     /// to a tile within `JUMP_MAX_RANGE` and submits `GameCommand::JumpTo`.

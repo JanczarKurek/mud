@@ -79,8 +79,8 @@ use crate::ui::quickbar::{
 use crate::ui::resources::{
     ActiveDialogState, BottomPanelVisibility, ContextMenuState, CursorState, DockedPanelDragState,
     DockedPanelResizeState, DockedPanelState, DragState, FloatingMinimapPan, FloatingMinimapZoom,
-    HoveredTile, HudMinimapSettings, OpenMenuState, PendingMenuActions, Quickbar, ShowCoordinates,
-    SpellTargetingState, TakePartialState, TradePopupState, UseOnState,
+    HoveredTile, HudMinimapSettings, ItemTargetingState, OpenMenuState, PendingMenuActions,
+    Quickbar, ShowCoordinates, SpellTargetingState, TakePartialState, TradePopupState, UseOnState,
 };
 use crate::ui::setup::spawn_hud;
 use crate::ui::sprite_state::sync_object_state_visuals;
@@ -90,11 +90,11 @@ use crate::ui::systems::{
     consume_level_up_toasts, handle_attack_targeting, handle_context_menu_actions,
     handle_context_menu_lock_actions, handle_context_menu_opening, handle_context_menu_read_action,
     handle_death_summary_dismiss, handle_docked_panel_close_buttons, handle_docked_panel_dragging,
-    handle_docked_panel_resizing, handle_docked_panel_scrolling, handle_jump_targeting,
-    handle_movable_dragging, handle_nearby_npc_row_clicks, handle_spell_targeting,
-    handle_take_partial_buttons, handle_trade_context_menu_actions, handle_use_on_targeting,
-    manage_open_containers, print_right_sidebar_layout_debug, setup_native_custom_cursor,
-    sync_carry_weight_label, sync_chat_log, sync_container_slot_images,
+    handle_docked_panel_resizing, handle_docked_panel_scrolling, handle_item_targeting,
+    handle_jump_targeting, handle_movable_dragging, handle_nearby_npc_row_clicks,
+    handle_spell_targeting, handle_take_partial_buttons, handle_trade_context_menu_actions,
+    handle_use_on_targeting, manage_open_containers, print_right_sidebar_layout_debug,
+    setup_native_custom_cursor, sync_carry_weight_label, sync_chat_log, sync_container_slot_images,
     sync_context_menu_attack_button, sync_context_menu_force_lock_button,
     sync_context_menu_hide_button, sync_context_menu_interact_button,
     sync_context_menu_offer_to_trade_button, sync_context_menu_open_button,
@@ -144,6 +144,7 @@ impl Plugin for UiPlugin {
         .insert_resource(CursorState::default())
         .insert_resource(UseOnState::default())
         .insert_resource(SpellTargetingState::default())
+        .insert_resource(ItemTargetingState::default())
         .insert_resource(TakePartialState::default())
         .insert_resource(HudMinimapSettings::default())
         .insert_resource(FloatingMinimapZoom::default())
@@ -319,6 +320,12 @@ impl Plugin for UiPlugin {
         .add_systems(
             Update,
             handle_spell_targeting.run_if(in_state(ClientAppState::InGame)),
+        )
+        .add_systems(
+            Update,
+            handle_item_targeting
+                .before(crate::game::CommandIntercept)
+                .run_if(in_state(ClientAppState::InGame)),
         )
         .add_systems(
             Update,
