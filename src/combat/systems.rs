@@ -212,6 +212,7 @@ pub fn resolve_battle_turn(
     mut pending_modifier_consumption: ResMut<PendingModifierConsumption>,
     mut commands: Commands,
 ) {
+    let _t = crate::diagnostics::SystemTimer::new("combat:resolve_battle_turn", 1.0);
     battle_turn_timer.remaining_seconds -= time.delta_secs();
     if battle_turn_timer.remaining_seconds > 0.0 {
         return;

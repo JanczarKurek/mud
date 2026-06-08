@@ -55,8 +55,9 @@ use crate::world::floor_definitions::FloorTilesetDefinitions;
 use crate::world::floor_flavors::{generate_floor_flavor_atlases, FloorFlavorGeneration};
 use crate::world::floor_map::FloorMaps;
 use crate::world::floor_render::{
-    build_floor_render_cells, consume_floor_render_dirty, sync_floor_render_transforms,
-    FloorDebugRender, FloorMaskMap, FloorRenderDirty, FloorRenderState, FloorTilesetAtlases,
+    any_added_floor_cells, build_floor_render_cells, consume_floor_render_dirty,
+    sync_floor_render_transforms, FloorDebugRender, FloorMaskMap, FloorRenderDirty,
+    FloorRenderState, FloorTilesetAtlases,
 };
 use crate::world::floors::{
     recompute_floor_mask_map, recompute_indoor_tile_map, recompute_visible_floors, IndoorTileMap,
@@ -286,9 +287,24 @@ impl Plugin for WorldClientPlugin {
                         consume_floor_render_dirty
                             .after(apply_game_events_to_client_state)
                             .after(build_floor_render_cells),
+                        // Only re-run when a floor cell's transform or tint can
+                        // actually change: the visible-floor range moved, the
+                        // indoor set changed, a floor transition is animating,
+                        // or new cells were just built. The `.after(build_…)`
+                        // edge inserts a sync point so freshly-spawned cells are
+                        // applied before this runs and positioned the same frame
+                        // (otherwise they flash at the origin). Iterating all 4k+
+                        // cells every frame otherwise cost ~8.6ms for no change.
                         sync_floor_render_transforms
                             .after(detect_player_movement)
-                            .after(recompute_visible_floors),
+                            .after(recompute_visible_floors)
+                            .after(build_floor_render_cells)
+                            .run_if(
+                                resource_changed::<VisibleFloorRange>
+                                    .or(resource_changed::<IndoorTileMap>)
+                                    .or(resource_changed::<FloorTransitionOffset>)
+                                    .or(any_added_floor_cells),
+                            ),
                     ),
                     // Animation + camera systems
                     attach_animated_sprite.after(sync_client_world_projection),

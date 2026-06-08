@@ -118,6 +118,7 @@ pub fn update_roaming_npcs(
     mut ui_events: Option<ResMut<PendingGameUiEvents>>,
     mut commands: Commands,
 ) {
+    let _t = crate::diagnostics::SystemTimer::new("npc:update_roaming_npcs", 1.0);
     let elapsed = time.elapsed_secs();
 
     let players: Vec<(Entity, SpaceId, TilePosition)> = player_query
@@ -129,12 +130,15 @@ pub fn update_roaming_npcs(
     // the semantics. Movement is what we pass to `resolve_npc_step` so cascade
     // descent finds an upper-floor surface to land on; LoS is what we pass to
     // `has_line_of_sight` so vision rays stop at painted ceilings.
-    let (blockers, los_blockers) = spatial::build_indices(
-        blocker_query.iter(),
-        definitions.as_deref(),
-        floor_maps.as_deref(),
-        floor_defs.as_deref(),
-    );
+    let (blockers, los_blockers) = {
+        let _t = crate::diagnostics::SystemTimer::new("npc:build_indices", 1.0);
+        spatial::build_indices(
+            blocker_query.iter(),
+            definitions.as_deref(),
+            floor_maps.as_deref(),
+            floor_defs.as_deref(),
+        )
+    };
 
     let npc_tiles: NpcTileIndex = npc_query
         .iter()
@@ -1363,6 +1367,7 @@ fn astar_next_step(
     player_tiles: &PlayerTileSet,
     goal_override: Option<TilePosition>,
 ) -> Option<TilePosition> {
+    let _t = crate::diagnostics::SystemTimer::new("npc:astar", 1.0);
     if start == goal {
         return None;
     }
@@ -2052,7 +2057,7 @@ mod tests {
     fn nearest_visible_player_ignores_other_floors() {
         // Unit-level proof of the detection gate: same XY, only z differs.
         let hostile = default_hostile(20, 20);
-        let blockers: BlockerIndex = HashSet::new();
+        let blockers: BlockerIndex = BlockerIndex::default();
         let npc = TilePosition::ground(5, 5);
 
         let upstairs = vec![(Entity::PLACEHOLDER, TEST_SPACE, TilePosition::new(5, 6, 2))];
@@ -2076,7 +2081,7 @@ mod tests {
         // floor up (dz=2) still fails the gate, so the stairwell LoS leak stays
         // closed.
         let hostile = default_hostile(20, 20);
-        let blockers: BlockerIndex = HashSet::new();
+        let blockers: BlockerIndex = BlockerIndex::default();
         let npc = TilePosition::new(5, 5, 1);
 
         let half_block_up = vec![(Entity::PLACEHOLDER, TEST_SPACE, TilePosition::new(5, 6, 2))];
@@ -2278,7 +2283,7 @@ mod tests {
         // A* should take the first climbing step onto the low stair rather than
         // dead-ending under the player — this is what lets the cross-floor Alert
         // follow a target up the stairs.
-        let mut blockers: BlockerIndex = HashSet::new();
+        let mut blockers: BlockerIndex = BlockerIndex::default();
         blockers.insert((TEST_SPACE, TilePosition::new(6, 5, 0)));
         blockers.insert((TEST_SPACE, TilePosition::new(7, 5, 0)));
         blockers.insert((TEST_SPACE, TilePosition::new(7, 5, 1)));
@@ -2310,7 +2315,7 @@ mod tests {
         // A single-tile chest (Collider at z=0) stands east of the NPC.
         // resolve_npc_step should treat the chest top (z=1) as a valid
         // landing — that's the dz=1 auto-step the player gets for free.
-        let mut blockers: BlockerIndex = HashSet::new();
+        let mut blockers: BlockerIndex = BlockerIndex::default();
         blockers.insert((TEST_SPACE, TilePosition::ground(6, 5)));
 
         let landed =
@@ -2322,7 +2327,7 @@ mod tests {
     fn resolve_npc_step_refuses_unsupported_climb() {
         // (6, 5, 1) is unblocked but has no supporting collider at z=0 —
         // there's nothing to stand on. Flat (6, 5, 0) is what we land on.
-        let mut blockers: BlockerIndex = HashSet::new();
+        let mut blockers: BlockerIndex = BlockerIndex::default();
         // No colliders at all → flat z=0 is the answer.
         let landed =
             resolve_npc_step(TEST_SPACE, TilePosition::ground(5, 5), 1, 0, &blockers).unwrap();
@@ -2340,7 +2345,7 @@ mod tests {
     #[test]
     fn cross_floor_line_of_sight_traces_through_voxels() {
         // Source (0,0,0) → target (3,0,2). With no blockers, LoS holds.
-        let blockers: BlockerIndex = HashSet::new();
+        let blockers: BlockerIndex = BlockerIndex::default();
         assert!(has_line_of_sight(
             TilePosition::ground(0, 0),
             TilePosition::new(3, 0, 2),
@@ -2351,7 +2356,7 @@ mod tests {
         // A wall slab at the interpolated midpoint blocks the line. With
         // dx=3, dz=2 the steps land at (1,0,1), (2,0,1), so a blocker at
         // (2,0,1) sits squarely on the arc.
-        let mut wall: BlockerIndex = HashSet::new();
+        let mut wall: BlockerIndex = BlockerIndex::default();
         wall.insert((TEST_SPACE, TilePosition::new(2, 0, 1)));
         assert!(!has_line_of_sight(
             TilePosition::ground(0, 0),
@@ -2367,7 +2372,7 @@ mod tests {
         // The chest is a Collider at (6, 5, 0); the player perches at (6, 5, 1).
         // A* should choose to climb the chest (dz=1, free auto-step) rather
         // than rejecting the path because it crosses Z.
-        let mut blockers: BlockerIndex = HashSet::new();
+        let mut blockers: BlockerIndex = BlockerIndex::default();
         blockers.insert((TEST_SPACE, TilePosition::ground(6, 5)));
         let npc_tiles: NpcTileIndex = HashMap::new();
         let player_tiles: PlayerTileSet = HashSet::new();

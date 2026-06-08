@@ -57,7 +57,7 @@ use crate::world::resources::ViewScrollOffset;
 use crate::world::WorldConfig;
 
 const SAMPLE_WINDOW: usize = 120;
-const SPIKE_THRESHOLD_MS: f32 = 18.0;
+const SPIKE_THRESHOLD_MS: f32 = 50.0;
 const SPIKE_HISTORY_SECONDS: f32 = 30.0;
 
 pub struct DiagnosticsPlugin;

@@ -28,8 +28,7 @@
 //! the number of colliders + painted-floor cells — much cheaper than the
 //! per-call linear scans the NPC system used to do.
 
-use std::collections::HashSet;
-
+use bevy::platform::collections::HashSet;
 use bevy::prelude::*;
 
 use crate::npc::components::Npc;

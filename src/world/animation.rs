@@ -389,7 +389,16 @@ pub fn tick_view_scroll(time: Res<Time>, mut offset: ResMut<ViewScrollOffset>) {
 
 /// Advances the local player's floor-transition residual toward zero.
 pub fn tick_floor_transition(time: Res<Time>, mut offset: ResMut<FloorTransitionOffset>) {
-    offset.lerp.tick(time.delta_secs());
+    // Only touch the resource while a transition is live. A bare
+    // `offset.lerp.tick(..)` goes through `ResMut`'s `DerefMut`, which marks the
+    // resource changed *every frame* regardless of the early-return inside
+    // `tick` — that would defeat the `resource_changed::<FloorTransitionOffset>`
+    // gate on `sync_floor_render_transforms`. `is_active()` is false the frame
+    // after the lerp completes (tick self-zeroes `duration`), so the final
+    // animating frame still ticks and the first idle frame is correctly skipped.
+    if offset.lerp.is_active() {
+        offset.lerp.tick(time.delta_secs());
+    }
 }
 
 /// Advances per-entity visual offsets toward zero.

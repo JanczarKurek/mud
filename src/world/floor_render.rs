@@ -1,5 +1,5 @@
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::Hasher;
 
 use bevy::prelude::*;
@@ -237,6 +237,7 @@ pub fn build_floor_render_cells(
     world_config: Res<WorldConfig>,
     visible_floors: Res<VisibleFloorRange>,
     mut render_state: ResMut<FloorRenderState>,
+    mut floor_dirty: ResMut<FloorRenderDirty>,
     flavor_gen: Res<crate::world::floor_flavors::FloorFlavorGeneration>,
     floor_debug: Res<FloorDebugRender>,
     floor_mask: Res<FloorMaskMap>,
@@ -244,12 +245,18 @@ pub fn build_floor_render_cells(
     existing: Query<(Entity, &FloorRenderCell)>,
 ) {
     let _t = crate::diagnostics::SystemTimer::new("build_floor_render_cells", 1.0);
-    // A flavored atlas was (re)generated, the floor-debug toggle flipped, or the
-    // floor-mask map changed — drop cached hashes so every floor rebuilds (picks
-    // up the new image, the flat debug-colour view, or new wall clip rects).
-    if *seen_flavor_gen != flavor_gen.0 || floor_debug.is_changed() || floor_mask.is_changed() {
+    // A flavored atlas was (re)generated or the floor-debug toggle flipped — drop
+    // cached hashes so every floor rebuilds (picks up the new image or the flat
+    // debug-colour view). A floor-mask change does NOT force a full rebuild:
+    // mask deltas (a wall streaming into interest range as the player nears a
+    // building) are routed through `FloorRenderDirty` by `recompute_floor_mask_map`
+    // and applied incrementally below — rebuilding only the corners around each
+    // changed tile instead of despawning + respawning every cell (~5k) per step.
+    if *seen_flavor_gen != flavor_gen.0 || floor_debug.is_changed() {
         render_state.built_for.clear();
         *seen_flavor_gen = flavor_gen.0;
+        // A full rebuild supersedes any pending per-tile work.
+        floor_dirty.cells.clear();
     }
     let Some(space) = client_state.current_space.as_ref() else {
         return;
@@ -281,6 +288,20 @@ pub fn build_floor_render_cells(
         }
     }
 
+    // Drain mask-dirty tiles for the active space, partitioned by z. Pushed by
+    // `recompute_floor_mask_map` when a wall's clip rect first appears; consumed
+    // incrementally per z below. Tiles for other spaces stay queued until that
+    // space is active again.
+    let mut dirty_by_z: HashMap<i32, Vec<(i32, i32)>> = HashMap::new();
+    floor_dirty.cells.retain(|(s, dz, x, y)| {
+        if *s == current_space_id {
+            dirty_by_z.entry(*dz).or_default().push((*x, *y));
+            false
+        } else {
+            true
+        }
+    });
+
     for z in z_min..=z_max {
         let key = (current_space_id, z);
         let Some(grid) = client_state.floor_maps.get(&key) else {
@@ -295,12 +316,61 @@ pub fn build_floor_render_cells(
             continue;
         };
         let hash = quick_hash(&grid.tiles);
-        if render_state.built_for.get(&key) == Some(&hash) {
+        let grid_unchanged = render_state.built_for.get(&key) == Some(&hash);
+
+        // Incremental mask rebuild: the grid is unchanged but a few mask tiles
+        // flipped (a wall streamed into interest range as the player neared a
+        // building). Respawn only the up-to-four corner cells that read each
+        // changed tile, instead of the whole floor (~5k cells). Mirrors the
+        // editor's paint-drag incremental path
+        // (`editor::floor_render::editor_build_floor_render_cells`).
+        let dirty_tiles = dirty_by_z.remove(&z).unwrap_or_default();
+        if grid_unchanged && !dirty_tiles.is_empty() {
+            let mut corners: HashSet<(i32, i32)> = HashSet::new();
+            for (tx, ty) in &dirty_tiles {
+                for dy in 0..=1 {
+                    for dx in 0..=1 {
+                        corners.insert((tx + dx, ty + dy));
+                    }
+                }
+            }
+            for (entity, cell) in &existing {
+                if cell.space_id == current_space_id
+                    && cell.z == z
+                    && corners.contains(&(cell.rx, cell.ry))
+                {
+                    commands.entity(entity).despawn();
+                }
+            }
+            for (rx, ry) in corners {
+                if rx < 0 || ry < 0 || rx > grid.width || ry > grid.height {
+                    continue;
+                }
+                spawn_render_cells_at_corner(
+                    &mut commands,
+                    &asset_server,
+                    &mut texture_atlas_layouts,
+                    &mut atlases,
+                    &floor_defs,
+                    &world_config,
+                    &floor_mask,
+                    current_space_id,
+                    z,
+                    rx,
+                    ry,
+                    grid,
+                    floor_debug.debug_color_only,
+                );
+            }
+            continue;
+        }
+        if grid_unchanged {
             continue;
         }
 
-        // Despawn only the cells we're about to rebuild — leave other floors
-        // untouched so vertical movement doesn't churn the entire space.
+        // Full rebuild: cold floor or the grid hash changed. Despawn only the
+        // cells we're about to rebuild — leave other floors untouched so vertical
+        // movement doesn't churn the entire space.
         for (entity, cell) in &existing {
             if cell.space_id == current_space_id && cell.z == z {
                 commands.entity(entity).despawn();
@@ -890,6 +960,17 @@ fn spawn_transition_cell(
 /// by content hash in `build_floor_render_cells` catches every change, so this
 /// is a no-op.
 pub fn consume_floor_render_dirty(_dirty: ResMut<FloorRenderDirty>) {}
+
+/// Run-condition for [`sync_floor_render_transforms`]: true when any
+/// `FloorRenderCell` was spawned since this condition last ran. Freshly built
+/// cells carry a placeholder `Transform` at `(0, 0)` (see
+/// `spawn_render_cells_at_corner`) and must be positioned the same frame they
+/// appear, even when no gating resource changed — otherwise they'd flash at the
+/// map origin for a frame. Paired with the `.after(build_floor_render_cells)`
+/// ordering edge so the spawn commands are applied before this is evaluated.
+pub fn any_added_floor_cells(added: Query<(), Added<FloorRenderCell>>) -> bool {
+    !added.is_empty()
+}
 
 pub fn sync_floor_render_transforms(
     client_state: Res<ClientGameState>,

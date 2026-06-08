@@ -6,7 +6,7 @@ use crate::world::components::{floor_index, SpaceId};
 use crate::world::direction::Direction;
 use crate::world::floor_definitions::FloorTilesetDefinitions;
 use crate::world::floor_map::FloorMap;
-use crate::world::floor_render::FloorMaskMap;
+use crate::world::floor_render::{FloorMaskMap, FloorRenderDirty};
 use crate::world::object_definitions::OverworldObjectDefinitions;
 
 /// How many floors above the player we'll scan upward in search of an
@@ -118,7 +118,20 @@ pub fn recompute_indoor_tile_map(
     mut map: ResMut<IndoorTileMap>,
 ) {
     let _t = crate::diagnostics::SystemTimer::new("recompute_indoor_tile_map", 1.0);
-    map.tiles.clear();
+    // Sticky accumulation, same rationale as `recompute_floor_mask_map`: roof /
+    // occluder objects are static structure, but they stream in and out of the
+    // server's INTEREST_RADIUS as the player moves. Rebuilding the set from
+    // scratch made it churn on every step, which marked this resource changed and
+    // forced `sync_floor_render_transforms` to re-tint *every* floor cell (~9ms)
+    // each step near a building. We only ADD newly-discovered indoor tiles: a
+    // covered tile stays covered when its occluder streams back out (it's
+    // off-screen, and still correct on return). Floor-map occluders are part of
+    // the always-resident grid, so those are stable regardless.
+    //
+    // Trade-off (as with the mask map): an occluder removed *in gameplay* keeps
+    // its tile tinted indoor until the resource is rebuilt. Roofs aren't
+    // destructible, so this only affects nothing in practice.
+    let mut to_insert = Vec::new();
     for object in client_state.world_objects.values() {
         let occludes = definitions
             .get(&object.definition_id)
@@ -127,12 +140,18 @@ pub fn recompute_indoor_tile_map(
             continue;
         }
         let tile = object.tile_position;
-        map.tiles.insert((
+        let key = (
             object.position.space_id,
             tile.x,
             tile.y,
             floor_index(tile.z) - 1,
-        ));
+        );
+        // Immutable `.contains` does not trip change detection; only the gated
+        // `insert` loop below takes the `ResMut`, so floors re-tint solely when a
+        // genuinely-new indoor tile appears.
+        if !map.tiles.contains(&key) {
+            to_insert.push(key);
+        }
     }
     // FloorMap tiles whose tileset has `occludes_floor_above` cover the floor
     // immediately below them, the same way object occluders do. This is what
@@ -142,10 +161,16 @@ pub fn recompute_indoor_tile_map(
         for y in 0..grid.height {
             for x in 0..grid.width {
                 if floormap_tile_occludes(Some(grid), &floor_defs, x, y) {
-                    map.tiles.insert((*space_id, x, y, target_floor));
+                    let key = (*space_id, x, y, target_floor);
+                    if !map.tiles.contains(&key) {
+                        to_insert.push(key);
+                    }
                 }
             }
         }
+    }
+    for key in to_insert {
+        map.tiles.insert(key);
     }
 }
 
@@ -157,9 +182,26 @@ pub fn recompute_floor_mask_map(
     client_state: Res<ClientGameState>,
     definitions: Res<OverworldObjectDefinitions>,
     mut map: ResMut<FloorMaskMap>,
+    mut floor_dirty: ResMut<FloorRenderDirty>,
 ) {
     let _t = crate::diagnostics::SystemTimer::new("recompute_floor_mask_map", 1.0);
-    let mut next = std::collections::HashMap::new();
+    // Sticky accumulation. Walls (the objects that carry `floor_mask_rect`) are
+    // static map structure, but they stream in and out of the server's
+    // INTEREST_RADIUS as the player moves (see `game::projection`). Rebuilding
+    // the rect set from scratch each frame made it churn on every step, which
+    // marked this resource changed and forced `build_floor_render_cells` to
+    // despawn + respawn *every* floor cell (~4k entities) — the movement
+    // frame-spike, and why the F10 floor-hide vanished after a step. Instead we
+    // only ADD/UPDATE rects as walls appear: a wall that streams back out keeps
+    // its rect (the floor it clips is off-screen anyway, and the rect is still
+    // correct when it returns). Each wall therefore costs at most one rebuild,
+    // the first time it is seen; re-walking explored ground is free.
+    //
+    // Trade-off: a `floor_mask_rect` object removed *in gameplay* keeps its clip
+    // until the next full rebuild. Structural walls aren't destructible, and the
+    // editor uses its own non-sticky `editor_recompute_floor_mask_map`, so this
+    // only affects the in-game view.
+    let mut to_insert = Vec::new();
     for object in client_state.world_objects.values() {
         let Some(rect) = definitions
             .get(&object.definition_id)
@@ -168,20 +210,25 @@ pub fn recompute_floor_mask_map(
             continue;
         };
         let tile = object.tile_position;
-        next.insert(
-            (
-                object.position.space_id,
-                floor_index(tile.z),
-                tile.x,
-                tile.y,
-            ),
-            rect,
+        let key = (
+            object.position.space_id,
+            floor_index(tile.z),
+            tile.x,
+            tile.y,
         );
+        // Immutable `.get` does not trip change detection; only the `insert`
+        // loop below (gated on a real diff) takes the `ResMut` mutably, so the
+        // resource is marked changed solely when a new or moved clip rect
+        // actually appears. Each genuinely-changed tile is queued in
+        // `FloorRenderDirty` so `build_floor_render_cells` rebuilds just the
+        // corners around it instead of the whole floor.
+        if map.rects.get(&key) != Some(&rect) {
+            to_insert.push((key, rect));
+            floor_dirty.cells.push(key);
+        }
     }
-    // Only mark the resource changed (which forces a floor rebuild) when the set
-    // of clip rects actually differs — this runs every frame.
-    if map.rects != next {
-        map.rects = next;
+    for (key, rect) in to_insert {
+        map.rects.insert(key, rect);
     }
 }
 
@@ -219,7 +266,7 @@ pub fn should_apply_indoor_tint(
 /// Window of floor indices currently rendered on the client. Recomputed each
 /// frame from the local player's position plus the covering tiles above them.
 /// Consumed by `sync_tile_transforms` to cull/dim by floor.
-#[derive(Resource, Clone, Copy, Debug, Default)]
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct VisibleFloorRange {
     /// Floor index of the player (`floor_index(player.z)`). Used for culling
     /// and floor-bucketed checks (visible-range, indoor-tile lookups).
@@ -284,10 +331,18 @@ pub fn recompute_visible_floors(
     // guarantees the player's own floor is always inside the range.
     let space_min_z = floor_min_z(&client_state, space_id, player_floor);
 
-    range.player_floor = player_floor;
-    range.player_z = player_pos.tile_position.z;
-    range.lowest_visible = space_min_z.min(player_floor);
-    range.highest_visible = highest_visible;
+    // Compare-and-set so the resource is only marked changed when the range
+    // actually moves — the `resource_changed::<VisibleFloorRange>` gate on
+    // `sync_floor_render_transforms` relies on this to skip idle frames.
+    let next = VisibleFloorRange {
+        player_floor,
+        player_z: player_pos.tile_position.z,
+        lowest_visible: space_min_z.min(player_floor),
+        highest_visible,
+    };
+    if *range != next {
+        *range = next;
+    }
 }
 
 /// Minimum `z` of all `FloorMap`s in `space_id`, with `player_floor` as a
@@ -609,6 +664,227 @@ render:
             range.highest_visible,
             2 + MAX_FLOORS_ABOVE,
             "no roof above player → full upper scan"
+        );
+    }
+
+    /// Records whether a resource was change-flagged when the recorder ran.
+    #[derive(Resource, Default)]
+    struct ObservedChange(bool);
+
+    fn record_indoor_changed(map: Res<IndoorTileMap>, mut obs: ResMut<ObservedChange>) {
+        obs.0 = map.is_changed();
+    }
+
+    fn record_range_changed(range: Res<VisibleFloorRange>, mut obs: ResMut<ObservedChange>) {
+        obs.0 = range.is_changed();
+    }
+
+    /// Regression for the floor-render gate: a second identical rebuild must NOT
+    /// mark `IndoorTileMap` changed, otherwise `sync_floor_render_transforms`
+    /// would re-run (iterating all 4k+ cells) every frame.
+    #[test]
+    fn recompute_indoor_tile_map_stable_when_unchanged() {
+        use crate::game::resources::ClientGameState;
+        use crate::world::floor_definitions::FloorTilesetDefinition;
+        use crate::world::floor_map::FloorMap;
+        use std::collections::HashMap;
+
+        let space = SpaceId(21);
+        let mut state = ClientGameState::default();
+        let mut grid = FloorMap::new_filled(10, 10, None);
+        grid.set(5, 5, Some("wooden_floor".to_string()));
+        state.floor_maps.insert((space, 1), grid);
+
+        let defs = OverworldObjectDefinitions::new_for_test(HashMap::new());
+        let mut floor_by_id = HashMap::new();
+        floor_by_id.insert(
+            "wooden_floor".to_string(),
+            FloorTilesetDefinition {
+                id: "wooden_floor".to_string(),
+                name: "Wooden Floor".to_string(),
+                priority: 100,
+                tile_size_px: 16,
+                atlas_path: None,
+                debug_color: [0, 0, 0],
+                occludes_floor_above: true,
+                walkable_surface: true,
+                variants: HashMap::new(),
+                ripple: None,
+            },
+        );
+        let floor_defs = FloorTilesetDefinitions::for_test(floor_by_id, HashMap::new());
+
+        let mut app = App::new();
+        app.insert_resource(state);
+        app.insert_resource(defs);
+        app.insert_resource(floor_defs);
+        app.insert_resource(IndoorTileMap::default());
+        app.insert_resource(ObservedChange::default());
+        app.add_systems(
+            Update,
+            (
+                recompute_indoor_tile_map,
+                record_indoor_changed.after(recompute_indoor_tile_map),
+            ),
+        );
+
+        app.update();
+        assert!(
+            app.world().resource::<ObservedChange>().0,
+            "first build should mark IndoorTileMap changed"
+        );
+        app.update();
+        assert!(
+            !app.world().resource::<ObservedChange>().0,
+            "second identical rebuild must NOT mark IndoorTileMap changed"
+        );
+    }
+
+    /// Same regression for `VisibleFloorRange`.
+    #[test]
+    fn recompute_visible_floors_stable_when_unchanged() {
+        use crate::game::resources::ClientGameState;
+        use crate::world::components::{SpacePosition, TilePosition};
+        use crate::world::floor_map::FloorMap;
+        use std::collections::HashMap;
+
+        let space = SpaceId(31);
+        let mut state = ClientGameState {
+            player_position: Some(SpacePosition::new(space, TilePosition::new(0, 0, 4))),
+            ..Default::default()
+        };
+        state.floor_maps.insert((space, 0), FloorMap::default());
+        let defs = OverworldObjectDefinitions::new_for_test(HashMap::new());
+
+        let mut app = App::new();
+        app.insert_resource(state);
+        app.insert_resource(defs);
+        app.insert_resource(FloorTilesetDefinitions::default());
+        app.insert_resource(VisibleFloorRange::default());
+        app.insert_resource(ObservedChange::default());
+        app.add_systems(
+            Update,
+            (
+                recompute_visible_floors,
+                record_range_changed.after(recompute_visible_floors),
+            ),
+        );
+
+        app.update();
+        assert!(
+            app.world().resource::<ObservedChange>().0,
+            "first compute should mark VisibleFloorRange changed"
+        );
+        app.update();
+        assert!(
+            !app.world().resource::<ObservedChange>().0,
+            "second identical compute must NOT mark VisibleFloorRange changed"
+        );
+    }
+
+    fn record_mask_changed(map: Res<FloorMaskMap>, mut obs: ResMut<ObservedChange>) {
+        obs.0 = map.is_changed();
+    }
+
+    /// A wall's clip rect must survive the object streaming out of interest
+    /// range, and a steady set must not re-mark the resource changed — otherwise
+    /// every step despawns + respawns all floor cells (the movement spike).
+    #[test]
+    fn floor_mask_map_is_sticky_across_object_streaming() {
+        use crate::game::resources::{ClientGameState, ClientWorldObjectState};
+        use crate::world::components::{SpacePosition, TilePosition};
+        use crate::world::object_definitions::OverworldObjectDefinition;
+        use std::collections::HashMap;
+
+        let yaml = r#"
+name: Wall
+description: ""
+colliding: true
+movable: false
+storable: false
+render:
+  z_index: 0.3
+  debug_color: [0, 0, 0]
+  debug_size: 1.0
+  floor_mask_rect: [0.0, 0.0, 0.5, 1.0]
+"#;
+        let def: OverworldObjectDefinition = serde_yaml::from_str(yaml).expect("definition parses");
+        let mut defs_map = HashMap::new();
+        defs_map.insert("wall".to_string(), def);
+        let defs = OverworldObjectDefinitions::new_for_test(defs_map);
+
+        let space = SpaceId(5);
+        let mut state = ClientGameState::default();
+        state.world_objects.insert(
+            1,
+            ClientWorldObjectState {
+                object_id: 1,
+                definition_id: "wall".to_string(),
+                position: SpacePosition::new(space, TilePosition::ground(3, 4)),
+                tile_position: TilePosition::ground(3, 4),
+                vitals: None,
+                is_container: false,
+                is_npc: false,
+                is_movable: false,
+                is_rotatable: false,
+                quantity: 1,
+                has_dialog: false,
+                facing: Direction::default(),
+                state: None,
+                is_shopkeeper: false,
+                is_hidden: false,
+                is_hostile: false,
+                is_targeting_local_player: false,
+                placement_seq: 0,
+            },
+        );
+
+        let mut app = App::new();
+        app.insert_resource(state);
+        app.insert_resource(defs);
+        app.insert_resource(FloorMaskMap::default());
+        app.insert_resource(FloorRenderDirty::default());
+        app.insert_resource(ObservedChange::default());
+        app.add_systems(
+            Update,
+            (
+                recompute_floor_mask_map,
+                record_mask_changed.after(recompute_floor_mask_map),
+            ),
+        );
+
+        app.update();
+        assert_eq!(
+            app.world().resource::<FloorMaskMap>().get(space, 0, 3, 4),
+            Some([0.0, 0.0, 0.5, 1.0]),
+            "wall clip rect recorded on first sight"
+        );
+        assert!(
+            app.world().resource::<ObservedChange>().0,
+            "first sighting marks FloorMaskMap changed (floors rebuild once)"
+        );
+
+        // Steady state: same object, no change → must not re-mark changed.
+        app.update();
+        assert!(
+            !app.world().resource::<ObservedChange>().0,
+            "unchanged wall set must NOT re-mark FloorMaskMap changed"
+        );
+
+        // Wall streams out of interest radius (server stops replicating it).
+        app.world_mut()
+            .resource_mut::<ClientGameState>()
+            .world_objects
+            .clear();
+        app.update();
+        assert_eq!(
+            app.world().resource::<FloorMaskMap>().get(space, 0, 3, 4),
+            Some([0.0, 0.0, 0.5, 1.0]),
+            "clip rect persists after the wall streams out (sticky)"
+        );
+        assert!(
+            !app.world().resource::<ObservedChange>().0,
+            "streaming a wall out must NOT mark FloorMaskMap changed (no respawn)"
         );
     }
 }

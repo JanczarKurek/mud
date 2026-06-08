@@ -251,6 +251,7 @@ fn accumulator_for_kind(accs: &mut Vec<(EffectKind, f32)>, kind: EffectKind) -> 
 /// drop expired entries, and prune per-kind tick accumulators whose kind has
 /// no surviving entries. Server-side only; gated by `simulation_active`.
 pub fn tick_magic_effects(time: Res<Time>, mut query: Query<&mut MagicEffects>) {
+    let _t = crate::diagnostics::SystemTimer::new("magic:tick_magic_effects", 1.0);
     let dt = time.delta_secs();
     if dt <= 0.0 {
         return;
@@ -287,6 +288,7 @@ pub fn tick_dot_effects(
     >,
     mut pending_damage: ResMut<PendingDamageEvents>,
 ) {
+    let _t = crate::diagnostics::SystemTimer::new("magic:tick_dot_effects", 1.0);
     let dt = time.delta_secs();
     if dt <= 0.0 {
         return;
