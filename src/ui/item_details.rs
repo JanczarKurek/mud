@@ -12,7 +12,6 @@ use bevy::text::{Justify, LineBreak, TextLayout};
 use bevy::window::PrimaryWindow;
 
 use crate::app::state::ClientAppState;
-use crate::combat::modifiers::ModifierEffect;
 use crate::game::resources::ClientGameState;
 use crate::magic::resources::{SpellDefinitions, SpellTargeting};
 use crate::player::components::{InventoryStack, CHARGES_KEY};
@@ -579,73 +578,22 @@ fn spawn_enchantments_section(
     }
     spawn_section_header(parent, palette, "Enchantments");
     for modifier in &stack.modifiers {
-        let name = if modifier.label.is_empty() {
-            modifier_effect_summary(&modifier.effect)
-        } else {
-            modifier.label.clone()
-        };
-        spawn_colored_property_row(
-            parent,
-            palette,
-            &name,
-            &modifier.duration.describe(),
-            Color::srgb(0.70, 0.60, 0.95),
-        );
-    }
-}
-
-/// One-line fallback summary of a modifier effect, used when the modifier has
-/// no authored `label`.
-fn modifier_effect_summary(effect: &ModifierEffect) -> String {
-    match effect {
-        ModifierEffect::BonusDamage {
-            dice,
-            bonus,
-            damage_type,
-        } => {
-            let dice_str = match dice {
-                Some((count, sides)) => format!("{count}d{sides}"),
-                None => String::new(),
-            };
-            let bonus_str = if *bonus != 0 {
-                format!("{bonus:+}")
-            } else {
-                String::new()
-            };
-            format!("+{dice_str}{bonus_str} {} dmg", damage_type.display_name())
-        }
-        ModifierEffect::OnHit { chance, spec } => {
-            format!(
-                "{}% {:?} on hit",
-                (chance * 100.0).round() as i32,
-                spec.kind
-            )
-        }
-        ModifierEffect::WielderStats {
-            attributes,
-            armor,
-            dodge_bonus,
-        } => {
-            let parts: Vec<String> = [
-                ("STR", attributes.strength),
-                ("AGI", attributes.agility),
-                ("CON", attributes.constitution),
-                ("WIL", attributes.willpower),
-                ("CHA", attributes.charisma),
-                ("FOC", attributes.focus),
-                ("Armor", *armor),
-                ("Dodge", *dodge_bonus),
-            ]
-            .into_iter()
-            .filter(|(_, v)| *v != 0)
-            .map(|(name, v)| format!("{v:+} {name}"))
-            .collect();
-            if parts.is_empty() {
-                "stat bonus".to_owned()
-            } else {
-                parts.join(", ")
-            }
-        }
+        // One wrapping line per enchantment: flavor label + mechanical summary
+        // (DoT per-second + total for on-hit effects) + remaining duration /
+        // charges. `inspect_line` is the shared formatter in `combat::modifiers`.
+        parent.spawn((
+            Text::new(format!("  {}", modifier.inspect_line())),
+            TextFont {
+                font_size: 12.0,
+                ..default()
+            },
+            TextColor(Color::srgb(0.70, 0.60, 0.95)),
+            TextLayout::new(Justify::Left, LineBreak::WordBoundary),
+            Node {
+                width: percent(100.0),
+                ..default()
+            },
+        ));
     }
 }
 

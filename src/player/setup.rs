@@ -6,10 +6,11 @@ use crate::magic::effects::MagicEffects;
 use crate::persistence::{PlayerStateDump, WorldSnapshotStatus};
 use crate::player::classes::Class;
 use crate::player::components::{
-    AppearanceRegion, BaseStats, ChatLog, DefenseStats, DerivedStats, DiscoveredTiles,
-    EquippedItem, Inventory, InventoryStack, MovementCooldown, Player, PlayerAppearance, PlayerId,
-    PlayerIdentity, RegenBuffs, RegenTickers, SpriteLayer, VitalStats, WeaponDamage,
+    AppearanceRegion, BaseStats, ChatLog, DefenseStats, DerivedStats, DiscoveredTiles, Inventory,
+    MovementCooldown, Player, PlayerAppearance, PlayerId, PlayerIdentity, RegenBuffs, RegenTickers,
+    SpriteLayer, VitalStats, WeaponDamage,
 };
+use crate::player::loadout::StartingLoadout;
 use crate::player::progression::Experience;
 use crate::player::skills::SkillSheet;
 use crate::world::components::{
@@ -17,88 +18,10 @@ use crate::world::components::{
     SpaceResident, TilePosition, ViewPosition,
 };
 use crate::world::lighting::LightSource;
-use crate::world::map_layout::ObjectProperties;
-use crate::world::object_definitions::{EquipmentSlot, OverworldObjectDefinitions};
+use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::setup::{attach_combat_health_bar, build_object_visual_bundle};
 use crate::world::WorldConfig;
-
-/// Populate a fresh player's inventory with a starter shortbow + arrows so the
-/// ranged-combat showcase is immediately playable.
-pub fn seed_starter_inventory(inventory: &mut Inventory) {
-    inventory.restore_equipment_item(EquipmentSlot::Weapon, EquippedItem::new("bow"));
-    inventory.set_ammo(EquippedItem::new("arrow"), 20);
-    // Seed a handful of apples so the `demo_villager` fetch quest (turn-in
-    // condition: 3 apples) is demoable without chasing items across the map.
-    if let Some(slot) = inventory
-        .backpack_slots
-        .iter_mut()
-        .find(|slot| slot.is_none())
-    {
-        *slot = Some(InventoryStack::item(
-            "apple".to_owned(),
-            ObjectProperties::new(),
-            3,
-        ));
-    }
-    // Seed enough coin to demo trading: 5 gold + 5 silver + 20 copper. Enough
-    // to buy from the villager shopkeeper (apples 4c, sword 3g, armor 5g).
-    for (type_id, qty) in [
-        (crate::game::currency::GOLD_TYPE_ID, 5u32),
-        (crate::game::currency::SILVER_TYPE_ID, 5u32),
-        (crate::game::currency::COPPER_TYPE_ID, 20u32),
-    ] {
-        if let Some(slot) = inventory
-            .backpack_slots
-            .iter_mut()
-            .find(|slot| slot.is_none())
-        {
-            *slot = Some(InventoryStack::item(
-                type_id.to_owned(),
-                ObjectProperties::new(),
-                qty,
-            ));
-        }
-    }
-    // Seed the gathering toolkit so a new player can immediately try fishing,
-    // herb-picking, and mining without first earning coin. Tools live in the
-    // backpack; the player swaps one into the weapon slot to use it.
-    for tool_id in ["fishing_rod", "pickaxe", "herb_knife"] {
-        if let Some(slot) = inventory
-            .backpack_slots
-            .iter_mut()
-            .find(|slot| slot.is_none())
-        {
-            *slot = Some(InventoryStack::item(
-                tool_id.to_owned(),
-                ObjectProperties::new(),
-                1,
-            ));
-        }
-    }
-    // Seed an enchantment demo kit: a melee weapon to equip plus the two
-    // weapon-enchant scrolls and a poison flask, so the item-modifier system is
-    // immediately demoable. Equip the sword, then read a scroll / use the flask
-    // and pick the weapon as the target.
-    for type_id in [
-        "bronze_sword",
-        "flame_weapon_scroll",
-        "empower_weapon_scroll",
-        "poison_flask",
-    ] {
-        if let Some(slot) = inventory
-            .backpack_slots
-            .iter_mut()
-            .find(|slot| slot.is_none())
-        {
-            *slot = Some(InventoryStack::item(
-                type_id.to_owned(),
-                ObjectProperties::new(),
-                1,
-            ));
-        }
-    }
-}
 
 /// Spawn the **projected** local-player entity for TcpClient mode. The
 /// authoritative player lives on the server; the client only carries a
@@ -158,6 +81,7 @@ pub fn spawn_embedded_player_authoritative(
     db: Option<Res<crate::accounts::AccountDbHandle>>,
     mut var_stores: Option<ResMut<crate::dialog::resources::CharacterVarStores>>,
     selected: Option<Res<crate::app::state::LocalSelectedCharacter>>,
+    loadout: Res<StartingLoadout>,
 ) {
     if snapshot_status
         .as_ref()
@@ -233,7 +157,7 @@ pub fn spawn_embedded_player_authoritative(
         );
         if needs_starter_seed {
             let mut starter = Inventory::default();
-            seed_starter_inventory(&mut starter);
+            loadout.apply_to(&mut starter);
             commands.entity(entity).insert(starter);
         }
         if let Some(stores) = var_stores.as_deref_mut() {
@@ -253,7 +177,7 @@ pub fn spawn_embedded_player_authoritative(
         display_name,
     );
     let mut starter = Inventory::default();
-    seed_starter_inventory(&mut starter);
+    loadout.apply_to(&mut starter);
     commands.entity(entity).insert(starter);
 }
 

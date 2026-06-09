@@ -10,7 +10,7 @@ use_effects:
   grants_item_modifier:
     type_ex: weapon_coating
     lvl: 1
-    label: "Poisoned (20 hits)"
+    label: "Poisoned"
     effect:
       kind: on_hit
       chance: 1.0

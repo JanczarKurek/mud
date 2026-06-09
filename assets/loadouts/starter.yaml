@@ -1,0 +1,47 @@
+# Starting loadout granted to every brand-new character.
+#
+# Schema (see docs/yaml_formats.md → "Loadout files"):
+#   equipment: items worn from the start.
+#     - slot:     one of amulet, helmet, weapon, armor, shield, legs,
+#                 backpack, ring, boots, ammo
+#       type_id:  directory name under assets/overworld_objects/
+#       quantity: only meaningful for `ammo` (the stack count); defaults to 1
+#       modifiers: optional per-instance enchantments (same shape as a spell's
+#                 enchant_item effect) — lets gear ship pre-buffed
+#   backpack: items dropped into the first free backpack slots.
+#       type_id / quantity / properties / modifiers, same as above
+
+equipment:
+  # Starter shortbow + arrows so ranged combat is immediately playable.
+  - slot: weapon
+    type_id: bow
+  - slot: ammo
+    type_id: arrow
+    quantity: 20
+
+backpack:
+  # Apples for the `demo_villager` fetch quest (turn-in: 3 apples).
+  # - type_id: apple
+  #   quantity: 3
+
+  # Coin to demo trading: 5 gold + 5 silver + 20 copper. Enough to buy from the
+  # villager shopkeeper (apples 4c, sword 3g, armor 5g).
+  # - type_id: gold_coin
+  #   quantity: 5
+  # - type_id: silver_coin
+  #   quantity: 5
+  # - type_id: copper_coin
+  #   quantity: 20
+
+  # Gathering toolkit: swap one into the weapon slot to fish / mine / pick herbs.
+  - type_id: fishing_rod
+  - type_id: pickaxe
+  - type_id: herb_knife
+
+  # Enchantment demo kit: a melee weapon to equip plus the two weapon-enchant
+  # scrolls and a poison flask, so the item-modifier system is demoable. Equip
+  # the sword, then read a scroll / use the flask and pick the weapon as target.
+  - type_id: bronze_sword
+  - type_id: flame_weapon_scroll
+  - type_id: empower_weapon_scroll
+  - type_id: poison_flask

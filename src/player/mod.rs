@@ -2,6 +2,7 @@ pub mod admin_progression;
 pub mod classes;
 pub mod components;
 pub mod lifecycle;
+pub mod loadout;
 pub mod progression;
 pub mod regen;
 pub mod setup;
@@ -36,6 +37,7 @@ impl Plugin for PlayerServerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PendingPlayerDeaths>()
             .init_resource::<PendingXpGrants>()
+            .insert_resource(crate::player::loadout::StartingLoadout::load_from_disk())
             .add_systems(Update, refresh_derived_player_stats)
             .add_systems(
                 Update,

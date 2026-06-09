@@ -2617,14 +2617,10 @@ pub fn handle_context_menu_opening(
         if let Some(stack) = stack_in_slot_kind(&client_state, &docked_panel_state, slot_kind) {
             let definition = definitions.get(&stack.type_id);
             let can_use = definition.is_some_and(|d| d.is_usable());
-            let has_use_on = ObjectRegistry::resolved_spell_id_for_type(
-                &stack.type_id,
-                Some(&stack.properties),
-                &definitions,
-                &spell_definitions,
-            )
-            .is_some()
-                || can_use;
+            // Only gathering tools do anything when "used on" a world target; see
+            // `is_use_on_capable`. Spell scrolls / enchant consumables / potions
+            // target through the "Use" verb's own pickers instead.
+            let has_use_on = is_use_on_capable(&stack.type_id, &definitions);
             // "Open" enabled for *inventory* pouches (a Backpack slot whose
             // item carries `contained_slots`). Pouches inside world
             // containers and equipment-slot pouches are intentionally
@@ -4234,7 +4230,15 @@ pub(crate) fn stack_in_slot_kind(
             } else {
                 1
             };
-            InventoryStack::item(item.type_id.clone(), item.properties.clone(), quantity)
+            // Preserve per-instance enchantments so the item-details popup can
+            // list them — `InventoryStack::item` would drop them, hiding a worn
+            // weapon's buffs in the inspect box.
+            InventoryStack::with_modifiers(
+                item.type_id.clone(),
+                item.properties.clone(),
+                quantity,
+                item.modifiers.clone(),
+            )
         }),
         ItemSlotKind::TradeUs { index } => client_state
             .current_trade
@@ -4499,16 +4503,24 @@ fn can_use_on(
     let Some(type_id) = object_registry.type_id(object_id) else {
         return false;
     };
-    let Some(definition) = definitions.get(type_id) else {
-        return false;
-    };
 
-    // Any usable item can target — gathering tools, untargeted spell scrolls,
-    // healing items used on other players, etc. The server resolves what the
-    // action actually does; the menu just opens the picker. Items carrying a
-    // *targeted* spell route through `CursorMode::SpellTarget` separately at
-    // click time (see `handle_context_menu_clicks`).
-    definition.is_usable()
+    // "Use On" enters world-target mode (`CursorMode::UseOn`), and the server's
+    // `handle_use_item_on` only does anything for a world target when the source
+    // is a gathering tool matching the target's `tool_gate` (pickaxe→ore vein,
+    // etc.). Other "usable" items resolve their targets through the "Use" button
+    // instead — targeted spells via `CursorMode::SpellTarget`, enchant
+    // consumables via `CursorMode::ItemTarget`, self-use directly — so offering
+    // "Use On" for them just opens a picker that does nothing. Gate strictly on
+    // tool-ness so the verb only appears where it acts.
+    is_use_on_capable(type_id, definitions)
+}
+
+/// Whether an item type does something when used on a world target via the
+/// "Use On" verb. Today that means it is a gathering tool referenced by some
+/// object's `tool_gate`; everything else targets through the "Use" verb's own
+/// pickers, so showing "Use On" for it would be a no-op.
+fn is_use_on_capable(type_id: &str, definitions: &OverworldObjectDefinitions) -> bool {
+    definitions.is_gathering_tool(type_id)
 }
 
 /// True when the context-menu target item's definition grants an item modifier

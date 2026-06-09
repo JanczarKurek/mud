@@ -2372,3 +2372,66 @@ Library functions (read-only, callable from `<<if …>>` expressions):
 The set of allowed skills mirrors `docs/progression.md §5`: `Athletics`,
 `Stealth`, `Perception`, `Lore`, `Spellcraft`, `Persuasion`, `Survival`,
 `Heal`, `Thievery`, `Concentration`.
+
+## 9. Starting Loadout YAML
+
+Path:
+- `assets/loadouts/starter.yaml`
+
+Purpose:
+- Defines the inventory a brand-new character is granted on first login. Loaded
+  server-side into the `StartingLoadout` resource (`src/player/loadout.rs`) and
+  applied by `StartingLoadout::apply_to` when a fresh character is seeded
+  (embedded mode in `spawn_embedded_player_authoritative`, TCP in
+  `handle_select_character`). The file stem **must** be `starter` — the loader
+  panics at startup if no `starter.yaml` is found under any `loadouts` asset dir.
+
+Top-level fields (both optional, default to empty):
+
+### `equipment`
+- Type: list of equipment entries
+- Meaning: items the character starts wearing. Each entry:
+  - `slot` (string, required): which slot to fill — one of `amulet`, `helmet`,
+    `weapon`, `armor`, `shield`, `legs`, `backpack`, `ring`, `boots`, `ammo`
+    (snake_case, matching `EquipmentSlot`).
+  - `type_id` (string, required): the item type — a directory name under
+    `assets/overworld_objects/`.
+  - `quantity` (int, optional, default `1`): only meaningful for `slot: ammo`,
+    where it becomes the ammo stack count. Ignored for single-item slots.
+  - `properties` (map of string→string, optional): per-instance properties
+    (e.g. a scroll's `spell_id`).
+  - `modifiers` (list, optional): per-instance enchantments — see
+    [Item modifiers](#item-modifiers-enchantments). Lets starting gear ship
+    pre-buffed (e.g. a flaming starter sword) entirely from data.
+
+### `backpack`
+- Type: list of item entries
+- Meaning: items dropped into the first free backpack slots, in order. Each
+  entry takes `type_id`, `quantity` (default `1`), `properties`, and `modifiers`
+  with the same meaning as an `equipment` entry (minus `slot`). Entries that
+  find no free backpack slot are warned and dropped.
+
+Example:
+
+```yaml
+equipment:
+  - slot: weapon
+    type_id: bow
+  - slot: ammo
+    type_id: arrow
+    quantity: 20
+backpack:
+  - type_id: apple
+    quantity: 3
+  - type_id: bronze_sword
+    modifiers:
+      - type_ex: flaming
+        lvl: 1
+        label: "Flaming (+1d6 fire)"
+        effect:
+          kind: bonus_damage
+          dice: [1, 6]
+          damage_type: fire
+        duration:
+          kind: permanent
+```

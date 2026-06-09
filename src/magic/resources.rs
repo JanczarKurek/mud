@@ -177,6 +177,26 @@ pub enum EffectKind {
     Drunk,
 }
 
+impl EffectKind {
+    /// Short, lowercase, player-facing name. Used in tooltips and the inspect
+    /// chat line where `{:?}` Debug output ("Poisoned") reads worse than prose.
+    pub fn display_name(self) -> &'static str {
+        match self {
+            EffectKind::Glimmer => "glimmer",
+            EffectKind::Haste => "haste",
+            EffectKind::Shield => "shield",
+            EffectKind::Bless => "bless",
+            EffectKind::Slow => "slow",
+            EffectKind::Sleep => "sleep",
+            EffectKind::Paralyze => "paralyze",
+            EffectKind::Chill => "chill",
+            EffectKind::Burning => "burning",
+            EffectKind::Poisoned => "poison",
+            EffectKind::Drunk => "drunk",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]

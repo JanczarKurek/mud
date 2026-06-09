@@ -21,9 +21,8 @@ use crate::network::resources::{
 };
 use crate::network::transport::{ClientTransport, ServerTransport};
 use crate::player::components::{Inventory, Player, PlayerId};
-use crate::player::setup::{
-    seed_starter_inventory, spawn_player_authoritative_in_space, spawn_player_from_dump,
-};
+use crate::player::loadout::StartingLoadout;
+use crate::player::setup::{spawn_player_authoritative_in_space, spawn_player_from_dump};
 use crate::world::components::{Collider, SpaceResident, TilePosition};
 use crate::world::map_layout::SpaceDefinitions;
 use crate::world::object_registry::ObjectRegistry;
@@ -287,6 +286,7 @@ pub fn poll_tcp_server_messages(
     collider_query: Query<(&SpaceResident, &TilePosition), With<Collider>>,
     player_position_query: Query<(&SpaceResident, &TilePosition), With<Player>>,
     mut object_registry: ResMut<ObjectRegistry>,
+    loadout: Res<StartingLoadout>,
     mut commands: Commands,
 ) {
     let connection_ids = server_state.peers.keys().copied().collect::<Vec<_>>();
@@ -370,6 +370,7 @@ pub fn poll_tcp_server_messages(
                         &collider_query,
                         &player_position_query,
                         &mut object_registry,
+                        &loadout,
                         &mut disconnected,
                     );
                 }
@@ -677,6 +678,7 @@ fn handle_select_character(
     collider_query: &Query<(&SpaceResident, &TilePosition), With<Collider>>,
     player_position_query: &Query<(&SpaceResident, &TilePosition), With<Player>>,
     object_registry: &mut ObjectRegistry,
+    loadout: &StartingLoadout,
     disconnected: &mut bool,
 ) {
     let Some(account_id) = peer.account_id() else {
@@ -756,7 +758,7 @@ fn handle_select_character(
         );
         if needs_starter_seed {
             let mut starter = Inventory::default();
-            seed_starter_inventory(&mut starter);
+            loadout.apply_to(&mut starter);
             commands.entity(entity).insert(starter);
         }
         if let Some(stores) = var_stores {
@@ -790,7 +792,7 @@ fn handle_select_character(
             display_name,
         );
         let mut starter = Inventory::default();
-        seed_starter_inventory(&mut starter);
+        loadout.apply_to(&mut starter);
         commands.entity(entity).insert(starter);
         entity
     };

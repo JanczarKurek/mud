@@ -37,6 +37,36 @@ pub struct ItemModifier {
     pub label: String,
 }
 
+impl ItemModifier {
+    /// One player-facing line for the inspect chat / tooltips:
+    /// `"{headline} — {duration}"`. For [`ModifierEffect::OnHit`] the mechanical
+    /// [`ModifierEffect::summary`] is always surfaced (a flavor `label` rarely
+    /// carries the DoT numbers a player wants), shown in parens after the label.
+    /// Other effects prefer the authored `label` when present (it already states
+    /// the mechanic), falling back to the summary.
+    pub fn inspect_line(&self) -> String {
+        let duration = self.duration.describe();
+        let headline = match &self.effect {
+            ModifierEffect::OnHit { .. } => {
+                let mech = self.effect.summary();
+                if self.label.is_empty() {
+                    mech
+                } else {
+                    format!("{} ({mech})", self.label)
+                }
+            }
+            _ => {
+                if self.label.is_empty() {
+                    self.effect.summary()
+                } else {
+                    self.label.clone()
+                }
+            }
+        };
+        format!("{headline} — {duration}")
+    }
+}
+
 /// What a modifier does.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
@@ -67,6 +97,88 @@ pub enum ModifierEffect {
         #[serde(default)]
         dodge_bonus: i32,
     },
+}
+
+/// Format an `f32` as a compact number: no trailing `.0` for whole values
+/// (`3.0 → "3"`), one decimal otherwise (`2.5 → "2.5"`).
+fn compact_f32(value: f32) -> String {
+    if value.fract() == 0.0 {
+        format!("{}", value as i64)
+    } else {
+        format!("{value:.1}")
+    }
+}
+
+impl ModifierEffect {
+    /// One-line mechanical summary of what this effect does, used by the inspect
+    /// chat line and the item-details popup. For [`ModifierEffect::OnHit`] with a
+    /// DoT spec (poison / burning / chill) the per-second damage and approximate
+    /// total are included; non-DoT on-hit effects show just the applied duration.
+    pub fn summary(&self) -> String {
+        match self {
+            ModifierEffect::BonusDamage {
+                dice,
+                bonus,
+                damage_type,
+            } => {
+                let dice_str = match dice {
+                    Some((count, sides)) => format!("{count}d{sides}"),
+                    None => String::new(),
+                };
+                let bonus_str = if *bonus != 0 {
+                    format!("{bonus:+}")
+                } else {
+                    String::new()
+                };
+                format!("+{dice_str}{bonus_str} {} dmg", damage_type.display_name())
+            }
+            ModifierEffect::OnHit { chance, spec } => {
+                let pct = (chance * 100.0).round() as i32;
+                let kind_name = spec.kind.display_name();
+                // A DoT spec deals `magnitude` damage per 1s tick (see
+                // `magic::effects::DOT_TICK_INTERVAL_SECONDS`), so the total over
+                // its lifetime is ~ magnitude * seconds.
+                if crate::magic::effects::dot_damage_type(spec.kind).is_some() {
+                    let total = (spec.magnitude * spec.seconds).round() as i32;
+                    format!(
+                        "{pct}% chance: {kind_name} {}/s for {}s (~{total} dmg)",
+                        compact_f32(spec.magnitude),
+                        compact_f32(spec.seconds),
+                    )
+                } else {
+                    format!(
+                        "{pct}% chance: {kind_name} for {}s",
+                        compact_f32(spec.seconds)
+                    )
+                }
+            }
+            ModifierEffect::WielderStats {
+                attributes,
+                armor,
+                dodge_bonus,
+            } => {
+                let parts: Vec<String> = [
+                    ("STR", attributes.strength),
+                    ("AGI", attributes.agility),
+                    ("CON", attributes.constitution),
+                    ("WIL", attributes.willpower),
+                    ("CHA", attributes.charisma),
+                    ("FOC", attributes.focus),
+                    ("Armor", *armor),
+                    ("Dodge", *dodge_bonus),
+                ]
+                .into_iter()
+                .filter(|(_, v)| *v != 0)
+                .map(|(name, v)| format!("{v:+} {name}"))
+                .collect();
+                if parts.is_empty() {
+                    "stat bonus".to_owned()
+                } else {
+                    parts.join(", ")
+                }
+            }
+        }
+    }
 }
 
 /// How long a modifier lasts.
@@ -377,5 +489,98 @@ duration:
         let s = serde_yaml::to_string(&m).unwrap();
         let back: ItemModifier = serde_yaml::from_str(&s).unwrap();
         assert_eq!(m, back);
+    }
+
+    use crate::magic::resources::{EffectKind, EffectSpec};
+
+    fn poison_spec(magnitude: f32, seconds: f32) -> EffectSpec {
+        EffectSpec {
+            kind: EffectKind::Poisoned,
+            magnitude,
+            seconds,
+            secondary_magnitude: None,
+        }
+    }
+
+    #[test]
+    fn bonus_damage_summary_formats_dice_and_bonus() {
+        let with_bonus = ModifierEffect::BonusDamage {
+            dice: Some((1, 6)),
+            bonus: 2,
+            damage_type: DamageType::Fire,
+        };
+        assert_eq!(with_bonus.summary(), "+1d6+2 fire dmg");
+        let no_bonus = ModifierEffect::BonusDamage {
+            dice: Some((1, 6)),
+            bonus: 0,
+            damage_type: DamageType::Fire,
+        };
+        assert_eq!(no_bonus.summary(), "+1d6 fire dmg");
+    }
+
+    #[test]
+    fn dot_on_hit_summary_includes_dps_and_total() {
+        let effect = ModifierEffect::OnHit {
+            chance: 0.3,
+            spec: poison_spec(3.0, 6.0),
+        };
+        assert_eq!(effect.summary(), "30% chance: poison 3/s for 6s (~18 dmg)");
+    }
+
+    #[test]
+    fn non_dot_on_hit_summary_shows_duration_only() {
+        let effect = ModifierEffect::OnHit {
+            chance: 0.5,
+            spec: EffectSpec {
+                kind: EffectKind::Slow,
+                magnitude: 2.0,
+                seconds: 4.0,
+                secondary_magnitude: None,
+            },
+        };
+        assert_eq!(effect.summary(), "50% chance: slow for 4s");
+    }
+
+    #[test]
+    fn wielder_stats_summary_lists_nonzero_terms() {
+        let effect = ModifierEffect::WielderStats {
+            attributes: AttributeSet::new(2, 0, 0, 0, 0, 0),
+            armor: 1,
+            dodge_bonus: -1,
+        };
+        assert_eq!(effect.summary(), "+2 STR, +1 Armor, -1 Dodge");
+    }
+
+    #[test]
+    fn inspect_line_prefers_label_for_bonus_damage() {
+        let mut m = timed("flaming", 1, 0.0);
+        m.duration = ModifierDuration::Permanent;
+        m.label = "Flaming (+1d6 fire)".to_owned();
+        assert_eq!(m.inspect_line(), "Flaming (+1d6 fire) — permanent");
+    }
+
+    #[test]
+    fn inspect_line_falls_back_to_summary_without_label() {
+        // `timed` builds a 1d6 fire BonusDamage with an empty label.
+        let m = timed("fire", 1, 12.0);
+        assert_eq!(m.inspect_line(), "+1d6 fire dmg — 12s");
+    }
+
+    #[test]
+    fn inspect_line_onhit_surfaces_mechanics_even_with_label() {
+        let m = ItemModifier {
+            type_ex: "venom".to_owned(),
+            lvl: 1,
+            effect: ModifierEffect::OnHit {
+                chance: 0.3,
+                spec: poison_spec(3.0, 6.0),
+            },
+            duration: ModifierDuration::Charges { remaining: 18 },
+            label: "Venom coating".to_owned(),
+        };
+        assert_eq!(
+            m.inspect_line(),
+            "Venom coating (30% chance: poison 3/s for 6s (~18 dmg)) — 18 hits"
+        );
     }
 }
