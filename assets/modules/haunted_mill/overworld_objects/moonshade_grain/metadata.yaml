@@ -1,0 +1,8 @@
+extends: pickup
+name: Sack of Moonshade Grain
+weight: 3.0
+description: A heavy burlap sack of pale grain that glows the faint silver-white of moonlight on water — the last harvest Old Maple brought in and never lived to mill.
+render:
+  debug_color: [200, 210, 180]
+  debug_size: 0.5
+  sprite_path: modules/haunted_mill/overworld_objects/moonshade_grain/sprite.png

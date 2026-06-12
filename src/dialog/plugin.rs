@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use bevy::prelude::*;
 use bevy_yarnspinner::prelude::*;
@@ -26,9 +26,16 @@ pub struct DialogServerPlugin;
 impl Plugin for DialogServerPlugin {
     fn build(&self, app: &mut App) {
         let yarn_dir: PathBuf = PathBuf::from("dialogs");
-        app.add_plugins(YarnSpinnerPlugin::with_yarn_source(YarnFileSource::folder(
-            yarn_dir,
-        )))
+        let mut yarn_plugin =
+            YarnSpinnerPlugin::with_yarn_source(YarnFileSource::folder(yarn_dir));
+        // Per-module dialog packs live at assets/modules/<name>/dialogs/*.yarn.
+        // `YarnFileSource::folder` globs `**/*.yarn` recursively, so a single
+        // source rooted at `modules` loads every module's dialog. Added only when
+        // the folder exists, because the folder source errors on a missing dir.
+        if Path::new("assets/modules").is_dir() {
+            yarn_plugin = yarn_plugin.add_yarn_source(YarnFileSource::folder("modules"));
+        }
+        app.add_plugins(yarn_plugin)
         .insert_resource(DialogSessionRegistry::default())
         .insert_resource(PendingDialogOptions::default())
         .insert_resource(CharacterVarStores::default())

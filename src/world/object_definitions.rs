@@ -239,6 +239,13 @@ pub enum TextKind {
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct NpcBehaviorDefaults {
+    /// When true, this NPC's *synthesized* default behavior (used when it is
+    /// spawned/placed without an explicit map behavior — e.g. via `world.spawn`)
+    /// is `RoamAndChase`: it chases and attacks players on sight. Peaceful NPCs
+    /// (questgivers, shopkeepers) leave this false and stand their ground. An
+    /// explicit map `behavior:` always overrides this default.
+    #[serde(default)]
+    pub hostile: bool,
     pub step_interval_seconds: f32,
     #[serde(default)]
     pub step_interval_jitter_seconds: f32,
@@ -1147,12 +1154,12 @@ pub struct OverworldObjectDefinitions {
 impl OverworldObjectDefinitions {
     pub fn load_from_disk() -> Self {
         let resolver = AssetResolver::new();
-        let scan_dirs = resolver.scan_dirs("overworld_objects");
+        let scan_dirs = resolver.scan_dirs_with_prefix("overworld_objects");
 
         let base_values = load_base_values();
         let mut raw_definition_values = HashMap::new();
 
-        for scan_dir in &scan_dirs {
+        for (id_prefix, scan_dir) in &scan_dirs {
             info!(
                 "loading overworld object definitions from {}",
                 scan_dir.display()
@@ -1173,13 +1180,18 @@ impl OverworldObjectDefinitions {
                     continue;
                 };
 
+                // Module objects register under `<module>/<dirname>`; core under
+                // the bare dirname. `extends:` still resolves against the (core)
+                // base classes, so `extends: npc` works from inside a module.
+                let type_id = format!("{id_prefix}{directory_name}");
+
                 let metadata_path = path.join("metadata.yaml");
                 info!(
                     "loading overworld object metadata {}",
                     metadata_path.display()
                 );
                 raw_definition_values.insert(
-                    directory_name.to_owned(),
+                    type_id,
                     load_yaml_value(&metadata_path, "overworld object metadata"),
                 );
             }

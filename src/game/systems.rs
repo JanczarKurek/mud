@@ -4284,7 +4284,7 @@ fn handle_admin_spawn(
     } else {
         object_registry.allocate_runtime_id_with_properties(type_id.to_owned(), initial_properties)
     };
-    spawn_overworld_object(
+    let entity = spawn_overworld_object(
         commands,
         definitions,
         object_registry,
@@ -4295,6 +4295,21 @@ fn handle_admin_spawn(
         tile_position,
         None,
     );
+    // A complete NPC definition (one with an `npc_behavior:` block) realizes as a
+    // proper, talkable/targetable NPC even when admin-spawned without an explicit
+    // map behavior — matching how the map/editor path spawns it.
+    if let Some(behavior) =
+        crate::world::setup::default_npc_behavior(Some(definition), tile_position)
+    {
+        crate::world::setup::realize_npc(
+            commands,
+            entity,
+            Some(definition),
+            object_id,
+            type_id,
+            &behavior,
+        );
+    }
     chat_log_state.push_narrator(format!(
         "Spawned {} as id {} at ({}, {}).",
         type_id, object_id, tile_position.x, tile_position.y

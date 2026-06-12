@@ -10,6 +10,10 @@ const SYNC_DIRS: &[&str] = &[
     "maps",
     "spells",
     "floors",
+    // Per-module content bundles (assets/modules/<name>/…). `collect_entries`
+    // recurses, so the whole module tree — sprites, object/spell YAML, dialog —
+    // syncs to TcpClients under its `modules/<name>/…` relative path.
+    "modules",
 ];
 
 pub fn build_server_manifest() -> Vec<AssetEntry> {

@@ -33,6 +33,14 @@ impl Plugin for QuestPlugin {
             .clone()
             .unwrap_or_else(|| PathBuf::from("assets/quests"));
         engine.load_from(&dir);
+        // Per-module quest packs: assets/modules/<name>/quests/*.py. Each quest
+        // registers under `<name>/<stem>` so its id matches the qualified
+        // `<<start_quest>>` / `<<complete_quest>>` arguments build-module emits.
+        // `load_from*` accumulates into the engine (rebuilding subscriptions each
+        // call), overlaying module quests on top of the global ones.
+        for (module, module_quests) in crate::assets::module_dirs_with_names("quests") {
+            engine.load_from_with_prefix(&module_quests, &format!("{module}/"));
+        }
 
         app.insert_non_send_resource(engine)
             .insert_resource(PendingQuestCommands::default())

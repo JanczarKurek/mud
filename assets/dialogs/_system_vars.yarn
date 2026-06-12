@@ -1,0 +1,11 @@
+title: MudSystemVars
+---
+// Engine-populated Yarn variables, declared ONCE for the whole project.
+// The <<skill_check "Skill" DC>> command writes these; any dialog — core or
+// module — may READ $last_skill_check_success / $last_skill_check_total, but
+// must never <<declare>> them again (Yarn variables share one project-wide
+// namespace, and a second declaration is a hard Y001 compile error).
+<<declare $last_skill_check_success = false>>
+<<declare $last_skill_check_total = 0>>
+This node is never entered; it exists only to declare system variables.
+===

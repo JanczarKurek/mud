@@ -1,0 +1,47 @@
+title: HauntedMillOldMaple
+---
+<<declare $mill_last_grain_started = false>>
+<<declare $mill_last_grain_done = false>>
+<<declare $mill_last_grain_persuaded = false>>
+// $last_skill_check_success / $last_skill_check_total are project-global system
+// vars (declared once in assets/dialogs/_system_vars.yarn) — used, not declared.
+
+<<if $mill_last_grain_done>>
+    Old Maple: Bless you, traveler. The grain is milled and I can rest at last.
+<<elseif $mill_last_grain_started>>
+    <<if has_item("haunted_mill/moonshade_grain", 1)>>
+        Old Maple: You found it — the last of my moonshade grain. After all this time.
+        -> Hand over the grain.
+            <<take_item "haunted_mill/moonshade_grain" 1>>
+            <<give_item "potion" 1>>
+            <<give_item "copper_coin" 15>>
+            <<set $mill_last_grain_done to true>>
+            Old Maple: One last good milling. Thank you, truly. Here — from the old strongbox.
+        -> [Persuade] Surely a ghost's final wish is worth more than a few coppers?  <<if skill_rank("Persuasion") > 0 and $mill_last_grain_persuaded == false>>
+            <<skill_check "Persuasion" 15>>
+            <<set $mill_last_grain_persuaded to true>>
+            <<if $last_skill_check_success>>
+                Old Maple: ...you have a kind and cunning tongue, traveler. Take this silver too.
+                <<take_item "haunted_mill/moonshade_grain" 1>>
+                <<give_item "potion" 1>>
+                <<give_item "copper_coin" 15>>
+                <<give_item "silver_coin" 3>>
+                <<set $mill_last_grain_done to true>>
+            <<else>>
+                Old Maple: A miller pays what is fair — no more, no less. But I thank you all the same.
+            <<endif>>
+        -> Let me hold onto it a moment longer.
+            Old Maple: Of course. There is no hurry now, not for me.
+    <<else>>
+        Old Maple: Have you found the moonshade grain? It's down in the flooded cellar — mind the rats.
+    <<endif>>
+<<else>>
+    Old Maple: Oh — a living soul. Forgive the rats; they came with the damp.
+    Old Maple: There is one last sack of grain I never milled, the morning I... well. Would you fetch it up for me?
+    -> I'll fetch your grain, Maple.
+        <<set $mill_last_grain_started to true>>
+        Old Maple: Bless you. It's in the cellar below. Bring it up, and I'll mill it one last time.
+    -> Not now.
+        Old Maple: I'll wait. I have nothing now but time.
+<<endif>>
+===

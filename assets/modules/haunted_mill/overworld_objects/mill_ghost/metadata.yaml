@@ -1,0 +1,44 @@
+extends: npc
+name: Old Maple
+description: A translucent, pale-blue badger in a flour-dusted apron, stooped from a lifetime over the millstones. He frets over ledgers that will never balance now — polite, and unbearably sad.
+dialog_node: HauntedMillOldMaple
+level: 2
+stats:
+  strength: 6
+  agility: 8
+  constitution: 10
+  willpower: 12
+  charisma: 11
+  focus: 13
+hp: "2d8+constitution"
+# A peaceful questgiver: the `npc_behavior` block is what marks this as a
+# (complete) NPC, so it spawns as a talkable, stationary NPC. `hostile: false`
+# keeps it from chasing; an explicit map behavior can still override this.
+npc_behavior:
+  hostile: false
+  step_interval_seconds: 1.5
+  detect_distance_tiles: 5
+  disengage_distance_tiles: 8
+render:
+  debug_color: [150, 180, 210]
+  debug_size: 0.9
+  y_sort: true
+  animation:
+    sheet_path: modules/haunted_mill/overworld_objects/mill_ghost/sheet.png
+    frame_width: 32
+    frame_height: 48
+    sheet_columns: 4
+    sheet_rows: 2
+    clips:
+      idle:
+        row: 0
+        start_col: 0
+        frame_count: 4
+        fps: 3.0
+        looping: true
+      walk:
+        row: 1
+        start_col: 0
+        frame_count: 4
+        fps: 8.0
+        looping: true

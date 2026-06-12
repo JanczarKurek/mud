@@ -6,8 +6,8 @@ title: FriendlyVillager
 <<declare $hunter_ready = false>>
 <<declare $hunter_complete = false>>
 <<declare $persuaded_for_bonus = false>>
-<<declare $last_skill_check_success = false>>
-<<declare $last_skill_check_total = 0>>
+// $last_skill_check_success / $last_skill_check_total are declared once in
+// _system_vars.yarn (project-global); used here, not re-declared.
 
 <<if $hunter_complete>>
     Villager: You've kept the rats at bay and fed me apples. Truly a hero.

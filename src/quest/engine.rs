@@ -78,6 +78,14 @@ impl QuestEngine {
     /// logged per-file; one bad quest shouldn't prevent the others from
     /// loading.
     pub fn load_from(&mut self, dir: &Path) {
+        self.load_from_with_prefix(dir, "");
+    }
+
+    /// Like [`load_from`](Self::load_from), but registers each quest under
+    /// `<id_prefix><file-stem>`. Module quests pass `"<module>/"` so their ids
+    /// match the qualified `<<start_quest>>` / `<<complete_quest>>` arguments
+    /// that `build-module` emits; core quests pass `""`.
+    pub fn load_from_with_prefix(&mut self, dir: &Path, id_prefix: &str) {
         let entries = match fs::read_dir(dir) {
             Ok(entries) => entries,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
@@ -98,7 +106,7 @@ impl QuestEngine {
         files.sort();
 
         for path in files {
-            if let Err(err) = self.load_file(&path) {
+            if let Err(err) = self.load_file(&path, id_prefix) {
                 warn!("failed to load quest {}: {err}", path.display());
             }
         }
@@ -111,12 +119,12 @@ impl QuestEngine {
         );
     }
 
-    fn load_file(&mut self, path: &Path) -> Result<(), String> {
-        let name = path
+    fn load_file(&mut self, path: &Path, id_prefix: &str) -> Result<(), String> {
+        let stem = path
             .file_stem()
             .and_then(|s| s.to_str())
-            .ok_or_else(|| "invalid filename".to_owned())?
-            .to_owned();
+            .ok_or_else(|| "invalid filename".to_owned())?;
+        let name = format!("{id_prefix}{stem}");
         let source = fs::read_to_string(path).map_err(|e| e.to_string())?;
 
         let (scope, default_state, subscribes_to, on_start, on_event, on_command) =

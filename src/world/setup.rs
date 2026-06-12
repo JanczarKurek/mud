@@ -20,7 +20,8 @@ use crate::world::components::{
 use crate::world::direction::Direction;
 use crate::world::floor_map::FloorMaps;
 use crate::world::map_layout::{
-    PortalDefinition, ResolvedObject, SpaceDefinition, SpaceDefinitions, SpacePermanence,
+    MapBehavior, PortalDefinition, ResolvedObject, SpaceDefinition, SpaceDefinitions,
+    SpacePermanence, TileRectangle,
 };
 use crate::world::object_definitions::{
     AttackProfileKindDef, OverworldObjectDefinition, OverworldObjectDefinitions, StatModifiers,
@@ -265,114 +266,154 @@ pub fn spawn_overworld_object_instance(
         }
     }
 
-    if let Some(behavior) = &object.behavior {
-        let definition = definitions.get(&object.type_id);
-        let base_stats = npc_base_stats_from_definition(definition);
-        let derived_stats = DerivedStats::from_base(&base_stats);
-        let max_health = definition
-            .and_then(|d| d.hp.as_deref())
-            .and_then(|raw| DamageExpr::parse(raw).ok())
-            .map(|expr| expr.roll(&derived_stats.attributes).max(1))
-            .unwrap_or(derived_stats.max_health) as f32;
-        let max_mana = derived_stats.max_mana as f32;
-        let (attack_profile, weapon_damage) = attack_profile_for_definition(definition);
-        let level = definition.and_then(|d| d.level).unwrap_or(1);
-        let defense_stats = DefenseStats {
-            armor: definition.map(|d| d.armor).unwrap_or(0),
-            block: definition.map(|d| d.block).unwrap_or(0),
-            dodge_bonus: definition.map(|d| d.dodge_bonus).unwrap_or(0),
-            block_chance: definition.map(|d| d.block_chance).unwrap_or(0),
-        };
-        {
-            let mut entity_commands = commands.entity(entity);
-            entity_commands.insert((
-                Npc,
-                attack_profile,
-                weapon_damage,
-                base_stats,
-                derived_stats,
-                VitalStats::full(max_health, max_mana),
-                defense_stats,
-                crate::player::progression::Experience::at_level(level),
-            ));
-
-            // Deterministic per-NPC jitter so that NPCs don't all decrement
-            // their step timers in lockstep — without this, every
-            // `step_interval_seconds` boundary the entire NPC population fires
-            // `update_roaming_npcs`'s search on the same frame and produces a
-            // visible spike. Spreads the work across all frames in the cycle.
-            let seed = object.id.wrapping_mul(1_103_515_245).wrapping_add(12_345);
-            let jitter_frac = (seed % 1024) as f32 / 1024.0;
-
-            let bounds = behavior.bounds();
-            let hostile = behavior.hostile();
-            let Some(npc_defaults) = definition.and_then(|d| d.npc_behavior.as_ref()) else {
-                warn!(
-                    "spawn for '{}' has a MapBehavior but the template has no \
-                     `npc_behavior:` block — skipping behavior attachment",
-                    object.type_id
-                );
-                return entity;
-            };
-            let step = npc_defaults.step_interval_seconds.max(0.05);
-            let jitter = if npc_defaults.step_interval_jitter_seconds > 0.0 {
-                npc_defaults.step_interval_jitter_seconds
-            } else {
-                step * 0.3
-            };
-            entity_commands.insert((
-                RoamingBehavior {
-                    bounds: RoamBounds {
-                        min_x: bounds.min_x,
-                        min_y: bounds.min_y,
-                        max_x: bounds.max_x,
-                        max_y: bounds.max_y,
-                    },
-                    step_interval_seconds: step,
-                    step_interval_jitter_seconds: jitter,
-                    idle_pause_chance: npc_defaults.idle_pause_chance,
-                    momentum_bias: npc_defaults.momentum_bias,
-                },
-                RoamingStepTimer {
-                    remaining_seconds: jitter_frac * step,
-                },
-                RoamingRandomState { seed },
-                AiState::default(),
-                AiMemory::default(),
-            ));
-            if hostile {
-                let detect = npc_defaults.detect_distance_tiles.max(1);
-                let disengage = npc_defaults.disengage_distance_tiles.max(detect);
-                entity_commands.insert((
-                    HostileBehavior {
-                        detect_distance_tiles: detect,
-                        disengage_distance_tiles: disengage,
-                        alert_duration_seconds: npc_defaults.alert_duration_seconds,
-                        requires_line_of_sight: npc_defaults.requires_line_of_sight,
-                    },
-                    CombatLeash {
-                        max_distance_tiles: disengage,
-                    },
-                ));
-            }
-            if let Some(def) = definition {
-                if !def.barks.aggro.is_empty() || !def.barks.mutter.is_empty() {
-                    entity_commands.insert(Barks {
-                        aggro: def.barks.aggro.clone(),
-                        mutter: def.barks.mutter.clone(),
-                    });
-                }
-            }
-            if let Some(profile) = definition
-                .and_then(|d| d.spellcasting.as_ref())
-                .map(|def| def.to_component())
-            {
-                entity_commands.insert(profile);
-            }
-        }
+    // A complete NPC definition (one with an `npc_behavior:` block) realizes on
+    // spawn even when placed without an explicit map behavior — see
+    // `default_npc_behavior`. An explicit `object.behavior` always wins.
+    let definition = definitions.get(&object.type_id);
+    if let Some(behavior) =
+        object.behavior.or_else(|| default_npc_behavior(definition, tile_position))
+    {
+        realize_npc(commands, entity, definition, object.id, &object.type_id, &behavior);
     }
 
     entity
+}
+
+/// Attach the server-authoritative NPC components to an already-spawned entity:
+/// the `Npc` marker, combat stats/vitals/defense, and — when the definition
+/// ships an `npc_behavior:` block — roaming AI (plus `HostileBehavior` for a
+/// chasing `behavior`). Shared by map placement (`spawn_overworld_object_instance`)
+/// and admin/script spawning (`handle_admin_spawn`) so a complete NPC definition
+/// realizes identically however it enters the world.
+pub fn realize_npc(
+    commands: &mut Commands,
+    entity: Entity,
+    definition: Option<&OverworldObjectDefinition>,
+    object_id: u64,
+    type_id: &str,
+    behavior: &MapBehavior,
+) {
+    let _ = type_id;
+    let base_stats = npc_base_stats_from_definition(definition);
+    let derived_stats = DerivedStats::from_base(&base_stats);
+    let max_health = definition
+        .and_then(|d| d.hp.as_deref())
+        .and_then(|raw| DamageExpr::parse(raw).ok())
+        .map(|expr| expr.roll(&derived_stats.attributes).max(1))
+        .unwrap_or(derived_stats.max_health) as f32;
+    let max_mana = derived_stats.max_mana as f32;
+    let (attack_profile, weapon_damage) = attack_profile_for_definition(definition);
+    let level = definition.and_then(|d| d.level).unwrap_or(1);
+    let defense_stats = DefenseStats {
+        armor: definition.map(|d| d.armor).unwrap_or(0),
+        block: definition.map(|d| d.block).unwrap_or(0),
+        dodge_bonus: definition.map(|d| d.dodge_bonus).unwrap_or(0),
+        block_chance: definition.map(|d| d.block_chance).unwrap_or(0),
+    };
+
+    let mut entity_commands = commands.entity(entity);
+    entity_commands.insert((
+        Npc,
+        attack_profile,
+        weapon_damage,
+        base_stats,
+        derived_stats,
+        VitalStats::full(max_health, max_mana),
+        defense_stats,
+        crate::player::progression::Experience::at_level(level),
+    ));
+
+    // Roaming/AI needs the per-mob cadence defaults. A complete NPC ships them;
+    // without an `npc_behavior:` block the entity stays a stationary but valid
+    // (talkable / targetable) NPC.
+    let Some(npc_defaults) = definition.and_then(|d| d.npc_behavior.as_ref()) else {
+        return;
+    };
+
+    // Deterministic per-NPC jitter so NPCs don't all decrement their step timers
+    // in lockstep (which would spike `update_roaming_npcs` on shared frames).
+    let seed = object_id.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+    let jitter_frac = (seed % 1024) as f32 / 1024.0;
+    let bounds = behavior.bounds();
+    let hostile = behavior.hostile();
+    let step = npc_defaults.step_interval_seconds.max(0.05);
+    let jitter = if npc_defaults.step_interval_jitter_seconds > 0.0 {
+        npc_defaults.step_interval_jitter_seconds
+    } else {
+        step * 0.3
+    };
+    entity_commands.insert((
+        RoamingBehavior {
+            bounds: RoamBounds {
+                min_x: bounds.min_x,
+                min_y: bounds.min_y,
+                max_x: bounds.max_x,
+                max_y: bounds.max_y,
+            },
+            step_interval_seconds: step,
+            step_interval_jitter_seconds: jitter,
+            idle_pause_chance: npc_defaults.idle_pause_chance,
+            momentum_bias: npc_defaults.momentum_bias,
+        },
+        RoamingStepTimer {
+            remaining_seconds: jitter_frac * step,
+        },
+        RoamingRandomState { seed },
+        AiState::default(),
+        AiMemory::default(),
+    ));
+    if hostile {
+        let detect = npc_defaults.detect_distance_tiles.max(1);
+        let disengage = npc_defaults.disengage_distance_tiles.max(detect);
+        entity_commands.insert((
+            HostileBehavior {
+                detect_distance_tiles: detect,
+                disengage_distance_tiles: disengage,
+                alert_duration_seconds: npc_defaults.alert_duration_seconds,
+                requires_line_of_sight: npc_defaults.requires_line_of_sight,
+            },
+            CombatLeash {
+                max_distance_tiles: disengage,
+            },
+        ));
+    }
+    if let Some(def) = definition {
+        if !def.barks.aggro.is_empty() || !def.barks.mutter.is_empty() {
+            entity_commands.insert(Barks {
+                aggro: def.barks.aggro.clone(),
+                mutter: def.barks.mutter.clone(),
+            });
+        }
+    }
+    if let Some(profile) = definition
+        .and_then(|d| d.spellcasting.as_ref())
+        .map(|def| def.to_component())
+    {
+        entity_commands.insert(profile);
+    }
+}
+
+/// A definition that ships an `npc_behavior:` block is a complete NPC: realize
+/// it on spawn even when placed/scripted without an explicit map behavior, as a
+/// stationary roam (single-tile bounds) — or `RoamAndChase` if its behavior
+/// defaults mark it hostile. Returns `None` for non-NPC templates so plain
+/// objects are unaffected. An explicit map `behavior:` overrides this default.
+pub fn default_npc_behavior(
+    definition: Option<&OverworldObjectDefinition>,
+    tile: TilePosition,
+) -> Option<MapBehavior> {
+    let npc = definition.and_then(|d| d.npc_behavior.as_ref())?;
+    let bounds = TileRectangle {
+        min_x: tile.x,
+        min_y: tile.y,
+        max_x: tile.x,
+        max_y: tile.y,
+    };
+    Some(if npc.hostile {
+        MapBehavior::RoamAndChase { bounds }
+    } else {
+        MapBehavior::Roam { bounds }
+    })
 }
 
 pub fn attach_combat_health_bar(
@@ -930,5 +971,44 @@ mod tests {
         assert_eq!(base.attributes.willpower, defaults.willpower);
         assert_eq!(base.attributes.charisma, defaults.charisma);
         assert_eq!(base.attributes.focus, defaults.focus);
+    }
+
+    fn def_from(extra: &str) -> OverworldObjectDefinition {
+        let yaml = format!(
+            "name: T\ndescription: t\ncolliding: true\nmovable: false\nstorable: false\n{extra}render:\n  z_index: 1.0\n  debug_color: [1, 2, 3]\n  debug_size: 0.5\n"
+        );
+        serde_yaml::from_str(&yaml).unwrap()
+    }
+
+    #[test]
+    fn default_behavior_none_for_plain_object() {
+        let def = def_from("");
+        assert!(default_npc_behavior(Some(&def), TilePosition::new(3, 4, 0)).is_none());
+        assert!(default_npc_behavior(None, TilePosition::new(3, 4, 0)).is_none());
+    }
+
+    #[test]
+    fn default_behavior_stationary_roam_for_peaceful_npc() {
+        let def = def_from(
+            "npc_behavior:\n  hostile: false\n  step_interval_seconds: 1.0\n  detect_distance_tiles: 5\n  disengage_distance_tiles: 8\n",
+        );
+        let behavior = default_npc_behavior(Some(&def), TilePosition::new(3, 4, 0)).unwrap();
+        match behavior {
+            MapBehavior::Roam { bounds } => {
+                // Single-tile bounds → stands in place.
+                assert_eq!((bounds.min_x, bounds.min_y), (3, 4));
+                assert_eq!((bounds.max_x, bounds.max_y), (3, 4));
+            }
+            other => panic!("expected stationary Roam, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn default_behavior_chase_for_hostile_npc() {
+        let def = def_from(
+            "npc_behavior:\n  hostile: true\n  step_interval_seconds: 0.8\n  detect_distance_tiles: 6\n  disengage_distance_tiles: 10\n",
+        );
+        let behavior = default_npc_behavior(Some(&def), TilePosition::new(0, 0, 0)).unwrap();
+        assert!(matches!(behavior, MapBehavior::RoamAndChase { .. }));
     }
 }

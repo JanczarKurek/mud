@@ -49,16 +49,84 @@ impl AssetResolver {
     /// Bundled directory comes first; XDG directory second so its entries take precedence
     /// when callers use a HashMap (later inserts overwrite earlier ones). XDG is only
     /// included when a root is configured (TcpClient mode).
+    ///
+    /// Per-module content bundles (`<root>/modules/<name>/<subdir>`) are appended
+    /// last. See [`AssetResolver::scan_dirs_with_prefix`] for the id-namespacing.
     pub fn scan_dirs(&self, subdir: &str) -> Vec<PathBuf> {
-        let mut dirs = vec![PathBuf::from("assets").join(subdir)];
+        self.scan_dirs_with_prefix(subdir)
+            .into_iter()
+            .map(|(_, dir)| dir)
+            .collect()
+    }
+
+    /// Like [`scan_dirs`](Self::scan_dirs), but pairs each directory with the
+    /// **id prefix** its assets register under. Core dirs (bundled + XDG) use an
+    /// empty prefix; a per-module dir uses `"<module>/"`, so a module asset named
+    /// `foo` loads under the qualified id `<module>/foo` and never collides with
+    /// core content or another module. `build-module` resolves authored
+    /// references to these qualified ids at compile time, so the engine only ever
+    /// sees absolute strings.
+    pub fn scan_dirs_with_prefix(&self, subdir: &str) -> Vec<(String, PathBuf)> {
+        let mut out = vec![(String::new(), PathBuf::from("assets").join(subdir))];
         if let Some(ref xdg) = self.xdg_root {
             let xdg_dir = xdg.join(subdir);
             if xdg_dir.is_dir() {
-                dirs.push(xdg_dir);
+                out.push((String::new(), xdg_dir));
             }
         }
-        dirs
+        for (module, dir) in module_dirs_with_names(subdir) {
+            out.push((format!("{module}/"), dir));
+        }
+        out
     }
+}
+
+/// Root holding per-module content bundles. A module mirrors the top-level asset
+/// layout inside its own folder — `assets/modules/<name>/{overworld_objects,
+/// spells,recipes,dialogs,quests}/…` — so a whole content pack lives in one
+/// place and can be dropped in or removed wholesale without touching the global
+/// asset dirs.
+const MODULES_DIRNAME: &str = "modules";
+
+/// `(module_name, <root>/modules/<module_name>/<subdir>)` for every module that
+/// ships a `<subdir>`, across the bundled (`assets/`) and XDG roots, sorted by
+/// module name.
+///
+/// Sorted so load order is deterministic across processes — the same property
+/// `discover_yaml_assets` relies on (TcpClient and HeadlessServer must agree on
+/// authored ids, or every wire-level `object_id` → `type_id` lookup breaks).
+/// Only directories that actually exist are returned, so callers tolerate
+/// modules that ship only some content kinds.
+pub fn module_dirs_with_names(subdir: &str) -> Vec<(String, PathBuf)> {
+    let mut roots = vec![PathBuf::from("assets")];
+    if let Some(xdg) = xdg_asset_root() {
+        roots.push(xdg.to_path_buf());
+    }
+    roots
+        .iter()
+        .flat_map(|root| module_subdirs_in(root, subdir))
+        .collect()
+}
+
+fn module_subdirs_in(root: &Path, subdir: &str) -> Vec<(String, PathBuf)> {
+    let modules_root = root.join(MODULES_DIRNAME);
+    let mut names: Vec<String> = match fs::read_dir(&modules_root) {
+        Ok(entries) => entries
+            .flatten()
+            .filter(|entry| entry.path().is_dir())
+            .filter_map(|entry| entry.file_name().into_string().ok())
+            .collect(),
+        Err(_) => return Vec::new(),
+    };
+    names.sort();
+    names
+        .into_iter()
+        .map(|name| {
+            let dir = modules_root.join(&name).join(subdir);
+            (name, dir)
+        })
+        .filter(|(_, dir)| dir.is_dir())
+        .collect()
 }
 
 impl Default for AssetResolver {
@@ -93,7 +161,7 @@ pub fn discover_yaml_assets(subdir: &str, kind: &str) -> Vec<DiscoveredYamlAsset
     let mut by_id: std::collections::BTreeMap<String, DiscoveredYamlAsset> =
         std::collections::BTreeMap::new();
 
-    for scan_dir in resolver.scan_dirs(subdir) {
+    for (id_prefix, scan_dir) in resolver.scan_dirs_with_prefix(subdir) {
         info!("loading {kind} from {}", scan_dir.display());
         let Ok(entries) = fs::read_dir(&scan_dir) else {
             continue;
@@ -111,11 +179,12 @@ pub fn discover_yaml_assets(subdir: &str, kind: &str) -> Vec<DiscoveredYamlAsset
                 continue;
             }
 
-            let id = path
+            let stem = path
                 .file_stem()
                 .and_then(|stem| stem.to_str())
-                .unwrap_or_else(|| panic!("{kind} file has invalid name: {}", path.display()))
-                .to_owned();
+                .unwrap_or_else(|| panic!("{kind} file has invalid name: {}", path.display()));
+            // Module assets load under `<module>/<stem>`; core under bare `<stem>`.
+            let id = format!("{id_prefix}{stem}");
 
             let contents = fs::read_to_string(&path).unwrap_or_else(|error| {
                 panic!("Failed to read {kind} {}: {error}", path.display())

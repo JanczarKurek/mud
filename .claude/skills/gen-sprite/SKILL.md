@@ -13,7 +13,12 @@ Create a sprite sheet and wire it into the game for the object ID given above. F
 
 ### 1. Gather context
 
-- Read `assets/overworld_objects/$0/metadata.yaml` to understand the object's name, description, and current render settings.
+- **Locate the object directory.** Call it `OBJ_DIR`. It is
+  `assets/overworld_objects/$0/` if that exists; otherwise the object belongs to
+  a content module — find it with `ls -d assets/modules/*/overworld_objects/$0/`
+  and use that path. All outputs below go inside `OBJ_DIR` so a module stays
+  self-contained.
+- Read `OBJ_DIR/metadata.yaml` to understand the object's name, description, and current render settings.
 - Read the existing sprite (if any) to see the current art style — use the Read tool to view the PNG visually.
 - Check `assets/overworld_objects/goblin/sheet.png` and `assets/overworld_objects/player/sheet.png` as style references for what good sheets look like in this project.
 - Look at `scripts/gen_goblin_sheet.py` and `scripts/gen_player_sheet.py` as code references for how sheets are generated.
@@ -36,7 +41,7 @@ Write a Python script to `scripts/gen_<object_id>_sheet.py`. Model it closely on
 - Use `img.putpixel` for single pixels and a local `rect(x, y, w, h, color)` helper for filled blocks
 - Draw from bottom to top: boots → pants → belt → torso → arms → neck → head → hair
 - The `make_frame(body_dy, l_foot_dy, r_foot_dy, l_arm_dy, r_arm_dy, ...)` signature should match the existing pattern
-- Output path: `assets/overworld_objects/<object_id>/sheet.png`
+- Output path: `OBJ_DIR/sheet.png` (i.e. beside the object's `metadata.yaml`, which may be under `assets/modules/<name>/overworld_objects/<object_id>/`)
 
 ### 4. Run the generator
 
@@ -48,11 +53,16 @@ Then immediately **view the output PNG** with the Read tool to verify it looks r
 
 ### 5. Update metadata.yaml
 
-Add or replace the `animation:` block under `render:` in `assets/overworld_objects/<object_id>/metadata.yaml`:
+Add or replace the `animation:` block under `render:` in `OBJ_DIR/metadata.yaml`.
+`sheet_path` is **relative to the `assets/` root** — i.e. `OBJ_DIR` with the
+leading `assets/` stripped, then `/sheet.png`. For a global object that is
+`overworld_objects/<object_id>/sheet.png`; for a module object it is
+`modules/<name>/overworld_objects/<object_id>/sheet.png`. (Bevy's
+`asset_server.load` resolves it under `assets/`, so it works from either place.)
 
 ```yaml
   animation:
-    sheet_path: overworld_objects/<object_id>/sheet.png
+    sheet_path: overworld_objects/<object_id>/sheet.png   # or modules/<name>/overworld_objects/<object_id>/sheet.png
     frame_width: 32
     frame_height: 48
     sheet_columns: 4
