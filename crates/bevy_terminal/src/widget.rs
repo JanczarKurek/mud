@@ -75,6 +75,9 @@ pub struct TerminalTheme {
     /// exact (caret will look slightly off-center for non-monospace fonts
     /// but stays within a few pixels of the right glyph).
     pub glyph_advance: f32,
+    /// Font for all terminal text. Defaults to the global default font handle;
+    /// set it to a fixed-width font for correct caret/column alignment.
+    pub font: Handle<Font>,
 }
 
 impl Default for TerminalTheme {
@@ -109,6 +112,7 @@ impl Default for TerminalTheme {
             font_size: 16.0,
             line_gap: 2.0,
             glyph_advance: 8.6,
+            font: Handle::default(),
         }
     }
 }

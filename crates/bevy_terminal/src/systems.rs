@@ -318,6 +318,7 @@ pub fn terminal_sync_buffer(
                     Text::new(text),
                     TextLayout::new(Justify::Left, LineBreak::WordBoundary),
                     TextFont {
+                        font: theme.font.clone(),
                         font_size: theme.font_size,
                         ..default()
                     },
@@ -333,11 +334,15 @@ pub fn terminal_sync_buffer(
     }
 }
 
+// Each input segment query carries an extra `&mut TextFont` (to apply the
+// theme font), which trips clippy's type-complexity lint; the shape mirrors the
+// other terminal queries and is clearer inline than split across aliases.
+#[allow(clippy::type_complexity)]
 pub fn terminal_sync_input_line(
     theme: Res<TerminalTheme>,
     mut terminals: Query<(Entity, &mut Terminal)>,
     mut prompt_q: Query<
-        (Entity, &mut Text, &mut TextColor),
+        (Entity, &mut Text, &mut TextColor, &mut TextFont),
         (
             With<TerminalInputPrompt>,
             Without<TerminalInputBefore>,
@@ -345,7 +350,7 @@ pub fn terminal_sync_input_line(
         ),
     >,
     mut before_q: Query<
-        (Entity, &mut Text, &mut TextColor),
+        (Entity, &mut Text, &mut TextColor, &mut TextFont),
         (
             With<TerminalInputBefore>,
             Without<TerminalInputPrompt>,
@@ -353,7 +358,7 @@ pub fn terminal_sync_input_line(
         ),
     >,
     mut after_q: Query<
-        (Entity, &mut Text, &mut TextColor),
+        (Entity, &mut Text, &mut TextColor, &mut TextFont),
         (
             With<TerminalInputAfter>,
             Without<TerminalInputPrompt>,
@@ -377,6 +382,7 @@ pub fn terminal_sync_input_line(
         let font_size = theme.font_size;
         let input_color = theme.input_color;
         let prompt_color = theme.prompt_color;
+        let font = theme.font.clone();
 
         // Compute the byte split for the cursor so we can hand each Text
         // its own slice — Bevy's layout pipeline then positions the cursor
@@ -388,26 +394,35 @@ pub fn terminal_sync_input_line(
             .unwrap_or(buffer.len());
         let (before, after) = buffer.split_at(split_byte);
 
-        for (entity, mut text, mut color) in &mut prompt_q {
+        for (entity, mut text, mut color, mut text_font) in &mut prompt_q {
             if !ancestor_is(entity, root_entity, &parents, 6) {
                 continue;
             }
             text.0 = prompt_text.clone();
             color.0 = prompt_color;
+            if text_font.font != font {
+                text_font.font = font.clone();
+            }
         }
-        for (entity, mut text, mut color) in &mut before_q {
+        for (entity, mut text, mut color, mut text_font) in &mut before_q {
             if !ancestor_is(entity, root_entity, &parents, 6) {
                 continue;
             }
             text.0 = before.to_owned();
             color.0 = input_color;
+            if text_font.font != font {
+                text_font.font = font.clone();
+            }
         }
-        for (entity, mut text, mut color) in &mut after_q {
+        for (entity, mut text, mut color, mut text_font) in &mut after_q {
             if !ancestor_is(entity, root_entity, &parents, 6) {
                 continue;
             }
             text.0 = after.to_owned();
             color.0 = input_color;
+            if text_font.font != font {
+                text_font.font = font.clone();
+            }
         }
         for (cursor_entity, mut node) in &mut cursor_q {
             if !ancestor_is(cursor_entity, root_entity, &parents, 6) {

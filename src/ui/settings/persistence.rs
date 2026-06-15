@@ -119,6 +119,10 @@ struct DisplayFile {
     vsync: bool,
     #[serde(default = "default_ui_scale")]
     ui_scale: f32,
+    #[serde(default = "default_font_scale")]
+    font_scale: f32,
+    #[serde(default)]
+    font_smoothing: bool,
 }
 
 impl Default for DisplayFile {
@@ -128,6 +132,8 @@ impl Default for DisplayFile {
             window_mode: d.window_mode,
             vsync: d.vsync,
             ui_scale: d.ui_scale,
+            font_scale: d.font_scale,
+            font_smoothing: d.font_smoothing,
         }
     }
 }
@@ -138,6 +144,10 @@ fn default_true() -> bool {
 
 fn default_ui_scale() -> f32 {
     1.0
+}
+
+fn default_font_scale() -> f32 {
+    DisplaySettings::default().font_scale
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -229,6 +239,12 @@ pub fn load_settings(
     } else {
         1.0
     };
+    display.font_scale = if file.display.font_scale.is_finite() {
+        file.display.font_scale.clamp(0.5, 3.0)
+    } else {
+        default_font_scale()
+    };
+    display.font_smoothing = file.display.font_smoothing;
     display.dirty = false;
 
     gameplay.auto_open_nearby_npcs_panel = file.gameplay.auto_open_nearby_npcs_panel;
@@ -274,6 +290,8 @@ pub fn persist_settings(
             window_mode: display.window_mode,
             vsync: display.vsync,
             ui_scale: display.ui_scale,
+            font_scale: display.font_scale,
+            font_smoothing: display.font_smoothing,
         },
         gameplay: GameplayFile {
             auto_open_nearby_npcs_panel: gameplay.auto_open_nearby_npcs_panel,

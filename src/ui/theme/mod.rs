@@ -1,4 +1,5 @@
 pub mod assets;
+mod font;
 pub mod palette;
 mod procedural_button;
 pub mod widgets;
@@ -32,6 +33,18 @@ impl Plugin for UiThemePlugin {
         };
         app.insert_resource(Palette::default())
             .insert_resource(assets)
-            .add_systems(Update, apply_themed_button_tint);
+            .init_resource::<font::UiFonts>()
+            .add_systems(Startup, font::setup_fonts)
+            .add_systems(Update, apply_themed_button_tint)
+            // Run text styling in `PostUpdate` *before* UI text measurement
+            // (`UiSystems::Content`), so text spawned during `Update` is scaled
+            // in the same frame it appears — never rendered at its unscaled size.
+            // Running a frame late (in `Update`) makes panels that respawn their
+            // text each frame flicker between the base and scaled sizes.
+            .add_systems(
+                PostUpdate,
+                (font::style_new_text, font::reapply_text_settings)
+                    .before(bevy::ui::UiSystems::Content),
+            );
     }
 }
