@@ -416,11 +416,18 @@ pub(crate) fn in_game_or_editor(state: Res<State<ClientAppState>>) -> bool {
 
 fn mirror_client_world_objects_into_registry(
     client_state: Res<crate::game::resources::ClientGameState>,
+    revisions: Res<crate::game::resources::ClientStateRevisions>,
     mut object_registry: ResMut<ObjectRegistry>,
+    mut last_revision: Local<u64>,
 ) {
-    if !client_state.is_changed() {
+    // Gate on the world-object revision rather than `client_state.is_changed()`
+    // (true on nearly every frame). The roster counter only advances when a
+    // `WorldObjectUpserted`/`WorldObjectRemoved` event lands, so we skip the
+    // full-map walk on frames where only vitals / world time / XP changed.
+    if *last_revision == revisions.world_objects {
         return;
     }
+    *last_revision = revisions.world_objects;
     for (object_id, state) in &client_state.world_objects {
         let needs_update = object_registry
             .type_id(*object_id)

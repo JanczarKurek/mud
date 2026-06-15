@@ -13,6 +13,7 @@ use crate::game::commands::GameCommand;
 use crate::game::resources::{
     ClientGameState, GameUiEvent, PendingGameCommands, PendingGameUiEvents,
 };
+use crate::player::components::InventoryStack;
 use crate::ui::movable_window::{
     find_window_by_id, spawn_movable_window, spawn_movable_window_close_button, MovableWindow,
     MovableWindowId, MOVABLE_WINDOW_DEFAULT_MIN_SIZE,
@@ -30,6 +31,18 @@ pub struct RecipeBookRoot {
 
 #[derive(Component)]
 pub struct RecipeBookContent;
+
+/// View-model of exactly the `ClientGameState` data the recipe book renders:
+/// the learned-recipe set and the backpack (which drives ingredient
+/// availability). Compared against a `Local` so rows rebuild only when one of
+/// these changes — not every frame. See `CharacterSheetSnapshot` for rationale.
+/// The station filter lives on `RecipeBookRoot`, so `root_ref.is_changed()`
+/// covers it; `recipe_defs` / `object_defs` change only on hot-reload.
+#[derive(Clone, PartialEq)]
+struct RecipeBookSnapshot {
+    learned: std::collections::BTreeSet<String>,
+    backpack: Vec<Option<InventoryStack>>,
+}
 
 #[derive(Component, Clone, Debug)]
 pub struct CraftButton {
@@ -174,11 +187,20 @@ fn rebuild_recipe_book_contents(
     palette: Option<Res<Palette>>,
     roots: Query<(&RecipeBookRoot, Ref<RecipeBookRoot>)>,
     content: Query<Entity, With<RecipeBookContent>>,
+    mut last: Local<Option<RecipeBookSnapshot>>,
 ) {
     let Ok((root, root_ref)) = roots.single() else {
         return;
     };
-    if !root_ref.is_changed() && !client_state.is_changed() {
+    let want = RecipeBookSnapshot {
+        learned: client_state.learned_recipes.clone(),
+        backpack: client_state.inventory.backpack_slots.clone(),
+    };
+    if !root_ref.is_changed()
+        && !recipe_defs.is_changed()
+        && !object_defs.is_changed()
+        && last.as_ref() == Some(&want)
+    {
         return;
     }
     let Some(palette) = palette.as_deref() else {
@@ -187,6 +209,7 @@ fn rebuild_recipe_book_contents(
     let Ok(body) = content.single() else {
         return;
     };
+    *last = Some(want);
 
     commands.entity(body).despawn_related::<Children>();
 

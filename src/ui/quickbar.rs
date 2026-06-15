@@ -191,17 +191,23 @@ pub fn sync_quickbar_visuals(
 ) {
     for (icon, mut image, mut visibility) in &mut icon_query {
         let Some(type_id) = quickbar.slots.get(icon.0).and_then(|s| s.as_deref()) else {
-            *visibility = Visibility::Hidden;
+            if *visibility != Visibility::Hidden {
+                *visibility = Visibility::Hidden;
+            }
             continue;
         };
 
         let Some(definition) = definitions.get(type_id) else {
-            *visibility = Visibility::Hidden;
+            if *visibility != Visibility::Hidden {
+                *visibility = Visibility::Hidden;
+            }
             continue;
         };
 
         let Some(sprite_path) = definition.sprite_for_count(1).map(str::to_owned) else {
-            *visibility = Visibility::Hidden;
+            if *visibility != Visibility::Hidden {
+                *visibility = Visibility::Hidden;
+            }
             continue;
         };
 
@@ -211,14 +217,25 @@ pub fn sync_quickbar_visuals(
         } else {
             DIMMED_TINT
         };
-        image.image = asset_server.load(sprite_path);
-        image.color = tint;
-        *visibility = Visibility::Visible;
+        // Compare-then-write so an unchanged slot doesn't dirty the ImageNode
+        // (which forces a re-render) or thrash the asset handle every frame.
+        let desired = asset_server.load(sprite_path);
+        if image.image != desired {
+            image.image = desired;
+        }
+        if image.color != tint {
+            image.color = tint;
+        }
+        if *visibility != Visibility::Visible {
+            *visibility = Visibility::Visible;
+        }
     }
 
     for (label, mut text) in &mut label_query {
         let Some(type_id) = quickbar.slots.get(label.0).and_then(|s| s.as_deref()) else {
-            text.0.clear();
+            if !text.0.is_empty() {
+                text.0.clear();
+            }
             continue;
         };
         let stack = find_stack_by_type(&client_state, type_id);
@@ -233,7 +250,10 @@ pub fn sync_quickbar_visuals(
                 None
             }
         });
-        text.0 = charge_or_qty.unwrap_or_default();
+        let want = charge_or_qty.unwrap_or_default();
+        if text.0 != want {
+            text.0 = want;
+        }
     }
 }
 

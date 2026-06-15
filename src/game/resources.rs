@@ -739,3 +739,28 @@ pub struct ClientGameState {
     #[serde(default)]
     pub discovered_tiles: HashMap<SpaceId, HashSet<(i32, i32)>>,
 }
+
+/// Per-domain change counters for `ClientGameState`, bumped only by
+/// `apply_game_events_to_client_state` (the client fold system) when the
+/// relevant event variants land.
+///
+/// `ClientGameState` is a monolithic resource: any single applied event
+/// `DerefMut`s the whole thing, so `ClientGameState::is_changed()` is true on
+/// nearly every frame and is therefore useless as a redraw gate. Presentation
+/// systems that consume a *large* slice of state (the world-object map, the
+/// minimap) compare these `u64`s against a `Local<u64>` instead of snapshotting
+/// the whole collection each frame. Panels that render a small slice should
+/// prefer a snapshot `Local` of exactly the fields they read.
+///
+/// Client-only: maintained by the client fold, never by the server's per-peer
+/// baseline advance (which calls `apply_event_to_state` directly).
+#[derive(Clone, Copy, Debug, Default, Resource)]
+pub struct ClientStateRevisions {
+    /// Bumped on `WorldObjectUpserted` / `WorldObjectRemoved`.
+    pub world_objects: u64,
+    /// Bumped on `RemotePlayerUpserted` / `RemotePlayerRemoved`.
+    pub remote_players: u64,
+    /// Bumped on `FloorMapReplaced` / `FloorTileSet` / `DiscoveredTilesReplaced`
+    /// / `TilesDiscovered` — i.e. anything that changes the painted map window.
+    pub map_tiles: u64,
+}

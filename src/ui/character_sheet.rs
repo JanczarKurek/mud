@@ -8,8 +8,12 @@
 use bevy::prelude::*;
 
 use crate::app::state::{simulation_active, ClientAppState};
-use crate::game::resources::ClientGameState;
-use crate::player::classes::ability_mod;
+use crate::game::resources::{
+    ClientCombatStats, ClientGameState, ClientVitalStats, RegenBuffState,
+};
+use crate::player::classes::{ability_mod, Class};
+use crate::player::components::AttributeSet;
+use crate::player::progression::ExperienceView;
 use crate::ui::components::CharacterSheetButton;
 use crate::ui::movable_window::{
     find_window_by_id, spawn_movable_window, spawn_movable_window_close_button, MovableWindow,
@@ -22,6 +26,21 @@ pub struct CharacterSheetRoot;
 
 #[derive(Component)]
 pub struct CharacterSheetContent;
+
+/// View-model of exactly the `ClientGameState` fields the character sheet
+/// renders. Compared against a `Local` so the body rebuilds only when one of
+/// these actually changes — not every frame. (Gating on
+/// `ClientGameState::is_changed()` is useless: the monolithic resource is
+/// dirtied by nearly every event, including NPCs roaming and the world clock.)
+#[derive(Clone, PartialEq)]
+struct CharacterSheetSnapshot {
+    class: Option<Class>,
+    experience: Option<ExperienceView>,
+    vitals: Option<ClientVitalStats>,
+    attributes: Option<AttributeSet>,
+    combat_stats: Option<ClientCombatStats>,
+    regen_buff: Option<RegenBuffState>,
+}
 
 const PANEL_SIZE: Vec2 = Vec2::new(460.0, 420.0);
 const PANEL_INITIAL_POS: Vec2 = Vec2::new(160.0, 90.0);
@@ -148,11 +167,20 @@ fn rebuild_character_sheet_contents(
     palette: Option<Res<Palette>>,
     roots: Query<Ref<CharacterSheetRoot>>,
     content: Query<Entity, With<CharacterSheetContent>>,
+    mut last: Local<Option<CharacterSheetSnapshot>>,
 ) {
     let Ok(root_ref) = roots.single() else {
         return;
     };
-    if !root_ref.is_changed() && !client_state.is_changed() {
+    let want = CharacterSheetSnapshot {
+        class: client_state.class,
+        experience: client_state.experience,
+        vitals: client_state.player_vitals,
+        attributes: client_state.attributes,
+        combat_stats: client_state.combat_stats,
+        regen_buff: client_state.regen_buff,
+    };
+    if !root_ref.is_changed() && last.as_ref() == Some(&want) {
         return;
     }
     let Some(palette) = palette.as_deref() else {
@@ -161,6 +189,7 @@ fn rebuild_character_sheet_contents(
     let Ok(body) = content.single() else {
         return;
     };
+    *last = Some(want);
 
     commands.entity(body).despawn_related::<Children>();
 

@@ -81,3 +81,18 @@
 **Fix**: In `apply_floor_layer` (`src/world/spatial.rs`), insert the floor occluder at `support_z` (= `surface_z - 1`, the between-floor half-block) instead of `surface_z`. Vertical/cross-floor rays still pass through the odd between-floor z and stay blocked; horizontal same-floor rays at the even surface z no longer hit it. Also aligned `tick_alert` (`src/npc/systems.rs`) to re-detect with `los_blockers`, matching `tick_wander` and the `lost_los` gate.
 
 **Gotcha to remember**: entities stand on floor *N* at the **even** z `N*2`; the floor *slab/ceiling* belongs at the **odd** between-floor z `N*2 - 1`. Never put a movement/LoS blocker that represents a floor on the even surface z, or you block the entities standing on it. Regression tests: `world::spatial::tests::{floor_occluder_sits_below_the_walking_surface, same_floor_horizontal_los_is_clear_above_occluding_floor, vertical_los_through_occluding_floor_is_blocked}` and `npc::systems::tests::los_npc_pursues_across_occluding_upper_floor`.
+
+---
+
+## HUD panels rebuild every frame — never gate presentation on `ClientGameState::is_changed()`
+
+**Symptom**: The character sheet, skills panel, recipe book (and the minimap) do a full `despawn_related::<Children>()` + rebuild every single frame, even while the player stands still. Shows up as constant per-system time in the diagnostics overlay and UI flicker / input churn.
+
+**Root cause**: `ClientGameState` is one monolithic resource. The client fold `apply_event_to_state` (`src/game/projection.rs`) `DerefMut`s the *whole* resource whenever **any** `GameEvent` is applied, and events fire almost every frame in normal play (NPCs roaming → `WorldObjectUpserted`, vitals regen → `PlayerVitalsChanged`, the world clock → `WorldTimeChanged` + a 10s heartbeat). So `ClientGameState::is_changed()` is `true` nearly every frame and is **useless as a redraw gate** — a panel that only renders skills rebuilds every time an NPC takes a step. (Note: merely taking `ResMut` does *not* dirty it; only the `DerefMut` does.)
+
+**Fix**: Gate each presentation system on the data it actually renders, using one of three patterns:
+- **Snapshot `Local`** (for systems that rebuild child entities): build a tiny `#[derive(Clone, PartialEq)]` view-model of exactly the fields rendered, keep it in `Local<Option<T>>`, rebuild only when it differs. See `CharacterSheetSnapshot` / `SkillsPanelSnapshot` / `RecipeBookSnapshot`.
+- **Compare-then-write** (for systems that only update a field): read the current value, write only if different — avoids dirtying Bevy change detection / re-layout. See `sync_quickbar_visuals`, the HP-bar / border writes in `sync_nearby_npcs_panel`, `sync_minimap_zoom_labels`.
+- **Generation counter** (for consumers of *large* collections where snapshotting is too costly): the `ClientStateRevisions` resource (`src/game/resources.rs`) carries per-domain `u64`s bumped by `apply_game_events_to_client_state`; compare against a `Local<u64>`. See `mirror_client_world_objects_into_registry` and the `MinimapSignature` gate in `update_minimap_images`.
+
+**Gotcha to remember**: `ClientStateRevisions` is bumped only in the client fold system (`apply_game_events_to_client_state`), never in `apply_event_to_state` — the latter is shared with the server's per-peer baseline advance and must stay pure. Editor / asset-viewer `is_changed()` gates on `editor_state` / `viewer_state` / buffers are fine; those resources change only on explicit user action.

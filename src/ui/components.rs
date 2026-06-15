@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 
 use crate::ui::resources::{MenuAction, MenuBarId, MinimapZoom};
+use crate::world::components::SpaceId;
 use crate::world::object_definitions::EquipmentSlot;
 
 /// Marker on every top-level HUD entity spawned by `spawn_hud`. Used by the
@@ -685,10 +686,30 @@ pub struct MinimapView {
 /// Holds the `Image` asset handle backing the tile window for a `MinimapView`.
 /// Swapped out when zoom changes (tile span dictates image size); otherwise
 /// the bytes inside are rewritten in place each frame.
+/// Fingerprint of everything `update_minimap_images` reads to paint one view's
+/// tile window and dots. Cached per-view on `MinimapCanvas` so the (O(span²)
+/// repaint + full dot respawn) is skipped on frames where nothing it draws
+/// moved. The `*_rev` fields are `ClientStateRevisions` counters — cheap proxies
+/// for "an object/player/tile changed" that avoid cloning those collections.
+#[derive(Clone, Copy, PartialEq)]
+pub struct MinimapSignature {
+    pub space: Option<SpaceId>,
+    pub tile: Option<(i32, i32, i32)>,
+    pub view_size: (i32, i32),
+    pub pan: (i32, i32),
+    pub zoom: MinimapZoom,
+    pub fill: [u8; 4],
+    pub world_objects_rev: u64,
+    pub remote_players_rev: u64,
+    pub map_tiles_rev: u64,
+}
+
 #[derive(Component)]
 pub struct MinimapCanvas {
     pub image_handle: Handle<Image>,
     pub last_zoom: Option<MinimapZoom>,
+    /// Last-painted fingerprint; `None` forces a repaint on the next tick.
+    pub last_signature: Option<MinimapSignature>,
 }
 
 #[derive(Component)]

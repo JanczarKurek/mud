@@ -1720,6 +1720,7 @@ pub(crate) fn spawn_minimap_panel_body_for_mode(
                 MinimapCanvas {
                     image_handle: image_handle.clone(),
                     last_zoom: Some(zoom),
+                    last_signature: None,
                 },
             ));
 

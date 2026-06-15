@@ -5,11 +5,11 @@ use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::ui::UiGlobalTransform;
 
-use crate::game::resources::{ClientGameState, ClientWorldObjectState};
+use crate::game::resources::{ClientGameState, ClientStateRevisions, ClientWorldObjectState};
 use crate::ui::components::{
     FloatingMinimapZoomInButton, FloatingMinimapZoomLabel, FloatingMinimapZoomOutButton,
     HudMinimapZoomInButton, HudMinimapZoomLabel, HudMinimapZoomOutButton, MinimapCanvas,
-    MinimapMode, MinimapOverlayDot, MinimapView,
+    MinimapMode, MinimapOverlayDot, MinimapSignature, MinimapView,
 };
 use crate::ui::mountable_panel::PanelMountMode;
 use crate::ui::resources::{
@@ -51,6 +51,7 @@ pub fn make_minimap_image(zoom: MinimapZoom) -> Image {
 pub fn update_minimap_images(
     mut commands: Commands,
     client_state: Res<ClientGameState>,
+    revisions: Res<ClientStateRevisions>,
     object_definitions: Res<OverworldObjectDefinitions>,
     floor_definitions: Res<FloorTilesetDefinitions>,
     hud_settings: Res<HudMinimapSettings>,
@@ -88,6 +89,31 @@ pub fn update_minimap_images(
             MinimapMode::HudSmall => IVec2::ZERO,
             MinimapMode::FullscreenLarge => pan_offset,
         };
+
+        // Skip the repaint + dot respawn unless something this view draws moved.
+        // The `*_rev` counters cover object/player/tile changes without cloning
+        // those maps; player position, pan, zoom, fill, and the resolved view
+        // size are captured directly. Definition hot-reloads are rare but change
+        // tile colors, so OR them in.
+        let node_size = computed.size();
+        let want_sig = MinimapSignature {
+            space: player_space,
+            tile: player_tile.map(|t| (t.x, t.y, t.z)),
+            view_size: (node_size.x.round() as i32, node_size.y.round() as i32),
+            pan: (view_pan.x, view_pan.y),
+            zoom,
+            fill: fill_color,
+            world_objects_rev: revisions.world_objects,
+            remote_players_rev: revisions.remote_players,
+            map_tiles_rev: revisions.map_tiles,
+        };
+        if canvas.last_signature == Some(want_sig)
+            && !object_definitions.is_changed()
+            && !floor_definitions.is_changed()
+        {
+            continue;
+        }
+        canvas.last_signature = Some(want_sig);
 
         let zoom_changed = canvas.last_zoom != Some(zoom);
         if zoom_changed {
@@ -130,7 +156,7 @@ pub fn update_minimap_images(
 
         if let (Some(space_id), Some(tile)) = (player_space, player_tile) {
             let half_span = (span - 1) / 2;
-            let node_size = computed.size();
+            // `node_size` was resolved above for the signature; reuse it.
             let fallback_size = match view.mode {
                 MinimapMode::HudSmall => HUD_MINIMAP_SIZE,
                 MinimapMode::FullscreenLarge => FULL_MAP_BODY_SIZE,
@@ -427,10 +453,16 @@ pub fn sync_minimap_zoom_labels(
     >,
 ) {
     for mut text in &mut hud_labels {
-        text.0 = hud_settings.zoom.label().to_owned();
+        let want = hud_settings.zoom.label();
+        if text.0 != want {
+            text.0 = want.to_owned();
+        }
     }
     for mut text in &mut floating_labels {
-        text.0 = floating_zoom.0.label().to_owned();
+        let want = floating_zoom.0.label();
+        if text.0 != want {
+            text.0 = want.to_owned();
+        }
     }
 }
 

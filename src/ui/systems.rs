@@ -522,28 +522,41 @@ pub fn sync_nearby_npcs_panel(
         }
     }
 
+    // Compare-then-write: HP bars and target borders are touched every frame,
+    // but only change when an NPC takes damage or the target switches. Writing
+    // unconditionally would dirty the Node/BackgroundColor/BorderColor and force
+    // a re-layout / re-render each frame.
     for (hp, mut node, mut bg) in hp_query.iter_mut() {
         if let Some(npc) = client_state.world_objects.get(&hp.object_id) {
             let (ratio, has_vitals) = match npc.vitals {
                 Some(v) if v.max_health > 0.0 => ((v.health / v.max_health).clamp(0.0, 1.0), true),
                 _ => (0.0, false),
             };
-            node.width = percent(ratio * 100.0);
-            bg.0 = if has_vitals {
+            let want_width = percent(ratio * 100.0);
+            if node.width != want_width {
+                node.width = want_width;
+            }
+            let want_bg = if has_vitals {
                 hp_fill_color(ratio)
             } else {
                 Color::NONE
             };
+            if bg.0 != want_bg {
+                bg.0 = want_bg;
+            }
         }
     }
 
     for (row, mut border) in border_query.iter_mut() {
         let is_target = Some(row.object_id) == target;
-        *border = BorderColor::all(if is_target {
+        let want = BorderColor::all(if is_target {
             palette.border_danger
         } else {
             Color::NONE
         });
+        if *border != want {
+            *border = want;
+        }
     }
 }
 

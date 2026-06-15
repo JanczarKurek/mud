@@ -25,6 +25,17 @@ pub struct SkillsPanelRoot;
 #[derive(Component)]
 pub struct SkillsPanelContent;
 
+/// View-model of exactly the `ClientGameState` fields the skills panel renders.
+/// Compared against a `Local` so the rows rebuild only when one of these
+/// changes — not every frame. See `CharacterSheetSnapshot` for the rationale.
+#[derive(Clone, Copy, PartialEq)]
+struct SkillsPanelSnapshot {
+    class: Option<Class>,
+    level: u32,
+    skill_ranks: [u8; 10],
+    available_skill_points: u32,
+}
+
 #[derive(Component, Clone, Copy, Debug)]
 pub struct AllocateSkillButton {
     pub skill: Skill,
@@ -148,11 +159,22 @@ fn rebuild_skills_panel_contents(
     palette: Option<Res<Palette>>,
     roots: Query<Ref<SkillsPanelRoot>>,
     content: Query<Entity, With<SkillsPanelContent>>,
+    mut last: Local<Option<SkillsPanelSnapshot>>,
 ) {
     let Ok(root_ref) = roots.single() else {
         return;
     };
-    if !root_ref.is_changed() && !client_state.is_changed() {
+    let want = SkillsPanelSnapshot {
+        class: client_state.class,
+        level: client_state
+            .experience
+            .as_ref()
+            .map(|e| e.level)
+            .unwrap_or(1),
+        skill_ranks: client_state.skill_ranks,
+        available_skill_points: client_state.available_skill_points,
+    };
+    if !root_ref.is_changed() && last.as_ref() == Some(&want) {
         return;
     }
     let Some(palette) = palette.as_deref() else {
@@ -161,6 +183,7 @@ fn rebuild_skills_panel_contents(
     let Ok(body) = content.single() else {
         return;
     };
+    *last = Some(want);
 
     commands.entity(body).despawn_related::<Children>();
 

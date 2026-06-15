@@ -24,8 +24,8 @@ use crate::combat::components::{AttackProfile, CombatTarget};
 use crate::dialog::components::DialogNode;
 use crate::game::resources::{
     ChatLogState, ClientActiveEffect, ClientCarryWeight, ClientCombatStats, ClientGameState,
-    ClientRemotePlayerState, ClientSpaceState, ClientVitalStats, ClientWorldObjectState, GameEvent,
-    InventoryState, PendingGameEvents, RegenBuffState,
+    ClientRemotePlayerState, ClientSpaceState, ClientStateRevisions, ClientVitalStats,
+    ClientWorldObjectState, GameEvent, InventoryState, PendingGameEvents, RegenBuffState,
 };
 use crate::game::shop::{Shopkeeper, StockMode, Stockpile};
 use crate::game::trade::{ActiveTrades, TradeParticipants, TradePartnerKind, WareView};
@@ -872,11 +872,30 @@ pub fn collect_game_events_from_authority(
 pub fn apply_game_events_to_client_state(
     mut client_state: ResMut<ClientGameState>,
     mut pending_game_events: ResMut<PendingGameEvents>,
+    mut revisions: ResMut<ClientStateRevisions>,
 ) {
     let _t = crate::diagnostics::SystemTimer::new("apply_game_events_to_client_state", 1.0);
     let events = std::mem::take(&mut pending_game_events.events);
     for event in events {
         log_client_game_event(&client_state, &event);
+        // Bump per-domain counters so presentation systems that read a large
+        // slice of state can gate on a cheap `u64` instead of the monolithic
+        // `ClientGameState::is_changed()`, which is dirtied by *any* event.
+        match &event {
+            GameEvent::WorldObjectUpserted { .. } | GameEvent::WorldObjectRemoved { .. } => {
+                revisions.world_objects = revisions.world_objects.wrapping_add(1);
+            }
+            GameEvent::RemotePlayerUpserted { .. } | GameEvent::RemotePlayerRemoved { .. } => {
+                revisions.remote_players = revisions.remote_players.wrapping_add(1);
+            }
+            GameEvent::FloorMapReplaced { .. }
+            | GameEvent::FloorTileSet { .. }
+            | GameEvent::DiscoveredTilesReplaced { .. }
+            | GameEvent::TilesDiscovered { .. } => {
+                revisions.map_tiles = revisions.map_tiles.wrapping_add(1);
+            }
+            _ => {}
+        }
         apply_event_to_state(&mut client_state, event);
     }
 }
