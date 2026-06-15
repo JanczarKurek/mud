@@ -14,7 +14,7 @@ use serde_yaml::{Mapping, Value};
 use crate::assets::AssetResolver;
 use crate::combat::damage_type::DamageType;
 use crate::magic::resources::EffectKind;
-use crate::world::direction::Direction;
+use crate::world::direction::{Direction, WallCorner};
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -940,6 +940,13 @@ pub struct RenderMetadata {
     /// camera-facing sides). `None` = not a wall.
     #[serde(default)]
     pub hide_when_inside_facing: Option<Direction>,
+    /// Which building corner this object represents, for the hide-when-inside
+    /// rule. A corner spans two wall faces, so it can't be described by the
+    /// single-axis `hide_when_inside_facing`. Front corners (`se`/`sw`) fade
+    /// when the player is inside; back corners (`ne`/`nw`) tint instead.
+    /// `None` = not a wall corner.
+    #[serde(default)]
+    pub wall_corner: Option<WallCorner>,
     /// Tiebreaker for stack ordering when several block-sized objects
     /// share `(space, x, y, z)`. Suggested values: barrel=10, chest=20. When
     /// equal, the authoritative `object_id` breaks the tie.

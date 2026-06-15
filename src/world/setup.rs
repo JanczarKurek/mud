@@ -270,10 +270,18 @@ pub fn spawn_overworld_object_instance(
     // spawn even when placed without an explicit map behavior — see
     // `default_npc_behavior`. An explicit `object.behavior` always wins.
     let definition = definitions.get(&object.type_id);
-    if let Some(behavior) =
-        object.behavior.or_else(|| default_npc_behavior(definition, tile_position))
+    if let Some(behavior) = object
+        .behavior
+        .or_else(|| default_npc_behavior(definition, tile_position))
     {
-        realize_npc(commands, entity, definition, object.id, &object.type_id, &behavior);
+        realize_npc(
+            commands,
+            entity,
+            definition,
+            object.id,
+            &object.type_id,
+            &behavior,
+        );
     }
 
     entity
@@ -786,6 +794,7 @@ pub fn build_object_visual_bundle(
         block_size: definition.render.block_size,
         stack_order: definition.render.stack_order,
         hide_when_inside_facing: definition.render.hide_when_inside_facing,
+        wall_corner: definition.render.wall_corner,
     };
 
     let anchor = if bottom_anchor_for(&definition.render) {

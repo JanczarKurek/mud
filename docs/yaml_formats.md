@@ -944,6 +944,7 @@ The `text` value supports three count placeholders in addition to the normal `{p
 - Default: omitted (floor fills the whole tile as usual)
 - Meaning: a sub-tile rectangle, in tile fractions with `x` = west→east and `y` = south→north (matching world axes; `0` = the tile's min edge, `1` = the max edge), that restricts where the floor is drawn on this object's tile. Floor renders **only** inside the rectangle.
 - Used by the directional walls (`wall_s`, `wall_e`, corners, …) to keep floor on the interior side of the slab so it meets the wall flush, leaving the exterior strip free for other terrain. Example: `wall_s` (interior to the north, slab inset `0.25`) uses `[0.0, 0.25, 1.0, 1.0]` — floor is cut south of the slab line.
+- The cut only applies to floor tiles painted with the **`Flooring` flavor** (ids like `cave_floor#flooring`) — the interior building floor that must sit flush against wall slabs. Plain floors (e.g. the base `grass` fill on a ground-floor wall's tile) render full, so a wall never carves a void strip into the surrounding terrain (which would show through as a black band around the building).
 - The floor renderer applies the clip per-quadrant (the floor dual-grid renders at tile corners); a tile with no overlapping mask is unaffected. Implementation: `FloorMaskMap` + `clip_quadrant` in `src/world/floor_render.rs`.
 
 ### `hide_when_inside_facing`
@@ -952,6 +953,14 @@ The `text` value supports three count placeholders in addition to the normal `{p
 - Default: omitted (no fade)
 - Meaning: marks this object as a building wall that should fade to a faint silhouette when the player is inside an enclosed area (the tile directly above the player has `occludes_floor_above: true`). Only `south` and `east` are honoured — these are the camera-facing walls that would otherwise obstruct the player view
 - The wall remains technically present (it still blocks movement); only its sprite alpha is reduced
+- Back walls (`north`/`west`) instead tint with the interior ambient colour when their interior tile is enclosed. Use `wall_corner` (below) for building corners, which span two faces and so can't be described by this single-axis field
+
+### `wall_corner`
+- Type: string (`ne`, `nw`, `se`, `sw`) or omitted
+- Optional: yes
+- Default: omitted (not a corner)
+- Meaning: marks this object as a building corner for the same hide-when-inside rule as `hide_when_inside_facing`, but for a piece that spans two wall faces. Front corners (`se`, `sw`, interior to the north) fade to a faint silhouette when the player is inside, like the `south`/`east` straight walls. Back corners (`ne`, `nw`, interior to the south) instead tint with the interior ambient colour when the interior cell diagonally behind them is enclosed, like the `north`/`west` straight walls
+- A corner has no `hide_when_inside_facing`; set exactly one of the two fields per wall object
 
 ### `stack_order`
 - Type: integer

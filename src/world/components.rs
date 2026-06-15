@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::player::components::{InventoryStack, PlayerId};
-use crate::world::direction::Direction;
+use crate::world::direction::{Direction, WallCorner};
 
 /// Authoritative facing direction for players, NPCs, and oriented world objects.
 /// Replicated to clients via upsert events — presentation code reads this rather
@@ -145,6 +145,10 @@ pub struct WorldVisual {
     /// the player is inside an enclosed area. Mirrored from
     /// `RenderMetadata.hide_when_inside_facing`.
     pub hide_when_inside_facing: Option<Direction>,
+    /// Which building corner this represents, if any. Front corners (`se`/`sw`)
+    /// fade when the player is inside; back corners (`ne`/`nw`) tint by their
+    /// interior-diagonal tile. Mirrored from `RenderMetadata.wall_corner`.
+    pub wall_corner: Option<WallCorner>,
 }
 
 #[derive(Component)]

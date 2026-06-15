@@ -78,6 +78,41 @@ impl Direction {
     }
 }
 
+/// Which corner of a building shell a wall-corner sprite sits on. A straight
+/// wall is a single [`Direction`] face, but a corner spans two axes, so it
+/// needs its own descriptor to drive the inside-fade and indoor-tint logic in
+/// `sync_tile_transforms` (a single `Direction` cannot express both arms).
+#[derive(Component, Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WallCorner {
+    Ne,
+    Nw,
+    Se,
+    Sw,
+}
+
+impl WallCorner {
+    /// Camera-facing (front) corners: their interior lies to the north, so they
+    /// sit between the south-east camera and the room and must fade when the
+    /// player is inside — exactly like the S/E straight walls they join. The
+    /// back corners (NE/NW, interior to the south) stay opaque and tint instead.
+    pub fn is_camera_facing(self) -> bool {
+        matches!(self, Self::Se | Self::Sw)
+    }
+
+    /// Offset from the corner's tile to the interior cell diagonally behind it.
+    /// The corner analogue of the perpendicular interior neighbour a straight
+    /// wall checks; used to decide indoor tinting for the back (NE/NW) corners.
+    pub fn interior_diagonal(self) -> (i32, i32) {
+        match self {
+            Self::Se => (-1, 1),
+            Self::Sw => (1, 1),
+            Self::Ne => (-1, -1),
+            Self::Nw => (1, -1),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -150,5 +185,37 @@ mod tests {
         assert_eq!(Direction::from_yaml(" east "), Some(Direction::East));
         assert_eq!(Direction::from_yaml("left"), Some(Direction::West));
         assert_eq!(Direction::from_yaml("nope"), None);
+    }
+
+    #[test]
+    fn wall_corner_front_corners_are_camera_facing() {
+        // SE/SW (interior to the north) sit between the camera and the room.
+        assert!(WallCorner::Se.is_camera_facing());
+        assert!(WallCorner::Sw.is_camera_facing());
+        // NE/NW are back corners — they tint instead of fading.
+        assert!(!WallCorner::Ne.is_camera_facing());
+        assert!(!WallCorner::Nw.is_camera_facing());
+    }
+
+    #[test]
+    fn wall_corner_interior_diagonal_points_at_the_room() {
+        // Each diagonal points to the interior cell behind the corner: SE's room
+        // is to its NW, SW's to its NE, NE's to its SW, NW's to its SE.
+        assert_eq!(WallCorner::Se.interior_diagonal(), (-1, 1));
+        assert_eq!(WallCorner::Sw.interior_diagonal(), (1, 1));
+        assert_eq!(WallCorner::Ne.interior_diagonal(), (-1, -1));
+        assert_eq!(WallCorner::Nw.interior_diagonal(), (1, -1));
+    }
+
+    #[test]
+    fn wall_corner_deserializes_from_lowercase_yaml() {
+        assert_eq!(
+            serde_yaml::from_str::<WallCorner>("se").unwrap(),
+            WallCorner::Se
+        );
+        assert_eq!(
+            serde_yaml::from_str::<WallCorner>("nw").unwrap(),
+            WallCorner::Nw
+        );
     }
 }

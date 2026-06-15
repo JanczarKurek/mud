@@ -2643,6 +2643,7 @@ pub fn sync_portal_overlays(
                 block_size: 0,
                 stack_order: 0,
                 hide_when_inside_facing: None,
+                wall_corner: None,
             },
             Sprite {
                 color: Color::srgba(0.2, 0.6, 1.0, 0.55),

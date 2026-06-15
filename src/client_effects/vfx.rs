@@ -83,6 +83,7 @@ pub fn consume_vfx_events(
                 block_size: 0,
                 stack_order: 0,
                 hide_when_inside_facing: None,
+                wall_corner: None,
             },
             Transform::default(),
             animated,

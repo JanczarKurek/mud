@@ -8,7 +8,7 @@ use crate::world::components::{
     Facing, HealthBarDisplayPolicy, RenderStackOrder, SpaceResident, TilePosition, ViewPosition,
     WorldVisual,
 };
-use crate::world::direction::Direction;
+use crate::world::direction::{Direction, WallCorner};
 use crate::world::floors::{
     is_indoor_tile, should_apply_indoor_tint, IndoorTileMap, VisibleFloorRange,
 };
@@ -184,6 +184,7 @@ pub fn sync_client_world_projection(
             world_visual.block_size = definition.render.block_size;
             world_visual.stack_order = definition.render.stack_order;
             world_visual.hide_when_inside_facing = definition.render.hide_when_inside_facing;
+            world_visual.wall_corner = definition.render.wall_corner;
         }
         if facing.0 != object.facing {
             facing.0 = object.facing;
@@ -576,30 +577,55 @@ pub fn sync_tile_transforms(
             // so the interior stays legible. North/west walls remain visible
             // because they sit "behind" the player and never obstruct view.
             if is_active && player_is_inside {
-                if let Some(facing_dir) = world_visual.hide_when_inside_facing {
-                    let camera_facing = matches!(facing_dir, Direction::South | Direction::East);
-                    let same_building =
-                        view_floor == player_floor || view_floor == player_floor + 1;
-                    if camera_facing && same_building {
-                        new_alpha = WALL_INSIDE_ALPHA;
-                        is_faded_camera_wall = true;
-                    }
+                // A straight wall's camera-facing face is South/East; a corner
+                // is camera-facing when it's a front (SE/SW) corner. Either way
+                // it sits between the south-east camera and the room interior,
+                // so it fades to keep the inside legible. Back walls/corners stay
+                // visible — they sit "behind" the player and never obstruct view.
+                let camera_facing = world_visual
+                    .hide_when_inside_facing
+                    .map(|d| matches!(d, Direction::South | Direction::East))
+                    .or_else(|| world_visual.wall_corner.map(WallCorner::is_camera_facing))
+                    .unwrap_or(false);
+                let same_building = view_floor == player_floor || view_floor == player_floor + 1;
+                if camera_facing && same_building {
+                    new_alpha = WALL_INSIDE_ALPHA;
+                    is_faded_camera_wall = true;
                 }
             }
 
             // Indoor tint: applies to back walls (N/W) and to any object
             // anchored on an indoor tile. Camera-facing walls being alpha-faded
             // shouldn't also get tinted — they're meant to read as outdoor.
-            let apply_tint = is_active
-                && !is_faded_camera_wall
-                && should_apply_indoor_tint(
+            let tinted_by_indoor = if let Some(corner) = world_visual.wall_corner {
+                // Back corners (NE/NW) tint with the N/W walls they join, keyed
+                // on the interior cell diagonally behind them. Front corners
+                // (SE/SW) never tint — they fade when inside and read outdoor
+                // otherwise, matching the S/E straight walls. (A bare corner has
+                // no `hide_when_inside_facing`, so the default `None` path would
+                // wrongly tint it on its own roofed tile — the dark-corner bug.)
+                if corner.is_camera_facing() {
+                    false
+                } else {
+                    let (dx, dy) = corner.interior_diagonal();
+                    indoor.contains(
+                        view.space_id,
+                        view.tile.x + dx,
+                        view.tile.y + dy,
+                        view_floor,
+                    )
+                }
+            } else {
+                should_apply_indoor_tint(
                     &indoor,
                     view.space_id,
                     view.tile.x,
                     view.tile.y,
                     view_floor,
                     world_visual.hide_when_inside_facing,
-                );
+                )
+            };
+            let apply_tint = is_active && !is_faded_camera_wall && tinted_by_indoor;
             let new_rgb = if apply_tint {
                 indoor_tint_rgb
             } else {

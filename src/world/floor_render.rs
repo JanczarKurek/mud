@@ -7,8 +7,8 @@ use bevy::prelude::*;
 use crate::game::resources::ClientGameState;
 use crate::world::components::SpaceId;
 use crate::world::floor_definitions::{
-    FloorTilesetDefinition, FloorTilesetDefinitions, FloorTransitionDefinition, FloorTypeId,
-    TransitionPairKey,
+    split_floor_id, FloorFlavor, FloorTilesetDefinition, FloorTilesetDefinitions,
+    FloorTransitionDefinition, FloorTypeId, TransitionPairKey,
 };
 use crate::world::floor_map::FloorMap;
 use crate::world::floors::{IndoorTileMap, VisibleFloorRange};
@@ -679,10 +679,16 @@ fn spawn_floor_cell(
 
             // If any contributing quadrant lands on a floor-masked tile, render
             // the cell as per-quadrant sprites clipped to those masks instead of
-            // one full-cell atlas sprite.
-            let masked = MASK_QUADRANTS.iter().any(|(bit, _, _, dx, dy)| {
-                mask & bit != 0 && floor_mask.get(space_id, z, rx + dx, ry + dy).is_some()
-            });
+            // one full-cell atlas sprite. Cutting is reserved for the `Flooring`
+            // flavor — the interior building floor that must meet wall slabs
+            // flush. Plain terrain (e.g. the base `grass` fill on a ground-floor
+            // wall's tile) renders full, so walls don't carve a void strip into
+            // the surrounding ground (which would show through as a black band).
+            let is_flooring = split_floor_id(floor_id.as_str()).1 == FloorFlavor::Flooring;
+            let masked = is_flooring
+                && MASK_QUADRANTS.iter().any(|(bit, _, _, dx, dy)| {
+                    mask & bit != 0 && floor_mask.get(space_id, z, rx + dx, ry + dy).is_some()
+                });
             if masked {
                 spawn_masked_floor_quadrants(
                     commands,

@@ -12,4 +12,5 @@ render:
   block_size: 2
   walkable_surface: true
   floor_mask_rect: [0.75, 0.25, 1.0, 1.0]
+  wall_corner: sw
   stack_order: 50
