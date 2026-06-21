@@ -20,9 +20,9 @@ use crate::ui::components::{
     HudRoot, ItemSlotButton, ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ItemTooltipLabel,
     ItemTooltipRoot, JumpInfoBoxLabel, JumpInfoBoxRoot, JumpTileHighlight, MagicEffectsLabel,
     ManaFill, ManaLabel, MinimapCanvas, MinimapMode, MinimapPanelUndockButton, MinimapView,
-    NearbyNpcsList, NearbyNpcsPanelUndockButton, PythonConsolePanel, PythonConsoleRestartButton,
-    PythonConsoleTerminal, RegenBuffLabel, RightSidebarRoot, StatusPanelContent,
-    StatusPanelUndockButton, TakePartialAmountLabel, TakePartialCancelButton,
+    NearbyNpcsList, NearbyNpcsPanelUndockButton, PythonConsoleMaximizeButton, PythonConsolePanel,
+    PythonConsoleRestartButton, PythonConsoleTerminal, RegenBuffLabel, RightSidebarRoot,
+    StatusPanelContent, StatusPanelUndockButton, TakePartialAmountLabel, TakePartialCancelButton,
     TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot,
     TradeButtonLabel, TradeColumn,
 };
@@ -1294,21 +1294,44 @@ fn spawn_python_console_header(
                 },
                 TextColor(palette.text_primary),
             ));
-            spawn_themed_button(
-                row,
-                theme,
-                palette,
-                ButtonStyle::Secondary,
+            // Right-aligned button cluster: Maximize/Restore, then Restart.
+            row.spawn((
                 Node {
+                    flex_direction: FlexDirection::Row,
+                    align_items: AlignItems::Center,
+                    column_gap: px(8.0),
+                    ..default()
+                },
+                BackgroundColor(Color::NONE),
+            ))
+            .with_children(|buttons| {
+                let button_node = || Node {
                     padding: UiRect::axes(px(10.0), px(3.0)),
                     align_items: AlignItems::Center,
                     justify_content: JustifyContent::Center,
                     ..default()
-                },
-                "Restart",
-                12.0,
-                PythonConsoleRestartButton,
-            );
+                };
+                spawn_themed_button(
+                    buttons,
+                    theme,
+                    palette,
+                    ButtonStyle::Secondary,
+                    button_node(),
+                    "Maximize",
+                    12.0,
+                    PythonConsoleMaximizeButton,
+                );
+                spawn_themed_button(
+                    buttons,
+                    theme,
+                    palette,
+                    ButtonStyle::Secondary,
+                    button_node(),
+                    "Restart",
+                    12.0,
+                    PythonConsoleRestartButton,
+                );
+            });
         });
 }
 

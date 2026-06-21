@@ -11,7 +11,8 @@ use crate::scripting::python::PythonConsoleHost;
 use crate::scripting::resources::PythonConsoleState;
 use crate::scripting_api::build::WorldSnapshotParams;
 use crate::ui::components::{
-    PythonConsolePanel, PythonConsoleRestartButton, PythonConsoleTerminal,
+    PythonConsoleMaximizeButton, PythonConsolePanel, PythonConsoleRestartButton,
+    PythonConsoleTerminal,
 };
 use crate::ui::PYTHON_CONSOLE_FOCUS_ID;
 
@@ -84,9 +85,14 @@ pub fn handle_python_console_submissions(
         // Echo the input as a prompt line so users see history mid-stream.
         terminal.push(format!(">>> {}", submission.text), LineStyle::Prompt);
 
+        // IPython-style `expr?` rewrites to `help(expr)` before compiling
+        // (`?` is not valid Python, so it must be expanded here).
+        let code =
+            expand_help_shortcut(&submission.text).unwrap_or_else(|| submission.text.clone());
+
         let caller = local_player_query.iter().next().map(|identity| identity.id);
         let snapshot = snapshot_params.build_for_player(caller);
-        let output = host.execute(&submission.text, snapshot);
+        let output = host.execute(&code, snapshot);
 
         for (line, style) in output.lines {
             terminal.push(line, style);
@@ -115,11 +121,11 @@ pub fn handle_python_console_completion(
         let Ok(mut terminal) = terminals.get_mut(request.terminal) else {
             continue;
         };
+        // `complete_at` sees the full prefix so it can resolve dotted access
+        // (`world.sp` → `spawn`); `token` is just the trailing identifier we
+        // replace, so the `world.` part is left intact.
         let token = trailing_identifier(&request.text_before_cursor);
-        if token.is_empty() {
-            continue;
-        }
-        let mut matches = host.complete_prefix(token);
+        let mut matches = host.complete_at(&request.text_before_cursor);
         matches.retain(|m| !m.starts_with('_'));
         match matches.as_slice() {
             [] => {}
@@ -129,7 +135,7 @@ pub fn handle_python_console_completion(
             }
             many => {
                 terminal.push(
-                    format!("[completions] {}", many.join(" ")),
+                    format!("[completions] {}", summarize(many)),
                     LineStyle::System,
                 );
                 if let Some(prefix) = common_prefix(many) {
@@ -139,6 +145,21 @@ pub fn handle_python_console_completion(
                 }
             }
         }
+    }
+}
+
+/// Render a candidate list for the `[completions]` line, capping long lists
+/// (e.g. bare `world.` lists every member) so the terminal stays readable.
+fn summarize(candidates: &[String]) -> String {
+    const MAX: usize = 30;
+    if candidates.len() <= MAX {
+        candidates.join(" ")
+    } else {
+        format!(
+            "{} … (+{} more)",
+            candidates[..MAX].join(" "),
+            candidates.len() - MAX
+        )
     }
 }
 
@@ -162,6 +183,47 @@ pub fn handle_python_console_restart_button(
     }
 }
 
+/// Maximize/Restore-button click handler. Flips `PythonConsoleState::maximized`;
+/// `sync_bottom_panels_visibility` reads the flag and grows the chat/console
+/// area to cover most of the screen.
+pub fn handle_python_console_maximize_button(
+    interactions: Query<&Interaction, (With<PythonConsoleMaximizeButton>, Changed<Interaction>)>,
+    mut console_state: ResMut<PythonConsoleState>,
+) {
+    let pressed = interactions
+        .iter()
+        .any(|i| matches!(i, Interaction::Pressed));
+    if pressed {
+        console_state.maximized = !console_state.maximized;
+    }
+}
+
+/// Keep the Maximize/Restore button's label in step with the console state.
+/// Runs only when the state actually changes.
+pub fn sync_python_console_maximize_label(
+    console_state: Res<PythonConsoleState>,
+    buttons: Query<&Children, With<PythonConsoleMaximizeButton>>,
+    mut texts: Query<&mut Text>,
+) {
+    if !console_state.is_changed() {
+        return;
+    }
+    let label = if console_state.maximized {
+        "Restore"
+    } else {
+        "Maximize"
+    };
+    for children in &buttons {
+        for child in children.iter() {
+            if let Ok(mut text) = texts.get_mut(child) {
+                if text.0 != label {
+                    text.0 = label.to_owned();
+                }
+            }
+        }
+    }
+}
+
 /// Pull the last identifier-ish token off the buffer. Stops at the first
 /// non-identifier char scanning right-to-left so `world.gi` returns `gi`.
 fn trailing_identifier(input: &str) -> &str {
@@ -175,6 +237,28 @@ fn trailing_identifier(input: &str) -> &str {
         }
     }
     &input[split..]
+}
+
+/// IPython-style `?` help shortcut. `world.spawn?` → `help(world.spawn)`,
+/// `?world.spawn` → the same, and a bare `?` → `help()`. Only triggers when
+/// the `?` bracket the statement (leading and/or trailing) so a `?` buried in
+/// a string or expression (`print("a?b")`) is left to run as-is. Returns the
+/// rewritten code, or `None` to run the input unchanged.
+fn expand_help_shortcut(text: &str) -> Option<String> {
+    let trimmed = text.trim();
+    if !trimmed.contains('?') {
+        return None;
+    }
+    let target = trimmed.trim_matches('?').trim();
+    // A surviving interior `?` means it wasn't a bracketing help marker.
+    if target.contains('?') {
+        return None;
+    }
+    if target.is_empty() {
+        Some("help()".to_owned())
+    } else {
+        Some(format!("help({target})"))
+    }
 }
 
 fn common_prefix(strings: &[String]) -> Option<String> {
@@ -206,6 +290,32 @@ mod tests {
         assert_eq!(trailing_identifier("a + b.c"), "c");
         assert_eq!(trailing_identifier(""), "");
         assert_eq!(trailing_identifier("  "), "");
+    }
+
+    #[test]
+    fn help_shortcut_rewrites_trailing_and_leading_question() {
+        assert_eq!(
+            expand_help_shortcut("world.spawn?").as_deref(),
+            Some("help(world.spawn)")
+        );
+        assert_eq!(
+            expand_help_shortcut("?world.spawn").as_deref(),
+            Some("help(world.spawn)")
+        );
+        // `??` (IPython source view) collapses to plain help here.
+        assert_eq!(
+            expand_help_shortcut("world.player()??").as_deref(),
+            Some("help(world.player())")
+        );
+        assert_eq!(expand_help_shortcut("?").as_deref(), Some("help()"));
+    }
+
+    #[test]
+    fn help_shortcut_ignores_plain_and_interior_question() {
+        assert_eq!(expand_help_shortcut("world.spawn"), None);
+        assert_eq!(expand_help_shortcut("  "), None);
+        // `?` inside a string/expression is not a help marker.
+        assert_eq!(expand_help_shortcut("print(\"a?b\")"), None);
     }
 
     #[test]

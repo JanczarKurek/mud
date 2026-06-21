@@ -7,4 +7,7 @@ use bevy::prelude::*;
 #[derive(Resource, Default)]
 pub struct PythonConsoleState {
     pub is_open: bool,
+    /// When open, expand the panel to cover most of the screen. Toggled by
+    /// the console header's Maximize/Restore button; persists across opens.
+    pub maximized: bool,
 }

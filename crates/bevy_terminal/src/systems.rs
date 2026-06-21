@@ -434,19 +434,24 @@ pub fn terminal_sync_input_line(
     }
 }
 
-/// After UI layout, pin the viewport's scroll position to the bottom for
-/// any terminal whose buffer was just mutated. Mirrors the project's
+/// After UI layout, keep the viewport pinned to the bottom for any terminal
+/// in "stick to bottom" mode (`auto_pin_bottom`). `Terminal::push` re-arms the
+/// flag and the scroll-away handlers (`terminal_input` PageUp/Down,
+/// `terminal_wheel_input`) clear it, so this stays pinned across the 1–2
+/// frames it takes a freshly-pushed line to be synced into UI nodes and
+/// measured by layout — without that stickiness, output pushed after
+/// `terminal_sync_buffer` in the same frame would pin to the *old* bottom and
+/// leave the new line scrolled off-screen. Mirrors the project's
 /// `auto_pin_dialog_transcript_scroll`.
 pub fn terminal_pin_scroll(
-    mut terminals: Query<(Entity, &mut Terminal)>,
+    terminals: Query<(Entity, &Terminal)>,
     mut viewport_q: Query<(Entity, &ComputedNode, &mut ScrollPosition), With<TerminalViewport>>,
     parents: Query<&ChildOf>,
 ) {
-    for (root_entity, mut terminal) in &mut terminals {
+    for (root_entity, terminal) in &terminals {
         if !terminal.auto_pin_bottom {
             continue;
         }
-        let mut pinned = false;
         for (vp_entity, computed, mut scroll) in &mut viewport_q {
             if !ancestor_is(vp_entity, root_entity, &parents, 6) {
                 continue;
@@ -460,10 +465,6 @@ pub fn terminal_pin_scroll(
             if (scroll.y - target).abs() > 0.5 {
                 scroll.y = target;
             }
-            pinned = true;
-        }
-        if pinned {
-            terminal.auto_pin_bottom = false;
         }
     }
 }

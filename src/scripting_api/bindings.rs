@@ -23,59 +23,73 @@ use crate::scripting_api::{with_ctx, with_ctx_or};
 use crate::world::components::{SpaceId, TilePosition};
 use crate::world::floor_definitions::FloorTypeId;
 
-const HELP_TEXT: &str = "\
-world API cheat sheet — use help(world.<verb>) for details.
-
-Read:
-  world.now()                            world.is_admin()
-  world.caller_player_id()               world.player()    -> Player | None
-  world.players()    -> list[Player]     world.find_player(id) -> Player | None
-  world.spaces()                         world.objects([space_id])
-  world.object(id)                       world.object_types()
-  world.spell_ids()                      world.floor_tile(space_id, z, x, y)
-  world.player_has(type_id, count=1)
-
-Player objects (returned by world.player/players/find_player):
-  Read-only properties:
-    p.id, p.name, p.class_name, p.level, p.xp, p.xp_for_next
-    p.skill_points, p.skills, p.attributes, p.vitals
-    p.space_id, p.x, p.y, p.z, p.position, p.facing
-  Admin mutations (targeted at p regardless of attached caller):
-    p.grant_xp(n)                p.set_level(n)
-    p.grant_skill_points(n)      p.set_skill(name, rank)
-    p.set_attribute(name, val)   p.set_class(name)
-    p.full_heal()                p.set_vitals(health=None, mana=None)
-    p.teleport(x, y, z=0, space_id=None)
-    p.give(type_id, count=1)     p.take(type_id, count=1)
-
-Write (acts on attached caller):
-  world.give(type_id, count=1)           world.take(type_id, count=1)
-  world.spawn(type_id, x, y, z=0)        world.despawn(object_id)
-  world.teleport(x, y, z=0, space_id=None)
-  world.set_vitals(health=None, mana=None)
-  world.set_object_state(object_id, state)
-  world.rotate(object_id, 'cw'|'ccw')
-  world.interact(object_id, verb)        world.open_container(object_id)
-  world.set_combat_target(object_id=None)
-  world.cast_spell(spell_id, target_object_id)
-  world.move_item(from_slot, to_slot)
-  world.set_floor(space_id, z, x, y, floor_type=None)
-
-Per-character stash (anyone can read/write):
-  world.stash_get(key)                   world.stash_set(key, value)
-  world.stash_has(key)                   world.stash_delete(key)
-
-Per-character log (quest scripts only):
-  world.log_write(subsection, title, body)
-
-Quest hooks (quest scripts only):
-  world.set_var(name, value)             world.get_var(name)
-  world.complete_quest(qid)              world.fail_quest(qid)
-
-Admin REPL:
-  world.attach_player(player_id)         world.attach_player(None)
-  world.reset()
-";
+/// Ordered grouping for the `world.help()` overview. Maps each category to
+/// the verb names that belong under it; descriptions are pulled *live* from
+/// each member's `__doc__` (see `member_summary`), so this list only governs
+/// grouping/ordering and never the prose. Any public module member not named
+/// here is surfaced under a trailing "Other" bucket, so a newly-added verb
+/// can never silently vanish from help.
+const HELP_CATEGORIES: &[(&str, &[&str])] = &[
+    (
+        "Read",
+        &[
+            "now",
+            "is_admin",
+            "caller_player_id",
+            "player_id",
+            "player",
+            "players",
+            "find_player",
+            "spaces",
+            "objects",
+            "object",
+            "object_types",
+            "spell_ids",
+            "floor_tile",
+            "player_has",
+            "list_objects",
+            "list_object_types",
+            "player_position",
+        ],
+    ),
+    (
+        "Inventory & items",
+        &["give", "take", "player_give", "player_take", "move_item"],
+    ),
+    (
+        "World mutation",
+        &[
+            "spawn",
+            "spawn_object",
+            "despawn",
+            "teleport",
+            "set_vitals",
+            "set_object_state",
+            "rotate",
+            "interact",
+            "open_container",
+            "set_combat_target",
+            "cast_spell",
+            "set_floor",
+        ],
+    ),
+    (
+        "Per-character stash & log",
+        &[
+            "stash_get",
+            "stash_set",
+            "stash_has",
+            "stash_delete",
+            "log_write",
+            "log",
+        ],
+    ),
+    (
+        "Quest hooks",
+        &["set_var", "get_var", "complete_quest", "fail_quest"],
+    ),
+    ("Admin / REPL", &["attach_player", "reset", "help"]),
+];
 
 /// `world` — verbs for inspecting and mutating the live game world.
 ///
@@ -96,17 +110,73 @@ pub mod world_api {
 
     // --- discovery / help -------------------------------------------------
 
-    /// Print a categorised cheat sheet of every `world.*` verb. For
-    /// details on a specific verb use `help(world.<verb>)` or
-    /// `print(world.<verb>.__doc__)`. Use `dir(world)` to enumerate
-    /// without docs.
+    /// Print a categorised overview of every `world.*` verb, generated live
+    /// from the module's members and the first line of each one's docstring
+    /// — so it can never drift from the real API. For details on a single
+    /// verb use `help(world.<verb>)` or `print(world.<verb>.__doc__)`, and
+    /// `apropos("term")` to search names + docs. `dir(world)` lists raw names.
     #[pyfunction]
-    fn help() {
+    fn help(vm: &VirtualMachine) -> PyResult<()> {
+        let module = vm.import("world", 0)?;
+        let mut public: Vec<String> = vm
+            .dir(Some(module.clone()))?
+            .borrow_vec()
+            .iter()
+            .filter_map(|n| n.str(vm).ok().map(|s| s.as_str().to_owned()))
+            .filter(|n| !n.starts_with('_'))
+            .collect();
+        public.sort();
+
+        let mut lines: Vec<String> = vec![
+            "world API — live overview. help(world.<verb>) or world.<verb>? for \
+             details, apropos(\"term\") to search."
+                .to_owned(),
+        ];
+        let mut shown: std::collections::HashSet<&str> = std::collections::HashSet::new();
+
+        for (category, names) in HELP_CATEGORIES {
+            let present: Vec<&str> = names
+                .iter()
+                .copied()
+                .filter(|n| public.iter().any(|p| p == n))
+                .collect();
+            if present.is_empty() {
+                continue;
+            }
+            lines.push(String::new());
+            lines.push(format!("{category}:"));
+            for name in present {
+                shown.insert(name);
+                lines.push(format!(
+                    "  {name:<22} {}",
+                    member_summary(&module, name, vm)
+                ));
+            }
+        }
+
+        // Anything public but uncategorised — surfaced so new verbs (and the
+        // Player type) can't hide from the overview.
+        let others: Vec<&String> = public
+            .iter()
+            .filter(|p| !shown.contains(p.as_str()))
+            .collect();
+        if !others.is_empty() {
+            lines.push(String::new());
+            lines.push("Other:".to_owned());
+            for name in others {
+                lines.push(format!(
+                    "  {name:<22} {}",
+                    member_summary(&module, name, vm)
+                ));
+            }
+        }
+
         with_ctx(|ctx| {
-            for line in HELP_TEXT.lines() {
-                ctx.log(line.to_owned());
+            for line in &lines {
+                ctx.log(line.clone());
             }
         });
+        Ok(())
     }
 
     // --- read API ----------------------------------------------------------
@@ -892,31 +962,37 @@ pub mod world_api {
     impl PyPlayer {
         // --- read-only getters ---
 
+        /// Player id (equals the DB account id).
         #[pygetset]
         fn id(&self) -> u64 {
             self.player_id
         }
 
+        /// Display name.
         #[pygetset]
         fn name(&self, vm: &VirtualMachine) -> PyResult<String> {
             view(self.player_id, vm, |p| p.display_name.clone())
         }
 
+        /// Class label, e.g. "Fighter".
         #[pygetset]
         fn class_name(&self, vm: &VirtualMachine) -> PyResult<String> {
             view(self.player_id, vm, |p| p.class_label.clone())
         }
 
+        /// Current level (1..=LEVEL_CAP).
         #[pygetset]
         fn level(&self, vm: &VirtualMachine) -> PyResult<u32> {
             view(self.player_id, vm, |p| p.level)
         }
 
+        /// Total accumulated XP.
         #[pygetset]
         fn xp(&self, vm: &VirtualMachine) -> PyResult<u64> {
             view(self.player_id, vm, |p| p.current_xp)
         }
 
+        /// Total XP required for the next level, or None at the cap.
         #[pygetset]
         fn xp_for_next(&self, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
             view(self.player_id, vm, |p| match p.xp_for_next {
@@ -925,50 +1001,61 @@ pub mod world_api {
             })
         }
 
+        /// Unspent skill points.
         #[pygetset]
         fn skill_points(&self, vm: &VirtualMachine) -> PyResult<u32> {
             view(self.player_id, vm, |p| p.available_skill_points)
         }
 
+        /// Skill ranks as a read-only {name: rank} mapping.
         #[pygetset]
         fn skills(&self, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
             view(self.player_id, vm, |p| {
-                skill_ranks_to_dict(&p.skill_ranks, vm)
+                read_only_mapping(skill_ranks_to_dict(&p.skill_ranks, vm), vm)
             })
         }
 
+        /// Attributes as a read-only {name: value} mapping (strength, agility, ...).
         #[pygetset]
         fn attributes(&self, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
             view(self.player_id, vm, |p| {
-                attribute_map_to_dict(&p.attributes, vm)
+                read_only_mapping(attribute_map_to_dict(&p.attributes, vm), vm)
             })
         }
 
+        /// Read-only vitals mapping: health, max_health, mana, max_mana.
         #[pygetset]
         fn vitals(&self, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
-            view(self.player_id, vm, |p| vitals_to_dict(&p.vitals, vm))
+            view(self.player_id, vm, |p| {
+                read_only_mapping(vitals_to_dict(&p.vitals, vm), vm)
+            })
         }
 
+        /// Id of the space the player currently occupies.
         #[pygetset]
         fn space_id(&self, vm: &VirtualMachine) -> PyResult<u64> {
             view(self.player_id, vm, |p| p.space_id)
         }
 
+        /// Tile x coordinate.
         #[pygetset]
         fn x(&self, vm: &VirtualMachine) -> PyResult<i32> {
             view(self.player_id, vm, |p| p.x)
         }
 
+        /// Tile y coordinate.
         #[pygetset]
         fn y(&self, vm: &VirtualMachine) -> PyResult<i32> {
             view(self.player_id, vm, |p| p.y)
         }
 
+        /// Tile z (floor) coordinate.
         #[pygetset]
         fn z(&self, vm: &VirtualMachine) -> PyResult<i32> {
             view(self.player_id, vm, |p| p.z)
         }
 
+        /// (x, y, z) tile position as a tuple.
         #[pygetset]
         fn position(&self, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
             view(self.player_id, vm, |p| {
@@ -982,11 +1069,13 @@ pub mod world_api {
             })
         }
 
+        /// Facing direction, e.g. "South".
         #[pygetset]
         fn facing(&self, vm: &VirtualMachine) -> PyResult<String> {
             view(self.player_id, vm, |p| p.facing.clone())
         }
 
+        /// World object id of the player's body, or None if unspawned.
         #[pygetset]
         fn object_id(&self, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
             view(self.player_id, vm, |p| match p.object_id {
@@ -1231,7 +1320,7 @@ pub mod world_api {
                     "x" => Ok(p.x.to_pyobject(vm)),
                     "y" => Ok(p.y.to_pyobject(vm)),
                     "z" => Ok(p.z.to_pyobject(vm)),
-                    "vitals" => Ok(vitals_to_dict(&p.vitals, vm)),
+                    "vitals" => Ok(read_only_mapping(vitals_to_dict(&p.vitals, vm), vm)),
                     "facing" => Ok(p.facing.clone().to_pyobject(vm)),
                     "name" => Ok(p.display_name.clone().to_pyobject(vm)),
                     "class" | "class_name" => Ok(p.class_label.clone().to_pyobject(vm)),
@@ -1241,12 +1330,33 @@ pub mod world_api {
                         Some(n) => n.to_pyobject(vm),
                         None => vm.ctx.none(),
                     }),
-                    "attributes" => Ok(attribute_map_to_dict(&p.attributes, vm)),
-                    "skills" => Ok(skill_ranks_to_dict(&p.skill_ranks, vm)),
+                    "attributes" => Ok(read_only_mapping(
+                        attribute_map_to_dict(&p.attributes, vm),
+                        vm,
+                    )),
+                    "skills" => Ok(read_only_mapping(
+                        skill_ranks_to_dict(&p.skill_ranks, vm),
+                        vm,
+                    )),
                     "skill_points" => Ok(p.available_skill_points.to_pyobject(vm)),
                     other => Err(vm.new_key_error(other.to_owned().to_pyobject(vm))),
                 }
             })?
+        }
+    }
+
+    /// Wrap a freshly-built dict in a read-only `mappingproxy`. The Player
+    /// snapshot fields (`attributes`, `skills`, `vitals`) are point-in-time
+    /// copies — handing back a plain `dict` invited
+    /// `p.attributes['strength'] = 99`, which silently mutated a throwaway and
+    /// did nothing to the game. A `mappingproxy` reads the same
+    /// (`p.attributes['strength']`) but raises `TypeError` on assignment, so
+    /// the read-only contract is honest. Use the `set_*` methods to mutate.
+    fn read_only_mapping(obj: PyObjectRef, vm: &VirtualMachine) -> PyObjectRef {
+        use rustpython_vm::builtins::{PyDict, PyMappingProxy};
+        match obj.downcast::<PyDict>() {
+            Ok(dict) => PyMappingProxy::from(dict).into_ref(&vm.ctx).into(),
+            Err(obj) => obj,
         }
     }
 
@@ -1287,6 +1397,35 @@ pub mod world_api {
     }
 
     // --- helpers ----------------------------------------------------------
+
+    /// First meaningful line of `module.<name>.__doc__`, used to annotate the
+    /// `world.help()` overview. Returns an empty string when the member has
+    /// no docstring.
+    fn member_summary(module: &PyObjectRef, name: &str, vm: &VirtualMachine) -> String {
+        let doc = module
+            .get_attr(&vm.ctx.new_str(name), vm)
+            .ok()
+            .and_then(|attr| attr.get_attr("__doc__", vm).ok())
+            .and_then(|doc| doc.str(vm).ok())
+            .map(|s| s.as_str().to_owned())
+            .unwrap_or_default();
+        doc_summary(&doc)
+    }
+
+    /// Reduce a docstring to its first real line. The `#[pyfunction]` macro
+    /// prefixes a `name(sig)\n--\n\n` text-signature header onto `__doc__`;
+    /// strip it so the summary is the human prose, not the signature.
+    fn doc_summary(doc: &str) -> String {
+        let body = match doc.split_once("\n--\n") {
+            Some((_sig, rest)) => rest,
+            None => doc,
+        };
+        body.lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty())
+            .unwrap_or("")
+            .to_owned()
+    }
 
     fn queue(vm: &VirtualMachine, command: GameCommand) -> PyResult<()> {
         match with_ctx(|ctx| ctx.queue_command(command)) {

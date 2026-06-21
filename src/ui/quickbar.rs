@@ -678,11 +678,20 @@ pub fn unhide_on_console_open(
     }
 }
 
-/// Single owner of chat-area / chat-panel / console-panel `Display`.
-/// Reads `BottomPanelVisibility::hidden` and `PythonConsoleState::is_open`,
-/// then writes:
+/// Default height of the chat/console area (matches the spawn value in
+/// `setup.rs`). The maximized console overrides this with a viewport-relative
+/// height so it covers most of the screen.
+const BOTTOM_PANEL_DEFAULT_HEIGHT: Val = Val::Px(260.0);
+/// Height of the chat/console area while the console is maximized, as a
+/// fraction of the window height.
+const CONSOLE_MAXIMIZED_HEIGHT: Val = Val::Vh(78.0);
+
+/// Single owner of chat-area / chat-panel / console-panel `Display` (and the
+/// chat-area height). Reads `BottomPanelVisibility::hidden` and
+/// `PythonConsoleState::{is_open, maximized}`, then writes:
 /// - `ChatAreaContainer` → `None` when hidden (so the quickbar drops to
-///   the screen edge), `Flex` otherwise;
+///   the screen edge), `Flex` otherwise, and tall when the console is
+///   maximized;
 /// - the chat and console panels alternate inside the container based on
 ///   `is_open`.
 pub fn sync_bottom_panels_visibility(
@@ -714,10 +723,16 @@ pub fn sync_bottom_panels_visibility(
     >,
 ) {
     let console_open = console_state.as_ref().is_some_and(|s| s.is_open);
+    let maximized = console_open && console_state.as_ref().is_some_and(|s| s.maximized);
     let area_display = if visibility.hidden {
         Display::None
     } else {
         Display::Flex
+    };
+    let area_height = if maximized {
+        CONSOLE_MAXIMIZED_HEIGHT
+    } else {
+        BOTTOM_PANEL_DEFAULT_HEIGHT
     };
     let chat_display = if console_open {
         Display::None
@@ -732,6 +747,9 @@ pub fn sync_bottom_panels_visibility(
     for mut node in &mut chat_areas {
         if node.display != area_display {
             node.display = area_display;
+        }
+        if node.height != area_height {
+            node.height = area_height;
         }
     }
     for mut node in &mut chat_panels {

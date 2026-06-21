@@ -230,6 +230,12 @@ pub struct PythonConsoleTerminal;
 #[derive(Component)]
 pub struct PythonConsoleRestartButton;
 
+/// Marker on the "Maximize"/"Restore" button in the Python console header.
+/// Click toggles `PythonConsoleState::maximized`, growing the panel to cover
+/// most of the screen. Its label tracks the current state.
+#[derive(Component)]
+pub struct PythonConsoleMaximizeButton;
+
 /// Marker on the terminal-widget root that hosts the read-only chat log.
 #[derive(Component)]
 pub struct ChatTerminal;
