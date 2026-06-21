@@ -13,8 +13,9 @@ use crate::game::resources::{
     GameEvent, GameUiEvent, InventoryStackSummary, PendingGameCommands, PendingGameEvents,
     PendingGameUiEvents,
 };
+use crate::magic::effects::MagicEffects;
 use crate::player::components::{
-    ChatLog, DerivedStats, Inventory, InventoryStack, MovementCooldown, Player, PlayerIdentity,
+    AwaitingRespawn, ChatLog, Inventory, InventoryStack, MovementCooldown, Player, PlayerIdentity,
     RegenBuffs, RegenTickers, VitalStats,
 };
 use crate::player::progression::{xp_for_level, Experience};
@@ -47,18 +48,12 @@ type DeathHandlerPlayerQuery<'w, 's> = Query<
     's,
     (
         &'static PlayerIdentity,
-        &'static mut VitalStats,
-        &'static DerivedStats,
         &'static mut Inventory,
-        &'static mut SpaceResident,
-        &'static mut TilePosition,
-        &'static mut MovementCooldown,
         &'static mut RegenBuffs,
         &'static mut RegenTickers,
         &'static mut ChatLog,
-        Option<&'static mut ViewPosition>,
-        Option<&'static mut Facing>,
         Option<&'static mut Experience>,
+        Option<&'static mut MagicEffects>,
     ),
     With<Player>,
 >;
@@ -70,16 +65,38 @@ pub const SLOT_DROP_CHANCE_PERCENT: u32 = 10;
 /// Asset id for the tombstone spawned on player death.
 const TOMBSTONE_TYPE_ID: &str = "tombstone";
 
-/// Drain `PendingPlayerDeaths` and resolve each one: spawn a corpse with the
-/// player's gear, reset HP/MP, clear active buffs, and teleport the player to
-/// their home tile (or map center as fallback).
+/// Resolve where a dead player should reappear: their saved `home_position` if
+/// that space still exists (ephemeral dungeons can be torn down between
+/// sessions), otherwise the center of the current overworld space. Shared by
+/// the live respawn (`process_acknowledge_death_commands`) and the save path
+/// (`save_entity`), which rewrites a disconnected-while-dead snapshot so the
+/// player reloads at their respawn point instead of where they fell.
+pub fn resolve_respawn_destination(
+    home_position: Option<(SpaceId, TilePosition)>,
+    space_manager: &SpaceManager,
+    world_config: &WorldConfig,
+) -> (SpaceId, TilePosition) {
+    home_position
+        .filter(|(space, _)| space_manager.get(*space).is_some())
+        .unwrap_or_else(|| {
+            (
+                world_config.current_space_id,
+                TilePosition::ground(world_config.map_width / 2, world_config.map_height / 2),
+            )
+        })
+}
+
+/// Drain `PendingPlayerDeaths` and resolve each one's *immediate* consequences:
+/// spawn a corpse with the player's gear, apply the XP penalty, clear active
+/// buffs and magic effects, and mark the player `AwaitingRespawn`. The player
+/// stays dead (HP 0) at the spot where they fell — the heal + teleport-home is
+/// deferred to `process_acknowledge_death_commands`, which runs when the player
+/// clicks "Continue" on the death overlay.
 pub fn handle_player_deaths(
     mut pending: ResMut<PendingPlayerDeaths>,
     mut commands: Commands,
     mut object_registry: ResMut<ObjectRegistry>,
     definitions: Res<OverworldObjectDefinitions>,
-    space_manager: Res<SpaceManager>,
-    world_config: Res<WorldConfig>,
     mut player_query: DeathHandlerPlayerQuery,
     mut pending_events: ResMut<PendingGameEvents>,
     mut pending_ui_events: ResMut<PendingGameUiEvents>,
@@ -89,18 +106,12 @@ pub fn handle_player_deaths(
     for death in deaths {
         let Ok((
             identity,
-            mut vitals,
-            derived,
             mut inventory,
-            mut space_resident,
-            mut tile_position,
-            mut movement,
             mut buffs,
             mut tickers,
             mut chat_log,
-            view_position,
-            facing,
             experience,
+            magic_effects,
         )) = player_query.get_mut(death.entity)
         else {
             continue;
@@ -166,55 +177,128 @@ pub fn handle_player_deaths(
             },
         );
 
-        vitals.health = vitals.max_health.max(1.0);
-        vitals.mana = vitals.max_mana.max(0.0);
-
-        // Restore base derived sizing in case max_health drifted (e.g. equipment
-        // bonus that briefly raised the cap was the source of an off-by-one).
-        let _ = derived;
-
         // Clear active food buff and reset accumulators so regen restarts
-        // cleanly post-respawn.
+        // cleanly post-respawn. (Regen is gated off while HP is 0, so nothing
+        // ticks until the player acknowledges and is healed.)
         buffs.multiplier = 1.0;
         buffs.remaining_seconds = 0.0;
         tickers.health_remaining = 0.0;
         tickers.mana_remaining = 0.0;
 
-        // Resolve respawn destination. Validate that the saved space still
-        // exists (ephemeral dungeons can be torn down between sessions).
-        let (target_space, target_tile) = identity
-            .home_position
-            .filter(|(space, _)| space_manager.get(*space).is_some())
-            .unwrap_or_else(|| {
-                (
-                    world_config.current_space_id,
-                    TilePosition::ground(world_config.map_width / 2, world_config.map_height / 2),
-                )
-            });
-
-        space_resident.space_id = target_space;
-        *tile_position = target_tile;
-        movement.remaining_seconds = 0.0;
-
-        if let Some(mut view) = view_position {
-            view.space_id = target_space;
-            view.tile = target_tile;
-        }
-        if let Some(mut facing) = facing {
-            facing.0 = crate::world::direction::Direction::default();
+        // Wipe magical buffs/debuffs so they don't survive death. The projection
+        // emits a cleared `PlayerEffectsChanged` next tick, despawning client VFX
+        // and shrinking any Glimmer light.
+        if let Some(mut effects) = magic_effects {
+            effects.active.clear();
+            effects.kind_tick_accumulators.clear();
         }
 
+        // Mark the player as awaiting respawn: they stay dead (HP 0) on the
+        // death tile until they click "Continue" (see
+        // `process_acknowledge_death_commands`, which heals + teleports home).
         // Drop the combat target so the killer doesn't keep auto-attacking
-        // after respawn (only relevant if the killer is a player).
+        // (only relevant if the killer is a player).
         commands
             .entity(death.entity)
+            .insert(AwaitingRespawn)
             .remove::<crate::combat::components::CombatTarget>();
 
-        chat_log.push_narrator(format!(
-            "{} fell in battle and is taken to safer ground.",
-            death.name
-        ));
+        chat_log.push_narrator(format!("{} fell in battle.", death.name));
     }
+}
+
+/// Drain `GameCommand::AcknowledgeDeath` from the pending command queue and
+/// finalize respawn for the acking player: heal HP/MP to full and teleport to
+/// their home tile (or map center as fallback), then remove `AwaitingRespawn`.
+///
+/// Runs in `CommandIntercept` (before `process_game_commands`) so a dead
+/// player's *other* commands are still blocked when the main processor runs.
+/// The query is filtered `With<AwaitingRespawn>`, so an `AcknowledgeDeath` from
+/// a player who isn't dead matches nobody and is a silent no-op. `cmd.player_id`
+/// is `Option`: `None` falls back to the first matching player (embedded mode
+/// has exactly one).
+pub fn process_acknowledge_death_commands(
+    mut pending_commands: ResMut<PendingGameCommands>,
+    mut player_query: Query<
+        (
+            Entity,
+            &PlayerIdentity,
+            &mut VitalStats,
+            &mut SpaceResident,
+            &mut TilePosition,
+            &mut MovementCooldown,
+            &mut ChatLog,
+            Option<&mut ViewPosition>,
+            Option<&mut Facing>,
+        ),
+        (With<Player>, With<AwaitingRespawn>),
+    >,
+    space_manager: Res<SpaceManager>,
+    world_config: Res<WorldConfig>,
+    mut commands: Commands,
+) {
+    let queued = std::mem::take(&mut pending_commands.commands);
+    let mut remaining = Vec::with_capacity(queued.len());
+
+    for cmd in queued {
+        match cmd.command {
+            GameCommand::AcknowledgeDeath => {
+                for (
+                    entity,
+                    identity,
+                    mut vitals,
+                    mut space_resident,
+                    mut tile_position,
+                    mut movement,
+                    mut chat_log,
+                    view_position,
+                    facing,
+                ) in player_query.iter_mut()
+                {
+                    let matches = match cmd.player_id {
+                        Some(id) => identity.id == id,
+                        None => true,
+                    };
+                    if !matches {
+                        continue;
+                    }
+
+                    // Heal to full (moved here from handle_player_deaths).
+                    vitals.health = vitals.max_health.max(1.0);
+                    vitals.mana = vitals.max_mana.max(0.0);
+
+                    let (target_space, target_tile) = resolve_respawn_destination(
+                        identity.home_position,
+                        &space_manager,
+                        &world_config,
+                    );
+
+                    space_resident.space_id = target_space;
+                    *tile_position = target_tile;
+                    movement.remaining_seconds = 0.0;
+
+                    if let Some(mut view) = view_position {
+                        view.space_id = target_space;
+                        view.tile = target_tile;
+                    }
+                    if let Some(mut facing) = facing {
+                        facing.0 = crate::world::direction::Direction::default();
+                    }
+
+                    chat_log.push_narrator("You are taken to safer ground.");
+
+                    commands.entity(entity).remove::<AwaitingRespawn>();
+                    break;
+                }
+            }
+            other => remaining.push(crate::game::resources::QueuedGameCommand {
+                player_id: cmd.player_id,
+                command: other,
+            }),
+        }
+    }
+
+    pending_commands.commands = remaining;
 }
 
 /// Death drain (`progression.md` §8): backpack always empties; each

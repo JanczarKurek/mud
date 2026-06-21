@@ -69,6 +69,20 @@ pub struct CommandOutputs<'w, 's> {
     /// True iff the player entity carries the debug `Noclip` marker. When set,
     /// movement skips collider/walkability gates (map bounds still apply).
     pub player_noclip: Query<'w, 's, (), (With<Player>, With<Noclip>)>,
+    /// True iff the resolved player carries `AwaitingRespawn` (dead, waiting to
+    /// click "Continue" on the death overlay). While set, `process_game_commands`
+    /// drops all of their commands so they can't move/cast/attack until they
+    /// acknowledge. `AcknowledgeDeath` itself is drained earlier in
+    /// `CommandIntercept`, so it never reaches the guard.
+    pub player_awaiting_respawn: Query<
+        'w,
+        's,
+        (),
+        (
+            With<Player>,
+            With<crate::player::components::AwaitingRespawn>,
+        ),
+    >,
     /// Read-only access to the player's `Class` + `Experience` so the spell
     /// cast paths can apply `class_access` / `min_caster_level` gating.
     pub player_class_level: Query<
@@ -326,6 +340,16 @@ pub fn process_game_commands(
         else {
             continue;
         };
+
+        // A dead player awaiting respawn can't act. AcknowledgeDeath is already
+        // drained in CommandIntercept, so blocking everything else here is safe.
+        if command_outputs
+            .player_awaiting_respawn
+            .get(player_entity)
+            .is_ok()
+        {
+            continue;
+        }
 
         match queued_command.command {
             GameCommand::MovePlayer { delta, climb } => {
@@ -673,6 +697,10 @@ pub fn process_game_commands(
             // CommandIntercept set). If we reach this arm, no player matched
             // the queued command so silently drop it.
             GameCommand::SetHome => {}
+            // Drained earlier by `process_acknowledge_death_commands` (player
+            // plugin, CommandIntercept set). Reaching this arm means no
+            // awaiting-respawn player matched, so silently drop it.
+            GameCommand::AcknowledgeDeath => {}
             GameCommand::EditorSetFloorTile { .. } => {
                 // Drained by `process_floor_commands` in `CommandIntercept` before this system runs.
                 bevy::log::warn!(

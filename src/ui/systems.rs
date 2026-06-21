@@ -968,9 +968,13 @@ fn spawn_death_summary_overlay(
         });
 }
 
-/// Click handler for the death-summary dismiss button: despawns the overlay.
+/// Click handler for the death-summary dismiss button. Sends
+/// `AcknowledgeDeath` (the server respawns the player: heal + teleport home),
+/// then despawns the overlay. Must run `.before(CommandIntercept)` or the
+/// pushed command is dropped (project convention for UI command-push systems).
 pub fn handle_death_summary_dismiss(
     mut commands: Commands,
+    mut pending_commands: ResMut<crate::game::resources::PendingGameCommands>,
     interactions: Query<
         &Interaction,
         (
@@ -986,6 +990,7 @@ pub fn handle_death_summary_dismiss(
     if !pressed {
         return;
     }
+    pending_commands.push(crate::game::commands::GameCommand::AcknowledgeDeath);
     for entity in overlays.iter() {
         commands.entity(entity).despawn();
     }

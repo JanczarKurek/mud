@@ -43,6 +43,15 @@ pub struct GodMode;
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct Noclip;
 
+/// Present on a player who has died and is waiting to click "Continue" on the
+/// death overlay. While present they stay at HP 0 (regen is gated off below 1)
+/// and `process_game_commands` drops their other commands, so they can't move,
+/// cast, or attack. Removed by `process_acknowledge_death_commands` once the
+/// respawn (heal + teleport home) completes. Session-only — never persisted; a
+/// load-side health clamp (`spawn_player_from_dump`) guards the reload case.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct AwaitingRespawn;
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct PlayerId(pub u64);
 

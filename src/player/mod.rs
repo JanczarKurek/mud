@@ -16,7 +16,8 @@ use crate::player::admin_progression::{
     process_admin_progression_commands, process_admin_toggle_commands,
 };
 use crate::player::lifecycle::{
-    handle_player_deaths, handle_set_home_commands, PendingPlayerDeaths,
+    handle_player_deaths, handle_set_home_commands, process_acknowledge_death_commands,
+    PendingPlayerDeaths,
 };
 use crate::player::progression::{apply_xp_grants, PendingXpGrants};
 use crate::player::regen::{tick_regen_buffs, tick_vital_regen};
@@ -81,6 +82,16 @@ impl Plugin for PlayerServerPlugin {
             .add_systems(
                 Update,
                 process_admin_toggle_commands
+                    .in_set(crate::game::CommandIntercept)
+                    .run_if(simulation_active),
+            )
+            // Respawn acknowledgement: drains AcknowledgeDeath *before*
+            // process_game_commands so the dead player's other commands are
+            // still blocked when the main processor runs. Same CommandIntercept
+            // pattern as handle_set_home_commands.
+            .add_systems(
+                Update,
+                process_acknowledge_death_commands
                     .in_set(crate::game::CommandIntercept)
                     .run_if(simulation_active),
             )

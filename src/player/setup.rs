@@ -212,6 +212,15 @@ pub fn spawn_player_from_dump(
     let space_id = dump.space_id.unwrap_or(fallback_space_id);
     let mut inventory = dump.inventory;
     inventory.ensure_slots();
+
+    // A character can be persisted at HP 0 if they disconnected while dead and
+    // awaiting respawn (the `AwaitingRespawn` marker is session-only). Regen is
+    // gated off at `health <= 0`, so a reloaded 0-HP player with no overlay would
+    // soft-lock. Clamp to alive on load — this also repairs any legacy 0-HP save.
+    let mut vital_stats = dump.vital_stats;
+    if vital_stats.health < 1.0 {
+        vital_stats.health = vital_stats.max_health.max(1.0);
+    }
     let object_id = object_registry.allocate_runtime_id("player");
     let stash = CharacterStash {
         entries: dump.stash,
@@ -236,7 +245,7 @@ pub fn spawn_player_from_dump(
             dump.chat_log,
             dump.base_stats,
             dump.derived_stats,
-            dump.vital_stats,
+            vital_stats,
             dump.movement_cooldown,
             (
                 dump.attack_profile,

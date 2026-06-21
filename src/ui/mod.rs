@@ -212,7 +212,14 @@ impl Plugin for UiPlugin {
         )
         .add_systems(
             Update,
-            (consume_death_summary_events, handle_death_summary_dismiss)
+            consume_death_summary_events.run_if(in_state(ClientAppState::InGame)),
+        )
+        // Pushes AcknowledgeDeath, so it must run before CommandIntercept or the
+        // command is dropped (project convention for UI command-push systems).
+        .add_systems(
+            Update,
+            handle_death_summary_dismiss
+                .before(crate::game::CommandIntercept)
                 .run_if(in_state(ClientAppState::InGame)),
         )
         .add_systems(

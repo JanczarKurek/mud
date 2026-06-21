@@ -11,12 +11,15 @@ use crate::network::resources::PendingPlayerSaves;
 use crate::persistence::build_player_state_dump;
 use crate::player::classes::Class;
 use crate::player::components::{
-    BaseStats, ChatLog, DerivedStats, DiscoveredTiles, Inventory, MovementCooldown, Player,
-    PlayerAppearance, PlayerIdentity, VitalStats,
+    AwaitingRespawn, BaseStats, ChatLog, DerivedStats, DiscoveredTiles, Inventory,
+    MovementCooldown, Player, PlayerAppearance, PlayerIdentity, VitalStats,
 };
+use crate::player::lifecycle::resolve_respawn_destination;
 use crate::player::progression::Experience;
 use crate::player::skills::SkillSheet;
 use crate::world::components::{Facing, SpaceResident, TilePosition};
+use crate::world::resources::SpaceManager;
+use crate::world::WorldConfig;
 
 /// Tracks time since the last autosave sweep; resets when the sweep fires.
 #[derive(Resource, Default)]
@@ -46,6 +49,7 @@ type PlayerStateQueryData<'a> = (
         Option<&'a SkillSheet>,
         Option<&'a PlayerAppearance>,
         Option<&'a DiscoveredTiles>,
+        Option<&'a AwaitingRespawn>,
     ),
 );
 
@@ -56,6 +60,8 @@ fn save_entity(
     character_id: i64,
     row: <PlayerStateQueryData<'_> as bevy::ecs::query::QueryData>::Item<'_, '_>,
     var_stores: Option<&CharacterVarStores>,
+    space_manager: Option<&SpaceManager>,
+    world_config: Option<&WorldConfig>,
 ) {
     let (
         _entity,
@@ -72,7 +78,7 @@ fn save_entity(
         combat_leash,
         facing,
         experience,
-        (class, magic_effects, stash, skill_sheet, appearance, discovered_tiles),
+        (class, magic_effects, stash, skill_sheet, appearance, discovered_tiles, awaiting_respawn),
     ) = row;
 
     let empty_effects = MagicEffects::default();
@@ -110,6 +116,22 @@ fn save_entity(
         dump.yarn_vars = stores.snapshot_for(identity.id.0);
     }
 
+    // A player who disconnects (or autosaves) while dead and awaiting respawn is
+    // sitting at HP 0 on the tile where they fell — the heal + teleport-home is
+    // deferred to their "Continue" click, which never came. Persist them as if
+    // they had acknowledged: at their respawn point, healed. Leaving the live
+    // entity untouched keeps the death overlay valid if they're still connected.
+    if awaiting_respawn.is_some() {
+        if let (Some(space_manager), Some(world_config)) = (space_manager, world_config) {
+            let (space, tile) =
+                resolve_respawn_destination(identity.home_position, space_manager, world_config);
+            dump.space_id = Some(space);
+            dump.tile_position = tile;
+        }
+        dump.vital_stats.health = dump.vital_stats.max_health.max(1.0);
+        dump.vital_stats.mana = dump.vital_stats.max_mana.max(0.0);
+    }
+
     if let Err(err) = db.lock().save_character(character_id, &dump) {
         warn!("failed to save character {character_id}: {err}");
     }
@@ -122,6 +144,8 @@ pub fn persist_disconnected_players(
     mut pending_saves: ResMut<PendingPlayerSaves>,
     db: Option<Res<AccountDbHandle>>,
     var_stores: Option<Res<CharacterVarStores>>,
+    space_manager: Option<Res<SpaceManager>>,
+    world_config: Option<Res<WorldConfig>>,
     player_query: Query<PlayerStateQueryData, PlayerStateQueryFilter>,
     mut commands: Commands,
 ) {
@@ -131,7 +155,14 @@ pub fn persist_disconnected_players(
     let entries = std::mem::take(&mut pending_saves.entries);
     for entry in entries {
         if let (Some(db), Ok(row)) = (db.as_deref(), player_query.get(entry.player_entity)) {
-            save_entity(db, entry.character_id, row, var_stores.as_deref());
+            save_entity(
+                db,
+                entry.character_id,
+                row,
+                var_stores.as_deref(),
+                space_manager.as_deref(),
+                world_config.as_deref(),
+            );
         }
         commands.entity(entry.player_entity).despawn();
     }
@@ -146,6 +177,8 @@ pub fn autosave_all_players(
     mut timer: ResMut<AutosaveTimer>,
     db: Option<Res<AccountDbHandle>>,
     var_stores: Option<Res<CharacterVarStores>>,
+    space_manager: Option<Res<SpaceManager>>,
+    world_config: Option<Res<WorldConfig>>,
     player_query: Query<PlayerStateQueryData, PlayerStateQueryFilter>,
 ) {
     timer.elapsed_since_save += time.delta_secs_f64();
@@ -160,7 +193,14 @@ pub fn autosave_all_players(
 
     for row in player_query.iter() {
         let character_id = row.1.id.0 as i64;
-        save_entity(db, character_id, row, var_stores.as_deref());
+        save_entity(
+            db,
+            character_id,
+            row,
+            var_stores.as_deref(),
+            space_manager.as_deref(),
+            world_config.as_deref(),
+        );
     }
 }
 
@@ -170,6 +210,8 @@ pub fn save_all_players_on_app_exit(
     mut app_exit: MessageReader<AppExit>,
     db: Option<Res<AccountDbHandle>>,
     var_stores: Option<Res<CharacterVarStores>>,
+    space_manager: Option<Res<SpaceManager>>,
+    world_config: Option<Res<WorldConfig>>,
     player_query: Query<PlayerStateQueryData, PlayerStateQueryFilter>,
 ) {
     if app_exit.read().next().is_none() {
@@ -180,6 +222,13 @@ pub fn save_all_players_on_app_exit(
     };
     for row in player_query.iter() {
         let character_id = row.1.id.0 as i64;
-        save_entity(db, character_id, row, var_stores.as_deref());
+        save_entity(
+            db,
+            character_id,
+            row,
+            var_stores.as_deref(),
+            space_manager.as_deref(),
+            world_config.as_deref(),
+        );
     }
 }

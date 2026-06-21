@@ -269,6 +269,11 @@ pub enum GameCommand {
     /// Persisted on the next autosave (or immediately if an account DB is
     /// attached).
     SetHome,
+    /// Player clicked "Continue" on the death overlay. Finalizes respawn:
+    /// heals to max HP/MP and teleports home. Drained by
+    /// `process_acknowledge_death_commands` in `CommandIntercept`; a no-op for
+    /// any player not currently carrying `AwaitingRespawn`.
+    AcknowledgeDeath,
     /// Open a trade window with a target (another player or, in later phases,
     /// a shopkeeper NPC). Server validates adjacency and routes
     /// `OpenTradePanel` UI events to both sides.
