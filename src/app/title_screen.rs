@@ -5,7 +5,7 @@ use bevy::prelude::*;
 
 use crate::app::auth_screen::PendingAuthRequest;
 use crate::app::plugin::AppRuntime;
-use crate::app::state::ClientAppState;
+use crate::app::state::{ClientAppState, DebugMode};
 use crate::network::resources::{TcpClientConfig, TcpClientConnection};
 use crate::ui::settings::SavedServerList;
 use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton, ThemedPanel};
@@ -30,6 +30,7 @@ impl Plugin for TitleScreenPlugin {
                     sync_login_field_text,
                     sync_login_field_focus_style,
                     sync_auth_error_text,
+                    sync_clean_state_label,
                     handle_title_screen_buttons,
                     sync_current_server_card,
                     sync_server_picker_modal,
@@ -83,6 +84,9 @@ struct TitleScreenState {
     password: String,
     register: bool,
     focused: LoginField,
+    /// Debug-only "Clean game state" two-click guard: first click arms it,
+    /// second click within the same session performs the wipe + exit.
+    confirm_clean: bool,
 }
 
 impl TitleScreenState {
@@ -107,6 +111,7 @@ impl TitleScreenState {
             password: String::new(),
             register: false,
             focused: LoginField::Username,
+            confirm_clean: false,
         }
     }
 
@@ -228,6 +233,9 @@ enum TitleAction {
     OpenMapEditor,
     OpenSettings,
     OpenAbout,
+    /// Debug-only: wipe the embedded world snapshot + accounts DB on next boot,
+    /// then exit. Two-click confirm via `TitleScreenState::confirm_clean`.
+    CleanGameState,
     Exit,
 }
 
@@ -235,6 +243,11 @@ enum TitleAction {
 struct TitleActionButton {
     action: TitleAction,
 }
+
+/// Label text of the "Clean game state" button — retargeted by
+/// `sync_clean_state_label` to reflect the two-click confirm state.
+#[derive(Component)]
+struct CleanStateLabel;
 
 /// Clickable region that focuses a specific login field.
 #[derive(Component, Clone, Copy)]
@@ -262,9 +275,11 @@ fn spawn_title_screen(
     title_state: Res<TitleScreenState>,
     theme: Res<UiThemeAssets>,
     palette: Res<Palette>,
+    debug: Option<Res<DebugMode>>,
 ) {
     let theme = theme.clone();
     let palette = *palette;
+    let debug_enabled = debug.is_some_and(|m| m.0);
 
     commands
         .spawn((
@@ -572,6 +587,11 @@ fn spawn_title_screen(
                                                     "Map Editor",
                                                     TitleAction::OpenMapEditor,
                                                 );
+                                                if debug_enabled {
+                                                    spawn_clean_state_button(
+                                                        actions, &theme, &palette,
+                                                    );
+                                                }
                                             }
                                             spawn_action_button(
                                                 actions,
@@ -649,6 +669,68 @@ fn spawn_action_button(
         });
 }
 
+/// Like [`spawn_action_button`] but tags the label with [`CleanStateLabel`] so
+/// `sync_clean_state_label` can flip it to a confirm prompt. Debug-only.
+fn spawn_clean_state_button(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+) {
+    let (bg, border, text) = idle_colors(palette, ButtonStyle::Primary, false);
+    parent
+        .spawn((
+            Button,
+            ThemedButton::new(ButtonStyle::Primary),
+            TitleActionButton {
+                action: TitleAction::CleanGameState,
+            },
+            Node {
+                width: percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                padding: UiRect::axes(px(18.0), px(14.0)),
+                border: UiRect::all(px(1.0)),
+                ..default()
+            },
+            ImageNode::new(theme.button_frame.clone())
+                .with_mode(theme.button_image_mode())
+                .with_color(bg),
+            BackgroundColor(Color::NONE),
+            BorderColor::all(border),
+        ))
+        .with_children(|button| {
+            button.spawn((
+                Text::new(CLEAN_STATE_IDLE_LABEL),
+                CleanStateLabel,
+                TextFont {
+                    font_size: 22.0,
+                    ..default()
+                },
+                TextColor(text),
+            ));
+        });
+}
+
+const CLEAN_STATE_IDLE_LABEL: &str = "Clean game state";
+const CLEAN_STATE_CONFIRM_LABEL: &str = "Click again to wipe + quit";
+
+/// Mirrors the two-click confirm state into the clean-state button's label.
+fn sync_clean_state_label(
+    title_state: Res<TitleScreenState>,
+    mut labels: Query<&mut Text, With<CleanStateLabel>>,
+) {
+    let desired = if title_state.confirm_clean {
+        CLEAN_STATE_CONFIRM_LABEL
+    } else {
+        CLEAN_STATE_IDLE_LABEL
+    };
+    for mut text in &mut labels {
+        if text.0 != desired {
+            text.0 = desired.to_owned();
+        }
+    }
+}
+
 fn handle_title_screen_buttons(
     mut title_state: ResMut<TitleScreenState>,
     mut next_state: ResMut<NextState<ClientAppState>>,
@@ -657,11 +739,18 @@ fn handle_title_screen_buttons(
     mut pending_auth: Option<ResMut<PendingAuthRequest>>,
     mut exit_messages: MessageWriter<AppExit>,
     mut settings_ui: ResMut<crate::ui::settings::SettingsUiState>,
+    world_save: Option<Res<crate::persistence::WorldSaveConfig>>,
+    db_path: Option<Res<crate::accounts::AccountDbPath>>,
     action_buttons: Query<(&Interaction, &TitleActionButton), (Changed<Interaction>, With<Button>)>,
 ) {
     for (interaction, button) in &action_buttons {
         if *interaction != Interaction::Pressed {
             continue;
+        }
+
+        // Any button other than the clean-state button disarms the confirm.
+        if button.action != TitleAction::CleanGameState {
+            title_state.confirm_clean = false;
         }
 
         match button.action {
@@ -726,6 +815,37 @@ fn handle_title_screen_buttons(
             }
             TitleAction::OpenAbout => {
                 next_state.set(ClientAppState::About);
+            }
+            TitleAction::CleanGameState => {
+                if !title_state.confirm_clean {
+                    // First click arms the confirm; the label flips via
+                    // `sync_clean_state_label`.
+                    title_state.confirm_clean = true;
+                    continue;
+                }
+                // Second click: record the resolved files to wipe and quit.
+                // The actual deletion happens pre-boot in `main.rs` (see
+                // `clean_cache::consume_wipe_marker`) so it runs while nothing
+                // holds the world snapshot or accounts DB open.
+                let mut targets = Vec::new();
+                if let Some(world_save) = world_save.as_ref() {
+                    targets.push(world_save.path.clone());
+                }
+                if let Some(db_path) = db_path.as_ref() {
+                    if let Some(path) = db_path.0.clone() {
+                        targets.push(path);
+                    }
+                }
+                if let Err(err) = crate::app::clean_cache::write_wipe_marker(&targets) {
+                    warn!("failed to write clean-state marker: {err}");
+                    title_state.confirm_clean = false;
+                    continue;
+                }
+                info!(
+                    "clean game state: scheduled wipe of {} file(s), exiting",
+                    targets.len()
+                );
+                exit_messages.write(AppExit::Success);
             }
             TitleAction::Exit => {
                 exit_messages.write(AppExit::Success);

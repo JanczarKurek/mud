@@ -12,7 +12,9 @@ pub mod systems;
 use bevy::prelude::*;
 
 use crate::app::state::{simulation_active, ClientAppState};
-use crate::player::admin_progression::process_admin_progression_commands;
+use crate::player::admin_progression::{
+    process_admin_progression_commands, process_admin_toggle_commands,
+};
 use crate::player::lifecycle::{
     handle_player_deaths, handle_set_home_commands, PendingPlayerDeaths,
 };
@@ -71,6 +73,14 @@ impl Plugin for PlayerServerPlugin {
             .add_systems(
                 Update,
                 process_admin_progression_commands
+                    .in_set(crate::game::CommandIntercept)
+                    .run_if(simulation_active),
+            )
+            // Debug/GM marker toggles (god mode, noclip). Same CommandIntercept
+            // pattern; separate system because it needs Commands + Entity.
+            .add_systems(
+                Update,
+                process_admin_toggle_commands
                     .in_set(crate::game::CommandIntercept)
                     .run_if(simulation_active),
             )

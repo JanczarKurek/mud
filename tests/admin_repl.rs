@@ -38,6 +38,7 @@ fn build_app(socket_path: PathBuf) -> App {
     let mut app = App::new();
     app.add_plugins(GameAppPlugin {
         runtime: AppRuntime::HeadlessServer,
+        debug: false,
         server_addr: None,
         bind_addr: Some("127.0.0.1:0".to_owned()),
         save_path: Some(unique_temp("save", "-world.json")),

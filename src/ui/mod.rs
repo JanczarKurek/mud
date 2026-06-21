@@ -4,6 +4,7 @@ pub mod character_sheet;
 pub mod chat_input;
 pub mod components;
 pub mod container_panel;
+pub mod debug_menu;
 pub mod dialog;
 pub mod equipment_panel;
 pub mod item_details;
@@ -501,6 +502,7 @@ impl Plugin for UiPlugin {
         );
 
         crate::ui::character_sheet::register(app);
+        crate::ui::debug_menu::register(app);
     }
 }
 

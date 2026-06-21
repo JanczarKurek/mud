@@ -46,6 +46,10 @@ pub enum AppRuntime {
 
 pub struct GameAppPlugin {
     pub runtime: AppRuntime,
+    /// Runtime debug/dev tooling toggle (from `--debug` / `MUD2_DEBUG`).
+    /// Inserted as a [`DebugMode`] resource so gameplay/UI systems can gate on
+    /// it. `false` in normal runs.
+    pub debug: bool,
     pub server_addr: Option<String>,
     pub bind_addr: Option<String>,
     /// Override for the world-snapshot path. `None` = use the per-role default
@@ -84,6 +88,7 @@ pub struct ClientTlsArgs {
 impl Plugin for GameAppPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(self.runtime);
+        app.insert_resource(crate::app::state::DebugMode(self.debug));
         // Install the process-wide XDG asset overlay root. Only TcpClient
         // consults it; other roles load bundled assets exclusively.
         let xdg_asset_root = match self.runtime {

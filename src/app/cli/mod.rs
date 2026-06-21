@@ -199,6 +199,12 @@ pub struct Mud2Cli {
     #[arg(long)]
     pub insecure: bool,
 
+    /// Enable debug/dev tooling: the main-menu "Clean game state" button,
+    /// auto-creation of a default character, and the in-game GM tools panel.
+    /// Off by default.
+    #[arg(long, env = "MUD2_DEBUG")]
+    pub debug: bool,
+
     #[command(flatten)]
     pub admin: SharedAdminSocketArgs,
 }
@@ -294,6 +300,7 @@ pub fn mud2_into_plugin(cli: Mud2Cli) -> GameAppPlugin {
 
     GameAppPlugin {
         runtime,
+        debug: cli.debug,
         server_addr: None,
         bind_addr: None,
         save_path: cli.data.save_path,
@@ -337,6 +344,7 @@ pub fn server_into_plugin(cli: ServerCli) -> GameAppPlugin {
 
     GameAppPlugin {
         runtime,
+        debug: false,
         server_addr: None,
         bind_addr: cli.bind,
         save_path: cli.data.save_path,

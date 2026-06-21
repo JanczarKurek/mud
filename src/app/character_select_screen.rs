@@ -6,9 +6,11 @@ use bevy::log::{info, warn};
 use bevy::prelude::*;
 
 use crate::app::plugin::AppRuntime;
-use crate::app::state::ClientAppState;
+use crate::app::state::{ClientAppState, DebugMode};
 use crate::network::protocol::{CharacterSummary, ClientMessage, ServerMessage};
 use crate::network::resources::{TcpClientConfig, TcpClientConnection};
+use crate::player::classes::Class;
+use crate::player::components::{AttributeSet, PlayerAppearance};
 use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton, ThemedPanel};
 use crate::ui::theme::{Palette, UiThemeAssets};
 
@@ -106,6 +108,7 @@ fn request_character_list(
     config: Option<Res<TcpClientConfig>>,
     mut connection: Option<ResMut<TcpClientConnection>>,
     db: Option<Res<crate::accounts::AccountDbHandle>>,
+    debug: Option<Res<DebugMode>>,
 ) {
     match state.runtime {
         AppRuntime::TcpClient => {
@@ -132,11 +135,34 @@ fn request_character_list(
             let Some(db) = db.as_deref() else {
                 return;
             };
+            let debug = debug.is_some_and(|m| m.0);
             let list = {
-                let guard = db.lock();
-                guard
+                let mut guard = db.lock();
+                let mut list = guard
                     .list_characters(crate::accounts::LOCAL_ACCOUNT_ID)
-                    .unwrap_or_default()
+                    .unwrap_or_default();
+                // Debug mode never leaves the roster empty: auto-seed a default
+                // "Debug" Fighter so there's always a character to play without
+                // walking the Character Create form. Balanced 12s satisfy the
+                // point-buy budget (6 × +2 == POINT_BUY_BUDGET).
+                if debug && list.is_empty() {
+                    match guard.create_character(
+                        crate::accounts::LOCAL_ACCOUNT_ID,
+                        "Debug",
+                        Class::Fighter,
+                        AttributeSet::new(12, 12, 12, 12, 12, 12),
+                        PlayerAppearance::default(),
+                    ) {
+                        Ok(id) => {
+                            info!("debug: auto-created default character {id}");
+                            list = guard
+                                .list_characters(crate::accounts::LOCAL_ACCOUNT_ID)
+                                .unwrap_or_default();
+                        }
+                        Err(err) => warn!("debug: failed to auto-create character: {err}"),
+                    }
+                }
+                list
             };
             let summaries: Vec<CharacterSummary> = list
                 .into_iter()

@@ -33,6 +33,8 @@ struct MenuEntry {
     /// When `Some`, the entry's first three characters are rewritten each
     /// frame with `[X]` / `[ ]` based on the referenced toggle.
     toggle: Option<ToggleSource>,
+    /// When true, the entry is only spawned in debug mode (`--debug`).
+    debug_only: bool,
 }
 
 const fn entry(label: &'static str, action: MenuAction) -> MenuEntry {
@@ -40,6 +42,7 @@ const fn entry(label: &'static str, action: MenuAction) -> MenuEntry {
         label,
         action,
         toggle: None,
+        debug_only: false,
     }
 }
 
@@ -48,6 +51,17 @@ const fn toggle_entry(label: &'static str, action: MenuAction, toggle: ToggleSou
         label,
         action,
         toggle: Some(toggle),
+        debug_only: false,
+    }
+}
+
+/// A dropdown entry that only appears when the game is launched with `--debug`.
+const fn debug_entry(label: &'static str, action: MenuAction) -> MenuEntry {
+    MenuEntry {
+        label,
+        action,
+        toggle: None,
+        debug_only: true,
     }
 }
 
@@ -130,11 +144,17 @@ const MENU_DEFINITIONS: &[MenuDefinition] = &[
             ),
             entry("    Log Snapshot   F5", MenuAction::LogSnapshot),
             entry("    Cycle Vsync    F6", MenuAction::CycleVsync),
+            debug_entry("    GM Tools", MenuAction::OpenGmTools),
         ],
     },
 ];
 
-pub fn spawn_menu_bar(commands: &mut Commands, theme: &UiThemeAssets, palette: &Palette) {
+pub fn spawn_menu_bar(
+    commands: &mut Commands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+    debug: bool,
+) {
     let (ghost_bg, _, ghost_text) = idle_colors(palette, ButtonStyle::Ghost, false);
 
     commands
@@ -241,6 +261,9 @@ pub fn spawn_menu_bar(commands: &mut Commands, theme: &UiThemeAssets, palette: &
             ))
             .with_children(|dropdown| {
                 for menu_entry in definition.entries {
+                    if menu_entry.debug_only && !debug {
+                        continue;
+                    }
                     dropdown
                         .spawn((
                             Button,
@@ -453,6 +476,14 @@ pub fn apply_menu_actions(
             MenuAction::CycleVsync => pending_debug.actions.push(DebugAction::CycleVsync),
             MenuAction::ToggleShowCoords => {
                 show_coords.0 = !show_coords.0;
+            }
+            MenuAction::OpenGmTools => {
+                crate::ui::debug_menu::toggle_gm_panel(
+                    &mut commands,
+                    theme.as_deref(),
+                    palette.as_deref(),
+                    &movable_windows,
+                );
             }
         }
     }

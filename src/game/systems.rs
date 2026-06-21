@@ -16,7 +16,7 @@ use crate::magic::resources::{SpellDefinition, SpellDefinitions};
 use crate::npc::components::Npc;
 use crate::player::components::{
     stack_weight, DerivedStats, Encumbered, EquippedItem, InventoryStack, MaxCarryWeight,
-    MovementCooldown, Player, PlayerId, PlayerIdentity, VitalStats,
+    MovementCooldown, Noclip, Player, PlayerId, PlayerIdentity, VitalStats,
 };
 use crate::world::components::{
     tile_distance_3d, Collider, Container, Facing, Movable, OverworldObject, Quantity, Rotatable,
@@ -66,6 +66,9 @@ pub struct CommandOutputs<'w, 's> {
     /// True iff the player entity carries the `Encumbered` marker. Doubles
     /// the movement cooldown when set.
     pub player_encumbered: Query<'w, 's, (), (With<Player>, With<Encumbered>)>,
+    /// True iff the player entity carries the debug `Noclip` marker. When set,
+    /// movement skips collider/walkability gates (map bounds still apply).
+    pub player_noclip: Query<'w, 's, (), (With<Player>, With<Noclip>)>,
     /// Read-only access to the player's `Class` + `Experience` so the spell
     /// cast paths can apply `class_access` / `min_caster_level` gating.
     pub player_class_level: Query<
@@ -332,6 +335,7 @@ pub fn process_game_commands(
                 };
                 let collider_positions = colliders_in_space(source_space_id, &player_queries.p0());
                 let encumbered = command_outputs.player_encumbered.get(player_entity).is_ok();
+                let noclip = command_outputs.player_noclip.get(player_entity).is_ok();
                 handle_move_player(
                     player_entity,
                     delta,
@@ -348,6 +352,7 @@ pub fn process_game_commands(
                     &mut space_authority.space_manager,
                     &mut space_authority.floor_maps,
                     encumbered,
+                    noclip,
                     &mut commands,
                     &mut command_outputs.pending_steps,
                     &mut command_outputs.pending_damage,
@@ -802,6 +807,13 @@ pub fn process_game_commands(
                     "process_game_commands saw an admin-progression command — check system ordering"
                 );
             }
+            GameCommand::AdminToggleGodMode | GameCommand::AdminToggleNoclip => {
+                // Drained by `process_admin_toggle_commands` (PlayerServerPlugin)
+                // in `CommandIntercept` before this system runs.
+                bevy::log::warn!(
+                    "process_game_commands saw an admin-toggle command — check system ordering"
+                );
+            }
         }
     }
 }
@@ -1024,6 +1036,7 @@ fn handle_move_player(
     space_manager: &mut SpaceManager,
     floor_maps: &mut FloorMaps,
     encumbered: bool,
+    noclip: bool,
     commands: &mut Commands,
     pending_steps: &mut crate::world::step_triggers::PendingStepEvents,
     pending_damage: &mut PendingDamageEvents,
@@ -1093,17 +1106,29 @@ fn handle_move_player(
         (tile_position.y + effective_delta.y).clamp(0, runtime_space.height - 1),
     );
 
-    let Some(step) = resolve_step_with_climb(
-        target_xy,
-        tile_position.z,
-        space_resident.space_id,
-        collider_positions,
-        object_query,
-        definitions,
-        floor_maps,
-        floor_defs,
-    ) else {
-        return;
+    let step = if noclip {
+        // Noclip: step one tile in the input direction at the same z, ignoring
+        // colliders, walls, climb gates, and fall damage. Map bounds are
+        // already enforced by the clamp on `target_xy`.
+        crate::game::traversal::StepResolution {
+            landed: TilePosition::new(target_xy.0, target_xy.1, tile_position.z),
+            dz_climbed: 0,
+            dz_fell: 0,
+        }
+    } else {
+        let Some(step) = resolve_step_with_climb(
+            target_xy,
+            tile_position.z,
+            space_resident.space_id,
+            collider_positions,
+            object_query,
+            definitions,
+            floor_maps,
+            floor_defs,
+        ) else {
+            return;
+        };
+        step
     };
 
     // Climbing is opt-in: tall ledges only resolve while SHIFT is held. Without

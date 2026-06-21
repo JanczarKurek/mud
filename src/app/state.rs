@@ -42,6 +42,17 @@ pub struct DiagnosticPause {
     pub simulation: bool,
 }
 
+/// Runtime debug/dev-tooling switch, set once at startup from the `--debug`
+/// CLI flag (or `MUD2_DEBUG` env) and never mutated afterwards. Gates the
+/// main-menu "Clean game state" button, auto-creation of a default character,
+/// and the in-game GM tools panel. Lives in `app::state` (like
+/// [`DiagnosticPause`]) so any plugin can read it without a circular dep. When
+/// the flag is absent the resource holds `false`, so all debug features are
+/// inert. Callers read it directly via `Option<Res<DebugMode>>` and
+/// `is_some_and(|m| m.0)`.
+#[derive(Resource, Default, Debug, Clone, Copy)]
+pub struct DebugMode(pub bool);
+
 /// System condition: true when the world simulation should tick.
 ///
 /// In `EmbeddedClient` mode the state machine is present; simulation runs only

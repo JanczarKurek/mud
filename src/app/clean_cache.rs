@@ -205,11 +205,100 @@ fn remove_path(path: &Path) -> io::Result<bool> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// In-app "Clean game state" wipe marker (debug tooling).
+//
+// The embedded-mode debug menu can't safely delete the world snapshot /
+// accounts DB at runtime: the world is re-saved on `AppExit` and the accounts
+// DB has a live open handle. Instead the in-app button writes a marker listing
+// the files to delete and exits; `main()` consumes the marker *before* building
+// the Bevy app, so the deletions run while nothing holds those files open.
+// ---------------------------------------------------------------------------
+
+const WIPE_MARKER_FILE: &str = ".wipe-on-next-boot";
+
+/// Fixed location of the wipe marker (in the embedded data dir). Independent of
+/// `--db-path` / `--save-path` overrides — the marker *contents* carry the
+/// actual resolved paths to delete.
+pub fn wipe_marker_path() -> PathBuf {
+    data_root_dir().join("embedded").join(WIPE_MARKER_FILE)
+}
+
+/// Write the wipe marker listing absolute paths to delete on next boot, one per
+/// line. Called by the in-app "Clean game state" button just before exit.
+pub fn write_wipe_marker(paths: &[PathBuf]) -> io::Result<()> {
+    let marker = wipe_marker_path();
+    if let Some(parent) = marker.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let body = paths
+        .iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("\n");
+    std::fs::write(&marker, body)
+}
+
+/// Parse marker contents (one path per line) into the list of paths to delete,
+/// skipping blank lines. Pure so it can be unit-tested without the filesystem.
+fn parse_wipe_marker(contents: &str) -> Vec<PathBuf> {
+    contents
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(PathBuf::from)
+        .collect()
+}
+
+/// If a wipe marker exists, delete every path it lists, then the marker itself.
+/// Call once at process start, before constructing the Bevy app. Returns true
+/// if a wipe ran. Errors are logged to stderr but never abort startup.
+pub fn consume_wipe_marker() -> bool {
+    let marker = wipe_marker_path();
+    let Ok(contents) = std::fs::read_to_string(&marker) else {
+        return false;
+    };
+    for path in parse_wipe_marker(&contents) {
+        match remove_path(&path) {
+            Ok(true) => println!("clean game state: removed {}", path.display()),
+            Ok(false) => {}
+            Err(err) => eprintln!(
+                "clean game state: failed to remove {}: {err}",
+                path.display()
+            ),
+        }
+    }
+    let _ = remove_path(&marker);
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::app::cli::Mud2Cli;
     use clap::Parser;
+
+    #[test]
+    fn wipe_marker_round_trips_paths_and_skips_blanks() {
+        let body = "/a/world-state.json\n\n  /b/accounts.db  \n";
+        let parsed = parse_wipe_marker(body);
+        assert_eq!(
+            parsed,
+            vec![
+                PathBuf::from("/a/world-state.json"),
+                PathBuf::from("/b/accounts.db"),
+            ]
+        );
+        // Empty marker yields nothing to delete.
+        assert!(parse_wipe_marker("").is_empty());
+    }
+
+    #[test]
+    fn wipe_marker_path_is_in_embedded_dir() {
+        let p = wipe_marker_path();
+        assert!(p.to_string_lossy().contains("embedded"));
+        assert!(p.ends_with(".wipe-on-next-boot"));
+    }
 
     #[test]
     fn clean_cache_subcommand_accepts_flags() {

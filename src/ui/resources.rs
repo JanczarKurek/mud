@@ -869,6 +869,8 @@ pub enum MenuAction {
     ToggleShowCoords,
     LogSnapshot,
     CycleVsync,
+    /// Debug-only: open/close the GM tools panel. Entry hidden unless `--debug`.
+    OpenGmTools,
 }
 
 #[derive(Resource, Default)]

@@ -11,6 +11,9 @@ fn main() -> ExitCode {
     if let Some(cmd) = cli.command {
         return clean_cache::run(cmd, Invoker::Mud2);
     }
+    // Consume a pending "Clean game state" wipe (written by the in-app debug
+    // button) before anything opens the world snapshot or accounts DB.
+    clean_cache::consume_wipe_marker();
     App::new().add_plugins(mud2_into_plugin(cli)).run();
     ExitCode::SUCCESS
 }

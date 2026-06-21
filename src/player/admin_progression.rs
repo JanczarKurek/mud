@@ -21,7 +21,9 @@ use crate::game::resources::{
     QueuedGameCommand,
 };
 use crate::player::classes::Class;
-use crate::player::components::{BaseStats, ChatLog, Player, PlayerIdentity, VitalStats};
+use crate::player::components::{
+    BaseStats, ChatLog, GodMode, Noclip, Player, PlayerIdentity, VitalStats,
+};
 use crate::player::progression::{
     xp_for_level, Experience, PendingXpGrant, PendingXpGrants, LEVEL_CAP,
 };
@@ -49,10 +51,17 @@ pub fn process_admin_progression_commands(
     let queued = std::mem::take(&mut pending_commands.commands);
     let mut remaining = Vec::with_capacity(queued.len());
 
+    // UI-driven admin commands (the GM tools panel) push with `player_id: None`;
+    // network peers always carry `Some` (set in `push_for_player`). Resolve
+    // `None` to the local player so the panel buttons target the acting player
+    // — mirrors how `process_allocate_skill_commands` / `resolve_player_entity`
+    // treat an unset id.
+    let local_player_id = player_query.iter().next().map(|p| p.0.id);
+
     for cmd in queued {
         match cmd.command {
             GameCommand::AdminGrantXp { amount } => {
-                let Some(target) = cmd.player_id else {
+                let Some(target) = cmd.player_id.or(local_player_id) else {
                     continue;
                 };
                 xp_grants.grants.push(PendingXpGrant {
@@ -61,7 +70,7 @@ pub fn process_admin_progression_commands(
                 });
             }
             GameCommand::AdminSetLevel { level } => {
-                let Some(target) = cmd.player_id else {
+                let Some(target) = cmd.player_id.or(local_player_id) else {
                     continue;
                 };
                 let target_level = level.clamp(1, LEVEL_CAP);
@@ -110,7 +119,7 @@ pub fn process_admin_progression_commands(
                 }
             }
             GameCommand::AdminGrantSkillPoints { amount } => {
-                let Some(target) = cmd.player_id else {
+                let Some(target) = cmd.player_id.or(local_player_id) else {
                     continue;
                 };
                 for (identity, _exp, mut sheet, _base, _class, _vitals, mut chat) in
@@ -127,7 +136,7 @@ pub fn process_admin_progression_commands(
                 }
             }
             GameCommand::AdminSetSkillRank { skill, rank } => {
-                let Some(target) = cmd.player_id else {
+                let Some(target) = cmd.player_id.or(local_player_id) else {
                     continue;
                 };
                 for (identity, _exp, mut sheet, _base, _class, _vitals, mut chat) in
@@ -147,7 +156,7 @@ pub fn process_admin_progression_commands(
                 }
             }
             GameCommand::AdminSetAttribute { kind, value } => {
-                let Some(target) = cmd.player_id else {
+                let Some(target) = cmd.player_id.or(local_player_id) else {
                     continue;
                 };
                 for (identity, _exp, _sheet, mut base, _class, _vitals, mut chat) in
@@ -162,7 +171,7 @@ pub fn process_admin_progression_commands(
                 }
             }
             GameCommand::AdminSetClass { class: new_class } => {
-                let Some(target) = cmd.player_id else {
+                let Some(target) = cmd.player_id.or(local_player_id) else {
                     continue;
                 };
                 for (identity, _exp, _sheet, _base, mut class, _vitals, mut chat) in
@@ -180,7 +189,7 @@ pub fn process_admin_progression_commands(
                 }
             }
             GameCommand::AdminFullHeal => {
-                let Some(target) = cmd.player_id else {
+                let Some(target) = cmd.player_id.or(local_player_id) else {
                     continue;
                 };
                 for (identity, _exp, _sheet, _base, _class, mut vitals, mut chat) in
@@ -192,6 +201,83 @@ pub fn process_admin_progression_commands(
                     vitals.health = vitals.max_health;
                     vitals.mana = vitals.max_mana;
                     chat.push_narrator("[Admin] Fully healed.".to_owned());
+                    break;
+                }
+            }
+            other => remaining.push(QueuedGameCommand {
+                player_id: cmd.player_id,
+                command: other,
+            }),
+        }
+    }
+
+    pending_commands.commands = remaining;
+}
+
+/// Drains the two debug/GM toggle commands (`AdminToggleGodMode` /
+/// `AdminToggleNoclip`) and inserts/removes the matching marker component on
+/// the target player. Kept separate from `process_admin_progression_commands`
+/// because toggling a marker needs `Commands` + the player `Entity`, which that
+/// function's progression-focused query doesn't carry. Same `CommandIntercept`
+/// drain-and-restore pattern, so the two systems compose without ordering
+/// constraints.
+#[allow(clippy::type_complexity)]
+pub fn process_admin_toggle_commands(
+    mut pending_commands: ResMut<PendingGameCommands>,
+    mut player_query: Query<
+        (
+            Entity,
+            &PlayerIdentity,
+            Has<GodMode>,
+            Has<Noclip>,
+            &mut ChatLog,
+        ),
+        With<Player>,
+    >,
+    mut commands: Commands,
+) {
+    let queued = std::mem::take(&mut pending_commands.commands);
+    let mut remaining = Vec::with_capacity(queued.len());
+
+    // `None` (from the GM tools panel) resolves to the local player; network
+    // peers always carry `Some`. See `process_admin_progression_commands`.
+    let local_player_id = player_query.iter().next().map(|p| p.1.id);
+
+    for cmd in queued {
+        match cmd.command {
+            GameCommand::AdminToggleGodMode => {
+                let Some(target) = cmd.player_id.or(local_player_id) else {
+                    continue;
+                };
+                for (entity, identity, has_god, _has_noclip, mut chat) in player_query.iter_mut() {
+                    if identity.id != target {
+                        continue;
+                    }
+                    if has_god {
+                        commands.entity(entity).remove::<GodMode>();
+                        chat.push_narrator("[Admin] God mode OFF.".to_owned());
+                    } else {
+                        commands.entity(entity).insert(GodMode);
+                        chat.push_narrator("[Admin] God mode ON.".to_owned());
+                    }
+                    break;
+                }
+            }
+            GameCommand::AdminToggleNoclip => {
+                let Some(target) = cmd.player_id.or(local_player_id) else {
+                    continue;
+                };
+                for (entity, identity, _has_god, has_noclip, mut chat) in player_query.iter_mut() {
+                    if identity.id != target {
+                        continue;
+                    }
+                    if has_noclip {
+                        commands.entity(entity).remove::<Noclip>();
+                        chat.push_narrator("[Admin] Noclip OFF.".to_owned());
+                    } else {
+                        commands.entity(entity).insert(Noclip);
+                        chat.push_narrator("[Admin] Noclip ON.".to_owned());
+                    }
                     break;
                 }
             }
@@ -384,5 +470,42 @@ mod tests {
 
         let sheet = app.world().entity(entity).get::<SkillSheet>().unwrap();
         assert_eq!(sheet.available_points, 7);
+    }
+
+    /// The GM tools panel pushes with `player_id: None`; it must resolve to the
+    /// local player (this is what made every GM button no-op before the fix).
+    #[test]
+    fn admin_full_heal_with_unset_player_id_heals_local_player() {
+        let mut app = make_app();
+        let entity = spawn_player(&mut app, 1, Class::Fighter);
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push(GameCommand::AdminFullHeal);
+
+        app.update();
+
+        let vitals = app.world().entity(entity).get::<VitalStats>().unwrap();
+        assert_eq!(vitals.health, vitals.max_health);
+        assert_eq!(vitals.mana, vitals.max_mana);
+    }
+
+    #[test]
+    fn admin_toggle_godmode_with_unset_player_id_inserts_and_removes_marker() {
+        let mut app = App::new();
+        app.init_resource::<PendingGameCommands>()
+            .add_systems(Update, process_admin_toggle_commands);
+        let entity = spawn_player(&mut app, 1, Class::Fighter);
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push(GameCommand::AdminToggleGodMode);
+        app.update();
+        assert!(app.world().entity(entity).contains::<GodMode>());
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push(GameCommand::AdminToggleGodMode);
+        app.update();
+        assert!(!app.world().entity(entity).contains::<GodMode>());
     }
 }

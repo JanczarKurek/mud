@@ -191,6 +191,7 @@ fn two_clients_receive_snapshots_and_see_each_other_move() {
     let mut app = App::new();
     app.add_plugins(GameAppPlugin {
         runtime: AppRuntime::HeadlessServer,
+        debug: false,
         server_addr: None,
         bind_addr: Some("127.0.0.1:0".to_owned()),
         save_path: Some(unique_test_save_path()),
@@ -266,6 +267,7 @@ fn reconnecting_same_account_restores_character_position() {
     let mut app = App::new();
     app.add_plugins(GameAppPlugin {
         runtime: AppRuntime::HeadlessServer,
+        debug: false,
         server_addr: None,
         bind_addr: Some("127.0.0.1:0".to_owned()),
         save_path: Some(unique_test_save_path()),
@@ -344,6 +346,7 @@ fn login_with_wrong_password_is_rejected() {
     let mut app = App::new();
     app.add_plugins(GameAppPlugin {
         runtime: AppRuntime::HeadlessServer,
+        debug: false,
         server_addr: None,
         bind_addr: Some("127.0.0.1:0".to_owned()),
         save_path: Some(unique_test_save_path()),
@@ -397,6 +400,7 @@ fn disconnecting_client_removes_its_player_from_the_server() {
     let mut app = App::new();
     app.add_plugins(GameAppPlugin {
         runtime: AppRuntime::HeadlessServer,
+        debug: false,
         server_addr: None,
         bind_addr: Some("127.0.0.1:0".to_owned()),
         save_path: Some(unique_test_save_path()),

@@ -25,7 +25,7 @@ use crate::game::resources::{GameUiEvent, PendingGameUiEvents, VfxAnchor};
 use crate::magic::effects::MagicEffects;
 use crate::magic::resources::{EffectKind, SpellDefinitions};
 use crate::npc::components::{LastDamagedAt, Npc};
-use crate::player::components::{ChatLog, Player, PlayerId, PlayerIdentity, VitalStats};
+use crate::player::components::{ChatLog, GodMode, Player, PlayerId, PlayerIdentity, VitalStats};
 use crate::player::lifecycle::{PendingPlayerDeath, PendingPlayerDeaths};
 use crate::player::progression::{xp_grant_for_kill, Experience, PendingXpGrant, PendingXpGrants};
 use crate::quest::events::{PendingQuestEvents, QuestEvent};
@@ -94,6 +94,7 @@ type DamageTargetQuery<'w, 's> = Query<
         Option<&'static Npc>,
         Option<&'static Experience>,
         Option<&'static mut MagicEffects>,
+        Has<GodMode>,
     ),
 >;
 
@@ -132,6 +133,7 @@ pub fn apply_pending_damage(
             is_npc,
             target_experience,
             mut target_effects,
+            is_invincible,
         )) = targets.get_mut(event.target)
         else {
             continue;
@@ -140,6 +142,11 @@ pub fn apply_pending_damage(
             continue;
         }
         if event.amount <= 0.0 {
+            continue;
+        }
+        // Debug/GM invincibility: a `GodMode` player absorbs all damage. No
+        // health change, no death, no hit VFX — the event simply evaporates.
+        if is_invincible {
             continue;
         }
 

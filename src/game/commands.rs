@@ -422,6 +422,13 @@ pub enum GameCommand {
     },
     /// Admin-only: restore health and mana to their respective maxes.
     AdminFullHeal,
+    /// Debug/GM toggle: insert or remove the `GodMode` marker on the target
+    /// player. While present, `apply_pending_damage` skips all incoming damage.
+    AdminToggleGodMode,
+    /// Debug/GM toggle: insert or remove the `Noclip` marker on the target
+    /// player. While present, movement ignores collider/walkability gates
+    /// (map bounds still apply).
+    AdminToggleNoclip,
     /// Player-invoked Read on a book/tombstone/inscription. Server validates
     /// adjacency (world) or ownership (inventory), then emits an
     /// `OpenBookPanel` UI event to that peer with the captured text snapshot.

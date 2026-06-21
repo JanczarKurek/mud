@@ -31,6 +31,18 @@ pub struct DefenseStats {
 #[derive(Component)]
 pub struct Player;
 
+/// Debug/GM marker: while present on a player, `apply_pending_damage` skips all
+/// incoming damage (invincibility). Session-only — never persisted to the
+/// accounts DB, so it clears on relogin.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct GodMode;
+
+/// Debug/GM marker: while present on a player, movement ignores
+/// collider/walkability checks (noclip). Map bounds still apply. Session-only —
+/// never persisted, so it clears on relogin.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct Noclip;
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct PlayerId(pub u64);
 
@@ -884,6 +896,14 @@ impl DiscoveredTiles {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn debug_default_attributes_satisfy_point_buy() {
+        // The `--debug` auto-created "Debug" character seeds this attribute set
+        // (see `character_select_screen::request_character_list`). If it ever
+        // stops satisfying point-buy, `create_character` would reject it.
+        assert!(validate_point_buy(&AttributeSet::new(12, 12, 12, 12, 12, 12)).is_ok());
+    }
 
     #[test]
     fn charges_remaining_round_trips_through_properties() {

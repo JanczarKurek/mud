@@ -44,9 +44,11 @@ pub fn spawn_hud(
     hud_minimap_settings: Res<HudMinimapSettings>,
     theme: Res<UiThemeAssets>,
     palette: Res<Palette>,
+    debug: Option<Res<crate::app::state::DebugMode>>,
 ) {
     let theme = theme.clone();
     let palette = *palette;
+    let debug = debug.is_some_and(|m| m.0);
     commands
         .spawn((
             Node {
@@ -129,7 +131,7 @@ pub fn spawn_hud(
                 });
         });
 
-    spawn_menu_bar(&mut commands, &theme, &palette);
+    spawn_menu_bar(&mut commands, &theme, &palette, debug);
     spawn_character_sheet_button(&mut commands, &asset_server);
     crate::ui::time_of_day_button::spawn_time_of_day_button(&mut commands, &asset_server);
 
