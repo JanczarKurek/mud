@@ -21,10 +21,10 @@
     # mismatch.
     linuxdeploy = pkgs.appimageTools.wrapType2 {
       pname = "linuxdeploy";
-      version = "continuous";
+      version = "1-alpha-20251107-1";
       src = pkgs.fetchurl {
-        url = "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage";
-        sha256 = "103wbx3wi4srj9yxfsqx068qjkvzmyxk51iwrkhm7lhm8ycnmv8x";
+        url = "https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage";
+        sha256 = "c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d";
       };
     };
     appimagetool = pkgs.appimageTools.wrapType2 {
