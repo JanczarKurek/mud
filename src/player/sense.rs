@@ -14,7 +14,9 @@ use std::collections::HashMap;
 use bevy::prelude::*;
 
 use crate::npc::components::{HostileBehavior, Npc};
-use crate::player::components::{BaseStats, Exertion, Player, Sneaking};
+use crate::player::components::{
+    Aware, BaseStats, Exertion, Player, Sneaking, AWARE_PERCEPTION_BONUS,
+};
 use crate::player::exertion::{exertion_dc_modifier, EXERTION_COST_SNEAK_PER_SEC};
 use crate::player::skills::{skill_check, Skill};
 use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
@@ -69,6 +71,7 @@ pub fn tick_player_sense(
             &BaseStats,
             &crate::player::skills::SkillSheet,
             Has<Sneaking>,
+            Has<Aware>,
             Option<&mut SenseReveals>,
             Option<&mut Exertion>,
         ),
@@ -89,6 +92,7 @@ pub fn tick_player_sense(
         base_stats,
         skill_sheet,
         sneaking,
+        is_aware,
         reveals,
         mut exertion,
     ) in &mut player_q
@@ -130,12 +134,13 @@ pub fn tick_player_sense(
                 continue;
             }
             let dc = SENSE_BASE_DC + distance + fatigue_dc;
+            let aware_bonus = if is_aware { AWARE_PERCEPTION_BONUS } else { 0 };
             let result = skill_check(
                 skill_sheet,
                 &base_stats.attributes,
                 Skill::Perception,
                 dc,
-                0,
+                aware_bonus,
             );
             if result.success {
                 reveals

@@ -76,6 +76,9 @@ pub struct CommandOutputs<'w, 's> {
     /// movement is slower (longer cooldown) and quieter (smaller noise).
     pub player_sneaking:
         Query<'w, 's, (), (With<Player>, With<crate::player::components::Sneaking>)>,
+    /// True iff the player entity carries the `Aware` marker. When set, movement
+    /// is slower and passive Perception is boosted.
+    pub player_aware: Query<'w, 's, (), (With<Player>, With<crate::player::components::Aware>)>,
     /// True iff the resolved player carries `AwaitingRespawn` (dead, waiting to
     /// click "Continue" on the death overlay). While set, `process_game_commands`
     /// drops all of their commands so they can't move/cast/attack until they
@@ -375,6 +378,7 @@ pub fn process_game_commands(
                 let encumbered = command_outputs.player_encumbered.get(player_entity).is_ok();
                 let noclip = command_outputs.player_noclip.get(player_entity).is_ok();
                 let sneaking = command_outputs.player_sneaking.get(player_entity).is_ok();
+                let aware = command_outputs.player_aware.get(player_entity).is_ok();
                 handle_move_player(
                     player_entity,
                     delta,
@@ -394,6 +398,7 @@ pub fn process_game_commands(
                     encumbered,
                     noclip,
                     sneaking,
+                    aware,
                     &mut commands,
                     &mut command_outputs.pending_steps,
                     &mut command_outputs.pending_noise,
@@ -727,6 +732,17 @@ pub fn process_game_commands(
                     commands
                         .entity(player_entity)
                         .remove::<crate::player::components::Sneaking>();
+                }
+            }
+            GameCommand::SetAware { aware } => {
+                if aware {
+                    commands
+                        .entity(player_entity)
+                        .insert(crate::player::components::Aware);
+                } else {
+                    commands
+                        .entity(player_entity)
+                        .remove::<crate::player::components::Aware>();
                 }
             }
             // Drained earlier by `process_acknowledge_death_commands` (player
@@ -1099,6 +1115,7 @@ fn handle_move_player(
     encumbered: bool,
     noclip: bool,
     sneaking: bool,
+    aware: bool,
     commands: &mut Commands,
     pending_steps: &mut crate::world::step_triggers::PendingStepEvents,
     pending_noise: &mut crate::world::noise::PendingNoiseEvents,
@@ -1279,6 +1296,9 @@ fn handle_move_player(
     }
     if sneaking {
         cooldown_scale *= crate::game::traversal::SNEAK_SLOW_FACTOR;
+    }
+    if aware {
+        cooldown_scale *= crate::game::traversal::AWARE_SLOW_FACTOR;
     }
     if effective_delta.x != 0 && effective_delta.y != 0 {
         cooldown_scale *= std::f32::consts::SQRT_2;

@@ -22,7 +22,9 @@
 use bevy::prelude::*;
 use std::collections::{HashMap, HashSet};
 
-use crate::player::components::{BaseStats, ChatLog, Player, PlayerIdentity};
+use crate::player::components::{
+    Aware, BaseStats, ChatLog, Player, PlayerIdentity, AWARE_PERCEPTION_BONUS,
+};
 use crate::player::skills::{skill_check, Skill, SkillSheet};
 use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
 use crate::world::object_definitions::OverworldObjectDefinitions;
@@ -99,6 +101,7 @@ impl Hidden {
 ///
 /// Every roll (pass or fail) sets the (player, object) cooldown to `now +
 /// PERCEPTION_COOLDOWN` so the player isn't re-rolling every frame.
+#[allow(clippy::type_complexity)]
 pub fn passive_perception_tick(
     time: Res<Time>,
     mut player_query: Query<
@@ -109,6 +112,7 @@ pub fn passive_perception_tick(
             &SkillSheet,
             &BaseStats,
             &mut ChatLog,
+            Has<Aware>,
         ),
         With<Player>,
     >,
@@ -120,7 +124,10 @@ pub fn passive_perception_tick(
 ) {
     let now = time.elapsed_secs_f64();
 
-    for (identity, p_resident, p_tile, sheet, base, mut chat_log) in player_query.iter_mut() {
+    for (identity, p_resident, p_tile, sheet, base, mut chat_log, is_aware) in
+        player_query.iter_mut()
+    {
+        let aware_bonus = if is_aware { AWARE_PERCEPTION_BONUS } else { 0 };
         for (h_resident, h_tile, object, mut hidden) in hidden_query.iter_mut() {
             if h_resident.space_id != p_resident.space_id {
                 continue;
@@ -144,7 +151,7 @@ pub fn passive_perception_tick(
                 &base.attributes,
                 Skill::Perception,
                 hidden.dc as i32,
-                0,
+                aware_bonus,
             );
             hidden.schedule_next_check(identity.id, now, PERCEPTION_COOLDOWN);
             if result.success && hidden.reveal_to(identity.id) {

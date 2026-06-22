@@ -96,6 +96,7 @@ pub type ProjectionPlayerQuery<'w, 's> = Query<
             &'static AttackProfile,
             Option<&'static DiscoveredTiles>,
             Has<crate::player::components::Sneaking>,
+            Has<crate::player::components::Aware>,
             Option<&'static crate::player::sense::SenseReveals>,
             Option<&'static crate::player::components::Exertion>,
         ),
@@ -228,6 +229,7 @@ pub fn compute_events_for_peer(
             attack_profile,
             discovered_tiles,
             is_sneaking,
+            is_aware,
             sense_reveals,
             exertion,
         ),
@@ -374,6 +376,10 @@ pub fn compute_events_for_peer(
                 events.push(GameEvent::PlayerSneakingChanged {
                     sneaking: is_sneaking,
                 });
+            }
+
+            if previous.aware != is_aware {
+                events.push(GameEvent::PlayerAwareChanged { aware: is_aware });
             }
 
             // Exertion decays continuously, so diff at whole-point resolution
@@ -1005,6 +1011,9 @@ pub fn apply_event_to_state(state: &mut ClientGameState, event: GameEvent) {
         GameEvent::PlayerSneakingChanged { sneaking } => {
             state.sneaking = sneaking;
         }
+        GameEvent::PlayerAwareChanged { aware } => {
+            state.aware = aware;
+        }
         GameEvent::PlayerExertionChanged { exertion } => {
             state.exertion = Some(exertion);
         }
@@ -1231,6 +1240,10 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
         GameEvent::PlayerSneakingChanged { sneaking } => debug!(
             "client sneaking updated: {} -> {}",
             client_state.sneaking, sneaking
+        ),
+        GameEvent::PlayerAwareChanged { aware } => debug!(
+            "client aware updated: {} -> {}",
+            client_state.aware, aware
         ),
         GameEvent::PlayerExertionChanged { exertion } => debug!(
             "client exertion updated: {:?} -> {:.0}/{:.0}",

@@ -135,6 +135,7 @@ pub fn spawn_hud(
     spawn_menu_bar(&mut commands, &theme, &palette, debug);
     spawn_character_sheet_button(&mut commands, &asset_server);
     crate::ui::time_of_day_button::spawn_time_of_day_button(&mut commands, &asset_server);
+    crate::ui::mode_indicator::spawn_mode_indicator_box(&mut commands, &asset_server, &palette);
 
     // Bottom HUD column: anchored to the screen bottom and stops short of
     // the 272-px right sidebar. Vertical flex stack — quickbar sits on top

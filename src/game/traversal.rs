@@ -47,6 +47,11 @@ pub const FALL_DAMAGE_K: f32 = 1.5;
 /// see `docs/utility_systems.md` §7.
 pub const SNEAK_SLOW_FACTOR: f32 = 1.75;
 
+/// Step-interval multiplier applied while a player is in Aware mode. Moving
+/// carefully and watching your surroundings trades speed for passive Perception.
+/// `[tunable]`.
+pub const AWARE_SLOW_FACTOR: f32 = 1.4;
+
 /// DC for an attempted climb of `dz` half-blocks. `dz = 2` (one full block,
 /// e.g. a barrel) is DC 10; every additional half-block adds 5 to the DC.
 pub const fn climb_dc(dz: i32) -> i32 {

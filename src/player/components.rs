@@ -53,6 +53,20 @@ pub struct Noclip;
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct Sneaking;
 
+/// Per-player situational bonus to passive Perception checks while `Aware`. See
+/// `world::hidden::passive_perception_tick` and `player::sense::tick_player_sense`.
+pub const AWARE_PERCEPTION_BONUS: i32 = 5;
+
+/// While present on a player, they are in **Aware** mode: movement is slower
+/// (see `handle_move_player`) but they gain `AWARE_PERCEPTION_BONUS` to passive
+/// Perception — spotting hidden objects/traps and reading nearby NPCs. Toggled
+/// by `GameCommand::SetAware`. Session-only state — never persisted, so a
+/// character always loads un-aware. Replicated to the local client via
+/// `GameEvent::PlayerAwareChanged` for the HUD indicator; presentation code
+/// must read `ClientGameState.aware`, never this authoritative marker.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct Aware;
+
 /// Present on a player who has died and is waiting to click "Continue" on the
 /// death overlay. While present they stay at HP 0 (regen is gated off below 1)
 /// and `process_game_commands` drops their other commands, so they can't move,

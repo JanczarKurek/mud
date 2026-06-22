@@ -12,6 +12,7 @@ pub mod log_panel;
 pub mod menu_bar;
 pub mod minimap;
 pub mod minimap_panel;
+pub mod mode_indicator;
 pub mod mountable_panel;
 pub mod movable_window;
 pub mod nearby_npcs_panel;
@@ -515,6 +516,7 @@ impl Plugin for UiPlugin {
 
         crate::ui::character_sheet::register(app);
         crate::ui::debug_menu::register(app);
+        crate::ui::mode_indicator::register(app);
     }
 }
 

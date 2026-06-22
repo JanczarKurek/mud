@@ -448,6 +448,11 @@ pub enum GameEvent {
     PlayerSneakingChanged {
         sneaking: bool,
     },
+    /// The local player's Aware state changed. Drives the HUD mode indicator.
+    /// State, not a one-shot signal — folded into `ClientGameState.aware`.
+    PlayerAwareChanged {
+        aware: bool,
+    },
     /// The local player's Exertion (fatigue) meter changed. State, not a
     /// one-shot — folded into `ClientGameState.exertion`. Diffed at whole-point
     /// resolution in the projection so a continuously-decaying meter doesn't
@@ -738,6 +743,10 @@ pub struct ClientGameState {
     /// `PlayerSneakingChanged`; the HUD renders a "Sneaking" indicator.
     #[serde(default)]
     pub sneaking: bool,
+    /// Whether the local player is currently in Aware mode. Driven by
+    /// `PlayerAwareChanged`; the HUD mode box renders an indicator.
+    #[serde(default)]
+    pub aware: bool,
     /// Replicated Exertion (fatigue) snapshot for the local player. `None`
     /// until the first `PlayerExertionChanged` event arrives. Drives the HUD
     /// fatigue bar.

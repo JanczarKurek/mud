@@ -42,6 +42,15 @@ def fill_disc(img, cx, cy, radius, c):
                 px(img, x, y, c)
 
 
+def fill_ellipse(img, cx, cy, rx, ry, c):
+    for y in range(SIZE):
+        for x in range(SIZE):
+            dx = (x - cx + 0.5) / rx
+            dy = (y - cy + 0.5) / ry
+            if dx * dx + dy * dy <= 1.0:
+                px(img, x, y, c)
+
+
 def fill_disc_shade(img, cx, cy, radius, base, hi, shadow):
     """Filled disc with a hi-light arc top-left and shadow arc bottom-right."""
     r2 = radius * radius
@@ -159,12 +168,65 @@ def gen_cave():
     return img
 
 
+# ── Sneak (footprint) ───────────────────────────────────────────────────────────
+def gen_sneak():
+    """A barefoot footprint — the mode toggle for sneaking. Drawn asymmetric (a
+    big toe and an arch notch) so it reads as a foot, not a blob."""
+    img = new_img()
+    SOLE = (122, 134, 156, 255)
+    SOLE_HI = (170, 182, 202, 255)
+    SOLE_SHADOW = (80, 90, 110, 255)
+
+    # Sole: a stack of ellipses tapering from a wide ball to a narrow heel.
+    fill_ellipse(img, 8, 6, 3.4, 2.6, SOLE)   # ball (wide)
+    fill_ellipse(img, 8, 9, 2.7, 2.2, SOLE)   # arch
+    fill_ellipse(img, 8, 12, 2.1, 2.0, SOLE)  # heel (narrow)
+    # Carve the instep on the left so the outline curves like a real arch.
+    px(img, 5, 9, BG)
+    px(img, 5, 10, BG)
+    px(img, 6, 10, BG)
+    # Toes: a fat big toe on the left, three smaller ones arcing right.
+    fill_disc(img, 5, 3, 1.1, SOLE)
+    px(img, 7, 2, SOLE)
+    px(img, 9, 2, SOLE)
+    px(img, 11, 3, SOLE)
+    # Depth: highlight along the inner edge, shadow on the outer/heel.
+    px(img, 7, 5, SOLE_HI)
+    px(img, 7, 8, SOLE_HI)
+    px(img, 9, 7, SOLE_SHADOW)
+    px(img, 9, 12, SOLE_SHADOW)
+    return img
+
+
+# ── Aware (eye) ──────────────────────────────────────────────────────────────────
+def gen_aware():
+    """An open eye — the mode toggle for heightened awareness."""
+    img = new_img()
+    OUTLINE = (58, 54, 70, 255)
+    WHITE = (236, 240, 246, 255)
+    IRIS = (74, 152, 212, 255)
+    IRIS_HI = (140, 202, 240, 255)
+    PUPIL = (22, 26, 36, 255)
+
+    # Dark almond rim, then the white sclera inside it.
+    fill_ellipse(img, 8, 8, 7.0, 4.0, OUTLINE)
+    fill_ellipse(img, 8, 8, 6.1, 3.2, WHITE)
+    # Iris with an upper-left highlight, then the pupil and a catchlight.
+    fill_disc(img, 8, 8, 3.0, IRIS)
+    fill_disc(img, 7, 7, 1.1, IRIS_HI)
+    fill_disc(img, 8, 8, 1.4, PUPIL)
+    px(img, 7, 7, WHITE)
+    return img
+
+
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     gen_sun().save(os.path.join(OUT_DIR, "sun.png"))
     gen_moon().save(os.path.join(OUT_DIR, "moon.png"))
     gen_cave().save(os.path.join(OUT_DIR, "cave.png"))
-    print(f"wrote {OUT_DIR}/sun.png, moon.png, cave.png")
+    gen_sneak().save(os.path.join(OUT_DIR, "sneak.png"))
+    gen_aware().save(os.path.join(OUT_DIR, "aware.png"))
+    print(f"wrote {OUT_DIR}/sun.png, moon.png, cave.png, sneak.png, aware.png")
 
 
 if __name__ == "__main__":
