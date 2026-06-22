@@ -213,7 +213,6 @@ pub fn spawn_hud(
             width: percent(100.0),
             height: Val::Auto,
             background: None,
-            ..default()
         },
     );
     commands.entity(chat_terminal).insert((
@@ -274,7 +273,6 @@ pub fn spawn_hud(
             width: percent(100.0),
             height: Val::Auto,
             background: Some(palette.surface_console_output),
-            ..default()
         },
     );
     commands.entity(console_terminal).insert((

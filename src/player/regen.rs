@@ -238,6 +238,6 @@ mod tests {
         };
         let fatigue = crate::player::exertion::exertion_regen_multiplier(Some(&exhausted));
         let composed = (1.0_f32 * 1.0 * fatigue).max(0.05);
-        assert!(composed < 1.0 && composed >= 0.05);
+        assert!((0.05..1.0).contains(&composed));
     }
 }

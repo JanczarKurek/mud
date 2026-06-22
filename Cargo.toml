@@ -7,6 +7,15 @@ name = "mud2"
 version = "0.2.0"
 edition = "2021"
 
+# These two clippy lints are unavoidable in idiomatic Bevy ECS code and account
+# for the vast majority of clippy noise: `type_complexity` fires on every
+# multi-filter `Query<...>`, and `too_many_arguments` fires on systems that take
+# the usual handful of queries + resources + commands. Allowed crate-wide (the
+# Bevy book recommends the same).
+[lints.clippy]
+type_complexity = "allow"
+too_many_arguments = "allow"
+
 [dependencies]
 bevy = { version = "0.18" }
 bevy_terminal = { path = "crates/bevy_terminal" }

@@ -638,6 +638,8 @@ pub struct PlacementSeqCounter(u64);
 impl PlacementSeqCounter {
     /// Returns a fresh seq and increments. Call this from every site that
     /// places an `OverworldObject` onto a tile or moves it between tiles.
+    // Named `next` deliberately — counter semantics, not an `Iterator`.
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> u64 {
         let v = self.0;
         self.0 = self.0.wrapping_add(1);

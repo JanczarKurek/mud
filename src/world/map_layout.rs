@@ -867,7 +867,7 @@ fn walk_instance(
         properties: instance.properties.clone(),
         placement: instance.placement,
         contents: Vec::with_capacity(instance.contents.len()),
-        behavior: instance.behavior.clone(),
+        behavior: instance.behavior,
         facing: instance.facing,
     });
 

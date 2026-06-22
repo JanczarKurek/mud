@@ -166,7 +166,7 @@ pub fn handle_clipboard_shortcuts(
                 z: tile.z,
                 type_id: type_id.clone(),
                 properties: properties.clone(),
-                behavior: behavior.clone(),
+                behavior,
             }],
             floors: Vec::new(),
         });
@@ -455,7 +455,7 @@ pub fn stamp_fragment(
         let new_id = object_registry
             .allocate_runtime_id_with_properties(fo.type_id.clone(), fo.properties.clone());
         if fo.behavior.is_some() {
-            object_registry.set_behavior(new_id, fo.behavior.clone());
+            object_registry.set_behavior(new_id, fo.behavior);
         }
         let entity = crate::world::setup::spawn_overworld_object(
             commands,
@@ -540,7 +540,7 @@ pub fn rotate_fragment_cw(fragment: &MapFragment) -> MapFragment {
             z: fo.z,
             type_id: fo.type_id.clone(),
             properties: fo.properties.clone(),
-            behavior: fo.behavior.clone(),
+            behavior: fo.behavior,
         });
     }
     for ff in &fragment.floors {
@@ -569,7 +569,7 @@ pub fn flip_fragment_horizontal(fragment: &MapFragment) -> MapFragment {
             z: fo.z,
             type_id: fo.type_id.clone(),
             properties: fo.properties.clone(),
-            behavior: fo.behavior.clone(),
+            behavior: fo.behavior,
         });
     }
     for ff in &fragment.floors {
@@ -598,7 +598,7 @@ pub fn flip_fragment_vertical(fragment: &MapFragment) -> MapFragment {
             z: fo.z,
             type_id: fo.type_id.clone(),
             properties: fo.properties.clone(),
-            behavior: fo.behavior.clone(),
+            behavior: fo.behavior,
         });
     }
     for ff in &fragment.floors {

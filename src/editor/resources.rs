@@ -963,8 +963,10 @@ mod tests {
     /// when the editor queries who's on floor 1.
     #[test]
     fn tile_on_active_floor_groups_half_blocks() {
-        let mut state = EditorState::default();
-        state.current_editing_floor = 1;
+        let state = EditorState {
+            current_editing_floor: 1,
+            ..Default::default()
+        };
         assert!(state.tile_on_active_floor(2)); // floor 1 base
         assert!(state.tile_on_active_floor(3)); // floor 1 + half-block
         assert!(!state.tile_on_active_floor(0)); // floor 0

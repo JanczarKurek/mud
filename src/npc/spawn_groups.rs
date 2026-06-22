@@ -120,7 +120,7 @@ fn pick_spawn_tile(
             return None;
         };
 
-        if !blocked.iter().any(|pos| *pos == candidate) {
+        if !blocked.contains(&candidate) {
             return Some(candidate);
         }
     }
@@ -319,7 +319,7 @@ pub fn tick_spawn_groups(
                     z: spawn_tile.z,
                 }),
                 contents: Vec::new(),
-                behavior: Some(runtime.def.behavior.clone()),
+                behavior: Some(runtime.def.behavior),
                 facing: None,
             };
 

@@ -145,7 +145,7 @@ fn execute_op(
                     .allocate_runtime_id_with_properties(type_id.clone(), properties.clone())
             };
             if behavior.is_some() {
-                object_registry.set_behavior(new_id, behavior.clone());
+                object_registry.set_behavior(new_id, behavior);
             }
             let entity = spawn_overworld_object(
                 commands,

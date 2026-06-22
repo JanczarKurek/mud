@@ -71,18 +71,10 @@ impl Default for FogUniforms {
     }
 }
 
-#[derive(Asset, AsBindGroup, TypePath, Clone)]
+#[derive(Asset, AsBindGroup, TypePath, Clone, Default)]
 pub struct FogOfWarMaterial {
     #[uniform(0)]
     pub uniforms: FogUniforms,
-}
-
-impl Default for FogOfWarMaterial {
-    fn default() -> Self {
-        Self {
-            uniforms: FogUniforms::default(),
-        }
-    }
 }
 
 impl Material2d for FogOfWarMaterial {
@@ -154,7 +146,7 @@ pub fn update_fog_overlay(
         for &(tx, ty) in set.iter() {
             let mx = tx - window_x0;
             let my = ty - window_y0;
-            if mx < 0 || mx >= WINDOW_W || my < 0 || my >= WINDOW_H {
+            if !(0..WINDOW_W).contains(&mx) || !(0..WINDOW_H).contains(&my) {
                 continue;
             }
             let bit_index = (my * WINDOW_W + mx) as u32;

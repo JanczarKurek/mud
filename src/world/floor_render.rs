@@ -1294,8 +1294,7 @@ mod tests {
             );
         }
         // ...and the inverse of the inverse round-trips by authoring index.
-        for idx in 0usize..16 {
-            let mask = AUTHORING_INDEX_TO_MASK[idx];
+        for (idx, &mask) in AUTHORING_INDEX_TO_MASK.iter().enumerate() {
             assert_eq!(MASK_TO_AUTHORING_INDEX[mask as usize], idx);
         }
     }

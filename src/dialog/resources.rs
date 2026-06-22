@@ -50,10 +50,7 @@ pub struct CharacterVarStores {
 
 impl CharacterVarStores {
     pub fn get_or_insert(&mut self, player_id: u64) -> PersistentVariableStorage {
-        self.by_player
-            .entry(player_id)
-            .or_insert_with(PersistentVariableStorage::new)
-            .clone()
+        self.by_player.entry(player_id).or_default().clone()
     }
 
     /// Returns the player's current variable snapshot, or an empty map if
@@ -75,10 +72,7 @@ impl CharacterVarStores {
         player_id: u64,
         values: HashMap<String, crate::dialog::variable_storage::YarnValueDump>,
     ) {
-        let store = self
-            .by_player
-            .entry(player_id)
-            .or_insert_with(PersistentVariableStorage::new);
+        let store = self.by_player.entry(player_id).or_default();
         store.restore(values);
     }
 }

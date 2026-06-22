@@ -2404,7 +2404,7 @@ pub fn apply_modal_confirmed(
         ModalConfirmed::SaveAs { authored_id } => {
             editor_context.authored_id = authored_id.clone();
             serialize_and_save(
-                &editor_context,
+                editor_context,
                 portal_buffer,
                 spawn_group_buffer,
                 lighting_buffer,

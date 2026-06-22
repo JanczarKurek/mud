@@ -655,10 +655,10 @@ fn handle_character_select_buttons(
 
 fn send_message(
     config: Option<&TcpClientConfig>,
-    mut connection: Option<&mut TcpClientConnection>,
+    connection: Option<&mut TcpClientConnection>,
     msg: ClientMessage,
 ) {
-    let (Some(config), Some(connection)) = (config, connection.as_deref_mut()) else {
+    let (Some(config), Some(connection)) = (config, connection) else {
         return;
     };
     crate::network::systems::ensure_tcp_client_connected(config, connection);

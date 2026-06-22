@@ -189,7 +189,7 @@ pub fn spawn_palette_panel(
                         let header_label = category
                             .clone()
                             .unwrap_or_else(|| "Uncategorized".to_owned());
-                        let any_named = !category.is_none() || ids.is_empty();
+                        let any_named = category.is_some() || ids.is_empty();
                         let _ = any_named;
                         list.spawn((
                             EditorPaletteCategoryHeader {

@@ -1711,7 +1711,6 @@ pub fn handle_context_menu_actions(
             None => {}
         }
         context_menu_state.hide();
-        return;
     }
 }
 

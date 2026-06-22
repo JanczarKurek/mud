@@ -686,7 +686,7 @@ pub fn apply_pick_rect_to_instance_behavior(
         return;
     };
     let before = object_registry.behavior(selected).cloned();
-    let next = Some(match before.clone() {
+    let next = Some(match before {
         Some(existing) => existing.with_bounds(picked.rect),
         // No behavior yet: default to Roam at the picked rect.
         None => MapBehavior::Roam {

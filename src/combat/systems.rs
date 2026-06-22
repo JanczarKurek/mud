@@ -89,9 +89,9 @@ fn roll_d20(salt: u64) -> i32 {
     ((mixed % 20) as i32) + 1
 }
 
-/// Returns the attack roll's total: `d20 + ability_mod + (NPC ? level : 0)
-/// + elevation_mod` (the elevation bonus is ranged-only — melee and spells
-/// get no high/low ground term).
+/// Returns the attack roll's total:
+/// `d20 + ability_mod + (NPC ? level : 0) + elevation_mod`. The elevation
+/// bonus is ranged-only — melee and spells get no high/low ground term.
 fn attack_roll_total(attacker: &CombatantSnapshot, target: &CombatantSnapshot, salt: u64) -> i32 {
     let mut total = roll_d20(salt)
         + crate::combat::formulas::attack_to_hit_bonus(
@@ -440,7 +440,7 @@ pub fn resolve_battle_turn(
                     );
                     continue;
                 }
-                AmmoConsumption::Decremented | AmmoConsumption::Emptied { .. } => {}
+                AmmoConsumption::Decremented | AmmoConsumption::Emptied => {}
             }
         }
 

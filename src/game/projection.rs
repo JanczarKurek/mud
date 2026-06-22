@@ -59,7 +59,7 @@ pub const INTEREST_RADIUS: f32 = 30.0;
 fn in_interest_radius(local: TilePosition, other: TilePosition) -> bool {
     let dx = (local.x - other.x) as f32;
     let dy = (local.y - other.y) as f32;
-    return dx.abs() <= INTEREST_RADIUS && dy.abs() <= INTEREST_RADIUS;
+    dx.abs() <= INTEREST_RADIUS && dy.abs() <= INTEREST_RADIUS
 }
 
 pub type ProjectionPlayerQuery<'w, 's> = Query<

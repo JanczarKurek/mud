@@ -239,6 +239,12 @@ pub struct PythonConsoleHost {
     scope: ManuallyDrop<Scope>,
 }
 
+impl Default for PythonConsoleHost {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PythonConsoleHost {
     pub fn new() -> Self {
         let interpreter = InterpreterConfig::new()
@@ -561,12 +567,14 @@ mod tests {
     #[test]
     fn complete_spawn_ids_via_types_namespace() {
         let host = PythonConsoleHost::new();
-        let mut snapshot = WorldSnapshot::default();
-        snapshot.object_types = vec![
-            "health_potion".to_owned(),
-            "healing_herb".to_owned(),
-            "bronze_sword".to_owned(),
-        ];
+        let snapshot = WorldSnapshot {
+            object_types: vec![
+                "health_potion".to_owned(),
+                "healing_herb".to_owned(),
+                "bronze_sword".to_owned(),
+            ],
+            ..Default::default()
+        };
         let matches = host.complete_at("world.types.heal", snapshot);
         assert!(
             matches.iter().any(|m| m == "health_potion"),
@@ -585,8 +593,10 @@ mod tests {
     #[test]
     fn types_namespace_resolves_to_id_string() {
         let mut host = PythonConsoleHost::new();
-        let mut snapshot = WorldSnapshot::default();
-        snapshot.object_types = vec!["health_potion".to_owned()];
+        let snapshot = WorldSnapshot {
+            object_types: vec!["health_potion".to_owned()],
+            ..Default::default()
+        };
         let out = host.execute("world.types.health_potion", snapshot);
         let text: String = out
             .lines
@@ -603,12 +613,14 @@ mod tests {
     #[test]
     fn types_namespace_nests_module_ids_on_slash() {
         let host = PythonConsoleHost::new();
-        let mut snapshot = WorldSnapshot::default();
-        snapshot.object_types = vec![
-            "health_potion".to_owned(),
-            "haunted_mill/moonshade_grain".to_owned(),
-            "haunted_mill/rusty_gear".to_owned(),
-        ];
+        let snapshot = WorldSnapshot {
+            object_types: vec![
+                "health_potion".to_owned(),
+                "haunted_mill/moonshade_grain".to_owned(),
+                "haunted_mill/rusty_gear".to_owned(),
+            ],
+            ..Default::default()
+        };
         // Top level offers the module as a single branch (its '/' ids collapse
         // to one segment), never the slashed id itself.
         let top = host.complete_at("world.types.haun", snapshot.clone());
@@ -629,8 +641,10 @@ mod tests {
     #[test]
     fn types_namespace_resolves_module_id_to_full_slash_string() {
         let mut host = PythonConsoleHost::new();
-        let mut snapshot = WorldSnapshot::default();
-        snapshot.object_types = vec!["haunted_mill/moonshade_grain".to_owned()];
+        let snapshot = WorldSnapshot {
+            object_types: vec!["haunted_mill/moonshade_grain".to_owned()],
+            ..Default::default()
+        };
         let out = host.execute("world.types.haunted_mill.moonshade_grain", snapshot);
         let text: String = out
             .lines
@@ -647,8 +661,10 @@ mod tests {
     #[test]
     fn types_namespace_subscript_resolves_any_full_id() {
         let mut host = PythonConsoleHost::new();
-        let mut snapshot = WorldSnapshot::default();
-        snapshot.object_types = vec!["haunted_mill/moonshade_grain".to_owned()];
+        let snapshot = WorldSnapshot {
+            object_types: vec!["haunted_mill/moonshade_grain".to_owned()],
+            ..Default::default()
+        };
         let out = host.execute("world.types['haunted_mill/moonshade_grain']", snapshot);
         let text: String = out
             .lines
@@ -665,8 +681,10 @@ mod tests {
     #[test]
     fn types_namespace_unknown_id_raises_attribute_error() {
         let mut host = PythonConsoleHost::new();
-        let mut snapshot = WorldSnapshot::default();
-        snapshot.object_types = vec!["health_potion".to_owned()];
+        let snapshot = WorldSnapshot {
+            object_types: vec!["health_potion".to_owned()],
+            ..Default::default()
+        };
         let out = host.execute("world.types.no_such_thing", snapshot);
         let text: String = out
             .lines

@@ -238,8 +238,10 @@ render:
             map_height: 100,
             fill_floor_type: "grass".into(),
         };
-        let mut editor_state = EditorState::default();
-        editor_state.current_editing_floor = current_editing_floor;
+        let editor_state = EditorState {
+            current_editing_floor,
+            ..Default::default()
+        };
 
         let mut app = App::new();
         app.insert_resource(defs);
@@ -284,7 +286,7 @@ render:
         spawn_roof(&mut app, 5, 5, 2);
         app.update();
         let range = *app.world().resource::<VisibleFloorRange>();
-        assert_eq!(range.highest_visible, 0 + MAX_FLOORS_ABOVE);
+        assert_eq!(range.highest_visible, MAX_FLOORS_ABOVE);
     }
 
     /// No hover → same fallback as "outside" — full upper cap, no occlusion.
@@ -294,7 +296,7 @@ render:
         spawn_roof(&mut app, 5, 5, 2);
         app.update();
         let range = *app.world().resource::<VisibleFloorRange>();
-        assert_eq!(range.highest_visible, 0 + MAX_FLOORS_ABOVE);
+        assert_eq!(range.highest_visible, MAX_FLOORS_ABOVE);
     }
 
     /// Active floor=1, cursor at (5,5), occluder at (5,5,z=4) → floor above
@@ -343,7 +345,7 @@ render:
             .insert(SPACE, 1, grid);
         app.update();
         let range = *app.world().resource::<VisibleFloorRange>();
-        assert_eq!(range.highest_visible, 0 + MAX_FLOORS_ABOVE);
+        assert_eq!(range.highest_visible, MAX_FLOORS_ABOVE);
     }
 
     /// Occluder on the WRONG tile shouldn't clamp — the cursor's column is
@@ -355,6 +357,6 @@ render:
         spawn_roof(&mut app, 5, 4, 2);
         app.update();
         let range = *app.world().resource::<VisibleFloorRange>();
-        assert_eq!(range.highest_visible, 0 + MAX_FLOORS_ABOVE);
+        assert_eq!(range.highest_visible, MAX_FLOORS_ABOVE);
     }
 }

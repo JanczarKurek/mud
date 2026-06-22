@@ -10,8 +10,6 @@
 //! no-op, surfacing a single warning at startup so the operator knows the
 //! flag was ignored.
 
-#![cfg(unix)]
-
 use std::collections::HashMap;
 use std::io::{ErrorKind, Read, Write};
 use std::os::unix::fs::PermissionsExt;

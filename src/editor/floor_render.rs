@@ -45,6 +45,7 @@ pub struct EditorFloorRenderState {
 /// - **No-op** otherwise. A trailing hash check guards against external
 ///   mutations (e.g. a wholesale `FloorMap` swap on map switch) that bypass
 ///   the dirty queue.
+///
 /// Mirror of `world::floor_render::build_floor_render_cells`, adapted to the
 /// editor's data sources: walks every `FloorMap` in the active space (so
 /// upper / lower stories stay visible alongside the active floor) and

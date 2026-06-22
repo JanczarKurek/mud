@@ -449,82 +449,6 @@ pub fn cleanup_invalid_trades(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::game::shop::StockEntry;
-
-    #[test]
-    fn try_take_handles_finite_and_infinite_stock() {
-        let mut entry = StockEntry {
-            type_id: "apple".to_owned(),
-            price_copper: 4,
-            stock: StockMode::Finite(3),
-        };
-        assert!(entry.try_take(2));
-        assert!(matches!(entry.stock, StockMode::Finite(1)));
-        assert!(!entry.try_take(2)); // would exceed remaining
-        assert!(entry.try_take(1));
-        assert!(matches!(entry.stock, StockMode::Finite(0)));
-
-        let mut infinite = StockEntry {
-            type_id: "apple".to_owned(),
-            price_copper: 4,
-            stock: StockMode::Infinite,
-        };
-        assert!(infinite.try_take(1_000_000));
-        assert!(matches!(infinite.stock, StockMode::Infinite));
-    }
-
-    #[test]
-    fn format_copper_collapses_zero_parts() {
-        assert_eq!(format_copper(0), "0c");
-        assert_eq!(format_copper(4), "4c");
-        assert_eq!(format_copper(COPPER_PER_SILVER), "1s");
-        assert_eq!(format_copper(COPPER_PER_GOLD), "1g");
-        assert_eq!(
-            format_copper(COPPER_PER_GOLD + COPPER_PER_SILVER + 2),
-            "1g 1s 2c"
-        );
-    }
-
-    #[test]
-    fn vendor_price_for_buyer_at_known_ranks() {
-        // 0 ranks → no change.
-        assert_eq!(vendor_price_for(0, 100, TradeSide::PlayerBuys), 100);
-        assert_eq!(persuasion_modifier_pct(0, TradeSide::PlayerBuys), 0);
-        // 5 ranks → -10%.
-        assert_eq!(vendor_price_for(5, 100, TradeSide::PlayerBuys), 90);
-        assert_eq!(persuasion_modifier_pct(5, TradeSide::PlayerBuys), -10);
-        // 10 ranks → -20% (boundary).
-        assert_eq!(vendor_price_for(10, 100, TradeSide::PlayerBuys), 80);
-        assert_eq!(persuasion_modifier_pct(10, TradeSide::PlayerBuys), -20);
-        // 15 ranks → still -20% (clamp).
-        assert_eq!(vendor_price_for(15, 100, TradeSide::PlayerBuys), 80);
-        assert_eq!(persuasion_modifier_pct(15, TradeSide::PlayerBuys), -20);
-    }
-
-    #[test]
-    fn vendor_price_for_seller_inverts_sign() {
-        assert_eq!(vendor_price_for(0, 100, TradeSide::PlayerSells), 100);
-        assert_eq!(vendor_price_for(5, 100, TradeSide::PlayerSells), 110);
-        assert_eq!(vendor_price_for(10, 100, TradeSide::PlayerSells), 120);
-        assert_eq!(vendor_price_for(15, 100, TradeSide::PlayerSells), 120);
-        assert_eq!(persuasion_modifier_pct(5, TradeSide::PlayerSells), 10);
-        assert_eq!(persuasion_modifier_pct(10, TradeSide::PlayerSells), 20);
-    }
-
-    #[test]
-    fn vendor_price_for_handles_small_amounts() {
-        // 4-copper apple at 5 ranks: 10% off 4 = floor(4 * 10 / 100) = 0
-        // (integer floor) → price stays 4. Sanity check that no overflow.
-        assert_eq!(vendor_price_for(5, 4, TradeSide::PlayerBuys), 4);
-        // 4-copper apple at 10 ranks: floor(4 * 20 / 100) = 0 still.
-        // The next-cheapest discount tier kicks in at base >= 5c.
-        assert_eq!(vendor_price_for(10, 5, TradeSide::PlayerBuys), 4);
-    }
-}
-
 /// Drains all `Trade*` `GameCommand` variants from `PendingGameCommands` and
 /// applies them to `ActiveTrades` + the involved players' inventories. Mirrors
 /// the `process_dialog_commands` / `process_rotate_commands` pattern: scheduled
@@ -1251,7 +1175,7 @@ fn commit_player_to_shop_trade(
     if total_offered_copper < total_owed_copper {
         let shortfall = total_owed_copper - total_offered_copper;
         if let Ok((_, _, _, mut chat_log, _, _, _, _, _)) = player_inventory_query.get_mut(entity) {
-            chat_log.push_narrator(&format!(
+            chat_log.push_narrator(format!(
                 "The merchant frowns. \"Short by {} — bring more coin.\"",
                 format_copper(shortfall)
             ));
@@ -1689,4 +1613,80 @@ fn insert_one_offer(
     }
 
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game::shop::StockEntry;
+
+    #[test]
+    fn try_take_handles_finite_and_infinite_stock() {
+        let mut entry = StockEntry {
+            type_id: "apple".to_owned(),
+            price_copper: 4,
+            stock: StockMode::Finite(3),
+        };
+        assert!(entry.try_take(2));
+        assert!(matches!(entry.stock, StockMode::Finite(1)));
+        assert!(!entry.try_take(2)); // would exceed remaining
+        assert!(entry.try_take(1));
+        assert!(matches!(entry.stock, StockMode::Finite(0)));
+
+        let mut infinite = StockEntry {
+            type_id: "apple".to_owned(),
+            price_copper: 4,
+            stock: StockMode::Infinite,
+        };
+        assert!(infinite.try_take(1_000_000));
+        assert!(matches!(infinite.stock, StockMode::Infinite));
+    }
+
+    #[test]
+    fn format_copper_collapses_zero_parts() {
+        assert_eq!(format_copper(0), "0c");
+        assert_eq!(format_copper(4), "4c");
+        assert_eq!(format_copper(COPPER_PER_SILVER), "1s");
+        assert_eq!(format_copper(COPPER_PER_GOLD), "1g");
+        assert_eq!(
+            format_copper(COPPER_PER_GOLD + COPPER_PER_SILVER + 2),
+            "1g 1s 2c"
+        );
+    }
+
+    #[test]
+    fn vendor_price_for_buyer_at_known_ranks() {
+        // 0 ranks → no change.
+        assert_eq!(vendor_price_for(0, 100, TradeSide::PlayerBuys), 100);
+        assert_eq!(persuasion_modifier_pct(0, TradeSide::PlayerBuys), 0);
+        // 5 ranks → -10%.
+        assert_eq!(vendor_price_for(5, 100, TradeSide::PlayerBuys), 90);
+        assert_eq!(persuasion_modifier_pct(5, TradeSide::PlayerBuys), -10);
+        // 10 ranks → -20% (boundary).
+        assert_eq!(vendor_price_for(10, 100, TradeSide::PlayerBuys), 80);
+        assert_eq!(persuasion_modifier_pct(10, TradeSide::PlayerBuys), -20);
+        // 15 ranks → still -20% (clamp).
+        assert_eq!(vendor_price_for(15, 100, TradeSide::PlayerBuys), 80);
+        assert_eq!(persuasion_modifier_pct(15, TradeSide::PlayerBuys), -20);
+    }
+
+    #[test]
+    fn vendor_price_for_seller_inverts_sign() {
+        assert_eq!(vendor_price_for(0, 100, TradeSide::PlayerSells), 100);
+        assert_eq!(vendor_price_for(5, 100, TradeSide::PlayerSells), 110);
+        assert_eq!(vendor_price_for(10, 100, TradeSide::PlayerSells), 120);
+        assert_eq!(vendor_price_for(15, 100, TradeSide::PlayerSells), 120);
+        assert_eq!(persuasion_modifier_pct(5, TradeSide::PlayerSells), 10);
+        assert_eq!(persuasion_modifier_pct(10, TradeSide::PlayerSells), 20);
+    }
+
+    #[test]
+    fn vendor_price_for_handles_small_amounts() {
+        // 4-copper apple at 5 ranks: 10% off 4 = floor(4 * 10 / 100) = 0
+        // (integer floor) → price stays 4. Sanity check that no overflow.
+        assert_eq!(vendor_price_for(5, 4, TradeSide::PlayerBuys), 4);
+        // 4-copper apple at 10 ranks: floor(4 * 20 / 100) = 0 still.
+        // The next-cheapest discount tier kicks in at base >= 5c.
+        assert_eq!(vendor_price_for(10, 5, TradeSide::PlayerBuys), 4);
+    }
 }

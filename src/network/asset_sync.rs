@@ -21,13 +21,13 @@ pub fn build_server_manifest() -> Vec<AssetEntry> {
 
     for subdir in SYNC_DIRS {
         let dir = PathBuf::from("assets").join(subdir);
-        collect_entries(&dir, &dir, &mut entries);
+        collect_entries(&dir, &mut entries);
     }
 
     entries
 }
 
-fn collect_entries(root: &Path, dir: &Path, entries: &mut Vec<AssetEntry>) {
+fn collect_entries(dir: &Path, entries: &mut Vec<AssetEntry>) {
     let Ok(read_dir) = std::fs::read_dir(dir) else {
         return;
     };
@@ -35,7 +35,7 @@ fn collect_entries(root: &Path, dir: &Path, entries: &mut Vec<AssetEntry>) {
     for entry in read_dir.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            collect_entries(root, &path, entries);
+            collect_entries(&path, entries);
         } else if path.is_file() {
             let Ok(relative) = path.strip_prefix(PathBuf::from("assets")) else {
                 continue;

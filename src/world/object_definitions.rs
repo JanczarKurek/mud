@@ -1063,8 +1063,8 @@ impl OverworldObjectDefinition {
                             text,
                             stack_size: (min, max),
                         } => {
-                            let min_ok = min.map_or(true, |m| count >= m);
-                            let max_ok = max.map_or(true, |m| count <= m);
+                            let min_ok = min.is_none_or(|m| count >= m);
+                            let max_ok = max.is_none_or(|m| count <= m);
                             if min_ok && max_ok {
                                 return text;
                             }

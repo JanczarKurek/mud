@@ -1782,7 +1782,8 @@ mod tests {
             idle_events.is_empty(),
             "expected zero events when nothing changed, got: {idle_events:?}"
         );
-        drop((
+        // Release the SystemState borrows so `app.world_mut()` can take over.
+        let _ = (
             player_query,
             object_query,
             world_object_query,
@@ -1792,7 +1793,7 @@ mod tests {
             floor_maps,
             active_trades,
             object_definitions,
-        ));
+        );
 
         // Move the player; the next diff should contain exactly one PlayerPositionChanged.
         app.world_mut()

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 /// Persistent gameplay toggles. Currently a single switch — the Nearby NPCs
 /// panel's auto-open behavior — but shaped to grow.
-#[derive(Resource, Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Resource, Clone, Copy, Debug, Serialize, Deserialize, Default)]
 pub struct GameplaySettings {
     /// When `true`, the Nearby NPCs panel opens automatically whenever any
     /// NPC is in interest range and closes when none are. When `false`
@@ -19,15 +19,6 @@ pub struct GameplaySettings {
     /// change, drained by `persist_settings`.
     #[serde(skip)]
     pub dirty: bool,
-}
-
-impl Default for GameplaySettings {
-    fn default() -> Self {
-        Self {
-            auto_open_nearby_npcs_panel: false,
-            dirty: false,
-        }
-    }
 }
 
 /// One configurable gameplay knob — the unit the UI builds a row per and the

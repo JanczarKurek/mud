@@ -111,10 +111,7 @@ fn build_image(recipe: FrameRecipe) -> Image {
 }
 
 fn is_rounded_corner(x: usize, y: usize, w: usize, h: usize) -> bool {
-    (x == 0 && y == 0)
-        || (x == w - 1 && y == 0)
-        || (x == 0 && y == h - 1)
-        || (x == w - 1 && y == h - 1)
+    (x == 0 || x == w - 1) && (y == 0 || y == h - 1)
 }
 
 fn rgba(r: f32, g: f32, b: f32) -> [u8; 4] {

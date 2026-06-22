@@ -245,9 +245,8 @@ fn resolve_mud2_runtime(mode: &ModeArgs) -> AppRuntime {
         AppRuntime::HeadlessServer
     } else if mode.tcp_client {
         AppRuntime::TcpClient
-    } else if mode.client {
-        AppRuntime::EmbeddedClient
     } else {
+        // `--client` is explicit-but-default; no mode flag lands here too.
         AppRuntime::EmbeddedClient
     }
 }

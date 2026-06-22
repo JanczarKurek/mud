@@ -42,7 +42,7 @@ impl ObjectRegistry {
                 );
                 properties.insert(object.id, object.properties.clone());
                 if let Some(behavior) = &object.behavior {
-                    behaviors.insert(object.id, behavior.clone());
+                    behaviors.insert(object.id, *behavior);
                 }
                 max_id = max_id.max(object.id);
             }
@@ -144,8 +144,8 @@ impl ObjectRegistry {
         if type_changed {
             self.properties.insert(object_id, ObjectProperties::new());
             self.behaviors.remove(&object_id);
-        } else if !self.properties.contains_key(&object_id) {
-            self.properties.insert(object_id, ObjectProperties::new());
+        } else {
+            self.properties.entry(object_id).or_default();
         }
         if self.next_runtime_id <= object_id {
             self.next_runtime_id = object_id + 1;

@@ -178,8 +178,8 @@ pub fn update_minimap_images(
             let tile_ui_y = view_height / span as f32;
             let tile_ui = tile_ui_x.min(tile_ui_y);
 
-            let player_dot_size = tile_ui.min(12.0).max(2.0);
-            let other_dot_size = (tile_ui * 0.75).min(10.0).max(2.0);
+            let player_dot_size = tile_ui.clamp(2.0, 12.0);
+            let other_dot_size = (tile_ui * 0.75).clamp(2.0, 10.0);
 
             let center_x = tile.x + view_pan.x;
             let center_y = tile.y + view_pan.y;
@@ -687,10 +687,10 @@ pub fn reset_floating_minimap_pan_when_mounted(
     minimap_mode: Res<MinimapPanelMode>,
     mut pan: ResMut<FloatingMinimapPan>,
 ) {
-    if matches!(minimap_mode.0, PanelMountMode::Mounted) {
-        if pan.offset_tiles != Vec2::ZERO || pan.drag.is_some() {
-            pan.offset_tiles = Vec2::ZERO;
-            pan.drag = None;
-        }
+    if matches!(minimap_mode.0, PanelMountMode::Mounted)
+        && (pan.offset_tiles != Vec2::ZERO || pan.drag.is_some())
+    {
+        pan.offset_tiles = Vec2::ZERO;
+        pan.drag = None;
     }
 }

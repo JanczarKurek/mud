@@ -88,18 +88,10 @@ impl Default for DarknessUniforms {
     }
 }
 
-#[derive(Asset, AsBindGroup, TypePath, Clone)]
+#[derive(Asset, AsBindGroup, TypePath, Clone, Default)]
 pub struct DarknessOverlayMaterial {
     #[uniform(0)]
     pub uniforms: DarknessUniforms,
-}
-
-impl Default for DarknessOverlayMaterial {
-    fn default() -> Self {
-        Self {
-            uniforms: DarknessUniforms::default(),
-        }
-    }
 }
 
 impl Material2d for DarknessOverlayMaterial {
@@ -224,7 +216,7 @@ pub fn update_darkness_overlay(
         }
         let mx = tile.x - window_x0;
         let my = tile.y - window_y0;
-        if mx < 0 || mx >= WINDOW_W || my < 0 || my >= WINDOW_H {
+        if !(0..WINDOW_W).contains(&mx) || !(0..WINDOW_H).contains(&my) {
             continue;
         }
         let occludes = definitions

@@ -65,5 +65,5 @@ pub fn simulation_active(
     if pause.is_some_and(|p| p.simulation) {
         return false;
     }
-    state.map_or(true, |s| *s.get() == ClientAppState::InGame)
+    state.is_none_or(|s| *s.get() == ClientAppState::InGame)
 }

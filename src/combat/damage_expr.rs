@@ -278,7 +278,7 @@ mod tests {
     fn roll_is_positive_for_strength_term() {
         let expr = DamageExpr::parse("1d6+strength").unwrap();
         let value = expr.roll(&attrs());
-        assert!(value >= 1 + 10 && value <= 6 + 10);
+        assert!((1 + 10..=6 + 10).contains(&value));
     }
 
     #[test]

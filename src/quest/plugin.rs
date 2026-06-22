@@ -14,15 +14,10 @@ use crate::quest::systems::{
     mirror_quest_state_to_stash, restore_quest_state_on_player_added, PendingQuestCommands,
 };
 
+#[derive(Default)]
 pub struct QuestPlugin {
     /// Directory to load `.py` files from. Defaults to `assets/quests/`.
     pub quest_dir: Option<PathBuf>,
-}
-
-impl Default for QuestPlugin {
-    fn default() -> Self {
-        Self { quest_dir: None }
-    }
 }
 
 impl Plugin for QuestPlugin {

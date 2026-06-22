@@ -9,14 +9,8 @@ use crate::world::components::SpaceId;
 use crate::world::map_layout::ObjectProperties;
 use crate::world::object_definitions::{EquipmentSlot, OverworldObjectDefinitions};
 
-#[derive(Component, Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Component, Clone, Debug, Deserialize, PartialEq, Serialize, Default)]
 pub struct WeaponDamage(pub DamageExpr);
-
-impl Default for WeaponDamage {
-    fn default() -> Self {
-        Self(DamageExpr::melee_default())
-    }
-}
 
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
 pub struct DefenseStats {
@@ -559,7 +553,7 @@ pub fn validate_point_buy(attrs: &AttributeSet) -> Result<(), String> {
     ];
     let mut total = 0;
     for (name, value) in values {
-        if value < ATTR_FLOOR || value > ATTR_CEILING {
+        if !(ATTR_FLOOR..=ATTR_CEILING).contains(&value) {
             return Err(format!(
                 "{name} must be between {ATTR_FLOOR} and {ATTR_CEILING}"
             ));

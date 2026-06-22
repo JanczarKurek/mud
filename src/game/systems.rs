@@ -4681,11 +4681,7 @@ fn handle_admin_spawn(
         return;
     };
 
-    if definition.colliding
-        && collider_positions
-            .iter()
-            .any(|collider_position| *collider_position == tile_position)
-    {
+    if definition.colliding && collider_positions.contains(&tile_position) {
         chat_log_state.push_narrator("Spawn rejected: target tile is blocked.");
         return;
     }
@@ -6105,10 +6101,7 @@ fn is_walkable_tile(
     floor_maps: &crate::world::floor_map::FloorMaps,
     floor_defs: &crate::world::floor_definitions::FloorTilesetDefinitions,
 ) -> bool {
-    if collider_positions
-        .iter()
-        .any(|collider_position| *collider_position == target)
-    {
+    if collider_positions.contains(&target) {
         return false;
     }
 
@@ -6245,7 +6238,7 @@ fn resolve_step_with_climb(
         );
         if stack_top_walkable {
             let above = TilePosition::new(x, y, stack_top);
-            let blocked_above = collider_positions.iter().any(|p| *p == above);
+            let blocked_above = collider_positions.contains(&above);
             let ceiling_above = object_query
                 .iter()
                 .filter(|(_, resident, tile, _)| resident.space_id == space_id && **tile == above)
@@ -6286,6 +6279,158 @@ fn resolve_step_with_climb(
         }
     }
     None
+}
+
+/// Resolve a world-tile drop. Returns the chosen `TilePosition` (with `z`
+/// snapped to the stack top of the column) when the drop is allowed, else
+/// `None`. Rules:
+///   * target `(x, y)` must be on-map and horizontally within 1 tile of
+///     the player;
+///   * the column's existing top must be reachable (within ±1 z of the
+///     player) AND the resulting new top must be at most `player_z + 2`
+///     (i.e. `crate::world::stacks::can_place_on_stack`);
+///   * the topmost block already in the column must have a walkable top
+///     surface (you can't drop onto a wall);
+///   * for moves, `dragged_entity` is excluded from the column so an
+///     object doesn't stack on itself.
+#[allow(clippy::too_many_arguments)]
+fn resolve_world_drop_tile(
+    target_tile: TilePosition,
+    origin_tile: Option<TilePosition>,
+    placed_block_size: u8,
+    space_id: crate::world::components::SpaceId,
+    player_position: &TilePosition,
+    dragged_entity: Entity,
+    object_query: &Query<
+        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
+        Without<Player>,
+    >,
+    collider_positions: &[TilePosition],
+    definitions: &OverworldObjectDefinitions,
+    floor_maps: &crate::world::floor_map::FloorMaps,
+    floor_defs: &crate::world::floor_definitions::FloorTilesetDefinitions,
+    world_config: &WorldConfig,
+) -> Option<TilePosition> {
+    if target_tile.x < 0
+        || target_tile.y < 0
+        || target_tile.x >= world_config.map_width
+        || target_tile.y >= world_config.map_height
+    {
+        return None;
+    }
+    if (player_position.x - target_tile.x).abs() > 1
+        || (player_position.y - target_tile.y).abs() > 1
+    {
+        return None;
+    }
+
+    let column_members = || {
+        object_query.iter().map(|(entity, resident, tile, object)| {
+            crate::world::stacks::ColumnMember {
+                entity,
+                resident,
+                tile,
+                object,
+            }
+        })
+    };
+
+    let stack_top = crate::world::stacks::stack_top_z_excluding(
+        space_id,
+        target_tile.x,
+        target_tile.y,
+        dragged_entity,
+        column_members(),
+        definitions,
+        floor_maps,
+        floor_defs,
+    );
+
+    let resolved = TilePosition::new(target_tile.x, target_tile.y, stack_top);
+    if origin_tile == Some(resolved) {
+        return Some(resolved);
+    }
+
+    if !crate::world::stacks::stack_top_is_walkable(
+        space_id,
+        target_tile.x,
+        target_tile.y,
+        dragged_entity,
+        column_members(),
+        definitions,
+        floor_maps,
+        floor_defs,
+    ) {
+        return None;
+    }
+
+    if !crate::world::stacks::can_place_on_stack(player_position.z, stack_top, placed_block_size) {
+        return None;
+    }
+
+    // Block placement that would overlap a character's footprint. A character
+    // (player or NPC) at `(target.x, target.y, cz)` occupies `cz` (its feet
+    // tile); a placed item with `block_size = bs` occupies `[stack_top,
+    // stack_top + bs)`. Reject if any collider sits inside that span so we
+    // can't materialize a chest under someone's feet.
+    let placed_top = stack_top + placed_block_size as i32;
+    if collider_positions.iter().any(|c| {
+        c.x == target_tile.x && c.y == target_tile.y && c.z >= stack_top && c.z < placed_top
+    }) {
+        return None;
+    }
+
+    Some(resolved)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn find_nearest_valid_world_drop_tile(
+    target_tile: TilePosition,
+    origin_tile: Option<TilePosition>,
+    placed_block_size: u8,
+    space_id: crate::world::components::SpaceId,
+    player_position: &TilePosition,
+    dragged_entity: Entity,
+    object_query: &Query<
+        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
+        Without<Player>,
+    >,
+    collider_positions: &[TilePosition],
+    definitions: &OverworldObjectDefinitions,
+    floor_maps: &crate::world::floor_map::FloorMaps,
+    floor_defs: &crate::world::floor_definitions::FloorTilesetDefinitions,
+    world_config: &WorldConfig,
+) -> Option<TilePosition> {
+    let mut candidates = Vec::new();
+    for y in -1..=1 {
+        for x in -1..=1 {
+            candidates.push((target_tile.x + x, target_tile.y + y));
+        }
+    }
+
+    candidates.sort_by_key(|(cx, cy)| {
+        (
+            (cx - target_tile.x).abs() + (cy - target_tile.y).abs(),
+            i32::from(*cx != target_tile.x && *cy != target_tile.y),
+        )
+    });
+
+    candidates.into_iter().find_map(|(cx, cy)| {
+        resolve_world_drop_tile(
+            TilePosition::new(cx, cy, target_tile.z),
+            origin_tile,
+            placed_block_size,
+            space_id,
+            player_position,
+            dragged_entity,
+            object_query,
+            collider_positions,
+            definitions,
+            floor_maps,
+            floor_defs,
+            world_config,
+        )
+    })
 }
 
 #[cfg(test)]
@@ -7400,156 +7545,4 @@ mod tests {
         assert_eq!(slot.as_ref().unwrap().quantity, 3);
         let _ = CHARGES_KEY; // keep the import alive even if charges aren't used in this test
     }
-}
-
-/// Resolve a world-tile drop. Returns the chosen `TilePosition` (with `z`
-/// snapped to the stack top of the column) when the drop is allowed, else
-/// `None`. Rules:
-///   * target `(x, y)` must be on-map and horizontally within 1 tile of
-///     the player;
-///   * the column's existing top must be reachable (within ±1 z of the
-///     player) AND the resulting new top must be at most `player_z + 2`
-///     (i.e. `crate::world::stacks::can_place_on_stack`);
-///   * the topmost block already in the column must have a walkable top
-///     surface (you can't drop onto a wall);
-///   * for moves, `dragged_entity` is excluded from the column so an
-///     object doesn't stack on itself.
-#[allow(clippy::too_many_arguments)]
-fn resolve_world_drop_tile(
-    target_tile: TilePosition,
-    origin_tile: Option<TilePosition>,
-    placed_block_size: u8,
-    space_id: crate::world::components::SpaceId,
-    player_position: &TilePosition,
-    dragged_entity: Entity,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
-    collider_positions: &[TilePosition],
-    definitions: &OverworldObjectDefinitions,
-    floor_maps: &crate::world::floor_map::FloorMaps,
-    floor_defs: &crate::world::floor_definitions::FloorTilesetDefinitions,
-    world_config: &WorldConfig,
-) -> Option<TilePosition> {
-    if target_tile.x < 0
-        || target_tile.y < 0
-        || target_tile.x >= world_config.map_width
-        || target_tile.y >= world_config.map_height
-    {
-        return None;
-    }
-    if (player_position.x - target_tile.x).abs() > 1
-        || (player_position.y - target_tile.y).abs() > 1
-    {
-        return None;
-    }
-
-    let column_members = || {
-        object_query.iter().map(|(entity, resident, tile, object)| {
-            crate::world::stacks::ColumnMember {
-                entity,
-                resident,
-                tile,
-                object,
-            }
-        })
-    };
-
-    let stack_top = crate::world::stacks::stack_top_z_excluding(
-        space_id,
-        target_tile.x,
-        target_tile.y,
-        dragged_entity,
-        column_members(),
-        definitions,
-        floor_maps,
-        floor_defs,
-    );
-
-    let resolved = TilePosition::new(target_tile.x, target_tile.y, stack_top);
-    if origin_tile == Some(resolved) {
-        return Some(resolved);
-    }
-
-    if !crate::world::stacks::stack_top_is_walkable(
-        space_id,
-        target_tile.x,
-        target_tile.y,
-        dragged_entity,
-        column_members(),
-        definitions,
-        floor_maps,
-        floor_defs,
-    ) {
-        return None;
-    }
-
-    if !crate::world::stacks::can_place_on_stack(player_position.z, stack_top, placed_block_size) {
-        return None;
-    }
-
-    // Block placement that would overlap a character's footprint. A character
-    // (player or NPC) at `(target.x, target.y, cz)` occupies `cz` (its feet
-    // tile); a placed item with `block_size = bs` occupies `[stack_top,
-    // stack_top + bs)`. Reject if any collider sits inside that span so we
-    // can't materialize a chest under someone's feet.
-    let placed_top = stack_top + placed_block_size as i32;
-    if collider_positions.iter().any(|c| {
-        c.x == target_tile.x && c.y == target_tile.y && c.z >= stack_top && c.z < placed_top
-    }) {
-        return None;
-    }
-
-    Some(resolved)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn find_nearest_valid_world_drop_tile(
-    target_tile: TilePosition,
-    origin_tile: Option<TilePosition>,
-    placed_block_size: u8,
-    space_id: crate::world::components::SpaceId,
-    player_position: &TilePosition,
-    dragged_entity: Entity,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
-    collider_positions: &[TilePosition],
-    definitions: &OverworldObjectDefinitions,
-    floor_maps: &crate::world::floor_map::FloorMaps,
-    floor_defs: &crate::world::floor_definitions::FloorTilesetDefinitions,
-    world_config: &WorldConfig,
-) -> Option<TilePosition> {
-    let mut candidates = Vec::new();
-    for y in -1..=1 {
-        for x in -1..=1 {
-            candidates.push((target_tile.x + x, target_tile.y + y));
-        }
-    }
-
-    candidates.sort_by_key(|(cx, cy)| {
-        (
-            (cx - target_tile.x).abs() + (cy - target_tile.y).abs(),
-            i32::from(*cx != target_tile.x && *cy != target_tile.y),
-        )
-    });
-
-    candidates.into_iter().find_map(|(cx, cy)| {
-        resolve_world_drop_tile(
-            TilePosition::new(cx, cy, target_tile.z),
-            origin_tile,
-            placed_block_size,
-            space_id,
-            player_position,
-            dragged_entity,
-            object_query,
-            collider_positions,
-            definitions,
-            floor_maps,
-            floor_defs,
-            world_config,
-        )
-    })
 }
