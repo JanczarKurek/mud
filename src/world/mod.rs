@@ -23,6 +23,7 @@ pub mod map_layout;
 pub mod noise;
 pub mod object_definitions;
 pub mod object_registry;
+pub mod pressure_plate;
 pub mod resources;
 pub mod setup;
 pub mod spatial;
@@ -185,6 +186,18 @@ impl Plugin for WorldServerPlugin {
             // client in the same tick.
             crate::world::hidden::passive_perception_tick
                 .after(process_continuous_step_triggers)
+                .before(crate::game::projection::collect_game_events_from_authority)
+                .run_if(crate::app::state::simulation_active),
+        )
+        .add_systems(
+            Update,
+            // Recompute pressure-plate occupancy (incl. shoved heavy objects)
+            // and drive plate + wired-target state. After the command/NPC moves
+            // that change occupancy, before event collection so the resulting
+            // door open/close replicates the same frame.
+            crate::world::pressure_plate::update_pressure_plates
+                .after(crate::game::systems::process_game_commands)
+                .after(crate::npc::systems::update_roaming_npcs)
                 .before(crate::game::projection::collect_game_events_from_authority)
                 .run_if(crate::app::state::simulation_active),
         )

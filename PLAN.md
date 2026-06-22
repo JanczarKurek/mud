@@ -122,8 +122,14 @@ interaction-driven simulator (stealth/detection, moving stuff, production &
 quality chains, knowledge & body loop, Medium-sim Exertion) — are designed in
 **`docs/utility_systems.md`**. The thesis there is to connect today's isolated
 skill checks through a small set of shared world signals (light, noise, cover,
-exertion, success-margin→quality). First build slice: "Sneak & Seek" (wires
-Stealth into NPC detection).
+exertion, success-margin→quality). Shipped so far: Slice 1 "Sneak & Seek"
+(Stealth↔NPC detection), Slice 2 Exertion + Endurance (the Medium-sim stamina
+currency + regen wire + `Concentration→Endurance` rename), and Slice 3 Physical
+manipulation/Cluster B (weight-gated multi-tile push/pull extending `MoveItem`;
+objects-as-cover / stack-to-climb / barricade emerging from the existing
+LoS/stack/A* systems; and pressure-plate holds in `src/world/pressure_plate.rs`).
+Remaining: Slice 4 production & quality, Slice 5 knowledge & body, and the
+deferred Backstab/sneak-attack.
 
 ### 4.3 Phase 7 — Content Pipeline & Tooling
 

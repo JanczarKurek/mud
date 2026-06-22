@@ -436,7 +436,10 @@ mod tests {
         let tile = TilePosition { x: 0, y: 0, z: 0 };
         let noon = light_level_at(tile, &curve, 0.5, &[]);
         let midnight = light_level_at(tile, &curve, 0.0, &[]);
-        assert!((noon - 1.0).abs() < 1e-6, "noon should be fully lit: {noon}");
+        assert!(
+            (noon - 1.0).abs() < 1e-6,
+            "noon should be fully lit: {noon}"
+        );
         assert!(midnight < 0.6, "midnight should be dim: {midnight}");
         assert!(midnight > 0.0, "midnight still navigable: {midnight}");
         assert!(noon > midnight);

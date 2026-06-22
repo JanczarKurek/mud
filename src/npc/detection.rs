@@ -71,7 +71,10 @@ mod tests {
     fn light_bonus_is_linear_and_clamped() {
         assert_eq!(light_to_perception_bonus(0.0), 0);
         assert_eq!(light_to_perception_bonus(1.0), LIGHT_MAX_BONUS);
-        assert_eq!(light_to_perception_bonus(0.5), (LIGHT_MAX_BONUS as f32 * 0.5).round() as i32);
+        assert_eq!(
+            light_to_perception_bonus(0.5),
+            (LIGHT_MAX_BONUS as f32 * 0.5).round() as i32
+        );
         // Out-of-range inputs clamp rather than overshoot.
         assert_eq!(light_to_perception_bonus(2.0), LIGHT_MAX_BONUS);
         assert_eq!(light_to_perception_bonus(-1.0), 0);

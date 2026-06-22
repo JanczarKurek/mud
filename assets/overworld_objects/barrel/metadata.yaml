@@ -3,6 +3,10 @@ name: Barrel
 description: A heavy wooden barrel that can be opened as a simple container.
 container_capacity: 8
 rotatable: true
+# Heavy enough that shoving it (push/pull) requires an Athletics check vs this
+# weight — see docs/utility_systems.md §4. As a full-block, walkable collider it
+# also doubles as cover, a barricade, and a stack-to-climb step once pushed.
+weight: 12.0
 render:
   z_index: 0.25
   debug_color:

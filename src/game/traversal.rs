@@ -52,10 +52,33 @@ pub const SNEAK_SLOW_FACTOR: f32 = 1.75;
 /// `[tunable]`.
 pub const AWARE_SLOW_FACTOR: f32 = 1.4;
 
+/// Maximum shove distance (tiles along the push line) a single push action will
+/// resolve. Bounds the line sweep the same way [`JUMP_MAX_RANGE`] bounds a jump.
+/// `[tunable]` — `docs/utility_systems.md` §7.
+pub const PUSH_MAX_RANGE: i32 = 4;
+
+/// Objects at or below this weight (kg) shove freely to an adjacent tile with no
+/// Athletics check — the legacy drag-to-adjacent behaviour. Heavier objects, or
+/// any multi-tile shove, roll Athletics vs [`push_dc`]. `[tunable]`.
+pub const PUSH_FREE_WEIGHT: f32 = 5.0;
+
+/// Each tile of shove distance past the first adds this much to the push DC,
+/// mirroring the jump's 5-DC-per-unit cadence. `[tunable]`.
+pub const PUSH_DC_PER_EXTRA_TILE: i32 = 5;
+
 /// DC for an attempted climb of `dz` half-blocks. `dz = 2` (one full block,
 /// e.g. a barrel) is DC 10; every additional half-block adds 5 to the DC.
 pub const fn climb_dc(dz: i32) -> i32 {
     5 + 5 * (dz - 1)
+}
+
+/// DC to shove a `weight`-kg object `tiles` tiles in a single push. The base DC
+/// is the object's weight in kilograms (`docs/utility_systems.md` §7: "weight
+/// (kg) as DC"); each tile past the first adds [`PUSH_DC_PER_EXTRA_TILE`], so a
+/// long shove is harder than nudging the same crate one tile. Negative weights
+/// (shouldn't happen) clamp to a DC of 0.
+pub fn push_dc(weight: f32, tiles: i32) -> i32 {
+    weight.round().max(0.0) as i32 + PUSH_DC_PER_EXTRA_TILE * (tiles - 1).max(0)
 }
 
 /// Effective cost of a jump in tile-equivalent units. Horizontal distance is
@@ -210,6 +233,22 @@ mod tests {
         assert_eq!(climb_dc(2), 10);
         assert_eq!(climb_dc(3), 15);
         assert_eq!(climb_dc(4), 20);
+    }
+
+    #[test]
+    fn push_dc_is_weight_plus_distance() {
+        // One-tile shove: DC equals the object's weight (rounded).
+        assert_eq!(push_dc(8.0, 1), 8);
+        assert_eq!(push_dc(8.4, 1), 8);
+        assert_eq!(push_dc(8.6, 1), 9);
+        // Each extra tile adds PUSH_DC_PER_EXTRA_TILE.
+        assert_eq!(push_dc(8.0, 2), 8 + PUSH_DC_PER_EXTRA_TILE);
+        assert_eq!(push_dc(8.0, 3), 8 + 2 * PUSH_DC_PER_EXTRA_TILE);
+        // A weightless object still has a floor DC of 0 for the first tile.
+        assert_eq!(push_dc(0.0, 1), 0);
+        // Defensive clamps: negative weight and zero/negative distance.
+        assert_eq!(push_dc(-5.0, 1), 0);
+        assert_eq!(push_dc(10.0, 0), 10);
     }
 
     #[test]

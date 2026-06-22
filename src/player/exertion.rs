@@ -46,6 +46,9 @@ pub const EXERTION_COST_CLIMB: f32 = 8.0;
 pub const EXERTION_COST_JUMP: f32 = 6.0;
 /// Exertion cost of a committed attack (hit or miss).
 pub const EXERTION_COST_ATTACK: f32 = 4.0;
+/// Exertion cost of a successful heavy-object shove (push/pull). Charged once
+/// per resolved push regardless of distance, like climb/jump.
+pub const EXERTION_COST_PUSH: f32 = 6.0;
 /// Sustained-sneaking cost, applied once per `SENSE_INTERVAL` (~1s) while sneaking.
 pub const EXERTION_COST_SNEAK_PER_SEC: f32 = 2.0;
 /// Fatigue relief from eating/drinking a regen-buff consumable.

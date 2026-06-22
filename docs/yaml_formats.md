@@ -535,7 +535,15 @@ The `text` value supports three count placeholders in addition to the normal `{p
 - Type: boolean
 - Optional: yes
 - Default: `false`
-- Meaning: whether the object can be dragged or repositioned in the game world
+- Meaning: whether the object can be dragged or repositioned in the game world.
+  Dragging a movable object to a tile beyond an adjacent one — or any object
+  heavier than the free threshold (`traversal::PUSH_FREE_WEIGHT`, 5 kg) — is a
+  **push**: the server rolls one Athletics check vs the object's `weight` and
+  slides it as far along the line toward the target as the roll allows (the same
+  "farthest reachable" logic as a jump, capped at `PUSH_MAX_RANGE`). A push
+  costs Exertion, emits Noise, and stops at the first wall/step/collider. Light
+  objects still drop freely onto an adjacent tile. See
+  `docs/utility_systems.md` §4.
 
 ### `rotatable`
 - Type: boolean
@@ -826,7 +834,48 @@ The `text` value supports three count placeholders in addition to the normal `{p
   carry-cap (`MaxCarryWeight::soft_cap`, default `20 + STR × 2 kg`) and a
   hard cap (`soft × 1.5`). Pickups above the hard cap are rejected with a
   "Too heavy" chat message; above the soft cap the player is `Encumbered`
-  and walks at half speed.
+  and walks at half speed. For **movable world objects**, `weight` is also the
+  base DC of the Athletics push check (`docs/utility_systems.md` §4) and the
+  minimum a resting object needs to hold a `pressure_plate` down.
+
+### `pressure_plate`
+- Type: mapping
+- Optional: yes
+- Default: absent (object is not a plate)
+- Meaning: makes a stateful object behave as a pressure plate (Cluster B,
+  `docs/utility_systems.md` §4). Each tick the server flips the plate to
+  `pressed_state` while its tile is occupied — by a player, an NPC, or a resting
+  object weighing at least `min_weight` kg — and back to `released_state` when
+  vacated, optionally driving a wired target between open/closed states.
+- Fields:
+  - `pressed_state` (string, required): plate state while occupied.
+  - `released_state` (string, required): plate state while vacated.
+  - `min_weight` (float kg, default `0.0`): minimum weight a resting object must
+    have to hold the plate. `0.0` = any object with non-zero weight. Players and
+    NPCs always hold it regardless.
+  - `target_property` (string, optional): property key (also listed in
+    `wires_to`) whose value resolves to the wired target object's id. Omit to
+    drive only the plate's own state.
+  - `target_pressed_state` / `target_released_state` (string, optional): states
+    applied to the wired target while the plate is pressed / released.
+- The plate's `pressed_state` / `released_state` must be declared under `states`,
+  and `target_property` must be listed in `wires_to`. Example:
+  ```yaml
+  pressure_plate:
+    pressed_state: pressed
+    released_state: released
+    min_weight: 5.0
+    target_property: target
+    target_pressed_state: open
+    target_released_state: closed
+  wires_to: [target]
+  states:
+    released: { sprite_path: overworld_objects/pressure_plate/released.png }
+    pressed:  { sprite_path: overworld_objects/pressure_plate/pressed.png }
+  initial_state: released
+  ```
+  On the placed instance, set `properties: { target: <door_authored_id> }`; the
+  map-load `wires_to` pass rewrites it to the door's runtime id.
 
 ### `render`
 - Type: mapping

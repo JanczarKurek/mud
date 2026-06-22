@@ -624,6 +624,9 @@ pub fn process_game_commands(
                     &world_config,
                     &command_outputs.player_carry,
                     &command_outputs.hidden_query,
+                    &command_outputs.player_athletics,
+                    &mut command_outputs.player_exertion,
+                    &mut command_outputs.pending_noise,
                     &mut command_outputs.pending_stack_settle,
                     &mut commands,
                 );
@@ -1601,6 +1604,213 @@ fn handle_jump_to(
     // same way walking is. Diagonal scaling is folded into `cost`.
     movement_cooldown.remaining_seconds =
         movement_cooldown.step_interval_seconds * (cost.max(1) as f32);
+}
+
+/// Shove a movable object from `origin` toward `target_tile`, sliding it as far
+/// along the straight line as a single Athletics-vs-weight roll allows.
+///
+/// This is the Cluster B keystone (`docs/utility_systems.md` §4) and mirrors
+/// [`handle_jump_to`]: one up-front Athletics roll, a tile-by-tile sweep that
+/// commits to the *farthest* tile whose distance-scaled DC the roll cleared.
+/// Unlike a jump, a pushed object can't arc over obstacles — the sweep stops at
+/// the first tile it can't occupy (a wall, a full-block step, another collider,
+/// or the pusher's own tile). The action writes the shared signals push is meant
+/// to touch: it costs Exertion and emits Noise, and the relocated collider
+/// becomes cover / a barricade / a stack-to-climb step for the systems that read
+/// live object positions. Server-authoritative; the move replicates through the
+/// normal `WorldObjectUpserted` diff.
+#[allow(clippy::too_many_arguments)]
+fn handle_object_push(
+    object_entity: Entity,
+    origin: TilePosition,
+    weight: f32,
+    placed_block_size: u8,
+    target_tile: TilePosition,
+    space_id: crate::world::components::SpaceId,
+    player_position: &TilePosition,
+    movement_cooldown: &mut MovementCooldown,
+    chat_log: &mut ChatLogState,
+    player_entity: Entity,
+    player_athletics: &Query<
+        (
+            &crate::player::components::BaseStats,
+            &crate::player::skills::SkillSheet,
+        ),
+        With<Player>,
+    >,
+    player_exertion: &mut Query<&mut crate::player::components::Exertion, With<Player>>,
+    object_query: &Query<
+        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
+        Without<Player>,
+    >,
+    collider_positions: &[TilePosition],
+    definitions: &OverworldObjectDefinitions,
+    floor_maps: &crate::world::floor_map::FloorMaps,
+    floor_defs: &crate::world::floor_definitions::FloorTilesetDefinitions,
+    world_config: &WorldConfig,
+    pending_noise: &mut crate::world::noise::PendingNoiseEvents,
+    pending_stack_settle: &mut crate::world::stacks::PendingStackSettleEvents,
+    commands: &mut Commands,
+) {
+    use crate::game::traversal;
+
+    // A push without a skill sheet (legacy fixture) has no Athletics to roll —
+    // refuse rather than guessing what "no check" means (mirrors the jump path).
+    let Ok((base_stats, skill_sheet)) = player_athletics.get(player_entity) else {
+        return;
+    };
+    let mut exertion = player_exertion.get_mut(player_entity).ok();
+    let fatigue_dc = crate::player::exertion::exertion_dc_modifier(exertion.as_deref());
+
+    if movement_cooldown.remaining_seconds > 0.0 {
+        return;
+    }
+
+    if target_tile.x < 0
+        || target_tile.y < 0
+        || target_tile.x >= world_config.map_width
+        || target_tile.y >= world_config.map_height
+    {
+        return;
+    }
+
+    let source = (origin.x, origin.y);
+    let target = (target_tile.x, target_tile.y);
+    if source == target {
+        return;
+    }
+
+    // The shove travels at most `PUSH_MAX_RANGE` tiles toward the target; a
+    // farther drop just means "push it as far as you can that way", so we
+    // truncate rather than reject (the client sends the raw cursor tile).
+    let mut path = traversal::bresenham_line(source, target);
+    path.truncate(traversal::PUSH_MAX_RANGE.max(0) as usize);
+
+    let column_members = || {
+        object_query.iter().map(|(entity, resident, tile, object)| {
+            crate::world::stacks::ColumnMember {
+                entity,
+                resident,
+                tile,
+                object,
+            }
+        })
+    };
+
+    // Single Athletics roll up-front; the sweep picks the farthest tile whose
+    // distance-scaled DC the roll already cleared (fatigue raises each DC).
+    let roll = crate::player::skills::skill_check(
+        skill_sheet,
+        &base_stats.attributes,
+        crate::player::skills::Skill::Athletics,
+        0,
+        0,
+    );
+
+    // Walk the straight line, sliding the object one tile at a time. `prev_z`
+    // tracks the object's feet so a shove can ride a half-block step but not be
+    // forced up a full block (you'd lift it, not push it).
+    let mut best: Option<(TilePosition, i32 /* tiles */, i32 /* dc */)> = None;
+    let mut prev_z = origin.z;
+    let mut first_tile_dc = traversal::push_dc(weight, 1); // for the failure line
+
+    for (idx, (xi, yi)) in path.iter().copied().enumerate() {
+        let tiles = idx as i32 + 1;
+        let dc = traversal::push_dc(weight, tiles);
+        if tiles == 1 {
+            first_tile_dc = dc;
+        }
+
+        // Resting surface of this column, ignoring the object being pushed.
+        let stack_top = crate::world::stacks::stack_top_z_excluding(
+            space_id,
+            xi,
+            yi,
+            object_entity,
+            column_members(),
+            definitions,
+            floor_maps,
+            floor_defs,
+        );
+
+        // Impassable checks — any of these stops the slide at the previous tile.
+        let too_steep = (stack_top - prev_z).abs() > 1;
+        let onto_wall = !crate::world::stacks::stack_top_is_walkable(
+            space_id,
+            xi,
+            yi,
+            object_entity,
+            column_members(),
+            definitions,
+            floor_maps,
+            floor_defs,
+        );
+        let onto_player = xi == player_position.x && yi == player_position.y;
+        let placed_top = stack_top + placed_block_size as i32;
+        let into_collider = collider_positions
+            .iter()
+            .any(|c| c.x == xi && c.y == yi && c.z >= stack_top && c.z < placed_top);
+        if too_steep || onto_wall || onto_player || into_collider {
+            break;
+        }
+
+        let resolved = TilePosition::new(xi, yi, stack_top);
+        if roll.total >= dc + fatigue_dc {
+            best = Some((resolved, tiles, dc));
+        }
+        prev_z = stack_top;
+    }
+
+    let Some((landed, tiles, dc)) = best else {
+        let shown_dc =
+            crate::player::check::Dc::new(first_tile_dc, "push").with(fatigue_dc, "fatigue");
+        chat_log.push_narrator(format!(
+            "It won't budge (Athletics {} vs DC {}).",
+            roll.total,
+            shown_dc.explain()
+        ));
+        movement_cooldown.remaining_seconds = movement_cooldown.step_interval_seconds;
+        return;
+    };
+
+    // The shove resolved — relocate the object (deferred insert, like the free
+    // drop path) and settle the column it left.
+    commands.entity(object_entity).insert(landed);
+    if origin != landed {
+        pending_stack_settle.push(crate::world::stacks::SettleStackEvent {
+            space_id,
+            x: origin.x,
+            y: origin.y,
+            removed_entity: Some(object_entity),
+        });
+    }
+
+    // Pay the shared-signal costs: fatigue and a loud grinding noise NPCs hear.
+    if let Some(e) = exertion.as_mut() {
+        e.add(crate::player::exertion::EXERTION_COST_PUSH);
+    }
+    pending_noise.push(space_id, landed, crate::world::noise::PUSH_NOISE);
+
+    let shown_dc = crate::player::check::Dc::new(dc, "push").with(fatigue_dc, "fatigue");
+    if (landed.x, landed.y) == target {
+        chat_log.push_narrator(format!(
+            "You shove it into place (Athletics {} vs DC {}).",
+            roll.total,
+            shown_dc.explain()
+        ));
+    } else {
+        chat_log.push_narrator(format!(
+            "You shove it as far as ({}, {}) (Athletics {} vs DC {}).",
+            landed.x,
+            landed.y,
+            roll.total,
+            shown_dc.explain()
+        ));
+    }
+
+    // Rate-limit like a multi-tile step; a longer shove ties up the pusher longer.
+    movement_cooldown.remaining_seconds =
+        movement_cooldown.step_interval_seconds * (tiles.max(1) as f32);
 }
 
 /// Sample a deterministic boolean for drunken fumbling. The nanosecond +
@@ -3704,6 +3914,15 @@ fn handle_move_item(
     world_config: &WorldConfig,
     max_carry_query: &Query<&MaxCarryWeight, With<Player>>,
     hidden_query: &Query<&crate::world::hidden::Hidden, Without<Player>>,
+    player_athletics: &Query<
+        (
+            &crate::player::components::BaseStats,
+            &crate::player::skills::SkillSheet,
+        ),
+        With<Player>,
+    >,
+    player_exertion: &mut Query<&mut crate::player::components::Exertion, With<Player>>,
+    pending_noise: &mut crate::world::noise::PendingNoiseEvents,
     pending_stack_settle: &mut crate::world::stacks::PendingStackSettleEvents,
     commands: &mut Commands,
 ) {
@@ -3722,7 +3941,7 @@ fn handle_move_item(
         mut chat_log_state,
         space_resident,
         player_position,
-        _,
+        mut movement_cooldown,
         _,
         _,
     )) = player_query.get_mut(player_entity)
@@ -3795,6 +4014,48 @@ fn handle_move_item(
             ) else {
                 return;
             };
+
+            let weight = definitions
+                .get(&definition_id)
+                .map_or(0.0, |def| def.weight);
+            let placed_block_size = definitions
+                .get(&definition_id)
+                .map_or(0, |def| def.render.block_size);
+
+            // A heavy object — or any relocation beyond an adjacent tile — is a
+            // *push*: an Athletics-vs-weight check that shoves the object as far
+            // along the line toward `target_tile` as the roll allows (mirrors
+            // `handle_jump_to`). Light objects dropped onto an adjacent tile keep
+            // the free drag-placement path below.
+            if weight > crate::game::traversal::PUSH_FREE_WEIGHT
+                || !is_near_player(&origin, &target_tile)
+            {
+                handle_object_push(
+                    entity,
+                    origin,
+                    weight,
+                    placed_block_size,
+                    target_tile,
+                    space_resident.space_id,
+                    &player_position,
+                    &mut movement_cooldown,
+                    &mut chat_log_state,
+                    player_entity,
+                    player_athletics,
+                    player_exertion,
+                    object_query,
+                    collider_positions,
+                    definitions,
+                    floor_maps,
+                    floor_defs,
+                    world_config,
+                    pending_noise,
+                    pending_stack_settle,
+                    commands,
+                );
+                return;
+            }
+
             // Attempt stack merge first (before the stack-placement path that
             // would create a new physical stack instead of merging quantities).
             let merged = is_near_player(&player_position, &target_tile)
@@ -3810,6 +4071,9 @@ fn handle_move_item(
                     commands,
                 );
             if !merged {
+                // (block size recomputed locally to keep the free-placement
+                // path self-contained; the outer `placed_block_size` feeds the
+                // push branch above.)
                 let placed_block_size = definitions
                     .get(&definition_id)
                     .map_or(0, |def| def.render.block_size);

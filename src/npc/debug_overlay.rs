@@ -264,14 +264,21 @@ fn build_overlay_lines(
             "per:{} det:{} los:{}",
             hostile.perception,
             hostile.detect_distance_tiles,
-            if hostile.requires_line_of_sight { "y" } else { "n" }
+            if hostile.requires_line_of_sight {
+                "y"
+            } else {
+                "n"
+            }
         ));
     }
     if let Some(noise) = heard {
         lines.push(format!("hear:({},{})", noise.x, noise.y));
     }
     if memory.contact_grace_until > elapsed {
-        lines.push(format!("grace:{:.1}s", memory.contact_grace_until - elapsed));
+        lines.push(format!(
+            "grace:{:.1}s",
+            memory.contact_grace_until - elapsed
+        ));
     }
     lines
 }

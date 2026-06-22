@@ -1,0 +1,35 @@
+extends: static_world
+name: Pressure Plate
+description: A worn flagstone that sinks under weight.
+# Cluster B puzzle layer (docs/utility_systems.md §4). The plate is `pressed`
+# while a player/NPC stands on it OR a resting object of >= min_weight kg sits on
+# it (shove a barrel on with push/pull), and `released` when vacated. While
+# pressed it drives the wired `target` object to its open state and back to
+# closed when released — see src/world/pressure_plate.rs.
+#
+# To use: place the plate and a target (e.g. wooden_door) on a map and set the
+# plate instance's `target` property to the door's authored id; `wires_to`
+# resolves it to the runtime id at load.
+pressure_plate:
+  pressed_state: pressed
+  released_state: released
+  min_weight: 5.0
+  target_property: target
+  target_pressed_state: open
+  target_released_state: closed
+wires_to: [target]
+states:
+  released:
+    # Placeholder art: reuses the stone sprite until dedicated plate frames are
+    # generated (gen-sprite). The state still drives the wired door regardless.
+    sprite_path: overworld_objects/stone/sprite.png
+  pressed:
+    sprite_path: overworld_objects/stone/sprite.png
+initial_state: released
+render:
+  z_index: 0.05
+  debug_color: [110, 110, 120]
+  debug_size: 0.9
+  sprite_path: overworld_objects/stone/sprite.png
+  block_size: 0
+  walkable_surface: true

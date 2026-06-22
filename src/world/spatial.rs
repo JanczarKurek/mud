@@ -305,4 +305,34 @@ mod tests {
             &los,
         ));
     }
+
+    #[test]
+    fn pushed_collider_provides_cover() {
+        // Cluster B "objects as cover" (docs/utility_systems.md §4) needs no new
+        // detection math: any collider in the LoS index hides the tile behind
+        // it, so shoving a crate/barrel between an observer and the player
+        // breaks line of sight. This proves the substrate the stealth detector
+        // (`nearest_visible_player`) already consumes.
+        let observer = TilePosition::ground(0, 0);
+        let target = TilePosition::ground(4, 0);
+
+        // No cover yet: the line is clear.
+        let empty = BlockerIndex::new();
+        assert!(has_line_of_sight(observer, target, TEST_SPACE, &empty));
+
+        // Shove a movable collider onto the midpoint tile (2, 0, 0). With no
+        // definition it inflates to a 1-half-block blocker — enough to break a
+        // same-z horizontal ray.
+        let resident = SpaceResident {
+            space_id: TEST_SPACE,
+        };
+        let crate_tile = TilePosition::ground(2, 0);
+        let los = build_los_blockers(
+            std::iter::once((&resident, &crate_tile, None::<&OverworldObject>)),
+            None::<&OverworldObjectDefinitions>,
+            None::<&FloorMaps>,
+            None::<&FloorTilesetDefinitions>,
+        );
+        assert!(!has_line_of_sight(observer, target, TEST_SPACE, &los));
+    }
 }

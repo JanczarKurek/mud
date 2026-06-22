@@ -544,6 +544,11 @@ macro_rules! apply_overworld_definition_components {
             );
             $entity.insert($crate::world::step_triggers::OnSteppedTriggers(__triggers));
         }
+        if let Some(__plate) = __definition.pressure_plate.as_ref() {
+            $entity.insert($crate::world::pressure_plate::PressurePlate::from_def(
+                __plate,
+            ));
+        }
     }};
 }
 

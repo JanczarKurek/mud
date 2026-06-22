@@ -185,6 +185,13 @@ pub struct OverworldObjectDefinition {
     /// `detected_by` so they keep seeing it.
     #[serde(default)]
     pub can_hide: Option<CanHideDef>,
+    /// When present, this object behaves as a pressure plate: it flips to
+    /// `pressed_state` while an entity (player/NPC) or a heavy-enough resting
+    /// object sits on its tile, and back to `released_state` when vacated,
+    /// optionally driving a wired target (e.g. a door) between its open/closed
+    /// states. See `src/world/pressure_plate.rs` and `docs/utility_systems.md` §4.
+    #[serde(default)]
+    pub pressure_plate: Option<PressurePlateDef>,
     /// Intrinsic NPC behavior knobs (speed, detection, etc.). Presence of this
     /// block also marks a template as a mob — the editor's Mobs palette and
     /// the spawn factory both treat `Some(_)` as the "this is an NPC" signal.
@@ -303,6 +310,39 @@ pub struct CanHideDef {
     /// negative for bulky items.
     #[serde(default)]
     pub sneakiness: i32,
+}
+
+/// Authoring block for a pressure plate (Cluster B, `docs/utility_systems.md`
+/// §4). The plate is a stateful object: `update_pressure_plates` flips it to
+/// `pressed_state` while its tile is occupied and to `released_state` when
+/// vacated. "Occupied" means a player or NPC stands on it, or a resting object
+/// weighs at least `min_weight` kg — so a shoved barrel can hold a plate down.
+/// When `target_property` (also listed in the object's `wires_to`) names a wired
+/// object, the plate drives it between `target_pressed_state` /
+/// `target_released_state` (e.g. a door open/closed) via the same
+/// `apply_state_transition` path interactions use.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct PressurePlateDef {
+    /// State the plate enters while occupied.
+    pub pressed_state: String,
+    /// State the plate returns to when vacated.
+    pub released_state: String,
+    /// Minimum weight (kg) a resting object must have to hold the plate down.
+    /// `0.0` means any object with non-zero weight counts. Players and NPCs
+    /// always hold the plate regardless of this value.
+    #[serde(default)]
+    pub min_weight: f32,
+    /// Property key (declared in `wires_to`) whose value resolves to the wired
+    /// target object's runtime id. `None` = the plate drives only its own state.
+    #[serde(default)]
+    pub target_property: Option<String>,
+    /// State applied to the wired target while the plate is pressed.
+    #[serde(default)]
+    pub target_pressed_state: Option<String>,
+    /// State applied to the wired target while the plate is released.
+    #[serde(default)]
+    pub target_released_state: Option<String>,
 }
 
 /// Per-state override of the rendering / collider knobs on

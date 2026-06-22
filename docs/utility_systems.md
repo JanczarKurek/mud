@@ -233,7 +233,7 @@ pool itself is attribute-governed (§6.1), keeping the two levers independent.
 
 The doc is the design; phasing mirrors `docs/progression.md` §9.
 
-### Slice 1 — "Sneak & Seek" (Cluster A) — *first build*
+### Slice 1 — "Sneak & Seek" (Cluster A) — *first build* — ✅ implemented
 
 Highest impact and the biggest dead connection. Exercises two shared signals
 (light, noise) plus a piece of Cluster B (cover). Server-authoritative throughout;
@@ -262,15 +262,37 @@ neither `Class` nor NPC-awareness today; it needs an "is this NPC aware of the
 attacker" predicate exposed from npc state into `resolve_battle_turn`. Ship slice
 1 first.
 
-### Slice 2 — Exertion + Endurance
+### Slice 2 — Exertion + Endurance — ✅ implemented
 
 The Medium-sim currency (§6.1), the Endurance regen wire into `src/player/regen.rs`,
 and the `Concentration → Endurance` rename (§6.2).
 
-### Slice 3 — Physical manipulation (Cluster B)
+### Slice 3 — Physical manipulation (Cluster B) — ✅ implemented
 
 Push/pull Athletics gate + Exertion cost, cover contribution into §3, stack-to-climb,
-barricade vs NPC pathing, pressure-plate holds.
+barricade vs NPC pathing, pressure-plate holds. As built:
+
+1. **Push/pull** extends the existing object relocation (`MoveItem` WorldObject →
+   WorldTile). A heavy object (`weight > traversal::PUSH_FREE_WEIGHT`) or any
+   move beyond an adjacent tile becomes a *push*: `handle_object_push`
+   (`src/game/systems.rs`) mirrors `handle_jump_to` — one Athletics roll, a
+   line sweep that slides the object to the farthest tile whose distance-scaled
+   `traversal::push_dc(weight, tiles)` the roll clears, stopping at the first
+   wall/step/collider. Costs `EXERTION_COST_PUSH`, emits `PUSH_NOISE`, settles
+   the vacated column. Light objects still drop freely onto an adjacent tile.
+2. **Cover, stack-to-climb, barricade** fall out for free — a shoved
+   `Collider` already enters the `los_blockers` index (cover, tested in
+   `spatial.rs::pushed_collider_provides_cover`), raises `stack_top_z`
+   (stack-to-climb, covered by the `resolve_step_with_climb` climb tests), and is
+   respected by live A* (barricade, covered by `astar_routes_around_wall`).
+3. **Pressure-plate holds** — new `src/world/pressure_plate.rs`
+   (`PressurePlate` component + `update_pressure_plates` server system) flips a
+   plate between pressed/released on live occupancy that now includes resting
+   heavy objects, driving a wired target (door) via `apply_state_transition`.
+   Authored via the `pressure_plate:` block (`docs/yaml_formats.md`).
+
+**Deferred (cross-boundary):** Backstab / sneak-attack damage (still per §8's
+Slice 1 note).
 
 ### Slice 4 — Production & quality (Cluster C)
 

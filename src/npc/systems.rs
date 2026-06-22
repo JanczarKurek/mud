@@ -14,7 +14,9 @@ use crate::npc::components::{
 };
 use crate::npc::detection::detection_outcome;
 use crate::player::classes::ability_mod;
-use crate::player::components::{BaseStats, DerivedStats, Player, PlayerId, PlayerIdentity, Sneaking};
+use crate::player::components::{
+    BaseStats, DerivedStats, Player, PlayerId, PlayerIdentity, Sneaking,
+};
 use crate::player::skills::{Skill, SkillSheet};
 use crate::world::components::OverworldObject;
 use crate::world::components::{
@@ -254,10 +256,7 @@ pub fn update_roaming_npcs(
         .map(|(entity, resident, tile_position, ..)| ((resident.space_id, *tile_position), entity))
         .collect();
 
-    let player_tiles: PlayerTileSet = players
-        .iter()
-        .map(|p| (p.space_id, p.tile))
-        .collect();
+    let player_tiles: PlayerTileSet = players.iter().map(|p| (p.space_id, p.tile)).collect();
 
     for (
         entity,
@@ -2296,7 +2295,15 @@ mod tests {
         let upstairs = vec![detect_player(TilePosition::new(5, 6, 2))];
         assert!(
             nearest_visible_player(
-                npc, TEST_SPACE, &hostile, &upstairs, &blockers, 20, &curve, 0.5, &[]
+                npc,
+                TEST_SPACE,
+                &hostile,
+                &upstairs,
+                &blockers,
+                20,
+                &curve,
+                0.5,
+                &[]
             )
             .is_none(),
             "a player a floor up must be invisible to detection"
@@ -2305,7 +2312,15 @@ mod tests {
         let same_floor = vec![detect_player(TilePosition::new(5, 6, 1))];
         assert!(
             nearest_visible_player(
-                npc, TEST_SPACE, &hostile, &same_floor, &blockers, 20, &curve, 0.5, &[]
+                npc,
+                TEST_SPACE,
+                &hostile,
+                &same_floor,
+                &blockers,
+                20,
+                &curve,
+                0.5,
+                &[]
             )
             .is_some(),
             "a player on a half-block step (same floor) stays visible"
@@ -2327,7 +2342,15 @@ mod tests {
         let half_block_up = vec![detect_player(TilePosition::new(5, 6, 2))];
         assert!(
             nearest_visible_player(
-                npc, TEST_SPACE, &hostile, &half_block_up, &blockers, 20, &curve, 0.5, &[]
+                npc,
+                TEST_SPACE,
+                &hostile,
+                &half_block_up,
+                &blockers,
+                20,
+                &curve,
+                0.5,
+                &[]
             )
             .is_some(),
             "a player one half-block up (z=1→z=2) must be visible (melee reach)"
@@ -2336,7 +2359,15 @@ mod tests {
         let full_floor_up = vec![detect_player(TilePosition::new(5, 6, 3))];
         assert!(
             nearest_visible_player(
-                npc, TEST_SPACE, &hostile, &full_floor_up, &blockers, 20, &curve, 0.5, &[]
+                npc,
+                TEST_SPACE,
+                &hostile,
+                &full_floor_up,
+                &blockers,
+                20,
+                &curve,
+                0.5,
+                &[]
             )
             .is_none(),
             "a player a full floor up (z=1→z=3, dz=2) stays invisible"

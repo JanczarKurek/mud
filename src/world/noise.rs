@@ -37,6 +37,8 @@ pub const FORCE_LOCK_NOISE: i32 = 9;
 pub const PICK_LOCK_NOISE: i32 = 3;
 /// Mining / chopping a resource node.
 pub const MINE_NOISE: i32 = 7;
+/// Shoving a heavy object across the floor — grinding and loud.
+pub const PUSH_NOISE: i32 = 7;
 /// A landed attack in melee/ranged combat — loudest.
 pub const ATTACK_NOISE: i32 = 10;
 
@@ -164,7 +166,10 @@ mod tests {
             remaining_seconds: 1.0,
         });
         // Within radius.
-        assert_eq!(field.loudest_audible(SpaceId(1), tile(4, 0)), Some(tile(0, 0)));
+        assert_eq!(
+            field.loudest_audible(SpaceId(1), tile(4, 0)),
+            Some(tile(0, 0))
+        );
         // Just outside radius.
         assert_eq!(field.loudest_audible(SpaceId(1), tile(6, 0)), None);
         // Wrong space.
@@ -186,7 +191,10 @@ mod tests {
             loudness: 9,
             remaining_seconds: 1.0,
         });
-        assert_eq!(field.loudest_audible(SpaceId(1), tile(0, 0)), Some(tile(2, 0)));
+        assert_eq!(
+            field.loudest_audible(SpaceId(1), tile(0, 0)),
+            Some(tile(2, 0))
+        );
     }
 
     #[test]
