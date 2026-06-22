@@ -49,6 +49,7 @@ type PlayerInteractQuery<'a> = (
 pub fn process_interact_commands(
     mut pending_commands: ResMut<PendingGameCommands>,
     mut ui_events: ResMut<PendingGameUiEvents>,
+    mut pending_noise: ResMut<crate::world::noise::PendingNoiseEvents>,
     definitions: Res<OverworldObjectDefinitions>,
     mut object_registry: ResMut<ObjectRegistry>,
     mut commands: Commands,
@@ -215,6 +216,12 @@ pub fn process_interact_commands(
             &mut stateful_query,
         );
 
+        // Loud interactions betray the player to nearby NPCs. Forcing a lock or
+        // mining is loud; lockpicking is quiet; opening doors is in between.
+        // Silent verbs (picking a flower) emit nothing.
+        let loudness = interaction_loudness(&verb);
+        pending_noise.push(player_space.space_id, *player_tile, loudness);
+
         // Queue inventory grants as GiveItem commands; `process_game_commands`
         // picks them up in the same tick (this system runs in CommandIntercept,
         // which is configured before process_game_commands).
@@ -269,6 +276,19 @@ pub fn process_interact_commands(
     }
 
     pending_commands.commands = remaining;
+}
+
+/// Audible radius (in tiles) of an interaction verb, for the noise field.
+/// Returns `0` for verbs that make no meaningful noise.
+fn interaction_loudness(verb: &str) -> i32 {
+    use crate::world::noise::{DOOR_NOISE, FORCE_LOCK_NOISE, MINE_NOISE, PICK_LOCK_NOISE};
+    match verb {
+        "force_lock" => FORCE_LOCK_NOISE,
+        "pick_lock" => PICK_LOCK_NOISE,
+        "mine" | "chop" | "dig" | "pick" | "harvest" => MINE_NOISE,
+        "open" | "close" | "pull" | "use_key" => DOOR_NOISE,
+        _ => 0,
+    }
 }
 
 /// Drive `RespawnTimer`s: when one reaches zero, transition its object back

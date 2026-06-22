@@ -117,6 +117,14 @@ damage, crit/dodge) are tracked separately in `FEATURE_BACKLOG.md` §1
 "Combat depth"; they share the §7 combat-math rewrite from
 `docs/progression.md` and naturally batch together with Phase E.
 
+**Utility & simulation systems** — the non-combat depth that makes this an
+interaction-driven simulator (stealth/detection, moving stuff, production &
+quality chains, knowledge & body loop, Medium-sim Exertion) — are designed in
+**`docs/utility_systems.md`**. The thesis there is to connect today's isolated
+skill checks through a small set of shared world signals (light, noise, cover,
+exertion, success-margin→quality). First build slice: "Sneak & Seek" (wires
+Stealth into NPC detection).
+
 ### 4.3 Phase 7 — Content Pipeline & Tooling
 
 Map editor and YAML content pipeline are shipped. Open items:

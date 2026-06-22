@@ -25,7 +25,8 @@ use crate::dialog::components::DialogNode;
 use crate::game::resources::{
     ChatLogState, ClientActiveEffect, ClientCarryWeight, ClientCombatStats, ClientGameState,
     ClientRemotePlayerState, ClientSpaceState, ClientStateRevisions, ClientVitalStats,
-    ClientWorldObjectState, GameEvent, InventoryState, PendingGameEvents, RegenBuffState,
+    ClientWorldObjectState, GameEvent, InventoryState, NpcAwareness, PendingGameEvents,
+    RegenBuffState,
 };
 use crate::game::shop::{Shopkeeper, StockMode, Stockpile};
 use crate::game::trade::{ActiveTrades, TradeParticipants, TradePartnerKind, WareView};
@@ -94,6 +95,8 @@ pub type ProjectionPlayerQuery<'w, 's> = Query<
             &'static WeaponDamage,
             &'static AttackProfile,
             Option<&'static DiscoveredTiles>,
+            Has<crate::player::components::Sneaking>,
+            Option<&'static crate::player::sense::SenseReveals>,
         ),
     ),
     With<Player>,
@@ -123,6 +126,7 @@ pub type ProjectionWorldObjectQuery<'w, 's> = Query<
         (
             Has<crate::npc::components::HostileBehavior>,
             Option<&'static CombatTarget>,
+            Option<&'static crate::npc::components::AiState>,
         ),
     ),
     Without<Player>,
@@ -197,6 +201,10 @@ pub fn compute_events_for_peer(
     )> = Vec::new();
 
     let mut local_player_entity: Option<Entity> = None;
+    // NPC object ids the local player currently has a Perception "read" on,
+    // captured from their `SenseReveals` during the player loop and consumed in
+    // the world-object loop to gate the awareness marker.
+    let mut local_revealed: std::collections::HashSet<u64> = std::collections::HashSet::new();
     for (
         (player_entity, identity),
         inventory,
@@ -212,7 +220,15 @@ pub fn compute_events_for_peer(
         (max_carry, current_carry, is_encumbered),
         experience,
         (class, stash, skill_sheet),
-        (magic_effects, defense_stats, weapon_damage, attack_profile, discovered_tiles),
+        (
+            magic_effects,
+            defense_stats,
+            weapon_damage,
+            attack_profile,
+            discovered_tiles,
+            is_sneaking,
+            sense_reveals,
+        ),
     ) in player_query.iter()
     {
         let projected_facing = facing.copied().unwrap_or_default().0;
@@ -228,6 +244,9 @@ pub fn compute_events_for_peer(
             local_player_entity = Some(player_entity);
             local_space_id = Some(space_resident.space_id);
             local_tile_position = Some(*tile_position);
+            if let Some(reveals) = sense_reveals {
+                local_revealed = reveals.revealed.keys().copied().collect();
+            }
 
             if previous.local_player_id != Some(local_player_id)
                 || previous.local_player_object_id != Some(player_object.object_id)
@@ -346,6 +365,12 @@ pub fn compute_events_for_peer(
             if effects_changed {
                 events.push(GameEvent::PlayerEffectsChanged {
                     effects: projected_effects,
+                });
+            }
+
+            if previous.sneaking != is_sneaking {
+                events.push(GameEvent::PlayerSneakingChanged {
+                    sneaking: is_sneaking,
                 });
             }
 
@@ -659,7 +684,7 @@ pub fn compute_events_for_peer(
         state,
         has_shopkeeper,
         hidden,
-        (has_hostile, npc_combat_target),
+        (has_hostile, npc_combat_target, ai_state),
     ) in world_object_query.iter()
     {
         if space_resident.space_id != local_space_id {
@@ -680,6 +705,22 @@ pub fn compute_events_for_peer(
         let is_targeting_local_player = match (npc_combat_target, local_player_entity) {
             (Some(target), Some(local_entity)) => target.entity == local_entity,
             _ => false,
+        };
+        // Awareness marker: only for hostile NPCs the local player has read
+        // (passed a Perception check, tracked in `SenseReveals`). Alerted if it
+        // targets us, Searching if it's in Alert, else Unaware.
+        let awareness = if has_hostile && local_revealed.contains(&object.object_id) {
+            use crate::npc::components::AiState;
+            let level = if is_targeting_local_player {
+                NpcAwareness::Alerted
+            } else if matches!(ai_state, Some(AiState::Alert { .. })) {
+                NpcAwareness::Searching
+            } else {
+                NpcAwareness::Unaware
+            };
+            Some(level)
+        } else {
+            None
         };
         let projected_object = ClientWorldObjectState {
             object_id: object.object_id,
@@ -704,6 +745,7 @@ pub fn compute_events_for_peer(
             is_hidden: hidden.is_some(),
             is_hostile: has_hostile,
             is_targeting_local_player,
+            awareness,
             placement_seq: object.placement_seq,
         };
 
@@ -939,6 +981,9 @@ pub fn apply_event_to_state(state: &mut ClientGameState, event: GameEvent) {
         GameEvent::PlayerEffectsChanged { effects } => {
             state.active_effects = effects;
         }
+        GameEvent::PlayerSneakingChanged { sneaking } => {
+            state.sneaking = sneaking;
+        }
         GameEvent::PlayerStorageChanged { storage_slots } => {
             state.player_storage_slots = storage_slots;
         }
@@ -1158,6 +1203,10 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
         GameEvent::PlayerEffectsChanged { effects } => debug!(
             "client magic effects updated: {:?} -> {:?}",
             client_state.active_effects, effects
+        ),
+        GameEvent::PlayerSneakingChanged { sneaking } => debug!(
+            "client sneaking updated: {} -> {}",
+            client_state.sneaking, sneaking
         ),
         GameEvent::PlayerStorageChanged { storage_slots } => info!(
             "client player storage updated: {} -> {}",

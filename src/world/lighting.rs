@@ -9,7 +9,7 @@
 use bevy::prelude::*;
 
 use crate::game::resources::ClientGameState;
-use crate::world::components::ClientProjectedWorldObject;
+use crate::world::components::{ClientProjectedWorldObject, TilePosition};
 use crate::world::map_layout::AmbientKeyframe;
 use crate::world::object_definitions::{LightEmissionDef, OverworldObjectDefinitions};
 
@@ -227,6 +227,50 @@ pub fn srgb_u8_to_linear(rgb: [u8; 3]) -> [f32; 3] {
     ]
 }
 
+/// A point light reduced to what the server-side light model needs: a tile and
+/// a radius. Built cheaply from an object's `LightEmissionDef` for the current
+/// state (see `nearest_visible_player`'s caller). The player's own carried light
+/// (torch / Glimmer) is just another entry.
+#[derive(Clone, Copy, Debug)]
+pub struct PointLight {
+    pub tile: TilePosition,
+    pub radius: f32,
+}
+
+/// Server-side ambient + point-light model: returns how lit a tile is, `0.0`
+/// (pitch dark) … `1.0` (full daylight). This is the authoritative light signal
+/// consumed by stealth detection — it reads the `WorldClock`-driven ambient
+/// curve, NOT the client-only `LightSource` components (see CLAUDE.md
+/// EmbeddedClient invariant).
+///
+/// Ambient contribution is `1.0 - alpha` from the day/night curve (so noon → 1.0,
+/// midnight → ~0.45 with the default curve). Each nearby emitter contributes a
+/// linear falloff from its center, and the brightest source wins (`max`) — so a
+/// torch at your feet lights you fully regardless of the hour, which is exactly
+/// the stealth tradeoff we want. Pass an empty `nearby_lights` for ambient-only.
+pub fn light_level_at(
+    tile: TilePosition,
+    curve: &[AmbientKeyframeF32],
+    time_of_day: f32,
+    nearby_lights: &[PointLight],
+) -> f32 {
+    let (_, alpha) = evaluate_ambient_curve(curve, time_of_day);
+    let mut level = (1.0 - alpha).clamp(0.0, 1.0);
+    for light in nearby_lights {
+        if light.radius <= 0.0 {
+            continue;
+        }
+        let dx = (tile.x - light.tile.x) as f32;
+        let dy = (tile.y - light.tile.y) as f32;
+        let dist = (dx * dx + dy * dy).sqrt();
+        if dist <= light.radius {
+            let falloff = (1.0 - dist / light.radius).clamp(0.0, 1.0);
+            level = level.max(falloff);
+        }
+    }
+    level.clamp(0.0, 1.0)
+}
+
 /// Bridge from authored YAML lighting metadata + replicated `state` to the
 /// `LightSource` ECS component on projected world objects. Inserts/updates/
 /// removes the component each frame to track state changes (e.g. lighting
@@ -384,6 +428,44 @@ mod tests {
         assert!((rgb[0] - 1.0).abs() < 1e-6);
         assert!((rgb[1] - 1.0).abs() < 1e-6);
         assert!((rgb[2] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn light_level_at_is_bright_at_noon_dark_at_midnight() {
+        let curve = default_day_night_curve();
+        let tile = TilePosition { x: 0, y: 0, z: 0 };
+        let noon = light_level_at(tile, &curve, 0.5, &[]);
+        let midnight = light_level_at(tile, &curve, 0.0, &[]);
+        assert!((noon - 1.0).abs() < 1e-6, "noon should be fully lit: {noon}");
+        assert!(midnight < 0.6, "midnight should be dim: {midnight}");
+        assert!(midnight > 0.0, "midnight still navigable: {midnight}");
+        assert!(noon > midnight);
+    }
+
+    #[test]
+    fn light_level_at_emitter_brightens_nearby_tile() {
+        let curve = default_day_night_curve();
+        let tile = TilePosition { x: 0, y: 0, z: 0 };
+        let torch = PointLight {
+            tile: TilePosition { x: 1, y: 0, z: 0 },
+            radius: 5.0,
+        };
+        let dark = light_level_at(tile, &curve, 0.0, &[]);
+        let lit = light_level_at(tile, &curve, 0.0, &[torch]);
+        assert!(lit > dark, "torch should raise light: {lit} vs {dark}");
+    }
+
+    #[test]
+    fn light_level_at_emitter_out_of_range_has_no_effect() {
+        let curve = default_day_night_curve();
+        let tile = TilePosition { x: 0, y: 0, z: 0 };
+        let far = PointLight {
+            tile: TilePosition { x: 100, y: 0, z: 0 },
+            radius: 3.0,
+        };
+        let without = light_level_at(tile, &curve, 0.0, &[]);
+        let with = light_level_at(tile, &curve, 0.0, &[far]);
+        assert!((without - with).abs() < 1e-6);
     }
 
     #[test]

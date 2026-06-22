@@ -20,6 +20,7 @@ pub mod lerp_anim;
 pub mod lighting;
 pub mod loot;
 pub mod map_layout;
+pub mod noise;
 pub mod object_definitions;
 pub mod object_registry;
 pub mod resources;

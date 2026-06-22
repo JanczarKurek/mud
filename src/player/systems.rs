@@ -265,6 +265,27 @@ pub fn set_home_on_keypress(
     }
 }
 
+/// `V` (no modifier) toggles the player's sneaking state. Edge-triggered so a
+/// held key doesn't flip-flop every frame. Reads the current state from the
+/// replicated `ClientGameState.sneaking` and pushes the opposite. Suppressed
+/// while the Python console is focused.
+pub fn toggle_sneak_on_keypress(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    keybindings: Res<Keybindings>,
+    console_state: Option<Res<PythonConsoleState>>,
+    client_state: Res<ClientGameState>,
+    mut pending_commands: ResMut<PendingGameCommands>,
+) {
+    if console_state.as_ref().is_some_and(|state| state.is_open) {
+        return;
+    }
+    if keybindings.just_pressed(Action::ToggleSneak, &keyboard_input) {
+        pending_commands.push(GameCommand::SetSneaking {
+            sneaking: !client_state.sneaking,
+        });
+    }
+}
+
 /// Ctrl+Q rotates a nearby rotatable object counter-clockwise, Ctrl+E clockwise.
 /// Picks the rotatable object within Chebyshev-1 of the local player, tie-broken
 /// by Manhattan distance then object_id so the choice is deterministic across

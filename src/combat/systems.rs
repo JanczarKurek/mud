@@ -209,6 +209,7 @@ pub fn resolve_battle_turn(
     mut chat_log_query: Query<&mut ChatLog, With<Player>>,
     mut ui_events: ResMut<PendingGameUiEvents>,
     mut pending_damage: ResMut<PendingDamageEvents>,
+    mut pending_noise: ResMut<crate::world::noise::PendingNoiseEvents>,
     mut pending_modifier_consumption: ResMut<PendingModifierConsumption>,
     mut commands: Commands,
 ) {
@@ -453,6 +454,14 @@ pub fn resolve_battle_turn(
                 sprite_definition_id: sprite_id,
             });
         }
+
+        // A committed attack (range, LoS, and ammo all cleared) is loud — even
+        // a miss. Nearby NPCs hear the scuffle and investigate.
+        pending_noise.push(
+            attacker.space_id,
+            attacker.position,
+            crate::world::noise::ATTACK_NOISE,
+        );
 
         // Stage 1: to-hit roll vs dodge DC. Misses spend ammo and play the
         // projectile but deal no damage.

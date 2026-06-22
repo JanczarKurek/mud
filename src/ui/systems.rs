@@ -113,6 +113,12 @@ pub fn apply_game_ui_events(
             // popup animation. The chat log already narrates these (see
             // `resolve_battle_turn`), so silent-consume is fine for now.
             GameUiEvent::AttackDodged { .. } | GameUiEvent::AttackBlocked { .. } => {}
+            // "You've been spotted." The spotting NPC also fires an aggro bark
+            // (speech bubble) on the same transition, which is the current
+            // visible cue; this arm is the hook point for a future toast/sound.
+            GameUiEvent::Spotted { npc_object_id } => {
+                debug!("local player spotted by object {npc_object_id}");
+            }
             GameUiEvent::OpenBookPanel {
                 source,
                 kind,
@@ -1069,6 +1075,23 @@ pub fn sync_regen_buff_label(
             format!("Well Fed: {mins}:{secs:02} (x{:.1})", buff.multiplier)
         }
         _ => String::new(),
+    };
+    // See `sync_carry_weight_label` for why we iterate.
+    for mut text in &mut label_query {
+        if text.0 != new_text {
+            text.0 = new_text.clone();
+        }
+    }
+}
+
+pub fn sync_sneaking_label(
+    client_state: Res<ClientGameState>,
+    mut label_query: Query<&mut Text, With<crate::ui::components::SneakingLabel>>,
+) {
+    let new_text = if client_state.sneaking {
+        "Sneaking".to_string()
+    } else {
+        String::new()
     };
     // See `sync_carry_weight_label` for why we iterate.
     for mut text in &mut label_query {

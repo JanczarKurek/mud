@@ -269,6 +269,12 @@ pub enum GameCommand {
     /// Persisted on the next autosave (or immediately if an account DB is
     /// attached).
     SetHome,
+    /// Toggle the player's sneaking state. While sneaking, movement is slower and
+    /// quieter and the player rolls Stealth against NPC detection. Handled in
+    /// `process_game_commands` by inserting/removing the `Sneaking` marker.
+    SetSneaking {
+        sneaking: bool,
+    },
     /// Player clicked "Continue" on the death overlay. Finalizes respawn:
     /// heals to max HP/MP and teleports home. Drained by
     /// `process_acknowledge_death_commands` in `CommandIntercept`; a no-op for

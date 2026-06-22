@@ -105,8 +105,8 @@ use crate::ui::systems::{
     sync_context_menu_use_on_button, sync_docked_panel_layout, sync_docked_panel_titles,
     sync_drag_preview, sync_equipment_slot_images, sync_item_slot_button_visibility,
     sync_item_tooltip, sync_jump_targeting_ui, sync_magic_effects_label, sync_native_custom_cursor,
-    sync_nearby_npcs_panel, sync_regen_buff_label, sync_take_partial_label, sync_vital_bars,
-    sync_xp_bar, tick_level_up_toasts, toggle_cursor_mode, update_hovered_tile,
+    sync_nearby_npcs_panel, sync_regen_buff_label, sync_sneaking_label, sync_take_partial_label,
+    sync_vital_bars, sync_xp_bar, tick_level_up_toasts, toggle_cursor_mode, update_hovered_tile,
     update_take_partial_popup_visibility,
 };
 use crate::ui::theme::UiThemePlugin;
@@ -180,7 +180,7 @@ impl Plugin for UiPlugin {
                 sync_xp_bar,
                 consume_level_up_toasts,
                 tick_level_up_toasts,
-                sync_regen_buff_label,
+                (sync_regen_buff_label, sync_sneaking_label),
                 sync_carry_weight_label,
                 sync_chat_log,
                 sync_context_menu_root,

@@ -1,4 +1,6 @@
 pub mod components;
+pub mod debug_overlay;
+pub mod detection;
 pub mod spawn_groups;
 pub mod spellcasting;
 pub mod systems;

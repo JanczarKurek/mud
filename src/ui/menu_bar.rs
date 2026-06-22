@@ -142,6 +142,11 @@ const MENU_DEFINITIONS: &[MenuDefinition] = &[
                 MenuAction::ToggleShowCoords,
                 ToggleSource::ShowCoords,
             ),
+            toggle_entry(
+                "[ ] NPC AI      Sh+F7",
+                MenuAction::ToggleAiOverlay,
+                ToggleSource::AiOverlay,
+            ),
             entry("    Log Snapshot   F5", MenuAction::LogSnapshot),
             entry("    Cycle Vsync    F6", MenuAction::CycleVsync),
             debug_entry("    GM Tools", MenuAction::OpenGmTools),
@@ -393,6 +398,7 @@ pub fn apply_menu_actions(
     mut settings_ui: ResMut<crate::ui::settings::SettingsUiState>,
     mut pending_debug: ResMut<PendingDebugActions>,
     mut show_coords: ResMut<ShowCoordinates>,
+    mut ai_overlay: ResMut<crate::npc::debug_overlay::AiDebugOverlay>,
 ) {
     for action in pending.actions.drain(..) {
         match action {
@@ -477,6 +483,10 @@ pub fn apply_menu_actions(
             MenuAction::ToggleShowCoords => {
                 show_coords.0 = !show_coords.0;
             }
+            MenuAction::ToggleAiOverlay => {
+                // Flip the flag; `sync_ai_debug_overlay` spawns/despawns boxes.
+                ai_overlay.enabled = !ai_overlay.enabled;
+            }
             MenuAction::OpenGmTools => {
                 crate::ui::debug_menu::toggle_gm_panel(
                     &mut commands,
@@ -498,6 +508,7 @@ pub fn sync_menu_toggle_labels(
     perf: Res<PerfOverlayState>,
     pause: Res<DiagnosticPause>,
     show_coords: Res<ShowCoordinates>,
+    ai_overlay: Res<crate::npc::debug_overlay::AiDebugOverlay>,
 ) {
     for (entry, children) in &entries {
         let Some(source) = entry.toggle_indicator else {
@@ -512,6 +523,7 @@ pub fn sync_menu_toggle_labels(
             ToggleSource::HideDarkness => perf.darkness_hidden,
             ToggleSource::HideObjects => perf.objects_hidden,
             ToggleSource::ShowCoords => show_coords.0,
+            ToggleSource::AiOverlay => ai_overlay.enabled,
         };
         let prefix = if on { "[X]" } else { "[ ]" };
         for &child in children {

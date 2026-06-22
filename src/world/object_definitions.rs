@@ -259,6 +259,10 @@ pub struct NpcBehaviorDefaults {
     pub alert_duration_seconds: f32,
     #[serde(default = "default_requires_line_of_sight")]
     pub requires_line_of_sight: bool,
+    /// Perception bonus contesting a sneaking player's Stealth roll. 0 = an
+    /// average guard. See `docs/utility_systems.md` §3.
+    #[serde(default)]
+    pub perception: i32,
 }
 
 fn default_idle_pause_chance() -> f32 {

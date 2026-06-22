@@ -1528,11 +1528,20 @@ npc_behavior:
   step_interval_jitter_seconds: 0.0   # optional; randomized extra delay
   idle_pause_chance: 0.3        # optional; per-step pause probability
   momentum_bias: 0.6            # optional; tendency to keep walking same way
-  detect_distance_tiles: 7      # required; aggro acquisition range
+  detect_distance_tiles: 7      # required; hard max sensing range (tiles)
   disengage_distance_tiles: 11  # required; leash radius
   alert_duration_seconds: 4.0   # optional; how long Alert state lingers
   requires_line_of_sight: true  # optional; Bresenham LoS gate for aggro
+  perception: 0                 # optional; bonus contesting a sneaking player's
+                                # Stealth roll within detect range (0 = average).
+                                # See docs/utility_systems.md §3.
 ```
+
+Within `detect_distance_tiles` (and with line-of-sight, if required), a
+*non-sneaking* player is always detected. A *sneaking* player is resolved by an
+opposed roll: the NPC's `perception` + a daylight bonus vs the player's Stealth +
+a sneak bonus — so darkness hides a sneaker and a higher `perception` guard sees
+through it.
 
 Roam bounds and the hostile/passive toggle live on the map's spawn group, not
 here — see `spawn_groups` under section 1.

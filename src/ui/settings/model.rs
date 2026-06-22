@@ -29,6 +29,8 @@ pub enum Action {
     SetHome,
     RotateCcw,
     RotateCw,
+    /// Toggle the player's sneaking state (slower, quieter, rolls Stealth).
+    ToggleSneak,
     /// Use the item bound to quick-use slot `0..QUICKBAR_SLOTS`. Holding the
     /// (non-remappable) Ctrl modifier turns this into the use-on flow — the
     /// pair is one bindable unit by design.
@@ -56,6 +58,7 @@ impl Action {
             Action::SetHome => "Set respawn point".to_owned(),
             Action::RotateCcw => "Rotate object (CCW)".to_owned(),
             Action::RotateCw => "Rotate object (CW)".to_owned(),
+            Action::ToggleSneak => "Toggle sneaking".to_owned(),
             Action::QuickbarUse(slot) => {
                 format!("Quickbar slot {} (hold Ctrl = use-on)", slot_label(slot))
             }
@@ -337,7 +340,12 @@ pub struct Keybindings {
 
 /// Fixed display order for the Controls list (non-movement rows).
 pub fn all_actions() -> Vec<Action> {
-    let mut v = vec![Action::SetHome, Action::RotateCcw, Action::RotateCw];
+    let mut v = vec![
+        Action::SetHome,
+        Action::RotateCcw,
+        Action::RotateCw,
+        Action::ToggleSneak,
+    ];
     for slot in 0..QUICKBAR_SLOTS {
         v.push(Action::QuickbarUse(slot));
     }
@@ -373,6 +381,10 @@ impl Default for Keybindings {
         map.insert(
             Action::RotateCw,
             Bindings::one(Binding::ctrl(KeyCode::KeyE)),
+        );
+        map.insert(
+            Action::ToggleSneak,
+            Bindings::one(Binding::plain(KeyCode::KeyV)),
         );
 
         // Quickbar: slot 0 -> Digit1 .. slot 8 -> Digit9, slot 9 -> Digit0.

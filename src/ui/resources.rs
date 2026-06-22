@@ -867,6 +867,8 @@ pub enum MenuAction {
     ToggleHideDarkness,
     ToggleHideObjects,
     ToggleShowCoords,
+    /// Toggle the per-NPC AI-state debug overlay (`npc::debug_overlay`).
+    ToggleAiOverlay,
     LogSnapshot,
     CycleVsync,
     /// Debug-only: open/close the GM tools panel. Entry hidden unless `--debug`.

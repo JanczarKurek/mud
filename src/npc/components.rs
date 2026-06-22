@@ -52,6 +52,12 @@ pub struct HostileBehavior {
     /// to acquire / maintain aggro. If false, aggro is purely distance-based.
     #[serde(default = "default_requires_line_of_sight")]
     pub requires_line_of_sight: bool,
+    /// Perception bonus added to this NPC's spotting roll when contesting a
+    /// player's Stealth (see `detection_outcome`). Higher = sharper-eyed guard.
+    /// `detect_distance_tiles` stays the hard maximum sensing range; within it,
+    /// whether the NPC actually notices a sneaking player is this opposed roll.
+    #[serde(default)]
+    pub perception: i32,
 }
 
 fn default_alert_duration_seconds() -> f32 {

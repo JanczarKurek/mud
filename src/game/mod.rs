@@ -61,6 +61,8 @@ impl Plugin for GameServerPlugin {
             .insert_resource(ContainerViewers::default())
             .insert_resource(PlacementSeqCounter::default())
             .insert_resource(ActiveTrades::default())
+            .insert_resource(crate::world::noise::PendingNoiseEvents::default())
+            .insert_resource(crate::world::noise::NoiseField::default())
             .configure_sets(
                 Update,
                 CommandIntercept
@@ -131,6 +133,27 @@ impl Plugin for GameServerPlugin {
                 Update,
                 tick_respawn_timers
                     .after(process_game_commands)
+                    .run_if(simulation_active),
+            )
+            // Decay the noise field and fold in this frame's emissions, after
+            // the systems that produce noise (movement, interactions, combat).
+            // NPCs sample the lingering field next tick — exact ordering vs
+            // `update_roaming_npcs` is unimportant since noise lives ~1.5s.
+            .add_systems(
+                Update,
+                crate::world::noise::update_noise_field
+                    .after(process_game_commands)
+                    .after(process_interact_commands)
+                    .after(resolve_battle_turn)
+                    .run_if(simulation_active),
+            )
+            // Player stealth sensing: refresh per-player NPC awareness reads
+            // before the projection serializes them into world-object state.
+            .add_systems(
+                Update,
+                crate::player::sense::tick_player_sense
+                    .after(update_roaming_npcs)
+                    .before(collect_game_events_from_authority)
                     .run_if(simulation_active),
             )
             // Map discovery: publisher sweeps positions, single drainer

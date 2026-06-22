@@ -22,7 +22,8 @@ use crate::ui::components::{
     ManaFill, ManaLabel, MinimapCanvas, MinimapMode, MinimapPanelUndockButton, MinimapView,
     NearbyNpcsList, NearbyNpcsPanelUndockButton, PythonConsoleMaximizeButton, PythonConsolePanel,
     PythonConsoleRestartButton, PythonConsoleTerminal, RegenBuffLabel, RightSidebarRoot,
-    StatusPanelContent, StatusPanelUndockButton, TakePartialAmountLabel, TakePartialCancelButton,
+    SneakingLabel, StatusPanelContent, StatusPanelUndockButton, TakePartialAmountLabel,
+    TakePartialCancelButton,
     TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot,
     TradeButtonLabel, TradeColumn,
 };
@@ -813,6 +814,17 @@ pub(crate) fn spawn_status_panel_body(parent: &mut ChildSpawnerCommands, palette
                 },
                 TextColor(palette.text_accent),
                 MagicEffectsLabel,
+            ));
+            // Sneaking indicator. Same shape as the regen-buff label — always
+            // rendered, `sync_sneaking_label` writes "Sneaking" while active.
+            panel.spawn((
+                Text::new(""),
+                TextFont {
+                    font_size: 14.0,
+                    ..default()
+                },
+                TextColor(palette.text_accent),
+                SneakingLabel,
             ));
             // Carry weight readout. Always rendered; `sync_carry_weight_label`
             // updates the text every frame the cached client value changes.

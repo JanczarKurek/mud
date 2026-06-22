@@ -12,13 +12,20 @@ use crate::npc::components::{
     AiMemory, AiState, Barks, HostileBehavior, LastDamagedAt, Npc, RoamingBehavior,
     RoamingRandomState, RoamingStepTimer,
 };
+use crate::npc::detection::detection_outcome;
 use crate::player::classes::ability_mod;
-use crate::player::components::{DerivedStats, Player};
+use crate::player::components::{BaseStats, DerivedStats, Player, PlayerId, PlayerIdentity, Sneaking};
+use crate::player::skills::{Skill, SkillSheet};
 use crate::world::components::OverworldObject;
 use crate::world::components::{
-    floor_index, tile_distance_3d, Collider, Facing, SpaceId, SpaceResident, TilePosition,
+    floor_index, tile_distance_3d, Collider, Facing, ObjectState, SpaceId, SpaceResident,
+    TilePosition,
 };
 use crate::world::direction::Direction;
+use crate::world::lighting::{
+    default_day_night_curve, light_level_at, AmbientKeyframeF32, PointLight, WorldClock,
+};
+use crate::world::noise::NoiseField;
 use crate::world::spatial::{self, has_line_of_sight, BlockerIndex};
 
 /// Shopkeepers stop wandering when a player is within this many tiles, so the
@@ -82,6 +89,36 @@ const CONTACT_GRACE_SECS: f32 = 3.0;
 type NpcTileIndex = HashMap<(SpaceId, TilePosition), Entity>;
 type PlayerTileSet = HashSet<(SpaceId, TilePosition)>;
 
+/// Per-player snapshot the detection logic needs each tick. Enriches the old
+/// `(Entity, SpaceId, TilePosition)` tuple with what the opposed Stealth roll
+/// reads: the player's precomputed Stealth total, whether they're sneaking, and
+/// their `PlayerId` (for the "spotted" cue). Built once per tick in
+/// `update_roaming_npcs`.
+#[derive(Clone, Copy)]
+struct PlayerDetectInfo {
+    entity: Entity,
+    player_id: Option<PlayerId>,
+    space_id: SpaceId,
+    tile: TilePosition,
+    /// `ranks(Stealth) + ability_mod(AGI)` — the static part of the player's
+    /// Stealth check; the d20 is rolled per contest inside the detector.
+    stealth_total: i32,
+    sneaking: bool,
+}
+
+/// Time-salted d20 (1..=20). Mirrors `combat::systems::roll_d20` — the raw
+/// nanosecond source self-correlates within a frame, so the two rolls of an
+/// opposed check must use different salts.
+fn roll_d20(salt: u64) -> i32 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.subsec_nanos() as u64)
+        .unwrap_or(0);
+    let mixed = nanos.wrapping_add(salt.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+    ((mixed % 20) as i32) + 1
+}
+
 pub fn update_roaming_npcs(
     time: Res<Time>,
     blocker_query: Query<
@@ -91,7 +128,32 @@ pub fn update_roaming_npcs(
     definitions: Option<Res<crate::world::object_definitions::OverworldObjectDefinitions>>,
     floor_maps: Option<Res<crate::world::floor_map::FloorMaps>>,
     floor_defs: Option<Res<crate::world::floor_definitions::FloorTilesetDefinitions>>,
-    player_query: Query<(Entity, &SpaceResident, &TilePosition), (With<Player>, Without<Npc>)>,
+    world_clock: Option<Res<WorldClock>>,
+    noise_field: Option<Res<NoiseField>>,
+    player_query: Query<
+        (
+            Entity,
+            &SpaceResident,
+            &TilePosition,
+            Option<&PlayerIdentity>,
+            Option<&SkillSheet>,
+            Option<&BaseStats>,
+            Has<Sneaking>,
+        ),
+        (With<Player>, Without<Npc>),
+    >,
+    // Light-emitting world objects (lamps, campfires). Disjoint from
+    // `npc_query`/`player_query` (Without<Npc>/<Player>) so the immutable
+    // `&TilePosition` borrow doesn't alias the NPC query's `&mut TilePosition`.
+    object_light_query: Query<
+        (
+            &SpaceResident,
+            &TilePosition,
+            Option<&ObjectState>,
+            &OverworldObject,
+        ),
+        (Without<Npc>, Without<Player>),
+    >,
     mut npc_query: Query<
         (
             Entity,
@@ -121,10 +183,57 @@ pub fn update_roaming_npcs(
     let _t = crate::diagnostics::SystemTimer::new("npc:update_roaming_npcs", 1.0);
     let elapsed = time.elapsed_secs();
 
-    let players: Vec<(Entity, SpaceId, TilePosition)> = player_query
+    let players: Vec<PlayerDetectInfo> = player_query
         .iter()
-        .map(|(entity, resident, tile_position)| (entity, resident.space_id, *tile_position))
+        .map(
+            |(entity, resident, tile_position, identity, skill_sheet, base_stats, sneaking)| {
+                // Stealth total = ranks(Stealth) + ability_mod(AGI). Players
+                // without a skill sheet / base stats (legacy test fixtures)
+                // contribute 0, so detection of non-sneakers is unchanged.
+                let stealth_total = match (skill_sheet, base_stats) {
+                    (Some(sheet), Some(stats)) => {
+                        sheet.rank(Skill::Stealth) as i32 + ability_mod(stats.attributes.agility)
+                    }
+                    _ => 0,
+                };
+                PlayerDetectInfo {
+                    entity,
+                    player_id: identity.map(|i| i.id),
+                    space_id: resident.space_id,
+                    tile: *tile_position,
+                    stealth_total,
+                    sneaking,
+                }
+            },
+        )
         .collect();
+
+    // Ambient day/night curve + time for the server-side light model. Slice 1
+    // uses the engine default curve for every space (per-space outdoor curves
+    // are a follow-up); absent clock defaults to noon → fully lit, preserving
+    // the old "always detected in range" behavior for tests.
+    let light_curve = default_day_night_curve();
+    let time_of_day = world_clock.as_deref().map(|c| c.time_of_day).unwrap_or(0.5);
+
+    // Index of point-light emitters (lamps, campfires) for the brightest-source
+    // light bump. Built from object definitions' per-state light emission.
+    let light_emitters: Vec<(SpaceId, PointLight)> = match definitions.as_deref() {
+        Some(defs) => object_light_query
+            .iter()
+            .filter_map(|(resident, tile, state, object)| {
+                let def = defs.get(&object.definition_id)?;
+                let emission = def.light_for_state(state.map(|s| s.0.as_str()))?;
+                Some((
+                    resident.space_id,
+                    PointLight {
+                        tile: *tile,
+                        radius: emission.radius,
+                    },
+                ))
+            })
+            .collect(),
+        None => Vec::new(),
+    };
 
     // Movement vs. line-of-sight indices — see `crate::world::spatial` for
     // the semantics. Movement is what we pass to `resolve_npc_step` so cascade
@@ -147,7 +256,7 @@ pub fn update_roaming_npcs(
 
     let player_tiles: PlayerTileSet = players
         .iter()
-        .map(|(_, space_id, position)| (*space_id, *position))
+        .map(|p| (p.space_id, p.tile))
         .collect();
 
     for (
@@ -192,9 +301,9 @@ pub fn update_roaming_npcs(
             let nearest = players
                 .iter()
                 .copied()
-                .filter(|(_, space_id, _)| *space_id == resident.space_id)
-                .min_by_key(|(_, _, position)| chebyshev_distance(*tile_position, *position))
-                .map(|(_, _, position)| position);
+                .filter(|p| p.space_id == resident.space_id)
+                .min_by_key(|p| chebyshev_distance(*tile_position, p.tile))
+                .map(|p| p.tile);
             if let Some(target) = nearest {
                 if chebyshev_distance(*tile_position, target) <= SHOPKEEPER_PAUSE_RADIUS_TILES {
                     if let Some(facing) = facing.as_mut() {
@@ -214,6 +323,12 @@ pub fn update_roaming_npcs(
             }
         }
 
+        // Noise this NPC can hear right now (loudest audible in its space).
+        // Drives Wander → Alert investigation even with no line of sight.
+        let heard_noise = noise_field
+            .as_deref()
+            .and_then(|field| field.loudest_audible(resident.space_id, *tile_position));
+
         let mut outcome = step_ai(StepAiInput {
             entity,
             space_id: resident.space_id,
@@ -232,6 +347,10 @@ pub fn update_roaming_npcs(
             elapsed,
             barks,
             last_damaged_at,
+            light_curve: &light_curve,
+            time_of_day,
+            light_emitters: &light_emitters,
+            heard_noise,
         });
 
         // Athletics gate on any step that climbs more than the free auto-step
@@ -282,6 +401,27 @@ pub fn update_roaming_npcs(
                 commands
                     .entity(entity)
                     .insert(CombatTarget { entity: target });
+                // Fresh aggro (from Wander/Alert, not an ongoing Pursue/Engage)
+                // → fire a one-shot "spotted" cue to the player who was seen.
+                let fresh = matches!(prev_state, AiState::Wander | AiState::Alert { .. });
+                if fresh {
+                    if let (Some(ui_events), Some(npc_object)) =
+                        (ui_events.as_deref_mut(), overworld_object)
+                    {
+                        if let Some(player_id) = players
+                            .iter()
+                            .find(|p| p.entity == target)
+                            .and_then(|p| p.player_id)
+                        {
+                            ui_events.push(
+                                player_id,
+                                GameUiEvent::Spotted {
+                                    npc_object_id: npc_object.object_id,
+                                },
+                            );
+                        }
+                    }
+                }
             }
             TargetChange::Clear => {
                 commands.entity(entity).remove::<CombatTarget>();
@@ -343,7 +483,7 @@ struct StepAiInput<'a> {
     behavior: &'a RoamingBehavior,
     hostile_behavior: Option<&'a HostileBehavior>,
     attack_profile: Option<&'a AttackProfile>,
-    players: &'a [(Entity, SpaceId, TilePosition)],
+    players: &'a [PlayerDetectInfo],
     blockers: &'a BlockerIndex,
     los_blockers: &'a BlockerIndex,
     npc_tiles: &'a NpcTileIndex,
@@ -355,6 +495,16 @@ struct StepAiInput<'a> {
     /// never been hit. Used to gate the Flee transition so an NPC only flees
     /// from an unreachable target that has recently hurt them.
     last_damaged_at: Option<f32>,
+    /// Day/night ambient curve + time, for the server-side light model used by
+    /// the opposed Stealth detection roll.
+    light_curve: &'a [AmbientKeyframeF32],
+    time_of_day: f32,
+    /// Point-light emitters (lamps/campfires) across all spaces; filtered to
+    /// the NPC's space inside the detector.
+    light_emitters: &'a [(SpaceId, PointLight)],
+    /// Loudest noise this NPC can currently hear (its tile), or `None`. A heard
+    /// noise pulls a wandering hostile NPC into Alert at that tile.
+    heard_noise: Option<TilePosition>,
 }
 
 struct PendingBark {
@@ -399,14 +549,18 @@ fn tick_wander(input: &mut StepAiInput<'_>) -> AiOutcome {
     // pursue/engage action immediately rather than burning a tick to "wake
     // up" — players expect a chasing NPC to actually take its first step.
     if let Some(hostile) = input.hostile_behavior {
-        if let Some((target_entity, _)) = nearest_visible_player(
+        if let Some(spotted) = nearest_visible_player(
             input.tile_position,
             input.space_id,
             hostile,
             input.players,
             input.los_blockers,
             hostile.detect_distance_tiles,
+            input.light_curve,
+            input.time_of_day,
+            input.light_emitters,
         ) {
+            let target_entity = spotted.entity;
             let mut outcome = tick_pursue_or_engage(input, target_entity, false);
             // We just transitioned from Wander, so there's no prior
             // CombatTarget — ensure we mark the component regardless of what
@@ -414,6 +568,26 @@ fn tick_wander(input: &mut StepAiInput<'_>) -> AiOutcome {
             outcome.target = TargetChange::Set(target_entity);
             outcome.bark = pick_bark(input, BarkKind::Aggro);
             return outcome;
+        }
+
+        // Didn't see anyone, but might hear something. A heard noise pulls a
+        // wandering hostile into Alert at the noise tile — investigate even with
+        // no line of sight. The existing Alert tick handles the pathing.
+        if let Some(noise_tile) = input.heard_noise {
+            return AiOutcome {
+                next_state: AiState::Alert {
+                    last_seen: noise_tile,
+                    expires_at_seconds: input.elapsed + hostile.alert_duration_seconds,
+                },
+                next_memory: AiMemory {
+                    last_step: None,
+                    ..input.memory
+                },
+                target: TargetChange::Keep,
+                move_to: None,
+                idle_pause: false,
+                bark: pick_bark(input, BarkKind::Mutter),
+            };
         }
     }
 
@@ -558,14 +732,18 @@ fn tick_alert(
     // index lets an NPC "see" a target it then immediately declares out of
     // contact, freezing it in a detect→abort loop.
     if let Some(hostile) = input.hostile_behavior {
-        if let Some((target_entity, _)) = nearest_visible_player(
+        if let Some(spotted) = nearest_visible_player(
             input.tile_position,
             input.space_id,
             hostile,
             input.players,
             input.los_blockers,
             hostile.disengage_distance_tiles,
+            input.light_curve,
+            input.time_of_day,
+            input.light_emitters,
         ) {
+            let target_entity = spotted.entity;
             let mut outcome = tick_pursue_or_engage(input, target_entity, false);
             outcome.target = TargetChange::Set(target_entity);
             return outcome;
@@ -631,8 +809,11 @@ fn tick_alert(
 
 fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: bool) -> AiOutcome {
     // Validate target still exists and is in the same space.
-    let Some((_, target_space, target_pos)) =
-        input.players.iter().copied().find(|(e, _, _)| *e == target)
+    let Some((target_space, target_pos)) = input
+        .players
+        .iter()
+        .find(|p| p.entity == target)
+        .map(|p| (p.space_id, p.tile))
     else {
         return AiOutcome {
             next_state: AiState::Wander,
@@ -889,8 +1070,12 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
 /// still possible — staying visible means the NPC is still being chased and
 /// shouldn't stop fleeing yet.
 fn tick_flee(input: &mut StepAiInput<'_>, from: Entity, expires_at_seconds: f32) -> AiOutcome {
-    let attacker = input.players.iter().copied().find(|(e, _, _)| *e == from);
-    let Some((_, attacker_space, attacker_pos)) = attacker else {
+    let attacker = input
+        .players
+        .iter()
+        .find(|p| p.entity == from)
+        .map(|p| (p.space_id, p.tile));
+    let Some((attacker_space, attacker_pos)) = attacker else {
         return AiOutcome {
             next_state: AiState::Wander,
             next_memory: AiMemory {
@@ -982,18 +1167,22 @@ fn tick_flee(input: &mut StepAiInput<'_>, from: Entity, expires_at_seconds: f32)
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn nearest_visible_player(
     tile_position: TilePosition,
     space_id: SpaceId,
     hostile: &HostileBehavior,
-    players: &[(Entity, SpaceId, TilePosition)],
+    players: &[PlayerDetectInfo],
     blockers: &BlockerIndex,
     radius: i32,
-) -> Option<(Entity, TilePosition)> {
+    light_curve: &[AmbientKeyframeF32],
+    time_of_day: f32,
+    light_emitters: &[(SpaceId, PointLight)],
+) -> Option<PlayerDetectInfo> {
     players
         .iter()
         .copied()
-        .filter(|(_, player_space_id, _)| *player_space_id == space_id)
+        .filter(|p| p.space_id == space_id)
         // No sensing across a *full* floor by default: an NPC detects players on
         // its own floor, plus anything within one auto-climb half-block (so a
         // player on the stair step right beside it — z=1↔z=2, which straddles a
@@ -1002,17 +1191,44 @@ fn nearest_visible_player(
         // line-of-sight leak closed: a player a full floor up (dz≥2) through an
         // open stair hole still fails this gate. A future "sense other floors"
         // skill would widen the band further.
-        .filter(|(_, _, position)| {
-            floor_index(position.z) == floor_index(tile_position.z)
-                || (position.z - tile_position.z).abs() <= crate::game::traversal::CLIMB_FREE_DZ
+        .filter(|p| {
+            floor_index(p.tile.z) == floor_index(tile_position.z)
+                || (p.tile.z - tile_position.z).abs() <= crate::game::traversal::CLIMB_FREE_DZ
         })
-        .filter(|(_, _, position)| chebyshev_distance(tile_position, *position) <= radius)
-        .filter(|(_, _, position)| {
+        .filter(|p| chebyshev_distance(tile_position, p.tile) <= radius)
+        // Line of sight is hard cover: an unbroken wall hides the player
+        // regardless of the stealth roll.
+        .filter(|p| {
             !hostile.requires_line_of_sight
-                || has_line_of_sight(tile_position, *position, space_id, blockers)
+                || has_line_of_sight(tile_position, p.tile, space_id, blockers)
         })
-        .min_by_key(|(_, _, position)| chebyshev_distance(tile_position, *position))
-        .map(|(entity, _, position)| (entity, position))
+        // Stealth contest. A player who isn't sneaking is always noticed within
+        // range + LoS (unchanged behavior). A sneaking player rolls Stealth vs
+        // the NPC's perception, modified by the light level at their tile —
+        // dark = hard to see, daylight or a nearby torch = easy.
+        .filter(|p| {
+            if !p.sneaking {
+                return true;
+            }
+            let nearby: Vec<PointLight> = light_emitters
+                .iter()
+                .filter(|(s, _)| *s == p.space_id)
+                .map(|(_, light)| *light)
+                .collect();
+            let light_level = light_level_at(p.tile, light_curve, time_of_day, &nearby);
+            // Salt the two d20s differently — a shared nanosecond source
+            // self-correlates within a frame.
+            let npc_roll = roll_d20(p.entity.to_bits() ^ 0xA5A5_A5A5);
+            let player_roll = roll_d20(p.entity.to_bits() ^ 0x5A5A_5A5A);
+            detection_outcome(
+                hostile.perception,
+                p.stealth_total,
+                light_level,
+                npc_roll,
+                player_roll,
+            )
+        })
+        .min_by_key(|p| chebyshev_distance(tile_position, p.tile))
 }
 
 /// The NPC's attack kind, defaulting an absent profile to `Melee`. Feeds the
@@ -1634,6 +1850,22 @@ mod tests {
             disengage_distance_tiles: disengage,
             alert_duration_seconds: 4.0,
             requires_line_of_sight: false, // most tests don't care about LoS
+            perception: 0,
+        }
+    }
+
+    /// A non-sneaking detection candidate at `tile` in `TEST_SPACE`. Non-sneakers
+    /// are always detected within range+LoS, so these exercise the floor/range
+    /// gates without the (non-deterministic) opposed stealth roll. The opposed
+    /// roll itself is unit-tested in `crate::npc::detection`.
+    fn detect_player(tile: TilePosition) -> PlayerDetectInfo {
+        PlayerDetectInfo {
+            entity: Entity::PLACEHOLDER,
+            player_id: None,
+            space_id: TEST_SPACE,
+            tile,
+            stealth_total: 0,
+            sneaking: false,
         }
     }
 
@@ -2060,15 +2292,22 @@ mod tests {
         let blockers: BlockerIndex = BlockerIndex::default();
         let npc = TilePosition::ground(5, 5);
 
-        let upstairs = vec![(Entity::PLACEHOLDER, TEST_SPACE, TilePosition::new(5, 6, 2))];
+        let curve = default_day_night_curve();
+        let upstairs = vec![detect_player(TilePosition::new(5, 6, 2))];
         assert!(
-            nearest_visible_player(npc, TEST_SPACE, &hostile, &upstairs, &blockers, 20).is_none(),
+            nearest_visible_player(
+                npc, TEST_SPACE, &hostile, &upstairs, &blockers, 20, &curve, 0.5, &[]
+            )
+            .is_none(),
             "a player a floor up must be invisible to detection"
         );
 
-        let same_floor = vec![(Entity::PLACEHOLDER, TEST_SPACE, TilePosition::new(5, 6, 1))];
+        let same_floor = vec![detect_player(TilePosition::new(5, 6, 1))];
         assert!(
-            nearest_visible_player(npc, TEST_SPACE, &hostile, &same_floor, &blockers, 20).is_some(),
+            nearest_visible_player(
+                npc, TEST_SPACE, &hostile, &same_floor, &blockers, 20, &curve, 0.5, &[]
+            )
+            .is_some(),
             "a player on a half-block step (same floor) stays visible"
         );
     }
@@ -2084,17 +2323,22 @@ mod tests {
         let blockers: BlockerIndex = BlockerIndex::default();
         let npc = TilePosition::new(5, 5, 1);
 
-        let half_block_up = vec![(Entity::PLACEHOLDER, TEST_SPACE, TilePosition::new(5, 6, 2))];
+        let curve = default_day_night_curve();
+        let half_block_up = vec![detect_player(TilePosition::new(5, 6, 2))];
         assert!(
-            nearest_visible_player(npc, TEST_SPACE, &hostile, &half_block_up, &blockers, 20)
-                .is_some(),
+            nearest_visible_player(
+                npc, TEST_SPACE, &hostile, &half_block_up, &blockers, 20, &curve, 0.5, &[]
+            )
+            .is_some(),
             "a player one half-block up (z=1→z=2) must be visible (melee reach)"
         );
 
-        let full_floor_up = vec![(Entity::PLACEHOLDER, TEST_SPACE, TilePosition::new(5, 6, 3))];
+        let full_floor_up = vec![detect_player(TilePosition::new(5, 6, 3))];
         assert!(
-            nearest_visible_player(npc, TEST_SPACE, &hostile, &full_floor_up, &blockers, 20)
-                .is_none(),
+            nearest_visible_player(
+                npc, TEST_SPACE, &hostile, &full_floor_up, &blockers, 20, &curve, 0.5, &[]
+            )
+            .is_none(),
             "a player a full floor up (z=1→z=3, dz=2) stays invisible"
         );
     }
@@ -2516,6 +2760,7 @@ mod tests {
                     disengage_distance_tiles: 20,
                     alert_duration_seconds: 4.0,
                     requires_line_of_sight: true,
+                    perception: 0,
                 },
                 AttackProfile::melee(),
                 RoamingStepTimer {
@@ -2580,6 +2825,7 @@ mod tests {
                     disengage_distance_tiles: 20,
                     alert_duration_seconds: 4.0,
                     requires_line_of_sight: true,
+                    perception: 0,
                 },
                 AttackProfile::melee(),
                 RoamingStepTimer {

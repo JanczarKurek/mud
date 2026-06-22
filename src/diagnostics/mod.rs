@@ -12,6 +12,9 @@
 //!   distinguish "real CPU spikes" from "missed-vsync deadline" cliffs at 60 Hz.
 //! - **F7** dumps an archetype histogram (entity count grouped by component
 //!   set) to the log. Quick way to see what's bloating the entity count.
+//! - **Shift+F7** toggles a per-NPC AI-state overlay (FSM state, target,
+//!   perception/detect range, heard noise) — boxes over NPC heads. EmbeddedClient
+//!   only (reads authoritative NPC components). See `npc::debug_overlay`.
 //! - **F8** toggles `DiagnosticPause::simulation` — flips every system gated on
 //!   `simulation_active` (NPC AI, combat, regen, dialog tick, ...). If frame
 //!   spikes vanish under F8, the cause is simulation-side; if they persist,
@@ -73,6 +76,7 @@ impl Plugin for DiagnosticsPlugin {
         .init_resource::<SpikeTracker>()
         .init_resource::<DiagnosticPause>()
         .init_resource::<PendingDebugActions>()
+        .init_resource::<crate::npc::debug_overlay::AiDebugOverlay>()
         .add_systems(Startup, spawn_overlays)
         .add_systems(First, clear_frame_timings)
         .add_systems(PreUpdate, mark_pre_update_start)
@@ -115,6 +119,18 @@ impl Plugin for DiagnosticsPlugin {
             ),
         )
         .add_systems(Update, handle_archetype_dump)
+        // NPC AI debug overlay (Shift+F7): boxes over NPC heads showing live FSM
+        // state. Gated to InGame; only populated in EmbeddedClient mode where
+        // authoritative NPC components share the App.
+        .add_systems(
+            Update,
+            (
+                crate::npc::debug_overlay::toggle_ai_debug_overlay,
+                crate::npc::debug_overlay::sync_ai_debug_overlay,
+            )
+                .chain()
+                .run_if(in_state(ClientAppState::InGame)),
+        )
         .add_systems(
             Update,
             draw_debug_grid.run_if(in_state(ClientAppState::InGame)),
@@ -821,10 +837,11 @@ fn is_vsync(mode: PresentMode) -> bool {
 }
 
 fn handle_archetype_dump(world: &mut World) {
-    if !world
-        .resource::<ButtonInput<KeyCode>>()
-        .just_pressed(KeyCode::F7)
-    {
+    let keys = world.resource::<ButtonInput<KeyCode>>();
+    // Plain F7 = archetype dump. Shift+F7 is the NPC AI overlay toggle
+    // (`npc::debug_overlay`), so ignore it here.
+    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+    if !keys.just_pressed(KeyCode::F7) || shift {
         return;
     }
     log_archetype_histogram(world);

@@ -33,6 +33,11 @@ pub struct RegenBuffLabel;
 #[derive(Component)]
 pub struct MagicEffectsLabel;
 
+/// Text node that displays a "Sneaking" indicator in the status panel while the
+/// player is sneaking. Hidden otherwise. Driven by `ClientGameState.sneaking`.
+#[derive(Component)]
+pub struct SneakingLabel;
+
 /// Text node that displays the player's carry weight in the status panel.
 /// Format: `Weight: 8.4 / 40 kg` with a trailing "(Encumbered)" tag in red
 /// when the soft cap is exceeded.
@@ -774,6 +779,7 @@ pub enum ToggleSource {
     HideDarkness,
     HideObjects,
     ShowCoords,
+    AiOverlay,
 }
 
 /// Marker on the right-aligned coordinate text node spawned at the end of

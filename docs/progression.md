@@ -172,6 +172,11 @@ Ten skills total. Combat power is class/BAB-driven (§3, §7), so **skills are p
 utility** — each skill exists to make a non-combat decision matter and has exactly one
 concrete, server-hookable mechanic. Each is keyed to one attribute:
 
+> **See `docs/utility_systems.md`** for how these per-skill mechanics are wired
+> together into an interaction-driven simulation via shared world signals (light,
+> noise, cover, exertion, success-margin→quality). That doc is the source of truth
+> for the *intertwined* behavior; the table below stays the per-skill summary.
+
 | Skill | Attr | What it does in mud2.0 |
 |---|---|---|
 | Athletics | STR | Climb/jump/swim tiles flagged for it; force locks/doors (`force_dc`); escape immobilizing effects (paralyze/snare) faster; reposition/flee check to break or close distance. |

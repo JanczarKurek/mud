@@ -43,6 +43,16 @@ pub struct GodMode;
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct Noclip;
 
+/// While present on a player, they are sneaking: movement is slower and quieter
+/// (see `handle_move_player` + the noise bus), and they roll Stealth against NPC
+/// detection (see `nearest_visible_player`). Toggled by `GameCommand::SetSneaking`.
+/// Session-only state — never persisted, so a character always loads un-sneaked.
+/// Replicated to the local client via `GameEvent::PlayerSneakingChanged` for the
+/// HUD indicator; presentation code must read `ClientGameState.sneaking`, never
+/// this authoritative marker.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct Sneaking;
+
 /// Present on a player who has died and is waiting to click "Continue" on the
 /// death overlay. While present they stay at HP 0 (regen is gated off below 1)
 /// and `process_game_commands` drops their other commands, so they can't move,

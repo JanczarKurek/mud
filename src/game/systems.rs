@@ -45,6 +45,9 @@ pub struct CommandOutputs<'w, 's> {
     pub ui_events: ResMut<'w, PendingGameUiEvents>,
     pub pending_damage: ResMut<'w, PendingDamageEvents>,
     pub pending_steps: ResMut<'w, crate::world::step_triggers::PendingStepEvents>,
+    /// Noise emissions from movement. Drained into the `NoiseField` by
+    /// `update_noise_field`; NPCs hear it and investigate.
+    pub pending_noise: ResMut<'w, crate::world::noise::PendingNoiseEvents>,
     pub container_viewers: ResMut<'w, ContainerViewers>,
     pub player_regen_buffs:
         Query<'w, 's, &'static mut crate::player::components::RegenBuffs, With<Player>>,
@@ -69,6 +72,17 @@ pub struct CommandOutputs<'w, 's> {
     /// True iff the player entity carries the debug `Noclip` marker. When set,
     /// movement skips collider/walkability gates (map bounds still apply).
     pub player_noclip: Query<'w, 's, (), (With<Player>, With<Noclip>)>,
+    /// True iff the player entity carries the `Sneaking` marker. When set,
+    /// movement is slower (longer cooldown) and quieter (smaller noise).
+    pub player_sneaking: Query<
+        'w,
+        's,
+        (),
+        (
+            With<Player>,
+            With<crate::player::components::Sneaking>,
+        ),
+    >,
     /// True iff the resolved player carries `AwaitingRespawn` (dead, waiting to
     /// click "Continue" on the death overlay). While set, `process_game_commands`
     /// drops all of their commands so they can't move/cast/attack until they
@@ -360,6 +374,7 @@ pub fn process_game_commands(
                 let collider_positions = colliders_in_space(source_space_id, &player_queries.p0());
                 let encumbered = command_outputs.player_encumbered.get(player_entity).is_ok();
                 let noclip = command_outputs.player_noclip.get(player_entity).is_ok();
+                let sneaking = command_outputs.player_sneaking.get(player_entity).is_ok();
                 handle_move_player(
                     player_entity,
                     delta,
@@ -377,8 +392,10 @@ pub fn process_game_commands(
                     &mut space_authority.floor_maps,
                     encumbered,
                     noclip,
+                    sneaking,
                     &mut commands,
                     &mut command_outputs.pending_steps,
+                    &mut command_outputs.pending_noise,
                     &mut command_outputs.pending_damage,
                 );
             }
@@ -697,6 +714,17 @@ pub fn process_game_commands(
             // CommandIntercept set). If we reach this arm, no player matched
             // the queued command so silently drop it.
             GameCommand::SetHome => {}
+            GameCommand::SetSneaking { sneaking } => {
+                if sneaking {
+                    commands
+                        .entity(player_entity)
+                        .insert(crate::player::components::Sneaking);
+                } else {
+                    commands
+                        .entity(player_entity)
+                        .remove::<crate::player::components::Sneaking>();
+                }
+            }
             // Drained earlier by `process_acknowledge_death_commands` (player
             // plugin, CommandIntercept set). Reaching this arm means no
             // awaiting-respawn player matched, so silently drop it.
@@ -1065,8 +1093,10 @@ fn handle_move_player(
     floor_maps: &mut FloorMaps,
     encumbered: bool,
     noclip: bool,
+    sneaking: bool,
     commands: &mut Commands,
     pending_steps: &mut crate::world::step_triggers::PendingStepEvents,
+    pending_noise: &mut crate::world::noise::PendingNoiseEvents,
     pending_damage: &mut PendingDamageEvents,
 ) {
     let Ok((
@@ -1201,6 +1231,13 @@ fn handle_move_player(
         space_id: space_resident.space_id,
         tile: target_position,
     });
+    // Footstep noise: a sneaking step is much quieter than a normal one.
+    let footstep_loudness = if sneaking {
+        crate::world::noise::SNEAK_NOISE
+    } else {
+        crate::world::noise::WALK_NOISE
+    };
+    pending_noise.push(space_resident.space_id, target_position, footstep_loudness);
 
     // Fall damage: any descent of more than `FALL_THRESHOLD_DZ` half-blocks
     // takes quadratic damage, halved by a successful Athletics save.
@@ -1220,6 +1257,9 @@ fn handle_move_player(
     let mut cooldown_scale = if encumbered { 2.0 } else { 1.0 };
     if let Ok(effects) = player_magic_effects.get(player_entity) {
         cooldown_scale *= effects.haste_multiplier();
+    }
+    if sneaking {
+        cooldown_scale *= crate::game::traversal::SNEAK_SLOW_FACTOR;
     }
     if effective_delta.x != 0 && effective_delta.y != 0 {
         cooldown_scale *= std::f32::consts::SQRT_2;

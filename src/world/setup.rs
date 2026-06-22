@@ -379,6 +379,7 @@ pub fn realize_npc(
                 disengage_distance_tiles: disengage,
                 alert_duration_seconds: npc_defaults.alert_duration_seconds,
                 requires_line_of_sight: npc_defaults.requires_line_of_sight,
+                perception: npc_defaults.perception,
             },
             CombatLeash {
                 max_distance_tiles: disengage,

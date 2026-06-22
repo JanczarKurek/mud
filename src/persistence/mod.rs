@@ -1631,6 +1631,7 @@ mod tests {
                         disengage_distance_tiles: 8,
                         alert_duration_seconds: 4.0,
                         requires_line_of_sight: true,
+                        perception: 0,
                     }),
                     // Pin the timer far in the future so the loaded NPC doesn't
                     // immediately wander off (10,10) before the test queries it.

@@ -41,6 +41,11 @@ pub const FALL_THRESHOLD_DZ: i32 = 2;
 /// Quadratic multiplier for fall damage: `FALL_DAMAGE_K * dz²` HP.
 pub const FALL_DAMAGE_K: f32 = 1.5;
 
+/// Step-interval multiplier applied while a player is sneaking. Sneaking trades
+/// speed for stealth, so each step takes longer to recover from. `[tunable]` —
+/// see `docs/utility_systems.md` §7.
+pub const SNEAK_SLOW_FACTOR: f32 = 1.75;
+
 /// DC for an attempted climb of `dz` half-blocks. `dz = 2` (one full block,
 /// e.g. a barrel) is DC 10; every additional half-block adds 5 to the DC.
 pub const fn climb_dc(dz: i32) -> i32 {

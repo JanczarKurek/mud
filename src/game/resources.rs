@@ -102,6 +102,11 @@ pub enum GameUiEvent {
         attacker_object_id: u64,
         target_object_id: u64,
     },
+    /// A hostile NPC just spotted the local player (fresh aggro). One-shot cue
+    /// for a "you've been seen!" toast/sound. `npc_object_id` is the spotter.
+    Spotted {
+        npc_object_id: u64,
+    },
     /// An attack was partially mitigated by the target's shield. `amount` is
     /// the absorbed damage (post-roll), useful for floating-text feedback.
     AttackBlocked {
@@ -298,6 +303,20 @@ pub struct ClientCombatStats {
     pub has_shield: bool,
 }
 
+/// What a hostile NPC currently knows about the local player, as revealed to
+/// them by a successful Perception "read" (see `player::sense`). Drives the
+/// over-head awareness marker. `None` on the world object means the player
+/// hasn't read this NPC (or the read lapsed) — they're sneaking blind.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+pub enum NpcAwareness {
+    /// Hasn't noticed the player (Wander, no target).
+    Unaware,
+    /// Suspicious — investigating a last-seen tile or a noise (Alert).
+    Searching,
+    /// Has the player as its combat target (Pursue/Engage) — it sees you.
+    Alerted,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ClientWorldObjectState {
     pub object_id: u64,
@@ -340,6 +359,12 @@ pub struct ClientWorldObjectState {
     /// `compute_events_for_peer`.
     #[serde(default)]
     pub is_targeting_local_player: bool,
+    /// This NPC's awareness of the local player, but only when the player has
+    /// successfully "read" it via a Perception check (`player::sense`). `None`
+    /// when unread — the over-head marker is the player-facing payoff of the
+    /// Perception/Stealth contest. Computed per-peer in `compute_events_for_peer`.
+    #[serde(default)]
+    pub awareness: Option<NpcAwareness>,
     /// Monotonic server-side placement stamp. Tiebreaker after `tile_position.z`
     /// for both the renderer and the pickup selector, so the most-recently
     /// placed item at a tile is visually on top and is picked up first.
@@ -407,6 +432,12 @@ pub enum GameEvent {
     /// resolution; an empty vec clears the HUD.
     PlayerEffectsChanged {
         effects: Vec<ClientActiveEffect>,
+    },
+    /// The local player's sneaking state changed. Drives the HUD "Sneaking"
+    /// indicator. State, not a one-shot signal — folded into
+    /// `ClientGameState.sneaking`.
+    PlayerSneakingChanged {
+        sneaking: bool,
     },
     PlayerStorageChanged {
         storage_slots: usize,
@@ -687,6 +718,10 @@ pub struct ClientGameState {
     /// systems (e.g. Glimmer light expansion) read from it.
     #[serde(default)]
     pub active_effects: Vec<ClientActiveEffect>,
+    /// Whether the local player is currently sneaking. Driven by
+    /// `PlayerSneakingChanged`; the HUD renders a "Sneaking" indicator.
+    #[serde(default)]
+    pub sneaking: bool,
     /// Replicated carry-weight snapshot for the local player. `None` until
     /// the first `PlayerCarryWeightChanged` event arrives — typically on the
     /// first frame the player exists.
