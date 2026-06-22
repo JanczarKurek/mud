@@ -71,6 +71,49 @@ def _mud_first_doc(obj):
 def _mud_public_members(obj):
     return [n for n in dir(obj) if not n.startswith("_")]
 
+class _IdNamespace:
+    """Tab-completable access to spawnable ids. Flat ids are direct attributes
+    (world.types.health_potion -> 'health_potion'); module ids nest on their
+    '/' separator (world.types.haunted_mill.moonshade_grain ->
+    'haunted_mill/moonshade_grain'). For an id with characters that aren't
+    valid attribute names, subscript by the full string: world.types['mod/id'].
+    Pass the resolved string to world.spawn / world.cast_spell."""
+    def __init__(self, lister, name, prefix=""):
+        self._lister = lister     # () -> list[str] of FULL ids
+        self._name = name         # "types" / "spells", for messages
+        self._prefix = prefix     # "" at the root, "haunted_mill/" inside a module
+    def _segments(self):
+        # The next path segment after self._prefix for every id beneath it.
+        out = []
+        for full in self._lister():
+            if full.startswith(self._prefix):
+                out.append(full[len(self._prefix):].split("/", 1)[0])
+        return out
+    def __dir__(self):
+        return sorted(set(self._segments()))
+    def __getattr__(self, attr):
+        ids = self._lister()
+        full = self._prefix + attr
+        if full in ids:
+            return full                                  # exact leaf id
+        if any(i.startswith(full + "/") for i in ids):
+            return _IdNamespace(self._lister, self._name, full + "/")  # module branch
+        raise AttributeError("world.%s has no id %r" % (self._name, full))
+    def __getitem__(self, key):
+        ids = self._lister()
+        full = key if key in ids else self._prefix + key
+        if full in ids:
+            return full
+        raise KeyError("world.%s has no id %r" % (self._name, key))
+    def __repr__(self):
+        return "<world.%s%s: %d entries — dir() or Tab>" % (
+            self._name, "." + self._prefix.rstrip("/") if self._prefix else "",
+            len(set(self._segments())))
+
+# Attached to the `world` module so they're namespaced + discoverable.
+world.types = _IdNamespace(world.object_types, "types")
+world.spells = _IdNamespace(world.spell_ids, "spells")
+
 def help(obj=None):
     """help() shows the world overview; help(world.spawn) a verb's full
     docstring; help(world.player()) dumps a Player's live fields + methods."""
@@ -324,44 +367,52 @@ impl PythonConsoleHost {
     /// caller replaces only the trailing token. Only a *pure dotted-name*
     /// base is evaluated — a base ending in a call/subscript (`world.player()`)
     /// is refused, so completion never executes a side-effecting expression.
-    pub fn complete_at(&self, text_before_cursor: &str) -> Vec<String> {
+    ///
+    /// `snapshot` is installed as the API context for the duration so that
+    /// snapshot-backed introspection resolves — most importantly
+    /// `dir(world.types)` / `dir(world.spells)`, which enumerate the spawnable
+    /// id strings.
+    pub fn complete_at(&self, text_before_cursor: &str, snapshot: WorldSnapshot) -> Vec<String> {
         let attr_prefix = trailing_identifier(text_before_cursor).to_owned();
         let head = &text_before_cursor[..text_before_cursor.len() - attr_prefix.len()];
         // `Some(base)` ⇒ dotted access; `base` is `None` when the thing
         // before the dot isn't safe to evaluate. `None` ⇒ bare identifier.
         let base: Option<Option<String>> = head.strip_suffix('.').map(evaluable_base);
 
-        self.interpreter.enter(|vm| {
-            let mut names: Vec<String> = match base {
-                Some(Some(base_src)) => {
-                    let Ok(code) = vm.compile(&base_src, Mode::Eval, "<complete>".to_owned())
-                    else {
-                        return Vec::new();
-                    };
-                    match vm.run_code_obj(code, (*self.scope).clone()) {
-                        Ok(obj) => dir_names(vm, &obj),
-                        Err(_) => return Vec::new(),
+        let ctx: Arc<dyn ApiContext> = Arc::new(AdminApiContext::new(snapshot));
+        install_ctx(ctx, || {
+            self.interpreter.enter(|vm| {
+                let mut names: Vec<String> = match base {
+                    Some(Some(base_src)) => {
+                        let Ok(code) = vm.compile(&base_src, Mode::Eval, "<complete>".to_owned())
+                        else {
+                            return Vec::new();
+                        };
+                        match vm.run_code_obj(code, (*self.scope).clone()) {
+                            Ok(obj) => dir_names(vm, &obj),
+                            Err(_) => return Vec::new(),
+                        }
                     }
-                }
-                // Dotted, but the base ends in a call/subscript/operator —
-                // refuse rather than risk evaluating it.
-                Some(None) => return Vec::new(),
-                None => {
-                    // A bare empty prefix is a Tab on whitespace; don't dump
-                    // the whole namespace.
-                    if attr_prefix.is_empty() {
-                        return Vec::new();
+                    // Dotted, but the base ends in a call/subscript/operator —
+                    // refuse rather than risk evaluating it.
+                    Some(None) => return Vec::new(),
+                    None => {
+                        // A bare empty prefix is a Tab on whitespace; don't dump
+                        // the whole namespace.
+                        if attr_prefix.is_empty() {
+                            return Vec::new();
+                        }
+                        let mut names = global_names(vm, &self.scope);
+                        let builtins: PyObjectRef = vm.builtins.clone().into();
+                        names.extend(dir_names(vm, &builtins));
+                        names
                     }
-                    let mut names = global_names(vm, &self.scope);
-                    let builtins: PyObjectRef = vm.builtins.clone().into();
-                    names.extend(dir_names(vm, &builtins));
-                    names
-                }
-            };
-            names.retain(|s| s.starts_with(&attr_prefix));
-            names.sort();
-            names.dedup();
-            names
+                };
+                names.retain(|s| s.starts_with(&attr_prefix));
+                names.sort();
+                names.dedup();
+                names
+            })
         })
     }
 }
@@ -467,7 +518,7 @@ mod tests {
     #[test]
     fn complete_dotted_world_members() {
         let host = PythonConsoleHost::new();
-        let matches = host.complete_at("world.sp");
+        let matches = host.complete_at("world.sp", WorldSnapshot::default());
         assert!(matches.iter().any(|m| m == "spawn"), "got {matches:?}");
         assert!(
             matches.iter().all(|m| m.starts_with("sp")),
@@ -478,7 +529,7 @@ mod tests {
     #[test]
     fn complete_dotted_empty_lists_all_members() {
         let host = PythonConsoleHost::new();
-        let matches = host.complete_at("world.");
+        let matches = host.complete_at("world.", WorldSnapshot::default());
         assert!(matches.iter().any(|m| m == "spawn"), "got {matches:?}");
         assert!(matches.iter().any(|m| m == "help"), "got {matches:?}");
     }
@@ -486,21 +537,147 @@ mod tests {
     #[test]
     fn complete_bare_prefix_includes_globals() {
         let host = PythonConsoleHost::new();
-        let matches = host.complete_at("wor");
+        let matches = host.complete_at("wor", WorldSnapshot::default());
         assert!(matches.iter().any(|m| m == "world"), "got {matches:?}");
     }
 
     #[test]
     fn complete_refuses_call_base_and_unknown_name() {
         let host = PythonConsoleHost::new();
-        assert!(host.complete_at("world.player().fo").is_empty());
-        assert!(host.complete_at("nonexistent_obj.fo").is_empty());
+        assert!(host
+            .complete_at("world.player().fo", WorldSnapshot::default())
+            .is_empty());
+        assert!(host
+            .complete_at("nonexistent_obj.fo", WorldSnapshot::default())
+            .is_empty());
     }
 
     #[test]
     fn complete_bare_empty_returns_nothing() {
         let host = PythonConsoleHost::new();
-        assert!(host.complete_at("   ").is_empty());
+        assert!(host.complete_at("   ", WorldSnapshot::default()).is_empty());
+    }
+
+    #[test]
+    fn complete_spawn_ids_via_types_namespace() {
+        let host = PythonConsoleHost::new();
+        let mut snapshot = WorldSnapshot::default();
+        snapshot.object_types = vec![
+            "health_potion".to_owned(),
+            "healing_herb".to_owned(),
+            "bronze_sword".to_owned(),
+        ];
+        let matches = host.complete_at("world.types.heal", snapshot);
+        assert!(
+            matches.iter().any(|m| m == "health_potion"),
+            "got {matches:?}"
+        );
+        assert!(
+            matches.iter().all(|m| m.starts_with("heal")),
+            "expected only heal* ids, got {matches:?}"
+        );
+        assert!(
+            !matches.iter().any(|m| m == "bronze_sword"),
+            "should be prefix-filtered, got {matches:?}"
+        );
+    }
+
+    #[test]
+    fn types_namespace_resolves_to_id_string() {
+        let mut host = PythonConsoleHost::new();
+        let mut snapshot = WorldSnapshot::default();
+        snapshot.object_types = vec!["health_potion".to_owned()];
+        let out = host.execute("world.types.health_potion", snapshot);
+        let text: String = out
+            .lines
+            .iter()
+            .map(|(l, _)| l.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            text.contains("'health_potion'"),
+            "expected id string, got {text:?}"
+        );
+    }
+
+    #[test]
+    fn types_namespace_nests_module_ids_on_slash() {
+        let host = PythonConsoleHost::new();
+        let mut snapshot = WorldSnapshot::default();
+        snapshot.object_types = vec![
+            "health_potion".to_owned(),
+            "haunted_mill/moonshade_grain".to_owned(),
+            "haunted_mill/rusty_gear".to_owned(),
+        ];
+        // Top level offers the module as a single branch (its '/' ids collapse
+        // to one segment), never the slashed id itself.
+        let top = host.complete_at("world.types.haun", snapshot.clone());
+        assert_eq!(top, vec!["haunted_mill".to_owned()], "got {top:?}");
+
+        // Descending into the module completes its leaf ids.
+        let nested = host.complete_at("world.types.haunted_mill.moon", snapshot);
+        assert!(
+            nested.iter().any(|m| m == "moonshade_grain"),
+            "got {nested:?}"
+        );
+        assert!(
+            nested.iter().all(|m| m.starts_with("moon")),
+            "got {nested:?}"
+        );
+    }
+
+    #[test]
+    fn types_namespace_resolves_module_id_to_full_slash_string() {
+        let mut host = PythonConsoleHost::new();
+        let mut snapshot = WorldSnapshot::default();
+        snapshot.object_types = vec!["haunted_mill/moonshade_grain".to_owned()];
+        let out = host.execute("world.types.haunted_mill.moonshade_grain", snapshot);
+        let text: String = out
+            .lines
+            .iter()
+            .map(|(l, _)| l.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            text.contains("'haunted_mill/moonshade_grain'"),
+            "expected full slashed id, got {text:?}"
+        );
+    }
+
+    #[test]
+    fn types_namespace_subscript_resolves_any_full_id() {
+        let mut host = PythonConsoleHost::new();
+        let mut snapshot = WorldSnapshot::default();
+        snapshot.object_types = vec!["haunted_mill/moonshade_grain".to_owned()];
+        let out = host.execute("world.types['haunted_mill/moonshade_grain']", snapshot);
+        let text: String = out
+            .lines
+            .iter()
+            .map(|(l, _)| l.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            text.contains("'haunted_mill/moonshade_grain'"),
+            "got {text:?}"
+        );
+    }
+
+    #[test]
+    fn types_namespace_unknown_id_raises_attribute_error() {
+        let mut host = PythonConsoleHost::new();
+        let mut snapshot = WorldSnapshot::default();
+        snapshot.object_types = vec!["health_potion".to_owned()];
+        let out = host.execute("world.types.no_such_thing", snapshot);
+        let text: String = out
+            .lines
+            .iter()
+            .map(|(l, _)| l.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            text.contains("AttributeError"),
+            "expected AttributeError, got {text:?}"
+        );
     }
 
     /// Join a run's output lines, asserting nothing raised.

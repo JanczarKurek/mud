@@ -52,6 +52,7 @@ const HELP_CATEGORIES: &[(&str, &[&str])] = &[
             "player_position",
         ],
     ),
+    ("Spawn ids (Tab-completable)", &["types", "spells"]),
     (
         "Inventory & items",
         &["give", "take", "player_give", "player_take", "move_item"],
@@ -543,7 +544,8 @@ pub mod world_api {
     /// `spawn(type_id, x, y, z=0)` — spawn an object at the caller's
     /// current space. Raises `ValueError` if any of `type_id` / `x` / `y`
     /// is missing. The caller must have a space; in the headless admin
-    /// REPL, `world.attach_player(id)` first.
+    /// REPL, `world.attach_player(id)` first. Tip: `world.types.<Tab>` lists
+    /// every spawnable id, e.g. `world.spawn(world.types.health_potion, x, y)`.
     #[pyfunction]
     fn spawn(args: FuncArgs, vm: &VirtualMachine) -> PyResult<()> {
         let type_id: String = args
@@ -746,6 +748,7 @@ pub mod world_api {
 
     /// `cast_spell(spell_id, target_object_id)` — cast a spell from
     /// `assets/spells/` at a target object. The caller pays the mana cost.
+    /// Tip: `world.spells.<Tab>` lists every spell id.
     #[pyfunction]
     fn cast_spell(spell_id: String, target_object_id: i64, vm: &VirtualMachine) -> PyResult<()> {
         if target_object_id < 0 {

@@ -116,6 +116,8 @@ pub fn handle_python_console_completion(
     mut requests: MessageReader<TerminalCompletionRequest>,
     host: NonSend<PythonConsoleHost>,
     mut terminals: Query<&mut Terminal, With<PythonConsoleTerminal>>,
+    snapshot_params: WorldSnapshotParams,
+    local_player_query: Query<&PlayerIdentity, With<Player>>,
 ) {
     for request in requests.read() {
         let Ok(mut terminal) = terminals.get_mut(request.terminal) else {
@@ -123,9 +125,12 @@ pub fn handle_python_console_completion(
         };
         // `complete_at` sees the full prefix so it can resolve dotted access
         // (`world.sp` → `spawn`); `token` is just the trailing identifier we
-        // replace, so the `world.` part is left intact.
+        // replace, so the `world.` part is left intact. A snapshot is built so
+        // snapshot-backed completions like `world.types.<id>` resolve.
         let token = trailing_identifier(&request.text_before_cursor);
-        let mut matches = host.complete_at(&request.text_before_cursor);
+        let caller = local_player_query.iter().next().map(|identity| identity.id);
+        let snapshot = snapshot_params.build_for_player(caller);
+        let mut matches = host.complete_at(&request.text_before_cursor, snapshot);
         matches.retain(|m| !m.starts_with('_'));
         match matches.as_slice() {
             [] => {}
