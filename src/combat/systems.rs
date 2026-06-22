@@ -196,6 +196,7 @@ pub fn resolve_battle_turn(
         )>,
         Query<&mut Inventory, With<Player>>,
         Query<&mut SpellcastingProfile>,
+        Query<&mut crate::player::components::Exertion, With<Player>>,
     )>,
     definitions: Res<OverworldObjectDefinitions>,
     object_registry: Res<ObjectRegistry>,
@@ -462,6 +463,15 @@ pub fn resolve_battle_turn(
             attacker.position,
             crate::world::noise::ATTACK_NOISE,
         );
+
+        // Swinging a weapon is tiring — a committed attack costs the player
+        // exertion whether it lands or misses (`utility_systems.md` §6.1).
+        if attacker.is_player {
+            let mut exertion_query = combat_queries.p4();
+            if let Ok(mut exertion) = exertion_query.get_mut(attacker.entity) {
+                exertion.add(crate::player::exertion::EXERTION_COST_ATTACK);
+            }
+        }
 
         // Stage 1: to-hit roll vs dodge DC. Misses spend ammo and play the
         // projectile but deal no damage.
@@ -771,6 +781,7 @@ fn execute_npc_spell_cast(
         )>,
         Query<&mut Inventory, With<Player>>,
         Query<&mut SpellcastingProfile>,
+        Query<&mut crate::player::components::Exertion, With<Player>>,
     )>,
     ui_events: &mut PendingGameUiEvents,
     pending_damage: &mut PendingDamageEvents,

@@ -6,9 +6,9 @@ use crate::magic::effects::MagicEffects;
 use crate::persistence::{PlayerStateDump, WorldSnapshotStatus};
 use crate::player::classes::Class;
 use crate::player::components::{
-    AppearanceRegion, BaseStats, ChatLog, DefenseStats, DerivedStats, DiscoveredTiles, Inventory,
-    MovementCooldown, Player, PlayerAppearance, PlayerId, PlayerIdentity, RegenBuffs, RegenTickers,
-    SpriteLayer, VitalStats, WeaponDamage,
+    AppearanceRegion, BaseStats, ChatLog, DefenseStats, DerivedStats, DiscoveredTiles, Exertion,
+    Inventory, MovementCooldown, Player, PlayerAppearance, PlayerId, PlayerIdentity, RegenBuffs,
+    RegenTickers, SpriteLayer, VitalStats, WeaponDamage,
 };
 use crate::player::loadout::StartingLoadout;
 use crate::player::progression::Experience;
@@ -256,6 +256,7 @@ pub fn spawn_player_from_dump(
                 dump.combat_leash,
                 RegenTickers::default(),
                 RegenBuffs::default(),
+                Exertion::default(),
                 dump.magic_effects,
                 stash,
             ),
@@ -322,6 +323,7 @@ pub fn spawn_player_authoritative_in_space(
                 },
                 RegenTickers::default(),
                 RegenBuffs::default(),
+                Exertion::default(),
                 MagicEffects::default(),
                 CharacterStash::default(),
             ),

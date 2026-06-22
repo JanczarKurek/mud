@@ -14,7 +14,8 @@ use std::collections::HashMap;
 use bevy::prelude::*;
 
 use crate::npc::components::{HostileBehavior, Npc};
-use crate::player::components::{BaseStats, Player, Sneaking};
+use crate::player::components::{BaseStats, Exertion, Player, Sneaking};
+use crate::player::exertion::{exertion_dc_modifier, EXERTION_COST_SNEAK_PER_SEC};
 use crate::player::skills::{skill_check, Skill};
 use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
 
@@ -69,16 +70,28 @@ pub fn tick_player_sense(
             &crate::player::skills::SkillSheet,
             Has<Sneaking>,
             Option<&mut SenseReveals>,
+            Option<&mut Exertion>,
         ),
         With<Player>,
     >,
-    npc_q: Query<(&OverworldObject, &SpaceResident, &TilePosition), (With<Npc>, With<HostileBehavior>)>,
+    npc_q: Query<
+        (&OverworldObject, &SpaceResident, &TilePosition),
+        (With<Npc>, With<HostileBehavior>),
+    >,
 ) {
     let dt = time.delta_secs();
     let elapsed = time.elapsed_secs();
 
-    for (entity, player_space, player_tile, base_stats, skill_sheet, sneaking, reveals) in
-        &mut player_q
+    for (
+        entity,
+        player_space,
+        player_tile,
+        base_stats,
+        skill_sheet,
+        sneaking,
+        reveals,
+        mut exertion,
+    ) in &mut player_q
     {
         let Some(mut reveals) = reveals else {
             // First time we see this player — attach the component; it starts
@@ -101,6 +114,13 @@ pub fn tick_player_sense(
         }
         reveals.cooldown = SENSE_INTERVAL;
 
+        // Sustained sneaking is tiring (once-per-interval cost), and fatigue
+        // raises the read DC. Read the penalty before charging the cost.
+        let fatigue_dc = exertion_dc_modifier(exertion.as_deref());
+        if let Some(e) = exertion.as_mut() {
+            e.add(EXERTION_COST_SNEAK_PER_SEC);
+        }
+
         for (object, npc_space, npc_tile) in &npc_q {
             if npc_space.space_id != player_space.space_id {
                 continue;
@@ -109,8 +129,14 @@ pub fn tick_player_sense(
             if distance > SENSE_RANGE {
                 continue;
             }
-            let dc = SENSE_BASE_DC + distance;
-            let result = skill_check(skill_sheet, &base_stats.attributes, Skill::Perception, dc, 0);
+            let dc = SENSE_BASE_DC + distance + fatigue_dc;
+            let result = skill_check(
+                skill_sheet,
+                &base_stats.attributes,
+                Skill::Perception,
+                dc,
+                0,
+            );
             if result.success {
                 reveals
                     .revealed

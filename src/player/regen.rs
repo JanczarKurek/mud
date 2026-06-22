@@ -12,7 +12,21 @@
 
 use bevy::prelude::*;
 
-use crate::player::components::{DerivedStats, Player, RegenBuffs, RegenTickers, VitalStats};
+use crate::player::components::{
+    DerivedStats, Exertion, Player, RegenBuffs, RegenTickers, VitalStats,
+};
+use crate::player::exertion::exertion_regen_multiplier;
+use crate::player::skills::{Skill, SkillSheet};
+
+/// Per-rank regen speed-up from Endurance (`utility_systems.md` §6.1). Rank 0 →
+/// ×1.0; each rank adds 4%, so a maxed Endurance (~13 ranks at L10) → ~×1.52.
+const ENDURANCE_REGEN_PER_RANK: f32 = 0.04;
+
+/// Regen-rate multiplier from the player's Endurance rank.
+fn endurance_regen_multiplier(sheet: Option<&SkillSheet>) -> f32 {
+    let rank = sheet.map_or(0, |s| s.rank(Skill::Endurance)) as f32;
+    1.0 + rank * ENDURANCE_REGEN_PER_RANK
+}
 
 /// Base health regen interval (seconds per HP) at constitution = 0.
 /// Plug into the actual formula: `60 / (2 + constitution / 5)`.
@@ -62,6 +76,8 @@ pub fn tick_vital_regen(
             &mut RegenTickers,
             &DerivedStats,
             Option<&RegenBuffs>,
+            Option<&SkillSheet>,
+            Option<&Exertion>,
         ),
         With<Player>,
     >,
@@ -71,12 +87,18 @@ pub fn tick_vital_regen(
         return;
     }
 
-    for (mut vitals, mut tickers, derived, buffs) in query.iter_mut() {
+    for (mut vitals, mut tickers, derived, buffs, sheet, exertion) in query.iter_mut() {
         if vitals.health <= 0.0 {
             continue;
         }
 
-        let multiplier = buffs.map_or(1.0, |b| if b.is_active() { b.multiplier } else { 1.0 });
+        // Compose the three regen modifiers into one rate scalar: food/drink
+        // buff × Endurance speed-up × exertion penalty. Floored so regen never
+        // fully stops.
+        let food = buffs.map_or(1.0, |b| if b.is_active() { b.multiplier } else { 1.0 });
+        let endurance = endurance_regen_multiplier(sheet);
+        let fatigue = exertion_regen_multiplier(exertion);
+        let multiplier = (food * endurance * fatigue).max(0.05);
 
         if vitals.health < vitals.max_health {
             tickers.health_remaining -= dt;
@@ -189,5 +211,33 @@ mod tests {
         let h = health_interval_seconds(&derived, 1.0);
         let m = mana_interval_seconds(&derived, 1.0);
         assert!(m < h);
+    }
+
+    #[test]
+    fn endurance_speeds_regen() {
+        use crate::player::skills::{Skill, SkillSheet};
+        let mut sheet = SkillSheet::default();
+        assert!((endurance_regen_multiplier(Some(&sheet)) - 1.0).abs() < f32::EPSILON);
+        sheet.set_rank(Skill::Endurance, 10);
+        let m10 = endurance_regen_multiplier(Some(&sheet));
+        assert!(m10 > 1.0);
+        // A higher multiplier shortens the regen interval (faster regen).
+        let derived = derived_with(10, 10);
+        assert!(health_interval_seconds(&derived, m10) < health_interval_seconds(&derived, 1.0));
+    }
+
+    #[test]
+    fn composed_multiplier_respects_floor() {
+        use crate::player::components::{Exertion, EXERTION_BASE_MAX};
+        // Worst case: no food, no endurance, a full exertion meter. The fatigue
+        // penalty bottoms at EXERTION_REGEN_FLOOR (0.5), so the composed rate is
+        // still well above the 0.05 floor — regen slows but never stalls.
+        let exhausted = Exertion {
+            current: EXERTION_BASE_MAX,
+            max: EXERTION_BASE_MAX,
+        };
+        let fatigue = crate::player::exertion::exertion_regen_multiplier(Some(&exhausted));
+        let composed = (1.0_f32 * 1.0 * fatigue).max(0.05);
+        assert!(composed < 1.0 && composed >= 0.05);
     }
 }

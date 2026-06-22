@@ -1,6 +1,8 @@
 pub mod admin_progression;
+pub mod check;
 pub mod classes;
 pub mod components;
+pub mod exertion;
 pub mod lifecycle;
 pub mod loadout;
 pub mod progression;
@@ -16,6 +18,7 @@ use crate::app::state::{simulation_active, ClientAppState};
 use crate::player::admin_progression::{
     process_admin_progression_commands, process_admin_toggle_commands,
 };
+use crate::player::exertion::tick_exertion;
 use crate::player::lifecycle::{
     handle_player_deaths, handle_set_home_commands, process_acknowledge_death_commands,
     PendingPlayerDeaths,
@@ -50,9 +53,11 @@ impl Plugin for PlayerServerPlugin {
                     .after(crate::combat::systems::resolve_battle_turn)
                     .run_if(simulation_active),
             )
+            // `tick_exertion` decays the fatigue meter; it runs before
+            // `tick_vital_regen` so the regen penalty reads the post-decay value.
             .add_systems(
                 Update,
-                (tick_regen_buffs, tick_vital_regen).run_if(simulation_active),
+                (tick_regen_buffs, tick_exertion, tick_vital_regen).run_if(simulation_active),
             )
             // Drain SetHome from PendingGameCommands *before* process_game_commands;
             // CommandIntercept handles the cross-plugin ordering that a bare

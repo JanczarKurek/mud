@@ -732,6 +732,23 @@ pub fn sync_vital_bars(
     }
 }
 
+/// Updates the status-panel Stamina bar from the replicated
+/// `ClientGameState.exertion`. The bar shows *remaining* stamina
+/// (`max − current`), so it depletes as the player exerts and a full bar means
+/// rested.
+pub fn sync_exertion_bar(
+    client_state: Res<ClientGameState>,
+    mut exertion_query: Query<&mut Node, With<crate::ui::components::ExertionFill>>,
+) {
+    let Some(exertion) = client_state.exertion else {
+        return;
+    };
+    let stamina_ratio = normalized_ratio(exertion.max - exertion.current, exertion.max);
+    for mut node in &mut exertion_query {
+        node.width = percent(stamina_ratio * 100.0);
+    }
+}
+
 /// Updates the status-panel weight readout from the replicated
 /// `ClientCarryWeight`. Renders `Weight: 8.4 / 40 kg` plus an
 /// "(Encumbered)" tag — color set per-frame to mark the encumbered state in

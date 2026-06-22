@@ -14,18 +14,18 @@ use crate::ui::components::{
     DockedPanelCanvas, DockedPanelCloseButton, DockedPanelDragHandle, DockedPanelResizeHandle,
     DockedPanelRoot, DockedPanelTitle, DragPreviewImage, DragPreviewLabel, DragPreviewQuantity,
     DragPreviewRoot, EquipmentPanelContent, EquipmentPanelUndockButton, EquipmentSlotButton,
-    EquipmentSlotImage, EquipmentSlotLabel, ExperienceFill, ExperienceLabel,
-    FloatingMinimapZoomInButton, FloatingMinimapZoomLabel, FloatingMinimapZoomOutButton,
-    HealthFill, HealthLabel, HudMinimapZoomInButton, HudMinimapZoomLabel, HudMinimapZoomOutButton,
-    HudRoot, ItemSlotButton, ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ItemTooltipLabel,
-    ItemTooltipRoot, JumpInfoBoxLabel, JumpInfoBoxRoot, JumpTileHighlight, MagicEffectsLabel,
-    ManaFill, ManaLabel, MinimapCanvas, MinimapMode, MinimapPanelUndockButton, MinimapView,
-    NearbyNpcsList, NearbyNpcsPanelUndockButton, PythonConsoleMaximizeButton, PythonConsolePanel,
+    EquipmentSlotImage, EquipmentSlotLabel, ExertionFill, ExertionLabel, ExperienceFill,
+    ExperienceLabel, FloatingMinimapZoomInButton, FloatingMinimapZoomLabel,
+    FloatingMinimapZoomOutButton, HealthFill, HealthLabel, HudMinimapZoomInButton,
+    HudMinimapZoomLabel, HudMinimapZoomOutButton, HudRoot, ItemSlotButton, ItemSlotImage,
+    ItemSlotKind, ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot, JumpInfoBoxLabel,
+    JumpInfoBoxRoot, JumpTileHighlight, MagicEffectsLabel, ManaFill, ManaLabel, MinimapCanvas,
+    MinimapMode, MinimapPanelUndockButton, MinimapView, NearbyNpcsList,
+    NearbyNpcsPanelUndockButton, PythonConsoleMaximizeButton, PythonConsolePanel,
     PythonConsoleRestartButton, PythonConsoleTerminal, RegenBuffLabel, RightSidebarRoot,
     SneakingLabel, StatusPanelContent, StatusPanelUndockButton, TakePartialAmountLabel,
-    TakePartialCancelButton,
-    TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot,
-    TradeButtonLabel, TradeColumn,
+    TakePartialCancelButton, TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton,
+    TakePartialPopupRoot, TradeButtonLabel, TradeColumn,
 };
 use crate::ui::menu_bar::{spawn_menu_bar, MENU_BAR_HEIGHT};
 use crate::ui::minimap::{make_minimap_image, FULL_MAP_BODY_SIZE, HUD_MINIMAP_SIZE};
@@ -789,6 +789,14 @@ pub(crate) fn spawn_status_panel_body(parent: &mut ChildSpawnerCommands, palette
                 palette.vital_experience_fill,
                 ExperienceFill,
                 ExperienceLabel,
+            );
+            spawn_vital_bar(
+                panel,
+                palette,
+                "ST",
+                palette.vital_exertion_fill,
+                ExertionFill,
+                ExertionLabel,
             );
             // Regen buff timer label. Always rendered; `sync_regen_buff_label`
             // writes the timer string while the buff is active and clears it

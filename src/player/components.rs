@@ -885,6 +885,63 @@ impl RegenBuffs {
     }
 }
 
+/// Base exertion cap at Constitution 10. See `docs/utility_systems.md` §6.1.
+pub const EXERTION_BASE_MAX: f32 = 100.0;
+/// Ratio of the cap at/above which the HP/mana regen penalty begins. (The
+/// physical-check DC penalty has its own, sharper ramp — see
+/// `crate::player::exertion::exertion_dc_modifier`.)
+pub const EXERTION_HIGH_THRESHOLD: f32 = 0.75;
+
+/// Per-player fatigue accumulator (the Medium-sim currency,
+/// `docs/utility_systems.md` §6.1). `current` runs 0 (rested) → `max`
+/// (exhausted); the HUD presents the inverse as a depleting **Stamina** bar.
+/// Raised by physical effort (climb, jump, sustained sneaking, combat); lowered
+/// by idle rest and food/drink (see `crate::player::exertion`). High exertion
+/// raises the DC of physical checks and slows HP/mana regen. The cap is
+/// governed by **Constitution** (recovery by **Willpower**), recomputed in
+/// `refresh_derived_player_stats`.
+///
+/// Session-only — never persisted (parity with `RegenTickers` / `Sneaking`); a
+/// character always loads rested. Replicated to the owning client via
+/// `GameEvent::PlayerExertionChanged`; presentation reads
+/// `ClientGameState.exertion`, never this authoritative component.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct Exertion {
+    pub current: f32,
+    pub max: f32,
+}
+
+impl Default for Exertion {
+    fn default() -> Self {
+        Self {
+            current: 0.0,
+            max: EXERTION_BASE_MAX,
+        }
+    }
+}
+
+impl Exertion {
+    /// Add fatigue (or subtract, with a negative `amount`), clamped to `0..=max`.
+    pub fn add(&mut self, amount: f32) {
+        self.current = (self.current + amount).clamp(0.0, self.max);
+    }
+
+    /// Fraction of the cap currently filled, `0.0..=1.0`.
+    pub fn ratio(&self) -> f32 {
+        if self.max <= 0.0 {
+            0.0
+        } else {
+            (self.current / self.max).clamp(0.0, 1.0)
+        }
+    }
+
+    /// True once exertion reaches the high threshold — the point at which
+    /// penalties kick in.
+    pub fn is_high(&self) -> bool {
+        self.ratio() >= EXERTION_HIGH_THRESHOLD
+    }
+}
+
 /// Per-player "have I seen this tile?" set. Server-authoritative; the
 /// discovery system (`crate::game::discovery`) is the sole writer. Replicated
 /// to the owning client via `GameEvent::DiscoveredTilesReplaced` and

@@ -63,6 +63,7 @@ pub struct Palette {
     pub vital_health_fill: Color,
     pub vital_mana_fill: Color,
     pub vital_experience_fill: Color,
+    pub vital_exertion_fill: Color,
 }
 
 impl Default for Palette {
@@ -125,6 +126,7 @@ impl Default for Palette {
             vital_health_fill: Color::srgb(0.70, 0.16, 0.18),
             vital_mana_fill: Color::srgb(0.14, 0.35, 0.78),
             vital_experience_fill: Color::srgb(0.86, 0.72, 0.32),
+            vital_exertion_fill: Color::srgb(0.85, 0.45, 0.10),
         }
     }
 }

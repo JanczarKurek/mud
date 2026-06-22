@@ -23,10 +23,10 @@ use bevy::prelude::*;
 use crate::combat::components::{AttackProfile, CombatTarget};
 use crate::dialog::components::DialogNode;
 use crate::game::resources::{
-    ChatLogState, ClientActiveEffect, ClientCarryWeight, ClientCombatStats, ClientGameState,
-    ClientRemotePlayerState, ClientSpaceState, ClientStateRevisions, ClientVitalStats,
-    ClientWorldObjectState, GameEvent, InventoryState, NpcAwareness, PendingGameEvents,
-    RegenBuffState,
+    ChatLogState, ClientActiveEffect, ClientCarryWeight, ClientCombatStats, ClientExertion,
+    ClientGameState, ClientRemotePlayerState, ClientSpaceState, ClientStateRevisions,
+    ClientVitalStats, ClientWorldObjectState, GameEvent, InventoryState, NpcAwareness,
+    PendingGameEvents, RegenBuffState,
 };
 use crate::game::shop::{Shopkeeper, StockMode, Stockpile};
 use crate::game::trade::{ActiveTrades, TradeParticipants, TradePartnerKind, WareView};
@@ -97,6 +97,7 @@ pub type ProjectionPlayerQuery<'w, 's> = Query<
             Option<&'static DiscoveredTiles>,
             Has<crate::player::components::Sneaking>,
             Option<&'static crate::player::sense::SenseReveals>,
+            Option<&'static crate::player::components::Exertion>,
         ),
     ),
     With<Player>,
@@ -228,6 +229,7 @@ pub fn compute_events_for_peer(
             discovered_tiles,
             is_sneaking,
             sense_reveals,
+            exertion,
         ),
     ) in player_query.iter()
     {
@@ -371,6 +373,25 @@ pub fn compute_events_for_peer(
             if previous.sneaking != is_sneaking {
                 events.push(GameEvent::PlayerSneakingChanged {
                     sneaking: is_sneaking,
+                });
+            }
+
+            // Exertion decays continuously, so diff at whole-point resolution
+            // (and an epsilon on the cap) to avoid emitting an event every frame.
+            let projected_exertion = exertion.map(|e| ClientExertion {
+                current: e.current,
+                max: e.max,
+            });
+            let exertion_changed = match (&previous.exertion, &projected_exertion) {
+                (None, None) => false,
+                (Some(_), None) | (None, Some(_)) => true,
+                (Some(a), Some(b)) => {
+                    a.current.round() != b.current.round() || (a.max - b.max).abs() > 0.5
+                }
+            };
+            if exertion_changed {
+                events.push(GameEvent::PlayerExertionChanged {
+                    exertion: projected_exertion.unwrap_or_default(),
                 });
             }
 
@@ -984,6 +1005,9 @@ pub fn apply_event_to_state(state: &mut ClientGameState, event: GameEvent) {
         GameEvent::PlayerSneakingChanged { sneaking } => {
             state.sneaking = sneaking;
         }
+        GameEvent::PlayerExertionChanged { exertion } => {
+            state.exertion = Some(exertion);
+        }
         GameEvent::PlayerStorageChanged { storage_slots } => {
             state.player_storage_slots = storage_slots;
         }
@@ -1207,6 +1231,12 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
         GameEvent::PlayerSneakingChanged { sneaking } => debug!(
             "client sneaking updated: {} -> {}",
             client_state.sneaking, sneaking
+        ),
+        GameEvent::PlayerExertionChanged { exertion } => debug!(
+            "client exertion updated: {:?} -> {:.0}/{:.0}",
+            client_state.exertion.map(|e| e.current),
+            exertion.current,
+            exertion.max
         ),
         GameEvent::PlayerStorageChanged { storage_slots } => info!(
             "client player storage updated: {} -> {}",

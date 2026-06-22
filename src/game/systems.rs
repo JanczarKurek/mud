@@ -74,15 +74,8 @@ pub struct CommandOutputs<'w, 's> {
     pub player_noclip: Query<'w, 's, (), (With<Player>, With<Noclip>)>,
     /// True iff the player entity carries the `Sneaking` marker. When set,
     /// movement is slower (longer cooldown) and quieter (smaller noise).
-    pub player_sneaking: Query<
-        'w,
-        's,
-        (),
-        (
-            With<Player>,
-            With<crate::player::components::Sneaking>,
-        ),
-    >,
+    pub player_sneaking:
+        Query<'w, 's, (), (With<Player>, With<crate::player::components::Sneaking>)>,
     /// True iff the resolved player carries `AwaitingRespawn` (dead, waiting to
     /// click "Continue" on the death overlay). While set, `process_game_commands`
     /// drops all of their commands so they can't move/cast/attack until they
@@ -127,6 +120,13 @@ pub struct CommandOutputs<'w, 's> {
         ),
         With<Player>,
     >,
+    /// Mutable access to the player's `Exertion` meter for the traversal action
+    /// hooks (climb/jump fatigue cost + the situational penalty on physical
+    /// Athletics checks). Separate query so it doesn't conflict with the
+    /// read-only `player_athletics` (disjoint components) or the main player
+    /// ParamSet.
+    pub player_exertion:
+        Query<'w, 's, &'static mut crate::player::components::Exertion, With<Player>>,
 }
 
 /// Bundle of resources needed together when a command may cause space
@@ -384,6 +384,7 @@ pub fn process_game_commands(
                     &mut player_queries.p2(),
                     &command_outputs.player_magic_effects,
                     &command_outputs.player_athletics,
+                    &mut command_outputs.player_exertion,
                     &authored_spaces,
                     &definitions,
                     &space_authority.floor_defs,
@@ -412,6 +413,7 @@ pub fn process_game_commands(
                     &object_query,
                     &mut player_queries.p2(),
                     &command_outputs.player_athletics,
+                    &mut command_outputs.player_exertion,
                     &definitions,
                     &space_authority.floor_defs,
                     &space_authority.space_manager,
@@ -487,6 +489,7 @@ pub fn process_game_commands(
                     &object_query,
                     &mut player_queries.p2(),
                     &mut command_outputs.player_regen_buffs,
+                    &mut command_outputs.player_exertion,
                     &mut command_outputs.player_magic_effects,
                     &command_outputs.player_class_level,
                     &mut object_registry,
@@ -506,6 +509,7 @@ pub fn process_game_commands(
                     &mut container_query,
                     &mut player_queries.p2(),
                     &mut command_outputs.player_regen_buffs,
+                    &mut command_outputs.player_exertion,
                     &mut command_outputs.player_magic_effects,
                     &command_outputs.player_class_level,
                     &object_query,
@@ -1085,6 +1089,7 @@ fn handle_move_player(
         ),
         With<Player>,
     >,
+    player_exertion: &mut Query<&mut crate::player::components::Exertion, With<Player>>,
     authored_spaces: &SpaceDefinitions,
     definitions: &OverworldObjectDefinitions,
     floor_defs: &crate::world::floor_definitions::FloorTilesetDefinitions,
@@ -1116,6 +1121,10 @@ fn handle_move_player(
     // Players without a skill sheet (e.g. legacy test fixtures) skip the
     // Athletics gate entirely — the climb / fall paths become free.
     let athletics = player_athletics.get(player_entity).ok();
+    // Fatigue raises the DC of physical (Athletics) checks, and a successful
+    // climb/fall costs exertion. Read the pre-action penalty once.
+    let mut exertion = player_exertion.get_mut(player_entity).ok();
+    let fatigue_dc = crate::player::exertion::exertion_dc_modifier(exertion.as_deref());
 
     // Resolve magic effects up-front so facing can apply consistently even
     // when the step is blocked by cooldown, a collider, or map bounds.
@@ -1201,26 +1210,35 @@ fn handle_move_player(
     // ledge takes a beat to recover.
     if step.dz_climbed > crate::game::traversal::CLIMB_FREE_DZ {
         if let Some((base_stats, skill_sheet)) = athletics {
-            let dc = crate::game::traversal::climb_dc(step.dz_climbed);
+            let dc = crate::player::check::Dc::new(
+                crate::game::traversal::climb_dc(step.dz_climbed),
+                "climb",
+            )
+            .with(fatigue_dc, "fatigue");
             let result = crate::player::skills::skill_check(
                 skill_sheet,
                 &base_stats.attributes,
                 crate::player::skills::Skill::Athletics,
-                dc,
+                dc.total(),
                 0,
             );
             if !result.success {
                 chat_log.push_narrator(format!(
                     "You fail to pull yourself up (Athletics {} vs DC {}).",
-                    result.total, dc
+                    result.total,
+                    dc.explain()
                 ));
                 movement_cooldown.remaining_seconds = movement_cooldown.step_interval_seconds;
                 return;
             }
             chat_log.push_narrator(format!(
                 "You scramble up the ledge (Athletics {} vs DC {}).",
-                result.total, dc
+                result.total,
+                dc.explain()
             ));
+            if let Some(e) = exertion.as_mut() {
+                e.add(crate::player::exertion::EXERTION_COST_CLIMB);
+            }
         }
     }
 
@@ -1250,6 +1268,7 @@ fn handle_move_player(
                 skill_sheet,
                 &base_stats.attributes,
                 step.dz_fell,
+                fatigue_dc,
             );
         }
     }
@@ -1366,6 +1385,7 @@ fn handle_jump_to(
         ),
         With<Player>,
     >,
+    player_exertion: &mut Query<&mut crate::player::components::Exertion, With<Player>>,
     definitions: &OverworldObjectDefinitions,
     floor_defs: &crate::world::floor_definitions::FloorTilesetDefinitions,
     space_manager: &SpaceManager,
@@ -1384,6 +1404,10 @@ fn handle_jump_to(
     let Ok((base_stats, skill_sheet)) = player_athletics.get(player_entity) else {
         return;
     };
+    // Fatigue raises the DC the jump roll must clear; a resolved jump costs
+    // exertion.
+    let mut exertion = player_exertion.get_mut(player_entity).ok();
+    let fatigue_dc = crate::player::exertion::exertion_dc_modifier(exertion.as_deref());
 
     if movement_cooldown.remaining_seconds > 0.0 {
         return;
@@ -1426,7 +1450,8 @@ fn handle_jump_to(
     };
 
     // Single Athletics roll up-front; the path sweep picks the farthest tile
-    // whose per-tile DC the roll already cleared. dc=0 so `success` is unused.
+    // whose per-tile DC the roll already cleared (fatigue raises each tile's DC
+    // by `fatigue_dc`). dc=0 here so `success` is unused.
     let roll = crate::player::skills::skill_check(
         skill_sheet,
         &base_stats.attributes,
@@ -1485,7 +1510,7 @@ fn handle_jump_to(
             if (xi, yi) == target {
                 target_dc = dc;
             }
-            if cost <= traversal::JUMP_MAX_RANGE && roll.total >= dc {
+            if cost <= traversal::JUMP_MAX_RANGE && roll.total >= dc + fatigue_dc {
                 best = Some((landing_pos, cost, dc));
             }
         } else if (xi, yi) == target {
@@ -1499,24 +1524,37 @@ fn handle_jump_to(
     }
 
     let Some((landed, cost, dc)) = best else {
+        let shown_dc = crate::player::check::Dc::new(target_dc, "jump").with(fatigue_dc, "fatigue");
         chat_log.push_narrator(format!(
             "Your jump fails (Athletics {} vs DC {}) — you can't find a foothold.",
-            roll.total, target_dc
+            roll.total,
+            shown_dc.explain()
         ));
         movement_cooldown.remaining_seconds = movement_cooldown.step_interval_seconds;
         return;
     };
 
+    // The leap resolved (even a short landing) — it cost real effort.
+    if let Some(e) = exertion.as_mut() {
+        e.add(crate::player::exertion::EXERTION_COST_JUMP);
+    }
+
     let fell = (source_z - landed.z).max(0);
     if (landed.x, landed.y) == target {
+        let shown_dc = crate::player::check::Dc::new(dc, "jump").with(fatigue_dc, "fatigue");
         chat_log.push_narrator(format!(
             "You leap across (Athletics {} vs DC {}).",
-            roll.total, dc
+            roll.total,
+            shown_dc.explain()
         ));
     } else {
+        let shown_dc = crate::player::check::Dc::new(target_dc, "jump").with(fatigue_dc, "fatigue");
         chat_log.push_narrator(format!(
             "Your jump falls short — you land at ({}, {}) (Athletics {} vs DC {}).",
-            landed.x, landed.y, roll.total, target_dc
+            landed.x,
+            landed.y,
+            roll.total,
+            shown_dc.explain()
         ));
     }
 
@@ -1535,6 +1573,7 @@ fn handle_jump_to(
             skill_sheet,
             &base_stats.attributes,
             fell,
+            fatigue_dc,
         );
     }
 
@@ -2369,6 +2408,7 @@ fn handle_use_item(
         With<Player>,
     >,
     regen_buffs_query: &mut Query<&mut crate::player::components::RegenBuffs, With<Player>>,
+    exertion_query: &mut Query<&mut crate::player::components::Exertion, With<Player>>,
     magic_effects_query: &mut Query<&mut crate::magic::effects::MagicEffects, With<Player>>,
     player_class_level: &Query<
         (
@@ -2579,6 +2619,10 @@ fn handle_use_item(
                 );
             }
         }
+        // Food/drink also relieves fatigue (`utility_systems.md` §6.1).
+        if let Ok(mut exertion) = exertion_query.get_mut(player_entity) {
+            exertion.add(-crate::player::exertion::EXERTION_FOOD_RELIEF);
+        }
     }
 
     consume_or_decrement_charge(
@@ -2614,6 +2658,7 @@ fn handle_use_item_on(
         With<Player>,
     >,
     regen_buffs_query: &mut Query<&mut crate::player::components::RegenBuffs, With<Player>>,
+    exertion_query: &mut Query<&mut crate::player::components::Exertion, With<Player>>,
     magic_effects_query: &mut Query<&mut crate::magic::effects::MagicEffects, With<Player>>,
     player_class_level: &Query<
         (
@@ -2642,6 +2687,7 @@ fn handle_use_item_on(
             object_query,
             player_query,
             regen_buffs_query,
+            exertion_query,
             magic_effects_query,
             player_class_level,
             object_registry,

@@ -13,6 +13,7 @@ use bevy::prelude::*;
 
 use crate::combat::damage::{DamageEvent, DamageSource, PendingDamageEvents};
 use crate::combat::damage_type::DamageType;
+use crate::player::check::Dc;
 use crate::player::components::{AttributeSet, ChatLog};
 use crate::player::skills::{skill_check, Skill, SkillSheet};
 
@@ -165,20 +166,25 @@ pub fn apply_fall_damage(
     sheet: &SkillSheet,
     attrs: &AttributeSet,
     dz: i32,
+    fatigue_dc: i32,
 ) {
-    let dc = fall_save_dc(dz);
-    let save = skill_check(sheet, attrs, Skill::Athletics, dc, 0);
+    let dc = Dc::new(fall_save_dc(dz), "fall").with(fatigue_dc, "fatigue");
+    let save = skill_check(sheet, attrs, Skill::Athletics, dc.total(), 0);
     let mut amount = fall_damage(dz);
     if save.success {
         amount *= 0.5;
         chat_log.push_narrator(format!(
             "You roll with the impact (Athletics {} vs DC {}). You take {:.0} damage.",
-            save.total, dc, amount
+            save.total,
+            dc.explain(),
+            amount
         ));
     } else {
         chat_log.push_narrator(format!(
             "You hit the ground hard (Athletics {} vs DC {}). You take {:.0} damage.",
-            save.total, dc, amount
+            save.total,
+            dc.explain(),
+            amount
         ));
     }
     pending_damage.push(DamageEvent {

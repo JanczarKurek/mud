@@ -53,6 +53,17 @@ pub struct ExperienceFill;
 #[derive(Component)]
 pub struct ExperienceLabel;
 
+/// Marker for the Stamina fill bar in the status panel. The bar shows
+/// *remaining* stamina (`max − exertion`), so it depletes as the player exerts
+/// and a full bar means rested. Driven by `ClientGameState.exertion` (mirrors
+/// `HealthFill`).
+#[derive(Component)]
+pub struct ExertionFill;
+
+/// Text node label for the Stamina bar ("ST:").
+#[derive(Component)]
+pub struct ExertionLabel;
+
 /// Root of the transient "Level Up!" toast overlay. The toast carries its
 /// own remaining-time so the system that owns it can fade and despawn the
 /// node without consulting any other state.

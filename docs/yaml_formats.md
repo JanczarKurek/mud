@@ -2389,7 +2389,7 @@ Library functions (read-only, callable from `<<if …>>` expressions):
 
 The set of allowed skills mirrors `docs/progression.md §5`: `Athletics`,
 `Stealth`, `Perception`, `Lore`, `Spellcraft`, `Persuasion`, `Survival`,
-`Heal`, `Thievery`, `Concentration`.
+`Heal`, `Thievery`, `Endurance`.
 
 ## 9. Starting Loadout YAML
 

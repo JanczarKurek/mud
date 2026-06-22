@@ -247,6 +247,15 @@ pub struct ClientVitalStats {
     pub max_mana: f32,
 }
 
+/// Replicated snapshot of the local player's Exertion (fatigue) meter. Drives
+/// the HUD fatigue bar. `current` is diffed at whole-point resolution in the
+/// projection to avoid per-frame event spam as the meter decays.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct ClientExertion {
+    pub current: f32,
+    pub max: f32,
+}
+
 /// Snapshot of an active food/drink regen buff replicated to the client. The
 /// HUD renders this as a small "Well Fed: M:SS" badge near the HP/MP bars.
 /// `None` on `ClientGameState::regen_buff` means no active buff.
@@ -438,6 +447,13 @@ pub enum GameEvent {
     /// `ClientGameState.sneaking`.
     PlayerSneakingChanged {
         sneaking: bool,
+    },
+    /// The local player's Exertion (fatigue) meter changed. State, not a
+    /// one-shot — folded into `ClientGameState.exertion`. Diffed at whole-point
+    /// resolution in the projection so a continuously-decaying meter doesn't
+    /// emit every frame.
+    PlayerExertionChanged {
+        exertion: ClientExertion,
     },
     PlayerStorageChanged {
         storage_slots: usize,
@@ -722,6 +738,11 @@ pub struct ClientGameState {
     /// `PlayerSneakingChanged`; the HUD renders a "Sneaking" indicator.
     #[serde(default)]
     pub sneaking: bool,
+    /// Replicated Exertion (fatigue) snapshot for the local player. `None`
+    /// until the first `PlayerExertionChanged` event arrives. Drives the HUD
+    /// fatigue bar.
+    #[serde(default)]
+    pub exertion: Option<ClientExertion>,
     /// Replicated carry-weight snapshot for the local player. `None` until
     /// the first `PlayerCarryWeightChanged` event arrives — typically on the
     /// first frame the player exists.

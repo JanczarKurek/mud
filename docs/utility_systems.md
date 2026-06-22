@@ -186,20 +186,25 @@ without survival-chore upkeep.
 - **Raised by** exertion-heavy actions: climbing, jumping, pushing/hauling
   (Cluster B), sustained sneaking (Cluster A), and combat.
 - **Lowered by** resting (sitting/idle) and food/drink.
-- **Governed by Endurance:** higher Endurance raises the cap and the recovery
-  rate.
-- **Consequences when high:** a situational penalty to skill checks and a slower
-  regen rate — pushing the player toward downtime rather than punishing them with
-  death. This is the Medium sim depth chosen for the project: *fatigue + rest +
-  optional forage, no hunger/thirst/temperature.*
+- **Governed by attributes** (not a skill, for balance): **Constitution** sets
+  the ceiling (`max = 100 + CON_mod·15`, floored), **Willpower** sets the
+  recovery rate (`base·(1 + WILL_mod·0.10)`). Presented to the player as a
+  depleting **Stamina** bar (`max − current`): full = rested, empty = exhausted.
+- **Consequences when high:** physical checks get a fatigue **DC penalty** —
+  surfaced via the `Dc` modifier stack so the narration shows it ("vs DC 17
+  (climb 15, fatigue +2)") — and HP/mana regen slows. Both push the player
+  toward downtime rather than punishing them with death. This is the Medium sim
+  depth chosen for the project: *fatigue + rest + optional forage, no
+  hunger/thirst/temperature.*
 
 ### 6.2 The `Concentration → Endurance` rename
 
 Per `docs/progression.md` §5.3 this is a **pure rename** of the `Skill`
 enum variant. The `[u8; 10]` rank-array layout and index are unchanged, so
 `GameEvent`s, projection, save data, and the skills UI need only the identifier
-rename — no array resize, no migration. Do this rename in the Exertion follow-up
-slice (§8) since Endurance is the skill that governs the new meter.
+rename — no array resize, no migration. The Endurance *skill* governs the
+out-of-combat **HP/mana** regen multiplier (`src/player/regen.rs`); the stamina
+pool itself is attribute-governed (§6.1), keeping the two levers independent.
 
 ---
 
@@ -215,8 +220,10 @@ slice (§8) since Endurance is the skill that governs the new meter.
 | Noise field decay | ~1.5 s | §3 |
 | NPC base `perception` | 0 (per-NPC authored) | §3 |
 | Push Athletics DC per weight | `weight` (kg) as DC | §4 |
-| Exertion per heavy action | small, action-scaled | §6.1 |
-| Exertion high-threshold penalty | situational −2 to skill checks | §6.1 |
+| Exertion per heavy action | climb 8 / jump 6 / attack 4 / sneak 2 per s | §6.1 |
+| Exertion ceiling / recovery | `100 + CON_mod·15` / `base·(1+WILL_mod·0.1)` | §6.1 |
+| Fatigue DC penalty | +1 from 50% spent, +1 per 10%, cap +6 | §6.1 |
+| Exertion regen slowdown | ramps to ×0.5 from 75% spent | §6.1 |
 | Gather margin → yield/rare | margin/5 extra, rare on margin ≥ 10 | §5 |
 | Craft margin → quality tier | +1 per 5 margin, capped | §5 |
 

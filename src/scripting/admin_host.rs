@@ -431,7 +431,7 @@ mod tests {
                 ("Survival".to_owned(), 0),
                 ("Heal".to_owned(), 0),
                 ("Thievery".to_owned(), 0),
-                ("Concentration".to_owned(), 0),
+                ("Endurance".to_owned(), 0),
             ],
             available_skill_points: 0,
         });

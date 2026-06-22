@@ -8,9 +8,10 @@ use crate::game::commands::{GameCommand, MoveDelta, RotationDirection};
 use crate::game::resources::{ClientGameState, InventoryState, PendingGameCommands};
 use crate::player::classes::Class;
 use crate::player::components::{
-    AttributeSet, BaseStats, CurrentCarryWeight, DefenseStats, DerivedStats, Encumbered,
+    AttributeSet, BaseStats, CurrentCarryWeight, DefenseStats, DerivedStats, Encumbered, Exertion,
     MaxCarryWeight, Player, PlayerIdentity, VitalStats, WeaponDamage,
 };
+use crate::player::exertion::exertion_max;
 use crate::player::progression::Experience;
 use crate::scripting::resources::PythonConsoleState;
 use crate::ui::settings::model::{Action, Keybindings, MovementBindings, MovementDir};
@@ -40,6 +41,7 @@ pub fn refresh_derived_player_stats(
             Has<Encumbered>,
             Option<&Class>,
             Option<&Experience>,
+            Option<&mut Exertion>,
         ),
         With<Player>,
     >,
@@ -58,6 +60,7 @@ pub fn refresh_derived_player_stats(
         was_encumbered,
         class,
         experience,
+        exertion,
     ) in &mut player_query
     {
         let mut attributes = base_stats.attributes;
@@ -221,6 +224,16 @@ pub fn refresh_derived_player_stats(
             commands.entity(entity).insert(Encumbered);
         } else if !now_encumbered && was_encumbered {
             commands.entity(entity).remove::<Encumbered>();
+        }
+
+        // Stamina ceiling is governed by Constitution (`utility_systems.md`
+        // §6.1), recomputed off the post-equipment attributes so CON-boosting
+        // gear widens the pool live; clamp `current` down if the cap shrank.
+        if let Some(mut exertion) = exertion {
+            exertion.max = exertion_max(derived_stats.attributes.constitution);
+            if exertion.current > exertion.max {
+                exertion.current = exertion.max;
+            }
         }
     }
 }

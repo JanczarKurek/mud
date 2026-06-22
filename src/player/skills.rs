@@ -28,7 +28,7 @@ pub enum Skill {
     Survival,
     Heal,
     Thievery,
-    Concentration,
+    Endurance,
 }
 
 impl Skill {
@@ -42,7 +42,7 @@ impl Skill {
         Skill::Survival,
         Skill::Heal,
         Skill::Thievery,
-        Skill::Concentration,
+        Skill::Endurance,
     ];
 
     pub const fn index(self) -> usize {
@@ -60,7 +60,7 @@ impl Skill {
             Skill::Survival => "Survival",
             Skill::Heal => "Heal",
             Skill::Thievery => "Thievery",
-            Skill::Concentration => "Concentration",
+            Skill::Endurance => "Endurance",
         }
     }
 
@@ -85,7 +85,7 @@ impl Skill {
             Skill::Survival => attributes.willpower,
             Skill::Heal => attributes.willpower,
             Skill::Thievery => attributes.agility,
-            Skill::Concentration => attributes.constitution,
+            Skill::Endurance => attributes.constitution,
         }
     }
 }
@@ -98,20 +98,20 @@ pub const fn class_skills(class: Class) -> &'static [Skill] {
         Class::Fighter => &[
             Skill::Athletics,
             Skill::Perception,
-            Skill::Concentration,
+            Skill::Endurance,
             Skill::Survival,
         ],
         Class::Wizard => &[
             Skill::Spellcraft,
             Skill::Lore,
-            Skill::Concentration,
+            Skill::Endurance,
             Skill::Heal,
         ],
         Class::Cleric => &[
             Skill::Heal,
             Skill::Lore,
             Skill::Persuasion,
-            Skill::Concentration,
+            Skill::Endurance,
             Skill::Spellcraft,
             Skill::Perception,
         ],
@@ -442,6 +442,23 @@ mod tests {
         // Vagabond base = 8.
         let attrs = AttributeSet::new(10, 10, 10, 10, 10, 12);
         assert_eq!(skill_points_for_level_up(Class::Vagabond, &attrs), 9);
+    }
+
+    #[test]
+    fn endurance_rename_invariants() {
+        // The Concentration → Endurance rename keeps index 9, the CON ability
+        // key, and the class lists (progression.md §5.3 — pure rename).
+        assert_eq!(Skill::Endurance.index(), 9);
+        assert_eq!(Skill::ALL[9], Skill::Endurance);
+        assert_eq!(Skill::from_label("Endurance"), Some(Skill::Endurance));
+        assert_eq!(Skill::from_label("endurance"), Some(Skill::Endurance));
+        assert_eq!(Skill::from_label("Concentration"), None);
+        let attrs = AttributeSet::new(10, 10, 14, 10, 10, 10);
+        assert_eq!(Skill::Endurance.ability_score(&attrs), attrs.constitution);
+        assert!(is_class_skill(Class::Fighter, Skill::Endurance));
+        assert!(is_class_skill(Class::Wizard, Skill::Endurance));
+        assert!(is_class_skill(Class::Cleric, Skill::Endurance));
+        assert!(!is_class_skill(Class::Vagabond, Skill::Endurance));
     }
 
     #[test]
