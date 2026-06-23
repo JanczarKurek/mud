@@ -1606,21 +1606,25 @@ fn handle_jump_to(
         movement_cooldown.step_interval_seconds * (cost.max(1) as f32);
 }
 
-/// Shove a movable object from `origin` toward `target_tile`, sliding it as far
-/// along the straight line as a single Athletics-vs-weight roll allows.
+/// Move a movable object from `origin` toward `target_tile`, sliding it as far
+/// along the straight line as a single Athletics roll allows. You may fling an
+/// object away from yourself, but you pay for it: the DC is the object's mass
+/// plus the jump-distance cost from its origin to the landing tile, so the
+/// farther it travels (and the more uphill terrain it crosses) the harder it is.
 ///
 /// This is the Cluster B keystone (`docs/utility_systems.md` §4) and mirrors
 /// [`handle_jump_to`]: one up-front Athletics roll, a tile-by-tile sweep that
-/// commits to the *farthest* tile whose distance-scaled DC the roll cleared.
-/// Unlike a jump, a pushed object can't arc over obstacles — the sweep stops at
-/// the first tile it can't occupy (a wall, a full-block step, another collider,
-/// or the pusher's own tile). The action writes the shared signals push is meant
-/// to touch: it costs Exertion and emits Noise, and the relocated collider
-/// becomes cover / a barricade / a stack-to-climb step for the systems that read
-/// live object positions. Server-authoritative; the move replicates through the
-/// normal `WorldObjectUpserted` diff.
+/// commits to the *farthest* tile whose distance-scaled DC the roll cleared, so
+/// a failed roll lands the object *short*. Unlike a jump, the object can't arc
+/// over obstacles — the sweep stops at the first tile it can't occupy (a wall, a
+/// full-block step, another collider, or the mover's own tile). The action
+/// writes the shared signals this move is meant to touch: it costs Exertion and
+/// emits Noise, and the relocated collider becomes cover / a barricade / a
+/// stack-to-climb step for the systems that read live object positions.
+/// Server-authoritative; the move replicates through the normal
+/// `WorldObjectUpserted` diff.
 #[allow(clippy::too_many_arguments)]
-fn handle_object_push(
+fn handle_object_move(
     object_entity: Entity,
     origin: TilePosition,
     weight: f32,
@@ -1712,14 +1716,10 @@ fn handle_object_push(
     // forced up a full block (you'd lift it, not push it).
     let mut best: Option<(TilePosition, i32 /* tiles */, i32 /* dc */)> = None;
     let mut prev_z = origin.z;
-    let mut first_tile_dc = traversal::push_dc(weight, 1); // for the failure line
+    let mut first_tile_dc = traversal::move_dc(weight, 0, 0, 0); // failure-line fallback
 
     for (idx, (xi, yi)) in path.iter().copied().enumerate() {
         let tiles = idx as i32 + 1;
-        let dc = traversal::push_dc(weight, tiles);
-        if tiles == 1 {
-            first_tile_dc = dc;
-        }
 
         // Resting surface of this column, ignoring the object being pushed.
         let stack_top = crate::world::stacks::stack_top_z_excluding(
@@ -1732,6 +1732,15 @@ fn handle_object_push(
             floor_maps,
             floor_defs,
         );
+
+        // DC = mass + jump-distance cost from the origin to this candidate tile
+        // (Euclidean horizontal + uphill terrain; downhill is free). The path was
+        // already truncated to `PUSH_MAX_RANGE`, so a far cursor can't slide the
+        // object past that cap even though the DC is measured at the real tile.
+        let dc = traversal::move_dc(weight, xi - origin.x, yi - origin.y, stack_top - origin.z);
+        if tiles == 1 {
+            first_tile_dc = dc;
+        }
 
         // Impassable checks — any of these stops the slide at the previous tile.
         let too_steep = (stack_top - prev_z).abs() > 1;
@@ -1761,9 +1770,13 @@ fn handle_object_push(
         prev_z = stack_top;
     }
 
+    // Narration splits the DC into its distance base + mass + fatigue parts. Mass
+    // is a modifier (not the base) so weightless legacy objects read cleanly.
+    let mass = weight.round().max(0.0) as i32;
     let Some((landed, tiles, dc)) = best else {
-        let shown_dc =
-            crate::player::check::Dc::new(first_tile_dc, "push").with(fatigue_dc, "fatigue");
+        let shown_dc = crate::player::check::Dc::new(first_tile_dc - mass, "distance")
+            .with(mass, "mass")
+            .with(fatigue_dc, "fatigue");
         chat_log.push_narrator(format!(
             "It won't budge (Athletics {} vs DC {}).",
             roll.total,
@@ -1791,7 +1804,9 @@ fn handle_object_push(
     }
     pending_noise.push(space_id, landed, crate::world::noise::PUSH_NOISE);
 
-    let shown_dc = crate::player::check::Dc::new(dc, "push").with(fatigue_dc, "fatigue");
+    let shown_dc = crate::player::check::Dc::new(dc - mass, "distance")
+        .with(mass, "mass")
+        .with(fatigue_dc, "fatigue");
     if (landed.x, landed.y) == target {
         chat_log.push_narrator(format!(
             "You shove it into place (Athletics {} vs DC {}).",
@@ -4022,15 +4037,68 @@ fn handle_move_item(
                 .get(&definition_id)
                 .map_or(0, |def| def.render.block_size);
 
-            // A heavy object — or any relocation beyond an adjacent tile — is a
-            // *push*: an Athletics-vs-weight check that shoves the object as far
-            // along the line toward `target_tile` as the roll allows (mirrors
-            // `handle_jump_to`). Light objects dropped onto an adjacent tile keep
-            // the free drag-placement path below.
-            if weight > crate::game::traversal::PUSH_FREE_WEIGHT
-                || !is_near_player(&origin, &target_tile)
-            {
-                handle_object_push(
+            // A light object set down on a tile adjacent to the player places for
+            // free (and stack-merges) — the everyday "set it down right here". A
+            // heavier object, or *any* landing away from the player, is a priced
+            // move: an Athletics-vs-distance roll that slides the object as far
+            // toward `target_tile` as the roll allows and lands it short on a miss
+            // (mirrors `handle_jump_to`). The price now lives in the DC, not a
+            // hard "destination must be near you" gate.
+            let is_light = weight <= crate::game::traversal::PUSH_FREE_WEIGHT;
+            let lands_adjacent = is_near_player(&player_position, &target_tile);
+            let mut placed = false;
+
+            if is_light && lands_adjacent {
+                // Stack-merge first (so quantities combine instead of spawning a
+                // second physical stack); otherwise free placement.
+                if merge_into_ground_stack(
+                    entity,
+                    object_id,
+                    target_tile,
+                    space_resident.space_id,
+                    object_query,
+                    quantity_query,
+                    object_registry,
+                    definitions,
+                    commands,
+                ) {
+                    placed = true;
+                } else if let Some(resolved) = resolve_world_drop_tile(
+                    target_tile,
+                    Some(origin),
+                    placed_block_size,
+                    space_resident.space_id,
+                    &player_position,
+                    entity,
+                    object_query,
+                    collider_positions,
+                    definitions,
+                    floor_maps,
+                    floor_defs,
+                    world_config,
+                ) {
+                    commands.entity(entity).insert(resolved);
+                    // Old column may need to settle if we lifted a block out of
+                    // the middle. Exclude `entity` since its TilePosition is being
+                    // overwritten in the same frame and the query would still see
+                    // the old `z`.
+                    if origin != resolved {
+                        pending_stack_settle.push(crate::world::stacks::SettleStackEvent {
+                            space_id: space_resident.space_id,
+                            x: origin.x,
+                            y: origin.y,
+                            removed_entity: Some(entity),
+                        });
+                    }
+                    placed = true;
+                }
+                // If neither merged nor resolved (e.g. the adjacent tile is
+                // blocked), `placed` stays false and we fall through to the priced
+                // move below instead of silently doing nothing (the old dead-zone).
+            }
+
+            if !placed {
+                handle_object_move(
                     entity,
                     origin,
                     weight,
@@ -4053,58 +4121,6 @@ fn handle_move_item(
                     pending_stack_settle,
                     commands,
                 );
-                return;
-            }
-
-            // Attempt stack merge first (before the stack-placement path that
-            // would create a new physical stack instead of merging quantities).
-            let merged = is_near_player(&player_position, &target_tile)
-                && merge_into_ground_stack(
-                    entity,
-                    object_id,
-                    target_tile,
-                    space_resident.space_id,
-                    object_query,
-                    quantity_query,
-                    object_registry,
-                    definitions,
-                    commands,
-                );
-            if !merged {
-                // (block size recomputed locally to keep the free-placement
-                // path self-contained; the outer `placed_block_size` feeds the
-                // push branch above.)
-                let placed_block_size = definitions
-                    .get(&definition_id)
-                    .map_or(0, |def| def.render.block_size);
-                if let Some(resolved) = resolve_world_drop_tile(
-                    target_tile,
-                    Some(origin),
-                    placed_block_size,
-                    space_resident.space_id,
-                    &player_position,
-                    entity,
-                    object_query,
-                    collider_positions,
-                    definitions,
-                    floor_maps,
-                    floor_defs,
-                    world_config,
-                ) {
-                    commands.entity(entity).insert(resolved);
-                    // Old column may need to settle if we lifted a block out
-                    // of the middle. Exclude `entity` since its TilePosition
-                    // is being overwritten in the same frame and the query
-                    // would still see the old `z`.
-                    if origin != resolved {
-                        pending_stack_settle.push(crate::world::stacks::SettleStackEvent {
-                            space_id: space_resident.space_id,
-                            x: origin.x,
-                            y: origin.y,
-                            removed_entity: Some(entity),
-                        });
-                    }
-                }
             }
         }
         (ItemReference::Slot(slot_ref), ItemDestination::Slot(destination_ref)) => {

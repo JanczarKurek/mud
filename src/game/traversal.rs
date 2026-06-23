@@ -57,14 +57,11 @@ pub const AWARE_SLOW_FACTOR: f32 = 1.4;
 /// `[tunable]` — `docs/utility_systems.md` §7.
 pub const PUSH_MAX_RANGE: i32 = 4;
 
-/// Objects at or below this weight (kg) shove freely to an adjacent tile with no
-/// Athletics check — the legacy drag-to-adjacent behaviour. Heavier objects, or
-/// any multi-tile shove, roll Athletics vs [`push_dc`]. `[tunable]`.
+/// Objects at or below this weight (kg) that land on a tile adjacent to the
+/// player place freely with no Athletics check — the legacy drag-to-adjacent
+/// behaviour. Heavier objects, or any landing away from the player, roll
+/// Athletics vs [`move_dc`]. `[tunable]`.
 pub const PUSH_FREE_WEIGHT: f32 = 5.0;
-
-/// Each tile of shove distance past the first adds this much to the push DC,
-/// mirroring the jump's 5-DC-per-unit cadence. `[tunable]`.
-pub const PUSH_DC_PER_EXTRA_TILE: i32 = 5;
 
 /// DC for an attempted climb of `dz` half-blocks. `dz = 2` (one full block,
 /// e.g. a barrel) is DC 10; every additional half-block adds 5 to the DC.
@@ -72,13 +69,15 @@ pub const fn climb_dc(dz: i32) -> i32 {
     5 + 5 * (dz - 1)
 }
 
-/// DC to shove a `weight`-kg object `tiles` tiles in a single push. The base DC
-/// is the object's weight in kilograms (`docs/utility_systems.md` §7: "weight
-/// (kg) as DC"); each tile past the first adds [`PUSH_DC_PER_EXTRA_TILE`], so a
-/// long shove is harder than nudging the same crate one tile. Negative weights
-/// (shouldn't happen) clamp to a DC of 0.
-pub fn push_dc(weight: f32, tiles: i32) -> i32 {
-    weight.round().max(0.0) as i32 + PUSH_DC_PER_EXTRA_TILE * (tiles - 1).max(0)
+/// DC to move a `weight`-kg object to a tile `(dx, dy)` from its origin and
+/// `dz_half` half-blocks up (downhill is free). The object's mass in kilograms
+/// is the additive base DC (`docs/utility_systems.md` §7: "weight (kg) as DC");
+/// the distance/terrain term is [`jump_dc`] — the object is treated as the
+/// "jumper" — so a fling costs proportionally to true Euclidean distance plus
+/// any uphill terrain it's shoved across. Negative weights (shouldn't happen)
+/// clamp the mass base to 0.
+pub fn move_dc(weight: f32, dx: i32, dy: i32, dz_half: i32) -> i32 {
+    weight.round().max(0.0) as i32 + jump_dc(dx, dy, dz_half)
 }
 
 /// Effective cost of a jump in tile-equivalent units. Horizontal distance is
@@ -236,19 +235,24 @@ mod tests {
     }
 
     #[test]
-    fn push_dc_is_weight_plus_distance() {
-        // One-tile shove: DC equals the object's weight (rounded).
-        assert_eq!(push_dc(8.0, 1), 8);
-        assert_eq!(push_dc(8.4, 1), 8);
-        assert_eq!(push_dc(8.6, 1), 9);
-        // Each extra tile adds PUSH_DC_PER_EXTRA_TILE.
-        assert_eq!(push_dc(8.0, 2), 8 + PUSH_DC_PER_EXTRA_TILE);
-        assert_eq!(push_dc(8.0, 3), 8 + 2 * PUSH_DC_PER_EXTRA_TILE);
-        // A weightless object still has a floor DC of 0 for the first tile.
-        assert_eq!(push_dc(0.0, 1), 0);
-        // Defensive clamps: negative weight and zero/negative distance.
-        assert_eq!(push_dc(-5.0, 1), 0);
-        assert_eq!(push_dc(10.0, 0), 10);
+    fn move_dc_is_mass_plus_jump_distance() {
+        // Mass is the additive base; the distance term is `jump_dc`, so a move
+        // costs proportionally from the very first tile (no free first tile).
+        assert_eq!(move_dc(0.0, 1, 0, 0), jump_dc(1, 0, 0)); // 5
+        assert_eq!(move_dc(12.0, 1, 0, 0), 12 + 5); // 17
+        // Mass alone when the object doesn't actually move.
+        assert_eq!(move_dc(12.0, 0, 0, 0), 12);
+        // Mass rounds to nearest before adding distance.
+        assert_eq!(move_dc(8.4, 0, 0, 0), 8);
+        assert_eq!(move_dc(8.6, 0, 0, 0), 9);
+        // Euclidean distance: a 2-diagonal (√8 ≈ 2.83 → DC 14) beats 2-cardinal.
+        assert_eq!(move_dc(0.0, 2, 2, 0), jump_dc(2, 2, 0)); // 14
+        assert_eq!(move_dc(0.0, 2, 0, 0), 10);
+        // Uphill terrain adds like a jump's upward z; downhill is free.
+        assert_eq!(move_dc(0.0, 1, 0, 2), jump_dc(1, 0, 2)); // 15
+        assert_eq!(move_dc(0.0, 2, 0, -2), 10);
+        // Negative weight clamps the mass base to 0; distance still applies.
+        assert_eq!(move_dc(-5.0, 1, 0, 0), 5);
     }
 
     #[test]

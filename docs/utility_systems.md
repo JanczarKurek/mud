@@ -219,7 +219,7 @@ pool itself is attribute-governed (§6.1), keeping the two levers independent.
 | Noise loudness: walk / sneak / door / force / mine / attack | 6 / 0–2 / 5 / 9 / 7 / 10 | §3 |
 | Noise field decay | ~1.5 s | §3 |
 | NPC base `perception` | 0 (per-NPC authored) | §3 |
-| Push Athletics DC per weight | `weight` (kg) as DC | §4 |
+| Move Athletics DC | `move_dc` = `weight` (kg) mass + `jump_dc` distance (Euclidean + uphill terrain, 5/unit) origin→landing | §4 |
 | Exertion per heavy action | climb 8 / jump 6 / attack 4 / sneak 2 per s | §6.1 |
 | Exertion ceiling / recovery | `100 + CON_mod·15` / `base·(1+WILL_mod·0.1)` | §6.1 |
 | Fatigue DC penalty | +1 from 50% spent, +1 per 10%, cap +6 | §6.1 |
@@ -272,14 +272,19 @@ and the `Concentration → Endurance` rename (§6.2).
 Push/pull Athletics gate + Exertion cost, cover contribution into §3, stack-to-climb,
 barricade vs NPC pathing, pressure-plate holds. As built:
 
-1. **Push/pull** extends the existing object relocation (`MoveItem` WorldObject →
+1. **Move/fling** extends the existing object relocation (`MoveItem` WorldObject →
    WorldTile). A heavy object (`weight > traversal::PUSH_FREE_WEIGHT`) or any
-   move beyond an adjacent tile becomes a *push*: `handle_object_push`
+   landing *away* from the player becomes a priced *move*: `handle_object_move`
    (`src/game/systems.rs`) mirrors `handle_jump_to` — one Athletics roll, a
-   line sweep that slides the object to the farthest tile whose distance-scaled
-   `traversal::push_dc(weight, tiles)` the roll clears, stopping at the first
-   wall/step/collider. Costs `EXERTION_COST_PUSH`, emits `PUSH_NOISE`, settles
-   the vacated column. Light objects still drop freely onto an adjacent tile.
+   line sweep that slides the object to the farthest tile whose DC the roll
+   clears (a miss lands it *short*), stopping at the first wall/step/collider.
+   The per-tile DC is `traversal::move_dc(weight, dx, dy, dz)` = the object's
+   mass plus the jump-distance cost from its origin to that tile, so you *may*
+   fling things away from yourself but pay proportionally to the distance (and
+   any uphill terrain) — there is no longer a hard "destination must be near you"
+   gate. Costs `EXERTION_COST_PUSH`, emits `PUSH_NOISE`, settles the vacated
+   column. A light object set down on a tile adjacent to the player still places
+   freely (no roll), merging into a matching ground stack when present.
 2. **Cover, stack-to-climb, barricade** fall out for free — a shoved
    `Collider` already enters the `los_blockers` index (cover, tested in
    `spatial.rs::pushed_collider_provides_cover`), raises `stack_top_z`

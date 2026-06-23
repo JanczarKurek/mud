@@ -1,0 +1,188 @@
+authored_id: proving_grounds
+# Ephemeral, like starter_cellar: each visit re-instantiates fresh from this
+# file, so the demo's puzzles/rewards reset and edits always take effect.
+permanence: ephemeral
+width: 40
+height: 28
+fill_floor_type: cave_floor
+
+# Dim, day/night-free dungeon so stealth/awareness matter (daylight inflates NPC
+# perception). Lit by the hub campfire + a few torches. Mirrors underworld.yaml.
+lighting:
+  outdoor_ambient: [60, 55, 55]
+  indoor_ambient: [50, 45, 45]
+  has_day_night: false
+
+# Wall shell + interior dividers. Row index = y, column index = x (y=0 is the
+# top row). Gaps at (4,6) and (35,6) hold the lever/plate gates; the gap at
+# (33,14) is the goblin pen entrance.
+legend:
+  "#": cave_wall
+
+tiles: |
+  ########################################
+  #......#........................#......#
+  #......#........................#......#
+  #......#........................#......#
+  #......#........................#......#
+  #......#........................#......#
+  ####.###........................###.####
+  #......................................#
+  #......................................#
+  #......................................#
+  #......................................#
+  #......................................#
+  #......................................#
+  #......................................#
+  #...........................#####.######
+  #...........................#..........#
+  #...........................#..........#
+  #...........................#..........#
+  #...........................#..........#
+  #...........................#..........#
+  #...........................#..........#
+  #...........................#..........#
+  #...........................#..........#
+  #...........................#..........#
+  #...........................#..........#
+  #...........................#..........#
+  #...........................#..........#
+  ########################################
+
+# Return to the overworld. The player arrives ON this tile from the overworld
+# portal; stepping onto it again sends them back beside the overworld arch
+# (39,25) — not onto it — so there is no instant bounce loop.
+portals:
+  - id: pg_exit
+    source: { x: 14, y: 12 }
+    destination_space_id: overworld
+    destination_tile: { x: 39, y: 25 }
+
+objects:
+  # ---- Hub / entrance -----------------------------------------------------
+  - type: portal_arch
+    placement: { x: 14, y: 12 }
+  - type: campfire           # rest here: idling recovers Stamina (exertion)
+    placement: { x: 16, y: 12 }
+  - type: sign_post
+    placement: { x: 14, y: 10 }
+    properties:
+      text: "Proving Grounds. Each alcove demos a system: climbing, jumping, pushing, pressure plates, levers, sneaking, hidden things."
+  - type: sign_post
+    placement: { x: 12, y: 13 }
+    properties:
+      text: "HUD top-right: Sneak (V) and Aware (F) cells. The Stamina bar drains as you climb/jump/push/sneak and refills while you rest."
+
+  # ---- Station A: Climbing + fatigue (west) -------------------------------
+  # Free auto-climb up the stair ramp (half-block steps); clambering onto the
+  # full-block barrel is an Athletics check (DC 10) that costs Stamina.
+  - type: stair_n_low
+    placement: { x: 4, y: 11 }
+  - type: stair_n_high
+    placement: { x: 4, y: 10 }
+  - type: barrel
+    placement: { x: 2, y: 10 }
+  - type: sign_post
+    placement: { x: 5, y: 12 }
+    properties:
+      text: "Climbing: step up the stairs for free; clamber onto the barrel (Athletics DC 10) and watch your Stamina drop."
+
+  # ---- Station B: Jumping (top-center room) -------------------------------
+  # Jump (the Jump action / JumpTo) over the fence line to reach the potion.
+  - type: fence
+    placement:
+      - { x: 14, y: 3 }
+      - { x: 15, y: 3 }
+      - { x: 16, y: 3 }
+      - { x: 17, y: 3 }
+      - { x: 18, y: 3 }
+      - { x: 19, y: 3 }
+      - { x: 20, y: 3 }
+  - type: potion
+    placement: { x: 17, y: 2 }
+  - type: sign_post
+    placement: { x: 23, y: 4 }
+    properties:
+      text: "Jumping: use Jump to leap the fence line. Big drops deal fall damage (Athletics save to halve)."
+
+  # ---- Station C: Push + Pressure plate -> gate (NE) ----------------------
+  # Push the 12kg barrel one tile north onto the plate; the wired gate opens
+  # while the barrel rests on it. Moving it is an Athletics check (DC 17 = 12 kg
+  # mass + 5 for one tile of distance) that costs Stamina; flinging it farther
+  # costs more and can land it short.
+  - id: gate_c
+    type: wooden_door
+    placement: { x: 35, y: 6 }
+  - type: pressure_plate
+    placement: { x: 35, y: 8 }
+    properties:
+      target: gate_c
+  - type: barrel
+    placement: { x: 35, y: 9 }
+  - type: gold_coin
+    placement: { x: 37, y: 2 }
+  - type: sign_post
+    placement: { x: 30, y: 9 }
+    properties:
+      text: "Push the barrel onto the pressure plate (Athletics DC 17) to hold the gate open. Pull it off and the gate closes."
+
+  # ---- Station D: Lever -> door (NW) --------------------------------------
+  - id: door_d
+    type: wooden_door
+    placement: { x: 4, y: 6 }
+  - type: lever
+    placement: { x: 4, y: 8 }
+    properties:
+      target: door_d
+  - type: gold_coin
+    placement: { x: 2, y: 2 }
+  - type: sign_post
+    placement: { x: 9, y: 8 }
+    properties:
+      text: "Pull the lever to open the wired door — the manual-mechanism cousin of the pressure plate."
+
+  # ---- Station E: Sneaking past a goblin (walled pen, SE) -----------------
+  # Toggle Sneak (V): slower & quieter, +5 Stealth, drains Stamina, and lets
+  # you read the goblin's awareness (z / ? / ! marks). Slip in, grab the chest.
+  - type: goblin
+    placement: { x: 33, y: 20 }
+    behavior:
+      kind: roam_and_chase
+      bounds: { min_x: 29, min_y: 15, max_x: 38, max_y: 26 }
+  - type: iron_chest
+    placement: { x: 37, y: 25 }
+    contents:
+      - type: gold_coin
+      - type: potion
+  - type: sign_post
+    placement: { x: 30, y: 16 }
+    properties:
+      text: "Sneaking (V): slip past the goblin to the chest. Watch its awareness marks (z calm, ? searching, ! alerted) and your Stamina."
+
+  # ---- Station F: Hidden things + Aware mode (south-center) ----------------
+  # The bear trap and the cache start invisible. Toggle Aware (F) for +5
+  # Perception to spot them; step on the un-spotted trap and it bites.
+  - type: bear_trap
+    placement: { x: 15, y: 20 }
+    properties:
+      hidden_dc: "12"
+  - id: hidden_cache
+    type: iron_chest
+    placement: { x: 10, y: 23 }
+    properties:
+      hidden_dc: "14"
+    contents:
+      - type: gold_coin
+      - type: scroll
+  - type: sign_post
+    placement: { x: 6, y: 16 }
+    properties:
+      text: "Hidden: a trap and a cache lurk here unseen. Toggle Aware (F) for +5 Perception to spot them before the trap bites."
+
+  # ---- Torches (extra light for the dim hall) -----------------------------
+  - type: torch
+    placement:
+      - { x: 10, y: 9 }
+      - { x: 26, y: 9 }
+      - { x: 10, y: 18 }
+      - { x: 24, y: 16 }

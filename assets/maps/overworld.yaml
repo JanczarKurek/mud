@@ -68,6 +68,14 @@ portals:
   destination_tile:
     x: 3
     y: 14
+- id: proving_grounds_entrance
+  source:
+    x: 40
+    y: 25
+  destination_space_id: proving_grounds
+  destination_tile:
+    x: 14
+    y: 12
 floors:
   cave_floor:
     placement:
@@ -3807,6 +3815,16 @@ objects:
   placement:
     x: 24
     y: 46
+- type: portal_arch
+  placement:
+    x: 40
+    y: 25
+- type: sign_post
+  properties:
+    text: Proving Grounds ahead — a demo gauntlet of climbing, jumping, pushing, sneaking and hidden things. Step onto the arch to enter.
+  placement:
+    x: 41
+    y: 25
 spawn_groups:
 - id: south_rats
   template: rat

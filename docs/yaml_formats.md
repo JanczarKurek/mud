@@ -536,14 +536,17 @@ The `text` value supports three count placeholders in addition to the normal `{p
 - Optional: yes
 - Default: `false`
 - Meaning: whether the object can be dragged or repositioned in the game world.
-  Dragging a movable object to a tile beyond an adjacent one — or any object
+  Dragging a movable object that lands *away* from the player — or any object
   heavier than the free threshold (`traversal::PUSH_FREE_WEIGHT`, 5 kg) — is a
-  **push**: the server rolls one Athletics check vs the object's `weight` and
-  slides it as far along the line toward the target as the roll allows (the same
-  "farthest reachable" logic as a jump, capped at `PUSH_MAX_RANGE`). A push
-  costs Exertion, emits Noise, and stops at the first wall/step/collider. Light
-  objects still drop freely onto an adjacent tile. See
-  `docs/utility_systems.md` §4.
+  priced **move**: the server rolls one Athletics check vs
+  `traversal::move_dc(weight, …)` and slides the object as far along the line
+  toward the target as the roll allows (the same "farthest reachable" logic as a
+  jump, capped at `PUSH_MAX_RANGE`; a failed roll lands it *short*). The DC is the
+  object's `weight` (mass) plus the jump-distance cost from its origin to the
+  landing (Euclidean distance + uphill terrain), so flinging it farther costs
+  more. The move costs Exertion, emits Noise, and stops at the first
+  wall/step/collider. A light object set down on a tile *adjacent to the player*
+  still places freely (no roll). See `docs/utility_systems.md` §4.
 
 ### `rotatable`
 - Type: boolean
@@ -835,8 +838,9 @@ The `text` value supports three count placeholders in addition to the normal `{p
   hard cap (`soft × 1.5`). Pickups above the hard cap are rejected with a
   "Too heavy" chat message; above the soft cap the player is `Encumbered`
   and walks at half speed. For **movable world objects**, `weight` is also the
-  base DC of the Athletics push check (`docs/utility_systems.md` §4) and the
-  minimum a resting object needs to hold a `pressure_plate` down.
+  mass base of the Athletics move DC (`traversal::move_dc`, on top of the
+  jump-distance term; `docs/utility_systems.md` §4) and the minimum a resting
+  object needs to hold a `pressure_plate` down.
 
 ### `pressure_plate`
 - Type: mapping
