@@ -8,10 +8,11 @@ use bevy_terminal::TerminalWidgetPlugin;
 
 use crate::app::state::ClientAppState;
 use crate::scripting::python::PythonConsoleHost;
-use crate::scripting::resources::PythonConsoleState;
+use crate::scripting::resources::{PythonConsoleState, PythonHistoryPersist};
 use crate::scripting::systems::{
     handle_python_console_completion, handle_python_console_maximize_button,
     handle_python_console_restart_button, handle_python_console_submissions,
+    load_python_console_history, persist_python_console_history,
     sync_python_console_maximize_label, toggle_python_console,
 };
 
@@ -25,6 +26,7 @@ impl Plugin for ScriptingPlugin {
             app.add_plugins(TerminalWidgetPlugin);
         }
         app.insert_resource(PythonConsoleState::default())
+            .insert_resource(PythonHistoryPersist::default())
             .insert_non_send_resource(PythonConsoleHost::new())
             // toggle_python_console runs in PreUpdate before
             // `bevy_terminal::terminal_input` so a backtick press that
@@ -39,7 +41,9 @@ impl Plugin for ScriptingPlugin {
             .add_systems(
                 Update,
                 (
+                    load_python_console_history,
                     handle_python_console_submissions,
+                    persist_python_console_history,
                     handle_python_console_completion,
                     handle_python_console_restart_button,
                     handle_python_console_maximize_button,

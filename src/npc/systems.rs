@@ -9,13 +9,14 @@ use crate::game::resources::{GameUiEvent, PendingGameUiEvents, SpeechBubbleStyle
 use crate::game::shop::Shopkeeper;
 use crate::magic::effects::MagicEffects;
 use crate::npc::components::{
-    AiMemory, AiState, Barks, HostileBehavior, LastDamagedAt, Npc, RoamingBehavior,
-    RoamingRandomState, RoamingStepTimer,
+    AiMemory, AiState, Barks, Companion, Faction, HostileBehavior, LastDamagedAt, Npc,
+    RoamingBehavior, RoamingRandomState, RoamingStepTimer,
 };
 use crate::npc::detection::detection_outcome;
 use crate::player::classes::ability_mod;
 use crate::player::components::{
-    BaseStats, DerivedStats, Player, PlayerId, PlayerIdentity, Sneaking,
+    AwaitingRespawn, BaseStats, DerivedStats, Player, PlayerId, PlayerIdentity, Sneaking,
+    VitalStats,
 };
 use crate::player::skills::{Skill, SkillSheet};
 use crate::world::components::OverworldObject;
@@ -91,17 +92,23 @@ const CONTACT_GRACE_SECS: f32 = 3.0;
 type NpcTileIndex = HashMap<(SpaceId, TilePosition), Entity>;
 type PlayerTileSet = HashSet<(SpaceId, TilePosition)>;
 
-/// Per-player snapshot the detection logic needs each tick. Enriches the old
-/// `(Entity, SpaceId, TilePosition)` tuple with what the opposed Stealth roll
-/// reads: the player's precomputed Stealth total, whether they're sneaking, and
-/// their `PlayerId` (for the "spotted" cue). Built once per tick in
-/// `update_roaming_npcs`.
+/// Per-combatant snapshot the detection logic needs each tick. Covers both
+/// players and faction-bearing NPCs (hostile mobs and companions), so the
+/// faction-aware detector can find any enemy regardless of kind. For player
+/// entries it also carries what the opposed Stealth roll reads: the player's
+/// precomputed Stealth total, whether they're sneaking, and their `PlayerId`
+/// (for the "spotted" cue). NPC entries set `player_id = None`, `sneaking =
+/// false`, `stealth_total = 0`. Built once per tick in `update_roaming_npcs`.
 #[derive(Clone, Copy)]
-struct PlayerDetectInfo {
+struct CombatantDetectInfo {
     entity: Entity,
     player_id: Option<PlayerId>,
     space_id: SpaceId,
     tile: TilePosition,
+    /// Side this combatant fights on. The detector only returns candidates of a
+    /// *different* faction than the searcher, which also excludes the searcher's
+    /// own entry (you are never your own enemy).
+    faction: Faction,
     /// `ranks(Stealth) + ability_mod(AGI)` — the static part of the player's
     /// Stealth check; the d20 is rolled per contest inside the detector.
     stealth_total: i32,
@@ -141,9 +148,16 @@ pub fn update_roaming_npcs(
             Option<&SkillSheet>,
             Option<&BaseStats>,
             Has<Sneaking>,
+            Option<&Faction>,
         ),
         (With<Player>, Without<Npc>),
     >,
+    // Faction/owner lookup for NPCs, keyed by entity. A *separate* query from
+    // `npc_query` rather than two more tuple slots: it touches only `Faction`
+    // and `Companion` (which `npc_query` never accesses), so there's no
+    // mutable-aliasing conflict with its `&mut TilePosition` — and it keeps the
+    // already-15-wide `npc_query` tuple from overflowing.
+    npc_faction_query: Query<(Option<&Faction>, Option<&Companion>), (With<Npc>, Without<Player>)>,
     // Light-emitting world objects (lamps, campfires). Disjoint from
     // `npc_query`/`player_query` (Without<Npc>/<Player>) so the immutable
     // `&TilePosition` borrow doesn't alias the NPC query's `&mut TilePosition`.
@@ -185,10 +199,25 @@ pub fn update_roaming_npcs(
     let _t = crate::diagnostics::SystemTimer::new("npc:update_roaming_npcs", 1.0);
     let elapsed = time.elapsed_secs();
 
-    let players: Vec<PlayerDetectInfo> = player_query
+    // One faction-tagged combatant list covering players *and* every
+    // faction-bearing NPC (hostile mobs + companions). The faction-aware
+    // detector reads this; the FSM resolves any target's live position from it,
+    // which is what lets an NPC pursue another NPC (companion ↔ monster).
+    // Faction-less peaceful NPCs (shopkeepers, quest-givers) are omitted, so
+    // they stay non-combatants and the list stays small.
+    let mut combatants: Vec<CombatantDetectInfo> = player_query
         .iter()
         .map(
-            |(entity, resident, tile_position, identity, skill_sheet, base_stats, sneaking)| {
+            |(
+                entity,
+                resident,
+                tile_position,
+                identity,
+                skill_sheet,
+                base_stats,
+                sneaking,
+                faction,
+            )| {
                 // Stealth total = ranks(Stealth) + ability_mod(AGI). Players
                 // without a skill sheet / base stats (legacy test fixtures)
                 // contribute 0, so detection of non-sneakers is unchanged.
@@ -198,17 +227,36 @@ pub fn update_roaming_npcs(
                     }
                     _ => 0,
                 };
-                PlayerDetectInfo {
+                CombatantDetectInfo {
                     entity,
                     player_id: identity.map(|i| i.id),
                     space_id: resident.space_id,
                     tile: *tile_position,
+                    faction: faction.copied().unwrap_or_default(),
                     stealth_total,
                     sneaking,
                 }
             },
         )
         .collect();
+    // NPC half: tiles can only be read from `npc_query` (sole owner of NPC
+    // `&mut TilePosition`); the faction comes from the disjoint
+    // `npc_faction_query` by entity lookup.
+    combatants.extend(npc_query.iter().filter_map(|(entity, resident, tile, ..)| {
+        let faction = npc_faction_query
+            .get(entity)
+            .ok()
+            .and_then(|(f, _)| f.copied())?;
+        Some(CombatantDetectInfo {
+            entity,
+            player_id: None,
+            space_id: resident.space_id,
+            tile: *tile,
+            faction,
+            stealth_total: 0,
+            sneaking: false,
+        })
+    }));
 
     // Ambient day/night curve + time for the server-side light model. Slice 1
     // uses the engine default curve for every space (per-space outdoor curves
@@ -256,7 +304,26 @@ pub fn update_roaming_npcs(
         .map(|(entity, resident, tile_position, ..)| ((resident.space_id, *tile_position), entity))
         .collect();
 
-    let player_tiles: PlayerTileSet = players.iter().map(|p| (p.space_id, p.tile)).collect();
+    // Soft-block set for the pathfinder: kept player-only (companions/monsters
+    // are already hard-blocked via `npc_tiles`), so this preserves the prior
+    // "don't path onto a player's tile" nicety unchanged.
+    let player_tiles: PlayerTileSet = combatants
+        .iter()
+        .filter(|c| c.player_id.is_some())
+        .map(|c| (c.space_id, c.tile))
+        .collect();
+
+    // Live occupancy, updated as each NPC commits its move below. `npc_tiles`
+    // is a snapshot from the top of the tick and goes stale the moment the
+    // first NPC steps, so it can't stop two NPCs from landing on the same tile
+    // in one tick. That gap was harmless while NPCs only chased players (the
+    // player moves in another system and an NPC stops adjacent), but two NPCs
+    // pursuing *each other* both pathed to the midpoint tile and stacked, then
+    // drifted off the map in lockstep. This set, checked at commit time, makes
+    // the second mover hold instead of stacking. Seeded with players too so an
+    // NPC never steps onto a player's tile mid-tick either.
+    let mut occupied: HashSet<(SpaceId, TilePosition)> = npc_tiles.keys().copied().collect();
+    occupied.extend(player_tiles.iter().copied());
 
     for (
         entity,
@@ -277,6 +344,24 @@ pub fn update_roaming_npcs(
     ) in &mut npc_query
     {
         let last_damaged_at = last_damaged_query.get(entity).ok().map(|t| t.0);
+
+        // This NPC's own side + (if it's a companion) where its owner is. A
+        // faction-less NPC that somehow reaches the FSM defaults to MonsterSide,
+        // preserving the legacy "monster aggros players" behavior for fixtures
+        // built without an explicit faction. The owner tile is resolved from the
+        // combatant list (owner is a player or another faction NPC, both there)
+        // and only when same-space, so a companion only follows on its own map.
+        let (self_faction, companion) = npc_faction_query
+            .get(entity)
+            .map(|(f, c)| (f.copied().unwrap_or(Faction::MonsterSide), c.copied()))
+            .unwrap_or((Faction::MonsterSide, None));
+        let companion_follow = companion.and_then(|c| {
+            combatants
+                .iter()
+                .find(|cb| cb.entity == c.owner && cb.space_id == resident.space_id)
+                .map(|cb| (cb.tile, c.follow_close_tiles))
+        });
+
         timer.remaining_seconds = (timer.remaining_seconds - time.delta_secs()).max(0.0);
         if timer.remaining_seconds > 0.0 {
             continue;
@@ -297,10 +382,10 @@ pub fn update_roaming_npcs(
         // Shopkeeper pause is orthogonal to the FSM: peaceful NPCs face the
         // nearest nearby player so context menus / trade UI stay live.
         if is_shopkeeper {
-            let nearest = players
+            let nearest = combatants
                 .iter()
                 .copied()
-                .filter(|p| p.space_id == resident.space_id)
+                .filter(|p| p.player_id.is_some() && p.space_id == resident.space_id)
                 .min_by_key(|p| chebyshev_distance(*tile_position, p.tile))
                 .map(|p| p.tile);
             if let Some(target) = nearest {
@@ -337,7 +422,9 @@ pub fn update_roaming_npcs(
             behavior,
             hostile_behavior,
             attack_profile,
-            players: &players,
+            self_faction,
+            companion_follow,
+            combatants: &combatants,
             blockers: &blockers,
             los_blockers: &los_blockers,
             npc_tiles: &npc_tiles,
@@ -407,7 +494,9 @@ pub fn update_roaming_npcs(
                     if let (Some(ui_events), Some(npc_object)) =
                         (ui_events.as_deref_mut(), overworld_object)
                     {
-                        if let Some(player_id) = players
+                        // Only players get a "spotted" cue; an NPC target (a
+                        // companion's prey) resolves to `player_id = None` here.
+                        if let Some(player_id) = combatants
                             .iter()
                             .find(|p| p.entity == target)
                             .and_then(|p| p.player_id)
@@ -429,19 +518,29 @@ pub fn update_roaming_npcs(
         }
 
         if let Some(new_position) = outcome.move_to {
-            let old_position = *tile_position;
-            *tile_position = new_position;
-            pending_steps.push(crate::world::step_triggers::StepEvent {
-                entity,
-                space_id: resident.space_id,
-                tile: new_position,
-            });
-            if let Some(direction) = Direction::from_delta(
-                new_position.x - old_position.x,
-                new_position.y - old_position.y,
-            ) {
-                if let Some(facing) = facing.as_mut() {
-                    facing.0 = direction;
+            let new_key = (resident.space_id, new_position);
+            // Hold rather than stack: if another combatant already holds this
+            // tile, or stepped into it earlier this tick, skip the move. Without
+            // this, two NPCs pursuing each other both commit to the midpoint
+            // tile and end up co-located, then drift off together (see
+            // `monster_chases_companion_and_engages`).
+            if !occupied.contains(&new_key) {
+                let old_position = *tile_position;
+                occupied.remove(&(resident.space_id, old_position));
+                occupied.insert(new_key);
+                *tile_position = new_position;
+                pending_steps.push(crate::world::step_triggers::StepEvent {
+                    entity,
+                    space_id: resident.space_id,
+                    tile: new_position,
+                });
+                if let Some(direction) = Direction::from_delta(
+                    new_position.x - old_position.x,
+                    new_position.y - old_position.y,
+                ) {
+                    if let Some(facing) = facing.as_mut() {
+                        facing.0 = direction;
+                    }
                 }
             }
         }
@@ -469,6 +568,34 @@ pub fn update_roaming_npcs(
     }
 }
 
+/// Despawn companions whose owner is gone or down. Runs before
+/// `update_roaming_npcs` so a freed companion never ticks against a dangling
+/// owner lookup. An owner counts as lost when:
+/// - its entity no longer exists (a slain monster owner is despawned by
+///   `apply_pending_damage`; a disconnected player is despawned/saved out), or
+/// - it is a player at HP ≤ 0 / `AwaitingRespawn` (player entities survive
+///   death, so we despawn the summons explicitly — "die with the summoner").
+///
+/// Any enemy still targeting the despawned companion has its now-dangling
+/// `CombatTarget` cleared by `clear_invalid_combat_targets`.
+pub fn despawn_orphaned_companions(
+    mut commands: Commands,
+    companions: Query<(Entity, &Companion)>,
+    owners: Query<(Option<&VitalStats>, Has<AwaitingRespawn>)>,
+) {
+    for (entity, companion) in &companions {
+        let orphaned = match owners.get(companion.owner) {
+            Err(_) => true,
+            Ok((vitals, awaiting_respawn)) => {
+                awaiting_respawn || vitals.is_some_and(|v| v.health <= 0.0)
+            }
+        };
+        if orphaned {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // FSM
 // ---------------------------------------------------------------------------
@@ -482,7 +609,13 @@ struct StepAiInput<'a> {
     behavior: &'a RoamingBehavior,
     hostile_behavior: Option<&'a HostileBehavior>,
     attack_profile: Option<&'a AttackProfile>,
-    players: &'a [PlayerDetectInfo],
+    /// The searcher's own side. The detector returns only enemies of this
+    /// faction (which also excludes the searcher itself).
+    self_faction: Faction,
+    /// `Some((owner_tile, follow_close_tiles))` if this NPC is a companion with
+    /// a same-space owner. Drives the follow-when-idle behavior in `tick_wander`.
+    companion_follow: Option<(TilePosition, i32)>,
+    combatants: &'a [CombatantDetectInfo],
     blockers: &'a BlockerIndex,
     los_blockers: &'a BlockerIndex,
     npc_tiles: &'a NpcTileIndex,
@@ -548,11 +681,12 @@ fn tick_wander(input: &mut StepAiInput<'_>) -> AiOutcome {
     // pursue/engage action immediately rather than burning a tick to "wake
     // up" — players expect a chasing NPC to actually take its first step.
     if let Some(hostile) = input.hostile_behavior {
-        if let Some(spotted) = nearest_visible_player(
+        if let Some(spotted) = nearest_visible_enemy(
             input.tile_position,
             input.space_id,
+            input.self_faction,
             hostile,
-            input.players,
+            input.combatants,
             input.los_blockers,
             hostile.detect_distance_tiles,
             input.light_curve,
@@ -569,10 +703,48 @@ fn tick_wander(input: &mut StepAiInput<'_>) -> AiOutcome {
             return outcome;
         }
 
-        // Didn't see anyone, but might hear something. A heard noise pulls a
-        // wandering hostile into Alert at the noise tile — investigate even with
-        // no line of sight. The existing Alert tick handles the pathing.
-        if let Some(noise_tile) = input.heard_noise {
+        // No enemy in sight. A companion now closes on its owner; a regular
+        // hostile instead investigates any noise it can hear. (Companions don't
+        // chase noise — they stay glued to their owner.)
+        if let Some((owner_tile, follow_close_tiles)) = input.companion_follow {
+            if chebyshev_distance(input.tile_position, owner_tile) > follow_close_tiles {
+                let step = astar_next_step(
+                    input.entity,
+                    input.space_id,
+                    input.tile_position,
+                    owner_tile,
+                    input.blockers,
+                    input.npc_tiles,
+                    input.player_tiles,
+                    Some(owner_tile),
+                )
+                .or_else(|| {
+                    choose_seek_step(
+                        input.entity,
+                        input.space_id,
+                        input.tile_position,
+                        owner_tile,
+                        input.blockers,
+                        input.npc_tiles,
+                        Some(input.player_tiles),
+                        Some(owner_tile),
+                    )
+                });
+                return AiOutcome {
+                    next_state: AiState::Wander,
+                    next_memory: AiMemory {
+                        last_step: step.map(|p| {
+                            IVec2::new(p.x - input.tile_position.x, p.y - input.tile_position.y)
+                        }),
+                        ..input.memory
+                    },
+                    target: TargetChange::Keep,
+                    move_to: step,
+                    idle_pause: false,
+                    bark: None,
+                };
+            }
+        } else if let Some(noise_tile) = input.heard_noise {
             return AiOutcome {
                 next_state: AiState::Alert {
                     last_seen: noise_tile,
@@ -725,17 +897,18 @@ fn tick_alert(
     // Act on the new state immediately, same as Wander → Pursue.
     //
     // Use the LoS index (not the movement index): visibility here must agree
-    // with `tick_wander`'s acquisition (`:nearest_visible_player` with
+    // with `tick_wander`'s acquisition (`:nearest_visible_enemy` with
     // `los_blockers`) and the `lost_los` gate in `tick_pursue_or_engage`.
     // Detecting with the movement index while the pursue gate checks the LoS
     // index lets an NPC "see" a target it then immediately declares out of
     // contact, freezing it in a detect→abort loop.
     if let Some(hostile) = input.hostile_behavior {
-        if let Some(spotted) = nearest_visible_player(
+        if let Some(spotted) = nearest_visible_enemy(
             input.tile_position,
             input.space_id,
+            input.self_faction,
             hostile,
-            input.players,
+            input.combatants,
             input.los_blockers,
             hostile.disengage_distance_tiles,
             input.light_curve,
@@ -807,9 +980,20 @@ fn tick_alert(
 }
 
 fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: bool) -> AiOutcome {
-    // Validate target still exists and is in the same space.
+    // Body-block / aggro switch: if our current target is out of reach but a
+    // different enemy already sits within attack range (a companion that bodied
+    // up to us while we chased its owner, say), switch to that nearer threat.
+    // Without this a monster locked on a fleeing player ignores the tank in its
+    // face and the two just conga across the map. Only fires while the current
+    // target is unreachable, so an active melee never flip-flops.
+    let switched_target = closer_in_range_enemy(input, target);
+    let target = switched_target.unwrap_or(target);
+
+    // Validate target still exists and is in the same space. The target may be
+    // a player or another NPC (a companion's prey, or a monster fighting a
+    // companion) — both live in the combatant list.
     let Some((target_space, target_pos)) = input
-        .players
+        .combatants
         .iter()
         .find(|p| p.entity == target)
         .map(|p| (p.space_id, p.tile))
@@ -865,7 +1049,7 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
         &input.tile_position,
         &target_pos,
     );
-    let next_target = if engaged != now_engaged {
+    let next_target = if switched_target.is_some() || engaged != now_engaged {
         TargetChange::Set(target) // Re-affirm; cheap, keeps CombatTarget present.
     } else {
         TargetChange::Keep
@@ -1070,7 +1254,7 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
 /// shouldn't stop fleeing yet.
 fn tick_flee(input: &mut StepAiInput<'_>, from: Entity, expires_at_seconds: f32) -> AiOutcome {
     let attacker = input
-        .players
+        .combatants
         .iter()
         .find(|p| p.entity == from)
         .map(|p| (p.space_id, p.tile));
@@ -1167,20 +1351,25 @@ fn tick_flee(input: &mut StepAiInput<'_>, from: Entity, expires_at_seconds: f32)
 }
 
 #[allow(clippy::too_many_arguments)]
-fn nearest_visible_player(
+fn nearest_visible_enemy(
     tile_position: TilePosition,
     space_id: SpaceId,
+    self_faction: Faction,
     hostile: &HostileBehavior,
-    players: &[PlayerDetectInfo],
+    combatants: &[CombatantDetectInfo],
     blockers: &BlockerIndex,
     radius: i32,
     light_curve: &[AmbientKeyframeF32],
     time_of_day: f32,
     light_emitters: &[(SpaceId, PointLight)],
-) -> Option<PlayerDetectInfo> {
-    players
+) -> Option<CombatantDetectInfo> {
+    combatants
         .iter()
         .copied()
+        // Faction gate: only an opposing side is an enemy. This also drops the
+        // searcher's own entry — you share your own faction, so you're never
+        // your own enemy — making a separate self-exclusion unnecessary.
+        .filter(|p| self_faction.is_enemy_of(p.faction))
         .filter(|p| p.space_id == space_id)
         // No sensing across a *full* floor by default: an NPC detects players on
         // its own floor, plus anything within one auto-climb half-block (so a
@@ -1235,6 +1424,33 @@ fn nearest_visible_player(
 /// reach rather than not at all.
 fn attack_kind_of(profile: Option<&AttackProfile>) -> AttackKind {
     profile.map(|p| p.kind).unwrap_or(AttackKind::Melee)
+}
+
+/// When the current `target` is out of attack range but another enemy already
+/// sits within it, return that nearer enemy so a monster fights the foe in its
+/// face (a companion bodying it up) instead of running past to chase a distant
+/// one. Returns `None` while the current target is itself reachable, so an
+/// active engagement never flip-flops between two adjacent foes.
+fn closer_in_range_enemy(input: &StepAiInput<'_>, target: Entity) -> Option<Entity> {
+    let kind = attack_kind_of(input.attack_profile);
+    let reachable = |tile: TilePosition| is_target_in_range(kind, &input.tile_position, &tile);
+    let current_in_range = input
+        .combatants
+        .iter()
+        .find(|c| c.entity == target)
+        .is_some_and(|c| c.space_id == input.space_id && reachable(c.tile));
+    if current_in_range {
+        return None;
+    }
+    input
+        .combatants
+        .iter()
+        .filter(|c| c.entity != target)
+        .filter(|c| input.self_faction.is_enemy_of(c.faction))
+        .filter(|c| c.space_id == input.space_id)
+        .filter(|c| reachable(c.tile))
+        .min_by_key(|c| chebyshev_distance(input.tile_position, c.tile))
+        .map(|c| c.entity)
 }
 
 #[derive(Clone, Copy)]
@@ -1823,8 +2039,8 @@ mod tests {
     use super::*;
     use crate::combat::components::{AttackProfile, CombatTarget};
     use crate::npc::components::{
-        AiMemory, AiState, HostileBehavior, Npc, RoamBounds, RoamingBehavior, RoamingRandomState,
-        RoamingStepTimer,
+        AiMemory, AiState, Companion, Faction, HostileBehavior, Npc, RoamBounds, RoamingBehavior,
+        RoamingRandomState, RoamingStepTimer,
     };
     use crate::player::components::{
         ChatLog, Inventory, Player, PlayerId, PlayerIdentity, VitalStats,
@@ -1857,12 +2073,13 @@ mod tests {
     /// are always detected within range+LoS, so these exercise the floor/range
     /// gates without the (non-deterministic) opposed stealth roll. The opposed
     /// roll itself is unit-tested in `crate::npc::detection`.
-    fn detect_player(tile: TilePosition) -> PlayerDetectInfo {
-        PlayerDetectInfo {
+    fn detect_player(tile: TilePosition) -> CombatantDetectInfo {
+        CombatantDetectInfo {
             entity: Entity::PLACEHOLDER,
             player_id: None,
             space_id: TEST_SPACE,
             tile,
+            faction: Faction::PlayerSide,
             stealth_total: 0,
             sneaking: false,
         }
@@ -2037,6 +2254,180 @@ mod tests {
         assert!(
             pos.x > 5,
             "NPC should step toward the player (east), got {pos:?}"
+        );
+    }
+
+    /// A PlayerSide companion wolf owned by `owner`. Wide bounds + the
+    /// `Companion` link mirror `spawn_summoned_creature`.
+    fn spawn_companion_wolf(
+        app: &mut App,
+        pos: TilePosition,
+        owner: Entity,
+        owner_id: u64,
+    ) -> Entity {
+        let mut hostile = default_hostile(6, 10);
+        hostile.requires_line_of_sight = true;
+        app.world_mut()
+            .spawn((
+                Npc,
+                SpaceResident {
+                    space_id: TEST_SPACE,
+                },
+                pos,
+                default_roaming(
+                    RoamBounds {
+                        min_x: 0,
+                        min_y: 0,
+                        max_x: 120,
+                        max_y: 120,
+                    },
+                    0.1,
+                ),
+                hostile,
+                AttackProfile::melee(),
+                RoamingStepTimer {
+                    remaining_seconds: 0.0,
+                },
+                RoamingRandomState { seed: 7 },
+                AiState::default(),
+                AiMemory::default(),
+                Faction::PlayerSide,
+                Companion {
+                    owner,
+                    owner_player: Some(PlayerId(owner_id)),
+                    follow_close_tiles: 2,
+                },
+            ))
+            .id()
+    }
+
+    /// A fire-elemental-shaped melee monster: requires line of sight, detect 6.
+    fn spawn_melee_monster_los(app: &mut App, pos: TilePosition) -> Entity {
+        let mut hostile = default_hostile(6, 10);
+        hostile.requires_line_of_sight = true;
+        app.world_mut()
+            .spawn((
+                Npc,
+                SpaceResident {
+                    space_id: TEST_SPACE,
+                },
+                pos,
+                default_roaming(
+                    RoamBounds {
+                        min_x: 0,
+                        min_y: 0,
+                        max_x: 120,
+                        max_y: 120,
+                    },
+                    0.1,
+                ),
+                hostile,
+                AttackProfile::melee(),
+                RoamingStepTimer {
+                    remaining_seconds: 0.0,
+                },
+                RoamingRandomState { seed: 3 },
+                AiState::default(),
+                AiMemory::default(),
+                Faction::MonsterSide,
+            ))
+            .id()
+    }
+
+    /// Regression for the companion feature: a hostile monster and a player's
+    /// companion that pursue *each other* must lock into melee adjacency and
+    /// stay there — not stack on a shared tile and drift off the map together
+    /// (the bug from simultaneous same-tick movement onto the midpoint tile).
+    #[test]
+    fn monster_and_companion_lock_into_melee_not_drift() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+
+        let player = spawn_player(&mut app, 1, TilePosition::ground(10, 10));
+        let wolf = spawn_companion_wolf(&mut app, TilePosition::ground(13, 10), player, 1);
+        let monster = spawn_melee_monster_los(&mut app, TilePosition::ground(16, 10));
+
+        app.add_systems(Update, update_roaming_npcs);
+
+        // Simulate both combatants each tick (reset their step timers so they
+        // act despite Time barely advancing in tests).
+        for _ in 0..10 {
+            for e in [wolf, monster] {
+                app.world_mut()
+                    .get_mut::<RoamingStepTimer>(e)
+                    .unwrap()
+                    .remaining_seconds = 0.0;
+            }
+            app.update();
+        }
+
+        let monster_pos = *app.world().get::<TilePosition>(monster).unwrap();
+        let wolf_pos = *app.world().get::<TilePosition>(wolf).unwrap();
+        // They must be adjacent (engaged), never co-located...
+        let gap = chebyshev_distance(monster_pos, wolf_pos);
+        assert_eq!(
+            gap, 1,
+            "monster and companion should hold at melee adjacency (monster {monster_pos:?}, wolf {wolf_pos:?})"
+        );
+        // ...and the brawl must stay where it started, not drift to the map edge.
+        assert!(
+            chebyshev_distance(monster_pos, TilePosition::ground(15, 10)) <= 2,
+            "the fight should stay put, not drift away (monster {monster_pos:?})"
+        );
+    }
+
+    /// A companion bodying up to a monster that's chasing its fleeing owner
+    /// must pull the monster's aggro: the monster switches target to the
+    /// adjacent companion and fights it in place, instead of ignoring it and
+    /// conga-chasing the owner across the map.
+    #[test]
+    fn companion_pulls_aggro_off_fleeing_owner() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+
+        let player = spawn_player(&mut app, 1, TilePosition::ground(10, 14));
+        let wolf = spawn_companion_wolf(&mut app, TilePosition::ground(11, 10), player, 1);
+        let monster = spawn_melee_monster_los(&mut app, TilePosition::ground(10, 18));
+
+        app.add_systems(Update, update_roaming_npcs);
+
+        for _ in 0..12 {
+            {
+                let mut p = app.world_mut().get_mut::<TilePosition>(player).unwrap();
+                if p.y > 2 {
+                    p.y -= 1; // owner flees north one tile per frame
+                }
+            }
+            for e in [wolf, monster] {
+                app.world_mut()
+                    .get_mut::<RoamingStepTimer>(e)
+                    .unwrap()
+                    .remaining_seconds = 0.0;
+            }
+            app.update();
+        }
+
+        let monster_pos = *app.world().get::<TilePosition>(monster).unwrap();
+        let wolf_pos = *app.world().get::<TilePosition>(wolf).unwrap();
+        let player_pos = *app.world().get::<TilePosition>(player).unwrap();
+
+        // The monster switched to the companion and holds at melee adjacency...
+        assert_eq!(
+            app.world().get::<CombatTarget>(monster).map(|t| t.entity),
+            Some(wolf),
+            "monster should switch aggro to the companion blocking it"
+        );
+        assert_eq!(
+            chebyshev_distance(monster_pos, wolf_pos),
+            1,
+            "monster should hold at melee with the companion (monster {monster_pos:?}, wolf {wolf_pos:?})"
+        );
+        // ...so the owner gets away rather than being run down.
+        assert!(
+            chebyshev_distance(monster_pos, player_pos) >= 5,
+            "the fleeing owner should escape while the companion tanks (monster {monster_pos:?}, player {player_pos:?})"
         );
     }
 
@@ -2294,9 +2685,10 @@ mod tests {
         let curve = default_day_night_curve();
         let upstairs = vec![detect_player(TilePosition::new(5, 6, 2))];
         assert!(
-            nearest_visible_player(
+            nearest_visible_enemy(
                 npc,
                 TEST_SPACE,
+                Faction::MonsterSide,
                 &hostile,
                 &upstairs,
                 &blockers,
@@ -2311,9 +2703,10 @@ mod tests {
 
         let same_floor = vec![detect_player(TilePosition::new(5, 6, 1))];
         assert!(
-            nearest_visible_player(
+            nearest_visible_enemy(
                 npc,
                 TEST_SPACE,
+                Faction::MonsterSide,
                 &hostile,
                 &same_floor,
                 &blockers,
@@ -2341,9 +2734,10 @@ mod tests {
         let curve = default_day_night_curve();
         let half_block_up = vec![detect_player(TilePosition::new(5, 6, 2))];
         assert!(
-            nearest_visible_player(
+            nearest_visible_enemy(
                 npc,
                 TEST_SPACE,
+                Faction::MonsterSide,
                 &hostile,
                 &half_block_up,
                 &blockers,
@@ -2358,9 +2752,10 @@ mod tests {
 
         let full_floor_up = vec![detect_player(TilePosition::new(5, 6, 3))];
         assert!(
-            nearest_visible_player(
+            nearest_visible_enemy(
                 npc,
                 TEST_SPACE,
+                Faction::MonsterSide,
                 &hostile,
                 &full_floor_up,
                 &blockers,
@@ -2371,6 +2766,64 @@ mod tests {
             )
             .is_none(),
             "a player a full floor up (z=1→z=3, dz=2) stays invisible"
+        );
+    }
+
+    #[test]
+    fn detector_only_returns_opposing_faction() {
+        // The faction gate: a PlayerSide searcher (a companion) ignores same-side
+        // combatants — including the player and other companions — and only
+        // acquires the opposing MonsterSide. This is also what excludes the
+        // searcher's own entry (it always shares its own faction).
+        let hostile = default_hostile(20, 20);
+        let blockers: BlockerIndex = BlockerIndex::default();
+        let npc = TilePosition::ground(5, 5);
+        let curve = default_day_night_curve();
+
+        let make = |tile: TilePosition, faction: Faction| CombatantDetectInfo {
+            entity: Entity::PLACEHOLDER,
+            player_id: None,
+            space_id: TEST_SPACE,
+            tile,
+            faction,
+            stealth_total: 0,
+            sneaking: false,
+        };
+
+        let allies = vec![make(TilePosition::ground(5, 6), Faction::PlayerSide)];
+        assert!(
+            nearest_visible_enemy(
+                npc,
+                TEST_SPACE,
+                Faction::PlayerSide,
+                &hostile,
+                &allies,
+                &blockers,
+                20,
+                &curve,
+                0.5,
+                &[]
+            )
+            .is_none(),
+            "a PlayerSide searcher must not target a PlayerSide combatant"
+        );
+
+        let foes = vec![make(TilePosition::ground(5, 6), Faction::MonsterSide)];
+        assert!(
+            nearest_visible_enemy(
+                npc,
+                TEST_SPACE,
+                Faction::PlayerSide,
+                &hostile,
+                &foes,
+                &blockers,
+                20,
+                &curve,
+                0.5,
+                &[]
+            )
+            .is_some(),
+            "a PlayerSide searcher must target a MonsterSide combatant"
         );
     }
 

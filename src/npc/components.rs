@@ -1,10 +1,44 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::player::components::PlayerId;
 use crate::world::components::{SpaceId, TilePosition};
 
 #[derive(Component, Clone, Copy, Debug, Deserialize, Serialize)]
 pub struct Npc;
+
+/// Which side a combatant fights on. Targeting is faction-aware: an entity only
+/// acquires enemies of a *different* faction. Players default to `PlayerSide`;
+/// hostile mobs are tagged `MonsterSide` at spawn; a companion inherits its
+/// owner's side. A faction-less NPC (shopkeeper, quest-giver) reads as the
+/// `PlayerSide` default — never an enemy of the player side, so companions and
+/// player-allied creatures leave it alone.
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Default, Deserialize, Serialize)]
+pub enum Faction {
+    #[default]
+    PlayerSide,
+    MonsterSide,
+}
+
+impl Faction {
+    pub fn is_enemy_of(self, other: Faction) -> bool {
+        self != other
+    }
+}
+
+/// Marks an NPC as a companion fighting for `owner`. `owner_player` is the
+/// player to credit kills to (XP / quest / kill feed) — `None` for a companion
+/// owned by another NPC. Deliberately **not** persisted: `owner` is a live
+/// `Entity` that is meaningless across save/load, and summoned companions are
+/// ephemeral (mirrors `HazardOwner`).
+#[derive(Component, Clone, Copy, Debug)]
+pub struct Companion {
+    pub owner: Entity,
+    pub owner_player: Option<PlayerId>,
+    /// When no enemy is visible, the companion follows its owner until it is
+    /// within this many tiles, then idles/wanders in place.
+    pub follow_close_tiles: i32,
+}
 
 #[derive(Component, Clone, Debug, Deserialize, Serialize)]
 pub struct SpawnGroupMember {

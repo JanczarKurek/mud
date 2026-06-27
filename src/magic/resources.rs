@@ -55,6 +55,11 @@ pub struct SpellEffects {
     /// Spawn a transient world object at the cast location.
     #[serde(default)]
     pub spawns_object: Option<SpawnObjectSpec>,
+    /// Summon a timed friendly creature (a companion) that fights on the
+    /// caster's side. Its kills credit the caster. Only meaningful for
+    /// `targeted_tile` spells (the creature appears at the target tile).
+    #[serde(default)]
+    pub summons_creature: Option<SummonSpec>,
     /// Deal `damage` to every entity within `aoe.radius_tiles` Chebyshev
     /// distance of the target tile. Only meaningful for tile-target spells.
     #[serde(default)]
@@ -109,6 +114,36 @@ pub struct SpawnObjectSpec {
     /// `DamageSource::OwnedByPlayer`.
     #[serde(default)]
     pub attribute_to_caster: bool,
+}
+
+/// A timed friendly creature summoned by a spell. The creature is realized as a
+/// full hostile NPC (so it acquires and fights enemies through the normal AI),
+/// then tagged `Faction::PlayerSide` + `Companion` so it fights *for* the caster
+/// and its kills are credited to them. It despawns when its `lifetime_seconds`
+/// `Ttl` expires (or when the caster dies). One companion per owner: re-casting
+/// replaces the previous summon.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct SummonSpec {
+    /// Overworld-object definition id of the creature to summon.
+    pub type_id: String,
+    /// Seconds the summon lives before its `Ttl` despawns it.
+    pub lifetime_seconds: f32,
+    /// How many to summon at the target tile. Defaults to 1.
+    #[serde(default = "default_summon_count")]
+    pub count: u32,
+    /// When no enemy is visible, the companion follows its owner until within
+    /// this many tiles. Defaults to 2.
+    #[serde(default = "default_follow_close_tiles")]
+    pub follow_close_tiles: i32,
+}
+
+fn default_summon_count() -> u32 {
+    1
+}
+
+fn default_follow_close_tiles() -> i32 {
+    2
 }
 
 /// Tile pattern for `SpawnObjectSpec`. `Single` is the default and matches

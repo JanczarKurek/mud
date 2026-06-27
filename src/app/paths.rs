@@ -35,6 +35,7 @@ const QUICKBAR_SUBDIR: &str = "quickbar";
 const UI_STATE_SUBDIR: &str = "ui_state";
 const CONFIG_SUBDIR: &str = "config";
 const SETTINGS_FILE: &str = "settings.json";
+const PYTHON_HISTORY_FILE: &str = "python_history.txt";
 
 /// Resolved data paths for a server-side role (embedded or headless server).
 #[derive(Clone, Debug)]
@@ -155,6 +156,18 @@ pub fn client_settings_path(runtime: AppRuntime) -> Option<PathBuf> {
     Some(base.join(SETTINGS_FILE))
 }
 
+/// Global client-side Python console command history. Client-wide (not
+/// per-character) like the settings file; the server never sees it.
+/// `HeadlessServer` uses the admin REPL instead and returns `None`.
+pub fn python_history_path(runtime: AppRuntime) -> Option<PathBuf> {
+    let base = match runtime {
+        AppRuntime::EmbeddedClient => data_root().join(EMBEDDED_SUBDIR).join(CONFIG_SUBDIR),
+        AppRuntime::TcpClient => data_root().join(CLIENT_SUBDIR).join(CONFIG_SUBDIR),
+        AppRuntime::HeadlessServer => return None,
+    };
+    Some(base.join(PYTHON_HISTORY_FILE))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -196,6 +209,18 @@ mod tests {
         assert_ne!(e, c);
         assert!(e.ends_with("ui_state/7.json"));
         assert!(c.ends_with("ui_state/7.json"));
+        assert!(e.to_string_lossy().contains(EMBEDDED_SUBDIR));
+        assert!(c.to_string_lossy().contains(CLIENT_SUBDIR));
+    }
+
+    #[test]
+    fn python_history_path_is_client_only_and_disjoint() {
+        assert!(python_history_path(AppRuntime::HeadlessServer).is_none());
+        let e = python_history_path(AppRuntime::EmbeddedClient).unwrap();
+        let c = python_history_path(AppRuntime::TcpClient).unwrap();
+        assert_ne!(e, c);
+        assert!(e.ends_with("config/python_history.txt"));
+        assert!(c.ends_with("config/python_history.txt"));
         assert!(e.to_string_lossy().contains(EMBEDDED_SUBDIR));
         assert!(c.to_string_lossy().contains(CLIENT_SUBDIR));
     }

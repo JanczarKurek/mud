@@ -41,6 +41,7 @@ items if/when we resume:
 ### Gameplay polish
 - Introduce richer collision semantics than a single blocking flag.
 - Generalize the new NPC behavior system so mobs/NPCs can share the same behavior component layer.
+- Companion mechanic + timed summon spell shipped: `Faction` (PlayerSide/MonsterSide) + `Companion` components, faction-aware NPC targeting (`nearest_visible_enemy`), companion kill credit via `DamageSource::OwnedByPlayer`, and the `summons_creature` spell effect (`summon_wolf`). Deferred follow-ups: (a) a hard owner-distance leash so a companion can't chase an enemy arbitrarily far from its owner (today only the follow-when-idle pull recenters it); (b) an "owned-by-you" visual tint on the client (projection currently sends no owner info); (c) monster-owned companions are supported by the generic path (`Companion.owner_player = None`) but no NPC that summons is authored yet; (d) summon cap is hard-coded to 1/owner — no per-spell cap field.
 - Decide how much scripting authority the embedded Python console should keep once server-authoritative logic exists.
 
 ## Risks

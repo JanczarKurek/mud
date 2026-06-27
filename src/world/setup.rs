@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use crate::combat::components::{AttackProfile, CombatLeash};
 use crate::combat::damage_expr::DamageExpr;
 use crate::npc::components::{
-    AiMemory, AiState, Barks, HostileBehavior, Npc, RoamBounds, RoamingBehavior,
+    AiMemory, AiState, Barks, Faction, HostileBehavior, Npc, RoamBounds, RoamingBehavior,
     RoamingRandomState, RoamingStepTimer,
 };
 use crate::persistence::WorldSnapshotStatus;
@@ -384,6 +384,10 @@ pub fn realize_npc(
             CombatLeash {
                 max_distance_tiles: disengage,
             },
+            // Hostile mobs fight on the monster side. A summoned companion is
+            // realized through this same path, then has its faction overridden
+            // to `PlayerSide` by `spawn_summoned_creature`.
+            Faction::MonsterSide,
         ));
     }
     if let Some(def) = definition {

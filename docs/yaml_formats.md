@@ -1817,6 +1817,26 @@ Top-level fields:
   `DamageSource::OwnedByPlayer` (XP flows back to the placer on kill). Leave
   `false` for non-hazard summons (e.g. `magic_light`).
 
+### `summons_creature`
+- Type: mapping `{ type_id: string, lifetime_seconds: float, count?: int, follow_close_tiles?: int }`
+- Optional: yes
+- Meaning: summon one or more **timed friendly companions** that fight on the
+  caster's side. Only meaningful for `targeted_tile` spells — the creature(s)
+  appear at the target tile. Each is realized as a full hostile NPC (so it
+  acquires and pursues enemies through the normal AI), then re-tagged
+  `Faction::PlayerSide` + `Companion` so it fights *for* the caster, and gets a
+  `Ttl` so it despawns after `lifetime_seconds`. While it lives, its kills are
+  credited to the caster (XP / quest progress / kill feed) via
+  `DamageSource::OwnedByPlayer`, and enemy NPCs will target it like they target
+  players. The referenced `type_id` must exist in `assets/overworld_objects/`
+  and should carry an `npc_behavior:` block (so it can engage enemies).
+- `count` (optional, default `1`): how many to summon at the target tile.
+- `follow_close_tiles` (optional, default `2`): when no enemy is visible the
+  companion follows its owner until within this many tiles, then idles nearby.
+- Cap: **one companion per owner.** Re-casting despawns the previous summon
+  (repositions/refreshes rather than stacking). A companion also despawns when
+  its owner dies (HP ≤ 0 / awaiting respawn) or its `Ttl` elapses.
+
 ### `aoe`
 - Type: mapping `{ radius_tiles: int, vfx_on_tile?: string }`
 - Optional: yes

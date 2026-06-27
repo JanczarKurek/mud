@@ -130,6 +130,10 @@ pub struct CommandOutputs<'w, 's> {
     /// ParamSet.
     pub player_exertion:
         Query<'w, 's, &'static mut crate::player::components::Exertion, With<Player>>,
+    /// Read-only view of active companions, used by the summon-spell path to
+    /// enforce the one-companion-per-owner cap (re-casting replaces the prior
+    /// summon). Disjoint from the other queries — touches only `Companion`.
+    pub companions: Query<'w, 's, (Entity, &'static crate::npc::components::Companion), With<Npc>>,
 }
 
 /// Bundle of resources needed together when a command may cause space
@@ -568,6 +572,7 @@ pub fn process_game_commands(
                     &mut command_outputs.npc_magic_effects,
                     &mut command_outputs.player_magic_effects,
                     &command_outputs.player_class_level,
+                    &command_outputs.companions,
                     &mut object_registry,
                     &definitions,
                     &spell_definitions,
@@ -3562,6 +3567,7 @@ fn handle_cast_spell_at_tile(
         ),
         With<Player>,
     >,
+    companion_query: &Query<(Entity, &crate::npc::components::Companion), With<Npc>>,
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
@@ -3736,6 +3742,20 @@ fn handle_cast_spell_at_tile(
         );
     }
 
+    if let Some(summon_spec) = spell.effects.summons_creature.as_ref() {
+        spawn_summoned_creature(
+            commands,
+            definitions,
+            object_registry,
+            companion_query,
+            summon_spec,
+            caster_space_id,
+            target_tile,
+            player_entity,
+            caster_id,
+        );
+    }
+
     if let Ok(mut effects) = player_magic_effects_query.get_mut(player_entity) {
         apply_spell_self_effects(spell, caster_id, &mut effects);
     }
@@ -3849,6 +3869,88 @@ fn spawn_spell_object(
         if spawn_spec.attribute_to_caster {
             entity_cmds.insert(crate::world::step_triggers::HazardOwner(caster_id));
         }
+    }
+}
+
+/// Summon `summon_spec.count` timed companions for the casting player at
+/// `target_tile`. Each is realized as a full hostile NPC (so it acquires and
+/// fights enemies through the normal AI), then re-tagged with `Faction::PlayerSide`
+/// and `Companion` so it fights *for* the caster and credits its kills to them,
+/// and given a `Ttl` so it despawns after `lifetime_seconds`. Enforces one
+/// companion per owner: any existing companion of this player is despawned
+/// first, so a recast repositions/refreshes rather than stacking summons.
+#[allow(clippy::too_many_arguments)]
+fn spawn_summoned_creature(
+    commands: &mut Commands,
+    definitions: &OverworldObjectDefinitions,
+    object_registry: &mut ObjectRegistry,
+    companion_query: &Query<(Entity, &crate::npc::components::Companion), With<Npc>>,
+    summon_spec: &crate::magic::resources::SummonSpec,
+    space_id: crate::world::components::SpaceId,
+    target_tile: TilePosition,
+    owner: Entity,
+    owner_id: PlayerId,
+) {
+    let type_id = summon_spec.type_id.as_str();
+    let Some(definition) = definitions.get(type_id) else {
+        return;
+    };
+
+    // Cap of one companion per owner: despawn any this player already controls.
+    for (entity, companion) in companion_query.iter() {
+        if companion.owner == owner {
+            commands.entity(entity).despawn();
+        }
+    }
+
+    // Wide roam bounds centered on the spawn tile so the follow-the-owner logic
+    // is never fought by the wander "return to bounds" rule — the companion
+    // tracks its owner across the map, re-centering via the follow pull.
+    const FOLLOW_ROAM_RADIUS: i32 = 96;
+    let bounds = crate::world::map_layout::TileRectangle {
+        min_x: target_tile.x - FOLLOW_ROAM_RADIUS,
+        min_y: target_tile.y - FOLLOW_ROAM_RADIUS,
+        max_x: target_tile.x + FOLLOW_ROAM_RADIUS,
+        max_y: target_tile.y + FOLLOW_ROAM_RADIUS,
+    };
+    // RoamAndChase makes `realize_npc` attach HostileBehavior + CombatLeash so
+    // the companion can acquire enemies; its side is flipped to PlayerSide below.
+    let behavior = crate::world::map_layout::MapBehavior::RoamAndChase { bounds };
+
+    for _ in 0..summon_spec.count.max(1) {
+        let object_id = object_registry.allocate_runtime_id(type_id);
+        let entity = crate::world::setup::spawn_overworld_object(
+            commands,
+            definitions,
+            object_registry,
+            object_id,
+            type_id,
+            None,
+            space_id,
+            target_tile,
+            None,
+        );
+        crate::world::setup::realize_npc(
+            commands,
+            entity,
+            Some(definition),
+            object_id,
+            type_id,
+            &behavior,
+        );
+        // Overlay the companion identity *after* realize_npc so PlayerSide wins
+        // over the MonsterSide that the hostile branch inserted.
+        commands.entity(entity).insert((
+            crate::npc::components::Faction::PlayerSide,
+            crate::npc::components::Companion {
+                owner,
+                owner_player: Some(owner_id),
+                follow_close_tiles: summon_spec.follow_close_tiles.max(1),
+            },
+            crate::world::ttl::Ttl {
+                remaining_seconds: summon_spec.lifetime_seconds.max(1.0),
+            },
+        ));
     }
 }
 

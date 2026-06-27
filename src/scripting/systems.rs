@@ -1,3 +1,7 @@
+use std::fs;
+use std::io::Write as _;
+use std::path::Path;
+
 use bevy::ecs::message::MessageReader;
 use bevy::input::keyboard::{KeyCode, KeyboardInput};
 use bevy::prelude::*;
@@ -5,10 +9,12 @@ use bevy_terminal::{
     LineStyle, Terminal, TerminalCompletionRequest, TerminalFocus, TerminalSubmit,
 };
 
+use crate::app::paths::python_history_path;
+use crate::app::plugin::AppRuntime;
 use crate::game::resources::PendingGameCommands;
 use crate::player::components::{Player, PlayerIdentity};
 use crate::scripting::python::PythonConsoleHost;
-use crate::scripting::resources::PythonConsoleState;
+use crate::scripting::resources::{PythonConsoleState, PythonHistoryPersist};
 use crate::scripting_api::build::WorldSnapshotParams;
 use crate::ui::components::{
     PythonConsoleMaximizeButton, PythonConsolePanel, PythonConsoleRestartButton,
@@ -106,6 +112,107 @@ pub fn handle_python_console_submissions(
         for (target, cmd) in output.targeted_commands {
             pending_commands.push_for_player(target, cmd);
         }
+    }
+}
+
+/// Cap on how many history entries we keep on disk and seed into the terminal,
+/// so the file (and the in-memory `Vec`) stay bounded across sessions.
+const MAX_HISTORY: usize = 1000;
+
+/// Seed the console terminal's in-memory command history from disk the first
+/// time we see its entity (re-seeds if the HUD is rebuilt and spawns a new
+/// terminal). Mirrors the load-once idiom of `load_quickbar_on_login`.
+pub fn load_python_console_history(
+    runtime: Res<AppRuntime>,
+    mut persist: ResMut<PythonHistoryPersist>,
+    mut terminals: Query<(Entity, &mut Terminal), With<PythonConsoleTerminal>>,
+) {
+    let Some((entity, mut terminal)) = terminals.iter_mut().next() else {
+        return;
+    };
+    if persist.loaded_into == Some(entity) {
+        return;
+    }
+    let Some(path) = python_history_path(*runtime) else {
+        persist.loaded_into = Some(entity);
+        return;
+    };
+
+    let mut lines = read_history_lines(&path);
+    // Bound the on-disk file so it can't grow without limit across sessions.
+    if lines.len() > MAX_HISTORY {
+        let start = lines.len() - MAX_HISTORY;
+        lines.drain(..start);
+        rewrite_history_file(&path, &lines);
+    }
+    persist.last_written = lines.last().cloned();
+    terminal.input.history = lines;
+    persist.loaded_into = Some(entity);
+}
+
+/// Append each submitted console command to the on-disk history file. Reads
+/// `TerminalSubmit` with its own cursor, independent of
+/// `handle_python_console_submissions`, and ignores submits from other
+/// terminals (e.g. chat). Consecutive duplicates collapse to one line.
+pub fn persist_python_console_history(
+    mut submissions: MessageReader<TerminalSubmit>,
+    runtime: Res<AppRuntime>,
+    mut persist: ResMut<PythonHistoryPersist>,
+    consoles: Query<Entity, With<PythonConsoleTerminal>>,
+) {
+    let Some(path) = python_history_path(*runtime) else {
+        return;
+    };
+    for submission in submissions.read() {
+        if !consoles.contains(submission.terminal) {
+            continue;
+        }
+        if persist.last_written.as_deref() == Some(submission.text.as_str()) {
+            continue;
+        }
+        append_history_line(&path, &submission.text);
+        persist.last_written = Some(submission.text.clone());
+    }
+}
+
+/// Read the history file as one command per line, dropping blanks. Missing or
+/// unreadable file yields an empty history.
+fn read_history_lines(path: &Path) -> Vec<String> {
+    let Ok(raw) = fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    raw.lines()
+        .filter(|line| !line.is_empty())
+        .map(|line| line.to_owned())
+        .collect()
+}
+
+/// Append a single command line, creating the parent directory if needed.
+fn append_history_line(path: &Path, line: &str) {
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    match fs::OpenOptions::new().create(true).append(true).open(path) {
+        Ok(mut file) => {
+            if let Err(err) = writeln!(file, "{line}") {
+                warn!("failed to append python history {}: {err}", path.display());
+            }
+        }
+        Err(err) => warn!("failed to open python history {}: {err}", path.display()),
+    }
+}
+
+/// Overwrite the history file with `lines` (used to trim an oversized file).
+fn rewrite_history_file(path: &Path, lines: &[String]) {
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let mut body = lines.join("\n");
+    if !body.is_empty() {
+        body.push('\n');
+    }
+    if let Err(err) = fs::write(path, body) {
+        warn!("failed to rewrite python history {}: {err}", path.display());
     }
 }
 

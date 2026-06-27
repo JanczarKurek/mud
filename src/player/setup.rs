@@ -3,6 +3,7 @@ use bevy::prelude::*;
 use crate::combat::components::{AttackProfile, CombatLeash};
 use crate::crafting::CharacterStash;
 use crate::magic::effects::MagicEffects;
+use crate::npc::components::Faction;
 use crate::persistence::{PlayerStateDump, WorldSnapshotStatus};
 use crate::player::classes::Class;
 use crate::player::components::{
@@ -259,6 +260,7 @@ pub fn spawn_player_from_dump(
                 Exertion::default(),
                 dump.magic_effects,
                 stash,
+                Faction::PlayerSide,
             ),
             Collider,
             OverworldObject {
@@ -326,6 +328,7 @@ pub fn spawn_player_authoritative_in_space(
                 Exertion::default(),
                 MagicEffects::default(),
                 CharacterStash::default(),
+                Faction::PlayerSide,
             ),
             Collider,
             OverworldObject {

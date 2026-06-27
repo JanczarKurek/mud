@@ -1,0 +1,14 @@
+name: Summon Wolf
+incantation: Adiuva Canis
+mana_cost: 25.0
+targeting: targeted_tile
+range_tiles: 5
+# class_access: [Druid]
+# min_caster_level: 3
+effects:
+  vfx_on_cast: cast_flash
+  summons_creature:
+    type_id: summoned_wolf
+    lifetime_seconds: 30.0
+    count: 1
+    follow_close_tiles: 2

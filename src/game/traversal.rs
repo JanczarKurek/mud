@@ -240,7 +240,7 @@ mod tests {
         // costs proportionally from the very first tile (no free first tile).
         assert_eq!(move_dc(0.0, 1, 0, 0), jump_dc(1, 0, 0)); // 5
         assert_eq!(move_dc(12.0, 1, 0, 0), 12 + 5); // 17
-        // Mass alone when the object doesn't actually move.
+                                                    // Mass alone when the object doesn't actually move.
         assert_eq!(move_dc(12.0, 0, 0, 0), 12);
         // Mass rounds to nearest before adding distance.
         assert_eq!(move_dc(8.4, 0, 0, 0), 8);

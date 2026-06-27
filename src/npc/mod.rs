@@ -11,7 +11,7 @@ use crate::app::state::simulation_active;
 use crate::npc::spawn_groups::{
     bootstrap_spawn_groups, tick_spawn_groups, PendingSpawnGroupDumps, SpawnGroupRegistry,
 };
-use crate::npc::systems::update_roaming_npcs;
+use crate::npc::systems::{despawn_orphaned_companions, update_roaming_npcs};
 use crate::world::setup::WorldStartupSet;
 
 pub struct NpcPlugin;
@@ -26,7 +26,14 @@ impl Plugin for NpcPlugin {
             )
             .add_systems(
                 Update,
-                (update_roaming_npcs, tick_spawn_groups).run_if(simulation_active),
+                (
+                    // Free orphaned companions before the AI tick so a companion
+                    // never steps against a dangling owner lookup.
+                    despawn_orphaned_companions.before(update_roaming_npcs),
+                    update_roaming_npcs,
+                    tick_spawn_groups,
+                )
+                    .run_if(simulation_active),
             );
     }
 }

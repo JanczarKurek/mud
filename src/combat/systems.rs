@@ -15,6 +15,7 @@ use crate::combat::resources::{BattleTurnTimer, PendingModifierConsumption};
 use crate::game::resources::{GameUiEvent, PendingGameUiEvents};
 use crate::magic::effects::MagicEffects;
 use crate::magic::resources::{EffectKind, EffectSpec, SpellDefinition, SpellDefinitions};
+use crate::npc::components::Companion;
 use crate::npc::spellcasting::{NpcSpellEntry, SpellcastingProfile};
 use crate::player::components::{
     AmmoConsumption, AttributeSet, ChatLog, DefenseStats, DerivedStats, Inventory, Player,
@@ -42,6 +43,10 @@ struct CombatantSnapshot {
     max_health: f32,
     is_player: bool,
     player_id: Option<u64>,
+    /// `Some(owner)` iff this combatant is a companion owned by a player. Its
+    /// attacks are credited to that player (`DamageSource::OwnedByPlayer`), so a
+    /// summoned creature's kills grant the summoner XP / quest progress.
+    owner_player: Option<PlayerId>,
     ranged_projectile_sprite: Option<String>,
     armor: i32,
     block: i32,
@@ -201,6 +206,10 @@ pub fn resolve_battle_turn(
     definitions: Res<OverworldObjectDefinitions>,
     object_registry: Res<ObjectRegistry>,
     spell_definitions: Res<SpellDefinitions>,
+    // Separate from the p0 ParamSet on purpose: `Companion` is touched by no
+    // other combat query, so a disjoint read avoids both a tuple-arity overflow
+    // on p0 and any aliasing conflict.
+    companion_query: Query<&Companion>,
     collider_query: Query<
         (&SpaceResident, &TilePosition, Option<&OverworldObject>),
         (With<crate::world::components::Collider>, Without<Player>),
@@ -261,6 +270,10 @@ pub fn resolve_battle_turn(
                     .unwrap_or_else(DamageExpr::melee_default);
                 let is_player = player_identity.is_some();
                 let player_id = player_identity.map(|identity| identity.id.0);
+                let owner_player = companion_query
+                    .get(entity)
+                    .ok()
+                    .and_then(|companion| companion.owner_player);
                 let ammo_type_id = inventory.and_then(|inv| {
                     inv.equipment_item(crate::world::object_definitions::EquipmentSlot::Ammo)
                         .map(|item| item.type_id.clone())
@@ -318,6 +331,7 @@ pub fn resolve_battle_turn(
                     max_health: vital_stats.max_health,
                     is_player,
                     player_id,
+                    owner_player,
                     ranged_projectile_sprite,
                     armor,
                     block,
@@ -533,6 +547,10 @@ pub fn resolve_battle_turn(
 
         let damage_source = if attacker.is_player {
             DamageSource::Player(PlayerId(attacker.player_id.unwrap_or(0)))
+        } else if let Some(owner) = attacker.owner_player {
+            // Player-owned companion (summon): credit the kill to its owner so
+            // XP / quest progress / kill feed land on the summoner.
+            DamageSource::OwnedByPlayer(owner)
         } else {
             DamageSource::Npc {
                 entity: attacker.entity,
@@ -613,6 +631,9 @@ pub fn resolve_battle_turn(
         // component yet) still ignites it.
         let caster = if attacker.is_player {
             attacker.player_id.map(PlayerId)
+        } else if attacker.owner_player.is_some() {
+            // Companion on-hit DoTs (e.g. a flaming summon) credit the owner too.
+            attacker.owner_player
         } else {
             None
         };
@@ -977,6 +998,7 @@ mod tests {
             max_health: 100.0,
             is_player,
             player_id: None,
+            owner_player: None,
             ranged_projectile_sprite: None,
             armor,
             block,
