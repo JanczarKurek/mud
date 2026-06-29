@@ -1304,14 +1304,19 @@ interactions:
 - Meaning: state name a freshly spawned instance starts in. Persistence load overrides this from `properties["state"]` when present.
 
 #### `interactions`
-- Type: list of `{verb, label?, from?, to, side_effects?}`
+- Type: list of `{verb, label?, from?, to, side_effects?, tool_gate?, skill_gate?, key_gate?, grants_items?, respawn_seconds?}`
 - Optional: yes
 - Meaning: verbs the player can invoke on this object via the context menu.
-  - `verb` — short identifier (e.g. `open`, `light`, `pull`).
+  - `verb` — short identifier (e.g. `open`, `light`, `pull`, `pick`).
   - `label` — display string for the context menu; defaults to capitalised `verb`.
   - `from` — list of states this verb is available in. Empty/absent = always.
   - `to` — state to transition into.
   - `side_effects` — optional list of post-transition actions (see below).
+  - `tool_gate` — optional `{required_type_id, fail_message?}`. The verb only fires when an item of that type is **equipped in the weapon slot**. Tool-gated verbs are *not* shown on the object's own context menu — invoke them by right-clicking the tool in your inventory and choosing "Use On" the node.
+  - `skill_gate` — optional `{skill, dc}`. Rolls a `skill_check` on attempt; failure emits a chat line and the transition is skipped. `dc` is `!fixed N` (or `from_lock_pick` / `from_lock_force` for lock verbs).
+  - `key_gate` — optional `{source}` (`from_lock` or `!fixed <lock_id>`); requires a matching key in inventory.
+  - `grants_items` — optional list of `LootDropDef` (`{type_id, quantity?, probability?}`, same shape as corpse loot). Granted to the acting player when the transition lands. `quantity` accepts `N` or a string like `"uniform(2, 4)"`.
+  - `respawn_seconds` — optional float. When set, a timer reverts the object to the first `from` state (or `initial_state`) after this delay — the node's regrow / refresh rate.
 
 #### `side_effects`
 Each entry is tagged by `kind`:
@@ -1338,6 +1343,29 @@ Lever wired to a door (map YAML):
 ```
 
 Chests get their `open` / `closed` visual purely from the *container-panel viewer count* — no `interactions:` block needed; just declare both `closed` and `open` states alongside `container_capacity`.
+
+#### Gatherable nodes
+
+A gatherable is just a stateful object whose interaction carries `grants_items` + `respawn_seconds`, with one state per look (e.g. `available` / `depleted`, or `full` / `empty`). Each state can point at its own `sprite_path`, so the node visibly changes once harvested and changes back when it refreshes. Add a `tool_gate` and/or `skill_gate` to require a tool/skill, or omit both for a free pick.
+
+`berry_bush` — a no-tool forage that swaps its sprite when picked:
+
+```yaml
+states:
+  full:  { sprite_path: overworld_objects/berry_bush/sprite.png }
+  empty: { sprite_path: overworld_objects/berry_bush/empty.png }
+initial_state: full
+interactions:
+  - verb: pick
+    label: Pick Berries
+    from: [full]            # button hides once empty
+    to: empty
+    grants_items:
+      - { type_id: berries, quantity: "uniform(2, 4)", probability: 1.0 }
+    respawn_seconds: 120.0   # regrows to `full` after 2 minutes
+```
+
+`herb_patch` / `ore_node` / `fishing_spot` follow the same shape but add a `tool_gate` (herb knife / pickaxe / fishing rod) and a `skill_gate` (Survival), so they harvest via "Use On" the tool rather than a context-menu button.
 
 ### Passive `on_stepped` triggers
 

@@ -1,0 +1,41 @@
+extends: obstacle
+name: Chair
+description: A simple wooden chair. It can be turned to face any direction.
+rotatable: true
+render:
+  z_index: 0.30
+  debug_color: [140, 98, 56]
+  debug_size: 0.9
+  default_facing: south
+  sprite_path: overworld_objects/chair/sprite.png
+  animation:
+    sheet_path: overworld_objects/chair/sheet.png
+    frame_width: 48
+    frame_height: 64
+    sheet_columns: 4
+    sheet_rows: 1
+    clips:
+      idle_s:
+        row: 0
+        start_col: 0
+        frame_count: 1
+        fps: 1.0
+        looping: true
+      idle_e:
+        row: 0
+        start_col: 1
+        frame_count: 1
+        fps: 1.0
+        looping: true
+      idle_n:
+        row: 0
+        start_col: 2
+        frame_count: 1
+        fps: 1.0
+        looping: true
+      idle_w:
+        row: 0
+        start_col: 3
+        frame_count: 1
+        fps: 1.0
+        looping: true

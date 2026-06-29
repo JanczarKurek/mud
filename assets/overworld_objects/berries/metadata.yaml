@@ -1,0 +1,24 @@
+extends: consumable
+name: Berries
+weight: 0.05
+max_stack_size: 50
+description:
+  - text: A small handful of plump red berries.
+    stack_size: [1, 1]
+  - text: "{count_written} handfuls of plump red berries."
+    stack_size: [2, ~]
+use_effects:
+  regen_multiplier: 1.5
+  regen_duration_seconds: 30
+use_texts:
+  - You pop the berries into your mouth. Sweet and a little tart.
+  - You eat a few of the berries.
+  - The berries are juicy and refreshing.
+use_on_texts:
+  - You offer a handful of berries to {target}.
+  - You hold the berries out toward {target}.
+render:
+  z_index: 0.24
+  debug_color: [188, 44, 44]
+  debug_size: 0.40
+  sprite_path: overworld_objects/berries/sprite.png

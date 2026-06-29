@@ -1220,4 +1220,52 @@ mod tests {
             "pickaxe with infinite_uses must remain in inventory after repeated UseItemOn"
         );
     }
+
+    /// Berry bushes are foraged with no tool and no skill check: a single
+    /// `pick` flips the bush `full` → `empty`, drops berries, and arms a
+    /// respawn timer. Exercises the real `berry_bush` / `berries` YAML.
+    #[test]
+    fn berry_bush_picked_without_tool_changes_state_and_grants_berries() {
+        let mut app = setup_app();
+        let player = spawn_test_player(&mut app, Class::Fighter, 0, 0, 10, 10);
+        let (_, node_id) = spawn_resource_node(&mut app, "berry_bush", 11, 10);
+        app.update();
+
+        // No tool equipped, no skill gate → the pick lands on the first try.
+        app.world_mut().resource_mut::<PendingGameCommands>().push(
+            GameCommand::InteractWithObject {
+                object_id: node_id,
+                verb: "pick".to_owned(),
+            },
+        );
+        app.update();
+
+        assert_eq!(current_state(&mut app, node_id), "empty");
+
+        let inventory = app
+            .world()
+            .entity(player)
+            .get::<Inventory>()
+            .unwrap()
+            .clone();
+        let berry_count: u32 = inventory
+            .backpack_slots
+            .iter()
+            .flatten()
+            .filter(|stack| stack.type_id == "berries")
+            .map(|stack| stack.quantity)
+            .sum();
+        assert!(
+            (2..=4).contains(&berry_count),
+            "expected 2-4 berries after a free pick, got {berry_count}"
+        );
+
+        let mut timer_q = app.world_mut().query::<(&OverworldObject, &RespawnTimer)>();
+        assert!(
+            timer_q
+                .iter(app.world())
+                .any(|(object, _)| object.object_id == node_id),
+            "picked berry bush should arm a respawn timer back to `full`"
+        );
+    }
 }

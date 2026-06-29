@@ -1,0 +1,11 @@
+extends: obstacle
+name: Oak Tree
+description: A broad-canopied oak, its trunk thick with the weight of many seasons.
+inspect_range: 5
+render:
+  z_index: 0.35
+  debug_color: [40, 110, 52]
+  debug_size: 1.0
+  sprite_path: overworld_objects/oak_tree/sprite.png
+  sprite_width_tiles: 2.0
+  sprite_height_tiles: 3.0

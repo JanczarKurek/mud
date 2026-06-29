@@ -1383,6 +1383,47 @@ floors:
       y: 24
       z: 1
 objects:
+# ── Art-iteration demo: roadside garden + grove (just north of the y=26 path) ──
+- type: hedge
+  placement:
+  - { x: 9, y: 19 }
+  - { x: 10, y: 19 }
+  - { x: 11, y: 19 }
+  - { x: 12, y: 19 }
+  - { x: 13, y: 19 }
+  - { x: 14, y: 19 }
+  - { x: 9, y: 20 }
+  - { x: 9, y: 21 }
+  - { x: 9, y: 22 }
+  - { x: 14, y: 20 }
+  - { x: 14, y: 21 }
+  - { x: 14, y: 22 }
+  - { x: 9, y: 23 }
+  - { x: 10, y: 23 }
+  - { x: 13, y: 23 }
+  - { x: 14, y: 23 }
+- type: bush
+  placement:
+  - { x: 10, y: 20 }
+  - { x: 13, y: 22 }
+- type: flowering_bush
+  placement:
+  - { x: 12, y: 20 }
+  - { x: 10, y: 22 }
+- type: berry_bush
+  placement:
+  - { x: 11, y: 21 }   # in the walled garden
+  - { x: 16, y: 23 }   # roadside patch by the grove — pick one, the rest stay full
+  - { x: 17, y: 23 }
+- type: oak_tree
+  placement:
+  - { x: 16, y: 21 }
+  - { x: 18, y: 25 }
+- type: pine_tree
+  placement:
+  - { x: 17, y: 19 }
+  - { x: 19, y: 23 }
+  - { x: 15, y: 25 }
 - type: apple
   placement:
   - x: 52

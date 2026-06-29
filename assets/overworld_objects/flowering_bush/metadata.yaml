@@ -1,0 +1,10 @@
+extends: obstacle
+name: Flowering Bush
+description: A leafy bush dotted with small bright blossoms.
+render:
+  z_index: 0.30
+  debug_color: [62, 146, 72]
+  debug_size: 1.0
+  sprite_path: overworld_objects/flowering_bush/sprite.png
+  sprite_width_tiles: 1.0
+  sprite_height_tiles: 1.33

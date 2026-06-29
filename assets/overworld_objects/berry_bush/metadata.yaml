@@ -1,0 +1,34 @@
+extends: obstacle
+name: Berry Bush
+description: A bush heavy with plump red berries.
+
+# A no-tool gatherable. Right-click the bush and choose "Pick Berries" — no
+# herb knife or skill check required, anyone can forage it. Picking drops a
+# handful of `berries` and flips the bush to its bare `empty` look; the berries
+# regrow (state returns to `full`) after `respawn_seconds` — its refresh rate.
+render:
+  z_index: 0.30
+  debug_color: [40, 108, 50]
+  debug_size: 1.0
+  sprite_path: overworld_objects/berry_bush/sprite.png   # fallback == full
+  sprite_width_tiles: 1.0
+  sprite_height_tiles: 1.33
+
+# Two visual states with their own sprites: berries vs. picked clean.
+states:
+  full:
+    sprite_path: overworld_objects/berry_bush/sprite.png
+  empty:
+    sprite_path: overworld_objects/berry_bush/empty.png
+initial_state: full
+
+interactions:
+  - verb: pick
+    label: Pick Berries
+    from: [full]          # only offered while the bush still has berries
+    to: empty
+    grants_items:
+      - type_id: berries
+        quantity: "uniform(2, 4)"
+        probability: 1.0
+    respawn_seconds: 120.0  # berries regrow after 2 minutes (refresh rate)

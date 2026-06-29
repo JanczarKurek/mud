@@ -1,0 +1,13 @@
+extends: obstacle
+name: Side Table
+description: A small bedside table with a single drawer.
+rotatable: true
+render:
+  z_index: 0.28
+  debug_color: [140, 98, 56]
+  debug_size: 1.0
+  rotation_by_facing: true
+  default_facing: south
+  sprite_path: overworld_objects/side_table/sprite.png
+  sprite_width_tiles: 1.0
+  sprite_height_tiles: 1.0

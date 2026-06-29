@@ -1,0 +1,41 @@
+extends: obstacle
+name: Bed
+description: A wood-framed bed with a soft mattress and a thick blanket.
+rotatable: true
+render:
+  z_index: 0.30
+  debug_color: [152, 60, 60]
+  debug_size: 1.0
+  default_facing: south
+  sprite_path: overworld_objects/bed/sprite.png
+  animation:
+    sheet_path: overworld_objects/bed/sheet.png
+    frame_width: 96
+    frame_height: 96
+    sheet_columns: 4
+    sheet_rows: 1
+    clips:
+      idle_s:
+        row: 0
+        start_col: 0
+        frame_count: 1
+        fps: 1.0
+        looping: true
+      idle_e:
+        row: 0
+        start_col: 1
+        frame_count: 1
+        fps: 1.0
+        looping: true
+      idle_n:
+        row: 0
+        start_col: 2
+        frame_count: 1
+        fps: 1.0
+        looping: true
+      idle_w:
+        row: 0
+        start_col: 3
+        frame_count: 1
+        fps: 1.0
+        looping: true

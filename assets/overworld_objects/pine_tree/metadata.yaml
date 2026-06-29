@@ -1,0 +1,11 @@
+extends: obstacle
+name: Pine Tree
+description: A tall, narrow conifer that keeps its needles through every winter.
+inspect_range: 5
+render:
+  z_index: 0.35
+  debug_color: [34, 96, 64]
+  debug_size: 1.0
+  sprite_path: overworld_objects/pine_tree/sprite.png
+  sprite_width_tiles: 1.0
+  sprite_height_tiles: 3.0

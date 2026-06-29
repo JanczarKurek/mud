@@ -1,0 +1,10 @@
+extends: obstacle
+name: Hedge
+description: A dense, neatly-trimmed hedge. Segments butt together into a wall of green.
+render:
+  z_index: 0.30
+  debug_color: [46, 120, 56]
+  debug_size: 1.0
+  sprite_path: overworld_objects/hedge/sprite.png
+  sprite_width_tiles: 1.0
+  sprite_height_tiles: 1.0

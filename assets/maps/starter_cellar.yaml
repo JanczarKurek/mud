@@ -72,3 +72,42 @@ objects:
     placement: { x: 9, y: 5 }
     properties:
       target: cellar_inner_door
+
+  # ── Art-iteration demo: a furnished room ──
+  # Dining set: a table on a rug, one chair on each side (shows all 4 facings).
+  - type: rug
+    placement: { x: 4, y: 2 }
+  - type: table
+    placement: { x: 4, y: 2 }
+  - type: chair
+    placement: { x: 3, y: 2 }
+    facing: east
+  - type: chair
+    placement: { x: 5, y: 2 }
+    facing: west
+  - type: chair
+    placement: { x: 4, y: 1 }
+    facing: north
+  - type: chair
+    placement: { x: 4, y: 3 }
+    facing: south
+  # Bedroom corner against the west wall
+  - type: bed
+    placement: { x: 2, y: 2 }
+    facing: east
+  - type: side_table
+    placement: { x: 2, y: 4 }
+    facing: south
+  # Storage along the north wall (front faces south into the room)
+  - type: bookshelf
+    placement: { x: 3, y: 8 }
+    facing: south
+  - type: cabinet
+    placement: { x: 5, y: 8 }
+    facing: south
+  # Odds and ends
+  - type: stool
+    placement: { x: 8, y: 2 }
+  - type: bench
+    placement: { x: 8, y: 6 }
+    facing: south

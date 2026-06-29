@@ -1617,6 +1617,53 @@ render:
     }
 
     #[test]
+    fn berry_bush_is_a_no_tool_gatherable_with_full_empty_sprites() {
+        let defs = OverworldObjectDefinitions::load_from_disk();
+        let bush = defs.get("berry_bush").expect("berry_bush.yaml loads");
+        assert_eq!(bush.initial_state.as_deref(), Some("full"));
+
+        // Distinct sprite per state — the bush visibly empties when picked.
+        let full = bush
+            .sprite_path_for_state(Some("full"))
+            .expect("full sprite");
+        let empty = bush
+            .sprite_path_for_state(Some("empty"))
+            .expect("empty sprite");
+        assert!(
+            full.ends_with("berry_bush/sprite.png"),
+            "full sprite: {full}"
+        );
+        assert!(
+            empty.ends_with("berry_bush/empty.png"),
+            "empty sprite: {empty}"
+        );
+        assert_ne!(full, empty);
+
+        // The "pick" verb is a free forage: only while full, no tool/skill gate.
+        let pick = bush
+            .interaction_for("pick", Some("full"))
+            .expect("pick offered while full");
+        assert!(pick.tool_gate.is_none(), "berry pick must need no tool");
+        assert!(pick.skill_gate.is_none(), "berry pick must need no skill");
+        assert_eq!(pick.to, "empty");
+        assert_eq!(pick.respawn_seconds, Some(120.0));
+        assert!(
+            pick.grants_items.iter().any(|d| d.type_id == "berries"),
+            "pick must grant berries"
+        );
+        assert!(
+            bush.interaction_for("pick", Some("empty")).is_none(),
+            "an empty bush offers nothing to pick"
+        );
+
+        // The granted item exists.
+        assert_eq!(
+            defs.get("berries").expect("berries.yaml loads").name,
+            "Berries"
+        );
+    }
+
+    #[test]
     fn states_and_interactions_round_trip() {
         let yaml = r#"
 name: Wooden Door

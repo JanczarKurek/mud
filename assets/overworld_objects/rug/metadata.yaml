@@ -1,0 +1,14 @@
+extends: static_world
+name: Rug
+description: A woven floor rug with a faded geometric pattern.
+rotatable: true
+render:
+  z_index: 0.05
+  debug_color: [196, 158, 110]
+  debug_size: 1.0
+  y_sort: false
+  rotation_by_facing: true
+  default_facing: south
+  sprite_path: overworld_objects/rug/sprite.png
+  sprite_width_tiles: 2.0
+  sprite_height_tiles: 2.0
