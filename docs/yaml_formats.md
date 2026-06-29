@@ -235,6 +235,39 @@ Fields:
 - Meaning: initial facing direction for this specific instance, overriding the object definition's `default_facing`
 - Useful for static props whose orientation is authored per placement (e.g. a signpost facing east)
 
+### `routine`
+- Type: mapping or omitted
+- Optional: yes
+- Only valid on the **explicit** instance form (an anonymous placement group cannot carry a routine).
+- Meaning: a "life agenda" for a hand-placed NPC — a patrol route and/or a day/night schedule that runs *parallel* to the combat AI. The routine is consulted only when the NPC has no combat target; a threat always preempts it, and the NPC resumes its routine afterward. Coordinates live here (they are location-specific); the *kind* of each scheduled activity (its pose + flavor barks) is defined on the object's `activities:` block (section 2).
+- Spawn-group members are not eligible (they roam) — routines are for persistent, authored NPCs.
+
+```yaml
+- type: blacksmith
+  placement: { x: 12, y: 8 }
+  facing: south
+  routine:
+    # Optional patrol — walked whenever no schedule window is active.
+    patrol:
+      mode: ping_pong        # loop | ping_pong | once  (default: loop)
+      waypoints:
+        - { x: 12, y: 8, dwell: 2.0 }   # dwell = seconds to pause here
+        - { x: 16, y: 8 }               # dwell defaults to 0
+        - { x: 16, y: 12, dwell: 3.0 }
+    # Optional day/night schedule. `time_of_day` runs 0..1 (0.5 = noon); one
+    # in-game day is 20 real minutes. First matching window wins; a window
+    # whose `to` is less than its `from` wraps past midnight.
+    schedule:
+      - { from: 0.25, to: 0.78, activity: work,  at: { x: 11, y: 8 }, face: north }
+      - { from: 0.78, to: 0.25, activity: sleep, at: { x: 30, y: 40 } }
+```
+
+Routine sub-fields:
+- `patrol.mode` — `loop` (0→1→2→0…), `ping_pong` (0→1→2→1→0…), or `once` (walk once, then hold at the last waypoint).
+- `patrol.waypoints[]` — `{ x, y, z?, dwell? }`; `dwell` is seconds paused on arrival before moving on.
+- `schedule[]` — `{ from, to, activity, at: { x, y, z? }, face? }`. `activity` names an entry in the object definition's `activities:`. `at` is the tile the NPC stands on (adjacent to a workbench/bed, not on top of it). `face` is the direction to look while there.
+- The "home"/"work" tiles must be in the NPC's own space — cross-space schedules are not supported.
+
 ### Anonymous placement group
 - Use this when you just want to place many objects of the same type and do not need to refer to them elsewhere in the map file.
 - Runtime object IDs are generated automatically during map loading.
@@ -1644,6 +1677,73 @@ barks:
   mutter:
     - "*grumbles*"
     - "Hungry..."
+```
+
+### `activities` (NPC templates only)
+
+Named activity library for an NPC type. A map instance's `routine:` schedule
+(section 1) references these by name to make the NPC perform a posed task at a
+station (work the forge, sleep, pray). Each activity's `pose_state` names an
+entry in this template's `states:` block; while the NPC dwells, its
+`ObjectState` is set to that pose, which drives the matching per-state
+animation (`states.<name>.animation`). If the named state has no animation
+override the NPC simply keeps its base sprite — the routine still works. Flavor
+`barks` fire on the dwell timer (the same per-NPC 8-second bark cooldown as
+`barks` and chatter).
+
+```yaml
+activities:
+  work:
+    pose_state: working          # optional; must match a `states:` key
+    dwell: { min: 4.0, max: 9.0 } # optional; seconds between flavor barks
+    barks: ["*clang clang*", "Hot work today."]
+  sleep:
+    pose_state: sleeping
+    dwell: { min: 8.0, max: 16.0 }
+    barks: ["*snoring*", "zzz..."]
+
+# The pose states reuse the existing `states:` / `animation:` mechanism:
+states:
+  working:
+    animation:
+      sheet_path: overworld_objects/blacksmith/work.png
+      frame_width: 32
+      frame_height: 48
+      sheet_columns: 4
+      sheet_rows: 1
+      clips:
+        idle: { row: 0, start_col: 0, frame_count: 4, fps: 6.0, looping: true }
+  sleeping:
+    animation:
+      sheet_path: overworld_objects/blacksmith/sleep.png
+      frame_width: 32
+      frame_height: 48
+      sheet_columns: 2
+      sheet_rows: 1
+      clips:
+        idle: { row: 0, start_col: 0, frame_count: 2, fps: 1.5, looping: true }
+```
+
+Name each pose sheet's clip `idle` — that is the clip the client plays while
+the NPC holds the pose. Use the `gen-sprite` skill to author the pose sheets.
+
+### `chatter` (NPC templates only)
+
+Ambient/social chatter pool. NPCs with this block strike up short
+speech-bubble conversations with nearby *idle* NPCs (any chattering type),
+trading lines back and forth. A conversation aborts cleanly if a participant
+enters combat or the pair drifts apart, and it shares the per-NPC bark
+cooldown so it never overlaps the ambient mutter. ASCII-only.
+
+```yaml
+chatter:
+  radius_tiles: 3              # optional (default 3); pairing range
+  greetings:                  # one-line openers spoken first
+    - "Morning."
+    - "Well met."
+  topics:                     # each topic is an ordered back-and-forth
+    - ["Cold morning, eh?", "Aye, frost on the well again.", "Winter's early."]
+    - ["Heard about the goblins?", "Don't remind me.", "Guards'll handle it... I hope."]
 ```
 
 ### `spellcasting` (NPC templates only)

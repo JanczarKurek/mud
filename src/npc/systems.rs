@@ -13,6 +13,7 @@ use crate::npc::components::{
     RoamingBehavior, RoamingRandomState, RoamingStepTimer,
 };
 use crate::npc::detection::detection_outcome;
+use crate::npc::routine::{routine_step, Routine, RoutineIntent, RoutinePhase, RoutineState};
 use crate::player::classes::ability_mod;
 use crate::player::components::{
     AwaitingRespawn, BaseStats, DerivedStats, Player, PlayerId, PlayerIdentity, Sneaking,
@@ -49,8 +50,9 @@ const MUTTER_PROBABILITY: f32 = 0.05;
 
 /// Minimum seconds between two bubbles from the same NPC. Caps spam even
 /// when several rolls succeed in a row, and prevents an aggro bark from
-/// being immediately stepped on by a mutter.
-const BUBBLE_COOLDOWN_SECONDS: f32 = 8.0;
+/// being immediately stepped on by a mutter. Shared with `npc::social` so
+/// ambient mutters and social chatter draw on the same per-NPC cooldown.
+pub(crate) const BUBBLE_COOLDOWN_SECONDS: f32 = 8.0;
 
 /// How recently the NPC must have taken damage from its current target for the
 /// "can't reach + hurt" flee trigger to fire. Keeps NPCs from fleeing every
@@ -135,8 +137,13 @@ pub fn update_roaming_npcs(
         (With<Collider>, Without<Npc>),
     >,
     definitions: Option<Res<crate::world::object_definitions::OverworldObjectDefinitions>>,
-    floor_maps: Option<Res<crate::world::floor_map::FloorMaps>>,
-    floor_defs: Option<Res<crate::world::floor_definitions::FloorTilesetDefinitions>>,
+    // Floor-map + tileset resources, grouped as one tuple param so the system
+    // stays within Bevy's 16-parameter ceiling (the `routine_query` below is the
+    // 16th slot). Both feed `spatial::build_indices`.
+    floor_resources: (
+        Option<Res<crate::world::floor_map::FloorMaps>>,
+        Option<Res<crate::world::floor_definitions::FloorTilesetDefinitions>>,
+    ),
     world_clock: Option<Res<WorldClock>>,
     noise_field: Option<Res<NoiseField>>,
     player_query: Query<
@@ -158,6 +165,14 @@ pub fn update_roaming_npcs(
     // mutable-aliasing conflict with its `&mut TilePosition` — and it keeps the
     // already-15-wide `npc_query` tuple from overflowing.
     npc_faction_query: Query<(Option<&Faction>, Option<&Companion>), (With<Npc>, Without<Player>)>,
+    // Life-agenda state for hand-placed NPCs. A *separate* disjoint query (its
+    // component set — `Routine`/`RoutineState`/`ObjectState` — is touched by no
+    // other query here), consulted only in the no-threat branch so the routine
+    // runs parallel to the combat FSM. See `crate::npc::routine`.
+    mut routine_query: Query<
+        (&Routine, &mut RoutineState, Option<&ObjectState>),
+        (With<Npc>, Without<Player>),
+    >,
     // Light-emitting world objects (lamps, campfires). Disjoint from
     // `npc_query`/`player_query` (Without<Npc>/<Player>) so the immutable
     // `&TilePosition` borrow doesn't alias the NPC query's `&mut TilePosition`.
@@ -294,8 +309,8 @@ pub fn update_roaming_npcs(
         spatial::build_indices(
             blocker_query.iter(),
             definitions.as_deref(),
-            floor_maps.as_deref(),
-            floor_defs.as_deref(),
+            floor_resources.0.as_deref(),
+            floor_resources.1.as_deref(),
         )
     };
 
@@ -439,6 +454,78 @@ pub fn update_roaming_npcs(
             heard_noise,
         });
 
+        // --- Life-agenda overlay (parallel to the combat FSM) -----------------
+        // Consult the NPC's Routine only when `step_ai` left it idle in Wander
+        // with no fresh combat target. A GoTo overrides the random-wander step
+        // with a path toward the goal; a Hold stops and (at a station) adopts a
+        // pose. Leaving Wander (combat) clears the pose and resets progress so
+        // the NPC never fights in its "sleeping" sprite. See `npc::routine`.
+        let mut routine_face: Option<Direction> = None;
+        if let Ok((routine, mut routine_state, current_pose)) = routine_query.get_mut(entity) {
+            let idle_in_wander = matches!(outcome.next_state, AiState::Wander)
+                && !matches!(outcome.target, TargetChange::Set(_));
+            if idle_in_wander {
+                let (next, intent) = routine_step(
+                    routine,
+                    routine_state.clone(),
+                    *tile_position,
+                    time_of_day,
+                    elapsed,
+                    &mut random_state,
+                );
+                match intent {
+                    RoutineIntent::None => {}
+                    RoutineIntent::GoTo { target, face } => {
+                        let step = astar_next_step(
+                            entity,
+                            resident.space_id,
+                            *tile_position,
+                            target,
+                            &blockers,
+                            &npc_tiles,
+                            &player_tiles,
+                            Some(target),
+                        )
+                        .or_else(|| {
+                            choose_seek_step(
+                                entity,
+                                resident.space_id,
+                                *tile_position,
+                                target,
+                                &blockers,
+                                &npc_tiles,
+                                Some(&player_tiles),
+                                Some(target),
+                            )
+                        });
+                        outcome.move_to = step;
+                        outcome.idle_pause = step.is_none();
+                        outcome.bark = None;
+                        routine_face = face;
+                    }
+                    RoutineIntent::Hold { face, bark } => {
+                        outcome.move_to = None;
+                        outcome.idle_pause = true;
+                        outcome.bark = bark.map(|text| PendingBark {
+                            text,
+                            style: SpeechBubbleStyle::Mutter,
+                        });
+                        routine_face = face;
+                    }
+                }
+                reconcile_object_state(
+                    &mut commands,
+                    entity,
+                    current_pose,
+                    next.active_pose.as_deref(),
+                );
+                *routine_state = next;
+            } else if current_pose.is_some() || routine_state.phase != RoutinePhase::Idle {
+                reconcile_object_state(&mut commands, entity, current_pose, None);
+                *routine_state = RoutineState::default();
+            }
+        }
+
         // Athletics gate on any step that climbs more than the free auto-step
         // (dz>1). NPCs without a `DerivedStats` use STR 10 → +0 mod, matching
         // the player default. A failed roll forfeits the step for this tick;
@@ -542,6 +629,12 @@ pub fn update_roaming_npcs(
                         facing.0 = direction;
                     }
                 }
+            }
+        } else if let (Some(face), Some(facing)) = (routine_face, facing.as_mut()) {
+            // Stationary routine hold: face the station (anvil, bed, …) without
+            // moving, so a working NPC looks at what it's doing.
+            if facing.0 != face {
+                facing.0 = face;
             }
         }
 
@@ -2009,23 +2102,36 @@ fn chebyshev_distance(a: TilePosition, b: TilePosition) -> i32 {
     tile_distance_3d(a, b)
 }
 
+/// Reconcile an NPC's `ObjectState` to the pose the routine wants this tick,
+/// inserting/removing the component only on a change. Replicates to clients via
+/// the existing projection path (`WorldObjectUpserted` → `animation_for_state`).
+fn reconcile_object_state(
+    commands: &mut Commands,
+    entity: Entity,
+    current: Option<&ObjectState>,
+    desired: Option<&str>,
+) {
+    if current.map(|s| s.0.as_str()) == desired {
+        return;
+    }
+    match desired {
+        Some(state) => {
+            commands
+                .entity(entity)
+                .insert(ObjectState(state.to_string()));
+        }
+        None => {
+            commands.entity(entity).remove::<ObjectState>();
+        }
+    }
+}
+
 fn next_random_index(random_state: &mut RoamingRandomState, modulo: usize) -> usize {
-    advance_rng(random_state);
-    ((random_state.seed >> 32) as usize) % modulo
+    random_state.next_index(modulo)
 }
 
 fn next_random_f32(random_state: &mut RoamingRandomState) -> f32 {
-    advance_rng(random_state);
-    // High 24 bits → uniform [0, 1).
-    let bits = (random_state.seed >> 40) as u32 & 0x00FF_FFFF;
-    bits as f32 / 16_777_216.0
-}
-
-fn advance_rng(random_state: &mut RoamingRandomState) {
-    random_state.seed = random_state
-        .seed
-        .wrapping_mul(6364136223846793005)
-        .wrapping_add(1);
+    random_state.next_f32()
 }
 
 // ---------------------------------------------------------------------------

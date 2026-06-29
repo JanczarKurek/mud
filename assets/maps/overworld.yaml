@@ -2685,6 +2685,33 @@ objects:
     y: 8
   - x: 67
     y: 24
+# --- NPC "aliveness" demo: chatter pair, a day/night schedule, a patrol. ---
+# A gossiping pair — they trade speech-bubble lines when idle near each other.
+- type: townsfolk
+  placement: { x: 10, y: 19 }
+  facing: east
+- type: townsfolk
+  placement: { x: 11, y: 19 }
+  facing: west
+# Day/night schedule: works (taps + "working" pose) by day, walks off to sleep
+# at night. World clock boots at noon, so this one starts at its work tile.
+- type: townsfolk
+  placement: { x: 13, y: 21 }
+  routine:
+    schedule:
+      - { from: 0.25, to: 0.78, activity: work,  at: { x: 13, y: 18 }, face: north }
+      - { from: 0.78, to: 0.25, activity: sleep, at: { x: 18, y: 21 } }
+# Patrol: paces a rectangle with dwell pauses at the corners.
+- type: townsfolk
+  placement: { x: 20, y: 19 }
+  routine:
+    patrol:
+      mode: loop
+      waypoints:
+        - { x: 20, y: 19, dwell: 2.0 }
+        - { x: 20, y: 22, dwell: 1.0 }
+        - { x: 23, y: 22, dwell: 2.0 }
+        - { x: 23, y: 19, dwell: 1.0 }
 - type: wall_corner_ne
   placement:
   - x: 17

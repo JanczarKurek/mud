@@ -136,6 +136,10 @@ pub struct MapObjectInstance {
     pub behavior: Option<MapBehavior>,
     #[serde(default)]
     pub facing: Option<Direction>,
+    /// Patrol route / day-night schedule for a hand-placed NPC. Baked into a
+    /// `Routine` component at spawn. `None` = no agenda (default wander).
+    #[serde(default)]
+    pub routine: Option<RoutineInstanceDef>,
 }
 
 /// A child of a container's `contents:` list. Either a symbolic reference to
@@ -169,6 +173,7 @@ pub struct ResolvedObject {
     pub contents: Vec<u64>,
     pub behavior: Option<MapBehavior>,
     pub facing: Option<Direction>,
+    pub routine: Option<RoutineInstanceDef>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -215,6 +220,72 @@ impl MapBehavior {
         }
         self
     }
+}
+
+/// Instance-level "life agenda" for a hand-placed NPC: a patrol route and/or a
+/// day/night schedule. Coordinates are location-specific so they live here in
+/// the map YAML, while the *type* of each activity (pose, flavor barks) lives
+/// on the object definition's `activities:` block. Baked into a
+/// `crate::npc::routine::Routine` at spawn. See `docs/yaml_formats.md`.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct RoutineInstanceDef {
+    /// Walked when no schedule window is active. Omit for a pure schedule.
+    #[serde(default)]
+    pub patrol: Option<PatrolDef>,
+    /// Time-of-day windows binding `time → activity → station tile`. First
+    /// match wins; a window with `to < from` wraps midnight.
+    #[serde(default)]
+    pub schedule: Vec<ScheduleWindowDef>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct PatrolDef {
+    #[serde(default)]
+    pub mode: PatrolModeDef,
+    pub waypoints: Vec<WaypointDef>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum PatrolModeDef {
+    /// Cycle `0 → 1 → 2 → 0 → …`.
+    #[default]
+    Loop,
+    /// Bounce `0 → 1 → 2 → 1 → 0 → …`.
+    PingPong,
+    /// Walk once then hold at the final waypoint.
+    Once,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct WaypointDef {
+    pub x: i32,
+    pub y: i32,
+    #[serde(default)]
+    pub z: i32,
+    /// Seconds to pause on this waypoint before moving to the next.
+    #[serde(default)]
+    pub dwell: f32,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct ScheduleWindowDef {
+    /// Start of the window (inclusive), in `[0, 1)` world-clock time.
+    pub from: f32,
+    /// End of the window (exclusive). `to < from` straddles midnight.
+    pub to: f32,
+    /// Activity name; resolved against the object definition's `activities:`.
+    pub activity: String,
+    /// Tile the NPC stands on while performing the activity.
+    pub at: TileCoordinate,
+    /// Direction to face while dwelling (e.g. toward a workbench).
+    #[serde(default)]
+    pub face: Option<Direction>,
 }
 
 /// Authored spawn-group entry. Each group spawns up to `max_count` instances
@@ -459,6 +530,7 @@ impl SpaceDefinition {
                             contents: Vec::new(),
                             behavior: None,
                             facing: group.facing,
+                            routine: None,
                         });
                     }
                 }
@@ -869,6 +941,7 @@ fn walk_instance(
         contents: Vec::with_capacity(instance.contents.len()),
         behavior: instance.behavior,
         facing: instance.facing,
+        routine: instance.routine.clone(),
     });
 
     let mut child_ids: Vec<u64> = Vec::with_capacity(instance.contents.len());

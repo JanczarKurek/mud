@@ -206,6 +206,16 @@ pub struct OverworldObjectDefinition {
     /// bubbles. Defaults to empty (NPC stays silent); see `BarkDef`.
     #[serde(default)]
     pub barks: BarkDef,
+    /// Named activity library for this NPC type (pose + flavor barks). A map
+    /// instance's `routine:` schedule references these by name. Each activity's
+    /// `pose_state` names an entry in `states:` whose animation plays while the
+    /// NPC performs it. See `crate::npc::routine` and `docs/yaml_formats.md`.
+    #[serde(default)]
+    pub activities: HashMap<String, ActivityDef>,
+    /// Ambient/social chatter pool. NPCs with this block trade short
+    /// speech-bubble lines with nearby idle NPCs. See `crate::npc::social`.
+    #[serde(default)]
+    pub chatter: Option<ChatterDef>,
     /// Marks this object as a persistent-text artifact (book, tombstone, …).
     /// Drives the "Read" context-menu verb and, for `Book`, the "Edit" affordance
     /// inside the read panel. Text lives in `properties["title"]` /
@@ -299,6 +309,72 @@ pub struct BarkDef {
     pub aggro: Vec<String>,
     #[serde(default)]
     pub mutter: Vec<String>,
+}
+
+/// One named activity an NPC can perform at a station (work, sleep, pray, …).
+/// Referenced by a map instance's `routine:` schedule. The `pose_state` drives
+/// the per-state animation while the NPC dwells; `barks` are flavor lines
+/// emitted on the dwell timer.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct ActivityDef {
+    /// `ObjectState` name (must match a `states:` key) to adopt while
+    /// performing this activity. `None` keeps the base sprite.
+    #[serde(default)]
+    pub pose_state: Option<String>,
+    /// Seconds between flavor barks while dwelling.
+    #[serde(default)]
+    pub dwell: DwellRange,
+    /// Flavor lines emitted on the dwell timer. Empty = silent.
+    #[serde(default)]
+    pub barks: Vec<String>,
+}
+
+/// Inclusive seconds range sampled uniformly for an activity's dwell/bark gap.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct DwellRange {
+    #[serde(default = "default_dwell_min")]
+    pub min: f32,
+    #[serde(default = "default_dwell_max")]
+    pub max: f32,
+}
+
+impl Default for DwellRange {
+    fn default() -> Self {
+        Self {
+            min: default_dwell_min(),
+            max: default_dwell_max(),
+        }
+    }
+}
+
+fn default_dwell_min() -> f32 {
+    4.0
+}
+
+fn default_dwell_max() -> f32 {
+    8.0
+}
+
+/// Ambient/social chatter pool for an NPC type. NPCs trade short lines with
+/// nearby idle NPCs of any chattering type. See `crate::npc::social`.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct ChatterDef {
+    /// Max tiles between two NPCs to start a conversation.
+    #[serde(default = "default_chatter_radius")]
+    pub radius_tiles: i32,
+    /// One-line openers used when two NPCs first meet.
+    #[serde(default)]
+    pub greetings: Vec<String>,
+    /// Each topic is an ordered back-and-forth the pair takes turns speaking.
+    #[serde(default)]
+    pub topics: Vec<Vec<String>>,
+}
+
+fn default_chatter_radius() -> i32 {
+    3
 }
 
 /// Authoring block for the player-driven Hide action.

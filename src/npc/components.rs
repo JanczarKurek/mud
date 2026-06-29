@@ -112,6 +112,29 @@ pub struct RoamingRandomState {
     pub seed: u64,
 }
 
+impl RoamingRandomState {
+    /// Advance the LCG one step. Shared by the wander RNG helpers in
+    /// `npc::systems` and the routine decision logic in `npc::routine` so both
+    /// draw from the same deterministic stream.
+    pub fn advance(&mut self) {
+        self.seed = self.seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+    }
+
+    /// Uniform `[0, 1)` from the high 24 bits of the next LCG state.
+    pub fn next_f32(&mut self) -> f32 {
+        self.advance();
+        let bits = (self.seed >> 40) as u32 & 0x00FF_FFFF;
+        bits as f32 / 16_777_216.0
+    }
+
+    /// Uniform index in `0..modulo` from the next LCG state. Caller guarantees
+    /// `modulo > 0`.
+    pub fn next_index(&mut self, modulo: usize) -> usize {
+        self.advance();
+        ((self.seed >> 32) as usize) % modulo
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub struct RoamBounds {
     pub min_x: i32,

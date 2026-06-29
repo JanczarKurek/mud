@@ -284,6 +284,26 @@ pub fn spawn_overworld_object_instance(
         );
     }
 
+    // Hand-placed NPCs with a `routine:` get a baked life agenda (patrol /
+    // schedule). The activity *library* (pose + barks) comes from the type
+    // definition; the coordinates come from this instance. Runs parallel to the
+    // combat FSM — see `crate::npc::routine`.
+    if let Some(routine_def) = object.routine.as_ref() {
+        let activities = definition.map(|d| d.activities.clone()).unwrap_or_default();
+        commands.entity(entity).insert((
+            crate::npc::routine::Routine::from_def(routine_def, &activities),
+            crate::npc::routine::RoutineState::default(),
+        ));
+    }
+
+    // Ambient/social chatter: NPCs whose type declares a `chatter:` pool trade
+    // speech-bubble lines with nearby idle NPCs (`crate::npc::social`).
+    if let Some(chatter_def) = definition.and_then(|d| d.chatter.as_ref()) {
+        commands
+            .entity(entity)
+            .insert(crate::npc::social::Chatter::from_def(chatter_def));
+    }
+
     entity
 }
 

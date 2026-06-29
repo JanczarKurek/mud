@@ -321,6 +321,8 @@ pub fn tick_spawn_groups(
                 contents: Vec::new(),
                 behavior: Some(runtime.def.behavior),
                 facing: None,
+                // Spawn-group members roam; routines are for hand-placed NPCs.
+                routine: None,
             };
 
             let entity = spawn_overworld_object_instance(

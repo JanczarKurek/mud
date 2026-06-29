@@ -26,6 +26,8 @@ use bevy::text::Justify;
 
 use crate::combat::components::CombatTarget;
 use crate::npc::components::{AiMemory, AiState, HostileBehavior, Npc};
+use crate::npc::routine::{RoutinePhase, RoutineState};
+use crate::npc::social::ConversationRegistry;
 use crate::ui::theme::{Palette, UiThemeAssets};
 use crate::world::components::{
     ClientProjectedWorldObject, OverworldObject, SpaceResident, TilePosition,
@@ -100,8 +102,10 @@ pub fn sync_ai_debug_overlay(
     world_config: Res<crate::world::WorldConfig>,
     theme: Res<UiThemeAssets>,
     palette: Res<Palette>,
+    conversations: Res<ConversationRegistry>,
     npc_q: Query<
         (
+            Entity,
             &OverworldObject,
             &SpaceResident,
             &TilePosition,
@@ -109,6 +113,7 @@ pub fn sync_ai_debug_overlay(
             &AiMemory,
             Option<&CombatTarget>,
             Option<&HostileBehavior>,
+            Option<&RoutineState>,
         ),
         With<Npc>,
     >,
@@ -140,7 +145,7 @@ pub fn sync_ai_debug_overlay(
     let lift = world_config.tile_size * (0.5 + OVERLAY_LIFT_TILES);
 
     let mut seen: HashSet<u64> = HashSet::new();
-    for (object, resident, tile, state, memory, target, hostile) in &npc_q {
+    for (entity, object, resident, tile, state, memory, target, hostile, routine) in &npc_q {
         let object_id = object.object_id;
         seen.insert(object_id);
 
@@ -154,6 +159,8 @@ pub fn sync_ai_debug_overlay(
             memory,
             target,
             hostile,
+            routine,
+            conversations.is_conversing(entity),
             heard,
             elapsed,
             &label_q,
@@ -248,6 +255,8 @@ fn build_overlay_lines(
     memory: &AiMemory,
     target: Option<&CombatTarget>,
     hostile: Option<&HostileBehavior>,
+    routine: Option<&RoutineState>,
+    conversing: bool,
     heard: Option<TilePosition>,
     elapsed: f32,
     label_q: &Query<&OverworldObject>,
@@ -258,6 +267,14 @@ fn build_overlay_lines(
     ];
     if let Some(target) = target {
         lines.push(format!("tgt: {}", entity_label(target.entity, label_q)));
+    }
+    // Routine ("life agenda") state — only present on hand-placed NPCs, and
+    // only interesting while they actually have an active goal.
+    if let Some(line) = routine.and_then(format_routine) {
+        lines.push(line);
+    }
+    if conversing {
+        lines.push("chat".to_string());
     }
     if let Some(hostile) = hostile {
         lines.push(format!(
@@ -281,6 +298,33 @@ fn build_overlay_lines(
         ));
     }
     lines
+}
+
+/// Compact one-line routine summary, or `None` when the NPC has no active
+/// agenda (idle, no pose) — keeps the box clutter-free for plain mobs.
+fn format_routine(routine: &RoutineState) -> Option<String> {
+    if routine.phase == RoutinePhase::Idle
+        && routine.active_activity.is_none()
+        && routine.active_pose.is_none()
+    {
+        return None;
+    }
+    let phase = match routine.phase {
+        RoutinePhase::Idle => "idle",
+        RoutinePhase::Traveling => "go",
+        RoutinePhase::Dwelling => "do",
+    };
+    // Schedule activities have a name; patrols just have a waypoint index.
+    let what = routine
+        .active_activity
+        .clone()
+        .unwrap_or_else(|| format!("wp{}", routine.waypoint_index));
+    let pose = routine
+        .active_pose
+        .as_deref()
+        .map(|p| format!(" [{p}]"))
+        .unwrap_or_default();
+    Some(format!("rt: {phase} {what}{pose}"))
 }
 
 fn format_ai_state(state: &AiState, elapsed: f32) -> String {

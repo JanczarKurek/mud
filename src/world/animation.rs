@@ -6,7 +6,7 @@ use crate::world::components::{ClientProjectedWorldObject, Facing, TilePosition}
 use crate::world::direction::Direction;
 use crate::world::lerp_anim::LinearLerp;
 use crate::world::object_definitions::{
-    AnimationClipDef, AnimationSheetDef, OverworldObjectDefinitions,
+    AnimationClipDef, AnimationSheetDef, OverworldObjectDefinition, OverworldObjectDefinitions,
 };
 use crate::world::resources::{FloorTransitionOffset, ViewScrollOffset};
 use crate::world::WorldConfig;
@@ -45,6 +45,23 @@ pub struct VisualOffset {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// True when the projected object's current replicated `state` names a state
+/// that ships its own animation sheet (`states.<name>.animation`). Such poses
+/// are driven by `sync_object_state_visuals`; the base walk/idle systems skip
+/// them so the two don't fight over the same `AnimatedSprite`.
+fn pose_owns_animation(
+    client_state: &ClientGameState,
+    def: &OverworldObjectDefinition,
+    object_id: u64,
+) -> bool {
+    client_state
+        .world_objects
+        .get(&object_id)
+        .and_then(|object| object.state.as_deref())
+        .and_then(|state| def.states.get(state))
+        .is_some_and(|state_def| state_def.animation.is_some())
+}
 
 #[allow(clippy::too_many_arguments)]
 fn apply_clip(
@@ -216,6 +233,7 @@ pub fn advance_animation_timers(
 /// Switches animated entities to their walk clip when they have `JustMoved`.
 pub fn trigger_movement_animation(
     definitions: Res<OverworldObjectDefinitions>,
+    client_state: Res<ClientGameState>,
     mut world_obj_query: Query<(
         &mut AnimatedSprite,
         &ClientProjectedWorldObject,
@@ -259,6 +277,12 @@ pub fn trigger_movement_animation(
         let Some(def) = definitions.get(&world_obj.definition_id) else {
             continue;
         };
+        // A posed NPC (e.g. routine "working") whose state owns its own
+        // animation sheet is animated solely by `sync_object_state_visuals`;
+        // the base walk/idle systems must not fight it. See `npc::routine`.
+        if pose_owns_animation(&client_state, def, world_obj.object_id) {
+            continue;
+        }
         let Some(sheet) = &def.render.animation else {
             continue;
         };
@@ -289,6 +313,7 @@ pub fn trigger_movement_animation(
 /// Transitions animated entities back to idle when they no longer have `JustMoved`.
 pub fn return_to_idle_animation(
     definitions: Res<OverworldObjectDefinitions>,
+    client_state: Res<ClientGameState>,
     mut world_obj_query: Query<
         (
             &mut AnimatedSprite,
@@ -335,6 +360,10 @@ pub fn return_to_idle_animation(
         let Some(def) = definitions.get(&world_obj.definition_id) else {
             continue;
         };
+        // Leave posed NPCs to `sync_object_state_visuals` (see above).
+        if pose_owns_animation(&client_state, def, world_obj.object_id) {
+            continue;
+        }
         let Some(sheet) = &def.render.animation else {
             continue;
         };
