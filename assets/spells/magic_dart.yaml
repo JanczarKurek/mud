@@ -8,3 +8,8 @@ min_caster_level: 1
 effects:
   damage: 5.0
   damage_type: arcane
+  # Homing bolt: the mote tracks the locked target and only deals damage when
+  # it makes contact, so a target that runs is still chased down.
+  projectile:
+    sprite: arcane_mote
+    speed_tiles_per_second: 12.0

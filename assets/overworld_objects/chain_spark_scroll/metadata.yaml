@@ -1,0 +1,9 @@
+extends: pickup
+name: Chain Spark Scroll
+weight: 0.1
+description: A crackling scroll that sends electricity spiralling out across the ground from a chosen tile.
+spell_id: chain_spark
+render:
+  debug_color: [120, 196, 255]
+  debug_size: 0.45
+  sprite_path: overworld_objects/scroll/sprite.png

@@ -1,0 +1,19 @@
+name: Chain Spark
+incantation: Exori Vis Tera
+mana_cost: 24.0
+targeting: targeted_tile
+range_tiles: 6
+class_access: [Wizard]
+min_caster_level: 4
+effects:
+  damage: 6.0
+  damage_type: lightning
+  # Electricity arcs out from the center one tile at a time along a spiral,
+  # so the damage visibly snakes across the ground.
+  aoe:
+    radius_tiles: 3
+    vfx_on_tile: lightning_spark
+    pattern:
+      kind: spiral
+      step_delay_seconds: 0.05
+  vfx_on_target_hit: lightning_hit

@@ -26,6 +26,14 @@ pub enum GameUiEvent {
         from_tile: TilePosition,
         to_tile: TilePosition,
         sprite_definition_id: String,
+        /// Flight time in seconds. The client lerps the missile from→to over
+        /// this duration (matching the server's scheduled-impact delay for
+        /// spell missiles; ranged attacks pass a fixed default).
+        duration_seconds: f32,
+        /// When set, the missile homes — the client re-reads this object's
+        /// current view position each frame as the flight endpoint. `None`
+        /// flies to the fixed `to_tile` (ranged attacks, tile-target spells).
+        target_object_id: Option<u64>,
     },
     /// Display a single line of dialog and wait for the player to click
     /// "Continue" (which sends `GameCommand::DialogAdvance`).

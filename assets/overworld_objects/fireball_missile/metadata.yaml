@@ -1,0 +1,10 @@
+extends: static_world
+name: Fireball
+description: A hurtling sphere of flame. Used as the flying missile for the Fireball spell.
+render:
+  # z_index is unused for projectiles (the client renders them at a fixed Z),
+  # but RenderMetadata requires it.
+  z_index: 0.9
+  debug_color: [232, 120, 40]
+  debug_size: 0.6
+  sprite_path: overworld_objects/fireball_missile/sprite.png

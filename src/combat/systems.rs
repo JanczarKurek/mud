@@ -467,6 +467,10 @@ pub fn resolve_battle_turn(
                 from_tile: attacker.position,
                 to_tile: target.position,
                 sprite_definition_id: sprite_id,
+                // Ranged physical attacks keep the original fixed flight feel;
+                // their damage already resolved this turn (cosmetic only).
+                duration_seconds: crate::client_effects::projectile::PROJECTILE_DURATION_SECONDS,
+                target_object_id: None,
             });
         }
 

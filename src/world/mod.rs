@@ -30,6 +30,7 @@ pub mod spatial;
 pub mod stacks;
 pub mod step_triggers;
 pub mod systems;
+pub mod tile_patterns;
 pub mod ttl;
 pub mod vfx;
 

@@ -64,6 +64,13 @@ pub struct SpellEffects {
     /// distance of the target tile. Only meaningful for tile-target spells.
     #[serde(default)]
     pub aoe: Option<AoeSpec>,
+    /// When set, the spell fires a flying missile and its damage/AoE only
+    /// resolves when the missile lands (`travel = distance / speed`). For
+    /// entity-target spells the missile homes — it hits the locked target
+    /// wherever it moved. `None` keeps the instantaneous behavior. See
+    /// `tick_scheduled_impacts` in `combat::scheduled`.
+    #[serde(default)]
+    pub projectile: Option<ProjectileSpec>,
     /// VFX definition id played on the caster at cast time. `None` falls back
     /// to `"cast_flash"` in the trigger code.
     #[serde(default)]
@@ -171,6 +178,53 @@ pub struct AoeSpec {
     /// (only hit entities get `vfx_on_target_hit`).
     #[serde(default)]
     pub vfx_on_tile: Option<String>,
+    /// How the AoE footprint resolves in space and time. Defaults to `Instant`
+    /// (the whole radius at once, matching the original behavior). `Spread`
+    /// blooms ring-by-ring from the center; `Spiral` hits one tile at a time
+    /// in an outward spiral. See `combat::scheduled::tick_scheduled_impacts`.
+    #[serde(default)]
+    pub pattern: AoePattern,
+}
+
+/// Spatial/temporal shape of an AoE blast. Internal tagging (`kind:`) matches
+/// the project convention for data-carrying YAML enums. Damage on each tile is
+/// scheduled at its delay and resolved planar at the target floor.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AoePattern {
+    /// Whole radius resolves simultaneously (delay 0 for every tile).
+    #[default]
+    Instant,
+    /// Rings bloom outward: the tile on Chebyshev ring `r` fires at
+    /// `r * ring_delay_seconds` (ring 0 = center at delay 0).
+    Spread { ring_delay_seconds: f32 },
+    /// One tile at a time along an outward square spiral: the `i`-th
+    /// spiral tile fires at `i * step_delay_seconds`. `clockwise` flips the
+    /// spiral handedness.
+    Spiral {
+        step_delay_seconds: f32,
+        #[serde(default)]
+        clockwise: bool,
+    },
+}
+
+/// Flying-missile parameters for a spell. The cast itself is immediate (mana,
+/// cast VFX, narrator) but the damage/AoE is deferred until the missile lands.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct ProjectileSpec {
+    /// Overworld-object definition id whose sprite renders the flying missile
+    /// (resolved via `OverworldObjectDefinitions`, like `arrow`/`bolt`).
+    pub sprite: String,
+    /// Travel speed in tiles per second. Flight time = `distance / speed`,
+    /// floored by a small minimum so adjacent casts still show a brief flight.
+    #[serde(default = "default_projectile_speed")]
+    pub speed_tiles_per_second: f32,
+}
+
+fn default_projectile_speed() -> f32 {
+    10.0
 }
 
 /// Kinds of timed magical effects tracked by `MagicEffects`.
@@ -451,5 +505,103 @@ effects:
         let aoe = spell.effects.aoe.as_ref().unwrap();
         assert_eq!(aoe.radius_tiles, 1);
         assert_eq!(spell.effects.effective_damage_type(), DamageType::Fire);
+        // Pattern defaults to Instant when omitted (back-compat with old YAML).
+        assert_eq!(aoe.pattern, AoePattern::Instant);
+    }
+
+    #[test]
+    fn aoe_pattern_variants_round_trip() {
+        let spread = r#"
+name: Flame Burst
+incantation: Exori Flam
+mana_cost: 20.0
+targeting: targeted_tile
+range_tiles: 5
+effects:
+  damage: 10.0
+  damage_type: fire
+  aoe:
+    radius_tiles: 2
+    vfx_on_tile: fire_hit
+    pattern:
+      kind: spread
+      ring_delay_seconds: 0.1
+"#;
+        let spell: SpellDefinition = serde_yaml::from_str(spread).unwrap();
+        let aoe = spell.effects.aoe.as_ref().unwrap();
+        assert_eq!(
+            aoe.pattern,
+            AoePattern::Spread {
+                ring_delay_seconds: 0.1
+            }
+        );
+
+        let spiral = r#"
+name: Chain Spark
+incantation: Exori Vis Tera
+mana_cost: 24.0
+targeting: targeted_tile
+range_tiles: 6
+effects:
+  damage: 6.0
+  damage_type: lightning
+  aoe:
+    radius_tiles: 3
+    vfx_on_tile: lightning_spark
+    pattern:
+      kind: spiral
+      step_delay_seconds: 0.05
+"#;
+        let spell: SpellDefinition = serde_yaml::from_str(spiral).unwrap();
+        let aoe = spell.effects.aoe.as_ref().unwrap();
+        assert_eq!(
+            aoe.pattern,
+            AoePattern::Spiral {
+                step_delay_seconds: 0.05,
+                clockwise: false,
+            }
+        );
+    }
+
+    #[test]
+    fn projectile_spec_round_trip() {
+        let yaml = r#"
+name: Fireball
+incantation: Exori Flam
+mana_cost: 22.0
+targeting: targeted_tile
+range_tiles: 6
+effects:
+  damage: 14.0
+  damage_type: fire
+  projectile:
+    sprite: fireball_missile
+    speed_tiles_per_second: 9.0
+  aoe:
+    radius_tiles: 2
+"#;
+        let spell: SpellDefinition = serde_yaml::from_str(yaml).unwrap();
+        let projectile = spell.effects.projectile.as_ref().unwrap();
+        assert_eq!(projectile.sprite, "fireball_missile");
+        assert_eq!(projectile.speed_tiles_per_second, 9.0);
+
+        // Speed defaults when omitted.
+        let defaulted = r#"
+name: Magic Dart
+incantation: Adori Vis
+mana_cost: 6.0
+targeting: targeted
+range_tiles: 5
+effects:
+  damage: 8.0
+  projectile:
+    sprite: arcane_mote
+"#;
+        let spell: SpellDefinition = serde_yaml::from_str(defaulted).unwrap();
+        let projectile = spell.effects.projectile.as_ref().unwrap();
+        assert_eq!(
+            projectile.speed_tiles_per_second,
+            default_projectile_speed()
+        );
     }
 }

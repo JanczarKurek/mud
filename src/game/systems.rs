@@ -4,6 +4,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::combat::components::CombatTarget;
 use crate::combat::damage::{DamageEvent, DamageSource, PendingDamageEvents};
 use crate::combat::modifiers::{apply_modifier, ApplyOutcome, ItemModifier};
+use crate::combat::scheduled::{
+    projectile_travel_seconds, ImpactKind, ScheduledImpact, ScheduledImpacts,
+};
 use crate::game::commands::{
     GameCommand, InspectTarget, ItemDestination, ItemReference, ItemSlotRef, MoveDelta, UseTarget,
 };
@@ -12,7 +15,7 @@ use crate::game::resources::{
     ChatLogState, ContainerViewers, GameUiEvent, InventoryState, PendingGameCommands,
     PendingGameUiEvents, VfxAnchor,
 };
-use crate::magic::resources::{SpellDefinition, SpellDefinitions};
+use crate::magic::resources::{AoePattern, SpellDefinition, SpellDefinitions};
 use crate::npc::components::Npc;
 use crate::player::components::{
     stack_weight, DerivedStats, Encumbered, EquippedItem, InventoryStack, MaxCarryWeight,
@@ -31,6 +34,7 @@ use crate::world::object_definitions::{
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::resources::SpaceManager;
 use crate::world::setup::{resolve_portal_destination_space, spawn_overworld_object};
+use crate::world::tile_patterns::{chebyshev_ring_tiles, spiral_tiles};
 use crate::world::WorldConfig;
 use bevy::ecs::system::SystemParam;
 
@@ -44,6 +48,10 @@ use bevy::ecs::system::SystemParam;
 pub struct CommandOutputs<'w, 's> {
     pub ui_events: ResMut<'w, PendingGameUiEvents>,
     pub pending_damage: ResMut<'w, PendingDamageEvents>,
+    /// Deferred spell impacts (flying missiles, time-shaped AoE). Spell
+    /// handlers push here instead of `pending_damage` when a cast flies or
+    /// spreads; `tick_scheduled_impacts` drains it. See `combat::scheduled`.
+    pub scheduled_impacts: ResMut<'w, crate::combat::scheduled::ScheduledImpacts>,
     pub pending_steps: ResMut<'w, crate::world::step_triggers::PendingStepEvents>,
     /// Noise emissions from movement. Drained into the `NoiseField` by
     /// `update_noise_field`; NPCs hear it and investigate.
@@ -553,6 +561,7 @@ pub fn process_game_commands(
                     &spell_definitions,
                     &mut command_outputs.ui_events,
                     &mut command_outputs.pending_damage,
+                    &mut command_outputs.scheduled_impacts,
                     &mut commands,
                 );
             }
@@ -569,7 +578,6 @@ pub fn process_game_commands(
                     &mut container_query,
                     &object_query,
                     &mut player_queries.p2(),
-                    &mut command_outputs.npc_magic_effects,
                     &mut command_outputs.player_magic_effects,
                     &command_outputs.player_class_level,
                     &command_outputs.companions,
@@ -577,7 +585,7 @@ pub fn process_game_commands(
                     &definitions,
                     &spell_definitions,
                     &mut command_outputs.ui_events,
-                    &mut command_outputs.pending_damage,
+                    &mut command_outputs.scheduled_impacts,
                     &mut commands,
                 );
             }
@@ -3367,6 +3375,7 @@ fn handle_cast_spell_at(
     spell_definitions: &SpellDefinitions,
     ui_events: &mut PendingGameUiEvents,
     pending_damage: &mut PendingDamageEvents,
+    scheduled: &mut ScheduledImpacts,
     commands: &mut Commands,
 ) {
     let Some(spell) = spell_definitions.get(spell_id) else {
@@ -3461,24 +3470,50 @@ fn handle_cast_spell_at(
         apply_spell_restore(spell, &mut target_vitals);
         name
     };
-    if spell.effects.damage > 0.0 {
-        pending_damage.push(DamageEvent {
-            target: target_entity,
-            amount: spell.effects.damage,
-            source: DamageSource::Player(caster_id),
-            damage_type: spell.effects.effective_damage_type(),
-            vfx_override: spell.effects.vfx_on_target_hit.clone(),
+    if let Some(projectile) = spell.effects.projectile.as_ref() {
+        // Homing missile: fly to the target (visual re-reads its position each
+        // frame) and defer damage + debuffs until the missile lands.
+        let distance = chebyshev_distance_tiles(caster_tile, target_position);
+        let travel = projectile_travel_seconds(distance, projectile.speed_tiles_per_second);
+        ui_events.push_broadcast(GameUiEvent::ProjectileFired {
+            from_tile: caster_tile,
+            to_tile: target_position,
+            sprite_definition_id: projectile.sprite.clone(),
+            duration_seconds: travel,
+            target_object_id: Some(target_object_id),
         });
-    }
+        scheduled.push(ScheduledImpact {
+            remaining_seconds: travel,
+            space_id: caster_space_id,
+            damage: spell.effects.damage,
+            damage_type: spell.effects.effective_damage_type(),
+            source: DamageSource::Player(caster_id),
+            kind: ImpactKind::Locked {
+                target: target_entity,
+                hit_vfx: spell.effects.vfx_on_target_hit.clone(),
+                buffs: spell.effects.buffs_target.clone(),
+            },
+        });
+    } else {
+        if spell.effects.damage > 0.0 {
+            pending_damage.push(DamageEvent {
+                target: target_entity,
+                amount: spell.effects.damage,
+                source: DamageSource::Player(caster_id),
+                damage_type: spell.effects.effective_damage_type(),
+                vfx_override: spell.effects.vfx_on_target_hit.clone(),
+            });
+        }
 
-    if !spell.effects.buffs_target.is_empty() {
-        apply_buffs_target(
-            target_entity,
-            &spell.effects.buffs_target,
-            Some(caster_id),
-            npc_magic_effects_query,
-            commands,
-        );
+        if !spell.effects.buffs_target.is_empty() {
+            apply_buffs_target(
+                target_entity,
+                &spell.effects.buffs_target,
+                Some(caster_id),
+                npc_magic_effects_query,
+                commands,
+            );
+        }
     }
 
     if let Ok(mut effects) = player_magic_effects_query.get_mut(player_entity) {
@@ -3555,10 +3590,6 @@ fn handle_cast_spell_at_tile(
         ),
         With<Player>,
     >,
-    npc_magic_effects_query: &mut Query<
-        &mut crate::magic::effects::MagicEffects,
-        (With<Npc>, Without<Player>),
-    >,
     player_magic_effects_query: &mut Query<&mut crate::magic::effects::MagicEffects, With<Player>>,
     player_class_level: &Query<
         (
@@ -3572,21 +3603,12 @@ fn handle_cast_spell_at_tile(
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
     ui_events: &mut PendingGameUiEvents,
-    pending_damage: &mut PendingDamageEvents,
+    scheduled: &mut ScheduledImpacts,
     commands: &mut Commands,
 ) {
     let Some(spell) = spell_definitions.get(spell_id) else {
         return;
     };
-
-    // Snapshot all player positions before taking a mutable borrow on the
-    // caster. Used to fan out AoE damage onto other players (and the caster
-    // themselves — friendly fire is intentional).
-    let player_snapshot: Vec<(Entity, crate::world::components::SpaceId, TilePosition)> =
-        player_query
-            .iter()
-            .map(|(e, _, _, _, r, t, _, _, _)| (e, r.space_id, *t))
-            .collect();
 
     let Ok((
         _,
@@ -3649,83 +3671,51 @@ fn handle_cast_spell_at_tile(
         anchor: VfxAnchor::tile(caster_space_id, caster_tile),
     });
 
-    // AoE damage fan-out. Damage goes through PendingDamageEvents and is
-    // resolved by `apply_pending_damage`; entities without VitalStats are
-    // silently ignored, so it's fine that `object_query` also contains
-    // furniture and scenery.
+    // Missile: fly to the target tile (fixed endpoint — tile-target casts
+    // don't home) and offset every AoE impact by the flight time. `0.0` for a
+    // non-missile spell means the pattern resolves from cast time as before.
+    let base_travel = if let Some(projectile) = spell.effects.projectile.as_ref() {
+        let distance = chebyshev_distance_tiles(caster_tile, target_tile);
+        let travel = projectile_travel_seconds(distance, projectile.speed_tiles_per_second);
+        ui_events.push_broadcast(GameUiEvent::ProjectileFired {
+            from_tile: caster_tile,
+            to_tile: target_tile,
+            sprite_definition_id: projectile.sprite.clone(),
+            duration_seconds: travel,
+            target_object_id: None,
+        });
+        travel
+    } else {
+        0.0
+    };
+
+    // AoE resolution. Each tile of the footprint becomes a deferred `Point`
+    // impact at `base_travel + pattern_delay`; `tick_scheduled_impacts` does
+    // the per-tile VFX, damage fan-out (friendly fire on), and NPC debuffs.
+    // `Instant` keeps delay 0, so it still lands the same frame as before
+    // (now planar at the target floor rather than a 3D radius).
     if let Some(aoe) = spell.effects.aoe.as_ref() {
         let radius = aoe.radius_tiles.max(0);
         let damage = spell.effects.damage;
         let damage_type = spell.effects.effective_damage_type();
-        let vfx_override = spell.effects.vfx_on_target_hit.clone();
+        let hit_vfx = spell.effects.vfx_on_target_hit.clone();
+        let vfx_on_tile = aoe.vfx_on_tile.clone();
+        let buffs = spell.effects.buffs_target.clone();
 
-        // Per-tile VFX: spawn the configured animation on every tile in the
-        // AoE — including tiles with no entity on them. Lets explosion spells
-        // visibly cover their footprint, not just their victims.
-        if let Some(tile_vfx_id) = aoe.vfx_on_tile.as_ref() {
-            for dy in -radius..=radius {
-                for dx in -radius..=radius {
-                    let tile =
-                        TilePosition::new(target_tile.x + dx, target_tile.y + dy, target_tile.z);
-                    ui_events.push_broadcast(GameUiEvent::VfxSpawn {
-                        definition_id: tile_vfx_id.clone(),
-                        anchor: VfxAnchor::tile(caster_space_id, tile),
-                    });
-                }
-            }
-        }
-
-        if damage > 0.0 {
-            for (entity, resident, tile, _) in object_query.iter() {
-                if resident.space_id != caster_space_id {
-                    continue;
-                }
-                if chebyshev_distance_tiles(*tile, target_tile) > radius {
-                    continue;
-                }
-                pending_damage.push(DamageEvent {
-                    target: entity,
-                    amount: damage,
-                    source: DamageSource::Player(caster_id),
-                    damage_type,
-                    vfx_override: vfx_override.clone(),
-                });
-            }
-            for (entity, space_id, tile) in &player_snapshot {
-                if *space_id != caster_space_id {
-                    continue;
-                }
-                if chebyshev_distance_tiles(*tile, target_tile) > radius {
-                    continue;
-                }
-                pending_damage.push(DamageEvent {
-                    target: *entity,
-                    amount: damage,
-                    source: DamageSource::Player(caster_id),
-                    damage_type,
-                    vfx_override: vfx_override.clone(),
-                });
-            }
-        }
-
-        // Buffs/debuffs fan out to NPCs in radius. Players are skipped —
-        // matches the existing rule that `buffs_target` only goes on NPCs.
-        if !spell.effects.buffs_target.is_empty() {
-            for (entity, resident, tile, _) in object_query.iter() {
-                if resident.space_id != caster_space_id {
-                    continue;
-                }
-                if chebyshev_distance_tiles(*tile, target_tile) > radius {
-                    continue;
-                }
-                apply_buffs_target(
-                    entity,
-                    &spell.effects.buffs_target,
-                    Some(caster_id),
-                    npc_magic_effects_query,
-                    commands,
-                );
-            }
+        for (tile, delay) in aoe_pattern_tiles(target_tile, radius, aoe.pattern) {
+            scheduled.push(ScheduledImpact {
+                remaining_seconds: base_travel + delay,
+                space_id: caster_space_id,
+                damage,
+                damage_type,
+                source: DamageSource::Player(caster_id),
+                kind: ImpactKind::Point {
+                    tile,
+                    hit_vfx: hit_vfx.clone(),
+                    vfx_on_tile: vfx_on_tile.clone(),
+                    buffs: buffs.clone(),
+                },
+            });
         }
     }
 
@@ -6185,6 +6175,42 @@ fn chebyshev_distance_tiles(a: TilePosition, b: TilePosition) -> i32 {
     tile_distance_3d(a, b)
 }
 
+/// Ordered `(tile, delay)` list for an AoE pattern over a Chebyshev disk of
+/// `radius` around `center`. Drives the deferred per-tile impacts in
+/// `handle_cast_spell_at_tile`. Delay is seconds from the AoE's start (impact
+/// time for a missile, cast time otherwise):
+/// - `Instant`: every tile at delay 0.
+/// - `Spread`: tile on ring `r` at `r * ring_delay_seconds` (blooms outward).
+/// - `Spiral`: the `i`-th spiral tile at `i * step_delay_seconds`.
+fn aoe_pattern_tiles(
+    center: TilePosition,
+    radius: i32,
+    pattern: AoePattern,
+) -> Vec<(TilePosition, f32)> {
+    match pattern {
+        AoePattern::Instant => (0..=radius)
+            .flat_map(|r| chebyshev_ring_tiles(center, r))
+            .map(|tile| (tile, 0.0))
+            .collect(),
+        AoePattern::Spread { ring_delay_seconds } => (0..=radius)
+            .flat_map(|r| {
+                let delay = r as f32 * ring_delay_seconds;
+                chebyshev_ring_tiles(center, r)
+                    .into_iter()
+                    .map(move |tile| (tile, delay))
+            })
+            .collect(),
+        AoePattern::Spiral {
+            step_delay_seconds,
+            clockwise,
+        } => spiral_tiles(center, radius, clockwise)
+            .into_iter()
+            .enumerate()
+            .map(|(i, tile)| (tile, i as f32 * step_delay_seconds))
+            .collect(),
+    }
+}
+
 /// Distance metric for inspect/perception: like Chebyshev but with elevation
 /// counted at half weight. `z` is in half-block units (see `TilePosition`),
 /// so dividing by 2 means one floor of vertical separation counts as one
@@ -6572,6 +6598,46 @@ mod tests {
     use crate::world::components::{Collider, OverworldObject};
     use crate::world::object_registry::ObjectRegistry;
     use crate::world::WorldServerPlugin;
+
+    #[test]
+    fn aoe_pattern_tile_delays() {
+        let center = TilePosition::new(5, 5, 0);
+
+        // Instant: the whole disk, every tile at delay 0.
+        let instant = aoe_pattern_tiles(center, 2, AoePattern::Instant);
+        assert_eq!(instant.len(), 25); // (2*2+1)^2
+        assert!(instant.iter().all(|(_, d)| *d == 0.0));
+
+        // Spread: ring r fires at r * ring_delay; center at 0.
+        let spread = aoe_pattern_tiles(
+            center,
+            2,
+            AoePattern::Spread {
+                ring_delay_seconds: 0.1,
+            },
+        );
+        assert_eq!(spread.len(), 25);
+        let center_delay = spread.iter().find(|(t, _)| *t == center).unwrap().1;
+        assert_eq!(center_delay, 0.0);
+        // A ring-2 corner fires at 2 * 0.1.
+        let corner = TilePosition::new(7, 7, 0);
+        let corner_delay = spread.iter().find(|(t, _)| *t == corner).unwrap().1;
+        assert!((corner_delay - 0.2).abs() < 1e-6);
+
+        // Spiral: tiles fire in order, each one step later than the last.
+        let spiral = aoe_pattern_tiles(
+            center,
+            2,
+            AoePattern::Spiral {
+                step_delay_seconds: 0.05,
+                clockwise: false,
+            },
+        );
+        assert_eq!(spiral.len(), 25);
+        assert_eq!(spiral[0], (center, 0.0));
+        assert!((spiral[1].1 - 0.05).abs() < 1e-6);
+        assert!((spiral[2].1 - 0.10).abs() < 1e-6);
+    }
 
     fn setup_server_app() -> App {
         let mut app = App::new();

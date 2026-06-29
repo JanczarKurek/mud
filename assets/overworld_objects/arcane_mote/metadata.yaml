@@ -1,0 +1,10 @@
+extends: static_world
+name: Arcane Mote
+description: A darting mote of arcane force. Used as the homing missile for Magic Dart.
+render:
+  # z_index is unused for projectiles (the client renders them at a fixed Z),
+  # but RenderMetadata requires it.
+  z_index: 0.9
+  debug_color: [150, 110, 230]
+  debug_size: 0.45
+  sprite_path: overworld_objects/arcane_mote/sprite.png

@@ -1866,18 +1866,56 @@ Top-level fields:
   its owner dies (HP ≤ 0 / awaiting respawn) or its `Ttl` elapses.
 
 ### `aoe`
-- Type: mapping `{ radius_tiles: int, vfx_on_tile?: string }`
+- Type: mapping `{ radius_tiles: int, vfx_on_tile?: string, pattern?: mapping }`
 - Optional: yes
-- Meaning: only meaningful for `targeted_tile` spells. After the regular
-  spell effects resolve, the spell's `damage` value is dealt as a one-shot
-  hit to every entity (NPC or player) within `radius_tiles` Chebyshev
-  distance of the target tile. The caster is **not** excluded — friendly
-  fire is on. `buffs_target` debuffs also fan out to every NPC in radius.
+- Meaning: only meaningful for `targeted_tile` spells. The spell's `damage`
+  value is dealt as a one-shot hit to every entity (NPC or player) standing on
+  a tile of the AoE footprint — a Chebyshev disk of `radius_tiles` around the
+  target tile, **planar at the target floor** (z is matched exactly; an
+  earlier 3D radius that also clipped half-blocks above/below is gone). The
+  caster is **not** excluded — friendly fire is on. `buffs_target` debuffs also
+  fan out to every NPC hit. Resolution is routed through the deferred
+  scheduled-impact queue (`src/combat/scheduled.rs`), so it composes with
+  `projectile` (the blast starts when the missile lands) and with timed
+  `pattern`s.
 - `vfx_on_tile` (optional): VFX definition id played once on **every** tile
-  in the AoE square, regardless of whether an entity occupies it. Use for
+  in the AoE footprint, regardless of whether an entity occupies it. Use for
   explosion-style spells where the floor itself should flash (e.g.
   `fire_hit` for fireball). Distinct from `vfx_on_target_hit`, which only
   plays on entities that actually take damage.
+- `pattern` (optional, default `{ kind: instant }`): how the footprint resolves
+  in **time**. Internally tagged by `kind`:
+  - `{ kind: instant }`: the whole disk resolves at once (delay 0 on every
+    tile). Matches the original behavior.
+  - `{ kind: spread, ring_delay_seconds: float }`: rings bloom outward — the
+    tile on Chebyshev ring `r` (r=0 is the center) fires at
+    `r * ring_delay_seconds`. Both damage and `vfx_on_tile` stagger, so the
+    blast visibly expands from the center.
+  - `{ kind: spiral, step_delay_seconds: float, clockwise?: bool }`: the disk's
+    tiles fire one at a time along an outward square spiral, tile `i` at
+    `i * step_delay_seconds`. `clockwise` (default `false`) flips the spiral
+    handedness. Good for arcing/chaining effects.
+
+### `projectile`
+- Type: mapping `{ sprite: string, speed_tiles_per_second?: float }`
+- Optional: yes
+- Default: none (damage/AoE resolves instantly at cast, the legacy behavior)
+- Meaning: the spell fires a flying missile and its `damage` / `aoe` only
+  resolves when the missile **lands**. Flight time is `distance / speed`,
+  floored at a small minimum (`MIN_FLIGHT_SECONDS`) so adjacent casts still
+  show a brief flight. The cast itself (mana, `vfx_on_cast`, narrator line,
+  scroll consumption) is still immediate — only the target damage/debuffs are
+  deferred.
+  - For `targeting: targeted` (entity) spells the missile **homes**: it flies to
+    the locked target and damages it on contact wherever it has moved (a target
+    that flees is still chased down; a target that dies mid-flight makes the
+    impact a clean no-op).
+  - For `targeting: targeted_tile` spells the missile flies to the aimed tile
+    (fixed endpoint) and the `aoe`/`pattern` blast begins when it arrives.
+- `sprite`: the **overworld-object** definition id whose sprite renders the
+  flying missile (resolved via `assets/overworld_objects/`, like `arrow`/`bolt`).
+  A missing definition just renders no missile — the damage still lands.
+- `speed_tiles_per_second` (optional, default `10.0`): travel speed.
 
 ### `vfx_on_cast`
 - Type: string

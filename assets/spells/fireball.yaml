@@ -8,7 +8,15 @@ range_tiles: 6
 effects:
   damage: 14.0
   damage_type: fire
+  # A flung fireball: the missile flies to the target tile, then the blast
+  # blooms outward ring-by-ring from the impact point.
+  projectile:
+    sprite: fireball_missile
+    speed_tiles_per_second: 9.0
   aoe:
-    radius_tiles: 1
+    radius_tiles: 2
     vfx_on_tile: fire_hit
+    pattern:
+      kind: spread
+      ring_delay_seconds: 0.1
   vfx_on_target_hit: fire_hit

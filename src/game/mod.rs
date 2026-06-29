@@ -55,6 +55,10 @@ impl Plugin for GameServerPlugin {
             .insert_resource(PendingGameEvents::default())
             .insert_resource(PendingGameUiEvents::default())
             .insert_resource(PendingDamageEvents::default())
+            // Deferred spell impacts. `process_game_commands`' `CommandOutputs`
+            // reads this, so it must exist wherever the game plugin runs (incl.
+            // test apps that omit `CombatPlugin`, which also `init_resource`s it).
+            .insert_resource(crate::combat::scheduled::ScheduledImpacts::default())
             .insert_resource(PendingDiscoveryEvents::default())
             .insert_resource(ClientGameState::default())
             .insert_resource(ClientStateRevisions::default())
