@@ -15,5 +15,12 @@ fn main() -> ExitCode {
     // button) before anything opens the world snapshot or accounts DB.
     clean_cache::consume_wipe_marker();
     App::new().add_plugins(mud2_into_plugin(cli)).run();
+    // The "Clean game state" debug button writes a wipe marker and exits so the
+    // deletion can run pre-boot. Re-exec ourselves so that fresh boot (which
+    // consumes the marker and performs the wipe) happens now — the game
+    // restarts automatically instead of requiring a manual relaunch.
+    if clean_cache::wipe_marker_pending() {
+        clean_cache::restart_process();
+    }
     ExitCode::SUCCESS
 }

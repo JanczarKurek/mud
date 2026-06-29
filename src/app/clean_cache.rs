@@ -250,6 +250,48 @@ fn parse_wipe_marker(contents: &str) -> Vec<PathBuf> {
         .collect()
 }
 
+/// True if a wipe marker is present. The marker is written *only* by the
+/// in-app "Clean game state" button just before it exits, and any pre-existing
+/// marker is consumed at the top of `main()`, so a marker found after the Bevy
+/// app has run means a wipe + restart was requested this run.
+pub fn wipe_marker_pending() -> bool {
+    wipe_marker_path().exists()
+}
+
+/// Re-exec the current binary with the same arguments. Used after the
+/// "Clean game state" button exits, so the fresh boot (which consumes the wipe
+/// marker and performs the deletions) happens automatically instead of
+/// requiring a manual relaunch.
+///
+/// On Unix this replaces the process image (`exec`) and only returns on error;
+/// elsewhere it spawns a child and returns, letting `main()` exit normally.
+/// Either way, callers should fall through to a normal exit if this returns.
+pub fn restart_process() {
+    let exe = std::env::current_exe()
+        .ok()
+        .or_else(|| std::env::args_os().next().map(PathBuf::from));
+    let Some(exe) = exe else {
+        eprintln!("clean game state: cannot locate current executable; not restarting");
+        return;
+    };
+    let mut command = std::process::Command::new(exe);
+    command.args(std::env::args_os().skip(1));
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        // `exec` only returns if it failed to replace the process image.
+        let err = command.exec();
+        eprintln!("clean game state: failed to restart: {err}");
+    }
+    #[cfg(not(unix))]
+    {
+        if let Err(err) = command.spawn() {
+            eprintln!("clean game state: failed to restart: {err}");
+        }
+    }
+}
+
 /// If a wipe marker exists, delete every path it lists, then the marker itself.
 /// Call once at process start, before constructing the Bevy app. Returns true
 /// if a wipe ran. Errors are logged to stderr but never abort startup.

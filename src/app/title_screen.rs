@@ -712,7 +712,7 @@ fn spawn_clean_state_button(
 }
 
 const CLEAN_STATE_IDLE_LABEL: &str = "Clean game state";
-const CLEAN_STATE_CONFIRM_LABEL: &str = "Click again to wipe + quit";
+const CLEAN_STATE_CONFIRM_LABEL: &str = "Click again to wipe + restart";
 
 /// Mirrors the two-click confirm state into the clean-state button's label.
 fn sync_clean_state_label(
@@ -823,10 +823,11 @@ fn handle_title_screen_buttons(
                     title_state.confirm_clean = true;
                     continue;
                 }
-                // Second click: record the resolved files to wipe and quit.
+                // Second click: record the resolved files to wipe and exit.
                 // The actual deletion happens pre-boot in `main.rs` (see
                 // `clean_cache::consume_wipe_marker`) so it runs while nothing
-                // holds the world snapshot or accounts DB open.
+                // holds the world snapshot or accounts DB open; `main.rs` then
+                // re-execs us so the game restarts automatically.
                 let mut targets = Vec::new();
                 if let Some(world_save) = world_save.as_ref() {
                     targets.push(world_save.path.clone());
@@ -842,7 +843,7 @@ fn handle_title_screen_buttons(
                     continue;
                 }
                 info!(
-                    "clean game state: scheduled wipe of {} file(s), exiting",
+                    "clean game state: scheduled wipe of {} file(s), restarting",
                     targets.len()
                 );
                 exit_messages.write(AppExit::Success);
