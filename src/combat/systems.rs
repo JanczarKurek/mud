@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use bevy::prelude::*;
 
@@ -17,6 +17,7 @@ use crate::magic::effects::MagicEffects;
 use crate::magic::resources::{EffectKind, EffectSpec, SpellDefinition, SpellDefinitions};
 use crate::npc::components::Companion;
 use crate::npc::spellcasting::{NpcSpellEntry, SpellcastingProfile};
+use crate::player::classes::{class_data, BabTrack, Class};
 use crate::player::components::{
     AmmoConsumption, AttributeSet, ChatLog, DefenseStats, DerivedStats, Inventory, Player,
     PlayerId, PlayerIdentity, VitalStats, WeaponDamage,
@@ -54,6 +55,20 @@ struct CombatantSnapshot {
     block_chance_pct: i32,
     has_shield: bool,
     level: u32,
+    /// BAB advancement track: a player's class track, or a creature's YAML
+    /// `bab_track` (default ¾). Feeds `attack_to_hit_bonus`.
+    bab_track: BabTrack,
+    /// The player's class (`None` for NPCs). Feeds the Fighter Weapon Focus
+    /// to-hit bonus and the Vagabond Backstab dice.
+    class: Option<Class>,
+    /// `true` iff this combatant is a player currently in sneak mode. Feeds
+    /// the backstab check (attacking from undetected stealth).
+    sneaking: bool,
+    /// Lowest raw d20 face that turns a landed hit into a critical (double
+    /// damage roll). Players resolve it from the equipped weapon's
+    /// `crit_range`, NPCs from their own definition; default 20, clamped
+    /// `2..=20` here so YAML can't make every hit crit.
+    crit_threshold: i32,
     /// Cloned for read-only spell selection during the per-attacker loop.
     /// Cooldown writes (`last_cast_at`) are batched and applied via p3
     /// after the loop.
@@ -67,23 +82,8 @@ struct CombatantSnapshot {
     weapon_modifiers: Vec<ItemModifier>,
 }
 
-/// Roll a uniform integer in `0..=max`. Uses the same nanosecond+salt pattern
-/// as `roll_die` — see `damage_expr::roll_die`.
-fn roll_defense(max: i32, salt: u64) -> i32 {
-    if max <= 0 {
-        return 0;
-    }
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.subsec_nanos() as u64)
-        .unwrap_or(0);
-    let mixed = nanos.wrapping_add(salt.wrapping_mul(0x9E37_79B9_7F4A_7C15));
-    (mixed % (max as u64 + 1)) as i32
-}
-
 /// Roll 1..=20 inclusive (a d20). Same nanosecond+salt jitter as
-/// `roll_defense` — sufficient for non-security-sensitive combat rolls.
+/// `damage_expr::roll_die` — sufficient for non-security-sensitive combat rolls.
 fn roll_d20(salt: u64) -> i32 {
     use std::time::{SystemTime, UNIX_EPOCH};
     let nanos = SystemTime::now()
@@ -94,26 +94,34 @@ fn roll_d20(salt: u64) -> i32 {
     ((mixed % 20) as i32) + 1
 }
 
-/// Returns the attack roll's total:
-/// `d20 + ability_mod + (NPC ? level : 0) + elevation_mod`. The elevation
-/// bonus is ranged-only — melee and spells get no high/low ground term.
-fn attack_roll_total(attacker: &CombatantSnapshot, target: &CombatantSnapshot, salt: u64) -> i32 {
-    let mut total = roll_d20(salt)
+/// Rolls an attack and returns `(raw_d20, total)` where
+/// `total = d20 + ability_mod + bab_at(track, level) + elevation_mod`. The
+/// elevation bonus is ranged-only — melee and spells get no high/low ground
+/// term. The raw d20 is returned so callers can apply the natural-20 (auto-hit)
+/// / natural-1 (auto-miss) rule from `progression.md` §7.1.
+fn attack_roll_total(
+    attacker: &CombatantSnapshot,
+    target: &CombatantSnapshot,
+    salt: u64,
+) -> (i32, i32) {
+    let d20 = roll_d20(salt);
+    let mut total = d20
         + crate::combat::formulas::attack_to_hit_bonus(
             attacker.attack_profile.kind,
             attacker.attributes,
-            attacker.is_player,
+            attacker.bab_track,
             attacker.level,
+            attacker.class,
         );
     if matches!(attacker.attack_profile.kind, AttackKind::Ranged { .. }) {
         total +=
             crate::combat::formulas::elevation_to_hit_mod(attacker.position.z, target.position.z);
     }
-    total
+    (d20, total)
 }
 
 fn dodge_dc(target: &CombatantSnapshot) -> i32 {
-    crate::combat::formulas::dodge_dc(target.attributes.agility, target.dodge_bonus)
+    crate::combat::formulas::dodge_dc(target.level, target.attributes.agility, target.dodge_bonus)
 }
 
 /// Return `true` with probability `chance` (clamped to `[0, 1]`). Reuses the
@@ -202,14 +210,24 @@ pub fn resolve_battle_turn(
         Query<&mut Inventory, With<Player>>,
         Query<&mut SpellcastingProfile>,
         Query<&mut crate::player::components::Exertion, With<Player>>,
+        // p5: a player's class (BAB track, Weapon Focus, Backstab) and live
+        // sneak flag. p0 is already at the max query tuple arity, so this
+        // rides the ParamSet and is pre-collected into a map before the p0
+        // snapshot loop.
+        Query<(Entity, &Class, Has<crate::player::components::Sneaking>)>,
     )>,
     definitions: Res<OverworldObjectDefinitions>,
     object_registry: Res<ObjectRegistry>,
     spell_definitions: Res<SpellDefinitions>,
     // Separate from the p0 ParamSet on purpose: `Companion` is touched by no
     // other combat query, so a disjoint read avoids both a tuple-arity overflow
-    // on p0 and any aliasing conflict.
-    companion_query: Query<&Companion>,
+    // on p0 and any aliasing conflict. Bundled with the AiState read (backstab
+    // awareness check — its writer `update_roaming_npcs` is ordered before
+    // this system) as a tuple so the system stays under Bevy's 16-param cap.
+    npc_reads: (
+        Query<&Companion>,
+        Query<&crate::npc::components::AiState, With<crate::npc::components::Npc>>,
+    ),
     collider_query: Query<
         (&SpaceResident, &TilePosition, Option<&OverworldObject>),
         (With<crate::world::components::Collider>, Without<Player>),
@@ -244,6 +262,15 @@ pub fn resolve_battle_turn(
         floor_defs.as_deref(),
     );
 
+    // Pre-collect each player's class, BAB track, and sneak flag keyed by
+    // entity. ParamSet access is exclusive, so this must finish before we
+    // borrow p0 for the snapshot loop.
+    let player_tracks: HashMap<Entity, (Class, BabTrack, bool)> = combat_queries
+        .p5()
+        .iter()
+        .map(|(entity, class, sneaking)| (entity, (*class, class_data(*class).bab_track, sneaking)))
+        .collect();
+
     let combatants: Vec<CombatantSnapshot> = combat_queries
         .p0()
         .iter()
@@ -270,7 +297,8 @@ pub fn resolve_battle_turn(
                     .unwrap_or_else(DamageExpr::melee_default);
                 let is_player = player_identity.is_some();
                 let player_id = player_identity.map(|identity| identity.id.0);
-                let owner_player = companion_query
+                let owner_player = npc_reads
+                    .0
                     .get(entity)
                     .ok()
                     .and_then(|companion| companion.owner_player);
@@ -310,6 +338,37 @@ pub fn resolve_battle_turn(
                     block > 0 || block_chance_pct > 0
                 };
                 let level = experience.map(|e| e.level).unwrap_or(1);
+                let player_class_info = player_tracks.get(&entity).copied();
+                // Crit threshold: players read the equipped weapon's
+                // `crit_range`, NPCs their own definition. Default 20.
+                let crit_threshold = if is_player {
+                    inventory
+                        .and_then(|inv| {
+                            inv.equipment_item(
+                                crate::world::object_definitions::EquipmentSlot::Weapon,
+                            )
+                        })
+                        .and_then(|item| definitions.get(&item.type_id))
+                        .and_then(|def| def.crit_range)
+                } else {
+                    definitions
+                        .get(&overworld_object.definition_id)
+                        .and_then(|def| def.crit_range)
+                }
+                .unwrap_or(20)
+                .clamp(2, 20);
+                // Players: BAB track from class (default Fighter/Full if somehow
+                // unset). NPCs: from the creature's YAML `bab_track`, default ¾.
+                let bab_track = if is_player {
+                    player_class_info
+                        .map(|(_, track, _)| track)
+                        .unwrap_or(BabTrack::Full)
+                } else {
+                    definitions
+                        .get(&overworld_object.definition_id)
+                        .and_then(|def| def.bab_track)
+                        .unwrap_or(BabTrack::ThreeQuarter)
+                };
                 CombatantSnapshot {
                     entity,
                     target: combat_target.map(|target| target.entity),
@@ -339,6 +398,12 @@ pub fn resolve_battle_turn(
                     block_chance_pct,
                     has_shield,
                     level,
+                    bab_track,
+                    class: player_class_info.map(|(class, _, _)| class),
+                    sneaking: player_class_info
+                        .map(|(_, _, sneaking)| sneaking)
+                        .unwrap_or(false),
+                    crit_threshold,
                     spellcasting: spellcasting.map(|p| p.spells.clone()),
                     active_effect_kinds: active_effect_kinds(magic_effects),
                     weapon_modifiers,
@@ -491,11 +556,26 @@ pub fn resolve_battle_turn(
             }
         }
 
+        // A committed attack breaks stealth, hit or miss. The snapshot keeps
+        // `sneaking: true` for THIS swing (the backstab opener below); the
+        // component removal replicates via the projection's
+        // `PlayerSneakingChanged` diff, and the next AI tick re-detects the
+        // now-visible player normally (the attack noise above already pulls
+        // out-of-sight NPCs into Alert).
+        if attacker.is_player && attacker.sneaking {
+            commands
+                .entity(attacker.entity)
+                .remove::<crate::player::components::Sneaking>();
+        }
+
         // Stage 1: to-hit roll vs dodge DC. Misses spend ammo and play the
-        // projectile but deal no damage.
-        let attack_total = attack_roll_total(attacker, target, attacker.object_id);
+        // projectile but deal no damage. A natural 20 always hits and a natural
+        // 1 always misses regardless of modifiers (`progression.md` §7.1), so
+        // even lopsided matchups keep a 5% hit/whiff floor.
+        let (d20, attack_total) = attack_roll_total(attacker, target, attacker.object_id);
         let dc = dodge_dc(target);
-        if attack_total < dc {
+        let hit = d20 == 20 || (d20 != 1 && attack_total >= dc);
+        if !hit {
             ui_events.push_broadcast(GameUiEvent::AttackDodged {
                 attacker_object_id: attacker.object_id,
                 target_object_id: target.object_id,
@@ -507,12 +587,73 @@ pub fn resolve_battle_turn(
             continue;
         }
 
-        // Stage 2: roll weapon damage as today.
-        let mut damage = attacker.damage_expr.roll(&attacker.attributes).max(1);
+        // Stage 2: roll weapon damage. Level is passed for expressions with a
+        // `level` term. A raw d20 at or above the attacker's crit threshold
+        // upgrades the landed hit to a critical: the damage expression is
+        // rolled TWICE (3.5e-style, distinct salt so same-nanosecond rolls
+        // stay independent) and summed, before block/armor. Enchant
+        // `BonusDamage` riders are not doubled.
+        let crit = d20 >= attacker.crit_threshold;
+        let mut damage = attacker
+            .damage_expr
+            .roll(&attacker.attributes, attacker.level as i32)
+            .max(1);
+        if crit {
+            damage += attacker
+                .damage_expr
+                .roll_salted(
+                    &attacker.attributes,
+                    attacker.level as i32,
+                    attacker.object_id.wrapping_add(0xC417_C417),
+                )
+                .max(1);
+        }
+
+        // Backstab (`progression.md` §3.4): a sneaking player striking an NPC
+        // that is UNAWARE of them (not targeting, pursuing, engaging, or
+        // fleeing from the attacker — Alert/searching still counts as
+        // unaware). Vagabonds add their scaling class dice; anyone else gets
+        // a small flat opener bonus. Applied once (never doubled by crit) and
+        // still subject to block/armor below.
+        let backstab = attacker.is_player
+            && attacker.sneaking
+            && !target.is_player
+            && !crate::npc::detection::npc_aware_of(
+                npc_reads.1.get(target_entity).ok(),
+                target.target,
+                attacker.entity,
+            );
+        if backstab {
+            let bonus = match attacker.class {
+                Some(Class::Vagabond) => {
+                    let dice = crate::combat::formulas::backstab_dice(attacker.level);
+                    let mut total = 0i32;
+                    for i in 0..dice {
+                        total += crate::combat::damage_expr::roll_die(
+                            6,
+                            attacker.object_id.wrapping_add(0x00BA_C5AB + i as u64),
+                        );
+                    }
+                    total
+                }
+                _ => crate::combat::formulas::BACKSTAB_FLAT_BONUS,
+            };
+            damage += bonus.max(0);
+            broadcast_chat_line(
+                &mut chat_log_query,
+                format!(
+                    "[{} strikes {} from the shadows: +{bonus} backstab damage]",
+                    attacker.name, target.name
+                ),
+            );
+        }
 
         // Stage 3: block roll (only if defender wields a shield). Chance is
         // shield's `block_chance` + AGI_mod * 2, clamped to [0, 95] so a hit
-        // is never fully unstoppable.
+        // is never fully unstoppable. On a successful block the FULL `block`
+        // value is removed (deterministic) — the old uniform 0..block roll made
+        // a wooden shield worth <0.5 dmg/hit, a defensive system that did
+        // nothing. The randomness now lives solely in the chance gate.
         if target.has_shield {
             let chance_pct = crate::combat::formulas::effective_block_chance_pct(
                 target.block_chance_pct,
@@ -522,23 +663,26 @@ pub fn resolve_battle_turn(
             // Salt with target object id so attacker/defender pairs roll
             // independently from on-hit effect rolls.
             if roll_chance(chance, target.object_id.wrapping_add(0xB10C_B10C)) {
-                let block_roll = roll_defense(target.block, 0);
-                damage = (damage - block_roll).max(1);
+                let block_amount = target.block.max(0);
+                damage = (damage - block_amount).max(1);
                 ui_events.push_broadcast(GameUiEvent::AttackBlocked {
                     attacker_object_id: attacker.object_id,
                     target_object_id: target.object_id,
-                    amount: block_roll,
+                    amount: block_amount,
                 });
                 broadcast_chat_line(
                     &mut chat_log_query,
-                    format!("[{} blocks {block_roll} damage]", target.name),
+                    format!("[{} blocks {block_amount} damage]", target.name),
                 );
             }
         }
 
-        // Stage 4: armor mitigation (unchanged — additive uniform roll).
-        let armor_roll = roll_defense(target.armor, 1);
-        let damage = (damage - armor_roll).max(1);
+        // Stage 4: armor mitigation — deterministic FULL `armor` value, floored
+        // so a hit always lands at least 1. The item card now means what it
+        // says (`armor: 4` blocks 4); armor values on items/creatures are tuned
+        // for full-value subtraction (roughly half the old numbers).
+        let armor_reduction = target.armor.max(0);
+        let damage = (damage - armor_reduction).max(1);
 
         let mut target_query = combat_queries.p1();
         let Ok((target_vitals, mut target_magic)) = target_query.get_mut(target_entity) else {
@@ -618,15 +762,31 @@ pub fn resolve_battle_turn(
         // `apply_pending_damage` so every damage source — melee, ranged,
         // spell, DoT, environment — wakes the target uniformly. NPCs keep
         // their CombatTarget so they re-engage immediately after waking.
-        broadcast_chat_line(
-            &mut chat_log_query,
-            format!(
-                "[{} hit {} for {damage} {} damage]",
-                attacker.name,
-                target.name,
-                attacker.damage_type.display_name()
-            ),
-        );
+        if crit {
+            ui_events.push_broadcast(GameUiEvent::AttackCrit {
+                attacker_object_id: attacker.object_id,
+                target_object_id: target.object_id,
+            });
+            broadcast_chat_line(
+                &mut chat_log_query,
+                format!(
+                    "[{} CRITS {} for {damage} {} damage!]",
+                    attacker.name,
+                    target.name,
+                    attacker.damage_type.display_name()
+                ),
+            );
+        } else {
+            broadcast_chat_line(
+                &mut chat_log_query,
+                format!(
+                    "[{} hit {} for {damage} {} damage]",
+                    attacker.name,
+                    target.name,
+                    attacker.damage_type.display_name()
+                ),
+            );
+        }
 
         // Roll the attacker's on-hit effects, from both the weapon definition
         // and any per-instance modifiers on the equipped weapon. Each entry is
@@ -807,6 +967,8 @@ fn execute_npc_spell_cast(
         Query<&mut Inventory, With<Player>>,
         Query<&mut SpellcastingProfile>,
         Query<&mut crate::player::components::Exertion, With<Player>>,
+        // p5: mirrors `resolve_battle_turn`'s ParamSet arity (unused here).
+        Query<(Entity, &Class, Has<crate::player::components::Sneaking>)>,
     )>,
     ui_events: &mut PendingGameUiEvents,
     pending_damage: &mut PendingDamageEvents,
@@ -822,6 +984,8 @@ fn execute_npc_spell_cast(
         &attacker.name,
         attacker.space_id,
         attacker.position,
+        attacker.attributes,
+        attacker.level,
         target.entity,
         &target.name,
         target.position,
@@ -1010,23 +1174,16 @@ mod tests {
             block_chance_pct,
             has_shield,
             level,
+            // Default to the creature ¾ track; tests that need a player/full
+            // track override `attacker.bab_track` directly. At level 1 every
+            // track yields bab 0, so the elevation/range tests are unaffected.
+            bab_track: BabTrack::ThreeQuarter,
+            class: None,
+            sneaking: false,
+            crit_threshold: 20,
             spellcasting: None,
             active_effect_kinds: HashSet::new(),
             weapon_modifiers: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn roll_defense_zero_max_returns_zero() {
-        assert_eq!(roll_defense(0, 0), 0);
-        assert_eq!(roll_defense(-5, 0), 0);
-    }
-
-    #[test]
-    fn roll_defense_within_range() {
-        for salt in 0..10 {
-            let r = roll_defense(5, salt);
-            assert!((0..=5).contains(&r), "roll {r} out of 0..=5 (salt={salt})");
         }
     }
 
@@ -1056,30 +1213,39 @@ mod tests {
     }
 
     #[test]
-    fn attack_roll_total_player_skips_level_bonus() {
-        // Player STR 14 → +2 mod. Roll is d20 + 2, in [3, 22]. Melee, so
-        // elevation is irrelevant — pick any target snapshot.
-        let attacker = snapshot(14, 10, 5, true, 0, 0, 0, 0, false);
+    fn dodge_dc_scales_with_level() {
+        // L8 → (3·8)/4 = +6; AGI 14 → +2; +1 item → DC 19.
+        let target = snapshot(10, 14, 8, true, 0, 0, 0, 1, false);
+        assert_eq!(dodge_dc(&target), 19);
+    }
+
+    #[test]
+    fn attack_roll_total_player_adds_full_bab() {
+        // Player STR 14 → +2 mod, Full track (Fighter) at level 5 → bab 5.
+        // Roll is d20 + 2 + 5, in [8, 27]. Melee, so elevation is irrelevant.
+        let mut attacker = snapshot(14, 10, 5, true, 0, 0, 0, 0, false);
+        attacker.bab_track = BabTrack::Full;
         let target = snapshot(10, 10, 1, false, 0, 0, 0, 0, false);
         for salt in 0..30 {
-            let total = attack_roll_total(&attacker, &target, salt);
+            let (_, total) = attack_roll_total(&attacker, &target, salt);
             assert!(
-                (3..=22).contains(&total),
-                "player attack {total} out of [3,22] (salt={salt})"
+                (8..=27).contains(&total),
+                "player attack {total} out of [8,27] (salt={salt})"
             );
         }
     }
 
     #[test]
-    fn attack_roll_total_npc_adds_level() {
-        // NPC level 6, STR 12 → +1 mod. Roll is d20 + 1 + 6, in [8, 27].
+    fn attack_roll_total_npc_adds_three_quarter_bab() {
+        // NPC level 6, STR 12 → +1 mod, default ¾ track → bab_at(¾,6) = 4.
+        // Roll is d20 + 1 + 4, in [6, 25] — the capped replacement for raw +6.
         let attacker = snapshot(12, 10, 6, false, 0, 0, 0, 0, false);
         let target = snapshot(10, 10, 1, true, 0, 0, 0, 0, false);
         for salt in 0..30 {
-            let total = attack_roll_total(&attacker, &target, salt);
+            let (_, total) = attack_roll_total(&attacker, &target, salt);
             assert!(
-                (8..=27).contains(&total),
-                "npc attack {total} out of [8,27] (salt={salt})"
+                (6..=25).contains(&total),
+                "npc attack {total} out of [6,25] (salt={salt})"
             );
         }
     }
@@ -1096,7 +1262,7 @@ mod tests {
         attacker.position = TilePosition::new(0, 0, 2);
         let target = snapshot(10, 10, 1, false, 0, 0, 0, 0, false);
         for salt in 0..30 {
-            let total = attack_roll_total(&attacker, &target, salt);
+            let (_, total) = attack_roll_total(&attacker, &target, salt);
             assert!(
                 (3..=22).contains(&total),
                 "ranged attack {total} out of [3,22] (salt={salt}) — elevation bonus +2"
@@ -1117,7 +1283,7 @@ mod tests {
         let mut target = snapshot(10, 10, 1, false, 0, 0, 0, 0, false);
         target.position = TilePosition::new(0, 0, 2);
         for salt in 0..30 {
-            let total = attack_roll_total(&attacker, &target, salt);
+            let (_, total) = attack_roll_total(&attacker, &target, salt);
             assert!(
                 (-1..=18).contains(&total),
                 "ranged-upward attack {total} out of [-1, 18] (salt={salt})"
@@ -1133,7 +1299,7 @@ mod tests {
         attacker.position = TilePosition::new(0, 0, 2);
         let target = snapshot(10, 10, 1, false, 0, 0, 0, 0, false);
         for salt in 0..30 {
-            let total = attack_roll_total(&attacker, &target, salt);
+            let (_, total) = attack_roll_total(&attacker, &target, salt);
             assert!(
                 (1..=20).contains(&total),
                 "melee attack {total} out of [1, 20] (salt={salt}) — elevation must be ignored"

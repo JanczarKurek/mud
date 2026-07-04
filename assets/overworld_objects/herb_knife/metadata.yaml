@@ -3,7 +3,8 @@ name: Herb Knife
 weight: 0.5
 description: A small curved blade for snipping stems. Use it on herb patches to harvest.
 equipment_slot: weapon
-damage: "1d3+strength"
+# Harvesting tool: tiny dice + STR modifier — utility, not a combat weapon.
+damage: "1d3+str_mod"
 infinite_uses: true
 attack_profile:
   kind: melee

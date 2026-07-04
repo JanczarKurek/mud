@@ -400,6 +400,12 @@ pub enum GameCommand {
         skill: Skill,
         ranks: u8,
     },
+    /// Spend one banked ability bump (earned at levels 4/8/12/16/20) to raise
+    /// `attribute` by +1. Drained by `process_allocate_ability_bump_commands`
+    /// in `CommandIntercept` before `process_game_commands` runs.
+    AllocateAbilityBump {
+        attribute: AttributeKind,
+    },
     /// Admin-only: grant raw XP. Pushed into `PendingXpGrants` so the canonical
     /// `apply_xp_grants` pipeline picks it up — level-ups, skill-point grants,
     /// and HUD toasts fire normally. Drained by

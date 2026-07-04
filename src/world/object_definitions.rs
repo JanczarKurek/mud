@@ -99,6 +99,12 @@ pub struct OverworldObjectDefinition {
     pub ammo_type: Option<String>,
     #[serde(default)]
     pub damage: Option<String>,
+    /// Lowest raw d20 face that upgrades a landed hit to a critical (double
+    /// damage roll). `None` = 20 (nat-20 only); a dagger with `crit_range: 19`
+    /// crits on 19-20 *when the attack also hits*. Clamped to `2..=20` at the
+    /// combat snapshot. Meaningful on weapons and on creature definitions.
+    #[serde(default)]
+    pub crit_range: Option<i32>,
     #[serde(default)]
     pub armor: i32,
     #[serde(default)]
@@ -121,6 +127,12 @@ pub struct OverworldObjectDefinition {
     /// (items, scenery, doors) can omit it; spawn paths default to 1.
     #[serde(default)]
     pub level: Option<u32>,
+    /// BAB advancement track for this creature's to-hit (`full | three_quarter
+    /// | half`). Defaults to `three_quarter` at the combat snapshot when unset —
+    /// most creatures; set `full` for brutes (e.g. the Cyclops) that should stay
+    /// accurate at their level. Replaces the old uncapped raw `+level` to-hit.
+    #[serde(default)]
+    pub bab_track: Option<crate::player::classes::BabTrack>,
     /// Yarn node name a player reaches when talking to this object. Empty =
     /// not talkable.
     #[serde(default)]

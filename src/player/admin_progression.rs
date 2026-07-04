@@ -112,6 +112,13 @@ pub fn process_admin_progression_commands(
                                 &mut events,
                                 &mut ui_events,
                             );
+                            if crossed % 4 == 0 {
+                                crate::player::skills::grant_level_up_ability_bump(
+                                    &mut sheet,
+                                    identity,
+                                    &mut ui_events,
+                                );
+                            }
                         }
                     }
                     chat.push_narrator(format!("[Admin] Level set to {}.", exp.level));

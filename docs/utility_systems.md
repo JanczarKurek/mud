@@ -257,10 +257,14 @@ the only client surface is the replicated `Sneaking` flag (HUD) and a one-shot
 5. **"Spotted" cue** — `GameUiEvent::Spotted` at the fresh aggro transition;
    client toast.
 
-**Deferred (cross-boundary):** Backstab / sneak-attack damage. Combat reads
-neither `Class` nor NPC-awareness today; it needs an "is this NPC aware of the
-attacker" predicate exposed from npc state into `resolve_battle_turn`. Ship slice
-1 first.
+**✅ Backstab / sneak-attack damage shipped (balance retune):** combat now reads
+both `Class` and NPC awareness. The pure predicate `npc_aware_of(state,
+combat_target, attacker)` lives in `src/npc/detection.rs` (aware iff the NPC is
+targeting/pursuing/engaging/fleeing the attacker; Wander/**Alert** count as
+unaware), and `resolve_battle_turn` applies the bonus to a **sneaking,
+undetected** player's strike: Vagabond `+Nd6` (`N = 1 + level/4`), anyone else
++2 flat. The committed attack removes `Sneaking` (hit or miss), so re-stealthing
+is required for another opener.
 
 ### Slice 2 — Exertion + Endurance — ✅ implemented
 
@@ -296,8 +300,8 @@ barricade vs NPC pathing, pressure-plate holds. As built:
    heavy objects, driving a wired target (door) via `apply_state_transition`.
    Authored via the `pressure_plate:` block (`docs/yaml_formats.md`).
 
-**Deferred (cross-boundary):** Backstab / sneak-attack damage (still per §8's
-Slice 1 note).
+**Backstab / sneak-attack damage:** ✅ shipped with the balance retune — see
+the Slice 1 note above.
 
 ### Slice 4 — Production & quality (Cluster C)
 

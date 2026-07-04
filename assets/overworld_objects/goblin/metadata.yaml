@@ -15,11 +15,13 @@ stats:
   willpower: 6
   charisma: 4
   focus: 7
-damage: "1d4+strength/5"
+# Creature template: dice + flat, sized to the level budget (~mean 2+1.1·L).
+damage: "1d6+1"
 attack_profile:
   kind: melee
   damage_type: cut
-hp: "1d6+25+constitution*3"
+# HP budget: mean ≈ 20 + 10·L.
+hp: "1d6+20+constitution*2"
 npc_behavior:
   step_interval_seconds: 0.9
   detect_distance_tiles: 5

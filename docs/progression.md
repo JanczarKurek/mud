@@ -64,7 +64,7 @@ Front-line martial. Soaks hits, hits hard, doesn't cast.
 | Skill points / level | 2 + FOC mod (min 1) |
 | Class skills | Athletics, Endurance, Perception, Survival |
 | Casting | None (mana stays at level-0 base) |
-| Starting feature | **Weapon Focus**: +1 to melee to-hit at level 1; +1 again at level 5 and every 5 thereafter `[tunable]` |
+| Starting feature | **Weapon Focus** ✅ *implemented*: +1 to melee to-hit at level 1; +1 again at level 5 and every 5 thereafter (`classes::weapon_focus_bonus`, folded into `attack_to_hit_bonus` for melee only) `[tunable]` |
 
 ### 3.2 Wizard
 
@@ -106,7 +106,7 @@ Skill specialist, opportunistic damage. Mud 2.0's flavor for the 3.5e Rogue.
 | Skill points / level | **8 + FOC mod** (min 1) |
 | Class skills | Stealth, Thievery, Perception, Persuasion, Athletics, Survival, Lore |
 | Casting | None at base (advanced classes may unlock) |
-| Starting feature | **Backstab**: +1d6 damage on attacks where target hasn't yet acted in combat or is unaware. Scales +1d6 every 4 levels `[tunable]` |
+| Starting feature | **Backstab** ✅ *implemented*: +Nd6 damage (N = `1 + level/4`, so 1d6 at L1 … 6d6 at L20) when a **sneaking, undetected** player strikes an NPC unaware of them (`npc_aware_of` in `src/npc/detection.rs`; non-Vagabonds get a flat +2 opener instead). The committed attack breaks stealth, so it's one opener per approach. `[tunable]` |
 
 ### 3.5 Advanced classes (deferred)
 
@@ -141,7 +141,16 @@ xp_for_level(N) = 1000 × N × (N - 1) / 2     [tunable: 1000 coefficient]
 Placeholder formula (gross simplification of 3.5e's CR system):
 
 ```
-xp_grant = victim_level² × 50     [tunable]
+xp_grant = victim_level × 75     [tunable]
+```
+
+Linear, not quadratic: level N→N+1 costs exactly `1000·N`, so a same-level kill
+grants `75·N` and kills-to-level stays a constant ~13 across the whole 1–20 band.
+(The original `level² × 50` outran the curve — 20 kills at L1 collapsed to 1–2
+by L15, so players out-leveled content pacing.)
+
+```
+(old, superseded): xp_grant = victim_level² × 50
 ```
 
 Awarded to the entity holding the killing blow's `attacker` slot in `resolve_battle_turn` (`src/combat/systems.rs:72`). If the killer is an NPC, no grant. The XP grant emits an `ExperienceGained { amount }` GameEvent (see §9).
@@ -158,7 +167,10 @@ When `current_xp ≥ xp_for_level(level + 1)`, the character levels:
    - Fighter: 0/level
 3. **Skill points**: as listed per class. Spent immediately or banked.
 4. **BAB / save bonuses**: recomputed from class progression (see §7).
-5. **Ability score bump**: at levels 4, 8, 12, 16, 20 — player picks one attribute and adds +1.
+5. **Ability score bump** ✅ *implemented*: at levels 4, 8, 12, 16, 20 the character banks one bump
+   (`SkillSheet.available_ability_bumps`), spent via `GameCommand::AllocateAbilityBump { attribute }`
+   from the skills panel to add +1 to a chosen attribute. Bumps may exceed the creation ceiling of 18
+   (earned growth). The new attribute re-derives HP/mana/to-hit/damage the next frame.
 6. **Class feature thresholds**: per-class effects fire at specific levels (Fighter weapon focus at 5/10/15/20, Vagabond backstab dice at 4/8/12/16/20, Wizard new spells per level, Cleric domain spells, etc.).
 7. Emit `LevelUp { new_level }` GameEvent and a `GameUiEvent::LevelUpToast` for the HUD.
 
@@ -220,23 +232,20 @@ vs a target DC. Common DCs `[tunable]`:
 | Cleric | Heal, Lore, Persuasion, Spellcraft, Perception, Survival |
 | Vagabond | Stealth, Thievery, Perception, Persuasion, Athletics, Survival, Lore |
 
-### 5.3 Implementation deltas (doc leads the code)
+### 5.3 Implementation status
 
-This redesign is design-only; the code has not been changed yet. For the future
-implementation effort:
+Most of the §5 redesign has since shipped (see `docs/utility_systems.md` §8 for
+the slice-by-slice record):
 
-- **Rename** the `Skill::Concentration` enum variant to `Skill::Endurance`. The
-  `[u8; 10]` skill-rank layout and index are **unchanged** (pure rename), so
-  `GameEvent`s, projection, save data, and the skills UI need only the identifier
-  rename — no array resize, no migration.
-- Six skills currently have **no mechanic in code** (Endurance, Perception beyond
-  hidden-object spotting, Stealth, Survival, Spellcraft, Heal, Lore). §5 now pins
-  exactly one server-hookable mechanic per skill — implement them in an impact-ordered
-  phased pass (suggested first: Endurance regen multiplier in `src/player/regen.rs`
-  and Heal's first-aid action, since they benefit the most under-served classes).
-- `PLAN.md` Phase 6 §C marks "Skills shipped"; it now needs a one-line follow-up that
-  the *mechanics* are pending per the redesigned §5 (keeps `PLAN.md` ↔
-  `docs/progression.md` consistent, per CLAUDE.md).
+- ✅ `Concentration → Endurance` rename (pure rename; array layout unchanged).
+- ✅ Athletics (climb/jump/fall-save/force-lock/push), Thievery (pick locks,
+  hide objects), Perception (spot hidden, sense while sneaking, opposed
+  detection), Stealth (sneak mode + opposed detection + the Backstab opener),
+  Endurance (regen multiplier in `src/player/regen.rs`).
+- ⚠️ Survival is a binary gather gate only (margin→yield is Slice 4).
+- ❌ Lore, Spellcraft, Heal still have no mechanic — they are
+  `docs/utility_systems.md` Slices 4–5, deferred from the combat-focused
+  balance pass (see `ISSUES.md`).
 
 ---
 
@@ -251,13 +260,22 @@ incantation: Exori Vis
 mana_cost: 12.0
 targeting: targeted
 range_tiles: 5
-class_access: [Wizard]        # NEW — list of classes that can cast
-min_caster_level: 1           # NEW — required class level
+class_access: [Wizard]        # list of classes that can cast
+min_caster_level: 1           # required class level
 effects:
-  damage: 18.0
+  damage: "3d6+foc_mod*2+level/2"   # damage is an EXPRESSION (see below)
 ```
 
-`docs/yaml_formats.md` is updated alongside Phase E.
+**Spell damage is a roll expression** (`effects.damage`), keyed off the caster's ability
+modifiers and level exactly like a weapon `damage:` string (`docs/yaml_formats.md`). It still
+accepts a bare number for flat damage (back-compat), but every shipping damage spell scales off
+`foc_mod` + `level`, and each has a distinct shape: the cantrip (Magic Dart) is the sustain
+baseline, Spark Bolt the single-target nuke, the frost/fire bolts carry **scaling DoTs**
+(`ScalableEffectSpec` — magnitudes are expressions too), and AoE spells pay a per-target premium
+for the footprint. **Heals scale the same way** (`restore_health: "2d8+wil_mod*2+level"`). Mana
+**regen** was retuned to `2 + WIL + FOC/2` per minute (`src/player/regen.rs`) so a dedicated
+caster sustains a cantrip every ~10 s and a nuke every ~28 s instead of one-shot bursting.
+`docs/yaml_formats.md` documents the schema.
 
 ### 6.1 Mana scaling
 
@@ -287,17 +305,27 @@ not modified by Spellcraft. For now all casts are instant, so this is fully defe
 
 Replaces the current `resolve_battle_turn` formula at `src/combat/systems.rs:72` (today: `d6 + str/5` flat).
 
-### 7.1 To-hit
+### 7.1 To-hit ✅ *implemented (balance batch)*
 
 ```
 attack_roll  = d20 + BAB + ability_mod + situational
 hit if attack_roll ≥ target_AC
-natural 20 = always hit (and threatens crit), natural 1 = always miss
+natural 20 = always hit, natural 1 = always miss
 ```
 
 - `ability_mod` = STR_mod for melee, AGI_mod for ranged.
-- `BAB` is per-class and per-level — see §7.4.
-- `situational` rolls in flanking, height advantage, etc. — placeholders for now.
+- `BAB` is per-class and per-level — see §7.4. **Wired in** for both players (class track) and
+  NPCs (their YAML `bab_track`, default ¾) via `bab_at()` in `combat::formulas::attack_to_hit_bonus`.
+  This replaced the old uncapped NPC `+level` term and the players-get-no-BAB gap.
+- **Natural 20 / natural 1** are now honored in `resolve_battle_turn`, giving a 5% hit/whiff floor.
+- `situational` rolls in flanking, height advantage, etc. — only ranged elevation is wired; the rest
+  are placeholders.
+- **Critical hits** ✅ *implemented*: a landed hit with a raw d20 at or above the weapon's
+  `crit_range` (default 20) rolls the damage expression **twice** and sums (3.5e-style), before
+  block/armor; enchant riders are not doubled. Symmetric for NPCs; spells don't crit (no attack
+  roll). A dagger ships with `crit_range: 19`. Surfaced via a chat line + `GameUiEvent::AttackCrit`.
+- **Fighter Weapon Focus** ✅ *implemented*: `+1 + level/5` to melee to-hit only (§3.1).
+- **Backstab** ✅ *implemented*: see §3.4 — sneaking + undetected opener, breaks stealth.
 
 ### 7.2 AC
 
@@ -309,16 +337,22 @@ AC = 10 + AGI_mod + armor + shield + dodge
 - `shield` = flat from equipped shield slot.
 - `dodge` = situational; default 0.
 
-**Refinement (implemented):** The combat-depth batch split these channels — armor and shield no longer contribute to the to-hit DC. Instead the dodge DC is `10 + AGI_mod + sum(item.dodge_bonus)`, and `armor` mitigates damage *post-hit* (additive subtract, same as today's flow), while `shield`'s mitigation is *chance-gated* by a per-shield `block_chance` roll (default `block_chance + AGI_mod * 2`, clamped to `[0, 95]`). See `src/combat/systems.rs::resolve_battle_turn`.
+**Refinement (implemented):** The combat-depth batch split these channels — armor and shield no longer contribute to the to-hit DC. The dodge DC is `10 + (3·level)/4 + AGI_mod + sum(item.dodge_bonus)` — the **level term** (balance retune) applies to players and creatures alike and answers the BAB curve, so same-level hit% stays in a ~60–80% band across L1–L20 instead of both sides pinning at the nat-20/1 95% cap; fighting up-level shifts both to-hit and dodge against you. `armor` mitigates damage *post-hit* at its **full value** (deterministic; item values tuned for it), while `shield`'s mitigation is *chance-gated* by a per-shield `block_chance` roll (default `block_chance + AGI_mod * 2`, clamped to `[0, 95]`) and subtracts the full `block` value. See `src/combat/systems.rs::resolve_battle_turn`.
 
-### 7.3 Damage
+### 7.3 Damage ✅ *implemented (modifier-based)*
 
 ```
-weapon_damage = roll(weapon_damage_expr) + STR_mod
-two-handed: STR_mod × 1.5 (rounded down)
+weapon_damage = roll(weapon_damage_expr)      # expr carries its own STR/AGI modifier
+weapon template: dice + str_mod/agi_mod (+ tier flat) + level/2
+two-handed: STR_mod × 1.5 (rounded down) — still deferred
 ```
 
-`weapon_damage_expr` lives on the equipped weapon definition (already wired via `WeaponDamage` component referenced at `src/combat/systems.rs:85`).
+`weapon_damage_expr` lives on the equipped weapon definition (wired via the `WeaponDamage`
+component). The stat contribution is the **ability modifier** (`str_mod`/`agi_mod` expression
+terms — same math as to-hit), the dice + flat bonus carry the tier identity (bronze `1d8` →
+iron `1d10+1` → steel `2d6+2`), and every real weapon has a `+level/2` skill-growth term
+(tools and fists don't). Creature damage is plain `dice + flat`, budgeted at
+`mean ≈ 2 + 1.3·level` (`docs/balance/report.md`).
 
 ### 7.4 BAB and save tables
 
@@ -460,7 +494,7 @@ Single-source list of every `[tunable]` referenced above. When a number lives he
 | Skill points / level | 2 / 2 / 2 / 8 | §3 |
 | XP curve coefficient | 1000 | §4.1 |
 | Level cap | 20 | §4.1 |
-| XP awarded per kill | `victim_level² × 50` | §4.2 |
+| XP awarded per kill | `victim_level × 75` (linear — constant ~13 kills/level) | §4.2 |
 | Mana per level (caster classes) | Wizard 10, Cleric 8 | §4.3, §6.1 |
 | Ability bump cadence | every 4 levels | §4.3 |
 | Skill DC anchors | 5 / 10 / 15 / 20 / 25 / 30 | §5.1 |

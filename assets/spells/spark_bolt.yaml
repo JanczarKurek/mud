@@ -6,5 +6,7 @@ range_tiles: 5
 class_access: [Wizard]
 min_caster_level: 1
 effects:
-  damage: 18.0
+  # Primary single-target nuke: biggest dice in the bolt family, double Focus
+  # modifier, strong level slope (~17 @FOC16 L1, ~31 @FOC20 L20).
+  damage: "3d6+foc_mod*2+level/2"
   damage_type: lightning

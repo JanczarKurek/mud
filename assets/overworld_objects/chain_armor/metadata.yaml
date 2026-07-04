@@ -1,0 +1,10 @@
+extends: equipment
+name: Chain Armor
+weight: 12.0
+description: A knee-length hauberk of riveted mail rings.
+equipment_slot: armor
+armor: 3
+render:
+  debug_color: [150, 153, 163]
+  debug_size: 0.62
+  sprite_path: overworld_objects/chain_armor/sprite.png

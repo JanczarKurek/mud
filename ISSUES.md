@@ -21,6 +21,33 @@ the project's broad direction lives in `PLAN.md`.
 - Decide when to delete the now-obsolete direct-mutation helpers still left in `ui::systems`.
 - Add dedicated ECS query helpers/system params for common same-space access patterns so AI and interaction systems stop hand-filtering residents.
 
+### Combat & progression balance
+The **balance retune** shipped on top of the earlier BAB batch (see the rewritten
+`docs/balance/report.md` §1 for the full scaling scheme): modifier-based weapon/spell damage
+(`str_mod`/`agi_mod`/`foc_mod` expression terms + `level/2` growth on real weapons), a
+level-scaled dodge DC (`10 + 3L/4 + AGI_mod + items`), critical hits (`crit_range`, double
+damage roll, dagger 19–20), Backstab (sneaking+undetected opener; Vagabond `1+L/4` d6),
+Fighter Weapon Focus, full-value armor + retuned values, scalable heals/DoTs
+(`ScalableEffectSpec`), mana-regen retune (`2 + WIL + FOC/2`/min), linear XP (`75·level`,
+~13 kills/level), a creature re-budget (dmg ≈ `2+1.3·L`, HP ≈ `20+11·L`; rat coherence fixed),
+and a gear tier to ~L12 (iron/steel swords, dagger, longbow, chain set, plate, tower shield;
+Ogre Brute L10 + Dire Wight L12 elites carry the loot). Remaining follow-ups:
+- **Two-handed `STR×1.5`** damage and **finesse** weapons (AGI-keyed melee to-hit).
+- **Damage-type resistances** — types are still cosmetic; monster-Lore reveals want them.
+- **Boss variants** (2–3× budget + mechanics) — the L20 Ancient Dragon in the sim is a
+  standard-budget stat block on purpose.
+- **Trap-build UX**: tools (pickaxe/herb knife) deliberately carry no level growth; surface an
+  in-game hint that they aren't weapons.
+- AOL-style equipment **drop protection** hook on death (noted in `progression.md` §8 rule 3).
+- Old world snapshots keep a stale persisted NPC `AttackProfile` until the NPC respawns
+  (`persistence` prefers the dump); damage/crit resolve from current defs at snapshot time.
+- New-creature placement is provisional: the Ogre Brute shares the cyclops's southeast zone and
+  the Dire Wight haunts the fire-elemental glade (proven-walkable bounds) — give them their own
+  lairs when the map grows.
+- Utility skills **Lore / Spellcraft / Heal** still have no mechanic and **Survival** is a
+  binary gather gate (`docs/utility_systems.md` Slices 4–5) — deferred from the combat-focused
+  pass by design.
+
 ### Multi-floor (z-level) follow-up
 The PoC in `docs/stacked_floors_plan.md` Phase 0/1 is shipped (z in `TilePosition`,
 roof hiding, stairs, sinkhole as a "hole" transition). Schema docs for the

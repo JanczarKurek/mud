@@ -12,6 +12,7 @@ use crate::game::resources::{
     ClientGameState, GameUiEvent, PendingGameCommands, PendingGameUiEvents,
 };
 use crate::player::classes::Class;
+use crate::player::components::{AttributeKind, AttributeSet};
 use crate::player::skills::{is_class_skill, max_rank, rank_cost, Skill};
 use crate::ui::movable_window::{
     find_window_by_id, spawn_movable_window, spawn_movable_window_close_button, MovableWindow,
@@ -34,11 +35,18 @@ struct SkillsPanelSnapshot {
     level: u32,
     skill_ranks: [u8; 10],
     available_skill_points: u32,
+    available_ability_bumps: u32,
+    attributes: Option<AttributeSet>,
 }
 
 #[derive(Component, Clone, Copy, Debug)]
 pub struct AllocateSkillButton {
     pub skill: Skill,
+}
+
+#[derive(Component, Clone, Copy, Debug)]
+pub struct AllocateAbilityButton {
+    pub attribute: AttributeKind,
 }
 
 const PANEL_SIZE: Vec2 = Vec2::new(360.0, 460.0);
@@ -64,6 +72,7 @@ pub fn register(app: &mut App) {
             consume_open_skills_panel_event,
             rebuild_skills_panel_contents,
             handle_allocate_skill_button_clicks,
+            handle_allocate_ability_button_clicks,
         )
             .chain()
             .in_set(SkillsPanelSystemSet::Process)
@@ -173,6 +182,8 @@ fn rebuild_skills_panel_contents(
             .unwrap_or(1),
         skill_ranks: client_state.skill_ranks,
         available_skill_points: client_state.available_skill_points,
+        available_ability_bumps: client_state.available_ability_bumps,
+        attributes: client_state.attributes,
     };
     if !root_ref.is_changed() && last.as_ref() == Some(&want) {
         return;
@@ -301,6 +312,89 @@ fn rebuild_skills_panel_contents(
                 });
             });
         }
+
+        // Ability bumps (earned at L4/8/12/16/20). Only shown when one is
+        // banked; lets the player raise any of the six attributes by +1.
+        let available_bumps = client_state.available_ability_bumps;
+        if available_bumps > 0 {
+            let attrs = client_state.attributes.unwrap_or_default();
+            root.spawn((
+                Text::new(format!(
+                    "Ability points: {available_bumps} — raise an attribute"
+                )),
+                TextFont {
+                    font_size: 16.0,
+                    ..default()
+                },
+                TextColor(palette.text_accent),
+                Node {
+                    margin: UiRect::axes(Val::Px(0.0), Val::Px(6.0)),
+                    ..default()
+                },
+            ));
+            for kind in AttributeKind::ALL {
+                let value = kind.read(&attrs);
+                root.spawn((
+                    Node {
+                        flex_direction: FlexDirection::Row,
+                        align_items: AlignItems::Center,
+                        column_gap: Val::Px(8.0),
+                        padding: UiRect::axes(Val::Px(6.0), Val::Px(4.0)),
+                        border: UiRect::all(Val::Px(1.0)),
+                        ..default()
+                    },
+                    BorderColor::all(palette.border_slot),
+                    BackgroundColor(palette.surface_raised),
+                ))
+                .with_children(|row| {
+                    row.spawn((
+                        Text::new(kind.label().to_owned()),
+                        TextFont {
+                            font_size: 14.0,
+                            ..default()
+                        },
+                        TextColor(palette.text_primary),
+                        Node {
+                            min_width: Val::Px(120.0),
+                            ..default()
+                        },
+                    ));
+                    row.spawn((
+                        Text::new(format!("{value}")),
+                        TextFont {
+                            font_size: 13.0,
+                            ..default()
+                        },
+                        TextColor(palette.text_primary),
+                        Node {
+                            min_width: Val::Px(56.0),
+                            ..default()
+                        },
+                    ));
+                    row.spawn((
+                        Button,
+                        AllocateAbilityButton { attribute: kind },
+                        Node {
+                            padding: UiRect::axes(Val::Px(10.0), Val::Px(2.0)),
+                            border: UiRect::all(Val::Px(1.0)),
+                            ..default()
+                        },
+                        BorderColor::all(palette.border_accent),
+                        BackgroundColor(palette.surface_panel),
+                    ))
+                    .with_children(|btn| {
+                        btn.spawn((
+                            Text::new("+"),
+                            TextFont {
+                                font_size: 14.0,
+                                ..default()
+                            },
+                            TextColor(palette.text_primary),
+                        ));
+                    });
+                });
+            }
+        }
     });
 }
 
@@ -330,6 +424,26 @@ fn handle_allocate_skill_button_clicks(
         pending_commands.push(GameCommand::AllocateSkillPoint {
             skill: button.skill,
             ranks: 1,
+        });
+    }
+}
+
+fn handle_allocate_ability_button_clicks(
+    mut pending_commands: ResMut<PendingGameCommands>,
+    client_state: Res<ClientGameState>,
+    interactions: Query<(&Interaction, &AllocateAbilityButton), Changed<Interaction>>,
+) {
+    for (interaction, button) in &interactions {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        // Client-side gate: don't queue a spend with nothing banked. The server
+        // re-validates authoritatively in `process_allocate_ability_bump_commands`.
+        if client_state.available_ability_bumps == 0 {
+            continue;
+        }
+        pending_commands.push(GameCommand::AllocateAbilityBump {
+            attribute: button.attribute,
         });
     }
 }

@@ -326,6 +326,9 @@ fn spawn_properties_section(
     if let Some(damage) = def.damage.as_deref() {
         rows.push(("Damage".to_owned(), damage.to_owned()));
     }
+    if let Some(crit_range) = def.crit_range.filter(|r| (2..20).contains(r)) {
+        rows.push(("Crit".to_owned(), format!("{crit_range}\u{2013}20")));
+    }
     if let Some(profile) = def.attack_profile.as_ref() {
         let kind_label = match profile.kind {
             crate::world::object_definitions::AttackProfileKindDef::Melee => "Melee",
@@ -415,52 +418,36 @@ fn spawn_spell_section(
         ));
     }
     let effects = &spell.effects;
-    if effects.damage > 0.0 {
+    if let Some(dmg) = effects.damage.tooltip_value() {
         let dmg_type = effects.effective_damage_type();
         rows.push((
             "Damage".to_owned(),
-            format!("{:.0} {}", effects.damage, dmg_type.display_name()),
+            format!("{} {}", dmg, dmg_type.display_name()),
         ));
     }
-    if effects.restore_health > 0.0 {
-        rows.push((
-            "Restores HP".to_owned(),
-            format!("{:.0}", effects.restore_health),
-        ));
+    if let Some(hp) = effects.restore_health.tooltip_value() {
+        rows.push(("Restores HP".to_owned(), hp));
     }
-    if effects.restore_mana > 0.0 {
-        rows.push((
-            "Restores MP".to_owned(),
-            format!("{:.0}", effects.restore_mana),
-        ));
+    if let Some(mp) = effects.restore_mana.tooltip_value() {
+        rows.push(("Restores MP".to_owned(), mp));
     }
     spawn_property_table(parent, palette, &rows);
 
     // Surface timed self-buffs and target-debuffs that the spell applies.
+    // Expression magnitudes show their neutral-baseline range.
+    let describe_spec = |spec: &crate::magic::resources::ScalableEffectSpec| {
+        let magnitude = match &spec.magnitude {
+            crate::magic::resources::ScalableAmount::Flat(v) => format!("{v:.1}"),
+            expr => expr.tooltip_value().unwrap_or_else(|| "0".to_owned()),
+        };
+        format!("  {:?} {} for {:.0}s", spec.kind, magnitude, spec.seconds)
+    };
     if !effects.buffs_self.is_empty() {
-        let lines: Vec<String> = effects
-            .buffs_self
-            .iter()
-            .map(|spec| {
-                format!(
-                    "  {:?} {:.1} for {:.0}s",
-                    spec.kind, spec.magnitude, spec.seconds
-                )
-            })
-            .collect();
+        let lines: Vec<String> = effects.buffs_self.iter().map(describe_spec).collect();
         spawn_indented_lines(parent, palette, "Buffs (self)", &lines);
     }
     if !effects.buffs_target.is_empty() {
-        let lines: Vec<String> = effects
-            .buffs_target
-            .iter()
-            .map(|spec| {
-                format!(
-                    "  {:?} {:.1} for {:.0}s",
-                    spec.kind, spec.magnitude, spec.seconds
-                )
-            })
-            .collect();
+        let lines: Vec<String> = effects.buffs_target.iter().map(describe_spec).collect();
         spawn_indented_lines(parent, palette, "Debuffs (target)", &lines);
     }
 }

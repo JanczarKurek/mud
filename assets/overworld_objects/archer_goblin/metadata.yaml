@@ -22,8 +22,10 @@ attack_profile:
   kind: ranged
 base_range_tiles: 6
 ammo_type: arrow
-damage: "1d6+agility/2"
-hp: "1d8+30+constitution*3"
+# Creature template: dice + flat, sized to the level budget (~mean 2+1.1·L).
+damage: "1d6+1"
+# HP budget: mean ≈ 20 + 10·L; ranged creatures run squishier.
+hp: "1d8+15+constitution*2"
 npc_behavior:
   step_interval_seconds: 1.0
   detect_distance_tiles: 8

@@ -8,5 +8,6 @@ min_caster_level: 3
 effects:
   buffs_target:
     - kind: poisoned
-      magnitude: 2.0
+      # Per-tick poison now scales with the caster (was flat 2.0/tick).
+      magnitude: "1+foc_mod/3+level/6"
       seconds: 12.0

@@ -3,7 +3,9 @@ name: Leather Armor
 weight: 8.0
 description: A sturdy leather cuirass with shoulder guards.
 equipment_slot: armor
-armor: 3
+# Armor now subtracts its FULL value post-hit (was a hidden /2); item values
+# are tuned to roughly half the old numbers.
+armor: 2
 render:
   debug_color: [122, 78, 49]
   debug_size: 0.62

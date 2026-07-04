@@ -4,6 +4,10 @@ weight: 2.0
 description: "A simple bronze sword with a broad beginner blade. {properties.inscription_line|}"
 equipment_slot: weapon
 engravable: true
+# Starter martial template: dice + STR ability modifier (matches to-hit math)
+# + a level/2 skill-growth term shared by all real melee weapons. Tiers above
+# it (iron/steel) grow the dice + flat bonus.
+damage: "1d8+str_mod+level/2"
 attack_profile:
   kind: melee
   damage_type: cut

@@ -20,7 +20,7 @@ use crate::game::resources::{GameUiEvent, VfxAnchor};
 use crate::magic::effects::{apply_effects_lazy, MagicEffects};
 use crate::magic::resources::{EffectKind, SpellDefinition};
 use crate::npc::spellcasting::{NpcSpellCondition, NpcSpellEntry, NpcSpellTargetKind};
-use crate::player::components::VitalStats;
+use crate::player::components::{AttributeSet, VitalStats};
 use crate::world::components::{tile_distance_3d, SpaceId, TilePosition};
 
 /// Read-only snapshot of an NPC caster + its target, supplied to
@@ -121,6 +121,8 @@ pub fn build_npc_cast_outcome(
     attacker_name: &str,
     attacker_space: SpaceId,
     attacker_tile: TilePosition,
+    attacker_attributes: AttributeSet,
+    attacker_level: u32,
     target_entity: Entity,
     target_name: &str,
     target_tile: TilePosition,
@@ -131,6 +133,12 @@ pub fn build_npc_cast_outcome(
         entity: attacker_entity,
     };
     let damage_type = spell.effects.effective_damage_type();
+    // Roll once here against the caster's stats so projectile/AoE/direct paths
+    // all use the same number for this cast.
+    let damage = spell
+        .effects
+        .damage
+        .roll(&attacker_attributes, attacker_level);
 
     // Cast-time VFX on the caster's tile.
     let cast_vfx_id = spell
@@ -155,31 +163,44 @@ pub fn build_npc_cast_outcome(
         NpcSpellTargetKind::SelfCast => {
             // Untargeted: damage/buffs apply to the caster. We only support
             // healing + self-buffs here; an NPC nuking itself would be a
-            // YAML authoring bug.
-            outcome.self_restore_health = spell.effects.restore_health;
-            outcome.self_restore_mana = spell.effects.restore_mana;
+            // YAML authoring bug. Heal amounts and buff magnitudes resolve
+            // against the caster's own attributes/level.
+            outcome.self_restore_health = spell
+                .effects
+                .restore_health
+                .resolve(&attacker_attributes, attacker_level);
+            outcome.self_restore_mana = spell
+                .effects
+                .restore_mana
+                .resolve(&attacker_attributes, attacker_level);
             for spec in &spell.effects.buffs_self {
-                outcome.self_buffs.push(*spec);
+                outcome
+                    .self_buffs
+                    .push(spec.resolve(&attacker_attributes, attacker_level));
             }
             for kind in &spell.effects.clears_self {
                 outcome.self_clears.push(*kind);
             }
         }
         NpcSpellTargetKind::Target => {
-            if spell.effects.damage > 0.0 {
+            if damage > 0.0 {
                 outcome.damage_events.push(DamageEvent {
                     target: target_entity,
-                    amount: spell.effects.damage,
+                    amount: damage,
                     source: damage_source,
                     damage_type,
                     vfx_override: spell.effects.vfx_on_target_hit.clone(),
                 });
             }
             for spec in &spell.effects.buffs_target {
-                outcome.target_buffs.push(*spec);
+                outcome
+                    .target_buffs
+                    .push(spec.resolve(&attacker_attributes, attacker_level));
             }
             for spec in &spell.effects.buffs_self {
-                outcome.self_buffs.push(*spec);
+                outcome
+                    .self_buffs
+                    .push(spec.resolve(&attacker_attributes, attacker_level));
             }
             for kind in &spell.effects.clears_self {
                 outcome.self_clears.push(*kind);
@@ -211,20 +232,24 @@ pub fn build_npc_cast_outcome(
                     }
                 }
             }
-            if spell.effects.damage > 0.0 {
+            if damage > 0.0 {
                 outcome.damage_events.push(DamageEvent {
                     target: target_entity,
-                    amount: spell.effects.damage,
+                    amount: damage,
                     source: damage_source,
                     damage_type,
                     vfx_override: spell.effects.vfx_on_target_hit.clone(),
                 });
             }
             for spec in &spell.effects.buffs_target {
-                outcome.target_buffs.push(*spec);
+                outcome
+                    .target_buffs
+                    .push(spec.resolve(&attacker_attributes, attacker_level));
             }
             for spec in &spell.effects.buffs_self {
-                outcome.self_buffs.push(*spec);
+                outcome
+                    .self_buffs
+                    .push(spec.resolve(&attacker_attributes, attacker_level));
             }
             for kind in &spell.effects.clears_self {
                 outcome.self_clears.push(*kind);

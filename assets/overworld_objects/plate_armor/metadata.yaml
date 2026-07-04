@@ -1,0 +1,11 @@
+extends: equipment
+name: Plate Armor
+weight: 25.0
+description: A full steel breastplate with articulated pauldrons. Heavy — plan your carry weight.
+equipment_slot: armor
+# Top body-armor tier (loot-only). The weight is the tradeoff: encumbrance bites.
+armor: 5
+render:
+  debug_color: [200, 205, 220]
+  debug_size: 0.65
+  sprite_path: overworld_objects/plate_armor/sprite.png

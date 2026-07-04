@@ -1,0 +1,15 @@
+extends: equipment
+name: Longbow
+weight: 2.5
+description: A tall yew bow with serious draw weight. Needs arrows in the ammo slot.
+equipment_slot: weapon
+attack_profile:
+  kind: ranged
+base_range_tiles: 6
+ammo_type: arrow
+# Mid ranged tier: bigger dice + flat over the shortbow, same AGI scaling.
+damage: "1d8+agi_mod+1+level/2"
+render:
+  debug_color: [125, 85, 45]
+  debug_size: 0.62
+  sprite_path: overworld_objects/longbow/sprite.png

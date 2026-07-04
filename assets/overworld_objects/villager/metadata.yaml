@@ -13,6 +13,26 @@ shopkeeper:
     - type_id: leather_armor
       price_copper: 1200         # 5 gold
       stock: 1
+    # Mid-tier gear (the ~L4-10 upgrade path; the top tier — steel/plate/tower —
+    # drops from the ogre brute and dire wight instead).
+    - type_id: iron_sword
+      price_copper: 2400         # 10 gold
+      stock: 1
+    - type_id: dagger
+      price_copper: 480          # 2 gold
+      stock: 2
+    - type_id: longbow
+      price_copper: 1900
+      stock: 1
+    - type_id: chain_helmet
+      price_copper: 1400
+      stock: 1
+    - type_id: chain_armor
+      price_copper: 2600
+      stock: 1
+    - type_id: chain_legs
+      price_copper: 1700
+      stock: 1
     # Crafting tools — also serve as the buy-price reference for gathering drops.
     - type_id: fishing_rod
       price_copper: 120

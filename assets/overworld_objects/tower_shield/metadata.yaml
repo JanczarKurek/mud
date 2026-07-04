@@ -1,0 +1,13 @@
+extends: equipment
+name: Tower Shield
+weight: 9.0
+description: A body-length shield you can practically hide behind. Bulky enough to slow your footwork.
+equipment_slot: shield
+# The tank option: blocks often and hard, at the cost of a little dodge.
+block: 6
+block_chance: 35
+dodge_bonus: -1
+render:
+  debug_color: [110, 95, 70]
+  debug_size: 0.62
+  sprite_path: overworld_objects/tower_shield/sprite.png

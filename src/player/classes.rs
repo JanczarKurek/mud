@@ -17,12 +17,16 @@ pub enum CastingAttribute {
     Willpower,
 }
 
-/// BAB advancement track per `progression.md` §7.4.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// BAB advancement track per `progression.md` §7.4. Loadable from NPC YAML
+/// (`bab_track: full | three_quarter | half`) via `OverworldObjectDefinition`;
+/// defaults to `ThreeQuarter` for creatures that don't specify one.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum BabTrack {
     /// `+1 / level` (Fighter).
     Full,
     /// `+3 / 4 levels` (Cleric, Vagabond).
+    #[default]
     ThreeQuarter,
     /// `+1 / 2 levels` (Wizard).
     Half,
@@ -154,6 +158,16 @@ pub fn bab_at(track: BabTrack, level: u32) -> i32 {
     }
 }
 
+/// Fighter **Weapon Focus** melee to-hit bonus (`progression.md` §3.1): +1 at
+/// level 1 and +1 more at 5/10/15/20, so `1 + level/5`. Zero for every other
+/// class. Melee-only — `attack_to_hit_bonus` gates on `AttackKind::Melee`.
+pub fn weapon_focus_bonus(class: Class, level: u32) -> i32 {
+    match class {
+        Class::Fighter => 1 + (level as i32) / 5,
+        _ => 0,
+    }
+}
+
 /// Good-save bonus at `level`: `2 + level / 2`.
 pub fn good_save_at(level: u32) -> i32 {
     2 + (level as i32) / 2
@@ -200,6 +214,21 @@ mod tests {
         assert_eq!(bab_at(BabTrack::Half, 1), 0);
         assert_eq!(bab_at(BabTrack::Half, 2), 1);
         assert_eq!(bab_at(BabTrack::Half, 20), 10);
+    }
+
+    #[test]
+    fn weapon_focus_anchors() {
+        // Fighter: +1 at L1, +1 more at each of 5/10/15/20.
+        assert_eq!(weapon_focus_bonus(Class::Fighter, 1), 1);
+        assert_eq!(weapon_focus_bonus(Class::Fighter, 4), 1);
+        assert_eq!(weapon_focus_bonus(Class::Fighter, 5), 2);
+        assert_eq!(weapon_focus_bonus(Class::Fighter, 10), 3);
+        assert_eq!(weapon_focus_bonus(Class::Fighter, 15), 4);
+        assert_eq!(weapon_focus_bonus(Class::Fighter, 20), 5);
+        // Everyone else: 0 at every level.
+        assert_eq!(weapon_focus_bonus(Class::Wizard, 20), 0);
+        assert_eq!(weapon_focus_bonus(Class::Vagabond, 20), 0);
+        assert_eq!(weapon_focus_bonus(Class::Cleric, 20), 0);
     }
 
     #[test]

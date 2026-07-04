@@ -1,0 +1,15 @@
+extends: equipment
+name: Steel Sword
+weight: 3.5
+description: "A gleaming steel longsword with a razor edge. {properties.inscription_line|}"
+equipment_slot: weapon
+engravable: true
+# High martial tier (loot-only): tightest dice, biggest flat.
+damage: "2d6+str_mod+2+level/2"
+attack_profile:
+  kind: melee
+  damage_type: cut
+render:
+  debug_color: [190, 195, 210]
+  debug_size: 0.55
+  sprite_path: overworld_objects/steel_sword/sprite.png

@@ -437,16 +437,28 @@ pub fn compute_events_for_peer(
             let projected_combat_stats = {
                 let attrs = derived_stats.attributes;
                 let level = experience.map(|e| e.level).unwrap_or(1);
-                let (damage_min, damage_max) =
-                    crate::combat::formulas::weapon_damage_range(&weapon_damage.0, attrs);
+                let (damage_min, damage_max) = crate::combat::formulas::weapon_damage_range(
+                    &weapon_damage.0,
+                    attrs,
+                    level as i32,
+                );
+                // BAB track from the player's class so the displayed to-hit
+                // matches what `resolve_battle_turn` actually rolls.
+                let bab_track = projected_class
+                    .map(|c| crate::player::classes::class_data(c).bab_track)
+                    .unwrap_or(crate::player::classes::BabTrack::Full);
                 let attack_bonus = crate::combat::formulas::attack_to_hit_bonus(
                     attack_profile.kind,
                     attrs,
-                    true,
+                    bab_track,
                     level,
+                    projected_class,
                 );
-                let dodge_dc =
-                    crate::combat::formulas::dodge_dc(attrs.agility, defense_stats.dodge_bonus);
+                let dodge_dc = crate::combat::formulas::dodge_dc(
+                    level,
+                    attrs.agility,
+                    defense_stats.dodge_bonus,
+                );
                 let has_shield = inventory
                     .equipment_item(crate::world::object_definitions::EquipmentSlot::Shield)
                     .is_some();
@@ -504,14 +516,17 @@ pub fn compute_events_for_peer(
             // is fine even at autosave cadence.
             let projected_ranks = skill_sheet.map(|s| s.ranks).unwrap_or([0; 10]);
             let projected_points = skill_sheet.map(|s| s.available_points).unwrap_or(0);
+            let projected_bumps = skill_sheet.map(|s| s.available_ability_bumps).unwrap_or(0);
             local_persuasion_ranks =
                 projected_ranks[crate::player::skills::Skill::Persuasion.index()];
             if previous.skill_ranks != projected_ranks
                 || previous.available_skill_points != projected_points
+                || previous.available_ability_bumps != projected_bumps
             {
                 events.push(GameEvent::SkillSheetChanged {
                     ranks: projected_ranks,
                     available_points: projected_points,
+                    available_ability_bumps: projected_bumps,
                 });
             }
 
@@ -1135,9 +1150,11 @@ pub fn apply_event_to_state(state: &mut ClientGameState, event: GameEvent) {
         GameEvent::SkillSheetChanged {
             ranks,
             available_points,
+            available_ability_bumps,
         } => {
             state.skill_ranks = ranks;
             state.available_skill_points = available_points;
+            state.available_ability_bumps = available_ability_bumps;
         }
         GameEvent::SkillPointsGranted { amount } => {
             state.available_skill_points = state.available_skill_points.saturating_add(amount);
@@ -1378,9 +1395,10 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
         GameEvent::SkillSheetChanged {
             ranks,
             available_points,
+            available_ability_bumps,
         } => debug!(
-            "client skill sheet replaced: ranks {:?} points {}",
-            ranks, available_points
+            "client skill sheet replaced: ranks {:?} points {} bumps {}",
+            ranks, available_points, available_ability_bumps
         ),
         GameEvent::SkillPointsGranted { amount } => {
             info!("client gained {amount} skill points")

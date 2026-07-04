@@ -9,7 +9,9 @@ stats:
   willpower: 3
   charisma: 2
   focus: 5
-damage: "1d3+agility/5"
+# Creature template: dice + flat, sized to the level budget (~mean 2+1.1·L).
+# The old expr keyed damage off AGI while melee to-hit uses STR — incoherent.
+damage: "1d4+1"
 attack_profile:
   kind: melee
   damage_type: pierce

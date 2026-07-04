@@ -6,7 +6,9 @@ range_tiles: 6
 class_access: [Wizard]
 min_caster_level: 1
 effects:
-  damage: 5.0
+  # Cantrip: cheap, spammable, the sustain baseline. Modifier-based Focus
+  # scaling (matches the d20 math everywhere else) with a slow level slope.
+  damage: "1d4+foc_mod+level/4"
   damage_type: arcane
   # Homing bolt: the mote tracks the locked target and only deals damage when
   # it makes contact, so a target that runs is still chased down.

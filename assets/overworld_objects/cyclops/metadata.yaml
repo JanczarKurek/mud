@@ -2,6 +2,9 @@ extends: npc
 name: Cyclops
 description: A hulking one-eyed giant with a massive club and a short temper.
 level: 8
+# Brute: full BAB track so it stays accurate at its level (most creatures use
+# the default ¾ track). Its to-hit is now bab_at(full, 8) + STR_mod, not raw +8.
+bab_track: full
 stats:
   strength: 18
   agility: 5
@@ -9,8 +12,11 @@ stats:
   willpower: 7
   charisma: 4
   focus: 7
-damage: "1d12+strength/2"
-hp: "2d20+80+constitution*6"
+# Creature template: dice + flat, sized to the level budget (~mean 2+1.3·L).
+# Swingy brute dice fit the club.
+damage: "2d8+3"
+# HP budget: mean ≈ 20 + 11·L, tanky ×1.4 (it's the zone boss).
+hp: "2d20+50+constitution*5"
 npc_behavior:
   step_interval_seconds: 1.4
   detect_distance_tiles: 5

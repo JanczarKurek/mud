@@ -1,37 +1,37 @@
 id,name,class,level,STR,AGI,CON,WIL,CHA,FOC,max_hp,max_mana,hp_per_level,mana_per_level,weapon,kind,to_hit,dmg_min,dmg_max,dmg_mean,armor,dodge_bonus,dodge_dc_offered,block,block_chance,note
-generalist,Generalist,Fighter,1,12,12,12,12,12,12,131,118,7,0,bronze_sword,melee,1,3,8,5.5,7,1,12,0,0,the 'just bump everything' new player
-generalist,Generalist,Fighter,5,12,12,12,12,12,12,159,118,7,0,bronze_sword,melee,1,3,8,5.5,7,1,12,0,0,the 'just bump everything' new player
-generalist,Generalist,Fighter,10,12,12,12,12,12,12,194,118,7,0,bronze_sword,melee,1,3,8,5.5,7,1,12,0,0,the 'just bump everything' new player
-generalist,Generalist,Fighter,20,12,12,12,12,12,12,264,118,7,0,bronze_sword,melee,1,3,8,5.5,7,1,12,0,0,the 'just bump everything' new player
-str_fighter,STR Fighter,Fighter,1,16,12,14,10,10,10,151,100,8,0,bronze_sword,melee,3,4,9,6.5,7,1,12,3,25,sword + shield front-liner
-str_fighter,STR Fighter,Fighter,5,16,12,14,10,10,10,183,100,8,0,bronze_sword,melee,3,4,9,6.5,7,1,12,3,25,sword + shield front-liner
-str_fighter,STR Fighter,Fighter,10,16,12,14,10,10,10,223,100,8,0,bronze_sword,melee,3,4,9,6.5,7,1,12,3,25,sword + shield front-liner
-str_fighter,STR Fighter,Fighter,20,16,12,14,10,10,10,303,100,8,0,bronze_sword,melee,3,4,9,6.5,7,1,12,3,25,sword + shield front-liner
-tank,Tank Fighter,Fighter,1,12,12,18,10,10,10,167,100,10,0,bronze_sword,melee,1,3,8,5.5,7,1,12,3,25,"max CON, sword + shield"
-tank,Tank Fighter,Fighter,5,12,12,18,10,10,10,207,100,10,0,bronze_sword,melee,1,3,8,5.5,7,1,12,3,25,"max CON, sword + shield"
-tank,Tank Fighter,Fighter,10,12,12,18,10,10,10,257,100,10,0,bronze_sword,melee,1,3,8,5.5,7,1,12,3,25,"max CON, sword + shield"
-tank,Tank Fighter,Fighter,20,12,12,18,10,10,10,357,100,10,0,bronze_sword,melee,1,3,8,5.5,7,1,12,3,25,"max CON, sword + shield"
-brute,Brute (pickaxe),Fighter,1,18,10,16,8,10,10,167,88,9,0,pickaxe,melee,4,19,22,20.5,7,1,11,0,0,dumps WIL; wields the high-scaling pickaxe
-brute,Brute (pickaxe),Fighter,5,18,10,16,8,10,10,203,88,9,0,pickaxe,melee,4,19,22,20.5,7,1,11,0,0,dumps WIL; wields the high-scaling pickaxe
-brute,Brute (pickaxe),Fighter,10,18,10,16,8,10,10,248,88,9,0,pickaxe,melee,4,19,22,20.5,7,1,11,0,0,dumps WIL; wields the high-scaling pickaxe
-brute,Brute (pickaxe),Fighter,20,18,10,16,8,10,10,338,88,9,0,pickaxe,melee,4,19,22,20.5,7,1,11,0,0,dumps WIL; wields the high-scaling pickaxe
-archer_bow,Archer (bow),Vagabond,1,12,19,12,10,10,10,131,100,5,0,bow,ranged,4,13,18,15.5,0,0,14,0,0,the literal starter kit; bow dmg keys off STR
-archer_bow,Archer (bow),Vagabond,5,12,19,12,10,10,10,151,100,5,0,bow,ranged,4,13,18,15.5,0,0,14,0,0,the literal starter kit; bow dmg keys off STR
-archer_bow,Archer (bow),Vagabond,10,12,19,12,10,10,10,176,100,5,0,bow,ranged,4,13,18,15.5,0,0,14,0,0,the literal starter kit; bow dmg keys off STR
-archer_bow,Archer (bow),Vagabond,20,12,19,12,10,10,10,226,100,5,0,bow,ranged,4,13,18,15.5,0,0,14,0,0,the literal starter kit; bow dmg keys off STR
-archer_xbow,Archer (crossbow),Vagabond,1,12,18,12,10,10,10,131,100,5,0,crossbow,ranged,4,20,26,23.0,7,1,15,0,0,"same build, crossbow scales dmg with AGI"
-archer_xbow,Archer (crossbow),Vagabond,5,12,18,12,10,10,10,151,100,5,0,crossbow,ranged,4,20,26,23.0,7,1,15,0,0,"same build, crossbow scales dmg with AGI"
-archer_xbow,Archer (crossbow),Vagabond,10,12,18,12,10,10,10,176,100,5,0,crossbow,ranged,4,20,26,23.0,7,1,15,0,0,"same build, crossbow scales dmg with AGI"
-archer_xbow,Archer (crossbow),Vagabond,20,12,18,12,10,10,10,226,100,5,0,crossbow,ranged,4,20,26,23.0,7,1,15,0,0,"same build, crossbow scales dmg with AGI"
-wizard,Glass Wizard,Wizard,1,10,10,8,16,10,18,103,160,2,14,bronze_sword,melee,0,3,8,5.5,0,0,10,0,0,fragile caster; melee shown is the fallback only
-wizard,Glass Wizard,Wizard,5,10,10,8,16,10,18,111,216,2,14,bronze_sword,melee,0,3,8,5.5,0,0,10,0,0,fragile caster; melee shown is the fallback only
-wizard,Glass Wizard,Wizard,10,10,10,8,16,10,18,121,286,2,14,bronze_sword,melee,0,3,8,5.5,0,0,10,0,0,fragile caster; melee shown is the fallback only
-wizard,Glass Wizard,Wizard,20,10,10,8,16,10,18,141,426,2,14,bronze_sword,melee,0,3,8,5.5,0,0,10,0,0,fragile caster; melee shown is the fallback only
-cleric,Balanced Cleric,Cleric,1,12,10,14,16,10,10,143,136,7,11,bronze_sword,melee,1,3,8,5.5,7,1,11,0,0,mid martial + heals
-cleric,Balanced Cleric,Cleric,5,12,10,14,16,10,10,171,180,7,11,bronze_sword,melee,1,3,8,5.5,7,1,11,0,0,mid martial + heals
-cleric,Balanced Cleric,Cleric,10,12,10,14,16,10,10,206,235,7,11,bronze_sword,melee,1,3,8,5.5,7,1,11,0,0,mid martial + heals
-cleric,Balanced Cleric,Cleric,20,12,10,14,16,10,10,276,345,7,11,bronze_sword,melee,1,3,8,5.5,7,1,11,0,0,mid martial + heals
-skirmisher,Vagabond Skirmisher,Vagabond,1,12,16,12,10,10,12,131,106,5,0,bronze_sword,melee,1,3,8,5.5,7,1,14,0,0,AGI/FOC rogue; backstab not modelled
-skirmisher,Vagabond Skirmisher,Vagabond,5,12,16,12,10,10,12,151,106,5,0,bronze_sword,melee,1,3,8,5.5,7,1,14,0,0,AGI/FOC rogue; backstab not modelled
-skirmisher,Vagabond Skirmisher,Vagabond,10,12,16,12,10,10,12,176,106,5,0,bronze_sword,melee,1,3,8,5.5,7,1,14,0,0,AGI/FOC rogue; backstab not modelled
-skirmisher,Vagabond Skirmisher,Vagabond,20,12,16,12,10,10,12,226,106,5,0,bronze_sword,melee,1,3,8,5.5,7,1,14,0,0,AGI/FOC rogue; backstab not modelled
+generalist,Generalist,Fighter,1,12,12,12,12,12,12,131,118,7,0,bronze_sword,melee,3,2,9,5.5,4,1,12,0,0,the 'just bump everything' new player; upgrades late
+generalist,Generalist,Fighter,5,13,12,12,12,12,12,161,118,7,0,bronze_sword,melee,8,4,11,7.5,4,1,15,0,0,the 'just bump everything' new player; upgrades late
+generalist,Generalist,Fighter,10,14,12,12,12,12,12,198,118,7,0,bronze_sword,melee,15,9,18,13.5,7,1,19,0,0,the 'just bump everything' new player; upgrades late
+generalist,Generalist,Fighter,20,17,12,12,12,12,12,274,118,7,0,bronze_sword,melee,28,15,24,19.5,7,1,27,0,0,the 'just bump everything' new player; upgrades late
+str_fighter,STR Fighter,Fighter,1,16,12,14,10,10,10,151,100,8,0,bronze_sword,melee,5,4,11,7.5,4,1,12,3,25,"sword + shield front-liner; buys chain at 6, loots plate at 12"
+str_fighter,STR Fighter,Fighter,5,17,12,14,10,10,10,185,100,8,0,bronze_sword,melee,10,6,13,9.5,4,1,15,3,25,"sword + shield front-liner; buys chain at 6, loots plate at 12"
+str_fighter,STR Fighter,Fighter,10,18,12,14,10,10,10,227,100,8,0,bronze_sword,melee,17,11,20,15.5,7,1,19,3,25,"sword + shield front-liner; buys chain at 6, loots plate at 12"
+str_fighter,STR Fighter,Fighter,20,21,12,14,10,10,10,313,100,8,0,bronze_sword,melee,30,19,29,24.0,9,0,26,6,35,"sword + shield front-liner; buys chain at 6, loots plate at 12"
+tank,Tank Fighter,Fighter,1,12,12,18,10,10,10,167,100,10,0,bronze_sword,melee,3,2,9,5.5,4,1,12,3,25,"max CON, sword + shield"
+tank,Tank Fighter,Fighter,5,12,12,19,10,10,10,213,100,10,0,bronze_sword,melee,8,4,11,7.5,4,1,15,3,25,"max CON, sword + shield"
+tank,Tank Fighter,Fighter,10,12,12,20,10,10,10,278,100,11,0,bronze_sword,melee,14,8,17,12.5,7,1,19,3,25,"max CON, sword + shield"
+tank,Tank Fighter,Fighter,20,12,12,23,10,10,10,425,100,12,0,bronze_sword,melee,26,15,25,20.0,9,0,26,6,35,"max CON, sword + shield"
+brute,Brute (pickaxe),Fighter,1,18,10,16,8,10,10,167,88,9,0,pickaxe,melee,6,5,8,6.5,4,1,11,0,0,dumps WIL; never upgrades the tool — the trap build
+brute,Brute (pickaxe),Fighter,5,19,10,16,8,10,10,205,88,9,0,pickaxe,melee,11,5,8,6.5,4,1,14,0,0,dumps WIL; never upgrades the tool — the trap build
+brute,Brute (pickaxe),Fighter,10,20,10,16,8,10,10,252,88,9,0,pickaxe,melee,18,6,9,7.5,4,1,18,0,0,dumps WIL; never upgrades the tool — the trap build
+brute,Brute (pickaxe),Fighter,20,23,10,16,8,10,10,348,88,9,0,pickaxe,melee,31,7,10,8.5,4,1,26,0,0,dumps WIL; never upgrades the tool — the trap build
+archer_bow,Archer (bow),Vagabond,1,12,19,12,10,10,10,131,100,5,0,bow,ranged,4,5,10,7.5,0,0,14,0,0,the literal starter kit; upgrades to longbow + chain
+archer_bow,Archer (bow),Vagabond,5,12,20,12,10,10,10,151,100,5,0,bow,ranged,8,8,13,10.5,0,0,18,0,0,the literal starter kit; upgrades to longbow + chain
+archer_bow,Archer (bow),Vagabond,10,12,20,12,10,10,10,176,100,5,0,bow,ranged,12,12,19,15.5,7,1,23,0,0,the literal starter kit; upgrades to longbow + chain
+archer_bow,Archer (bow),Vagabond,20,12,23,12,10,10,10,226,100,5,0,bow,ranged,21,18,25,21.5,7,1,32,0,0,the literal starter kit; upgrades to longbow + chain
+archer_xbow,Archer (crossbow),Vagabond,1,12,18,12,10,10,10,131,100,5,0,crossbow,ranged,4,7,13,10.0,4,1,15,0,0,"same build, crossbow scales dmg with AGI"
+archer_xbow,Archer (crossbow),Vagabond,5,12,19,12,10,10,10,151,100,5,0,crossbow,ranged,7,9,15,12.0,4,1,18,0,0,"same build, crossbow scales dmg with AGI"
+archer_xbow,Archer (crossbow),Vagabond,10,12,20,12,10,10,10,176,100,5,0,crossbow,ranged,12,13,19,16.0,7,1,23,0,0,"same build, crossbow scales dmg with AGI"
+archer_xbow,Archer (crossbow),Vagabond,20,12,23,12,10,10,10,226,100,5,0,crossbow,ranged,21,19,25,22.0,7,1,32,0,0,"same build, crossbow scales dmg with AGI"
+wizard,Glass Wizard,Wizard,1,10,10,8,16,10,18,103,160,2,14,bronze_sword,melee,0,1,8,4.5,0,0,10,0,0,fragile caster; melee shown is the fallback only
+wizard,Glass Wizard,Wizard,5,10,10,8,16,10,19,111,219,2,14,bronze_sword,melee,2,3,10,6.5,0,0,13,0,0,fragile caster; melee shown is the fallback only
+wizard,Glass Wizard,Wizard,10,10,10,8,16,10,20,121,301,2,15,bronze_sword,melee,5,6,13,9.5,0,0,17,0,0,fragile caster; melee shown is the fallback only
+wizard,Glass Wizard,Wizard,20,10,10,8,16,10,23,141,479,2,16,bronze_sword,melee,10,11,18,14.5,0,0,25,0,0,fragile caster; melee shown is the fallback only
+cleric,Balanced Cleric,Cleric,1,12,10,14,16,10,10,143,136,7,11,bronze_sword,melee,1,2,9,5.5,4,1,11,0,0,mid martial + heals
+cleric,Balanced Cleric,Cleric,5,12,10,14,17,10,10,171,186,7,11,bronze_sword,melee,4,4,11,7.5,4,1,14,0,0,mid martial + heals
+cleric,Balanced Cleric,Cleric,10,12,10,14,18,10,10,206,256,7,12,bronze_sword,melee,8,8,17,12.5,7,1,18,3,25,mid martial + heals
+cleric,Balanced Cleric,Cleric,20,12,10,14,21,10,10,276,413,7,13,bronze_sword,melee,16,13,22,17.5,7,1,26,3,25,mid martial + heals
+skirmisher,Vagabond Skirmisher,Vagabond,1,12,16,12,10,10,12,131,106,5,0,dagger,melee,1,2,5,3.5,4,1,14,0,0,dagger rogue: crit 19-20; backstab openers not modelled
+skirmisher,Vagabond Skirmisher,Vagabond,5,12,17,12,10,10,12,151,106,5,0,dagger,melee,4,4,7,5.5,4,1,17,0,0,dagger rogue: crit 19-20; backstab openers not modelled
+skirmisher,Vagabond Skirmisher,Vagabond,10,12,18,12,10,10,12,176,106,5,0,dagger,melee,8,7,10,8.5,7,1,22,0,0,dagger rogue: crit 19-20; backstab openers not modelled
+skirmisher,Vagabond Skirmisher,Vagabond,20,12,21,12,10,10,12,226,106,5,0,dagger,melee,16,12,15,13.5,7,1,31,0,0,dagger rogue: crit 19-20; backstab openers not modelled

@@ -9,7 +9,8 @@ stats:
   willpower: 5
   charisma: 2
   focus: 6
-damage: "1d6+strength/4"
+# Creature template: dice + flat, sized to the level budget (~mean 2+1.3·L).
+damage: "1d8+2"
 attack_profile:
   kind: melee
   damage_type: cut

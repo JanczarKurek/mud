@@ -1,18 +1,20 @@
 id,name,source,level,STR,AGI,CON,WIL,CHA,FOC,mean_hp,hp_expr,damage_expr,kind,to_hit,dmg_min,dmg_max,dmg_mean,dodge_dc,armor,block,block_chance,xp_on_kill,note
-rat,Giant Rat,game,1,5,13,4,3,2,5,20,1d4+10+constitution*2,1d3+agility/5,melee,-2,3,5,4.0,11,0,0,0,50,
-archer_goblin,Archer Goblin,game,2,7,13,7,6,4,7,56,1d8+30+constitution*3,1d6+agility/2,ranged,3,7,12,9.5,11,0,0,0,200,
-goblin,Goblin,game,2,8,11,8,6,4,7,52,1d6+25+constitution*3,1d4+strength/5,melee,1,2,5,3.5,10,0,0,0,200,
-goblin_mage,Goblin Mage,game,3,6,10,7,13,5,14,38,1d6+20+constitution*2,1d3,ranged,3,1,3,2.0,10,0,0,0,450,also casts magic_dart/fireball/sleep/heal — melee profile only here
-skeleton,Skeleton,game,3,7,8,6,5,2,6,52,1d8+30+constitution*3,1d6+strength/4,melee,1,2,7,4.5,9,1,2,15,450,
-wild_boar,Wild Boar,designed,4,12,10,12,6,3,4,76,1d10+35+constitution*3,1d6+strength/3,melee,5,5,10,7.5,10,0,0,0,800,
-orc_brute,Orc Brute,designed,5,14,9,13,7,5,6,101,2d8+40+constitution*4,1d8+strength/2,melee,7,8,15,11.5,9,1,0,0,1250,
-fire_elemental,Fire Elemental,game,6,12,13,12,14,6,10,109,2d10+50+constitution*4,1d8+strength/3,melee,7,5,12,8.5,11,2,0,0,1800,35% on-hit burning 2.0/6s (not in this melee profile)
-dire_wolf,Dire Wolf,designed,7,13,16,12,7,4,5,112,2d8+55+constitution*4,1d8+agility/3,melee,8,6,13,9.5,13,0,0,0,2450,
-cyclops,Cyclops,game,8,18,5,16,7,4,7,197,2d20+80+constitution*6,1d12+strength/2,melee,12,10,21,15.5,7,0,0,0,3200,
-ogre,Ogre,designed,9,19,6,17,7,4,5,213,2d20+90+constitution*6,1d12+strength/2,melee,13,10,21,15.5,8,1,0,0,4050,
-stone_golem,Stone Golem,designed,10,18,4,20,8,2,4,292,3d20+120+constitution*7,2d8+strength/2,melee,14,11,25,18.0,7,5,0,0,5000,
-wraith,Wraith,designed,12,12,16,14,16,8,14,224,3d12+120+constitution*6,1d10+agility/2,melee,13,9,18,13.5,13,2,0,0,7200,
-troll,Troll,designed,14,20,8,20,8,4,5,352,3d20+160+constitution*8,2d10+strength/2,melee,19,12,30,21.0,9,3,0,0,9800,
-young_dragon,Young Dragon,designed,16,22,12,20,14,10,12,422,4d20+200+constitution*9,3d8+strength/2,melee,22,14,35,24.5,11,5,0,0,12800,
-demon,Demon,designed,18,22,16,20,18,14,16,462,4d20+240+constitution*9,2d12+strength/2,melee,24,13,35,24.0,13,4,4,25,16200,
-ancient_dragon,Ancient Dragon,designed,20,26,12,24,18,16,16,592,5d20+300+constitution*10,4d8+strength/2,melee,28,17,45,31.0,11,6,0,0,20000,
+rat,Giant Rat,game,1,5,13,4,3,2,5,20,1d4+10+constitution*2,1d4+1,melee,-3,2,5,3.5,11,0,0,0,75,
+archer_goblin,Archer Goblin,game,2,7,13,7,6,4,7,34,1d8+15+constitution*2,1d6+1,ranged,2,2,7,4.5,12,0,0,0,150,
+goblin,Goblin,game,2,8,11,8,6,4,7,40,1d6+20+constitution*2,1d6+1,melee,0,2,7,4.5,11,0,0,0,150,
+goblin_mage,Goblin Mage,game,3,6,10,7,13,5,14,38,1d6+20+constitution*2,1d3,ranged,2,1,3,2.0,12,0,0,0,225,also casts magic_dart/fireball/sleep/heal — melee profile only here
+skeleton,Skeleton,game,3,7,8,6,5,2,6,52,1d8+30+constitution*3,1d8+2,melee,0,3,10,6.5,11,1,2,15,225,
+wild_boar,Wild Boar,designed,4,12,10,12,6,3,4,62,1d10+20+constitution*3,1d8+3,melee,4,4,11,7.5,13,0,0,0,300,
+orc_brute,Orc Brute,designed,5,14,9,13,7,5,6,73,2d8+25+constitution*3,1d10+3,melee,5,4,13,8.5,12,1,0,0,375,
+fire_elemental,Fire Elemental,game,6,12,13,12,14,6,10,87,2d10+40+constitution*3,2d6+3,melee,5,5,15,10.0,15,1,0,0,450,35% on-hit burning 2.0/6s (not in this melee profile)
+dire_wolf,Dire Wolf,designed,7,13,16,12,7,4,5,97,2d8+40+constitution*4,2d6+4,melee,6,6,16,11.0,18,0,0,0,525,
+cyclops,Cyclops,game,8,18,5,16,7,4,7,151,2d20+50+constitution*5,2d8+3,melee,12,5,19,12.0,13,0,0,0,600,
+ogre,Ogre,designed,9,19,6,17,7,4,5,166,2d20+60+constitution*5,2d8+5,melee,10,7,21,14.0,14,2,0,0,675,
+ogre_brute,Ogre Brute,game,10,19,6,17,7,3,5,181,2d20+75+constitution*5,2d8+6,melee,14,8,22,15.0,15,2,0,0,750,L10 elite; drops chain pieces + iron sword
+stone_golem,Stone Golem,designed,10,18,4,20,8,2,4,182,3d20+70+constitution*4,2d10+4,melee,11,6,24,15.0,14,3,0,0,750,
+dire_wight,Dire Wight,game,12,14,14,14,16,6,12,150,3d12+60+constitution*5,2d10+7,melee,11,9,27,18.0,21,3,0,0,900,L12 elite; 30% on-hit chill 2.0/5s; drops steel/plate/tower
+wraith,Wraith,designed,12,12,16,14,16,8,14,150,3d12+75+constitution*4,2d10+7,melee,10,9,27,18.0,22,2,0,0,900,
+troll,Troll,designed,14,20,8,20,8,4,5,242,3d20+90+constitution*6,3d8+7,melee,15,10,31,20.5,19,3,0,0,1050,
+young_dragon,Young Dragon,designed,16,22,12,20,14,10,12,272,4d20+110+constitution*6,3d10+6,melee,18,9,36,22.5,23,5,0,0,1200,
+demon,Demon,designed,18,22,16,20,18,14,16,222,4d20+80+constitution*5,3d10+9,melee,19,12,39,25.5,26,4,4,25,1350,
+ancient_dragon,Ancient Dragon,designed,20,22,12,24,18,16,16,242,4d20+80+constitution*5,4d8+10,melee,21,14,42,28.0,26,6,0,0,1500,standard L20 budget; true boss variants (2-3x) are future content

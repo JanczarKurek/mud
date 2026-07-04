@@ -7,7 +7,9 @@ attack_profile:
   kind: ranged
 base_range_tiles: 6
 ammo_type: bolt
-damage: "2d4+agility"
+# Heavier ranged tier: bigger dice + flat than the shortbow, same AGI-modifier
+# scaling as its to-hit, level/2 growth like all real weapons.
+damage: "2d4+agi_mod+1+level/2"
 render:
   debug_color: [92, 68, 40]
   debug_size: 0.62

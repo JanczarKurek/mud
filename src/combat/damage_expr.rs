@@ -2,9 +2,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+use crate::player::classes::ability_mod;
 use crate::player::components::AttributeSet;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub enum AttributeKind {
     Strength,
     Agility,
@@ -39,17 +41,51 @@ impl AttributeKind {
     }
 }
 
+/// How a stat term reads its attribute: `Raw` uses the full score (`strength`
+/// at STR 16 adds 16), `Mod` uses the d20 ability modifier (`str_mod` at
+/// STR 16 adds +3, matching to-hit math). Raw stays the default so existing
+/// expressions — creature `hp:` like `2d20+80+constitution*6` in particular —
+/// keep their meaning.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum StatTermMode {
+    #[default]
+    Raw,
+    Mod,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct StatTerm {
     pub kind: AttributeKind,
+    pub multiplier: i32,
+    pub divisor: i32,
+    /// `#[serde(default)]` so exprs serialized before this field existed load
+    /// as `Raw`.
+    #[serde(default)]
+    pub mode: StatTermMode,
+}
+
+/// A term that scales with the caster/wielder's level, e.g. `level`, `level/2`,
+/// `level*3`. Spells key damage off caster level with it, and every real
+/// weapon carries a `level/2` skill-growth term (tools and fists don't).
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct LevelTerm {
     pub multiplier: i32,
     pub divisor: i32,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct DamageExpr {
     pub dice: Option<(u32, u32)>,
     pub stats: Vec<StatTerm>,
+    /// Level-scaling terms (usually empty). `#[serde(default)]` so existing
+    /// serialized exprs without this field still load.
+    #[serde(default)]
+    pub level: Vec<LevelTerm>,
     pub bonus: i32,
 }
 
@@ -60,14 +96,18 @@ impl Default for DamageExpr {
 }
 
 impl DamageExpr {
+    /// Unarmed / no-`damage:`-field fallback: `1d4 + str_mod`. Fists are the
+    /// damage floor — every real weapon carries larger dice.
     pub fn melee_default() -> Self {
         Self {
-            dice: Some((1, 6)),
+            dice: Some((1, 4)),
             stats: vec![StatTerm {
                 kind: AttributeKind::Strength,
                 multiplier: 1,
-                divisor: 5,
+                divisor: 1,
+                mode: StatTermMode::Mod,
             }],
+            level: Vec::new(),
             bonus: 0,
         }
     }
@@ -80,6 +120,7 @@ impl DamageExpr {
 
         let mut dice: Option<(u32, u32)> = None;
         let mut stats: Vec<StatTerm> = Vec::new();
+        let mut level: Vec<LevelTerm> = Vec::new();
         let mut bonus: i32 = 0;
 
         for raw_term in trimmed.split('+') {
@@ -134,40 +175,63 @@ impl DamageExpr {
                 (term, 1, 1)
             };
 
-            let Some(kind) = AttributeKind::parse(stat_part) else {
+            if stat_part.eq_ignore_ascii_case("level") || stat_part.eq_ignore_ascii_case("lvl") {
+                level.push(LevelTerm {
+                    multiplier,
+                    divisor,
+                });
+                continue;
+            }
+
+            // A `_mod` suffix (e.g. `str_mod`, `focus_mod`) switches the term
+            // to ability-modifier mode.
+            let lower = stat_part.to_ascii_lowercase();
+            let (attr_token, mode) = match lower.strip_suffix("_mod") {
+                Some(base) => (base, StatTermMode::Mod),
+                None => (lower.as_str(), StatTermMode::Raw),
+            };
+            let Some(kind) = AttributeKind::parse(attr_token) else {
                 return Err(format!("unrecognized term '{term}' in '{raw}'"));
             };
             stats.push(StatTerm {
                 kind,
                 multiplier,
                 divisor,
+                mode,
             });
         }
 
-        Ok(Self { dice, stats, bonus })
+        Ok(Self {
+            dice,
+            stats,
+            level,
+            bonus,
+        })
     }
 
-    /// Smallest possible damage roll for the given attributes (every die
-    /// shows 1, stat terms applied at floor).
-    pub fn min_damage(&self, attrs: &AttributeSet) -> i32 {
+    /// Smallest possible damage roll for the given attributes + level (every
+    /// die shows 1, stat/level terms applied at floor).
+    pub fn min_damage(&self, attrs: &AttributeSet, level: i32) -> i32 {
         let dice_total = match self.dice {
             Some((count, _)) => count as i32,
             None => 0,
         };
         dice_total
             .saturating_add(self.stat_total(attrs))
+            .saturating_add(self.level_total(level))
             .saturating_add(self.bonus)
     }
 
-    /// Largest possible damage roll for the given attributes (every die at
-    /// max face).
-    pub fn max_damage(&self, attrs: &AttributeSet) -> i32 {
+    /// Largest possible damage roll for the given attributes + level (every die
+    /// at max face).
+    pub fn max_damage(&self, attrs: &AttributeSet, level: i32) -> i32 {
         let dice_total = match self.dice {
             Some((count, sides)) => (count as i32).saturating_mul(sides as i32),
             None => 0,
         };
         dice_total
             .saturating_add(self.stat_total(attrs))
+            .saturating_add(self.level_total(level))
             .saturating_add(self.bonus)
     }
 
@@ -175,7 +239,11 @@ impl DamageExpr {
         self.stats
             .iter()
             .map(|term| {
-                let raw = term.kind.value_of(attrs).saturating_mul(term.multiplier);
+                let base = match term.mode {
+                    StatTermMode::Raw => term.kind.value_of(attrs),
+                    StatTermMode::Mod => ability_mod(term.kind.value_of(attrs)),
+                };
+                let raw = base.saturating_mul(term.multiplier);
                 if term.divisor == 0 {
                     0
                 } else {
@@ -185,12 +253,37 @@ impl DamageExpr {
             .sum()
     }
 
-    pub fn roll(&self, attrs: &AttributeSet) -> i32 {
+    fn level_total(&self, level: i32) -> i32 {
+        self.level
+            .iter()
+            .map(|term| {
+                let raw = level.saturating_mul(term.multiplier);
+                if term.divisor == 0 {
+                    0
+                } else {
+                    raw / term.divisor
+                }
+            })
+            .sum()
+    }
+
+    /// Roll this expression for a combatant with the given attributes and
+    /// `level`. `level` only matters when the expression has `level` terms (it
+    /// is ignored by every weapon/HP expression today).
+    pub fn roll(&self, attrs: &AttributeSet, level: i32) -> i32 {
+        self.roll_salted(attrs, level, 0)
+    }
+
+    /// Like [`roll`], but with an extra salt folded into every die. Two rolls
+    /// of the same expression in the same nanosecond tick share the underlying
+    /// time source, so callers that need independent back-to-back rolls (e.g.
+    /// the critical-hit double roll) must pass distinct salts.
+    pub fn roll_salted(&self, attrs: &AttributeSet, level: i32, salt: u64) -> i32 {
         let dice_total = match self.dice {
             Some((count, sides)) if count > 0 && sides > 0 => {
                 let mut total = 0i32;
                 for i in 0..count {
-                    total = total.saturating_add(roll_die(sides as usize, i as u64));
+                    total = total.saturating_add(roll_die(sides as usize, salt + i as u64));
                 }
                 total
             }
@@ -198,6 +291,7 @@ impl DamageExpr {
         };
         dice_total
             .saturating_add(self.stat_total(attrs))
+            .saturating_add(self.level_total(level))
             .saturating_add(self.bonus)
     }
 }
@@ -230,7 +324,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_melee_default() {
+    fn parses_legacy_raw_divisor_expression() {
         let expr = DamageExpr::parse("1d6+strength/5").unwrap();
         assert_eq!(expr.dice, Some((1, 6)));
         assert_eq!(expr.stats.len(), 1);
@@ -238,6 +332,13 @@ mod tests {
         assert_eq!(expr.stats[0].divisor, 5);
         assert_eq!(expr.stats[0].multiplier, 1);
         assert_eq!(expr.bonus, 0);
+    }
+
+    #[test]
+    fn melee_default_is_unarmed_floor() {
+        // 1d4 + str_mod: parse form and constructor agree.
+        let expr = DamageExpr::melee_default();
+        assert_eq!(expr, DamageExpr::parse("1d4+str_mod").unwrap());
     }
 
     #[test]
@@ -277,8 +378,32 @@ mod tests {
     #[test]
     fn roll_is_positive_for_strength_term() {
         let expr = DamageExpr::parse("1d6+strength").unwrap();
-        let value = expr.roll(&attrs());
+        let value = expr.roll(&attrs(), 1);
         assert!((1 + 10..=6 + 10).contains(&value));
+    }
+
+    #[test]
+    fn parses_and_rolls_level_term() {
+        // A caster-level-scaling spell expression: 1d8 + focus/2 + level/2.
+        let expr = DamageExpr::parse("1d8+focus/2+level/2").unwrap();
+        assert_eq!(expr.dice, Some((1, 8)));
+        assert_eq!(expr.stats[0].kind, AttributeKind::Focus);
+        assert_eq!(expr.stats[0].divisor, 2);
+        assert_eq!(expr.level.len(), 1);
+        assert_eq!(expr.level[0].divisor, 2);
+        // FOC 18 -> +9, level 10 -> +5, 1d8 -> [1,8]: roll in [15, 22].
+        let attrs = AttributeSet::new(10, 10, 10, 10, 10, 18);
+        let value = expr.roll(&attrs, 10);
+        assert!((1 + 9 + 5..=8 + 9 + 5).contains(&value), "{value}");
+    }
+
+    #[test]
+    fn level_term_ignored_without_it() {
+        // No level term -> the `level` argument has no effect. Use a dice-free
+        // expression so the roll is deterministic.
+        let expr = DamageExpr::parse("agility+2").unwrap();
+        assert_eq!(expr.roll(&attrs(), 1), 12 + 2);
+        assert_eq!(expr.roll(&attrs(), 1), expr.roll(&attrs(), 99));
     }
 
     #[test]
@@ -291,7 +416,51 @@ mod tests {
         assert_eq!(expr.stats[0].multiplier, 5);
         assert_eq!(expr.stats[0].divisor, 1);
         let attrs = AttributeSet::new(10, 10, 12, 10, 10, 10);
-        assert_eq!(expr.roll(&attrs), 50 + 12 * 5);
+        assert_eq!(expr.roll(&attrs, 1), 50 + 12 * 5);
+    }
+
+    #[test]
+    fn parses_mod_terms_short_and_long() {
+        // `str_mod` at STR 16 -> +3 (the d20 ability modifier, not the raw 16).
+        let expr = DamageExpr::parse("1d8+str_mod").unwrap();
+        assert_eq!(expr.stats[0].kind, AttributeKind::Strength);
+        assert_eq!(expr.stats[0].mode, StatTermMode::Mod);
+        let attrs = AttributeSet::new(16, 10, 10, 10, 10, 10);
+        assert_eq!(expr.min_damage(&attrs, 1), 1 + 3);
+        assert_eq!(expr.max_damage(&attrs, 1), 8 + 3);
+
+        let long = DamageExpr::parse("focus_mod*2").unwrap();
+        assert_eq!(long.stats[0].kind, AttributeKind::Focus);
+        assert_eq!(long.stats[0].mode, StatTermMode::Mod);
+        // FOC 14 -> mod +2, *2 -> +4.
+        let attrs = AttributeSet::new(10, 10, 10, 10, 10, 14);
+        assert_eq!(long.roll(&attrs, 1), 4);
+    }
+
+    #[test]
+    fn mod_term_is_negative_below_ten() {
+        // STR 7 -> mod -2 (rounded toward -inf). No dice: deterministic.
+        let expr = DamageExpr::parse("str_mod+5").unwrap();
+        let attrs = AttributeSet::new(7, 10, 10, 10, 10, 10);
+        assert_eq!(expr.roll(&attrs, 1), -2 + 5);
+    }
+
+    #[test]
+    fn raw_terms_unchanged_by_mode_addition() {
+        // The cyclops-style HP expression must keep its raw-score meaning.
+        let expr = DamageExpr::parse("2d20+80+constitution*6").unwrap();
+        assert_eq!(expr.stats[0].mode, StatTermMode::Raw);
+        let attrs = AttributeSet::new(10, 10, 14, 10, 10, 10);
+        assert_eq!(expr.min_damage(&attrs, 1), 2 + 80 + 14 * 6);
+        assert_eq!(expr.max_damage(&attrs, 1), 40 + 80 + 14 * 6);
+    }
+
+    #[test]
+    fn stat_term_serde_defaults_to_raw() {
+        // Exprs serialized before `mode` existed must deserialize as Raw.
+        let json = r#"{"kind":"Strength","multiplier":1,"divisor":5}"#;
+        let term: StatTerm = serde_json::from_str(json).unwrap();
+        assert_eq!(term.mode, StatTermMode::Raw);
     }
 
     #[test]
@@ -302,9 +471,11 @@ mod tests {
                 kind: AttributeKind::Strength,
                 multiplier: 1,
                 divisor: 5,
+                mode: StatTermMode::Raw,
             }],
+            level: Vec::new(),
             bonus: 0,
         };
-        assert_eq!(expr.roll(&attrs()), 2);
+        assert_eq!(expr.roll(&attrs(), 1), 2);
     }
 }

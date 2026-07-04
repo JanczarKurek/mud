@@ -1,14 +1,16 @@
 name: Immolation
 incantation: Ignis Ardor
-mana_cost: 20.0
+mana_cost: 10.0
 targeting: targeted
 range_tiles: 4
 class_access: [Wizard]
 min_caster_level: 5
 effects:
-  damage: 6.0
+  # DoT carrier: low direct hit — the scaling burn below is the bulk.
+  damage: "1d4+foc_mod"
   damage_type: fire
   buffs_target:
     - kind: burning
-      magnitude: 2.0
+      # Per-tick burn now scales with the caster (was flat 2.0/tick).
+      magnitude: "1+foc_mod/3+level/6"
       seconds: 10.0

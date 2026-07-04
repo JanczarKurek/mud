@@ -3,7 +3,9 @@ name: Pickaxe
 weight: 2.5
 description: A heavy iron-headed pickaxe. Use it on rocky outcrops to mine ore.
 equipment_slot: weapon
-damage: "1d4+strength"
+# A mining tool, not a weapon: small dice + STR modifier keeps it a usable
+# backup that never beats a real weapon's larger dice.
+damage: "1d4+str_mod"
 infinite_uses: true
 render:
   z_index: 0.26

@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
-from stats_model import AttributeSet
+from stats_model import AttributeSet, ability_mod
 
 
 def _idiv(a: int, b: int) -> int:
@@ -43,9 +43,26 @@ class StatTerm:
     kind: str          # canonical attribute name
     multiplier: int = 1
     divisor: int = 1
+    # "raw" uses the full score; "mod" uses the d20 ability modifier
+    # (`str_mod` at STR 16 -> +3), mirroring Rust's `StatTermMode`.
+    mode: str = "raw"
 
     def value(self, attrs: AttributeSet) -> int:
-        raw = getattr(attrs, self.kind) * self.multiplier
+        base = getattr(attrs, self.kind)
+        if self.mode == "mod":
+            base = ability_mod(base)
+        raw = base * self.multiplier
+        return _idiv(raw, self.divisor)
+
+
+@dataclass(frozen=True)
+class LevelTerm:
+    """A ``level`` / ``lvl`` term, optionally scaled (``level/k`` or ``level*k``)."""
+    multiplier: int = 1
+    divisor: int = 1
+
+    def value(self, level: int) -> int:
+        raw = level * self.multiplier
         return _idiv(raw, self.divisor)
 
 
@@ -54,12 +71,13 @@ class DamageExpr:
     dice: Optional[Tuple[int, int]] = None     # (count, sides)
     stats: List[StatTerm] = field(default_factory=list)
     bonus: int = 0
+    level: List[LevelTerm] = field(default_factory=list)
 
     # --- construction -----------------------------------------------------
     @staticmethod
     def melee_default() -> "DamageExpr":
-        """Default unarmed/plain-weapon melee: ``1d6 + strength/5``."""
-        return DamageExpr(dice=(1, 6), stats=[StatTerm("strength", 1, 5)], bonus=0)
+        """Default unarmed/no-`damage:` fallback: ``1d4 + str_mod`` (the floor)."""
+        return DamageExpr(dice=(1, 4), stats=[StatTerm("strength", 1, 1, "mod")], bonus=0)
 
     @staticmethod
     def parse(raw: str) -> "DamageExpr":
@@ -70,6 +88,7 @@ class DamageExpr:
         dice: Optional[Tuple[int, int]] = None
         stats: List[StatTerm] = []
         bonus = 0
+        level: List[LevelTerm] = []
 
         for raw_term in trimmed.split("+"):
             term = raw_term.strip()
@@ -95,7 +114,7 @@ class DamageExpr:
             except ValueError:
                 pass
 
-            # Attribute term, optionally scaled.
+            # Attribute or level term, optionally scaled.
             multiplier, divisor = 1, 1
             if "*" in term:
                 stat_part, _, rhs = term.partition("*")
@@ -108,39 +127,53 @@ class DamageExpr:
             else:
                 stat_part = term
 
-            key = _ATTR_ALIASES.get(stat_part.strip().lower())
+            stat_lower = stat_part.strip().lower()
+            if stat_lower in ("level", "lvl"):
+                level.append(LevelTerm(multiplier, divisor))
+                continue
+
+            # A `_mod` suffix (e.g. `str_mod`, `focus_mod`) switches the term
+            # to ability-modifier mode.
+            mode = "raw"
+            if stat_lower.endswith("_mod"):
+                stat_lower = stat_lower[: -len("_mod")]
+                mode = "mod"
+            key = _ATTR_ALIASES.get(stat_lower)
             if key is None:
                 raise ValueError(f"unrecognized term '{term}' in '{raw}'")
-            stats.append(StatTerm(key, multiplier, divisor))
+            stats.append(StatTerm(key, multiplier, divisor, mode))
 
-        return DamageExpr(dice=dice, stats=stats, bonus=bonus)
+        return DamageExpr(dice=dice, stats=stats, bonus=bonus, level=level)
 
     # --- evaluation -------------------------------------------------------
     def stat_total(self, attrs: AttributeSet) -> int:
         return sum(term.value(attrs) for term in self.stats)
 
-    def roll(self, attrs: AttributeSet, rng) -> int:
+    def level_total(self, level: int) -> int:
+        return sum(term.value(level) for term in self.level)
+
+    def roll(self, attrs: AttributeSet, rng, level: int = 0) -> int:
         dice_total = 0
         if self.dice:
             count, sides = self.dice
             dice_total = sum(rng.randint(1, sides) for _ in range(count))
-        return dice_total + self.stat_total(attrs) + self.bonus
+        return dice_total + self.stat_total(attrs) + self.bonus + self.level_total(level)
 
-    def min_damage(self, attrs: AttributeSet) -> int:
+    def min_damage(self, attrs: AttributeSet, level: int = 0) -> int:
         dice_total = self.dice[0] if self.dice else 0          # every die shows 1
-        return dice_total + self.stat_total(attrs) + self.bonus
+        return dice_total + self.stat_total(attrs) + self.bonus + self.level_total(level)
 
-    def max_damage(self, attrs: AttributeSet) -> int:
+    def max_damage(self, attrs: AttributeSet, level: int = 0) -> int:
         dice_total = self.dice[0] * self.dice[1] if self.dice else 0
-        return dice_total + self.stat_total(attrs) + self.bonus
+        return dice_total + self.stat_total(attrs) + self.bonus + self.level_total(level)
 
-    def mean_damage(self, attrs: AttributeSet) -> float:
+    def mean_damage(self, attrs: AttributeSet, level: int = 0) -> float:
         """Expected roll (no min-1 floor; the floor lives in the combat model)."""
         dice_mean = 0.0
         if self.dice:
             count, sides = self.dice
             dice_mean = count * (sides + 1) / 2.0
-        return dice_mean + self.stat_total(attrs) + self.bonus
+        return dice_mean + self.stat_total(attrs) + self.bonus + self.level_total(level)
 
     def describe(self) -> str:
         parts = []
@@ -148,6 +181,15 @@ class DamageExpr:
             parts.append(f"{self.dice[0]}d{self.dice[1]}")
         for t in self.stats:
             s = t.kind[:3].upper()
+            if t.mode == "mod":
+                s += "mod"
+            if t.multiplier != 1:
+                s += f"*{t.multiplier}"
+            if t.divisor != 1:
+                s += f"/{t.divisor}"
+            parts.append(s)
+        for t in self.level:
+            s = "LVL"
             if t.multiplier != 1:
                 s += f"*{t.multiplier}"
             if t.divisor != 1:
@@ -179,14 +221,37 @@ def _selftest() -> None:
         except ValueError:
             pass
 
-    # melee_default: STR 10 -> STR/5 = 2; 1d6 -> [1,6]; range [3,8], mean 5.5.
+    # melee_default (unarmed floor): STR 10 -> mod +0; 1d4 -> [1,4], mean 2.5.
     md = DamageExpr.melee_default()
     a10 = A.uniform(10)
-    assert md.min_damage(a10) == 3 and md.max_damage(a10) == 8
-    assert abs(md.mean_damage(a10) - 5.5) < 1e-9
+    assert md.min_damage(a10) == 1 and md.max_damage(a10) == 4
+    assert abs(md.mean_damage(a10) - 2.5) < 1e-9
+    assert md == DamageExpr.parse("1d4+str_mod")
 
     # Truncation toward zero on stat division.
     assert DamageExpr(stats=[StatTerm("strength", 1, 5)]).stat_total(A.uniform(12)) == 2
+
+    # Level term: "1d8+focus/2+level/2" at FOC 18, level 10 -> min = 1+9+5 = 15.
+    lvl = DamageExpr.parse("1d8+focus/2+level/2")
+    assert lvl.level and lvl.level[0].divisor == 2
+    foc18 = A(focus=18)
+    assert lvl.level_total(10) == 5
+    assert lvl.min_damage(foc18, level=10) == 15, lvl.min_damage(foc18, level=10)
+    # No level passed -> level term contributes nothing (existing weapon callers).
+    assert lvl.min_damage(foc18) == 1 + 9
+
+    # `_mod` terms mirror Rust's StatTermMode::Mod (anchors from damage_expr.rs).
+    mod_e = DamageExpr.parse("1d8+str_mod")
+    assert mod_e.stats[0].mode == "mod"
+    a16 = A(strength=16)
+    assert mod_e.min_damage(a16) == 1 + 3 and mod_e.max_damage(a16) == 8 + 3
+    long_mod = DamageExpr.parse("focus_mod*2")
+    assert long_mod.stat_total(A(focus=14)) == 4
+    # STR 7 -> mod -2 (rounded toward -inf).
+    neg = DamageExpr.parse("str_mod+5")
+    assert neg.min_damage(A(strength=7)) == -2 + 5
+    # Raw terms keep raw-score meaning.
+    assert hp.stats[0].mode == "raw"
     print("damage_expr selftest OK")
 
 

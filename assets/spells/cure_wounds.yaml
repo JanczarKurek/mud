@@ -5,4 +5,5 @@ targeting: untargeted
 class_access: [Cleric]
 min_caster_level: 3
 effects:
-  restore_health: 30.0
+  # The big heal (was flat 30): ~26 at WIL16 L3, ~47 by L20 WIL20.
+  restore_health: "3d8+wil_mod*3+level"

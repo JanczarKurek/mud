@@ -1,0 +1,15 @@
+extends: equipment
+name: Iron Sword
+weight: 3.0
+description: "A well-forged iron blade — a clear step up from bronze. {properties.inscription_line|}"
+equipment_slot: weapon
+engravable: true
+# Mid martial tier: bigger dice + flat over the bronze template.
+damage: "1d10+str_mod+1+level/2"
+attack_profile:
+  kind: melee
+  damage_type: cut
+render:
+  debug_color: [150, 150, 160]
+  debug_size: 0.55
+  sprite_path: overworld_objects/iron_sword/sprite.png

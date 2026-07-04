@@ -103,6 +103,11 @@ pub enum GameUiEvent {
     SkillPointsToast {
         amount: u32,
     },
+    /// Transient overlay: the local player banked an ability bump (at level
+    /// 4/8/12/16/20) and can raise an attribute. `available` is the new total.
+    AbilityBumpAvailable {
+        available: u32,
+    },
     /// An attack missed the target via the dodge mechanic. Pure presentation
     /// signal — no state changed (attacker still consumed any ammo, target
     /// still owes no damage).
@@ -121,6 +126,13 @@ pub enum GameUiEvent {
         attacker_object_id: u64,
         target_object_id: u64,
         amount: i32,
+    },
+    /// A landed attack was a critical hit (raw d20 ≥ the weapon's crit
+    /// threshold): the damage expression was rolled twice. Pure presentation
+    /// signal for a HUD flourish — the damage itself rides `DamageEvent`.
+    AttackCrit {
+        attacker_object_id: u64,
+        target_object_id: u64,
     },
     /// Open the book/tombstone/inscription reader-editor panel on the client.
     /// Server emits this in response to `GameCommand::ReadBook` after
@@ -596,6 +608,11 @@ pub enum GameEvent {
     SkillSheetChanged {
         ranks: [u8; 10],
         available_points: u32,
+        /// Unspent ability bumps (earned at L4/8/12/16/20). Replicated on this
+        /// baseline diff; the bump's attribute change rides
+        /// `PlayerAttributesChanged`.
+        #[serde(default)]
+        available_ability_bumps: u32,
     },
     /// Delta event: the local player just gained `amount` skill points
     /// (from a level-up). The fold adds it to `ClientGameState`.
@@ -807,6 +824,10 @@ pub struct ClientGameState {
     /// `SkillPointsGranted` (delta) and `SkillSheetChanged` (baseline).
     #[serde(default)]
     pub available_skill_points: u32,
+    /// Unspent ability bumps (earned at L4/8/12/16/20). Folded from
+    /// `SkillSheetChanged` (baseline). Drives the ability-bump UI.
+    #[serde(default)]
+    pub available_ability_bumps: u32,
     /// Tiles the local player has ever seen, grouped by space. Drives the
     /// fog-of-war overlay on the main view and the minimap. Folded from
     /// `DiscoveredTilesReplaced` (baseline) and `TilesDiscovered` (delta).

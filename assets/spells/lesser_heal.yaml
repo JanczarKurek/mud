@@ -5,4 +5,5 @@ targeting: untargeted
 class_access: [Cleric]
 min_caster_level: 1
 effects:
-  restore_health: 20.0
+  # Heals now scale with the caster (was flat 20): ~16 at WIL16 L1, ~35 by L20.
+  restore_health: "2d8+wil_mod*2+level"

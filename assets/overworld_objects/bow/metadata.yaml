@@ -7,7 +7,10 @@ attack_profile:
   kind: ranged
 base_range_tiles: 5
 ammo_type: arrow
-damage: "1d6+strength"
+# Bows key damage off the AGI ability modifier, matching their AGI-based
+# to-hit, + the same level/2 growth as melee. The crossbow is the
+# heavier-hitting sibling.
+damage: "1d6+agi_mod+level/2"
 stats:
   agility: 1
 render:

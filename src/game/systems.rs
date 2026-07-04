@@ -18,8 +18,8 @@ use crate::game::resources::{
 use crate::magic::resources::{AoePattern, SpellDefinition, SpellDefinitions};
 use crate::npc::components::Npc;
 use crate::player::components::{
-    stack_weight, DerivedStats, Encumbered, EquippedItem, InventoryStack, MaxCarryWeight,
-    MovementCooldown, Noclip, Player, PlayerId, PlayerIdentity, VitalStats,
+    stack_weight, AttributeSet, DerivedStats, Encumbered, EquippedItem, InventoryStack,
+    MaxCarryWeight, MovementCooldown, Noclip, Player, PlayerId, PlayerIdentity, VitalStats,
 };
 use crate::world::components::{
     tile_distance_3d, Collider, Container, Facing, Movable, OverworldObject, Quantity, Rotatable,
@@ -101,14 +101,16 @@ pub struct CommandOutputs<'w, 's> {
             With<crate::player::components::AwaitingRespawn>,
         ),
     >,
-    /// Read-only access to the player's `Class` + `Experience` so the spell
-    /// cast paths can apply `class_access` / `min_caster_level` gating.
+    /// Read-only access to the player's `Class` + `Experience` + `DerivedStats`
+    /// so the spell cast paths can apply `class_access` / `min_caster_level`
+    /// gating and roll level/attribute-scaled spell `damage` expressions.
     pub player_class_level: Query<
         'w,
         's,
         (
             Option<&'static crate::player::classes::Class>,
             Option<&'static crate::player::progression::Experience>,
+            Option<&'static crate::player::components::DerivedStats>,
         ),
         With<Player>,
     >,
@@ -842,6 +844,13 @@ pub fn process_game_commands(
                 // in `CommandIntercept` before this system runs.
                 bevy::log::warn!(
                     "process_game_commands saw an allocate-skill command — check system ordering"
+                );
+            }
+            GameCommand::AllocateAbilityBump { .. } => {
+                // Drained by `process_allocate_ability_bump_commands`
+                // (PlayerServerPlugin) in `CommandIntercept` before this runs.
+                bevy::log::warn!(
+                    "process_game_commands saw an allocate-ability-bump command — check ordering"
                 );
             }
             GameCommand::ReadBook { source } => {
@@ -2672,6 +2681,7 @@ fn handle_use_item(
         (
             Option<&crate::player::classes::Class>,
             Option<&crate::player::progression::Experience>,
+            Option<&crate::player::components::DerivedStats>,
         ),
         With<Player>,
     >,
@@ -2750,7 +2760,7 @@ fn handle_use_item(
         let is_scroll = true;
         let (class, level) = player_class_level
             .get(player_entity)
-            .map(|(c, e)| (c.copied(), e.map_or(1, |exp| exp.level)))
+            .map(|(c, e, _derived)| (c.copied(), e.map_or(1, |exp| exp.level)))
             .unwrap_or((None, 1));
         if let Err(reason) = check_caster_eligibility(spell, is_scroll, class, level) {
             chat_log_state.push_narrator(reason);
@@ -2770,18 +2780,20 @@ fn handle_use_item(
             definition_id: cast_vfx_id,
             anchor: VfxAnchor::tile(player_space_id, player_position),
         });
-        apply_spell_restore(spell, &mut vital_stats);
-        if spell.effects.damage > 0.0 {
+        let caster_attrs = caster_attributes(player_class_level, player_entity);
+        apply_spell_restore(spell, &mut vital_stats, &caster_attrs, level);
+        let rolled_damage = spell.effects.damage.roll(&caster_attrs, level);
+        if rolled_damage > 0.0 {
             pending_damage.push(DamageEvent {
                 target: player_entity,
-                amount: spell.effects.damage,
+                amount: rolled_damage,
                 source: DamageSource::Player(acting_player_id),
                 damage_type: spell.effects.effective_damage_type(),
                 vfx_override: spell.effects.vfx_on_target_hit.clone(),
             });
         }
         if let Ok(mut effects) = magic_effects_query.get_mut(player_entity) {
-            apply_spell_self_effects(spell, acting_player_id, &mut effects);
+            apply_spell_self_effects(spell, acting_player_id, &mut effects, &caster_attrs, level);
         }
         if let Some(spawn_spec) = spell.effects.spawns_object.as_ref() {
             spawn_spell_object(
@@ -2922,6 +2934,7 @@ fn handle_use_item_on(
         (
             Option<&crate::player::classes::Class>,
             Option<&crate::player::progression::Experience>,
+            Option<&crate::player::components::DerivedStats>,
         ),
         With<Player>,
     >,
@@ -3243,6 +3256,7 @@ fn handle_cast_spell_at_item(
         (
             Option<&crate::player::classes::Class>,
             Option<&crate::player::progression::Experience>,
+            Option<&crate::player::components::DerivedStats>,
         ),
         With<Player>,
     >,
@@ -3277,7 +3291,7 @@ fn handle_cast_spell_at_item(
     let is_scroll = true;
     let (class, level) = player_class_level
         .get(player_entity)
-        .map(|(c, e)| (c.copied(), e.map_or(1, |exp| exp.level)))
+        .map(|(c, e, _derived)| (c.copied(), e.map_or(1, |exp| exp.level)))
         .unwrap_or((None, 1));
     if let Err(reason) = check_caster_eligibility(spell, is_scroll, class, level) {
         chat_log_state.push_narrator(reason);
@@ -3333,6 +3347,27 @@ fn handle_cast_spell_at_item(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// The caster's attribute set from the shared `player_class_level` query, used
+/// to roll attribute/level-scaled spell `damage` expressions. Defaults to a
+/// baseline set if the caster somehow lacks `DerivedStats`.
+fn caster_attributes(
+    query: &Query<
+        (
+            Option<&crate::player::classes::Class>,
+            Option<&crate::player::progression::Experience>,
+            Option<&DerivedStats>,
+        ),
+        With<Player>,
+    >,
+    entity: Entity,
+) -> AttributeSet {
+    query
+        .get(entity)
+        .ok()
+        .and_then(|(_, _, derived)| derived.map(|ds| ds.attributes))
+        .unwrap_or_default()
+}
+
 fn handle_cast_spell_at(
     player_entity: Entity,
     source: ItemReference,
@@ -3367,6 +3402,7 @@ fn handle_cast_spell_at(
         (
             Option<&crate::player::classes::Class>,
             Option<&crate::player::progression::Experience>,
+            Option<&crate::player::components::DerivedStats>,
         ),
         With<Player>,
     >,
@@ -3420,7 +3456,7 @@ fn handle_cast_spell_at(
     let is_scroll = true;
     let (class, level) = player_class_level
         .get(player_entity)
-        .map(|(c, e)| (c.copied(), e.map_or(1, |exp| exp.level)))
+        .map(|(c, e, _derived)| (c.copied(), e.map_or(1, |exp| exp.level)))
         .unwrap_or((None, 1));
     if let Err(reason) = check_caster_eligibility(spell, is_scroll, class, level) {
         chat_log_state.push_narrator(reason);
@@ -3460,6 +3496,10 @@ fn handle_cast_spell_at(
         anchor: VfxAnchor::tile(caster_space_id, caster_tile),
     });
 
+    // Resolve everything caster-scaled once up front (restore, damage, debuff
+    // magnitudes) so the projectile and direct paths use the same numbers and
+    // `combat::scheduled` keeps carrying plain `EffectSpec`s.
+    let caster_attrs = caster_attributes(player_class_level, player_entity);
     let target_name = {
         let Ok((mut target_vitals, target_object)) = npc_vitals_query.get_mut(target_entity) else {
             return;
@@ -3467,9 +3507,16 @@ fn handle_cast_spell_at(
         let name = object_registry
             .display_name(target_object.object_id, definitions, spell_definitions)
             .unwrap_or_else(|| target_object.definition_id.clone());
-        apply_spell_restore(spell, &mut target_vitals);
+        apply_spell_restore(spell, &mut target_vitals, &caster_attrs, level);
         name
     };
+    let rolled_damage = spell.effects.damage.roll(&caster_attrs, level);
+    let resolved_target_buffs: Vec<crate::magic::resources::EffectSpec> = spell
+        .effects
+        .buffs_target
+        .iter()
+        .map(|spec| spec.resolve(&caster_attrs, level))
+        .collect();
     if let Some(projectile) = spell.effects.projectile.as_ref() {
         // Homing missile: fly to the target (visual re-reads its position each
         // frame) and defer damage + debuffs until the missile lands.
@@ -3485,30 +3532,30 @@ fn handle_cast_spell_at(
         scheduled.push(ScheduledImpact {
             remaining_seconds: travel,
             space_id: caster_space_id,
-            damage: spell.effects.damage,
+            damage: rolled_damage,
             damage_type: spell.effects.effective_damage_type(),
             source: DamageSource::Player(caster_id),
             kind: ImpactKind::Locked {
                 target: target_entity,
                 hit_vfx: spell.effects.vfx_on_target_hit.clone(),
-                buffs: spell.effects.buffs_target.clone(),
+                buffs: resolved_target_buffs,
             },
         });
     } else {
-        if spell.effects.damage > 0.0 {
+        if rolled_damage > 0.0 {
             pending_damage.push(DamageEvent {
                 target: target_entity,
-                amount: spell.effects.damage,
+                amount: rolled_damage,
                 source: DamageSource::Player(caster_id),
                 damage_type: spell.effects.effective_damage_type(),
                 vfx_override: spell.effects.vfx_on_target_hit.clone(),
             });
         }
 
-        if !spell.effects.buffs_target.is_empty() {
+        if !resolved_target_buffs.is_empty() {
             apply_buffs_target(
                 target_entity,
-                &spell.effects.buffs_target,
+                &resolved_target_buffs,
                 Some(caster_id),
                 npc_magic_effects_query,
                 commands,
@@ -3517,7 +3564,7 @@ fn handle_cast_spell_at(
     }
 
     if let Ok(mut effects) = player_magic_effects_query.get_mut(player_entity) {
-        apply_spell_self_effects(spell, caster_id, &mut effects);
+        apply_spell_self_effects(spell, caster_id, &mut effects, &caster_attrs, level);
     }
 
     if let Some(spawn_spec) = spell.effects.spawns_object.as_ref() {
@@ -3543,11 +3590,12 @@ fn handle_cast_spell_at(
         commands,
     );
     chat_log_state.push_line(format!("[Player]: \"{}\"", spell.incantation));
-    if spell.effects.damage > 0.0 {
+    if rolled_damage > 0.0 {
         chat_log_state.push_narrator(format!(
-            "Cast {} on {} ({} damage).",
+            "Cast {} on {} ({} {} damage).",
             spell.name,
             target_name,
+            rolled_damage as i32,
             spell.effects.effective_damage_type().display_name()
         ));
     } else {
@@ -3595,6 +3643,7 @@ fn handle_cast_spell_at_tile(
         (
             Option<&crate::player::classes::Class>,
             Option<&crate::player::progression::Experience>,
+            Option<&crate::player::components::DerivedStats>,
         ),
         With<Player>,
     >,
@@ -3636,7 +3685,7 @@ fn handle_cast_spell_at_tile(
     let is_scroll = true;
     let (class, level) = player_class_level
         .get(player_entity)
-        .map(|(c, e)| (c.copied(), e.map_or(1, |exp| exp.level)))
+        .map(|(c, e, _derived)| (c.copied(), e.map_or(1, |exp| exp.level)))
         .unwrap_or((None, 1));
     if let Err(reason) = check_caster_eligibility(spell, is_scroll, class, level) {
         chat_log_state.push_narrator(reason);
@@ -3696,11 +3745,19 @@ fn handle_cast_spell_at_tile(
     // (now planar at the target floor rather than a 3D radius).
     if let Some(aoe) = spell.effects.aoe.as_ref() {
         let radius = aoe.radius_tiles.max(0);
-        let damage = spell.effects.damage;
+        let caster_attrs = caster_attributes(player_class_level, player_entity);
+        let damage = spell.effects.damage.roll(&caster_attrs, level);
         let damage_type = spell.effects.effective_damage_type();
         let hit_vfx = spell.effects.vfx_on_target_hit.clone();
         let vfx_on_tile = aoe.vfx_on_tile.clone();
-        let buffs = spell.effects.buffs_target.clone();
+        // Resolve debuff magnitudes against the caster now, so the scheduled
+        // impacts carry plain `EffectSpec`s.
+        let buffs: Vec<crate::magic::resources::EffectSpec> = spell
+            .effects
+            .buffs_target
+            .iter()
+            .map(|spec| spec.resolve(&caster_attrs, level))
+            .collect();
 
         for (tile, delay) in aoe_pattern_tiles(target_tile, radius, aoe.pattern) {
             scheduled.push(ScheduledImpact {
@@ -3747,7 +3804,8 @@ fn handle_cast_spell_at_tile(
     }
 
     if let Ok(mut effects) = player_magic_effects_query.get_mut(player_entity) {
-        apply_spell_self_effects(spell, caster_id, &mut effects);
+        let caster_attrs = caster_attributes(player_class_level, player_entity);
+        apply_spell_self_effects(spell, caster_id, &mut effects, &caster_attrs, level);
     }
 
     consume_or_decrement_charge(
@@ -6141,26 +6199,41 @@ fn random_text(texts: &[String]) -> String {
     texts[nanos % texts.len()].clone()
 }
 
-/// Apply only the healing/mana-restore parts of a spell. Damage flows through
-/// `PendingDamageEvents` so attribution + death handling happen in one place.
-fn apply_spell_restore(spell: &SpellDefinition, vital_stats: &mut VitalStats) {
-    vital_stats.health =
-        (vital_stats.health + spell.effects.restore_health).clamp(0.0, vital_stats.max_health);
-    vital_stats.mana =
-        (vital_stats.mana + spell.effects.restore_mana).clamp(0.0, vital_stats.max_mana);
+/// Apply only the healing/mana-restore parts of a spell, rolled against the
+/// caster's attributes + level (heals scale like damage does). Damage flows
+/// through `PendingDamageEvents` so attribution + death handling happen in
+/// one place.
+fn apply_spell_restore(
+    spell: &SpellDefinition,
+    vital_stats: &mut VitalStats,
+    caster_attrs: &crate::player::components::AttributeSet,
+    caster_level: u32,
+) {
+    let health = spell
+        .effects
+        .restore_health
+        .resolve(caster_attrs, caster_level);
+    let mana = spell
+        .effects
+        .restore_mana
+        .resolve(caster_attrs, caster_level);
+    vital_stats.health = (vital_stats.health + health).clamp(0.0, vital_stats.max_health);
+    vital_stats.mana = (vital_stats.mana + mana).clamp(0.0, vital_stats.max_mana);
 }
 
 /// Apply self-buff + clears entries from a spell to the caster's
-/// `MagicEffects`. `buffs_target` is applied separately by the targeted-cast
-/// handler so the target NPC can be looked up and lazily granted the
-/// component.
+/// `MagicEffects`, resolving expression magnitudes against the caster.
+/// `buffs_target` is applied separately by the targeted-cast handler so the
+/// target NPC can be looked up and lazily granted the component.
 fn apply_spell_self_effects(
     spell: &SpellDefinition,
     caster_id: crate::player::components::PlayerId,
     caster_effects: &mut crate::magic::effects::MagicEffects,
+    caster_attrs: &crate::player::components::AttributeSet,
+    caster_level: u32,
 ) {
     for spec in &spell.effects.buffs_self {
-        caster_effects.apply(*spec, Some(caster_id));
+        caster_effects.apply(spec.resolve(caster_attrs, caster_level), Some(caster_id));
     }
     for kind in &spell.effects.clears_self {
         caster_effects.clear(*kind);

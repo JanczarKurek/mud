@@ -1,0 +1,75 @@
+extends: npc
+name: Dire Wight
+description: A gaunt revenant wrapped in grave-cold air. Frost creeps across the ground where it walks.
+level: 12
+stats:
+  strength: 14
+  agility: 14
+  constitution: 14
+  willpower: 16
+  charisma: 6
+  focus: 12
+# Creature template: dice + flat, sized to the level budget (~mean 2+1.3·L).
+damage: "2d10+7"
+attack_profile:
+  kind: melee
+  damage_type: death
+  on_hit_effects:
+    - kind: chill
+      chance: 0.3
+      magnitude: 2.0
+      seconds: 5.0
+      secondary_magnitude: 1.5
+# HP budget: mean ≈ 20 + 11·L.
+hp: "3d12+60+constitution*5"
+armor: 3
+loot:
+  corpse_despawn_seconds: 60
+  drops:
+    - type_id: gold_coin
+      quantity: "uniform(3, 7)"
+      probability: 1.0
+    - type_id: steel_sword
+      quantity: 1
+      probability: 0.2
+    - type_id: plate_armor
+      quantity: 1
+      probability: 0.15
+    - type_id: tower_shield
+      quantity: 1
+      probability: 0.15
+npc_behavior:
+  step_interval_seconds: 1.0
+  detect_distance_tiles: 6
+  disengage_distance_tiles: 10
+barks:
+  aggro:
+    - "*a rattling exhale*"
+    - "Cold... take you..."
+  mutter:
+    - "*frost crackles*"
+    - "*hollow whisper*"
+render:
+  debug_color: [180, 200, 215]
+  debug_size: 0.95
+  sprite_path: overworld_objects/dire_wight/sprite.png
+  y_sort: true
+  animation:
+    sheet_path: overworld_objects/dire_wight/sheet.png
+    frame_width: 32
+    frame_height: 48
+    sheet_columns: 4
+    sheet_rows: 2
+    clips:
+      idle:
+        row: 0
+        start_col: 0
+        frame_count: 4
+        fps: 3.0
+        looping: true
+      walk:
+        row: 1
+        start_col: 0
+        frame_count: 4
+        fps: 8.0
+        looping: true

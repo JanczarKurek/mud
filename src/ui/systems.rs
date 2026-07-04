@@ -109,10 +109,15 @@ pub fn apply_game_ui_events(
             other @ GameUiEvent::SkillPointsToast { .. } => {
                 pending_ui_events.events.push(other);
             }
+            other @ GameUiEvent::AbilityBumpAvailable { .. } => {
+                pending_ui_events.events.push(other);
+            }
             // Combat-feedback signals: hook point for future floating-text /
             // popup animation. The chat log already narrates these (see
             // `resolve_battle_turn`), so silent-consume is fine for now.
-            GameUiEvent::AttackDodged { .. } | GameUiEvent::AttackBlocked { .. } => {}
+            GameUiEvent::AttackDodged { .. }
+            | GameUiEvent::AttackBlocked { .. }
+            | GameUiEvent::AttackCrit { .. } => {}
             // "You've been spotted." The spotting NPC also fires an aggro bark
             // (speech bubble) on the same transition, which is the current
             // visible cue; this arm is the hook point for a future toast/sound.

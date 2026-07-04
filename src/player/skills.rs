@@ -13,7 +13,9 @@ use crate::game::resources::{
     GameEvent, GameUiEvent, PendingGameCommands, PendingGameEvents, PendingGameUiEvents,
 };
 use crate::player::classes::{ability_mod, class_data, Class};
-use crate::player::components::{AttributeSet, BaseStats, ChatLog, Player, PlayerIdentity};
+use crate::player::components::{
+    AttributeKind, AttributeSet, BaseStats, ChatLog, Player, PlayerIdentity,
+};
 use crate::player::progression::Experience;
 
 /// All ten skills, in their canonical ordering. Indexes into `SkillSheet.ranks`.
@@ -168,6 +170,11 @@ pub fn skill_points_for_level_up(class: Class, attributes: &AttributeSet) -> u32
 pub struct SkillSheet {
     pub ranks: [u8; 10],
     pub available_points: u32,
+    /// Unspent ability-score bumps (one banked at levels 4/8/12/16/20). Spent
+    /// via `GameCommand::AllocateAbilityBump` to raise one attribute by +1.
+    /// `#[serde(default)]` so saves written before this field default to 0.
+    #[serde(default)]
+    pub available_ability_bumps: u32,
 }
 
 impl SkillSheet {
@@ -382,6 +389,62 @@ pub fn process_allocate_skill_commands(
     pending_commands.commands = remaining;
 }
 
+/// Server system: drains `GameCommand::AllocateAbilityBump` in the
+/// `CommandIntercept` set. Spends a banked bump on the chosen attribute. The
+/// new attribute value and the decremented counter both replicate through the
+/// per-frame projection diff (`PlayerAttributesChanged` + `SkillSheetChanged`),
+/// so this only needs to mutate and narrate.
+pub fn process_allocate_ability_bump_commands(
+    mut pending_commands: ResMut<PendingGameCommands>,
+    mut player_query: Query<
+        (
+            &PlayerIdentity,
+            &mut SkillSheet,
+            &mut BaseStats,
+            &mut ChatLog,
+        ),
+        With<Player>,
+    >,
+) {
+    let queued = std::mem::take(&mut pending_commands.commands);
+    let mut remaining = Vec::with_capacity(queued.len());
+
+    for cmd in queued {
+        match cmd.command {
+            GameCommand::AllocateAbilityBump { attribute } => {
+                for (identity, mut sheet, mut base, mut chat_log) in player_query.iter_mut() {
+                    let matches = match cmd.player_id {
+                        Some(id) => identity.id == id,
+                        None => true,
+                    };
+                    if !matches {
+                        continue;
+                    }
+                    match allocate_ability_bump(&mut sheet, &mut base, attribute) {
+                        AbilityBumpOutcome::Applied {
+                            kind, new_value, ..
+                        } => {
+                            chat_log
+                                .push_narrator(format!("{} raised to {new_value}.", kind.label()));
+                        }
+                        AbilityBumpOutcome::NoBumpsAvailable => {
+                            chat_log
+                                .push_narrator("You have no ability points to spend.".to_owned());
+                        }
+                    }
+                    break;
+                }
+            }
+            other => remaining.push(crate::game::resources::QueuedGameCommand {
+                player_id: cmd.player_id,
+                command: other,
+            }),
+        }
+    }
+
+    pending_commands.commands = remaining;
+}
+
 /// Hook into the level-up loop: award `skill_points_for_level_up` points,
 /// surface a HUD toast, and emit `SkillPointsGranted` for replication. Called
 /// from `apply_xp_grants` for each level crossed.
@@ -397,6 +460,58 @@ pub fn grant_level_up_skill_points(
     sheet.available_points = sheet.available_points.saturating_add(amount);
     events.events.push(GameEvent::SkillPointsGranted { amount });
     ui_events.push(identity.id, GameUiEvent::SkillPointsToast { amount });
+}
+
+/// Outcome of attempting to spend a banked ability bump.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum AbilityBumpOutcome {
+    Applied {
+        kind: AttributeKind,
+        new_value: i32,
+        remaining: u32,
+    },
+    NoBumpsAvailable,
+}
+
+/// Pure spend step: if a bump is banked, raise `kind` by +1 and decrement the
+/// counter. Bumps may push an attribute past the creation ceiling of 18 — they
+/// are earned growth (`docs/progression.md` §4.3 step 5), and `ability_mod` is
+/// uncapped. The next frame's `refresh_derived_player_stats` re-derives HP/mana
+/// and the projection replicates the new attributes via `PlayerAttributesChanged`.
+pub fn allocate_ability_bump(
+    sheet: &mut SkillSheet,
+    base: &mut BaseStats,
+    kind: AttributeKind,
+) -> AbilityBumpOutcome {
+    if sheet.available_ability_bumps == 0 {
+        return AbilityBumpOutcome::NoBumpsAvailable;
+    }
+    let new_value = kind.read(&base.attributes) + 1;
+    kind.write(&mut base.attributes, new_value);
+    sheet.available_ability_bumps -= 1;
+    AbilityBumpOutcome::Applied {
+        kind,
+        new_value,
+        remaining: sheet.available_ability_bumps,
+    }
+}
+
+/// Hook into the level-up loop: bank one ability bump and surface a HUD toast.
+/// Called from `apply_xp_grants` at levels 4/8/12/16/20. The counter increment
+/// replicates via the per-frame `SkillSheetChanged` projection diff, so no
+/// dedicated delta event is needed.
+pub fn grant_level_up_ability_bump(
+    sheet: &mut SkillSheet,
+    identity: &PlayerIdentity,
+    ui_events: &mut PendingGameUiEvents,
+) {
+    sheet.available_ability_bumps = sheet.available_ability_bumps.saturating_add(1);
+    ui_events.push(
+        identity.id,
+        GameUiEvent::AbilityBumpAvailable {
+            available: sheet.available_ability_bumps,
+        },
+    );
 }
 
 #[cfg(test)]
@@ -487,6 +602,7 @@ mod tests {
         let mut sheet = SkillSheet {
             ranks: [0; 10],
             available_points: 4,
+            available_ability_bumps: 0,
         };
         // Vagabond + Thievery is a class skill → cost 1.
         let outcome = allocate_skill_ranks(&mut sheet, Class::Vagabond, 1, Skill::Thievery, 3);
@@ -506,6 +622,7 @@ mod tests {
         let mut sheet = SkillSheet {
             ranks: [0; 10],
             available_points: 100,
+            available_ability_bumps: 0,
         };
         // Fighter + Thievery is cross-class → cap at level 1 = (1+3)/2 = 2.
         let _ = allocate_skill_ranks(&mut sheet, Class::Fighter, 1, Skill::Thievery, 2);
@@ -519,6 +636,7 @@ mod tests {
         let mut sheet = SkillSheet {
             ranks: [0; 10],
             available_points: 1,
+            available_ability_bumps: 0,
         };
         // Cross-class costs 2/rank; 1 point is not enough for even one.
         let outcome = allocate_skill_ranks(&mut sheet, Class::Fighter, 5, Skill::Thievery, 1);
@@ -532,6 +650,7 @@ mod tests {
         let mut sheet = SkillSheet {
             ranks: [0; 10],
             available_points: 3,
+            available_ability_bumps: 0,
         };
         // Cross-class cost 2 → can buy 1, not 2.
         let outcome = allocate_skill_ranks(&mut sheet, Class::Fighter, 10, Skill::Thievery, 2);
@@ -542,5 +661,53 @@ mod tests {
                 remaining_points: 1,
             }
         );
+    }
+
+    #[test]
+    fn ability_bump_raises_attribute_and_decrements() {
+        let mut sheet = SkillSheet {
+            ranks: [0; 10],
+            available_points: 0,
+            available_ability_bumps: 2,
+        };
+        let mut base = BaseStats::default(); // all attributes 10
+        let outcome = allocate_ability_bump(&mut sheet, &mut base, AttributeKind::Strength);
+        assert_eq!(
+            outcome,
+            AbilityBumpOutcome::Applied {
+                kind: AttributeKind::Strength,
+                new_value: 11,
+                remaining: 1,
+            }
+        );
+        assert_eq!(base.attributes.strength, 11);
+        assert_eq!(sheet.available_ability_bumps, 1);
+    }
+
+    #[test]
+    fn ability_bump_can_exceed_creation_ceiling() {
+        // Bumps are earned growth — they push past the point-buy cap of 18.
+        let mut sheet = SkillSheet {
+            ranks: [0; 10],
+            available_points: 0,
+            available_ability_bumps: 1,
+        };
+        let mut base = BaseStats::default();
+        base.attributes.focus = 18;
+        let outcome = allocate_ability_bump(&mut sheet, &mut base, AttributeKind::Focus);
+        assert!(matches!(
+            outcome,
+            AbilityBumpOutcome::Applied { new_value: 19, .. }
+        ));
+        assert_eq!(base.attributes.focus, 19);
+    }
+
+    #[test]
+    fn ability_bump_refused_when_none_banked() {
+        let mut sheet = SkillSheet::default(); // available_ability_bumps: 0
+        let mut base = BaseStats::default();
+        let outcome = allocate_ability_bump(&mut sheet, &mut base, AttributeKind::Agility);
+        assert_eq!(outcome, AbilityBumpOutcome::NoBumpsAvailable);
+        assert_eq!(base.attributes.agility, 10); // unchanged
     }
 }

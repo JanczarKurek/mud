@@ -37,9 +37,16 @@ fn health_interval_seconds(derived: &DerivedStats, multiplier: f32) -> f32 {
     60.0 / effective
 }
 
+/// Mana regen interval (seconds per MP): `60 / (2 + willpower + focus/2)`
+/// per minute. `[tunable]` — the target metric is *sustained casting*: a
+/// dedicated caster (WIL 16 / FOC 16 → ~26 MP/min ≈ 2.3 s/MP) keeps a 4-mana
+/// cantrip flowing every ~10 s and affords a 12-mana nuke every ~28 s,
+/// instead of the old ~7/min trickle that made every fight a one-shot mana
+/// bar (`docs/balance/report.md` §2.5).
 fn mana_interval_seconds(derived: &DerivedStats, multiplier: f32) -> f32 {
     let willpower = derived.attributes.willpower.max(0) as f32;
-    let per_minute = 2.0 + willpower / 5.0;
+    let focus = derived.attributes.focus.max(0) as f32;
+    let per_minute = 2.0 + willpower + focus / 2.0;
     let effective = (per_minute * multiplier).max(0.001);
     60.0 / effective
 }

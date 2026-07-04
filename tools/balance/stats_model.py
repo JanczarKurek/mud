@@ -94,6 +94,12 @@ def bab_at(track: str, level: int) -> int:
     raise ValueError(track)
 
 
+def weapon_focus_bonus(class_name, level: int) -> int:
+    """Fighter Weapon Focus melee to-hit: +1 at L1, +1 more at 5/10/15/20
+    (mirrors `player/classes.rs::weapon_focus_bonus`). 0 for everyone else."""
+    return 1 + level // 5 if class_name == "Fighter" else 0
+
+
 def good_save_at(level: int) -> int:
     return 2 + level // 2
 
@@ -166,7 +172,9 @@ def level_for_xp(xp: int) -> int:
 
 
 def xp_grant_for_kill(victim_level: int) -> int:
-    return victim_level ** 2 * 50
+    # Linear 75/level: same-level kills-to-level is a constant ~13.3 against
+    # the 1000*N(N-1)/2 curve (progression.rs).
+    return victim_level * 75
 
 
 # --- regen (regen.rs:19-31) -----------------------------------------------
@@ -176,8 +184,21 @@ def hp_regen_seconds_per_point(attrs: AttributeSet, multiplier: float = 1.0) -> 
 
 
 def mana_regen_seconds_per_point(attrs: AttributeSet, multiplier: float = 1.0) -> float:
-    per_minute = max(0.001, (2.0 + max(0, attrs.willpower) / 5.0) * multiplier)
+    # per_minute = 2 + willpower + focus/2 (regen.rs). Retuned for sustained
+    # casting: a WIL16/FOC16 caster regens ~26/min (~2.3 s/MP), so a cantrip
+    # is sustainable every ~10 s and a 12-mana nuke every ~28 s.
+    per_minute = max(0.001, (2.0 + max(0, attrs.willpower)
+                             + max(0, attrs.focus) / 2.0) * multiplier)
     return 60.0 / per_minute
+
+
+def bumps_for_level(level: int) -> int:
+    """Number of every-4-levels ability bumps a character has earned by `level`.
+
+    Players gain +1 to one attribute at levels 4/8/12/16/20 (progression).
+    NPCs do not get bumps.
+    """
+    return len([L for L in (4, 8, 12, 16, 20) if level >= L])
 
 
 def _selftest() -> None:
@@ -194,7 +215,11 @@ def _selftest() -> None:
     # xp curve / grants (progression.rs:188, 211).
     assert [xp_for_level(n) for n in (1, 2, 3, 4, 5, 10, 20)] == \
         [0, 1000, 3000, 6000, 10000, 45000, 190000]
-    assert [xp_grant_for_kill(n) for n in (1, 2, 3, 8)] == [50, 200, 450, 3200]
+    assert [xp_grant_for_kill(n) for n in (1, 2, 3, 8, 20)] == [75, 150, 225, 600, 1500]
+    # Same-level kills-per-level stays in the 8-15 band across 1..19.
+    for n in range(1, LEVEL_CAP):
+        kills = (xp_for_level(n + 1) - xp_for_level(n)) / xp_grant_for_kill(n)
+        assert 8.0 <= kills <= 15.0, (n, kills)
     assert level_for_xp(0) == 1 and level_for_xp(1000) == 2 and level_for_xp(190000) == 20
 
     # default all-10 Fighter L1: HP = 35 + CON*6 + STR*2 = 35+60+20 = 115;

@@ -4030,3 +4030,41 @@ spawn_groups:
       min_y: 5
       max_x: 40
       max_y: 14
+# L10 elite sharing the cyclops's proven-walkable territory — the southeast
+# corner is the high-level zone. `[tunable]` placement; move to its own ridge
+# when the map grows.
+- id: ogre_brute_den
+  template: ogre_brute
+  max_count: 1
+  respawn_mean_seconds: 240.0
+  area:
+    bounds:
+      min_x: 50
+      min_y: 42
+      max_x: 62
+      max_y: 49
+  behavior:
+    kind: roam_and_chase
+    bounds:
+      min_x: 50
+      min_y: 42
+      max_x: 62
+      max_y: 49
+# L12 elite haunting the fire-elemental glade at the map's north edge.
+- id: dire_wight_barrow
+  template: dire_wight
+  max_count: 1
+  respawn_mean_seconds: 300.0
+  area:
+    bounds:
+      min_x: 28
+      min_y: 5
+      max_x: 40
+      max_y: 14
+  behavior:
+    kind: roam_and_chase
+    bounds:
+      min_x: 28
+      min_y: 5
+      max_x: 40
+      max_y: 14

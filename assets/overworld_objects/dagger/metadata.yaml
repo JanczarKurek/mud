@@ -1,0 +1,17 @@
+extends: equipment
+name: Dagger
+weight: 0.8
+description: A slim double-edged blade that slips between ribs. Crits on 19-20.
+equipment_slot: weapon
+# Light blade: small dice, but an expanded crit range (19-20) — its identity
+# is the crit + the Vagabond backstab opener. Full melee growth term keeps it
+# viable as a main-hand into the teens.
+damage: "1d4+str_mod+level/2"
+crit_range: 19
+attack_profile:
+  kind: melee
+  damage_type: pierce
+render:
+  debug_color: [200, 200, 215]
+  debug_size: 0.45
+  sprite_path: overworld_objects/dagger/sprite.png

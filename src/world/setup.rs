@@ -324,14 +324,14 @@ pub fn realize_npc(
     let _ = type_id;
     let base_stats = npc_base_stats_from_definition(definition);
     let derived_stats = DerivedStats::from_base(&base_stats);
+    let level = definition.and_then(|d| d.level).unwrap_or(1);
     let max_health = definition
         .and_then(|d| d.hp.as_deref())
         .and_then(|raw| DamageExpr::parse(raw).ok())
-        .map(|expr| expr.roll(&derived_stats.attributes).max(1))
+        .map(|expr| expr.roll(&derived_stats.attributes, level as i32).max(1))
         .unwrap_or(derived_stats.max_health) as f32;
     let max_mana = derived_stats.max_mana as f32;
     let (attack_profile, weapon_damage) = attack_profile_for_definition(definition);
-    let level = definition.and_then(|d| d.level).unwrap_or(1);
     let defense_stats = DefenseStats {
         armor: definition.map(|d| d.armor).unwrap_or(0),
         block: definition.map(|d| d.block).unwrap_or(0),

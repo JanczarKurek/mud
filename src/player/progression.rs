@@ -34,10 +34,13 @@ pub fn level_for_xp(xp: u64) -> u32 {
     n
 }
 
-/// XP awarded for killing a creature of `victim_level`.
+/// XP awarded for killing a creature of `victim_level`: linear `75·level`.
+/// With the `1000·N(N−1)/2` curve, level N→N+1 costs exactly `1000·N`, so
+/// same-level kills-to-level is a constant `1000N / 75N ≈ 13.3` all the way
+/// up. (The old `level²·50` outran the curve — 20 kills at L1, 1–2 by L15.)
 /// `[tunable]` progression.md §4.2.
 pub fn xp_grant_for_kill(victim_level: u32) -> u64 {
-    (victim_level as u64).pow(2) * 50
+    victim_level as u64 * 75
 }
 
 /// Per-character XP / level state. Lives on both player entities (current_xp
@@ -176,6 +179,15 @@ pub fn apply_xp_grants(
                 &mut events,
                 &mut ui_events,
             );
+            // Ability bump every 4 levels (4/8/12/16/20) — progression.md §4.3
+            // step 5. Banks a +1-attribute pick the player spends via the UI.
+            if experience.level % 4 == 0 {
+                crate::player::skills::grant_level_up_ability_bump(
+                    &mut skill_sheet,
+                    identity,
+                    &mut ui_events,
+                );
+            }
         }
     }
 }
@@ -209,10 +221,26 @@ mod tests {
 
     #[test]
     fn xp_grant_anchors() {
-        assert_eq!(xp_grant_for_kill(1), 50);
-        assert_eq!(xp_grant_for_kill(2), 200);
-        assert_eq!(xp_grant_for_kill(3), 450);
-        assert_eq!(xp_grant_for_kill(8), 3_200);
+        assert_eq!(xp_grant_for_kill(1), 75);
+        assert_eq!(xp_grant_for_kill(2), 150);
+        assert_eq!(xp_grant_for_kill(3), 225);
+        assert_eq!(xp_grant_for_kill(8), 600);
+        assert_eq!(xp_grant_for_kill(20), 1_500);
+    }
+
+    #[test]
+    fn same_level_kills_per_level_stays_in_band() {
+        // Level N→N+1 costs 1000·N; a same-level kill grants 75·N. The ratio
+        // must stay ~13.3 (kills/level) across the whole 1..20 band — the old
+        // quadratic grant collapsed to 1-2 kills by L15.
+        for n in 1..LEVEL_CAP {
+            let cost = xp_for_level(n + 1) - xp_for_level(n);
+            let kills = cost as f64 / xp_grant_for_kill(n) as f64;
+            assert!(
+                (8.0..=15.0).contains(&kills),
+                "level {n}: {kills:.1} kills/level out of band"
+            );
+        }
     }
 
     #[test]

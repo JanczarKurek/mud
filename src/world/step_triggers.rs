@@ -138,7 +138,8 @@ impl StepTrigger {
             match effect {
                 StepEffect::ApplyEffect(spec) => effect_specs.push(*spec),
                 StepEffect::ApplyDamage(expr) => {
-                    let rolled = expr.roll(&AttributeSet::default()).max(0) as f32;
+                    // Traps have no caster; level 0 (their exprs carry no level term).
+                    let rolled = expr.roll(&AttributeSet::default(), 0).max(0) as f32;
                     damage_amounts.push(rolled);
                 }
                 StepEffect::SetState(new_state) => {
@@ -583,7 +584,7 @@ mod tests {
         // Environmental damage must work without any attacker stats.
         let expr = DamageExpr::parse("1d4+2").unwrap();
         for _ in 0..20 {
-            let rolled = expr.roll(&AttributeSet::default());
+            let rolled = expr.roll(&AttributeSet::default(), 0);
             assert!((3..=6).contains(&rolled));
         }
     }

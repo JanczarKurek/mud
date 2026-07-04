@@ -6,7 +6,8 @@ range_tiles: 6
 # class_access: [Wizard]
 # min_caster_level: 4
 effects:
-  damage: 14.0
+  # Big AoE nuke (radius 2): the cost buys the footprint, not per-target burst.
+  damage: "2d6+foc_mod+level/2"
   damage_type: fire
   # A flung fireball: the missile flies to the target tile, then the blast
   # blooms outward ring-by-ring from the impact point.

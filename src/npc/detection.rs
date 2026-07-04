@@ -35,9 +35,82 @@ pub fn detection_outcome(
     npc_total >= player_total
 }
 
+/// Is this NPC *aware* of `attacker` — i.e. actively fighting, chasing, or
+/// fleeing from them? Backstab (`docs/progression.md` §3.4) keys off the
+/// inverse: an attack from a sneaking player this NPC is NOT aware of. Pure so
+/// combat can call it without reaching into npc system internals.
+///
+/// `Wander` and `Alert` count as unaware — an alerted NPC is *searching* (it
+/// heard something, it hasn't acquired the attacker), matching the
+/// `NpcAwareness::Searching` presentation mapping in `game/projection.rs`.
+pub fn npc_aware_of(
+    state: Option<&crate::npc::components::AiState>,
+    combat_target: Option<bevy::prelude::Entity>,
+    attacker: bevy::prelude::Entity,
+) -> bool {
+    use crate::npc::components::AiState;
+    if combat_target == Some(attacker) {
+        return true;
+    }
+    match state {
+        Some(AiState::Pursue { target }) | Some(AiState::Engage { target }) => *target == attacker,
+        // A fleeing NPC lost its CombatTarget (`tick_flee`) but absolutely
+        // knows who it's running from.
+        Some(AiState::Flee { from, .. }) => *from == attacker,
+        Some(AiState::Wander) | Some(AiState::Alert { .. }) | None => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn npc_aware_of_truth_table() {
+        use crate::npc::components::AiState;
+        use bevy::prelude::Entity;
+        let me = Entity::from_raw_u32(1).unwrap();
+        let other = Entity::from_raw_u32(2).unwrap();
+
+        // CombatTarget on me -> aware, regardless of AI state.
+        assert!(npc_aware_of(Some(&AiState::Wander), Some(me), me));
+        // Pursue/Engage on me -> aware; on someone else -> not of me.
+        assert!(npc_aware_of(
+            Some(&AiState::Pursue { target: me }),
+            None,
+            me
+        ));
+        assert!(npc_aware_of(
+            Some(&AiState::Engage { target: me }),
+            None,
+            me
+        ));
+        assert!(!npc_aware_of(
+            Some(&AiState::Engage { target: other }),
+            None,
+            me
+        ));
+        // Fleeing from me -> aware (it knows exactly who hurt it).
+        assert!(npc_aware_of(
+            Some(&AiState::Flee {
+                from: me,
+                expires_at_seconds: 0.0
+            }),
+            None,
+            me
+        ));
+        // Wander / Alert (searching, hasn't acquired) / no state -> unaware.
+        assert!(!npc_aware_of(Some(&AiState::Wander), None, me));
+        assert!(!npc_aware_of(
+            Some(&AiState::Alert {
+                last_seen: crate::world::components::TilePosition { x: 0, y: 0, z: 0 },
+                expires_at_seconds: 0.0
+            }),
+            None,
+            me
+        ));
+        assert!(!npc_aware_of(None, None, me));
+    }
 
     #[test]
     fn darkness_and_sneaking_beats_a_dull_guard() {

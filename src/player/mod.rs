@@ -76,6 +76,13 @@ impl Plugin for PlayerServerPlugin {
                     .in_set(crate::game::CommandIntercept)
                     .run_if(simulation_active),
             )
+            // Ability-bump allocation: same CommandIntercept pattern.
+            .add_systems(
+                Update,
+                crate::player::skills::process_allocate_ability_bump_commands
+                    .in_set(crate::game::CommandIntercept)
+                    .run_if(simulation_active),
+            )
             // Admin progression mutations (grant XP, set level, etc.). Same
             // CommandIntercept pattern.
             .add_systems(

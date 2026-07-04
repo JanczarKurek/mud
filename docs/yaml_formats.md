@@ -736,13 +736,15 @@ The `text` value supports three count placeholders in addition to the normal `{p
 ### `damage`
 - Type: damage expression string
 - Optional: yes
-- Default: `1d6+strength/5` (melee default)
+- Default: `1d4+str_mod` (unarmed melee floor)
 - Meaning: damage formula evaluated on each attack. The expression is a `+`-separated list of terms:
   - A dice term `NdM` (at most one per expression, e.g. `1d6`, `2d4`)
-  - A stat term `<stat>`, `<stat>*<multiplier>`, or `<stat>/<divisor>` (`strength`, `agility`, `constitution`, `willpower`, `charisma`, `focus`, plus the abbreviations `str`/`agi`/`con`/`wil`/`cha`/`foc`)
-  - A plain integer bonus
-- Examples: `1d6+strength`, `2d4+agility`, `1d12+strength/2+5`
-- Both weapons (when equipped by the player) and NPCs read this field.
+  - A **raw** stat term `<stat>`, `<stat>*<multiplier>`, or `<stat>/<divisor>` (`strength`, `agility`, `constitution`, `willpower`, `charisma`, `focus`, plus the abbreviations `str`/`agi`/`con`/`wil`/`cha`/`foc`) — adds the full attribute score (mostly for creature `hp:` expressions)
+  - A **modifier** stat term with a `_mod` suffix (`str_mod`, `agi_mod`, `foc_mod`, `wil_mod`, `con_mod`, `cha_mod`, or the long forms like `focus_mod`) — adds the d20 ability modifier `(score−10)/2`, matching to-hit math. **All shipping weapon and spell damage uses `_mod` terms.**
+  - A **level term** `level`, `level*<multiplier>`, or `level/<divisor>` (also `lvl`) — scales with the wielder's/caster's level. Real weapons carry `+level/2` (skill growth); tools and fists don't. Spell `damage:` uses it too, e.g. `3d6+foc_mod*2+level/2`.
+  - A plain integer bonus (weapon-tier flat, e.g. `+1` iron / `+2` steel)
+- Examples: `1d8+str_mod+level/2` (bronze sword), `2d4+agi_mod+1+level/2` (crossbow), `2d20+80+constitution*6` (a raw-score creature HP expression), `3d6+foc_mod*2+level/2` (a scaling spell)
+- Both weapons (when equipped by the player) and NPCs read this field. The same expression type backs **spell** `effects.damage`, which deserializes from either this string form or a bare number (flat damage). Shipping creatures use plain `dice + flat` damage (e.g. `2d8+6`) sized to the level budget — see `docs/balance/report.md`.
 
 ### `hp`
 - Type: damage expression string
@@ -752,11 +754,18 @@ The `text` value supports three count placeholders in addition to the normal `{p
 - Examples: `1d8+30+constitution*3`, `2d20+80+constitution*6`, `50+constitution*5` (deterministic)
 - Player HP is unaffected by this field.
 
+### `crit_range`
+- Type: integer (`2..=20`)
+- Optional: yes
+- Default: `20`
+- Meaning: the lowest raw d20 face that upgrades a landed hit into a **critical hit** — the damage expression is rolled twice and summed (before block/armor; on-hit riders are not doubled). `20` = crits only on a natural 20 (which also always hits). A light blade might carry `crit_range: 19` to crit on 19–20; a 19 only crits when the attack also beats the dodge DC. Read from the equipped weapon for players, or from the creature's own definition for NPCs. Spells never crit (they make no attack roll).
+- Example: `crit_range: 19` on a dagger.
+
 ### `armor`
 - Type: integer
 - Optional: yes
 - Default: `0`
-- Meaning: damage reduction for items equipped in defensive slots (`armor`, `helmet`, `legs`, `boots`). Values are summed across all equipped pieces. On every incoming hit that lands, the defender rolls a uniform integer in `0..=armor_total` and subtracts it from the damage. Final damage is floored at `1`.
+- Meaning: damage reduction for items equipped in defensive slots (`armor`, `helmet`, `legs`, `boots`). Values are summed across all equipped pieces. On every incoming hit that lands, the defender subtracts the **full** `armor_total` (deterministic) from the damage. Final damage is floored at `1`. The item card means what it says: `armor: 4` blocks 4. (Values are tuned for full-value subtraction — roughly half the numbers from the old random-roll era.)
 - Only counted when worn in one of the four defensive slots above; setting `armor` on a weapon or ring has no effect.
 - **Also applies to NPCs**: an NPC's own `armor` field becomes its `DefenseStats.armor` at spawn.
 
@@ -764,7 +773,7 @@ The `text` value supports three count placeholders in addition to the normal `{p
 - Type: integer
 - Optional: yes
 - Default: `0`
-- Meaning: damage reduction specific to the `shield` slot. Block is now **chance-gated**: it only fires when the `block_chance` roll succeeds (see below). When it does, the defender rolls `0..=block` and subtracts before the armor roll. Combined with `armor` the post-hit order is: `damage = max(1, raw - block_roll - armor_roll)`.
+- Meaning: damage reduction specific to the `shield` slot. Block is **chance-gated**: it only fires when the `block_chance` roll succeeds (see below). When it does, the defender subtracts the **full** `block` value (deterministic) before armor. Combined with `armor` the post-hit order is: `damage = max(1, raw - block - armor)`. (Previously a random `0..=block` roll, which made shields nearly cosmetic; the full value plus a meaningful `block_chance` makes them matter.)
 - Only counted when equipped in the `shield` slot (for players) or set on an NPC definition.
 
 ### `block_chance`
@@ -778,8 +787,15 @@ The `text` value supports three count placeholders in addition to the normal `{p
 - Type: integer
 - Optional: yes
 - Default: `0`
-- Meaning: flat bonus added to the wearer's dodge DC (the to-hit target attackers must beat). Counts on any equipment slot (boots, cloaks, rings, etc.), and stacks across pieces. Dodge DC = `10 + AGI_mod + sum(dodge_bonus)`.
+- Meaning: flat bonus added to the wearer's dodge DC (the to-hit target attackers must beat). Counts on any equipment slot (boots, cloaks, rings, etc.), and stacks across pieces. Dodge DC = `10 + (3·level)/4 + AGI_mod + sum(dodge_bonus)` — the level term applies to players and creatures alike, so accuracy is driven by the level gap rather than saturating at high level.
 - Example: `dodge_bonus: 1` on a pair of traveler boots → +1 DC for whoever wears them.
+
+### `bab_track`
+- Type: string — one of `full`, `three_quarter`, `half`
+- Optional: yes (creature/NPC definitions only)
+- Default: `three_quarter`
+- Meaning: the creature's Base Attack Bonus track, controlling how its to-hit scales with level. A combatant's melee/ranged to-hit is `d20 + ability_mod(STR/AGI) + bab_at(track, level)` (a natural 20 always hits, a natural 1 always misses). Full = `+1/level` (brutes like the Cyclops), three_quarter = `+3/4 levels` (most creatures), half = `+1/2 levels`. Players use their **class** track (Fighter full, Cleric/Vagabond ¾, Wizard ½), not this field.
+- Example: `bab_track: full` on the Cyclops keeps it accurate at level 8.
 
 ### `use_effects`
 - Type: mapping
@@ -1888,36 +1904,44 @@ Top-level fields:
 - Meaning: damage type tag for the spell's damage. Shown in the cast log (e.g. `Cast Frost Lance on Goblin (frost damage).`); no resistance math is applied yet. Heal/buff spells with `damage: 0.0` can omit this field.
 
 ### `restore_health`
-- Type: float
+- Type: float **or roll-expression string**
 - Optional: yes
 - Default: `0.0`
-- Meaning: health restored by the spell
+- Meaning: health restored by the spell. A bare number is a flat amount
+  (back-compat); a string is a damage-style expression rolled against the
+  **caster's** attributes and level, e.g. `"2d8+wil_mod*2+level"` — the
+  shipping Cleric heals scale this way.
 
 ### `restore_mana`
-- Type: float
+- Type: float or roll-expression string
 - Optional: yes
 - Default: `0.0`
-- Meaning: mana restored by the spell
+- Meaning: mana restored by the spell. Same forms as `restore_health`.
 
 ### `buffs_self`
-- Type: array of `EffectSpec`
+- Type: array of `ScalableEffectSpec`
 - Optional: yes
 - Default: empty list
 - Meaning: timed magical effects applied to the caster. Each entry is `{ kind,
-  magnitude, seconds, secondary_magnitude? }`. Most kinds upsert on the
-  caster's `MagicEffects` — re-applying refreshes duration and keeps the
-  stronger magnitude (smaller magnitude for `haste` since lower = faster).
-  The stacking kinds (`paralyze`, `chill`, `burning`, `poisoned`, `drunk`)
-  always append a new independent entry instead. `secondary_magnitude` is
-  optional and only consulted by `chill` (slow multiplier).
+  magnitude, seconds, secondary_magnitude? }`. **`magnitude` accepts a bare
+  number or a roll-expression string** (`"1+foc_mod/3+level/6"`), resolved
+  against the caster at cast time — shipping DoT spells scale their per-tick
+  damage this way; fractional flat multipliers (haste `0.7`) pass through
+  untouched. Most kinds upsert on the caster's `MagicEffects` — re-applying
+  refreshes duration and keeps the stronger magnitude (smaller magnitude for
+  `haste` since lower = faster). The stacking kinds (`paralyze`, `chill`,
+  `burning`, `poisoned`, `drunk`) always append a new independent entry
+  instead. `secondary_magnitude` is optional, stays a plain float, and is only
+  consulted by `chill` (slow multiplier).
 
 ### `buffs_target`
-- Type: array of `EffectSpec`
+- Type: array of `ScalableEffectSpec`
 - Optional: yes
 - Default: empty list
 - Meaning: timed magical effects applied to the targeted NPC (ignored for
-  `untargeted` spells). Same merge rules as `buffs_self`. `MagicEffects` is
-  lazily attached to NPCs that don't already carry it.
+  `untargeted` spells). Same forms and merge rules as `buffs_self`
+  (expression magnitudes resolve against the caster at cast time).
+  `MagicEffects` is lazily attached to NPCs that don't already carry it.
 
 ### `clears_self`
 - Type: array of `EffectKind`
