@@ -25,6 +25,11 @@ use crate::world::WorldConfig;
 #[derive(Resource, Default)]
 pub struct AutosaveTimer {
     pub elapsed_since_save: f64,
+    /// Character ids captured when the interval elapsed, drained one per
+    /// frame. Serializing + writing every player synchronously in a single
+    /// frame caused a periodic hitch that grew with player count; staggering
+    /// bounds the per-frame cost at one blocking SQLite write.
+    pub pending: Vec<i64>,
 }
 
 type PlayerStateQueryData<'a> = (
@@ -182,17 +187,25 @@ pub fn autosave_all_players(
     player_query: Query<PlayerStateQueryData, PlayerStateQueryFilter>,
 ) {
     timer.elapsed_since_save += time.delta_secs_f64();
-    if timer.elapsed_since_save < config.interval_seconds {
-        return;
+    if timer.elapsed_since_save >= config.interval_seconds {
+        timer.elapsed_since_save = 0.0;
+        timer.pending = player_query.iter().map(|row| row.1.id.0 as i64).collect();
     }
-    timer.elapsed_since_save = 0.0;
 
     let Some(db) = db.as_deref() else {
         return;
     };
 
-    for row in player_query.iter() {
-        let character_id = row.1.id.0 as i64;
+    // Drain at most one save per frame. Ids whose player vanished since the
+    // sweep started (disconnect path already saved them) are skipped without
+    // consuming this frame's save slot.
+    while let Some(character_id) = timer.pending.pop() {
+        let Some(row) = player_query
+            .iter()
+            .find(|row| row.1.id.0 as i64 == character_id)
+        else {
+            continue;
+        };
         save_entity(
             db,
             character_id,
@@ -201,6 +214,7 @@ pub fn autosave_all_players(
             space_manager.as_deref(),
             world_config.as_deref(),
         );
+        break;
     }
 }
 

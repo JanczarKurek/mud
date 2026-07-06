@@ -25,6 +25,7 @@ use bevy::shader::ShaderRef;
 use bevy::sprite_render::{AlphaMode2d, Material2d, Material2dKey, MeshMaterial2d};
 
 use crate::game::resources::ClientGameState;
+use crate::world::components::SpaceId;
 use crate::world::WorldConfig;
 
 const SHADER_PATH: &str = "shaders/fog_of_war.wgsl";
@@ -122,9 +123,11 @@ pub fn setup_fog_overlay(
 pub fn update_fog_overlay(
     client_state: Res<ClientGameState>,
     world_config: Res<WorldConfig>,
+    revisions: Res<crate::game::resources::ClientStateRevisions>,
     camera_query: Query<&Transform, (With<bevy::prelude::Camera2d>, Without<FogOverlay>)>,
     mut overlay_query: Query<(&MeshMaterial2d<FogOfWarMaterial>, &mut Transform), With<FogOverlay>>,
     mut materials: ResMut<Assets<FogOfWarMaterial>>,
+    mut last_built: Local<Option<(SpaceId, i32, i32, u64)>>,
 ) {
     let _t = crate::diagnostics::SystemTimer::new("update_fog_overlay", 1.0);
     let Ok((material_handle, mut overlay_transform)) = overlay_query.single_mut() else {
@@ -138,38 +141,9 @@ pub fn update_fog_overlay(
     let window_x0 = player_pos.tile_position.x - WINDOW_RADIUS;
     let window_y0 = player_pos.tile_position.y - WINDOW_RADIUS;
 
-    // Build the discovered-tile bitmask for the visible window. Fog is 2D —
-    // a tile reads as discovered for every floor as soon as the player has
-    // seen its `(x, y)` column on any floor.
-    let mut mask = [UVec4::ZERO; MASK_VEC4_COUNT];
-    if let Some(set) = client_state.discovered_tiles.get(&space_id) {
-        for &(tx, ty) in set.iter() {
-            let mx = tx - window_x0;
-            let my = ty - window_y0;
-            if !(0..WINDOW_W).contains(&mx) || !(0..WINDOW_H).contains(&my) {
-                continue;
-            }
-            let bit_index = (my * WINDOW_W + mx) as u32;
-            let u32_index = bit_index / 32;
-            let bit_in_u32 = bit_index % 32;
-            let vec4_index = (u32_index / 4) as usize;
-            let component = (u32_index % 4) as usize;
-            if vec4_index >= MASK_VEC4_COUNT {
-                continue;
-            }
-            let v = &mut mask[vec4_index];
-            let cur = v[component];
-            v[component] = cur | (1u32 << bit_in_u32);
-        }
-    }
-
-    // Tile-to-world transform — same convention as the darkness overlay
-    // (sprites at absolute world coords, origin at `-0.5 * tile_size`).
-    let tile_size = world_config.tile_size;
-    let origin_x = -0.5 * tile_size;
-    let origin_y = -0.5 * tile_size;
-
     // Park the overlay at the camera so the quad always covers the viewport.
+    // Runs every frame (the camera moves during the scroll lerp); the compare
+    // keeps the Transform clean when at rest.
     if let Ok(camera_transform) = camera_query.single() {
         let new_overlay_pos = Vec3::new(
             camera_transform.translation.x,
@@ -180,6 +154,61 @@ pub fn update_fog_overlay(
             overlay_transform.translation = new_overlay_pos;
         }
     }
+
+    // The mask only changes when the window moves (player crossed a tile
+    // boundary), the space changes, or new tiles were discovered. Rebuilding
+    // it — and worse, `get_mut`-dirtying the material, which re-uploads the
+    // full uniform block to the GPU — every frame is pure churn.
+    let build_key = (space_id, window_x0, window_y0, revisions.discovered);
+    if *last_built == Some(build_key) {
+        return;
+    }
+    *last_built = Some(build_key);
+
+    // Build the discovered-tile bitmask for the visible window. Fog is 2D —
+    // a tile reads as discovered for every floor as soon as the player has
+    // seen its `(x, y)` column on any floor. Iterate whichever is smaller:
+    // the discovered set (early game) or the fixed window (a well-explored
+    // map's set grows to tens of thousands of tiles).
+    let mut mask = [UVec4::ZERO; MASK_VEC4_COUNT];
+    if let Some(set) = client_state.discovered_tiles.get(&space_id) {
+        let mut set_bit = |mx: i32, my: i32| {
+            let bit_index = (my * WINDOW_W + mx) as u32;
+            let u32_index = bit_index / 32;
+            let bit_in_u32 = bit_index % 32;
+            let vec4_index = (u32_index / 4) as usize;
+            let component = (u32_index % 4) as usize;
+            if vec4_index >= MASK_VEC4_COUNT {
+                return;
+            }
+            let v = &mut mask[vec4_index];
+            let cur = v[component];
+            v[component] = cur | (1u32 << bit_in_u32);
+        };
+        if set.len() <= (WINDOW_W * WINDOW_H) as usize {
+            for &(tx, ty) in set.iter() {
+                let mx = tx - window_x0;
+                let my = ty - window_y0;
+                if (0..WINDOW_W).contains(&mx) && (0..WINDOW_H).contains(&my) {
+                    set_bit(mx, my);
+                }
+            }
+        } else {
+            for my in 0..WINDOW_H {
+                for mx in 0..WINDOW_W {
+                    if set.contains(&(window_x0 + mx, window_y0 + my)) {
+                        set_bit(mx, my);
+                    }
+                }
+            }
+        }
+    }
+
+    // Tile-to-world transform — same convention as the darkness overlay
+    // (sprites at absolute world coords, origin at `-0.5 * tile_size`).
+    let tile_size = world_config.tile_size;
+    let origin_x = -0.5 * tile_size;
+    let origin_y = -0.5 * tile_size;
 
     let Some(material) = materials.get_mut(&material_handle.0) else {
         return;

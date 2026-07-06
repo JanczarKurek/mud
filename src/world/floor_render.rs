@@ -241,10 +241,21 @@ pub fn build_floor_render_cells(
     flavor_gen: Res<crate::world::floor_flavors::FloorFlavorGeneration>,
     floor_debug: Res<FloorDebugRender>,
     floor_mask: Res<FloorMaskMap>,
-    mut seen_flavor_gen: Local<u64>,
+    revisions: Res<crate::game::resources::ClientStateRevisions>,
+    // (flavor generation, floor-maps revision) seen on the previous run —
+    // one Local to stay under Bevy's 16-system-param limit.
+    mut seen: Local<(u64, Option<u64>)>,
     existing: Query<(Entity, &FloorRenderCell)>,
 ) {
     let _t = crate::diagnostics::SystemTimer::new("build_floor_render_cells", 1.0);
+    let (seen_flavor_gen, seen_floor_rev) = &mut *seen;
+    // The grids in `client_state.floor_maps` only mutate through replicated
+    // events, and every such event bumps `revisions.floor_maps`. When the
+    // revision is unchanged, a floor we already built cannot have changed —
+    // skip `quick_hash`, which otherwise walks every tile of every visible
+    // floor (65k+ Strings per floor on the island map) each frame.
+    let grids_maybe_changed = *seen_floor_rev != Some(revisions.floor_maps);
+    *seen_floor_rev = Some(revisions.floor_maps);
     // A flavored atlas was (re)generated or the floor-debug toggle flipped — drop
     // cached hashes so every floor rebuilds (picks up the new image or the flat
     // debug-colour view). A floor-mask change does NOT force a full rebuild:
@@ -263,38 +274,69 @@ pub fn build_floor_render_cells(
     };
     let current_space_id = space.space_id;
 
-    // Sweep stale entries: anything for a different space, or for a z outside
-    // the visible range. Without this, dead floors leak across space switches
-    // and across the player's vertical movement.
+    // Sweep stale entries for *other spaces only*. Cells whose z left the
+    // visible range are deliberately kept alive: `sync_floor_render_transforms`
+    // parks them at z = -10000, and keeping them (plus their `built_for`
+    // entry) turns a stairs transition from a ~full-floor despawn + respawn
+    // spike into a pure transform pass. Off-range floors of the current space
+    // are re-validated below whenever a grid actually changes.
     let z_min = visible_floors.lowest_visible.max(0);
     let z_max = visible_floors.highest_visible;
     let stale: Vec<(SpaceId, i32)> = render_state
         .built_for
         .keys()
         .copied()
-        .filter(|(sid, z)| *sid != current_space_id || *z < z_min || *z > z_max)
+        .filter(|(sid, _)| *sid != current_space_id)
         .collect();
     if !stale.is_empty() {
         for key in &stale {
             render_state.built_for.remove(key);
         }
         for (entity, cell) in &existing {
-            if stale
-                .iter()
-                .any(|(sid, z)| *sid == cell.space_id && *z == cell.z)
-            {
+            if cell.space_id != current_space_id {
                 commands.entity(entity).despawn();
+            }
+        }
+    }
+
+    // A grid mutated somewhere: re-validate every cached floor of the current
+    // space — including ones outside the visible range, which the z-loop below
+    // never reaches — and evict any whose hash no longer matches, so they
+    // rebuild now (in range) or on return (out of range). This keeps the
+    // invariant that `built_for` always maps to the hash of the *current*
+    // grid, which is what lets the per-frame path below skip hashing entirely.
+    let mut evicted: HashSet<(SpaceId, i32)> = HashSet::new();
+    if grids_maybe_changed {
+        let cached: Vec<(SpaceId, i32)> = render_state
+            .built_for
+            .keys()
+            .copied()
+            .filter(|(sid, _)| *sid == current_space_id)
+            .collect();
+        for key in cached {
+            let up_to_date = client_state.floor_maps.get(&key).is_some_and(|grid| {
+                render_state.built_for.get(&key) == Some(&quick_hash(&grid.tiles))
+            });
+            if !up_to_date {
+                render_state.built_for.remove(&key);
+                evicted.insert(key);
+                for (entity, cell) in &existing {
+                    if cell.space_id == key.0 && cell.z == key.1 {
+                        commands.entity(entity).despawn();
+                    }
+                }
             }
         }
     }
 
     // Drain mask-dirty tiles for the active space, partitioned by z. Pushed by
     // `recompute_floor_mask_map` when a wall's clip rect first appears; consumed
-    // incrementally per z below. Tiles for other spaces stay queued until that
-    // space is active again.
+    // incrementally per z below. Tiles for other spaces — or for kept-alive
+    // floors currently outside the visible z range, which the loop below never
+    // reaches — stay queued until they come back into play.
     let mut dirty_by_z: HashMap<i32, Vec<(i32, i32)>> = HashMap::new();
     floor_dirty.cells.retain(|(s, dz, x, y)| {
-        if *s == current_space_id {
+        if *s == current_space_id && (z_min..=z_max).contains(dz) {
             dirty_by_z.entry(*dz).or_default().push((*x, *y));
             false
         } else {
@@ -315,8 +357,15 @@ pub fn build_floor_render_cells(
             }
             continue;
         };
-        let hash = quick_hash(&grid.tiles);
-        let grid_unchanged = render_state.built_for.get(&key) == Some(&hash);
+        // A present `built_for` entry is always current: entries are inserted
+        // with the grid's hash at build time and evicted in the re-validate
+        // pass above the moment any grid mutates. So the per-frame steady
+        // state does no hashing at all; `quick_hash` only runs for floors
+        // about to be (re)built.
+        let (grid_unchanged, hash) = match render_state.built_for.get(&key) {
+            Some(&built_hash) => (true, built_hash),
+            None => (false, quick_hash(&grid.tiles)),
+        };
 
         // Incremental mask rebuild: the grid is unchanged but a few mask tiles
         // flipped (a wall streamed into interest range as the player neared a
@@ -370,10 +419,14 @@ pub fn build_floor_render_cells(
 
         // Full rebuild: cold floor or the grid hash changed. Despawn only the
         // cells we're about to rebuild — leave other floors untouched so vertical
-        // movement doesn't churn the entire space.
-        for (entity, cell) in &existing {
-            if cell.space_id == current_space_id && cell.z == z {
-                commands.entity(entity).despawn();
+        // movement doesn't churn the entire space. Skip floors the re-validate
+        // pass already despawned this frame (commands are deferred, so those
+        // entities still show up in `existing`).
+        if !evicted.contains(&key) {
+            for (entity, cell) in &existing {
+                if cell.space_id == current_space_id && cell.z == z {
+                    commands.entity(entity).despawn();
+                }
             }
         }
 

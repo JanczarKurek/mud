@@ -430,6 +430,8 @@ fn rebuild_log_panel_contents(
     body_editors: Query<(Entity, &TextEditRoot), Without<LogPanelTitleEditor>>,
     mut text_edits: Query<&mut TextEdit>,
     mut last_signature: Local<Option<RebuildSignature>>,
+    revisions: Res<crate::game::resources::ClientStateRevisions>,
+    mut last_log_rev: Local<Option<u64>>,
 ) {
     let Some(palette) = palette.as_deref() else {
         return;
@@ -465,6 +467,24 @@ fn rebuild_log_panel_contents(
                 }
             }
         }
+    }
+
+    // `compute_signature` deep-clones every section/subsection body — too
+    // expensive to run every frame the panel is open. The log content only
+    // changes when `LogStateChanged` lands (tracked by `revisions.log`); the
+    // rest of the signature is the root's selection state, which we compare
+    // directly. Only when one of those moved do we pay for the full
+    // signature (which still guards against redundant rebuilds, e.g. a
+    // heartbeat LogStateChanged carrying identical content).
+    let log_rev_changed = *last_log_rev != Some(revisions.log);
+    *last_log_rev = Some(revisions.log);
+    let selection_changed = last_signature.as_ref().is_none_or(|sig| {
+        sig.selected_section != root.selected_section
+            || sig.selected_subsection != root.selected_subsection
+            || sig.editing_title != root.editing_title
+    });
+    if !log_rev_changed && !selection_changed {
+        return;
     }
 
     let signature = compute_signature(log, &root);

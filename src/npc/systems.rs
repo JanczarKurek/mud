@@ -214,6 +214,25 @@ pub fn update_roaming_npcs(
     let _t = crate::diagnostics::SystemTimer::new("npc:update_roaming_npcs", 1.0);
     let elapsed = time.elapsed_secs();
 
+    // Tick every NPC's step timer and bail before building any index when no
+    // NPC is due this frame — the common case, since step intervals are
+    // seconds and frames are milliseconds. Without this gate the combatant
+    // list, light-emitter list, blocker/LoS indices, and occupancy sets below
+    // were rebuilt from scratch (O(entities)) every frame for nothing.
+    let mut any_npc_ready = false;
+    for (_, _, _, _, _, _, mut timer, ..) in &mut npc_query {
+        let next = (timer.remaining_seconds - time.delta_secs()).max(0.0);
+        if timer.remaining_seconds != next {
+            timer.remaining_seconds = next;
+        }
+        if next <= 0.0 {
+            any_npc_ready = true;
+        }
+    }
+    if !any_npc_ready {
+        return;
+    }
+
     // One faction-tagged combatant list covering players *and* every
     // faction-bearing NPC (hostile mobs + companions). The faction-aware
     // detector reads this; the FSM resolves any target's live position from it,
@@ -358,6 +377,13 @@ pub fn update_roaming_npcs(
         overworld_object,
     ) in &mut npc_query
     {
+        // Timers were already ticked in the pre-pass above; NPCs whose timer
+        // hasn't expired skip the whole body (including the combatant scan in
+        // `companion_follow` below).
+        if timer.remaining_seconds > 0.0 {
+            continue;
+        }
+
         let last_damaged_at = last_damaged_query.get(entity).ok().map(|t| t.0);
 
         // This NPC's own side + (if it's a companion) where its owner is. A
@@ -376,11 +402,6 @@ pub fn update_roaming_npcs(
                 .find(|cb| cb.entity == c.owner && cb.space_id == resident.space_id)
                 .map(|cb| (cb.tile, c.follow_close_tiles))
         });
-
-        timer.remaining_seconds = (timer.remaining_seconds - time.delta_secs()).max(0.0);
-        if timer.remaining_seconds > 0.0 {
-            continue;
-        }
 
         let slow_multiplier = magic_effects.map_or(1.0, |e| e.npc_step_multiplier());
 

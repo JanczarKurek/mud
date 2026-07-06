@@ -45,9 +45,11 @@ echo "==> Building release binary inside FHS sandbox (mud2-fhs)"
 # against the dev `cargo run --bin mud2` cache (different RUSTFLAGS would
 # otherwise trigger a relink every time you switch contexts).
 export CARGO_TARGET_DIR="$REPO_ROOT/target/fhs"
-mud2-fhs -c 'cargo build --release --bin mud2 --no-default-features'
+# `--profile dist` carries the packaging-only lto/codegen-units/strip settings
+# (see Cargo.toml) so regular `--release` builds stay fast to iterate on.
+mud2-fhs -c 'cargo build --profile dist --bin mud2 --no-default-features'
 
-BIN="$CARGO_TARGET_DIR/release/mud2"
+BIN="$CARGO_TARGET_DIR/dist/mud2"
 if [[ ! -x "$BIN" ]]; then
     echo "error: $BIN missing after cargo build" >&2
     exit 1

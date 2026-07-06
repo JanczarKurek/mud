@@ -106,6 +106,41 @@ impl IndoorTileMap {
     }
 }
 
+/// Run condition for [`recompute_indoor_tile_map`]: the sticky indoor set can
+/// only grow when replicated world objects or painted floor maps changed
+/// (tracked via `ClientStateRevisions`), or when the definitions deciding
+/// occlusion (re)load. Without this gate the scan walks every tile of every
+/// loaded floor map each frame — 65k+ tiles per floor on the island map — for
+/// no output on frames where nothing changed.
+pub fn indoor_map_inputs_changed(
+    revisions: Res<crate::game::resources::ClientStateRevisions>,
+    definitions: Res<OverworldObjectDefinitions>,
+    floor_defs: Res<FloorTilesetDefinitions>,
+    mut last: Local<Option<(u64, u64)>>,
+) -> bool {
+    let current = (revisions.world_objects, revisions.floor_maps);
+    if definitions.is_changed() || floor_defs.is_changed() || *last != Some(current) {
+        *last = Some(current);
+        return true;
+    }
+    false
+}
+
+/// Run condition for [`recompute_floor_mask_map`]: clip rects come solely from
+/// replicated world objects and their definitions, so the sweep only needs to
+/// run when either changed.
+pub fn floor_mask_inputs_changed(
+    revisions: Res<crate::game::resources::ClientStateRevisions>,
+    definitions: Res<OverworldObjectDefinitions>,
+    mut last: Local<Option<u64>>,
+) -> bool {
+    if definitions.is_changed() || *last != Some(revisions.world_objects) {
+        *last = Some(revisions.world_objects);
+        return true;
+    }
+    false
+}
+
 /// Build the per-frame `IndoorTileMap` from one sweep over `world_objects`.
 /// Schedules after `apply_game_events_to_client_state` so the set reflects the
 /// latest replicated state. Matches the predicate in `is_indoor_tile`: an

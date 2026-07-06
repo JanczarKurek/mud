@@ -58,10 +58,17 @@ impl FloorMap {
 #[derive(Resource, Default, Clone, Debug)]
 pub struct FloorMaps {
     maps: HashMap<(SpaceId, i32), FloorMap>,
+    /// Bumped on every mutable access. `compute_events_for_peer` compares this
+    /// against a per-peer memo to skip the O(interest-window) per-tile diff on
+    /// frames where no grid could have changed. `get_mut` bumps conservatively
+    /// (the caller might not write) — floor edits are rare, so a spurious bump
+    /// only costs one extra diff pass.
+    revision: u64,
 }
 
 impl FloorMaps {
     pub fn insert(&mut self, space_id: SpaceId, z: i32, map: FloorMap) {
+        self.revision = self.revision.wrapping_add(1);
         self.maps.insert((space_id, z), map);
     }
 
@@ -70,11 +77,17 @@ impl FloorMaps {
     }
 
     pub fn get_mut(&mut self, space_id: SpaceId, z: i32) -> Option<&mut FloorMap> {
+        self.revision = self.revision.wrapping_add(1);
         self.maps.get_mut(&(space_id, z))
     }
 
     pub fn remove_space(&mut self, space_id: SpaceId) {
+        self.revision = self.revision.wrapping_add(1);
         self.maps.retain(|(sid, _), _| *sid != space_id);
+    }
+
+    pub fn revision(&self) -> u64 {
+        self.revision
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (SpaceId, i32, &FloorMap)> {

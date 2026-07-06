@@ -96,3 +96,28 @@
 - **Generation counter** (for consumers of *large* collections where snapshotting is too costly): the `ClientStateRevisions` resource (`src/game/resources.rs`) carries per-domain `u64`s bumped by `apply_game_events_to_client_state`; compare against a `Local<u64>`. See `mirror_client_world_objects_into_registry` and the `MinimapSignature` gate in `update_minimap_images`.
 
 **Gotcha to remember**: `ClientStateRevisions` is bumped only in the client fold system (`apply_game_events_to_client_state`), never in `apply_event_to_state` — the latter is shared with the server's per-peer baseline advance and must stay pure. Editor / asset-viewer `is_changed()` gates on `editor_state` / `viewer_state` / buffers are fine; those resources change only on explicit user action.
+
+---
+
+## Full-scale work every frame with no change gate (2026-07 audit round)
+
+**Symptom**: Missed frames in release, ~30fps in debug, growing worse as maps grew (256×256 island). Same bug *class* as the HUD-rebuild issue above, re-introduced by ~139 commits of new features — each new system did full-scan work per frame because nothing gated it.
+
+**The big five found by the audit** (all fixed, keep them fixed):
+- `recompute_indoor_tile_map` / `recompute_floor_mask_map` scanned every tile of every loaded floor map (65k+/floor) / every world object, every frame. Now gated with `run_if(indoor_map_inputs_changed / floor_mask_inputs_changed)` on `ClientStateRevisions` counters.
+- `build_floor_render_cells` ran `quick_hash` over the full floor String-array per visible floor per frame just to detect change. Now: a `built_for` entry is *invariantly current* — entries are evicted in a re-validate pass that only runs when `revisions.floor_maps` bumps, so the steady state does zero hashing. Corollary: never insert into `built_for` without the current grid hash.
+- `compute_events_for_peer` diffed the full ~3.7k-tile interest window and built a `ClientWorldObjectState` (two String clones) per in-range object, per peer per frame. Now: `FloorDiffCache` memo (revision + peer tile) skips the tile diff; world objects compare field-by-field against the baseline *before* the struct is materialized (exhaustive destructure — adding a field to the struct breaks the compare at compile time, on purpose).
+- `update_roaming_npcs` rebuilt blocker/LoS/combatant/occupancy indices O(entities) every frame even when no NPC was due to step. Now a timer pre-pass early-returns first.
+- `update_fog_overlay` walked the entire discovered-tiles set (up to 65k) and `get_mut`-dirtied the fog material (full GPU uniform re-upload) every frame. Now gated on (space, window origin, `revisions.discovered`); iterates whichever is smaller, window or set.
+
+**New revision domains** in `ClientStateRevisions`: `floor_maps` (grid edits ONLY — `map_tiles` also bumps on fog discovery, which fires on nearly every step, so floor-render systems must NOT gate on `map_tiles`), `discovered`, `log`, `inventory`. Server-side, `FloorMaps::revision()` bumps on every mutable access.
+
+**Frame-spike fixes**: floor cells for out-of-range z are now kept alive (parked at z=-10000 by `sync_floor_render_transforms`) instead of despawned+respawned on stairs (~66k entities/frame on the island); autosave saves one player per frame from a queue instead of all players in one frame.
+
+**Gotchas discovered this round**:
+- Deref-coercing a `Mut<T>` into a `&mut T` at a call site marks it changed even if the callee never writes — helper closures for compare-then-write must take `&mut Mut<T>`.
+- Calling any `&mut self` method on a `ResMut` resource (e.g. `DockedPanelState::open_nearby_npcs` every frame in the auto-open path, `panel_mut` in the title sync) DerefMuts the resource and permanently defeats every `resource_changed::<T>` gate downstream. Check with the immutable getter first.
+- `sprite.texture_atlas.as_mut()` dirties the whole `Sprite` (re-extract) — read `as_ref()` first and only take the `&mut` when the atlas index actually advances (`advance_animation_timers`).
+- Unconditional `node.width = percent(...)` on UI bars forces relayout every frame; the value is almost always identical (`sync_vital_bars` et al.).
+- `SystemTimer` is a no-op unless `diagnostics::enable_system_timers()` ran (done by `DiagnosticsPlugin`); the headless server no longer pays a Mutex per instrumented call.
+- Debug builds: `[profile.dev] opt-level = 1` + `[profile.dev.package."*"] opt-level = 3` in `Cargo.toml` — do not remove; opt-level 0 own-code was a large chunk of the 30fps.

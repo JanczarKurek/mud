@@ -102,14 +102,31 @@ path = "src/bin/floor_viewer.rs"
 [profile.dev]
 debug = "line-tables-only"
 split-debuginfo = "unpacked"
-
-[profile.dev.package."*"]
+# Light optimization for our own code — debug builds at opt-level 0 ran the
+# game at ~30fps. Level 1 keeps compile times and debuggability reasonable
+# while making `cargo run` playable.
 opt-level = 1
 
-[profile.release]
-strip = "symbols"
-lto = "thin"
-codegen-units = 1
+# Full optimization for dependencies (Bevy, wgpu, image decoders …). They are
+# compiled once and cached, so this costs one long cold build and nothing on
+# incremental rebuilds — standard Bevy guidance for usable dev-mode perf.
+[profile.dev.package."*"]
+opt-level = 3
+
+# Day-to-day `cargo run --release` profile: cargo defaults (16 codegen units,
+# no cross-crate LTO), so the final mud2 crate compiles in parallel instead of
+# pinning one core for minutes after every source change.
 # `panic = "abort"` would conflict with `bevy_dylib` (default `dynamic_linking`
 # feature), which must be built with unwinding. Leave panic at the default
 # `unwind` so `cargo build --release` works without `--no-default-features`.
+[profile.release]
+
+# Distribution profile — used only by packaging/build-appimage.sh. The
+# LTO + single-codegen-unit + strip combo buys a smaller, slightly faster
+# binary at the cost of a long single-threaded tail compile, which is why it
+# lives here and not in `release`.
+[profile.dist]
+inherits = "release"
+strip = "symbols"
+lto = "thin"
+codegen-units = 1

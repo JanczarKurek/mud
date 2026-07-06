@@ -222,10 +222,20 @@ pub fn advance_animation_timers(
             }
         }
 
-        if let Some(atlas) = sprite.texture_atlas.as_mut() {
-            atlas.index = (animated.clip_row * animated.atlas_columns
-                + animated.clip_start_col
-                + animated.frame_index) as usize;
+        let target_index = (animated.clip_row * animated.atlas_columns
+            + animated.clip_start_col
+            + animated.frame_index) as usize;
+        // Read immutably first: `sprite.texture_atlas.as_mut()` DerefMuts the
+        // Sprite and re-extracts every animated sprite every frame, even on
+        // the (vast majority of) frames where the animation didn't advance.
+        if sprite
+            .texture_atlas
+            .as_ref()
+            .is_some_and(|atlas| atlas.index != target_index)
+        {
+            if let Some(atlas) = sprite.texture_atlas.as_mut() {
+                atlas.index = target_index;
+            }
         }
     }
 }

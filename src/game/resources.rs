@@ -859,4 +859,18 @@ pub struct ClientStateRevisions {
     /// Bumped on `FloorMapReplaced` / `FloorTileSet` / `DiscoveredTilesReplaced`
     /// / `TilesDiscovered` — i.e. anything that changes the painted map window.
     pub map_tiles: u64,
+    /// Bumped on `FloorMapReplaced` / `FloorTileSet` only — actual floor-grid
+    /// edits, *not* fog-of-war discovery. Discovery fires on nearly every step,
+    /// so systems that only care about painted tiles (floor render, indoor
+    /// map) must gate on this instead of `map_tiles`.
+    pub floor_maps: u64,
+    /// Bumped on `DiscoveredTilesReplaced` / `TilesDiscovered` — fog-of-war
+    /// progress for the local player.
+    pub discovered: u64,
+    /// Bumped on `LogStateChanged` — the per-character log (quests/notes).
+    pub log: u64,
+    /// Bumped on `InventoryChanged` / `ContainerChanged` / `ContainerRemoved`
+    /// / `PlayerStorageChanged` — everything the backpack / equipment /
+    /// container-slot UIs render from.
+    pub inventory: u64,
 }

@@ -418,6 +418,28 @@ fn hp_fill_color(ratio: f32) -> Color {
     }
 }
 
+/// Run condition for [`sync_nearby_npcs_panel`]. The panel renders from the
+/// world-object slice (revision-tracked), the player's tile, and the current
+/// target; a freshly spawned list (undocking to a floating window) needs one
+/// pass to populate. Ungated, the system rebuilt and sorted the candidate Vec
+/// from all world objects every frame.
+pub fn nearby_npcs_inputs_changed(
+    revisions: Res<crate::game::resources::ClientStateRevisions>,
+    client_state: Res<ClientGameState>,
+    docked_panel_state: Res<DockedPanelState>,
+    added_lists: Query<(), Added<NearbyNpcsList>>,
+    mut last: Local<Option<(u64, Option<TilePosition>, Option<u64>)>>,
+) -> bool {
+    let key = (
+        revisions.world_objects,
+        client_state.player_tile_position,
+        client_state.current_target_object_id,
+    );
+    let changed = *last != Some(key) || docked_panel_state.is_changed() || !added_lists.is_empty();
+    *last = Some(key);
+    changed
+}
+
 /// Two-phase reconciler for the Nearby NPCs panel:
 ///   - Phase A: when the sorted (threat_tier, distance) sequence of object_ids
 ///     changes, despawn all rows and respawn them in the new order. The
@@ -487,9 +509,19 @@ pub fn sync_nearby_npcs_panel(
         .map(|s| s.auto_open_nearby_npcs_panel)
         .unwrap_or(false);
     if auto_open {
+        // Check open-state through the immutable getter first: calling the
+        // `&mut self` open/close helpers unconditionally DerefMuts
+        // `DockedPanelState` every frame, defeating every
+        // `resource_changed::<DockedPanelState>` gate (and re-upserting the
+        // panel each frame while any NPC is nearby).
+        let is_open = docked_panel_state
+            .panel(DockedPanelState::NEARBY_NPCS_PANEL_ID)
+            .is_some();
         if npcs.is_empty() {
-            docked_panel_state.close_nearby_npcs();
-        } else {
+            if is_open {
+                docked_panel_state.close_nearby_npcs();
+            }
+        } else if !is_open {
             docked_panel_state.open_nearby_npcs();
         }
     }
@@ -728,12 +760,20 @@ pub fn sync_vital_bars(
     let health_ratio = normalized_ratio(vital_stats.health, vital_stats.max_health);
     let mana_ratio = normalized_ratio(vital_stats.mana, vital_stats.max_mana);
 
+    // Compare-then-write: an unconditional `node.width =` DerefMuts the Node
+    // and re-runs UI layout every frame even when vitals are unchanged.
+    let health_width = percent(health_ratio * 100.0);
     for mut node in &mut health_query {
-        node.width = percent(health_ratio * 100.0);
+        if node.width != health_width {
+            node.width = health_width;
+        }
     }
 
+    let mana_width = percent(mana_ratio * 100.0);
     for mut node in &mut mana_query {
-        node.width = percent(mana_ratio * 100.0);
+        if node.width != mana_width {
+            node.width = mana_width;
+        }
     }
 }
 
@@ -749,8 +789,11 @@ pub fn sync_exertion_bar(
         return;
     };
     let stamina_ratio = normalized_ratio(exertion.max - exertion.current, exertion.max);
+    let stamina_width = percent(stamina_ratio * 100.0);
     for mut node in &mut exertion_query {
-        node.width = percent(stamina_ratio * 100.0);
+        if node.width != stamina_width {
+            node.width = stamina_width;
+        }
     }
 }
 
@@ -825,8 +868,11 @@ pub fn sync_xp_bar(
         Some(span) if span > 0 => (view.xp_into_level as f32 / span as f32).clamp(0.0, 1.0),
         _ => 1.0,
     };
+    let fill_width = percent(ratio * 100.0);
     for mut node in &mut fill_query {
-        node.width = percent(ratio * 100.0);
+        if node.width != fill_width {
+            node.width = fill_width;
+        }
     }
 
     let label = match view.xp_for_next {
@@ -1210,6 +1256,19 @@ fn classify_chat_line(line: &str) -> bevy_terminal::LineStyle {
     } else {
         bevy_terminal::LineStyle::ChatSay
     }
+}
+
+/// Shared run condition for the `sync_context_menu_*` family. The menu's
+/// contents and position depend only on `ContextMenuState` (mutated on
+/// right-click / action selection), plus the root's own `ComputedNode` — the
+/// menu is positioned with its laid-out size, which only resolves on the
+/// frame after it opens. Without this gate ~15 systems DerefMut a `Node`
+/// every frame while the menu sits closed.
+pub fn context_menu_inputs_changed(
+    context_menu_state: Res<ContextMenuState>,
+    root_layout_changed: Query<(), (With<ContextMenuRoot>, Changed<ComputedNode>)>,
+) -> bool {
+    context_menu_state.is_changed() || !root_layout_changed.is_empty()
 }
 
 pub fn sync_context_menu_root(
@@ -2299,9 +2358,15 @@ pub fn sync_jump_targeting_ui(
         return;
     };
 
+    // Compare-then-write on the hide paths: this system runs every frame and
+    // the idle case (not in jump-target mode) must not dirty the nodes.
     if cursor_state.mode != CursorMode::JumpTarget {
-        *highlight_vis = Visibility::Hidden;
-        *info_vis = Visibility::Hidden;
+        if *highlight_vis != Visibility::Hidden {
+            *highlight_vis = Visibility::Hidden;
+        }
+        if *info_vis != Visibility::Hidden {
+            *info_vis = Visibility::Hidden;
+        }
         return;
     }
 
@@ -2309,8 +2374,12 @@ pub fn sync_jump_targeting_ui(
         return;
     };
     let Some(cursor_position) = window.cursor_position() else {
-        *highlight_vis = Visibility::Hidden;
-        *info_vis = Visibility::Hidden;
+        if *highlight_vis != Visibility::Hidden {
+            *highlight_vis = Visibility::Hidden;
+        }
+        if *info_vis != Visibility::Hidden {
+            *info_vis = Visibility::Hidden;
+        }
         return;
     };
     let Some(player_position) = client_state.player_tile_position else {
@@ -2835,6 +2904,25 @@ fn can_read_target(type_id: &str, definitions: &OverworldObjectDefinitions) -> b
         .is_some_and(|def| def.text_kind.is_some() || def.engravable)
 }
 
+/// Run condition for [`sync_docked_panel_layout`]: panel rows only move when
+/// `DockedPanelState` changes (open/close/resize/float — user actions), or
+/// when a panel's UI entities were just spawned and need their initial layout.
+/// Requires `sync_docked_panel_titles` to stay compare-then-write, otherwise
+/// the state is dirtied every frame and this gate never skips.
+pub fn docked_panel_layout_inputs_changed(
+    docked_panel_state: Res<DockedPanelState>,
+    added: Query<
+        (),
+        Or<(
+            Added<DockedPanelRoot>,
+            Added<DockedPanelCloseButton>,
+            Added<DockedPanelResizeHandle>,
+        )>,
+    >,
+) -> bool {
+    docked_panel_state.is_changed() || !added.is_empty()
+}
+
 pub fn sync_docked_panel_layout(
     docked_panel_state: Res<DockedPanelState>,
     mut panel_queries: ParamSet<(
@@ -2850,10 +2938,13 @@ pub fn sync_docked_panel_layout(
     // `MountablePanel` impl.
     let is_floating = |panel_id: usize| docked_panel_state.is_floating(panel_id);
 
+    // All writes below are compare-then-write: this system runs whenever the
+    // panel state changes, and an unconditional Node/Visibility DerefMut would
+    // relayout every panel when only one actually moved.
     for (panel_root, mut node, mut visibility) in &mut panel_queries.p0() {
         let panel = docked_panel_state.panel(panel_root.panel_id);
         let floating = is_floating(panel_root.panel_id);
-        if let Some(panel) = panel.filter(|_| !floating) {
+        let (display, height, top, vis) = if let Some(panel) = panel.filter(|_| !floating) {
             let top_offset = docked_panel_state
                 .panels
                 .iter()
@@ -2861,19 +2952,33 @@ pub fn sync_docked_panel_layout(
                 .filter(|candidate| !is_floating(candidate.id))
                 .map(|candidate| candidate.height + 8.0)
                 .sum::<f32>();
-            node.display = Display::Flex;
-            node.height = px(panel.height);
-            node.top = px(top_offset);
-            *visibility = Visibility::Visible;
+            (
+                Display::Flex,
+                Some(px(panel.height)),
+                px(top_offset),
+                Visibility::Visible,
+            )
         } else {
-            node.display = Display::None;
-            node.top = px(0.0);
-            *visibility = Visibility::Hidden;
+            (Display::None, None, px(0.0), Visibility::Hidden)
+        };
+        if node.display != display {
+            node.display = display;
+        }
+        if let Some(height) = height {
+            if node.height != height {
+                node.height = height;
+            }
+        }
+        if node.top != top {
+            node.top = top;
+        }
+        if *visibility != vis {
+            *visibility = vis;
         }
     }
 
     for (close_button, mut visibility) in &mut panel_queries.p1() {
-        *visibility = if docked_panel_state
+        let vis = if docked_panel_state
             .panel(close_button.panel_id)
             .is_some_and(|panel| panel.closable)
             && !is_floating(close_button.panel_id)
@@ -2882,10 +2987,13 @@ pub fn sync_docked_panel_layout(
         } else {
             Visibility::Hidden
         };
+        if *visibility != vis {
+            *visibility = vis;
+        }
     }
 
     for (resize_handle, mut visibility) in &mut panel_queries.p2() {
-        *visibility = if docked_panel_state
+        let vis = if docked_panel_state
             .panel(resize_handle.panel_id)
             .is_some_and(|panel| panel.resizable)
             && !is_floating(resize_handle.panel_id)
@@ -2894,6 +3002,9 @@ pub fn sync_docked_panel_layout(
         } else {
             Visibility::Hidden
         };
+        if *visibility != vis {
+            *visibility = vis;
+        }
     }
 }
 
@@ -2935,12 +3046,42 @@ pub fn sync_docked_panel_titles(
             None => String::new(),
         };
 
-        if let Some(panel) = docked_panel_state.panel_mut(title.panel_id) {
-            panel.title = resolved_title.clone();
+        // Only take the mutable borrow when the title really changed —
+        // `panel_mut` DerefMuts `DockedPanelState`, and dirtying it every
+        // frame would defeat every `resource_changed::<DockedPanelState>`
+        // gate downstream (notably `sync_docked_panel_layout`).
+        let stale = docked_panel_state
+            .panel(title.panel_id)
+            .is_some_and(|panel| panel.title != resolved_title);
+        if stale {
+            if let Some(panel) = docked_panel_state.panel_mut(title.panel_id) {
+                panel.title = resolved_title.clone();
+            }
         }
 
-        text.0 = resolved_title;
+        if text.0 != resolved_title {
+            text.0 = resolved_title;
+        }
     }
+}
+
+/// Run condition for the item/equipment-slot sync family. Those systems
+/// render purely from the inventory/container slice of `ClientGameState`
+/// (tracked by `ClientStateRevisions.inventory`) and the docked-panel layout;
+/// slot entities spawned by a panel opening need one initial pass, hence the
+/// `Added` check. Ungated they reloaded slot images and rewrote visibility
+/// for every slot every frame, even with all panels closed.
+pub fn item_slot_inputs_changed(
+    revisions: Res<crate::game::resources::ClientStateRevisions>,
+    docked_panel_state: Res<DockedPanelState>,
+    added: Query<(), Or<(Added<ItemSlotButton>, Added<ItemSlotImage>)>>,
+    mut last_inventory: Local<Option<u64>>,
+) -> bool {
+    let changed = *last_inventory != Some(revisions.inventory)
+        || docked_panel_state.is_changed()
+        || !added.is_empty();
+    *last_inventory = Some(revisions.inventory);
+    changed
 }
 
 pub fn sync_item_slot_button_visibility(
@@ -3189,11 +3330,14 @@ pub fn update_take_partial_popup_visibility(
     let Ok(mut vis) = popup_query.single_mut() else {
         return;
     };
-    *vis = if take_partial_state.source.is_some() {
+    let new_vis = if take_partial_state.source.is_some() {
         Visibility::Visible
     } else {
         Visibility::Hidden
     };
+    if *vis != new_vis {
+        *vis = new_vis;
+    }
 }
 
 pub fn sync_take_partial_label(
@@ -3204,7 +3348,10 @@ pub fn sync_take_partial_label(
         return;
     };
     if take_partial_state.source.is_some() {
-        text.0 = take_partial_state.selected_amount.to_string();
+        let new_text = take_partial_state.selected_amount.to_string();
+        if text.0 != new_text {
+            text.0 = new_text;
+        }
     }
 }
 
@@ -3668,12 +3815,38 @@ pub fn sync_drag_preview(
         None => None,
     };
 
+    // Idle path (no drag in progress) runs every frame — compare-then-write
+    // so it stops dirtying the preview nodes once they're already hidden.
+    let hide_preview = |root_visibility: &mut Mut<Visibility>,
+                            image_visibility: &mut Mut<Visibility>,
+                            quantity_visibility: &mut Mut<Visibility>,
+                            label: &mut Mut<Text>,
+                            quantity_text: &mut Mut<Text>| {
+        if **root_visibility != Visibility::Hidden {
+            **root_visibility = Visibility::Hidden;
+        }
+        if **image_visibility != Visibility::Hidden {
+            **image_visibility = Visibility::Hidden;
+        }
+        if **quantity_visibility != Visibility::Hidden {
+            **quantity_visibility = Visibility::Hidden;
+        }
+        if !label.0.is_empty() {
+            label.0.clear();
+        }
+        if !quantity_text.0.is_empty() {
+            quantity_text.0.clear();
+        }
+    };
+
     let Some((label_text, sprite_path, quantity)) = resolved else {
-        *root_visibility = Visibility::Hidden;
-        *image_visibility = Visibility::Hidden;
-        *quantity_visibility = Visibility::Hidden;
-        label.0.clear();
-        quantity_text.0.clear();
+        hide_preview(
+            &mut root_visibility,
+            &mut image_visibility,
+            &mut quantity_visibility,
+            &mut label,
+            &mut quantity_text,
+        );
         return;
     };
 
@@ -3681,11 +3854,13 @@ pub fn sync_drag_preview(
         return;
     };
     let Some(cursor_position) = window.cursor_position() else {
-        *root_visibility = Visibility::Hidden;
-        *image_visibility = Visibility::Hidden;
-        *quantity_visibility = Visibility::Hidden;
-        label.0.clear();
-        quantity_text.0.clear();
+        hide_preview(
+            &mut root_visibility,
+            &mut image_visibility,
+            &mut quantity_visibility,
+            &mut label,
+            &mut quantity_text,
+        );
         return;
     };
 
@@ -3730,9 +3905,17 @@ pub fn sync_item_tooltip(
         return;
     };
 
-    let hide = |tooltip_visibility: &mut Visibility, label: &mut Text| {
-        *tooltip_visibility = Visibility::Hidden;
-        label.0.clear();
+    // Takes `&mut Mut<_>` (not `&mut _`) deliberately: deref-coercing a `Mut`
+    // at the call site would mark it changed even when we end up not writing.
+    // The common every-frame path is "nothing hovered, tooltip already
+    // hidden", which must not dirty the nodes.
+    let hide = |tooltip_visibility: &mut Mut<Visibility>, label: &mut Mut<Text>| {
+        if **tooltip_visibility != Visibility::Hidden {
+            **tooltip_visibility = Visibility::Hidden;
+        }
+        if !label.0.is_empty() {
+            label.0.clear();
+        }
     };
 
     if drag_state.source.is_some() {
@@ -3770,11 +3953,21 @@ pub fn sync_item_tooltip(
         return;
     };
 
-    *tooltip_visibility = Visibility::Visible;
+    if *tooltip_visibility != Visibility::Visible {
+        *tooltip_visibility = Visibility::Visible;
+    }
     let anchor = cursor_to_val_px(cursor_position, &ui_scale);
-    tooltip_node.left = px(anchor.x + 18.0);
-    tooltip_node.top = px(anchor.y - 24.0);
-    label.0 = name;
+    let left = px(anchor.x + 18.0);
+    let top = px(anchor.y - 24.0);
+    if tooltip_node.left != left {
+        tooltip_node.left = left;
+    }
+    if tooltip_node.top != top {
+        tooltip_node.top = top;
+    }
+    if label.0 != name {
+        label.0 = name;
+    }
 }
 
 pub fn handle_docked_panel_scrolling(

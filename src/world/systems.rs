@@ -41,6 +41,7 @@ pub fn sync_client_world_projection(
         &mut WorldVisual,
         &mut Facing,
         Option<&mut VisualOffset>,
+        Option<&RenderStackOrder>,
     )>,
 ) {
     let _t = crate::diagnostics::SystemTimer::new("sync_client_world_projection", 1.0);
@@ -108,6 +109,7 @@ pub fn sync_client_world_projection(
             mut world_visual,
             mut facing,
             existing_visual_offset,
+            existing_stack_order,
         )) = projected_query.get_mut(entity)
         else {
             let entity = spawn_client_projected_world_object(
@@ -148,9 +150,16 @@ pub fn sync_client_world_projection(
             continue;
         }
 
-        view.space_id = object.position.space_id;
+        // All writes below are compare-then-write: an unconditional DerefMut
+        // marks the component changed every frame for every projected object,
+        // even when the replicated state is identical.
+        if view.space_id != object.position.space_id {
+            view.space_id = object.position.space_id;
+        }
         let old_tile = view.tile;
-        view.tile = object.position.tile_position;
+        if old_tile != object.position.tile_position {
+            view.tile = object.position.tile_position;
+        }
         if old_tile != view.tile {
             let dx = view.tile.x - old_tile.x;
             let dy = view.tile.y - old_tile.y;
@@ -171,30 +180,48 @@ pub fn sync_client_world_projection(
                 commands.entity(query_entity).insert(JustMoved { dx, dy });
             }
         }
-        if let Some(vitals) = object.vitals {
-            displayed_vitals.health = vitals.health;
-            displayed_vitals.max_health = vitals.max_health;
-            displayed_vitals.mana = vitals.mana;
-            displayed_vitals.max_mana = vitals.max_mana;
-        } else {
-            *displayed_vitals = DisplayedVitalStats::default();
+        let new_vitals = match object.vitals {
+            Some(vitals) => DisplayedVitalStats {
+                health: vitals.health,
+                max_health: vitals.max_health,
+                mana: vitals.mana,
+                max_mana: vitals.max_mana,
+            },
+            None => DisplayedVitalStats::default(),
+        };
+        if *displayed_vitals != new_vitals {
+            *displayed_vitals = new_vitals;
         }
         if let Some(definition) = definitions.get(&object.definition_id) {
-            world_visual.z_index = definition.render.z_index;
-            world_visual.block_size = definition.render.block_size;
-            world_visual.stack_order = definition.render.stack_order;
-            world_visual.hide_when_inside_facing = definition.render.hide_when_inside_facing;
-            world_visual.wall_corner = definition.render.wall_corner;
+            if world_visual.z_index != definition.render.z_index {
+                world_visual.z_index = definition.render.z_index;
+            }
+            if world_visual.block_size != definition.render.block_size {
+                world_visual.block_size = definition.render.block_size;
+            }
+            if world_visual.stack_order != definition.render.stack_order {
+                world_visual.stack_order = definition.render.stack_order;
+            }
+            if world_visual.hide_when_inside_facing != definition.render.hide_when_inside_facing {
+                world_visual.hide_when_inside_facing = definition.render.hide_when_inside_facing;
+            }
+            if world_visual.wall_corner != definition.render.wall_corner {
+                world_visual.wall_corner = definition.render.wall_corner;
+            }
         }
         if facing.0 != object.facing {
             facing.0 = object.facing;
         }
         // Mirror the authoritative `placement_seq` onto a `RenderStackOrder`
         // component so `sync_tile_transforms` can use it as a y-sort
-        // tiebreaker. `insert` overwrites if the component already exists.
-        commands
-            .entity(query_entity)
-            .insert(RenderStackOrder(object.placement_seq));
+        // tiebreaker. Only touch the entity when the value actually changed —
+        // a per-frame `insert` queues a command and re-triggers archetype
+        // bookkeeping for every projected object.
+        if existing_stack_order.map(|s| s.0) != Some(object.placement_seq) {
+            commands
+                .entity(query_entity)
+                .insert(RenderStackOrder(object.placement_seq));
+        }
     }
 
     let stale_object_ids = projection_state
@@ -653,9 +680,12 @@ pub fn sync_player_z(
         let view_floor = crate::world::components::floor_index(view.tile.z);
         let new_z = y_sort_z(view.tile.x, view.tile.y, view_floor, 0, 0) - 0.005;
         if (transform.translation.z - new_z).abs() > 0.001 {
-            info!(
+            trace!(
                 "player z update: tile_y={} tile_z={} z_index={} -> z={}",
-                view.tile.y, view.tile.z, world_visual.z_index, new_z
+                view.tile.y,
+                view.tile.z,
+                world_visual.z_index,
+                new_z
             );
             transform.translation.z = new_z;
         }

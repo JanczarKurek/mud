@@ -83,6 +83,10 @@ pub struct TcpServerPeer {
     /// diffs against a default `ClientGameState` and produces a full bootstrap
     /// stream.
     pub last_projection: Option<ClientGameState>,
+    /// Memo that lets `compute_events_for_peer` skip the per-tile floor diff
+    /// on quiet frames. Must be reset to default whenever `last_projection`
+    /// fails to advance (e.g. a failed send), or stale tiles never re-diff.
+    pub floor_diff_cache: crate::game::projection::FloorDiffCache,
     pub sync_complete: bool,
     pub manifest_sent: bool,
     pub latency: PeerLatencyState,

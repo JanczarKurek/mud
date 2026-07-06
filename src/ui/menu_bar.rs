@@ -359,7 +359,10 @@ pub fn sync_menu_dropdowns(
 ) {
     for (dropdown, mut node) in &mut dropdowns {
         let open = open_menu.open_id == Some(dropdown.menu);
-        node.display = if open { Display::Flex } else { Display::None };
+        let display = if open { Display::Flex } else { Display::None };
+        if node.display != display {
+            node.display = display;
+        }
         if !open {
             continue;
         }

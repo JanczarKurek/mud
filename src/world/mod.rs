@@ -63,8 +63,8 @@ use crate::world::floor_render::{
     FloorRenderState, FloorTilesetAtlases,
 };
 use crate::world::floors::{
-    recompute_floor_mask_map, recompute_indoor_tile_map, recompute_visible_floors, IndoorTileMap,
-    VisibleFloorRange,
+    floor_mask_inputs_changed, indoor_map_inputs_changed, recompute_floor_mask_map,
+    recompute_indoor_tile_map, recompute_visible_floors, IndoorTileMap, VisibleFloorRange,
 };
 use crate::world::fog_render::{setup_fog_overlay, update_fog_overlay, FogOfWarMaterial};
 use crate::world::lighting::{advance_world_clock, sync_object_light_components, WorldClock};
@@ -279,20 +279,23 @@ impl Plugin for WorldClientPlugin {
                         recompute_visible_floors
                             .after(apply_game_events_to_client_state)
                             .before(sync_tile_transforms),
-                        // Build the indoor-tile lookup once per frame so the
-                        // tint consumers (sync_tile_transforms,
-                        // sync_floor_render_transforms) get O(1) per-tile
-                        // lookups instead of O(world_objects) per call.
+                        // Build the indoor-tile lookup so the tint consumers
+                        // (sync_tile_transforms, sync_floor_render_transforms)
+                        // get O(1) per-tile lookups instead of O(world_objects)
+                        // per call. Gated: the scan itself is O(all floor
+                        // tiles) and must not run on quiet frames.
                         recompute_indoor_tile_map
                             .after(apply_game_events_to_client_state)
                             .before(sync_tile_transforms)
-                            .before(sync_floor_render_transforms),
+                            .before(sync_floor_render_transforms)
+                            .run_if(indoor_map_inputs_changed),
                         // Per-tile floor clip rects from wall objects; must run
                         // before the floor build so a wall's clip is applied the
-                        // same frame.
+                        // same frame. Gated on world-object changes.
                         recompute_floor_mask_map
                             .after(apply_game_events_to_client_state)
-                            .before(build_floor_render_cells),
+                            .before(build_floor_render_cells)
+                            .run_if(floor_mask_inputs_changed),
                         sync_tile_transforms.after(detect_player_movement),
                         sync_player_z,
                         sync_combat_health_bars,

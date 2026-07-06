@@ -63,7 +63,9 @@ const MAX_LIGHTS: usize = 32;
 const MASK_VEC4_COUNT: usize = 16;
 
 /// GPU uniforms. Layout must match the WGSL `DarknessUniforms` struct.
-#[derive(Clone, ShaderType)]
+/// `PartialEq` powers the compare-then-write in `update_darkness_overlay` —
+/// dirtying the material asset re-uploads the whole block to the GPU.
+#[derive(Clone, PartialEq, ShaderType)]
 pub struct DarknessUniforms {
     pub outdoor: Vec4,
     pub indoor: Vec4,
@@ -293,26 +295,39 @@ pub fn update_darkness_overlay(
         }
     }
 
-    let Some(material) = materials.get_mut(&material_handle.0) else {
-        return;
+    let new_uniforms = DarknessUniforms {
+        outdoor: Vec4::new(
+            outdoor_color[0],
+            outdoor_color[1],
+            outdoor_color[2],
+            outdoor_alpha,
+        ),
+        indoor: Vec4::new(indoor_rgb[0], indoor_rgb[1], indoor_rgb[2], indoor_alpha),
+        tile_xform: Vec4::new(origin_x, origin_y, tile_size, 0.0),
+        mask_origin: Vec4::new(
+            window_x0 as f32,
+            window_y0 as f32,
+            WINDOW_W as f32,
+            WINDOW_H as f32,
+        ),
+        counts: Vec4::new(count as f32, 0.0, 0.0, 0.0),
+        mask,
+        lights,
     };
-    material.uniforms.outdoor = Vec4::new(
-        outdoor_color[0],
-        outdoor_color[1],
-        outdoor_color[2],
-        outdoor_alpha,
-    );
-    material.uniforms.indoor = Vec4::new(indoor_rgb[0], indoor_rgb[1], indoor_rgb[2], indoor_alpha);
-    material.uniforms.tile_xform = Vec4::new(origin_x, origin_y, tile_size, 0.0);
-    material.uniforms.mask_origin = Vec4::new(
-        window_x0 as f32,
-        window_y0 as f32,
-        WINDOW_W as f32,
-        WINDOW_H as f32,
-    );
-    material.uniforms.counts = Vec4::new(count as f32, 0.0, 0.0, 0.0);
-    material.uniforms.mask = mask;
-    material.uniforms.lights = lights;
+    // Compare against the current uniforms through the immutable accessor:
+    // `get_mut` dirties the asset and re-uploads the uniform block to the GPU
+    // even when nothing changed. The block does change while the day/night
+    // curve is actively drifting, but stays identical for long stretches
+    // (indoors, night plateau, spaces without a curve).
+    if materials
+        .get(&material_handle.0)
+        .is_none_or(|material| material.uniforms == new_uniforms)
+    {
+        return;
+    }
+    if let Some(material) = materials.get_mut(&material_handle.0) {
+        material.uniforms = new_uniforms;
+    }
 }
 
 /// Map an ambient color (0..1 RGB) to a darkness alpha for the

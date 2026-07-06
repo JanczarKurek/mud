@@ -67,6 +67,9 @@ pub struct DiagnosticsPlugin;
 
 impl Plugin for DiagnosticsPlugin {
     fn build(&self, app: &mut App) {
+        // The spike-frame dump reads SystemTimer accumulations passively, so
+        // timers stay live whenever the diagnostics plugin is present.
+        enable_system_timers();
         app.add_plugins((
             FrameTimeDiagnosticsPlugin::default(),
             EntityCountDiagnosticsPlugin::default(),
@@ -644,6 +647,18 @@ struct ScheduleMarks {
     last_end: Option<Instant>,
 }
 
+/// Master switch for [`SystemTimer`]. Flipped on once by `DiagnosticsPlugin`
+/// (client modes only); everywhere else — headless server, auxiliary binaries,
+/// unit tests — every timer collapses to a no-op instead of paying two
+/// `Instant::now()` calls plus a global Mutex lock per instrumented call
+/// (notably `npc:astar`, which constructs one per pathfind invocation).
+static SYSTEM_TIMERS_ENABLED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+pub fn enable_system_timers() {
+    SYSTEM_TIMERS_ENABLED.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Drop-guard timer for ad-hoc per-system timing. Insert
 /// `let _t = SystemTimer::new("name", _);` at the top of any system you want
 /// timed; on drop, the elapsed milliseconds are added to a per-frame map
@@ -651,21 +666,25 @@ struct ScheduleMarks {
 /// existing call sites compile unchanged.
 pub struct SystemTimer {
     name: &'static str,
-    start: Instant,
+    /// `None` when timing is globally disabled — drop does nothing.
+    start: Option<Instant>,
 }
 
 impl SystemTimer {
     pub fn new(name: &'static str, _threshold_ms_unused: f32) -> Self {
-        Self {
-            name,
-            start: Instant::now(),
-        }
+        let start = SYSTEM_TIMERS_ENABLED
+            .load(std::sync::atomic::Ordering::Relaxed)
+            .then(Instant::now);
+        Self { name, start }
     }
 }
 
 impl Drop for SystemTimer {
     fn drop(&mut self) {
-        let ms = self.start.elapsed().as_secs_f32() * 1000.0;
+        let Some(start) = self.start else {
+            return;
+        };
+        let ms = start.elapsed().as_secs_f32() * 1000.0;
         if let Ok(mut t) = frame_timings().lock() {
             *t.entry(self.name).or_insert(0.0) += ms;
         }

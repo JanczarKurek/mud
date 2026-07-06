@@ -155,6 +155,18 @@ pub type ProjectionStockpileQuery<'w, 's> = Query<
     (With<Shopkeeper>, Without<Player>),
 >;
 
+/// Per-peer memo that lets `compute_events_for_peer` skip the O(interest
+/// window) per-tile floor diff on quiet frames: the scan's result can only
+/// differ from last time if a grid mutated (`FloorMaps::revision`) or the
+/// peer's window moved (their tile changed). Owned by the caller — a `Local`
+/// in the embedded collect system, a peer field on the TCP flush path. Reset
+/// to `default()` to force a full re-diff.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FloorDiffCache {
+    pub floor_maps_revision: Option<u64>,
+    pub tile: Option<TilePosition>,
+}
+
 /// Diffs the authoritative ECS against a per-peer baseline, returning a
 /// `Vec<GameEvent>` that, when folded into `previous`, produces the peer's
 /// next `ClientGameState`. Passing `&ClientGameState::default()` as `previous`
@@ -163,6 +175,7 @@ pub type ProjectionStockpileQuery<'w, 's> = Query<
 pub fn compute_events_for_peer(
     local_player_id: PlayerId,
     previous: &ClientGameState,
+    floor_diff_cache: &mut FloorDiffCache,
     player_query: &ProjectionPlayerQuery,
     object_query: &ProjectionObjectQuery,
     world_object_query: &ProjectionWorldObjectQuery,
@@ -193,7 +206,8 @@ pub fn compute_events_for_peer(
     let mut local_space_id: Option<SpaceId> = None;
     let mut local_tile_position: Option<TilePosition> = None;
     let mut local_persuasion_ranks: u8 = 0;
-    let mut seen_remote_player_ids: Vec<PlayerId> = Vec::new();
+    let mut seen_remote_player_ids: std::collections::HashSet<PlayerId> =
+        std::collections::HashSet::new();
     // Remote players are projected after the player loop ends so we know
     // local_space_id / local_tile_position regardless of iteration order.
     let mut deferred_remote_candidates: Vec<(
@@ -575,7 +589,7 @@ pub fn compute_events_for_peer(
             if resident.space_id != local_space || !in_interest_radius(local_tile, tile) {
                 continue;
             }
-            seen_remote_player_ids.push(projected.player_id);
+            seen_remote_player_ids.insert(projected.player_id);
             if previous.remote_players.get(&projected.player_id) != Some(&projected) {
                 events.push(GameEvent::RemotePlayerUpserted { player: projected });
             }
@@ -600,6 +614,16 @@ pub fn compute_events_for_peer(
         "local_tile_position should be Some whenever local_space_id is Some (set together)",
     );
     let _ = local_player_object_id;
+
+    // The per-tile window diff below is O((2R+1)²) per z-level — ~3.7k tile
+    // compares per floor per peer. Its outcome can only change when a grid
+    // mutated or this peer's window moved, so skip it on quiet frames. The
+    // bootstrap / resize arms (full `FloorMapReplaced`) stay active: they key
+    // off `previous.floor_maps` presence, which the memo does not cover.
+    let window_scan_needed = floor_diff_cache.floor_maps_revision != Some(floor_maps.revision())
+        || floor_diff_cache.tile != Some(local_tile);
+    floor_diff_cache.floor_maps_revision = Some(floor_maps.revision());
+    floor_diff_cache.tile = Some(local_tile);
 
     // Push every floor map *before* CurrentSpaceChanged so the renderer sees
     // each (space, z) grid populated by the time the space switch triggers a
@@ -640,7 +664,7 @@ pub fn compute_events_for_peer(
                 // client will be repaired on the first tick the player walks
                 // back into range (their per-peer baseline still has the old
                 // tile, so prev != current and the delta fires).
-                if local_tile.z != z {
+                if !window_scan_needed || local_tile.z != z {
                     continue;
                 }
                 let r = INTEREST_RADIUS.ceil() as i32;
@@ -684,7 +708,7 @@ pub fn compute_events_for_peer(
         }
     }
 
-    let mut current_container_ids = Vec::new();
+    let mut current_container_ids = std::collections::HashSet::new();
     for (container, object, resident, tile_position) in container_query.iter() {
         if resident.space_id != local_space_id {
             continue;
@@ -692,7 +716,7 @@ pub fn compute_events_for_peer(
         if !in_interest_radius(local_tile, *tile_position) {
             continue;
         }
-        current_container_ids.push(object.object_id);
+        current_container_ids.insert(object.object_id);
         let current_slots = &container.slots;
         if previous.container_slots.get(&object.object_id) != Some(current_slots) {
             events.push(GameEvent::ContainerChanged {
@@ -710,7 +734,7 @@ pub fn compute_events_for_peer(
         }
     }
 
-    let mut current_world_object_ids = Vec::new();
+    let mut current_world_object_ids = std::collections::HashSet::new();
     for (
         space_resident,
         tile_position,
@@ -743,7 +767,7 @@ pub fn compute_events_for_peer(
         if !in_interest_radius(local_tile, *tile_position) {
             continue;
         }
-        current_world_object_ids.push(object.object_id);
+        current_world_object_ids.insert(object.object_id);
         let is_targeting_local_player = match (npc_combat_target, local_player_entity) {
             (Some(target), Some(local_entity)) => target.entity == local_entity,
             _ => false,
@@ -764,17 +788,71 @@ pub fn compute_events_for_peer(
         } else {
             None
         };
+        let projected_vitals = vitals.map(|vitals| ClientVitalStats {
+            health: vitals.health,
+            max_health: vitals.max_health,
+            mana: vitals.mana,
+            max_mana: vitals.max_mana,
+        });
+
+        // Compare against the baseline *before* materializing the projected
+        // struct: building `ClientWorldObjectState` clones two Strings
+        // (definition_id, state), and doing that for every in-range object on
+        // every frame per peer dominated idle projection cost. The exhaustive
+        // destructure (no `..`) means adding a field to the struct is a
+        // compile error here — keep it in sync with the constructor below.
+        let unchanged = previous.world_objects.get(&object.object_id).is_some_and(
+            |ClientWorldObjectState {
+                 object_id: _,
+                 definition_id: prev_definition_id,
+                 position: prev_position,
+                 tile_position: prev_tile_position,
+                 vitals: prev_vitals,
+                 is_container: prev_is_container,
+                 is_npc: prev_is_npc,
+                 is_movable: prev_is_movable,
+                 is_rotatable: prev_is_rotatable,
+                 quantity: prev_quantity,
+                 has_dialog: prev_has_dialog,
+                 facing: prev_facing,
+                 state: prev_state,
+                 is_shopkeeper: prev_is_shopkeeper,
+                 is_hidden: prev_is_hidden,
+                 is_hostile: prev_is_hostile,
+                 is_targeting_local_player: prev_is_targeting,
+                 awareness: prev_awareness,
+                 placement_seq: prev_placement_seq,
+             }| {
+                *prev_definition_id == object.definition_id
+                    && *prev_position == SpacePosition::new(space_resident.space_id, *tile_position)
+                    && prev_tile_position == tile_position
+                    && *prev_vitals == projected_vitals
+                    && *prev_is_container == has_container
+                    && *prev_is_npc == has_npc
+                    && *prev_is_movable == has_movable
+                    && *prev_is_rotatable == has_rotatable
+                    && *prev_quantity == qty.map(|q| q.0).unwrap_or(1)
+                    && *prev_has_dialog == has_dialog
+                    && *prev_facing == facing.copied().unwrap_or_default().0
+                    && prev_state.as_deref() == state.map(|s| s.0.as_str())
+                    && *prev_is_shopkeeper == has_shopkeeper
+                    && *prev_is_hidden == hidden.is_some()
+                    && *prev_is_hostile == has_hostile
+                    && *prev_is_targeting == is_targeting_local_player
+                    && *prev_awareness == awareness
+                    && *prev_placement_seq == object.placement_seq
+            },
+        );
+        if unchanged {
+            continue;
+        }
+
         let projected_object = ClientWorldObjectState {
             object_id: object.object_id,
             definition_id: object.definition_id.clone(),
             position: SpacePosition::new(space_resident.space_id, *tile_position),
             tile_position: *tile_position,
-            vitals: vitals.map(|vitals| ClientVitalStats {
-                health: vitals.health,
-                max_health: vitals.max_health,
-                mana: vitals.mana,
-                max_mana: vitals.max_mana,
-            }),
+            vitals: projected_vitals,
             is_container: has_container,
             is_npc: has_npc,
             is_movable: has_movable,
@@ -791,11 +869,9 @@ pub fn compute_events_for_peer(
             placement_seq: object.placement_seq,
         };
 
-        if previous.world_objects.get(&object.object_id) != Some(&projected_object) {
-            events.push(GameEvent::WorldObjectUpserted {
-                object: projected_object,
-            });
-        }
+        events.push(GameEvent::WorldObjectUpserted {
+            object: projected_object,
+        });
     }
 
     for stale_object_id in previous.world_objects.keys() {
@@ -909,6 +985,7 @@ pub fn collect_game_events_from_authority(
     active_trades: Res<ActiveTrades>,
     object_definitions: Res<OverworldObjectDefinitions>,
     mut pending_game_events: ResMut<PendingGameEvents>,
+    mut floor_diff_cache: Local<FloorDiffCache>,
 ) {
     pending_game_events.events.clear();
 
@@ -931,6 +1008,7 @@ pub fn collect_game_events_from_authority(
     let events = compute_events_for_peer(
         local_player_id,
         &client_state,
+        &mut floor_diff_cache,
         &player_query,
         &object_query,
         &world_object_query,
@@ -972,11 +1050,22 @@ pub fn apply_game_events_to_client_state(
             GameEvent::RemotePlayerUpserted { .. } | GameEvent::RemotePlayerRemoved { .. } => {
                 revisions.remote_players = revisions.remote_players.wrapping_add(1);
             }
-            GameEvent::FloorMapReplaced { .. }
-            | GameEvent::FloorTileSet { .. }
-            | GameEvent::DiscoveredTilesReplaced { .. }
-            | GameEvent::TilesDiscovered { .. } => {
+            GameEvent::FloorMapReplaced { .. } | GameEvent::FloorTileSet { .. } => {
                 revisions.map_tiles = revisions.map_tiles.wrapping_add(1);
+                revisions.floor_maps = revisions.floor_maps.wrapping_add(1);
+            }
+            GameEvent::DiscoveredTilesReplaced { .. } | GameEvent::TilesDiscovered { .. } => {
+                revisions.map_tiles = revisions.map_tiles.wrapping_add(1);
+                revisions.discovered = revisions.discovered.wrapping_add(1);
+            }
+            GameEvent::LogStateChanged { .. } => {
+                revisions.log = revisions.log.wrapping_add(1);
+            }
+            GameEvent::InventoryChanged { .. }
+            | GameEvent::ContainerChanged { .. }
+            | GameEvent::ContainerRemoved { .. }
+            | GameEvent::PlayerStorageChanged { .. } => {
+                revisions.inventory = revisions.inventory.wrapping_add(1);
             }
             _ => {}
         }
@@ -1219,7 +1308,8 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
                 );
             }
         }
-        GameEvent::PlayerPositionChanged { position, .. } => info!(
+        // Fires on every step — keep off the default (info) log level.
+        GameEvent::PlayerPositionChanged { position, .. } => debug!(
             "client player position updated: {:?} -> space {} at ({}, {})",
             client_state.player_position,
             position.space_id.0,
@@ -1235,7 +1325,8 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
             space.space_id.0,
             space.authored_id
         ),
-        GameEvent::PlayerVitalsChanged { vitals } => info!(
+        // Fires on every integer HP/mana tick (regen, combat) — debug only.
+        GameEvent::PlayerVitalsChanged { vitals } => debug!(
             "client player vitals updated: hp {:.1}/{:.1} -> {:.1}/{:.1}, mana {:.1}/{:.1} -> {:.1}/{:.1}",
             client_state.player_vitals.map(|current| current.health).unwrap_or_default(),
             client_state.player_vitals.map(|current| current.max_health).unwrap_or_default(),

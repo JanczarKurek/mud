@@ -255,6 +255,7 @@ pub fn accept_tcp_client_connections(
                         stream: transport,
                         read_buffer: Vec::new(),
                         last_projection: None,
+                        floor_diff_cache: Default::default(),
                         sync_complete: false,
                         manifest_sent: false,
                         latency: PeerLatencyState::default(),
@@ -886,9 +887,11 @@ pub fn flush_server_messages(
             // advances the baseline so subsequent diffs stay coherent.
             let default_baseline = ClientGameState::default();
             let baseline = peer.last_projection.as_ref().unwrap_or(&default_baseline);
+            let mut floor_diff_cache = peer.floor_diff_cache;
             let events = crate::game::projection::compute_events_for_peer(
                 player_id,
                 baseline,
+                &mut floor_diff_cache,
                 &player_query,
                 &object_query,
                 &world_object_query,
@@ -908,20 +911,35 @@ pub fn flush_server_messages(
             }) {
                 world_clock.seconds_since_emit = 0.0;
             }
-            if !events.is_empty() {
+            if events.is_empty() {
+                // Nothing was sent, so the baseline didn't move — safe to keep
+                // the (possibly freshly warmed) floor-diff memo.
+                peer.floor_diff_cache = floor_diff_cache;
+            } else {
+                // Wrap once so the serializer borrows the Vec — no clone; the
+                // events are recovered below to advance the baseline by move.
+                let message = ServerMessage::Events(events);
                 if !write_message_counted(
                     &mut peer.stream,
-                    &ServerMessage::Events(events.clone()),
+                    &message,
                     &mut disconnected,
                     Some(&mut peer.throughput.bytes_out),
                 ) {
                     warn!("failed to send events to TCP client");
+                    // The peer never saw these events and the baseline did not
+                    // advance; drop the memo so the next tick re-diffs floors
+                    // in full instead of trusting a state the peer is missing.
+                    peer.floor_diff_cache = Default::default();
                 } else {
+                    let ServerMessage::Events(events) = message else {
+                        unreachable!("message constructed as Events above");
+                    };
                     let mut next_baseline = peer.last_projection.take().unwrap_or_default();
                     for event in events {
                         crate::game::projection::apply_event_to_state(&mut next_baseline, event);
                     }
                     peer.last_projection = Some(next_baseline);
+                    peer.floor_diff_cache = floor_diff_cache;
                 }
             }
 
@@ -1672,6 +1690,7 @@ mod tests {
         let events = crate::game::projection::compute_events_for_peer(
             PlayerId(1),
             &ClientGameState::default(),
+            &mut Default::default(),
             &player_query,
             &object_query,
             &world_object_query,
@@ -1747,6 +1766,7 @@ mod tests {
         let bootstrap = crate::game::projection::compute_events_for_peer(
             PlayerId(1),
             &ClientGameState::default(),
+            &mut Default::default(),
             &player_query,
             &object_query,
             &world_object_query,
@@ -1767,6 +1787,7 @@ mod tests {
         let idle_events = crate::game::projection::compute_events_for_peer(
             PlayerId(1),
             &baseline,
+            &mut Default::default(),
             &player_query,
             &object_query,
             &world_object_query,
@@ -1816,6 +1837,7 @@ mod tests {
         let move_events = crate::game::projection::compute_events_for_peer(
             PlayerId(1),
             &baseline,
+            &mut Default::default(),
             &player_query,
             &object_query,
             &world_object_query,
@@ -1869,6 +1891,7 @@ mod tests {
         crate::game::projection::compute_events_for_peer(
             PlayerId(player_id),
             baseline,
+            &mut Default::default(),
             &player_query,
             &object_query,
             &world_object_query,

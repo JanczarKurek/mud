@@ -189,15 +189,20 @@ impl Plugin for UiPlugin {
                 ),
                 sync_carry_weight_label,
                 sync_chat_log,
-                sync_context_menu_root,
-                sync_context_menu_attack_button,
-                sync_context_menu_open_button,
-                sync_context_menu_interact_button,
-                sync_context_menu_use_button,
-                sync_context_menu_use_on_button,
-                sync_context_menu_talk_button,
-                sync_nearby_npcs_panel,
-                sync_docked_panel_layout.after(MountablePanelLifecycleSet),
+                (
+                    sync_context_menu_root,
+                    sync_context_menu_attack_button,
+                    sync_context_menu_open_button,
+                    sync_context_menu_interact_button,
+                    sync_context_menu_use_button,
+                    sync_context_menu_use_on_button,
+                    sync_context_menu_talk_button,
+                )
+                    .run_if(systems::context_menu_inputs_changed),
+                sync_nearby_npcs_panel.run_if(systems::nearby_npcs_inputs_changed),
+                sync_docked_panel_layout
+                    .after(MountablePanelLifecycleSet)
+                    .run_if(systems::docked_panel_layout_inputs_changed),
                 sync_docked_panel_titles,
             )
                 .run_if(in_state(ClientAppState::InGame)),
@@ -205,8 +210,11 @@ impl Plugin for UiPlugin {
         .add_systems(
             Update,
             (
-                sync_context_menu_trade_button,
-                sync_context_menu_offer_to_trade_button,
+                (
+                    sync_context_menu_trade_button,
+                    sync_context_menu_offer_to_trade_button,
+                )
+                    .run_if(systems::context_menu_inputs_changed),
                 sync_magic_effects_label,
             )
                 .run_if(in_state(ClientAppState::InGame)),
@@ -214,7 +222,8 @@ impl Plugin for UiPlugin {
         .add_systems(
             Update,
             (sync_item_slot_button_visibility, sync_container_slot_images)
-                .run_if(in_state(ClientAppState::InGame)),
+                .run_if(in_state(ClientAppState::InGame))
+                .run_if(systems::item_slot_inputs_changed),
         )
         .add_systems(
             Update,
@@ -246,7 +255,7 @@ impl Plugin for UiPlugin {
         .add_systems(
             Update,
             (
-                sync_context_menu_take_partial_button,
+                sync_context_menu_take_partial_button.run_if(systems::context_menu_inputs_changed),
                 update_take_partial_popup_visibility,
                 sync_take_partial_label,
                 handle_take_partial_buttons,
@@ -255,7 +264,9 @@ impl Plugin for UiPlugin {
         )
         .add_systems(
             Update,
-            sync_equipment_slot_images.run_if(in_state(ClientAppState::InGame)),
+            sync_equipment_slot_images
+                .run_if(in_state(ClientAppState::InGame))
+                .run_if(systems::item_slot_inputs_changed),
         )
         .add_systems(
             Update,
@@ -286,7 +297,8 @@ impl Plugin for UiPlugin {
                 sync_context_menu_hide_button,
                 sync_context_menu_read_button,
             )
-                .run_if(in_state(ClientAppState::InGame)),
+                .run_if(in_state(ClientAppState::InGame))
+                .run_if(systems::context_menu_inputs_changed),
         )
         .add_systems(
             Update,

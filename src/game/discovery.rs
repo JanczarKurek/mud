@@ -58,12 +58,24 @@ pub fn discover_around_players(
         ),
         With<Player>,
     >,
+    mut last_swept: Local<
+        std::collections::HashMap<crate::player::components::PlayerId, (SpaceId, i32, i32)>,
+    >,
 ) {
     let radius = DISCOVERY_RADIUS;
     let radius_sq = radius * radius;
     let radius_ceil = radius.ceil() as i32;
 
     for (identity, resident, tile, discovered) in players.iter() {
+        // The disc sweep is pure in the player's (space, x, y): once a
+        // position has been swept, re-sweeping it every frame while the
+        // player stands still is ~113 wasted set probes per player.
+        let position_key = (resident.space_id, tile.x, tile.y);
+        if last_swept.get(&identity.id) == Some(&position_key) {
+            continue;
+        }
+        last_swept.insert(identity.id, position_key);
+
         let Some(space) = space_manager.get(resident.space_id) else {
             continue;
         };
