@@ -23,29 +23,21 @@ and `wall_e` (south neighbour) so all three slabs share a flush meeting
 point at (fx = 1 - INSET, fy = 1 - INSET).
 """
 
-import math
 import os
 
 from PIL import Image
 
 from wall_perspective import (
     TILE_PX,
-    WALL_HEIGHT_FLOORS,
-    WALL_INSET,
-    WALL_VIZ_HEIGHT_TILES,
-    WALL_VIZ_WIDTH_TILES,
+    SLAB_N,
+    SLAB_S,
+    SLAB_E,
+    SLAB_W,
     BG,
-    STONE,
-    STONE_HI,
-    STONE_DARK,
-    STONE_VDARK,
-    MORTAR,
-    CAP_HI,
-    CAP_MID,
-    CAP_DARK,
-    project,
-    fill_polygon,
-    _line,
+    arm_corners_3d,
+    arm_depth,
+    canvas_for_content,
+    draw_stone_arm,
 )
 
 ASSETS_DIR = "assets/overworld_objects"
@@ -68,15 +60,12 @@ ASSETS_DIR = "assets/overworld_objects"
 # Corners are L-shapes whose two half-tile arms meet at the inset position
 # and reach back to the adjacent directional wall slabs.
 
-# Slab base positions (the fy of an axis="y" arm; the fx of an axis="x" arm).
-# wall_s / wall_e use the requested inset directly. wall_n / wall_w have to
-# clamp toward the centre because the iso projection extends the visible
-# slab top by WALL_VIZ_*_TILES *up-and-left*; without the clamp those two
-# walls would visually overshoot the tile's north / west boundary.
-_S = WALL_INSET
-_E = 1.0 - WALL_INSET
-_N = min(1.0 - WALL_INSET, 1.0 - WALL_VIZ_HEIGHT_TILES)
-_W = max(WALL_INSET, WALL_VIZ_WIDTH_TILES)
+# Slab base positions live in wall_perspective.py (shared with the door
+# generator); aliased so the SPECS below keep their original spelling.
+_S = SLAB_S
+_E = SLAB_E
+_N = SLAB_N
+_W = SLAB_W
 
 SPECS = [
     # ── Four directional walls. Each spans the full tile width along its
@@ -122,6 +111,7 @@ SPECS = [
     # directional walls so the slabs touch flush at (pos_x, pos_y).
     {
         "id": "wall_corner_ne",
+        "wall_corner": "ne",
         "name": "Wall Corner NE",
         "description": "North-east building corner; north arm reaches west, east arm reaches south.",
         "arms": [
@@ -137,6 +127,7 @@ SPECS = [
     },
     {
         "id": "wall_corner_nw",
+        "wall_corner": "nw",
         "name": "Wall Corner NW",
         "description": "North-west building corner; north arm reaches east, west arm reaches south.",
         "arms": [
@@ -148,6 +139,7 @@ SPECS = [
     },
     {
         "id": "wall_corner_se",
+        "wall_corner": "se",
         "name": "Wall Corner SE",
         "description": "South-east building corner; south arm reaches west, east arm reaches north.",
         "arms": [
@@ -159,6 +151,7 @@ SPECS = [
     },
     {
         "id": "wall_corner_sw",
+        "wall_corner": "sw",
         "name": "Wall Corner SW",
         "description": "South-west building corner; south arm reaches east, west arm reaches north.",
         "arms": [
@@ -171,107 +164,9 @@ SPECS = [
 ]
 
 
-# ── Canvas sizing ────────────────────────────────────────────────────────
-def arm_corners_3d(arm):
-    """Return the four 3D corners (bottom-left, bottom-right, top-right, top-left)
-    of a wall arm in winding order around the visible face."""
-    pos = arm["pos"]
-    t0, t1 = arm["t0"], arm["t1"]
-    h = WALL_HEIGHT_FLOORS
-    if arm["axis"] == "y":
-        return [(t0, pos, 0.0), (t1, pos, 0.0), (t1, pos, h), (t0, pos, h)]
-    else:
-        return [(pos, t0, 0.0), (pos, t1, 0.0), (pos, t1, h), (pos, t0, h)]
-
-
-def canvas_for_content(corners_3d):
-    """Size a canvas to fit `corners_3d`.
-
-    The renderer's bottom-anchor pins the canvas bottom-center pixel to the
-    tile's SOUTH edge in world (see `anchor_y_offset = -tile_size * 0.5` in
-    `src/world/systems.rs::sync_tile_transforms`). So our reference point is
-    the tile-south-center (3D coords `(0.5, 0, 0)`), which must project to
-    canvas (cw/2, ch-1). We size the canvas tight to the projected bbox of
-    `corners_3d` so the sprite does NOT extend into neighbour tiles — this
-    avoids cross-tile alpha occlusion where a tall sprite's transparent
-    rows would otherwise hide a wall in the neighbour tile.
-
-    Returns (cw, ch, anchor_px) where `anchor_px` is the PIL pixel of the
-    3D origin (0, 0, 0).
-    """
-    tile_south_raw = project(0.5, 0.0, 0.0, (0, 0))
-    offs = []
-    for (x, y, z) in corners_3d:
-        p = project(x, y, z, (0, 0))
-        offs.append((p[0] - tile_south_raw[0], p[1] - tile_south_raw[1]))
-
-    dxs = [o[0] for o in offs]
-    dys = [o[1] for o in offs]
-    # Width must center the tile-south-center at canvas (cw/2, ch-1) AND fit
-    # all content offsets. Take the symmetric envelope.
-    cw_left = -2 * min(dxs) if min(dxs) < 0 else 0
-    cw_right = 2 * max(dxs) + 1 if max(dxs) >= 0 else 0
-    cw = max(int(cw_left), int(cw_right), TILE_PX)
-    # Height must reach from canvas bottom up far enough to fit the top of
-    # the wall body. Don't round up — keep canvas tight so the sprite stops
-    # at the wall's top edge (avoids occluding the neighbour tile above).
-    above = -min(dys) if min(dys) < 0 else 0
-    ch = max(int(above) + 1, 1)
-
-    anchor_x = cw // 2 - TILE_PX // 2
-    anchor_y = ch - 1
-    return cw, ch, (anchor_x, anchor_y)
-
-
 # ── Drawing ──────────────────────────────────────────────────────────────
-def _lerp_pt(a, b, t):
-    return (round(a[0] + (b[0] - a[0]) * t),
-            round(a[1] + (b[1] - a[1]) * t))
-
-
-def draw_arm(img, arm, anchor):
-    """Draw one wall slab: stone body, lit top cap band, edge highlights/shadows."""
-    pts3d = arm_corners_3d(arm)
-    bl, br, tr, tl = [project(x, y, z, anchor) for (x, y, z) in pts3d]
-
-    # Stone body
-    fill_polygon(img, [bl, br, tr, tl], STONE)
-
-    # Top "cap" band — top 18% of face in CAP_HI, next 6% in CAP_MID as a
-    # soft shadow line under the lit cap. Fakes a thin lit top surface
-    # without adding a real 3D thickness.
-    cap_top_frac = 0.18
-    cap_shadow_frac = 0.24
-    cap_bl = _lerp_pt(tl, bl, cap_top_frac)
-    cap_br = _lerp_pt(tr, br, cap_top_frac)
-    sh_bl = _lerp_pt(tl, bl, cap_shadow_frac)
-    sh_br = _lerp_pt(tr, br, cap_shadow_frac)
-    fill_polygon(img, [cap_bl, cap_br, tr, tl], CAP_HI)
-    fill_polygon(img, [sh_bl, sh_br, cap_br, cap_bl], CAP_MID)
-
-    # Mortar courses — two horizontal-ish bands across the face below the cap.
-    for course_frac in (0.55, 0.80):
-        c_bl = _lerp_pt(tl, bl, course_frac)
-        c_br = _lerp_pt(tr, br, course_frac)
-        c2_bl = _lerp_pt(tl, bl, course_frac + 0.025)
-        c2_br = _lerp_pt(tr, br, course_frac + 0.025)
-        fill_polygon(img, [c2_bl, c2_br, c_br, c_bl], MORTAR)
-
-    # Edge outlines: bottom seam shadowed, left slanted edge lit, right shadowed.
-    _line(img, bl[0], bl[1], br[0], br[1], STONE_VDARK)
-    _line(img, bl[0], bl[1], tl[0], tl[1], STONE_HI)
-    _line(img, br[0], br[1], tr[0], tr[1], STONE_DARK)
-    # Top edge: along (tl, tr) — already covered by CAP_HI fill, no extra stroke.
-
-
-def _arm_depth(arm):
-    """Mean fy of the arm — higher fy is farther from the camera (camera is
-    up-left of the player, lower fy = south = closer = drawn later)."""
-    if arm["axis"] == "y":
-        return arm["pos"]
-    return (arm["t0"] + arm["t1"]) / 2.0
-
-
+# Geometry (arm_corners_3d / canvas_for_content) and the hewn-stone face
+# renderer live in wall_perspective.py, shared with gen_door_set.py.
 def build_sprite(spec):
     # Collect all 3D corners across every arm so canvas fits the union.
     all_corners = []
@@ -280,8 +175,8 @@ def build_sprite(spec):
     cw, ch, anchor = canvas_for_content(all_corners)
     img = Image.new("RGBA", (cw, ch), BG)
     # Painter's algorithm: farther arms first (higher mean fy).
-    for arm in sorted(spec["arms"], key=lambda a: -_arm_depth(a)):
-        draw_arm(img, arm, anchor)
+    for arm in sorted(spec["arms"], key=lambda a: -arm_depth(a)):
+        draw_stone_arm(img, arm, anchor)
     return img, cw, ch
 
 
@@ -299,7 +194,7 @@ render:
   occludes_floor_above: true
   block_size: 2
   walkable_surface: true
-{mask_line}{hide_line}  stack_order: 50
+{mask_line}{hide_line}{corner_line}  stack_order: 50
 """
 
 
@@ -326,6 +221,12 @@ def write_metadata(spec, cw, ch):
         m = spec["floor_mask"]
         nums = ", ".join(f"{round(v, 3)}" for v in m)
         mask_line = f"  floor_mask_rect: [{nums}]\n"
+    # Corners carry `wall_corner:` (drives the renderer's fade/tint choice);
+    # it used to be hand-added post-generation and got clobbered on
+    # regeneration — emit it here so that can't happen again.
+    corner_line = (
+        f"  wall_corner: {spec['wall_corner']}\n" if spec.get("wall_corner") else ""
+    )
     content = META_TEMPLATE.format(
         name=spec["name"],
         description=spec["description"],
@@ -334,6 +235,7 @@ def write_metadata(spec, cw, ch):
         h_tiles=_fmt_tiles(ch),
         mask_line=mask_line,
         hide_line=hide_line,
+        corner_line=corner_line,
     )
     with open(path, "w") as f:
         f.write(content)

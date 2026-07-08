@@ -1,4 +1,6 @@
 #![allow(clippy::type_complexity)]
+use std::collections::HashSet;
+
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
@@ -22,9 +24,9 @@ use crate::npc::spawn_groups::SpawnGroupRegistry;
 use crate::player::components::Player;
 use crate::world::animation::VisualOffset;
 use crate::world::components::{
-    OverworldObject, SpaceId, SpaceResident, TilePosition, ViewPosition, WorldVisual,
+    OverworldObject, Quantity, SpaceId, SpaceResident, TilePosition, ViewPosition, WorldVisual,
 };
-use crate::world::floor_definitions::FloorTilesetDefinitions;
+use crate::world::floor_definitions::{FloorTilesetDefinitions, FloorTypeId};
 use crate::world::floor_map::FloorMaps;
 use crate::world::map_layout::{
     AmbientKeyframe, MapBehavior, PortalDefinition, SpaceDefinitions, SpawnArea, SpawnGroupDef,
@@ -47,6 +49,7 @@ pub fn insert_editor_visuals_pub(
     world_config: &WorldConfig,
     tile: TilePosition,
     camera: &EditorCamera,
+    count: u32,
 ) {
     insert_editor_visuals(
         entity_commands,
@@ -56,6 +59,7 @@ pub fn insert_editor_visuals_pub(
         world_config,
         tile,
         camera,
+        count,
     );
 }
 
@@ -67,6 +71,7 @@ fn insert_editor_visuals(
     world_config: &WorldConfig,
     tile: TilePosition,
     camera: &EditorCamera,
+    count: u32,
 ) {
     let effective_size = world_config.tile_size * camera.zoom_level;
     let bundle = build_object_visual_bundle(
@@ -75,7 +80,7 @@ fn insert_editor_visuals(
         def,
         world_config,
         None,
-        1,
+        count.max(1),
     );
     let bottom_anchored = bundle.anchor.is_some();
     let anchor_y_offset = if bottom_anchored {
@@ -266,11 +271,17 @@ pub fn attach_editor_visuals(
     editor_camera: Res<EditorCamera>,
     editor_context: Res<EditorContext>,
     objects: Query<
-        (Entity, &OverworldObject, &TilePosition, &SpaceResident),
+        (
+            Entity,
+            &OverworldObject,
+            &TilePosition,
+            &SpaceResident,
+            Option<&Quantity>,
+        ),
         (Without<Transform>, Without<Player>),
     >,
 ) {
-    for (entity, obj, tile, resident) in &objects {
+    for (entity, obj, tile, resident, quantity) in &objects {
         // Only attach visuals for objects in the active editing space
         if resident.space_id != editor_context.space_id {
             continue;
@@ -286,6 +297,7 @@ pub fn attach_editor_visuals(
             &world_config,
             *tile,
             &editor_camera,
+            quantity.map_or(1, |q| q.0),
         );
     }
 }
@@ -845,7 +857,14 @@ pub fn handle_editor_left_click(
         editor_state.selected_type_id = None;
         if let Some(props) = object_registry.properties(obj.object_id) {
             prop_buffer.object_id = Some(obj.object_id);
-            prop_buffer.entries = props.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+            // `quantity` is edited via the dedicated Stack section, not the
+            // generic property rows, so it never enters this buffer (which
+            // `commit_edit` treats as the full property set).
+            prop_buffer.entries = props
+                .iter()
+                .filter(|(k, _)| k.as_str() != "quantity")
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
             prop_buffer.entries.sort_by(|a, b| a.0.cmp(&b.0));
         } else {
             prop_buffer.object_id = Some(obj.object_id);
@@ -922,6 +941,7 @@ pub fn handle_editor_left_click(
                 &world_config,
                 stamp,
                 &editor_camera,
+                1,
             );
             composite_ops.push(UndoOp::Despawn { object_id });
         }
@@ -1043,6 +1063,60 @@ pub fn handle_editor_right_click(
 /// `last_painted` local resets on mouse-up or tool change so a fresh drag
 /// doesn't draw a line back to wherever the previous drag ended.
 #[allow(clippy::too_many_arguments)]
+/// Accumulates the undo record for one continuous floor-brush stroke so a
+/// single Ctrl+Z reverts the whole drag rather than one tile per frame. Held in
+/// a `Local` on [`handle_editor_floor_brush_drag`]; [`FloorStrokeUndo::flush`]
+/// commits the batch to the undo stack when the stroke ends (button release,
+/// tool switch, or fill-mode change).
+#[derive(Default)]
+pub struct FloorStrokeUndo {
+    /// `(z, x, y)` cells already recorded this stroke. Dedupes so each tile
+    /// keeps its true *pre-stroke* value and the paint command isn't re-sent
+    /// when the drag revisits a cell.
+    touched: HashSet<(i32, i32, i32)>,
+    ops: Vec<UndoOp>,
+}
+
+impl FloorStrokeUndo {
+    /// Snapshot `(space_id, z, x, y)`'s pre-stroke value (via `prev`) the first
+    /// time it's painted this stroke. Returns `true` on that first touch — the
+    /// caller should then emit the paint command — and `false` for a cell
+    /// already painted this stroke (skip the redundant command).
+    fn record(
+        &mut self,
+        space_id: SpaceId,
+        z: i32,
+        x: i32,
+        y: i32,
+        prev: impl FnOnce() -> Option<FloorTypeId>,
+    ) -> bool {
+        if !self.touched.insert((z, x, y)) {
+            return false;
+        }
+        self.ops.push(UndoOp::SetFloor {
+            space_id,
+            z,
+            x,
+            y,
+            value: prev(),
+        });
+        true
+    }
+
+    /// Commit the stroke to the undo stack — one `Composite`, or a bare op for a
+    /// single cell — and reset for the next stroke. No-op if nothing was painted.
+    fn flush(&mut self, undo_stack: &mut UndoStack) {
+        self.touched.clear();
+        let ops = std::mem::take(&mut self.ops);
+        match ops.len() {
+            0 => {}
+            1 => undo_stack.push_undo(ops.into_iter().next().unwrap()),
+            _ => undo_stack.push_undo(UndoOp::Composite { ops }),
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn handle_editor_floor_brush_drag(
     mouse: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<PrimaryWindow>>,
@@ -1051,22 +1125,29 @@ pub fn handle_editor_floor_brush_drag(
     editor_context: Res<EditorContext>,
     mut editor_state: ResMut<EditorState>,
     mut pending_commands: ResMut<PendingGameCommands>,
+    floor_maps: Res<FloorMaps>,
+    mut undo_stack: ResMut<UndoStack>,
     panel_roots: crate::editor::ui::EditorPanelRoots,
     mut last_painted: Local<Option<TilePosition>>,
+    mut stroke: Local<FloorStrokeUndo>,
 ) {
     if editor_state.current_tool != EditorTool::FloorBrush {
         *last_painted = None;
+        stroke.flush(&mut undo_stack);
         return;
     }
     // Defer to the rect/flood fill handlers when those modes are active.
     if editor_state.fill_mode != crate::editor::resources::FillMode::Single {
         *last_painted = None;
+        stroke.flush(&mut undo_stack);
         return;
     }
     let left = mouse.pressed(MouseButton::Left);
     let right = mouse.pressed(MouseButton::Right);
     if !left && !right {
+        // Button released: commit the whole drag as a single undo entry.
         *last_painted = None;
+        stroke.flush(&mut undo_stack);
         return;
     }
     let Ok(window) = windows.single() else { return };
@@ -1119,6 +1200,7 @@ pub fn handle_editor_floor_brush_drag(
     // Floor maps are keyed by floor_index; current_editing_floor is already
     // in those units.
     let floor_map_z = editor_state.current_editing_floor;
+    let space_id = editor_context.space_id;
     for t in &to_paint {
         for dy in lo_dx..=hi_dx {
             for dx in lo_dx..=hi_dx {
@@ -1131,8 +1213,19 @@ pub fn handle_editor_floor_brush_drag(
                 {
                     continue;
                 }
+                // Record the pre-stroke value the first time this cell is
+                // painted (so one Ctrl+Z reverts the whole drag), and skip the
+                // paint command for cells the stroke already covered.
+                let first_touch = stroke.record(space_id, floor_map_z, nx, ny, || {
+                    floor_maps
+                        .get(space_id, floor_map_z)
+                        .and_then(|m| m.get(nx, ny).cloned())
+                });
+                if !first_touch {
+                    continue;
+                }
                 pending_commands.push(GameCommand::EditorSetFloorTile {
-                    space_id: editor_context.space_id,
+                    space_id,
                     z: floor_map_z,
                     x: nx,
                     y: ny,
@@ -1183,7 +1276,47 @@ pub fn handle_editor_keyboard_input(
     mut prop_buffer: ResMut<EditorPropertyEditBuffer>,
     mut object_registry: ResMut<ObjectRegistry>,
     mut editor_state: ResMut<EditorState>,
+    mut stack_edit: ResMut<crate::editor::resources::EditorStackEdit>,
+    mut pending_stack: ResMut<crate::editor::resources::PendingStackCountChanges>,
 ) {
+    // Stack-count numeric input takes priority: while focused, keystrokes are
+    // digits-only and never fall through to the palette / property pipelines.
+    if stack_edit.editing {
+        for event in keyboard_events.read() {
+            if !event.state.is_pressed() {
+                continue;
+            }
+            match event.key_code {
+                KeyCode::Escape => {
+                    stack_edit.editing = false;
+                    stack_edit.text.clear();
+                }
+                KeyCode::Enter | KeyCode::Tab => {
+                    let count = stack_edit.text.parse::<u32>().unwrap_or(1).max(1);
+                    stack_edit.editing = false;
+                    stack_edit.text.clear();
+                    if let Some(id) = editor_state.selected_object_id {
+                        pending_stack.0.push((id, count));
+                    }
+                }
+                KeyCode::Backspace => {
+                    stack_edit.text.pop();
+                }
+                _ => {
+                    if event.repeat {
+                        continue;
+                    }
+                    if let Key::Character(ch) = &event.logical_key {
+                        for c in ch.chars().filter(|c| c.is_ascii_digit()) {
+                            stack_edit.text.push(c);
+                        }
+                    }
+                }
+            }
+        }
+        return;
+    }
+
     if editor_state.palette_filter_focused {
         for event in keyboard_events.read() {
             if !event.state.is_pressed() {
@@ -1272,12 +1405,21 @@ fn commit_edit(
         }
     }
     if let Some(object_id) = prop_buffer.object_id {
-        let props = prop_buffer
+        let mut props: crate::world::map_layout::ObjectProperties = prop_buffer
             .entries
             .iter()
             .filter(|(k, _)| !k.is_empty())
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
+        // `quantity` lives outside the generic buffer (Stack section owns it),
+        // so carry the registry's current value across a property-row commit.
+        if let Some(q) = object_registry
+            .properties(object_id)
+            .and_then(|p| p.get("quantity"))
+            .cloned()
+        {
+            props.insert("quantity".to_owned(), q);
+        }
         object_registry.set_properties(object_id, props);
         editor_state.dirty = true;
     }
@@ -2682,6 +2824,65 @@ mod tests {
             bresenham_line_tiles(t(0, 0), t(3, 3)),
             vec![t(0, 0), t(1, 1), t(2, 2), t(3, 3)]
         );
+    }
+
+    /// Extract `(x, y, value)` from a `SetFloor` op, panicking otherwise.
+    fn as_set_floor(op: &UndoOp) -> (i32, i32, Option<&str>) {
+        match op {
+            UndoOp::SetFloor { x, y, value, .. } => (*x, *y, value.as_deref()),
+            _ => panic!("expected SetFloor op"),
+        }
+    }
+
+    #[test]
+    fn floor_stroke_batches_into_one_composite() {
+        let mut stroke = FloorStrokeUndo::default();
+        let sid = SpaceId(0);
+        assert!(stroke.record(sid, 0, 1, 1, || Some("grass".to_owned())));
+        assert!(stroke.record(sid, 0, 2, 1, || None));
+        let mut undo = UndoStack::default();
+        stroke.flush(&mut undo);
+        assert_eq!(undo.undo_ops.len(), 1, "whole stroke = one Ctrl+Z");
+        let UndoOp::Composite { ops } = &undo.undo_ops[0] else {
+            panic!("expected a Composite for a multi-tile stroke");
+        };
+        assert_eq!(ops.len(), 2);
+        // Each cell's *pre-stroke* value is snapshotted for the inverse.
+        assert_eq!(as_set_floor(&ops[0]), (1, 1, Some("grass")));
+        assert_eq!(as_set_floor(&ops[1]), (2, 1, None));
+    }
+
+    #[test]
+    fn floor_stroke_dedupes_revisited_cell_and_single_tile_is_bare_op() {
+        let mut stroke = FloorStrokeUndo::default();
+        let sid = SpaceId(0);
+        assert!(stroke.record(sid, 0, 5, 5, || Some("planks".to_owned())));
+        // Revisiting the same cell this stroke records nothing and, crucially,
+        // never re-reads `prev` — so the original pre-stroke value survives.
+        assert!(!stroke.record(sid, 0, 5, 5, || panic!("prev must not be re-read")));
+        let mut undo = UndoStack::default();
+        stroke.flush(&mut undo);
+        assert_eq!(undo.undo_ops.len(), 1);
+        // A single cell flushes as a bare op, not a one-element Composite.
+        assert_eq!(as_set_floor(&undo.undo_ops[0]), (5, 5, Some("planks")));
+    }
+
+    #[test]
+    fn floor_stroke_empty_flush_is_noop_and_resets_between_strokes() {
+        let mut stroke = FloorStrokeUndo::default();
+        let mut undo = UndoStack::default();
+        stroke.flush(&mut undo);
+        assert!(undo.undo_ops.is_empty(), "empty stroke pushes nothing");
+
+        let sid = SpaceId(0);
+        assert!(stroke.record(sid, 0, 0, 0, || None));
+        stroke.flush(&mut undo);
+        assert_eq!(undo.undo_ops.len(), 1);
+        // `flush` clears the touched set, so the next stroke can repaint the
+        // same cell instead of being silently deduped against the last one.
+        assert!(stroke.record(sid, 0, 0, 0, || Some("grass".to_owned())));
+        stroke.flush(&mut undo);
+        assert_eq!(undo.undo_ops.len(), 2);
     }
 
     #[test]

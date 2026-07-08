@@ -1705,6 +1705,49 @@ render:
     }
 
     #[test]
+    fn directional_doors_mirror_their_walls() {
+        // The wall-slab doors (gen_door_set.py) must stay drop-in replacements
+        // for their walls: same canvas (state sprite swaps reuse the base
+        // render dims), same floor mask (floors keep meeting the jambs flush),
+        // same inside-fade side — with state-driven collision on top.
+        let defs = OverworldObjectDefinitions::load_from_disk();
+        for (door_id, wall_id) in [
+            ("wooden_door_n", "wall_n"),
+            ("wooden_door_s", "wall_s"),
+            ("wooden_door_e", "wall_e"),
+            ("wooden_door_w", "wall_w"),
+        ] {
+            let door = defs.get(door_id).expect(door_id);
+            let wall = defs.get(wall_id).expect(wall_id);
+            assert_eq!(
+                door.render.floor_mask_rect, wall.render.floor_mask_rect,
+                "{door_id} floor mask must match {wall_id}"
+            );
+            assert_eq!(
+                (
+                    door.render.sprite_width_tiles,
+                    door.render.sprite_height_tiles
+                ),
+                (
+                    wall.render.sprite_width_tiles,
+                    wall.render.sprite_height_tiles
+                ),
+                "{door_id} canvas must match {wall_id}"
+            );
+            assert_eq!(
+                door.render.hide_when_inside_facing, wall.render.hide_when_inside_facing,
+                "{door_id} inside-fade side must match {wall_id}"
+            );
+            assert_eq!(door.render.block_size, wall.render.block_size);
+            assert!(door.render.occludes_floor_above);
+            assert_eq!(door.initial_state.as_deref(), Some("closed"));
+            assert!(door.colliding_for_state(Some("closed")));
+            assert!(door.colliding_for_state(Some("locked")));
+            assert!(!door.colliding_for_state(Some("open")));
+        }
+    }
+
+    #[test]
     fn berry_bush_is_a_no_tool_gatherable_with_full_empty_sprites() {
         let defs = OverworldObjectDefinitions::load_from_disk();
         let bush = defs.get("berry_bush").expect("berry_bush.yaml loads");

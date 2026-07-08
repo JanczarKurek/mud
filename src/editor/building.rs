@@ -313,7 +313,9 @@ fn wall_for_position(x: i32, y: i32, width: i32, height: i32, walls: &WallSlots)
 /// Post-draw door placement. When the building tool is active and
 /// `place_door_armed` is set, a left-click on a perimeter wall whose
 /// `type_id` matches the active preset's wall slots replaces that wall
-/// with the preset's `default_door`. Runs before `handle_editor_left_click`
+/// with the preset's door for that side (`BuildingPreset::door_for_wall` —
+/// per-side `doors` when configured, otherwise the legacy `default_door`).
+/// Runs before `handle_editor_left_click`
 /// so the click is consumed here and not by the regular brush / select
 /// flow. Auto-disarms after one successful swap so each toggle = one door.
 #[allow(clippy::too_many_arguments)]
@@ -365,10 +367,6 @@ pub fn handle_editor_building_door_swap_click(
     let Some(preset) = presets.get(&preset_id) else {
         return;
     };
-    let Some(door_type) = preset.default_door.clone() else {
-        warn!("Building tool: preset '{preset_id}' has no default_door");
-        return;
-    };
     let wall_ids: Vec<String> = preset.walls.all_wall_ids().map(str::to_owned).collect();
 
     // Find a wall object at this tile whose type belongs to the active preset.
@@ -387,6 +385,15 @@ pub fn handle_editor_building_door_swap_click(
         .type_id(wall_object_id)
         .map(str::to_owned)
         .unwrap_or_default();
+    // Pick the door variant for this wall's side; with per-side `doors`
+    // configured, corners are not swappable.
+    let Some(door_type) = preset.door_for_wall(&wall_type_id) else {
+        warn!(
+            "Building tool: preset '{preset_id}' has no door for wall '{wall_type_id}' \
+             (corners take no door)"
+        );
+        return;
+    };
     let wall_properties = object_registry
         .properties(wall_object_id)
         .cloned()
@@ -437,6 +444,7 @@ pub fn handle_editor_building_door_swap_click(
         &world_config,
         tile,
         &editor_camera,
+        1,
     );
 
     // Composite undo: door swap reverses to (despawn door, respawn wall).
@@ -543,6 +551,7 @@ mod tests {
             walls: basic_walls(),
             default_floor: Some("cobblestone".into()),
             default_door: Some("wooden_door".into()),
+            doors: None,
         };
         let fragment = build_fragment(sel, &preset, preset.default_floor.clone());
         // 4×3 rectangle: perimeter = 2*(4+3) - 4 = 10 tiles.
@@ -576,6 +585,7 @@ mod tests {
             walls: basic_walls(),
             default_floor: None,
             default_door: None,
+            doors: None,
         };
         let fragment = build_fragment(sel, &preset, None);
         assert!(fragment.floors.is_empty());

@@ -1,0 +1,60 @@
+extends: obstacle
+name: Wooden Door (East)
+description: Wooden door set into an east-edge wall slab (interior is to the west).
+render:
+  z_index: 0.3
+  debug_color: [110, 70, 40]
+  debug_size: 1.0
+  sprite_path: overworld_objects/wooden_door_e/closed.png
+  sprite_width_tiles: 1.0
+  sprite_height_tiles: 1.521
+  occludes_floor_above: true
+  block_size: 2
+  walkable_surface: true
+  floor_mask_rect: [0.0, 0.0, 0.75, 1.0]
+  hide_when_inside_facing: east
+  stack_order: 50
+states:
+  locked:
+    sprite_path: overworld_objects/wooden_door_e/closed.png
+    colliding: true
+  closed:
+    sprite_path: overworld_objects/wooden_door_e/closed.png
+    colliding: true
+  open:
+    sprite_path: overworld_objects/wooden_door_e/open.png
+    colliding: false
+initial_state: closed
+lock:
+  lock_id: 7
+  pick_dc: 15
+  force_dc: 18
+interactions:
+  - verb: pick_lock
+    label: Pick Lock
+    from: [locked]
+    to: closed
+    skill_gate:
+      skill: Thievery
+      dc: from_lock_pick
+  - verb: force_lock
+    label: Force Lock
+    from: [locked]
+    to: closed
+    skill_gate:
+      skill: Athletics
+      dc: from_lock_force
+  - verb: use_key
+    label: Use Key
+    from: [locked]
+    to: closed
+    key_gate:
+      source: from_lock
+  - verb: open
+    label: Open
+    from: [closed]
+    to: open
+  - verb: close
+    label: Close
+    from: [open]
+    to: closed

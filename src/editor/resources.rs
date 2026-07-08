@@ -286,6 +286,23 @@ pub enum EditingField {
     Key,
 }
 
+/// Live text-entry state for the properties panel's "Stack" section numeric
+/// input field. `editing` gates the digits-only keyboard branch in
+/// `handle_editor_keyboard_input`; `text` is the raw buffer flushed on Enter.
+#[derive(Resource, Default)]
+pub struct EditorStackEdit {
+    pub editing: bool,
+    pub text: String,
+}
+
+/// Queue of pending stack-count changes `(object_id, desired_count)`. The
+/// slider, +/- steppers, and numeric input all push here; a single
+/// `apply_stack_count_changes` system (which owns the sprite-rebuild
+/// resources) drains it, clamps to the definition's `max_stack_size`, updates
+/// the registry properties + `Quantity` component, and refreshes the visual.
+#[derive(Resource, Default)]
+pub struct PendingStackCountChanges(pub Vec<(u64, u32)>);
+
 // ── Modal dialog ──────────────────────────────────────────────────────────────
 
 #[derive(Clone, Debug)]

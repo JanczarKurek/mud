@@ -25,7 +25,8 @@ use crate::editor::hotkeys::{
 use crate::editor::resources::{
     EditorCamera, EditorClipboard, EditorCursorMarker, EditorLightingBuffer,
     EditorPasteGhostMarker, EditorPickRectResult, EditorPortalBuffer, EditorPropertyEditBuffer,
-    EditorSpawnGroupBuffer, EditorState, EditorVendorStashBuffer, ModalState, UndoStack,
+    EditorSpawnGroupBuffer, EditorStackEdit, EditorState, EditorVendorStashBuffer, ModalState,
+    PendingStackCountChanges, UndoStack,
 };
 use crate::editor::selection::{
     handle_editor_pick_rect_drag, handle_editor_select_drag, handle_editor_select_hotkey,
@@ -70,9 +71,10 @@ use crate::editor::ui::palette::{
     sync_recent_strip,
 };
 use crate::editor::ui::properties::{
-    apply_pick_rect_to_instance_behavior, handle_add_property_button, handle_behavior_pick_bounds,
-    handle_behavior_set_buttons, handle_dialog_select_buttons, handle_property_row_click,
-    sync_properties_panel,
+    apply_pick_rect_to_instance_behavior, apply_stack_count_changes, handle_add_property_button,
+    handle_behavior_pick_bounds, handle_behavior_set_buttons, handle_dialog_select_buttons,
+    handle_property_row_click, handle_stack_input_click, handle_stack_slider_drag,
+    handle_stack_step_buttons, sync_properties_panel,
 };
 use crate::editor::ui::spawn_groups_panel::{
     handle_spawn_groups_panel_clicks, render_spawn_group_overlay, sync_spawn_groups_panel,
@@ -222,6 +224,8 @@ impl Plugin for EditorPlugin {
         app.init_resource::<EditorState>()
             .init_resource::<EditorCamera>()
             .init_resource::<EditorPropertyEditBuffer>()
+            .init_resource::<EditorStackEdit>()
+            .init_resource::<PendingStackCountChanges>()
             .init_resource::<ModalState>()
             .init_resource::<UndoStack>()
             .init_resource::<EditorPortalBuffer>()
@@ -445,6 +449,12 @@ impl Plugin for EditorPlugin {
                     handle_behavior_pick_bounds,
                     handle_dialog_select_buttons,
                     apply_pick_rect_to_instance_behavior,
+                    (
+                        handle_stack_slider_drag,
+                        handle_stack_step_buttons,
+                        handle_stack_input_click,
+                        apply_stack_count_changes,
+                    ),
                 )
                     .run_if(in_state(ClientAppState::MapEditor)),
             )

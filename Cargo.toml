@@ -102,10 +102,17 @@ path = "src/bin/floor_viewer.rs"
 [profile.dev]
 debug = "line-tables-only"
 split-debuginfo = "unpacked"
-# Light optimization for our own code — debug builds at opt-level 0 ran the
-# game at ~30fps. Level 1 keeps compile times and debuggability reasonable
-# while making `cargo run` playable.
+# Light optimization for our own code. Re-measured 2026-07-07: opt-level 0 is
+# 25fps even on a mostly empty map (the Bevy query/iterator generics
+# monomorphized into this crate are what need optimizing, and the algorithmic
+# perf fixes don't compensate for that), so 1 is the floor for a playable
+# `cargo run`. It costs 2× wall / 7× CPU per full crate rebuild vs 0
+# (2m46s vs 1m24s measured).
 opt-level = 1
+# Compile-time trim: cargo's dev default is *thin-local* LTO, not "no LTO".
+# Turning it fully off skips a whole-crate pass on every rebuild of this
+# 115k-line crate; per-CGU inlining still happens at opt-level 1.
+lto = "off"
 
 # Full optimization for dependencies (Bevy, wgpu, image decoders …). They are
 # compiled once and cached, so this costs one long cold build and nothing on

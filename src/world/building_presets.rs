@@ -30,6 +30,60 @@ pub struct BuildingPreset {
     pub default_floor: Option<FloorTypeId>,
     #[serde(default)]
     pub default_door: Option<String>,
+    /// Per-side door ids matching the directional wall slabs. When set, the
+    /// door-swap tool picks the variant for the side of the clicked wall and
+    /// refuses corners; `default_door` remains the fallback for presets
+    /// without side variants.
+    #[serde(default)]
+    pub doors: Option<DoorSlots>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct DoorSlots {
+    pub north: String,
+    pub south: String,
+    pub east: String,
+    pub west: String,
+}
+
+impl DoorSlots {
+    pub fn all_door_ids(&self) -> impl Iterator<Item = &str> {
+        [
+            self.north.as_str(),
+            self.south.as_str(),
+            self.east.as_str(),
+            self.west.as_str(),
+        ]
+        .into_iter()
+    }
+}
+
+impl BuildingPreset {
+    /// The door id to swap in for a clicked wall, or `None` if that wall may
+    /// not take a door. With per-side `doors` configured, only the four
+    /// straight sides map (corners are never swappable — a corner door has
+    /// no sensible orientation). Without `doors`, any preset wall falls back
+    /// to `default_door` (legacy behavior, corners included). If two sides
+    /// share a wall id, precedence is north, south, east, west.
+    pub fn door_for_wall(&self, wall_type_id: &str) -> Option<String> {
+        let Some(doors) = &self.doors else {
+            return self.default_door.clone();
+        };
+        let walls = &self.walls;
+        let door = if wall_type_id == walls.north {
+            &doors.north
+        } else if wall_type_id == walls.south {
+            &doors.south
+        } else if wall_type_id == walls.east {
+            &doors.east
+        } else if wall_type_id == walls.west {
+            &doors.west
+        } else {
+            return None;
+        };
+        Some(door.clone())
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -116,6 +170,14 @@ impl BuildingPresets {
                     "building preset `{id}` references unknown door object `{door}`",
                 );
             }
+            if let Some(doors) = preset.doors.as_ref() {
+                for door_id in doors.all_door_ids() {
+                    assert!(
+                        objects.get(door_id).is_some(),
+                        "building preset `{id}` references unknown door object `{door_id}`",
+                    );
+                }
+            }
             if let Some(floor) = preset.default_floor.as_ref() {
                 assert!(
                     floors.contains(floor),
@@ -199,5 +261,57 @@ walls:
         assert_eq!(stone.walls.north, "wall_n");
         assert_eq!(stone.walls.east, "wall_e");
         assert_eq!(stone.default_door.as_deref(), Some("wooden_door"));
+        let doors = stone.doors.as_ref().expect("stone preset has door slots");
+        assert_eq!(doors.north, "wooden_door_n");
+        assert_eq!(doors.west, "wooden_door_w");
+    }
+
+    fn preset_with_doors() -> BuildingPreset {
+        preset(
+            r#"
+id: stone
+name: Stone Building
+walls:
+  north: wall_n
+  south: wall_s
+  east: wall_e
+  west: wall_w
+  corner_nw: wall_corner_nw
+default_door: wooden_door
+doors:
+  north: wooden_door_n
+  south: wooden_door_s
+  east: wooden_door_e
+  west: wooden_door_w
+"#,
+        )
+    }
+
+    #[test]
+    fn door_for_wall_picks_side_variant() {
+        let p = preset_with_doors();
+        assert_eq!(p.door_for_wall("wall_n").as_deref(), Some("wooden_door_n"));
+        assert_eq!(p.door_for_wall("wall_s").as_deref(), Some("wooden_door_s"));
+        assert_eq!(p.door_for_wall("wall_e").as_deref(), Some("wooden_door_e"));
+        assert_eq!(p.door_for_wall("wall_w").as_deref(), Some("wooden_door_w"));
+    }
+
+    #[test]
+    fn door_for_wall_rejects_corners_when_doors_configured() {
+        let p = preset_with_doors();
+        assert_eq!(p.door_for_wall("wall_corner_nw"), None);
+        assert_eq!(p.door_for_wall("not_a_wall"), None);
+    }
+
+    #[test]
+    fn door_for_wall_falls_back_to_default_door_without_slots() {
+        let mut p = preset_with_doors();
+        p.doors = None;
+        // Legacy behavior: any wall (corners included) takes the default door.
+        assert_eq!(p.door_for_wall("wall_n").as_deref(), Some("wooden_door"));
+        assert_eq!(
+            p.door_for_wall("wall_corner_nw").as_deref(),
+            Some("wooden_door")
+        );
     }
 }

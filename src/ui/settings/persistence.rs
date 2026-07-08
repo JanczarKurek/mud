@@ -32,6 +32,8 @@ struct SettingsFile {
     editor: EditorFile,
     #[serde(default)]
     servers: ServersFile,
+    #[serde(default)]
+    world: WorldFile,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -89,6 +91,15 @@ pub struct SavedServerEntry {
     pub addr: String,
 }
 
+/// Offline-only world preferences on disk. `selected_map` remembers the
+/// starting map picked in the title-screen map picker; `None` means "use the
+/// bootstrap space".
+#[derive(Serialize, Deserialize, Default)]
+struct WorldFile {
+    #[serde(default)]
+    selected_map: Option<String>,
+}
+
 fn default_saved_servers() -> Vec<SavedServerEntry> {
     vec![SavedServerEntry {
         name: "Local".to_owned(),
@@ -103,6 +114,16 @@ fn default_saved_servers() -> Vec<SavedServerEntry> {
 pub struct SavedServerList {
     pub saved: Vec<SavedServerEntry>,
     pub selected_addr: Option<String>,
+    pub dirty: bool,
+}
+
+/// Resource holding the offline starting-map preference. `map_id` is the
+/// authored id of the space the player should spawn into for a new game;
+/// `None` falls back to the bootstrap space. `dirty` is set by the
+/// title-screen map picker so `persist_settings` flushes it on the next frame.
+#[derive(Resource, Default, Debug)]
+pub struct SelectedStartingMap {
+    pub map_id: Option<String>,
     pub dirty: bool,
 }
 
@@ -180,6 +201,7 @@ pub fn load_settings(
     mut display: ResMut<DisplaySettings>,
     mut gameplay: ResMut<GameplaySettings>,
     mut servers: ResMut<SavedServerList>,
+    mut selected_map: ResMut<SelectedStartingMap>,
     mut loaded: ResMut<SettingsLoaded>,
 ) {
     if loaded.0 {
@@ -192,6 +214,9 @@ pub fn load_settings(
     servers.saved = default_saved_servers();
     servers.selected_addr = None;
     servers.dirty = false;
+
+    selected_map.map_id = None;
+    selected_map.dirty = false;
 
     let Some(path) = client_settings_path(*runtime) else {
         return;
@@ -209,6 +234,8 @@ pub fn load_settings(
 
     servers.saved = file.servers.saved;
     servers.selected_addr = file.servers.selected_addr;
+
+    selected_map.map_id = file.world.selected_map;
 
     keybindings.apply_overrides(
         file.controls
@@ -259,12 +286,14 @@ pub fn persist_settings(
     mut display: ResMut<DisplaySettings>,
     mut gameplay: ResMut<GameplaySettings>,
     mut servers: ResMut<SavedServerList>,
+    mut selected_map: ResMut<SelectedStartingMap>,
 ) {
     if !keybindings.dirty
         && !editor_keys.dirty
         && !display.dirty
         && !gameplay.dirty
         && !servers.dirty
+        && !selected_map.dirty
     {
         return;
     }
@@ -274,6 +303,7 @@ pub fn persist_settings(
         display.dirty = false;
         gameplay.dirty = false;
         servers.dirty = false;
+        selected_map.dirty = false;
         return;
     };
 
@@ -307,6 +337,9 @@ pub fn persist_settings(
             saved: servers.saved.clone(),
             selected_addr: servers.selected_addr.clone(),
         },
+        world: WorldFile {
+            selected_map: selected_map.map_id.clone(),
+        },
     };
 
     if let Some(parent) = path.parent() {
@@ -325,6 +358,7 @@ pub fn persist_settings(
     display.dirty = false;
     gameplay.dirty = false;
     servers.dirty = false;
+    selected_map.dirty = false;
 }
 
 #[cfg(test)]
@@ -355,6 +389,7 @@ mod tests {
                 saved: default_saved_servers(),
                 selected_addr: None,
             },
+            world: WorldFile::default(),
         };
         let json = serde_json::to_string_pretty(&file).unwrap();
         let parsed: SettingsFile = serde_json::from_str(&json).unwrap();
@@ -397,6 +432,35 @@ mod tests {
     }
 
     #[test]
+    fn world_selected_map_round_trips() {
+        let file = SettingsFile {
+            controls: ControlsFile::default(),
+            display: DisplayFile::default(),
+            gameplay: GameplayFile::default(),
+            editor: EditorFile::default(),
+            servers: ServersFile {
+                saved: default_saved_servers(),
+                selected_addr: None,
+            },
+            world: WorldFile {
+                selected_map: Some("island".to_owned()),
+            },
+        };
+        let json = serde_json::to_string_pretty(&file).unwrap();
+        let parsed: SettingsFile = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.world.selected_map.as_deref(), Some("island"));
+    }
+
+    #[test]
+    fn settings_file_without_world_block_defaults_to_none() {
+        // Files written before the world block existed must load with no
+        // starting-map override (falls back to the bootstrap space).
+        let json = r#"{"controls":{"bindings":[],"movement":null},"display":{}}"#;
+        let parsed: SettingsFile = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.world.selected_map, None);
+    }
+
+    #[test]
     fn servers_block_round_trips() {
         let original = ServersFile {
             saved: vec![
@@ -417,6 +481,7 @@ mod tests {
             gameplay: GameplayFile::default(),
             editor: EditorFile::default(),
             servers: original,
+            world: WorldFile::default(),
         };
         let json = serde_json::to_string_pretty(&file).unwrap();
         let parsed: SettingsFile = serde_json::from_str(&json).unwrap();
@@ -487,6 +552,7 @@ mod tests {
                 saved: default_saved_servers(),
                 selected_addr: None,
             },
+            world: WorldFile::default(),
         };
         let json = serde_json::to_string_pretty(&file).unwrap();
         let parsed: SettingsFile = serde_json::from_str(&json).unwrap();

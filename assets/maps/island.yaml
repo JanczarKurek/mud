@@ -392,7 +392,7 @@ objects:
   placement:
   - x: 124
     y: 130
-- type: wooden_door
+- type: wooden_door_e
   placement:
   - x: 121
     y: 129

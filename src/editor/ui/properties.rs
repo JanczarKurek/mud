@@ -1,14 +1,18 @@
 use bevy::prelude::*;
+use bevy::ui::{ComputedNode, UiGlobalTransform};
+use bevy::window::PrimaryWindow;
 
 use crate::editor::dialog_index::EditorDialogIndex;
 use crate::editor::resources::{
-    EditingField, EditorPickRectResult, EditorPropertyEditBuffer, EditorState, EditorTool,
-    PickRectTarget, UndoOp, UndoStack,
+    EditingField, EditorCamera, EditorPickRectResult, EditorPropertyEditBuffer, EditorStackEdit,
+    EditorState, EditorTool, PendingStackCountChanges, PickRectTarget, UndoOp, UndoStack,
 };
-use crate::world::components::OverworldObject;
+use crate::editor::systems::insert_editor_visuals_pub;
+use crate::world::components::{OverworldObject, Quantity, TilePosition};
 use crate::world::map_layout::{MapBehavior, TileRectangle};
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
+use crate::world::WorldConfig;
 
 /// Root panel for the properties sidebar.
 #[derive(Component)]
@@ -72,6 +76,33 @@ pub struct DialogSelectButton {
     pub dialog_id: Option<String>,
 }
 
+// ── Stack-count section ─────────────────────────────────────────────────────
+
+/// Draggable slider track for the pile size. `max` is the definition's
+/// effective `max_stack_size`.
+#[derive(Component, Clone, Copy)]
+pub struct StackCountSlider {
+    pub max: u32,
+}
+
+/// Filled portion of the slider track; its width % encodes the current count.
+#[derive(Component)]
+pub struct StackCountFill;
+
+/// The "N / max" readout text.
+#[derive(Component)]
+pub struct StackReadout;
+
+/// A `−` / `+` stepper button; `delta` is ±1.
+#[derive(Component, Clone, Copy)]
+pub struct StackStepButton {
+    pub delta: i32,
+}
+
+/// The click-to-focus numeric input field for the stack count.
+#[derive(Component)]
+pub struct StackCountInput;
+
 /// Spawn the right-sidebar properties panel (initially empty).
 pub fn spawn_properties_panel(parent: &mut ChildSpawnerCommands) {
     parent
@@ -82,11 +113,15 @@ pub fn spawn_properties_panel(parent: &mut ChildSpawnerCommands) {
                 height: Val::Percent(100.0),
                 flex_direction: FlexDirection::Column,
                 border: UiRect::left(Val::Px(1.0)),
+                // Hidden via `Display::None` (not `Visibility::Hidden`) so the
+                // node collapses out of layout when empty — otherwise its
+                // 220px×100% rectangle keeps blocking the map cursor along the
+                // whole right edge (see `EditorPanelRoots::cursor_over`).
+                display: Display::None,
                 ..default()
             },
             BackgroundColor(Color::srgba(0.06, 0.04, 0.04, 0.92)),
             BorderColor::all(Color::srgb(0.30, 0.22, 0.15)),
-            Visibility::Hidden,
         ))
         .with_children(|panel| {
             // Header
@@ -146,22 +181,27 @@ pub fn sync_properties_panel(
     object_registry: Res<ObjectRegistry>,
     object_definitions: Res<OverworldObjectDefinitions>,
     dialog_index: Res<EditorDialogIndex>,
+    stack_edit: Res<EditorStackEdit>,
     object_query: Query<&OverworldObject>,
-    mut root_query: Query<&mut Visibility, With<EditorPropertiesRoot>>,
+    mut root_query: Query<&mut Node, With<EditorPropertiesRoot>>,
     mut header_query: Query<&mut Text, With<EditorPropertiesHeader>>,
     content_query: Query<Entity, With<EditorPropertiesContent>>,
     mut commands: Commands,
 ) {
-    let Ok(mut visibility) = root_query.single_mut() else {
+    let Ok(mut root_node) = root_query.single_mut() else {
         return;
     };
 
     let Some(selected_id) = editor_state.selected_object_id else {
-        *visibility = Visibility::Hidden;
+        if root_node.display != Display::None {
+            root_node.display = Display::None;
+        }
         return;
     };
 
-    *visibility = Visibility::Visible;
+    if root_node.display != Display::Flex {
+        root_node.display = Display::Flex;
+    }
 
     // Update header with type info.
     let type_label = object_query
@@ -179,6 +219,7 @@ pub fn sync_properties_panel(
         && !editor_state.is_changed()
         && !object_registry.is_changed()
         && !dialog_index.is_changed()
+        && !stack_edit.is_changed()
     {
         return;
     }
@@ -192,8 +233,10 @@ pub fn sync_properties_panel(
         .entity(content_entity)
         .despawn_related::<Children>();
 
-    // Get current properties to display.
-    let entries = if prop_buffer.object_id == Some(selected_id) {
+    // Get current properties to display. The `quantity` key is edited through
+    // the dedicated Stack section below, so hide it from the generic row list
+    // to avoid two controls fighting over the same value.
+    let mut entries = if prop_buffer.object_id == Some(selected_id) {
         prop_buffer.entries.clone()
     } else {
         object_registry
@@ -206,6 +249,7 @@ pub fn sync_properties_panel(
             })
             .unwrap_or_default()
     };
+    entries.retain(|(k, _)| k != "quantity");
 
     // Rebuild rows.
     commands.entity(content_entity).with_children(|content| {
@@ -359,7 +403,169 @@ pub fn sync_properties_panel(
                 &dialog_index.names,
             );
         }
+
+        // ── Stack count ─────────────────────────────────────────────────────
+        // Only stackable definitions (max_stack_size > 1) get a pile-size
+        // control. The effective cap is already flattened through the
+        // `extends` chain at load, so a plain `get` gives the right value.
+        let max_stack = definition_id
+            .as_deref()
+            .and_then(|id| object_definitions.get(id))
+            .map(|def| def.max_stack_size)
+            .unwrap_or(1);
+        if max_stack > 1 {
+            let current = object_registry
+                .properties(selected_id)
+                .and_then(|p| p.get("quantity"))
+                .and_then(|s| s.parse::<u32>().ok())
+                .unwrap_or(1)
+                .clamp(1, max_stack);
+            spawn_stack_section(content, current, max_stack, &stack_edit);
+        }
     });
+}
+
+/// Build the "Stack" section: a live "N / max" readout, a `−`/`+` stepper pair
+/// flanking a draggable slider track, and a click-to-type numeric input.
+fn spawn_stack_section(
+    parent: &mut ChildSpawnerCommands,
+    current: u32,
+    max: u32,
+    stack_edit: &EditorStackEdit,
+) {
+    let fill_pct = count_to_fill_pct(current, max);
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(4.0),
+                margin: UiRect::top(Val::Px(8.0)),
+                border: UiRect::top(Val::Px(1.0)),
+                padding: UiRect::top(Val::Px(4.0)),
+                ..default()
+            },
+            BorderColor::all(Color::srgb(0.25, 0.18, 0.12)),
+        ))
+        .with_children(|sec| {
+            sec.spawn((
+                Text::new("Stack"),
+                TextFont {
+                    font_size: 12.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.96, 0.84, 0.62)),
+            ));
+            sec.spawn((
+                StackReadout,
+                Text::new(format!("{current} / {max}")),
+                TextFont {
+                    font_size: 10.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.78, 0.74, 0.66)),
+            ));
+            // Stepper row: [−] [ slider track ] [+]
+            sec.spawn((Node {
+                width: Val::Percent(100.0),
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(4.0),
+                ..default()
+            },))
+                .with_children(|row| {
+                    stack_step_button(row, "-", -1);
+                    // Slider track (fixed height, grows to fill the row).
+                    row.spawn((
+                        StackCountSlider { max },
+                        Node {
+                            flex_grow: 1.0,
+                            height: Val::Px(14.0),
+                            border: UiRect::all(Val::Px(1.0)),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.10, 0.08, 0.06, 0.90)),
+                        BorderColor::all(Color::srgb(0.35, 0.26, 0.16)),
+                    ))
+                    .with_children(|track| {
+                        track.spawn((
+                            StackCountFill,
+                            Node {
+                                width: Val::Percent(fill_pct),
+                                height: Val::Percent(100.0),
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgb(0.72, 0.52, 0.22)),
+                        ));
+                    });
+                    stack_step_button(row, "+", 1);
+                });
+            // Numeric input field.
+            let input_text = if stack_edit.editing {
+                format!("[{}]", stack_edit.text)
+            } else {
+                current.to_string()
+            };
+            sec.spawn((
+                Button,
+                StackCountInput,
+                Node {
+                    width: Val::Percent(100.0),
+                    padding: UiRect::axes(Val::Px(6.0), Val::Px(3.0)),
+                    justify_content: JustifyContent::Center,
+                    border: UiRect::all(Val::Px(1.0)),
+                    ..default()
+                },
+                BackgroundColor(if stack_edit.editing {
+                    Color::srgba(0.20, 0.15, 0.08, 0.90)
+                } else {
+                    Color::srgba(0.12, 0.09, 0.06, 0.80)
+                }),
+                BorderColor::all(if stack_edit.editing {
+                    Color::srgb(0.90, 0.72, 0.40)
+                } else {
+                    Color::srgb(0.30, 0.22, 0.14)
+                }),
+            ))
+            .with_children(|b| {
+                b.spawn((
+                    Text::new(input_text),
+                    TextFont {
+                        font_size: 11.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.92, 0.86, 0.74)),
+                ));
+            });
+        });
+}
+
+fn stack_step_button(parent: &mut ChildSpawnerCommands, label: &str, delta: i32) {
+    parent
+        .spawn((
+            Button,
+            StackStepButton { delta },
+            Node {
+                width: Val::Px(20.0),
+                height: Val::Px(18.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                border: UiRect::all(Val::Px(1.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.14, 0.10, 0.08, 0.95)),
+            BorderColor::all(Color::srgb(0.40, 0.30, 0.20)),
+        ))
+        .with_children(|b| {
+            b.spawn((
+                Text::new(label.to_owned()),
+                TextFont {
+                    font_size: 12.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.92, 0.86, 0.74)),
+            ));
+        });
 }
 
 fn spawn_behavior_section(parent: &mut ChildSpawnerCommands, behavior: Option<&MapBehavior>) {
@@ -730,8 +936,10 @@ pub fn handle_dialog_select_buttons(
         object_registry.set_properties(selected, props.clone());
         // Mirror the change into the editor's per-object property buffer
         // so the property list shows the updated `dialog_id` on next render.
+        // `quantity` is excluded — the Stack section owns it (keeping it out of
+        // the buffer preserves row-index alignment).
         if prop_buffer.object_id == Some(selected) {
-            prop_buffer.entries = props.into_iter().collect();
+            prop_buffer.entries = props.into_iter().filter(|(k, _)| k != "quantity").collect();
             prop_buffer.entries.sort_by(|a, b| a.0.cmp(&b.0));
             prop_buffer.editing_index = None;
         }
@@ -741,4 +949,252 @@ pub fn handle_dialog_select_buttons(
 
 fn existing_bounds(behavior: &Option<MapBehavior>) -> Option<TileRectangle> {
     behavior.as_ref().map(|b| b.bounds())
+}
+
+/// Map a normalized slider fraction `0.0..=1.0` to a count in `1..=max`.
+fn slider_frac_to_count(frac: f32, max: u32) -> u32 {
+    let max = max.max(1);
+    1 + (frac.clamp(0.0, 1.0) * (max - 1) as f32).round() as u32
+}
+
+/// Fill-bar width percentage for `count` within `1..=max`.
+fn count_to_fill_pct(count: u32, max: u32) -> f32 {
+    if max > 1 {
+        (count.clamp(1, max) - 1) as f32 / (max - 1) as f32 * 100.0
+    } else {
+        0.0
+    }
+}
+
+/// Read the current pile size from an object's `quantity` property (default 1).
+fn stack_count_of(object_registry: &ObjectRegistry, object_id: u64) -> u32 {
+    object_registry
+        .properties(object_id)
+        .and_then(|p| p.get("quantity"))
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(1)
+}
+
+/// Local drag state for the stack slider.
+#[derive(Default)]
+pub struct StackSliderDragState {
+    active: bool,
+    count: u32,
+}
+
+/// Drag the stack slider. While the LMB is held after a press that landed on
+/// the track, the cursor x maps to a count in `1..=max` and the fill / readout
+/// update **in place** (no registry write, so the panel does not rebuild and
+/// the slider node stays stable). The count is committed to the registry on
+/// release via `PendingStackCountChanges`.
+#[allow(clippy::too_many_arguments)]
+pub fn handle_stack_slider_drag(
+    mouse: Res<ButtonInput<MouseButton>>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    editor_state: Res<EditorState>,
+    sliders: Query<(&ComputedNode, &UiGlobalTransform, &StackCountSlider)>,
+    mut fills: Query<&mut Node, With<StackCountFill>>,
+    mut readouts: Query<&mut Text, With<StackReadout>>,
+    mut pending: ResMut<PendingStackCountChanges>,
+    mut drag: Local<StackSliderDragState>,
+) {
+    if !mouse.pressed(MouseButton::Left) {
+        if drag.active {
+            if let Some(id) = editor_state.selected_object_id {
+                pending.0.push((id, drag.count.max(1)));
+            }
+            drag.active = false;
+        }
+        return;
+    }
+
+    let Ok(window) = windows.single() else { return };
+    let Some(cursor) = window.cursor_position() else {
+        return;
+    };
+    let Some((computed, transform, slider)) = sliders.iter().next() else {
+        return;
+    };
+    let max = slider.max.max(1);
+
+    if mouse.just_pressed(MouseButton::Left) {
+        // Only begin a drag if the press landed on the track.
+        if !crate::ui::movable_window::point_in_node(cursor, computed, transform) {
+            return;
+        }
+        drag.active = true;
+    }
+    if !drag.active {
+        return;
+    }
+
+    let size = computed.size();
+    if size.x <= 0.0 {
+        return;
+    }
+    // Physical-space math (mirrors the minimap pan handler) so drag tracking
+    // survives HiDPI scaling.
+    let inv = computed.inverse_scale_factor();
+    let physical_x = if inv > 0.0 { cursor.x / inv } else { cursor.x };
+    let left = transform.translation.x - size.x * 0.5;
+    let frac = (physical_x - left) / size.x;
+    let count = slider_frac_to_count(frac, max);
+    drag.count = count;
+
+    let fill_pct = count_to_fill_pct(count, max);
+    if let Ok(mut node) = fills.single_mut() {
+        node.width = Val::Percent(fill_pct);
+    }
+    if let Ok(mut text) = readouts.single_mut() {
+        text.0 = format!("{count} / {max}");
+    }
+}
+
+/// `−` / `+` steppers adjust the pile size by ±1 (clamped in the apply system).
+pub fn handle_stack_step_buttons(
+    btns: Query<(&StackStepButton, &Interaction), (Changed<Interaction>, With<Button>)>,
+    editor_state: Res<EditorState>,
+    object_registry: Res<ObjectRegistry>,
+    mut pending: ResMut<PendingStackCountChanges>,
+) {
+    let Some(selected) = editor_state.selected_object_id else {
+        return;
+    };
+    for (btn, interaction) in &btns {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        let current = stack_count_of(&object_registry, selected) as i32;
+        let next = (current + btn.delta).max(1) as u32;
+        pending.0.push((selected, next));
+    }
+}
+
+/// Clicking the numeric field focuses it for digits-only text entry, seeding
+/// the buffer with the current count. Drops the property / vendor-stash edits
+/// so keystrokes route only to the stack input.
+pub fn handle_stack_input_click(
+    inputs: Query<&Interaction, (Changed<Interaction>, With<StackCountInput>)>,
+    editor_state: Res<EditorState>,
+    object_registry: Res<ObjectRegistry>,
+    mut stack_edit: ResMut<EditorStackEdit>,
+    mut prop_buffer: ResMut<EditorPropertyEditBuffer>,
+    mut vendor_stash_buffer: ResMut<crate::editor::resources::EditorVendorStashBuffer>,
+) {
+    for interaction in &inputs {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        let Some(selected) = editor_state.selected_object_id else {
+            continue;
+        };
+        prop_buffer.editing_index = None;
+        prop_buffer.edit_text.clear();
+        vendor_stash_buffer.editing = None;
+        vendor_stash_buffer.edit_text.clear();
+        stack_edit.editing = true;
+        stack_edit.text = stack_count_of(&object_registry, selected).to_string();
+    }
+}
+
+/// Drain `PendingStackCountChanges`: clamp to the definition's `max_stack_size`,
+/// write/remove the `quantity` property, insert/remove the `Quantity` component
+/// on the live entity, and rebuild its editor sprite to reflect the stack tier.
+/// Matches the existing property-edit convention of no undo entry (only sets
+/// `editor_state.dirty`).
+#[allow(clippy::too_many_arguments)]
+pub fn apply_stack_count_changes(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
+    object_definitions: Res<OverworldObjectDefinitions>,
+    world_config: Res<WorldConfig>,
+    editor_camera: Res<EditorCamera>,
+    mut object_registry: ResMut<ObjectRegistry>,
+    mut prop_buffer: ResMut<EditorPropertyEditBuffer>,
+    mut editor_state: ResMut<EditorState>,
+    mut pending: ResMut<PendingStackCountChanges>,
+    objects: Query<(Entity, &OverworldObject, &TilePosition)>,
+) {
+    if pending.0.is_empty() {
+        return;
+    }
+    let changes = std::mem::take(&mut pending.0);
+    for (object_id, requested) in changes {
+        let Some(type_id) = object_registry.type_id(object_id).map(|s| s.to_owned()) else {
+            continue;
+        };
+        let def = object_definitions.get(&type_id);
+        let max = def.map(|d| d.max_stack_size).unwrap_or(1).max(1);
+        let count = requested.clamp(1, max);
+
+        let mut props = object_registry
+            .properties(object_id)
+            .cloned()
+            .unwrap_or_default();
+        if count > 1 {
+            props.insert("quantity".to_owned(), count.to_string());
+        } else {
+            props.remove("quantity");
+        }
+        object_registry.set_properties(object_id, props);
+        // `quantity` stays out of the generic property buffer (Stack section
+        // owns it); just clear any active edit so the row list re-renders.
+        if prop_buffer.object_id == Some(object_id) {
+            prop_buffer.editing_index = None;
+        }
+        editor_state.dirty = true;
+
+        if let Some((entity, _, tile)) = objects.iter().find(|(_, o, _)| o.object_id == object_id) {
+            let tile = *tile;
+            let mut ec = commands.entity(entity);
+            if count > 1 {
+                ec.try_insert(Quantity(count));
+            } else {
+                ec.remove::<Quantity>();
+            }
+            if let Some(def) = def {
+                insert_editor_visuals_pub(
+                    &mut ec,
+                    &asset_server,
+                    &mut texture_atlas_layouts,
+                    def,
+                    &world_config,
+                    tile,
+                    &editor_camera,
+                    count,
+                );
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod stack_tests {
+    use super::*;
+
+    #[test]
+    fn frac_maps_to_full_range() {
+        // Endpoints and midpoint of a 1..=100 slider.
+        assert_eq!(slider_frac_to_count(0.0, 100), 1);
+        assert_eq!(slider_frac_to_count(1.0, 100), 100);
+        assert_eq!(slider_frac_to_count(0.5, 100), 51); // 1 + round(0.5*99)
+                                                        // Out-of-range fractions clamp.
+        assert_eq!(slider_frac_to_count(-0.3, 50), 1);
+        assert_eq!(slider_frac_to_count(2.0, 50), 50);
+    }
+
+    #[test]
+    fn non_stackable_max_pins_to_one() {
+        assert_eq!(slider_frac_to_count(0.7, 1), 1);
+        assert_eq!(count_to_fill_pct(1, 1), 0.0);
+    }
+
+    #[test]
+    fn fill_pct_endpoints() {
+        assert_eq!(count_to_fill_pct(1, 100), 0.0);
+        assert_eq!(count_to_fill_pct(100, 100), 100.0);
+        // Over-max clamps rather than exceeding 100%.
+        assert_eq!(count_to_fill_pct(250, 100), 100.0);
+    }
 }

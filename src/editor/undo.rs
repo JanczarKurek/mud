@@ -167,6 +167,7 @@ fn execute_op(
                     world_config,
                     tile,
                     editor_camera,
+                    1,
                 );
             }
             UndoOp::Despawn { object_id: new_id }

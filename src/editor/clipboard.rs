@@ -476,6 +476,7 @@ pub fn stamp_fragment(
             world_config,
             tile,
             editor_camera,
+            1,
         );
         undo_ops.push(UndoOp::Despawn { object_id: new_id });
     }

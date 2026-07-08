@@ -7,9 +7,10 @@ use crate::app::auth_screen::PendingAuthRequest;
 use crate::app::plugin::AppRuntime;
 use crate::app::state::{ClientAppState, DebugMode};
 use crate::network::resources::{TcpClientConfig, TcpClientConnection};
-use crate::ui::settings::SavedServerList;
+use crate::ui::settings::{SavedServerList, SelectedStartingMap};
 use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton, ThemedPanel};
 use crate::ui::theme::{Palette, UiThemeAssets};
+use crate::world::map_layout::SpaceDefinitions;
 
 pub struct TitleScreenPlugin {
     pub runtime: AppRuntime,
@@ -35,6 +36,8 @@ impl Plugin for TitleScreenPlugin {
                     sync_current_server_card,
                     sync_server_picker_modal,
                     handle_server_picker_buttons,
+                    sync_map_picker_modal,
+                    handle_map_picker_buttons,
                     handle_direct_field_clicks,
                     handle_direct_field_keyboard,
                     sync_direct_field_text,
@@ -74,8 +77,10 @@ struct TitleScreenState {
     /// Currently chosen server — `None` only briefly in `HeadlessServer` mode
     /// (which never reaches this screen) or before settings finish loading.
     current: Option<TitleServerEntry>,
-    /// Whether the picker modal is on screen.
+    /// Whether the server-picker modal is on screen.
     modal_open: bool,
+    /// Whether the starting-map picker modal is on screen (embedded only).
+    map_picker_open: bool,
     /// Direct-connect inputs (transient — never written to disk).
     direct_host: String,
     direct_port: String,
@@ -104,6 +109,7 @@ impl TitleScreenState {
             runtime,
             current,
             modal_open: false,
+            map_picker_open: false,
             direct_host: String::new(),
             direct_port: String::new(),
             direct_focused: None,
@@ -186,6 +192,21 @@ struct TitleScreenRoot;
 #[derive(Component)]
 struct ServerPickerModalRoot;
 
+/// Root of the starting-map picker modal overlay; despawned when it closes.
+#[derive(Component)]
+struct MapPickerModalRoot;
+
+/// One starting-map picker row; clicking it sets the selected starting map to
+/// the carried authored id and closes the modal.
+#[derive(Component, Clone)]
+struct MapPickerEntryButton {
+    map_id: String,
+}
+
+/// The map-picker "Cancel" button — closes the modal without changing the pick.
+#[derive(Component)]
+struct MapPickerCancel;
+
 /// The single "current server" card on the title panel — clicking it opens
 /// the picker modal (TCP mode only; no-op in Embedded mode).
 #[derive(Component)]
@@ -231,6 +252,8 @@ enum TitleAction {
     OpenServerPicker,
     ToggleRegister,
     OpenMapEditor,
+    /// Embedded-only: open the starting-map picker modal.
+    OpenMapPicker,
     OpenSettings,
     OpenAbout,
     /// Debug-only: wipe the embedded world snapshot + accounts DB on next boot,
@@ -584,6 +607,13 @@ fn spawn_title_screen(
                                                     actions,
                                                     &theme,
                                                     &palette,
+                                                    "Select Map",
+                                                    TitleAction::OpenMapPicker,
+                                                );
+                                                spawn_action_button(
+                                                    actions,
+                                                    &theme,
+                                                    &palette,
                                                     "Map Editor",
                                                     TitleAction::OpenMapEditor,
                                                 );
@@ -810,6 +840,9 @@ fn handle_title_screen_buttons(
             TitleAction::OpenMapEditor => {
                 next_state.set(ClientAppState::MapEditor);
             }
+            TitleAction::OpenMapPicker => {
+                title_state.map_picker_open = true;
+            }
             TitleAction::OpenSettings => {
                 settings_ui.toggle();
             }
@@ -855,10 +888,22 @@ fn handle_title_screen_buttons(
     }
 }
 
-fn cleanup_title_screen(mut commands: Commands, root_query: Query<Entity, With<TitleScreenRoot>>) {
+fn cleanup_title_screen(
+    mut commands: Commands,
+    mut title_state: ResMut<TitleScreenState>,
+    root_query: Query<Entity, With<TitleScreenRoot>>,
+    map_modal_query: Query<Entity, With<MapPickerModalRoot>>,
+) {
     for entity in &root_query {
         commands.entity(entity).despawn();
     }
+    // The map-picker overlay is a sibling root (not a child of TitleScreenRoot),
+    // so despawn it explicitly and clear the flag to avoid a leaked overlay if
+    // the screen is left with the modal still open.
+    for entity in &map_modal_query {
+        commands.entity(entity).despawn();
+    }
+    title_state.map_picker_open = false;
 }
 
 fn register_label(register: bool) -> String {
@@ -1442,6 +1487,249 @@ fn handle_server_picker_buttons(
                 });
                 title_state.modal_open = false;
             }
+        }
+    }
+}
+
+/// Persistent map ids selectable as a starting map, sorted for a stable list.
+fn starting_map_entries(definitions: &SpaceDefinitions) -> Vec<String> {
+    let mut ids: Vec<String> = definitions
+        .iter()
+        .filter(|def| def.permanence.is_persistent())
+        .map(|def| def.authored_id.clone())
+        .collect();
+    ids.sort();
+    ids
+}
+
+/// Spawn/despawn the starting-map picker modal to track `map_picker_open`.
+fn sync_map_picker_modal(
+    mut commands: Commands,
+    title_state: Res<TitleScreenState>,
+    definitions: Res<SpaceDefinitions>,
+    selected_map: Res<SelectedStartingMap>,
+    theme: Res<UiThemeAssets>,
+    palette: Res<Palette>,
+    existing: Query<Entity, With<MapPickerModalRoot>>,
+) {
+    let want_open = title_state.map_picker_open;
+    let has_modal = !existing.is_empty();
+
+    if want_open && !has_modal {
+        spawn_map_picker_modal(&mut commands, &definitions, &selected_map, &theme, &palette);
+    } else if !want_open && has_modal {
+        for entity in &existing {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
+fn spawn_map_picker_modal(
+    commands: &mut Commands,
+    definitions: &SpaceDefinitions,
+    selected_map: &SelectedStartingMap,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+) {
+    let entries = starting_map_entries(definitions);
+    // A `None` preference means "use the bootstrap space" — highlight that row.
+    let effective_selected = selected_map
+        .map_id
+        .clone()
+        .unwrap_or_else(|| definitions.bootstrap_space_id.clone());
+
+    commands
+        .spawn((
+            MapPickerModalRoot,
+            Node {
+                width: percent(100.0),
+                height: percent(100.0),
+                position_type: PositionType::Absolute,
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.03, 0.02, 0.02, 0.75)),
+            ZIndex(50),
+        ))
+        .with_children(|root| {
+            root.spawn((
+                ThemedPanel,
+                Node {
+                    width: px(480.0),
+                    max_width: percent(90.0),
+                    max_height: percent(85.0),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(14.0),
+                    padding: UiRect::all(px(22.0)),
+                    border: UiRect::all(px(1.0)),
+                    ..default()
+                },
+                ImageNode::new(theme.panel_frame.clone())
+                    .with_mode(theme.panel_image_mode())
+                    .with_color(Color::WHITE),
+                BackgroundColor(Color::NONE),
+                BorderColor::all(palette.border_accent),
+            ))
+            .with_children(|panel| {
+                panel.spawn((
+                    Text::new("Starting map"),
+                    TextFont {
+                        font_size: 26.0,
+                        ..default()
+                    },
+                    TextColor(palette.text_primary),
+                ));
+                panel.spawn((
+                    Text::new("Pick which map a new game spawns into (offline)."),
+                    TextFont {
+                        font_size: 14.0,
+                        ..default()
+                    },
+                    TextColor(palette.text_muted),
+                ));
+
+                panel
+                    .spawn((Node {
+                        width: percent(100.0),
+                        flex_direction: FlexDirection::Column,
+                        row_gap: px(8.0),
+                        overflow: Overflow::scroll_y(),
+                        ..default()
+                    },))
+                    .with_children(|list| {
+                        if entries.is_empty() {
+                            list.spawn((
+                                Text::new("No maps found."),
+                                TextFont {
+                                    font_size: 14.0,
+                                    ..default()
+                                },
+                                TextColor(palette.text_muted),
+                            ));
+                        }
+                        for map_id in &entries {
+                            let selected = *map_id == effective_selected;
+                            let is_bootstrap = *map_id == definitions.bootstrap_space_id;
+                            let (bg, border, _) = idle_colors(palette, ButtonStyle::Slot, selected);
+                            list.spawn((
+                                Button,
+                                ThemedButton {
+                                    style: ButtonStyle::Slot,
+                                    selected,
+                                },
+                                MapPickerEntryButton {
+                                    map_id: map_id.clone(),
+                                },
+                                Node {
+                                    width: percent(100.0),
+                                    flex_direction: FlexDirection::Column,
+                                    align_items: AlignItems::Start,
+                                    padding: UiRect::all(px(12.0)),
+                                    border: UiRect::all(px(1.0)),
+                                    row_gap: px(2.0),
+                                    ..default()
+                                },
+                                ImageNode::new(theme.button_frame.clone())
+                                    .with_mode(theme.button_image_mode())
+                                    .with_color(bg),
+                                BackgroundColor(Color::NONE),
+                                BorderColor::all(border),
+                            ))
+                            .with_children(|button| {
+                                button.spawn((
+                                    Text::new(map_id.clone()),
+                                    TextFont {
+                                        font_size: 18.0,
+                                        ..default()
+                                    },
+                                    TextColor(palette.text_primary),
+                                ));
+                                if is_bootstrap {
+                                    button.spawn((
+                                        Text::new("Default"),
+                                        TextFont {
+                                            font_size: 14.0,
+                                            ..default()
+                                        },
+                                        TextColor(palette.text_muted),
+                                    ));
+                                }
+                            });
+                        }
+                    });
+
+                panel
+                    .spawn((Node {
+                        width: percent(100.0),
+                        flex_direction: FlexDirection::Row,
+                        justify_content: JustifyContent::End,
+                        ..default()
+                    },))
+                    .with_children(|footer| {
+                        footer
+                            .spawn((
+                                Button,
+                                ThemedButton::new(ButtonStyle::Primary),
+                                MapPickerCancel,
+                                Node {
+                                    justify_content: JustifyContent::Center,
+                                    align_items: AlignItems::Center,
+                                    padding: UiRect::axes(px(14.0), px(10.0)),
+                                    border: UiRect::all(px(1.0)),
+                                    ..default()
+                                },
+                                ImageNode::new(theme.button_frame.clone())
+                                    .with_mode(theme.button_image_mode())
+                                    .with_color(
+                                        idle_colors(palette, ButtonStyle::Primary, false).0,
+                                    ),
+                                BackgroundColor(Color::NONE),
+                                BorderColor::all(
+                                    idle_colors(palette, ButtonStyle::Primary, false).1,
+                                ),
+                            ))
+                            .with_children(|button| {
+                                button.spawn((
+                                    Text::new("Close"),
+                                    TextFont {
+                                        font_size: 18.0,
+                                        ..default()
+                                    },
+                                    TextColor(idle_colors(palette, ButtonStyle::Primary, false).2),
+                                ));
+                            });
+                    });
+            });
+        });
+}
+
+/// Map-picker button handler: pick a starting map (persisted via
+/// `SelectedStartingMap.dirty`) or close the modal.
+fn handle_map_picker_buttons(
+    mut title_state: ResMut<TitleScreenState>,
+    mut selected_map: ResMut<SelectedStartingMap>,
+    entry_buttons: Query<
+        (&Interaction, &MapPickerEntryButton),
+        (Changed<Interaction>, With<Button>),
+    >,
+    cancel_buttons: Query<&Interaction, (Changed<Interaction>, With<MapPickerCancel>)>,
+) {
+    for (interaction, button) in &entry_buttons {
+        if *interaction == Interaction::Pressed {
+            if selected_map.map_id.as_deref() != Some(button.map_id.as_str()) {
+                selected_map.map_id = Some(button.map_id.clone());
+                selected_map.dirty = true;
+            }
+            title_state.map_picker_open = false;
+            return;
+        }
+    }
+
+    for interaction in &cancel_buttons {
+        if *interaction == Interaction::Pressed {
+            title_state.map_picker_open = false;
+            return;
         }
     }
 }

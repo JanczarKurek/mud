@@ -3818,10 +3818,10 @@ pub fn sync_drag_preview(
     // Idle path (no drag in progress) runs every frame — compare-then-write
     // so it stops dirtying the preview nodes once they're already hidden.
     let hide_preview = |root_visibility: &mut Mut<Visibility>,
-                            image_visibility: &mut Mut<Visibility>,
-                            quantity_visibility: &mut Mut<Visibility>,
-                            label: &mut Mut<Text>,
-                            quantity_text: &mut Mut<Text>| {
+                        image_visibility: &mut Mut<Visibility>,
+                        quantity_visibility: &mut Mut<Visibility>,
+                        label: &mut Mut<Text>,
+                        quantity_text: &mut Mut<Text>| {
         if **root_visibility != Visibility::Hidden {
             **root_visibility = Visibility::Hidden;
         }

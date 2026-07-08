@@ -50,6 +50,7 @@ pub fn handle_editor_rect_fill(
     mut object_registry: ResMut<ObjectRegistry>,
     mut undo_stack: ResMut<UndoStack>,
     mut pending_commands: ResMut<PendingGameCommands>,
+    floor_maps: Res<FloorMaps>,
     mut drag: Local<RectFillDragState>,
     existing_objects: Query<(&OverworldObject, &SpaceResident, &TilePosition), Without<Player>>,
     mut commands: Commands,
@@ -145,6 +146,7 @@ pub fn handle_editor_rect_fill(
         }
         EditorTool::FloorBrush => {
             let floor_type = editor_state.selected_floor_painted_id();
+            let existing = floor_maps.get(editor_context.space_id, floor_map_z);
             for y in min_y..=max_y {
                 for x in min_x..=max_x {
                     if x < 0
@@ -154,6 +156,16 @@ pub fn handle_editor_rect_fill(
                     {
                         continue;
                     }
+                    // Snapshot the previous floor value so the rect undoes in
+                    // one step. `process_floor_commands` mutates `FloorMaps`
+                    // but records no undo of its own.
+                    composite.push(UndoOp::SetFloor {
+                        space_id: editor_context.space_id,
+                        z: floor_map_z,
+                        x,
+                        y,
+                        value: existing.and_then(|m| m.get(x, y).cloned()),
+                    });
                     pending_commands.push(GameCommand::EditorSetFloorTile {
                         space_id: editor_context.space_id,
                         z: floor_map_z,
@@ -169,11 +181,6 @@ pub fn handle_editor_rect_fill(
 
     if !composite.is_empty() {
         undo_stack.push_undo(UndoOp::Composite { ops: composite });
-        editor_state.dirty = true;
-    } else if matches!(editor_state.current_tool, EditorTool::FloorBrush) {
-        // Floor commands write asynchronously through CommandIntercept and
-        // each emits its own undo entry via `process_floor_commands`, so
-        // there's no Composite op to push here. Just mark dirty.
         editor_state.dirty = true;
     }
 }
@@ -287,7 +294,16 @@ pub fn handle_editor_flood_fill(
         }
         EditorTool::FloorBrush => {
             let floor_type = editor_state.selected_floor_painted_id();
+            let existing = floor_maps.get(editor_context.space_id, floor_map_z);
             for (x, y) in cells {
+                // Snapshot the previous value so the flood undoes in one step.
+                composite.push(UndoOp::SetFloor {
+                    space_id: editor_context.space_id,
+                    z: floor_map_z,
+                    x,
+                    y,
+                    value: existing.and_then(|m| m.get(x, y).cloned()),
+                });
                 pending_commands.push(GameCommand::EditorSetFloorTile {
                     space_id: editor_context.space_id,
                     z: floor_map_z,

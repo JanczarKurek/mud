@@ -18,7 +18,7 @@ pub use gameplay::GameplaySettings;
 pub use model::{Action, Keybindings};
 pub use ui::SettingsUiState;
 
-pub use persistence::{SavedServerEntry, SavedServerList};
+pub use persistence::{SavedServerEntry, SavedServerList, SelectedStartingMap};
 
 use display::apply_display_settings;
 use persistence::{load_settings, persist_settings, SettingsLoaded};
@@ -42,6 +42,7 @@ impl Plugin for SettingsPlugin {
             .init_resource::<SettingsUiState>()
             .init_resource::<SettingsLoaded>()
             .init_resource::<SavedServerList>()
+            .init_resource::<SelectedStartingMap>()
             .add_systems(Startup, (load_settings, spawn_settings_overlay))
             .add_systems(
                 PreUpdate,

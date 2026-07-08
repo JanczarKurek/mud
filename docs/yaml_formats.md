@@ -1494,6 +1494,31 @@ A trap that snaps shut combines all three: see
 state changes (e.g. a permanent patch of fire) uses just `apply_effect` — see
 `assets/overworld_objects/blazing_fire/metadata.yaml`.
 
+### Stack count (`quantity`)
+
+Pile size is **per-instance**. To author a placed stackable object as a pile of
+N, set a `quantity` entry in that instance's `properties:` block:
+
+```yaml
+- id: gold_pile
+  type: gold_coin
+  placement: { x: 7, y: 4 }
+  properties:
+    quantity: "25"
+```
+
+- `quantity` — stringly-typed count (same convention as `state:` / `hidden_dc:`).
+  Only meaningful for definitions with `max_stack_size > 1`; the loader clamps
+  nothing but the map editor's Stack section clamps to the effective
+  `max_stack_size`. Values of `1` (or absent) mean a single item and omit the
+  `Quantity` component entirely.
+
+In the **map editor**, selecting a stackable object surfaces a **Stack** section
+(slider + `−`/`+` steppers + numeric input) that writes this property; the
+object sprite updates to the matching `stack_sprites` tier. Setting the count
+back to 1 removes the key. Player-dropped / loot piles set their quantity at
+runtime and do not rely on this property.
+
 ### Hidden trait
 
 Hiddenness is **per-instance**, not per-type. To author a specific placed

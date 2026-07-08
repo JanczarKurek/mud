@@ -11,3 +11,8 @@ walls:
   corner_se: wall_corner_se
 default_floor: cobblestone
 default_door: wooden_door
+doors:
+  north: wooden_door_n
+  south: wooden_door_s
+  east: wooden_door_e
+  west: wooden_door_w

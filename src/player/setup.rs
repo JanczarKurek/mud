@@ -21,6 +21,7 @@ use crate::world::components::{
 use crate::world::lighting::LightSource;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
+use crate::world::resources::SpaceManager;
 use crate::world::setup::{attach_combat_health_bar, build_object_visual_bundle};
 use crate::world::WorldConfig;
 
@@ -76,12 +77,14 @@ pub fn despawn_projected_local_player(
 pub fn spawn_embedded_player_authoritative(
     mut commands: Commands,
     world_config: Res<WorldConfig>,
+    space_manager: Res<SpaceManager>,
     mut object_registry: ResMut<ObjectRegistry>,
     snapshot_status: Option<Res<WorldSnapshotStatus>>,
     player_query: Query<Option<&PlayerIdentity>, With<Player>>,
     db: Option<Res<crate::accounts::AccountDbHandle>>,
     mut var_stores: Option<ResMut<crate::dialog::resources::CharacterVarStores>>,
     selected: Option<Res<crate::app::state::LocalSelectedCharacter>>,
+    selected_map: Option<Res<crate::ui::settings::SelectedStartingMap>>,
     loadout: Res<StartingLoadout>,
 ) {
     if snapshot_status
@@ -90,6 +93,21 @@ pub fn spawn_embedded_player_authoritative(
     {
         return;
     }
+
+    // Resolve the map a *new* (or origin-positioned) character should spawn in.
+    // The title-screen map picker sets `SelectedStartingMap`; `None` (or an
+    // authored id that isn't a live persistent space) falls back to the
+    // bootstrap space via `world_config.current_space_id`. A returning
+    // character with a real saved position resumes there regardless.
+    let spawn_space_id = selected_map
+        .as_ref()
+        .and_then(|s| s.map_id.as_deref())
+        .and_then(|id| space_manager.persistent_space_id(id))
+        .unwrap_or(world_config.current_space_id);
+    let (spawn_width, spawn_height) = space_manager
+        .get(spawn_space_id)
+        .map(|space| (space.width, space.height))
+        .unwrap_or((world_config.map_width, world_config.map_height));
 
     if player_query.iter().next().is_some() {
         warn!(
@@ -133,9 +151,8 @@ pub fn spawn_embedded_player_authoritative(
         let needs_spawn_location =
             dump.space_id.is_none() || (dump.tile_position.x == 0 && dump.tile_position.y == 0);
         if needs_spawn_location {
-            dump.space_id = Some(world_config.current_space_id);
-            dump.tile_position =
-                TilePosition::ground(world_config.map_width / 2, world_config.map_height / 2);
+            dump.space_id = Some(spawn_space_id);
+            dump.tile_position = TilePosition::ground(spawn_width / 2, spawn_height / 2);
         }
         let yarn_vars = dump.yarn_vars.clone();
         let needs_starter_seed = dump
@@ -148,7 +165,7 @@ pub fn spawn_embedded_player_authoritative(
                 .equipment_slots
                 .iter()
                 .all(|(_, item)| item.is_none());
-        let fallback_space_id = world_config.current_space_id;
+        let fallback_space_id = spawn_space_id;
         let entity = spawn_player_from_dump(
             &mut commands,
             &mut object_registry,
@@ -167,13 +184,13 @@ pub fn spawn_embedded_player_authoritative(
         return;
     }
 
-    let spawn_tile = TilePosition::ground(world_config.map_width / 2, world_config.map_height / 2);
+    let spawn_tile = TilePosition::ground(spawn_width / 2, spawn_height / 2);
     let object_id = object_registry.allocate_runtime_id("player");
-    let entity = spawn_player_authoritative(
+    let entity = spawn_player_authoritative_in_space(
         &mut commands,
-        &world_config,
         player_id,
         object_id,
+        spawn_space_id,
         spawn_tile,
         display_name,
     );

@@ -196,6 +196,16 @@ pub fn spawn_overworld_object_instance(
         )
     };
 
+    // Per-instance stack count: a map author (via the editor's Stack section)
+    // stores the pile size as a `quantity` property. Absent / "1" means a
+    // single item (no `Quantity` component). Runtime-dropped items never carry
+    // this property, so they keep whatever quantity the drop logic assigns.
+    let quantity = object
+        .properties
+        .get("quantity")
+        .and_then(|s| s.parse::<u32>().ok())
+        .filter(|&q| q > 1);
+
     let entity = spawn_overworld_object(
         commands,
         definitions,
@@ -205,7 +215,7 @@ pub fn spawn_overworld_object_instance(
         container_contents,
         space_id,
         tile_position,
-        None,
+        quantity,
     );
 
     if let Some(facing) = object.facing {
