@@ -59,6 +59,10 @@ items if/when we resume:
 - `FloorIndicatorLabel` HUD text.
 - Ladder / rope transition object kinds (sinkhole already exists).
 
+### Art
+- Transition tilesets for the new `flagstone` / `checkered_marble` floors (`assets/floors/transitions/<low>__<high>/`) — currently they meet terrain with a hard quadrant edge, acceptable indoors.
+- The barrel sprite deliberately softens the wall-set projection (a strict 1-floor cylinder under the (-36,-24)px/floor shear reads as a lying log — see `scripts/gen_container_set.py`), so objects stacked on a barrel sit slightly up-left of the drawn lid.
+
 ### Map authoring
 - Brushes / floods / templates so large layouts are not verbose YAML tile lists (`TileRectangleArea` rects already work, plus the ASCII `tiles:` grid; the gap is interactive paint tooling).
 - Add validation for map YAML so invalid object IDs or out-of-bounds placements fail clearly.

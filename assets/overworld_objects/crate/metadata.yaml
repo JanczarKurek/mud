@@ -1,0 +1,16 @@
+extends: movable_obstacle
+name: Crate
+description: A sturdy wooden shipping crate. Can be opened, shoved, and climbed.
+container_capacity: 10
+rotatable: true
+weight: 10.0
+render:
+  z_index: 0.25
+  debug_color: [168, 128, 76]
+  debug_size: 0.7
+  sprite_path: overworld_objects/crate/sprite.png
+  sprite_width_tiles: 2.333
+  sprite_height_tiles: 1.438
+  block_size: 2
+  walkable_surface: true
+  stack_order: 15

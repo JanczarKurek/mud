@@ -151,14 +151,6 @@ floors:
       y: 128
     - x: 114
       y: 129
-    - x: 122
-      y: 129
-    - x: 123
-      y: 129
-    - x: 124
-      y: 129
-    - x: 125
-      y: 129
     - x: 126
       y: 129
     - x: 127
@@ -255,6 +247,18 @@ floors:
       y: 134
     - x: 124
       y: 135
+  flagstone:
+    placement:
+    - x: 121
+      y: 129
+    - x: 122
+      y: 129
+    - x: 123
+      y: 129
+    - x: 124
+      y: 129
+    - x: 125
+      y: 129
   cave_floor:
     placement:
     - x: 115
@@ -297,8 +301,6 @@ floors:
       y: 129
     - x: 120
       y: 129
-    - x: 121
-      y: 129
     - x: 115
       y: 130
     - x: 116
@@ -328,10 +330,16 @@ floors:
     - x: 121
       y: 131
 objects:
-- type: barrel
+- type: crate
   placement:
-  - x: 119
+  - x: 116
     y: 130
+  - x: 117
+    y: 130
+  - x: 118
+    y: 130
+- type: iron_chest
+  placement:
   - x: 120
     y: 130
 - type: wall_corner_ne

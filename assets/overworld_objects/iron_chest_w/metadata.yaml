@@ -1,13 +1,13 @@
 extends: movable_obstacle
-name: Iron Chest
-description: A heavy iron-banded chest. Its lock faces south.
+name: Iron Chest (West)
+description: A heavy iron-banded chest. Its lock faces west, away from view.
 container_capacity: 12
 colliding: true
 render:
   z_index: 0.25
   debug_color: [120, 120, 130]
   debug_size: 0.78
-  sprite_path: overworld_objects/iron_chest/closed.png
+  sprite_path: overworld_objects/iron_chest_w/closed.png
   sprite_width_tiles: 2.125
   sprite_height_tiles: 1.375
   block_size: 1
@@ -15,11 +15,11 @@ render:
   stack_order: 20
 states:
   locked:
-    sprite_path: overworld_objects/iron_chest/closed.png
+    sprite_path: overworld_objects/iron_chest_w/closed.png
   closed:
-    sprite_path: overworld_objects/iron_chest/closed.png
+    sprite_path: overworld_objects/iron_chest_w/closed.png
   open:
-    sprite_path: overworld_objects/iron_chest/open.png
+    sprite_path: overworld_objects/iron_chest_w/open.png
 initial_state: closed
 lock:
   lock_id: 7
