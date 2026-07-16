@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::magic::resources::SpellDefinitions;
-use crate::world::map_layout::{MapBehavior, ObjectProperties, SpaceDefinitions};
+use crate::world::map_layout::{MapBehavior, ObjectProperties, ResolvedObject, SpaceDefinitions};
 use crate::world::object_definitions::{
     number_to_customary, number_to_written, OverworldObjectDefinitions,
 };
@@ -178,6 +178,25 @@ impl ObjectRegistry {
         }
         if self.next_runtime_id <= object_id {
             self.next_runtime_id = object_id + 1;
+        }
+    }
+
+    /// Overwrite the registry entries for a freshly-resolved space so its
+    /// runtime ids, types, properties, and behaviors are authoritative, and
+    /// advance `next_runtime_id` past them. Mirrors the loop in
+    /// `reset_space_contents_from_def` and the editor's GenerateDungeon path;
+    /// call it after `SpaceDefinitions::load_single_from_disk` (which re-resolves
+    /// a space into a fresh id range but does not touch the registry) so the
+    /// re-baked ids can't later be re-handed-out by `allocate_runtime_id` and
+    /// collide with a live entity of a different type.
+    pub fn sync_resolved_objects(&mut self, objects: &[ResolvedObject]) {
+        for object in objects {
+            self.replace_existing(
+                object.id,
+                object.type_id.clone(),
+                object.properties.clone(),
+                object.behavior,
+            );
         }
     }
 
@@ -403,6 +422,42 @@ mod tests {
             .map(|p| p.is_empty())
             .unwrap_or(true));
         assert!(registry.behavior(42).is_none());
+    }
+
+    /// `sync_resolved_objects` must bind every resolved id to its type and
+    /// advance `next_runtime_id` past the highest one, so a following
+    /// `allocate_runtime_id` can't re-hand-out a synced id.
+    #[test]
+    fn sync_resolved_objects_binds_types_and_advances_counter() {
+        use crate::world::map_layout::ResolvedObject;
+
+        fn resolved(id: u64, type_id: &str) -> ResolvedObject {
+            ResolvedObject {
+                id,
+                type_id: type_id.to_owned(),
+                properties: ObjectProperties::new(),
+                placement: None,
+                contents: Vec::new(),
+                quantity: None,
+                behavior: None,
+                facing: None,
+                routine: None,
+            }
+        }
+
+        let mut registry = ObjectRegistry::default();
+        registry.sync_resolved_objects(&[resolved(600, "crate"), resolved(605, "wall_n")]);
+
+        assert_eq!(registry.type_id(600), Some("crate"));
+        assert_eq!(registry.type_id(605), Some("wall_n"));
+        assert_eq!(
+            registry.next_runtime_id(),
+            606,
+            "counter advanced past the highest synced id"
+        );
+        // The next allocation must not collide with a synced id.
+        let fresh = registry.allocate_runtime_id("apple");
+        assert!(fresh >= 606);
     }
 
     #[test]

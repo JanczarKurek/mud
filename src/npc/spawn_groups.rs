@@ -319,6 +319,7 @@ pub fn tick_spawn_groups(
                     z: spawn_tile.z,
                 }),
                 contents: Vec::new(),
+                quantity: None,
                 behavior: Some(runtime.def.behavior),
                 facing: None,
                 // Spawn-group members roam; routines are for hand-placed NPCs.

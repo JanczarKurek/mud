@@ -252,6 +252,7 @@ fn build_fragment(
                     type_id: wall_id,
                     properties: Default::default(),
                     behavior: None,
+                    contents: Vec::new(),
                 });
             }
             if floor_id.is_some() {
@@ -459,6 +460,7 @@ pub fn handle_editor_building_door_swap_click(
                 tile,
                 properties: wall_properties,
                 behavior: wall_behavior,
+                contents: Vec::new(),
             },
         ],
     };

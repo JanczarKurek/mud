@@ -171,6 +171,48 @@ pub fn resolve_portal_destination_space(
     ))
 }
 
+/// Recursively convert a resolved authored object into an `InventoryStack`,
+/// honoring its stack `quantity` and nested `contents:` (a container inside a
+/// container). Nested slots are padded/truncated to the child definition's
+/// `container_capacity` so runtime slot indexing stays valid, mirroring the
+/// top-level padding in `apply_overworld_definition_components!`. An unknown
+/// child type leaves the slot list dense.
+fn resolved_to_stack(
+    space: &SpaceDefinition,
+    definitions: &OverworldObjectDefinitions,
+    resolved: &ResolvedObject,
+) -> InventoryStack {
+    let quantity = resolved.quantity.unwrap_or(1).max(1);
+    let contained_slots = if resolved.contents.is_empty() {
+        None
+    } else {
+        let mut slots: Vec<Option<InventoryStack>> = resolved
+            .contents
+            .iter()
+            .map(|&id| {
+                space
+                    .find_resolved(id)
+                    .map(|child| resolved_to_stack(space, definitions, child))
+            })
+            .collect();
+        if let Some(capacity) = definitions
+            .get(&resolved.type_id)
+            .and_then(|def| def.container_capacity)
+        {
+            slots.truncate(capacity);
+            slots.resize(capacity, None);
+        }
+        Some(slots)
+    };
+    InventoryStack {
+        type_id: resolved.type_id.clone(),
+        properties: resolved.properties.clone(),
+        quantity,
+        contained_slots,
+        modifiers: Vec::new(),
+    }
+}
+
 pub fn spawn_overworld_object_instance(
     commands: &mut Commands,
     definitions: &OverworldObjectDefinitions,
@@ -188,9 +230,9 @@ pub fn spawn_overworld_object_instance(
                 .contents
                 .iter()
                 .map(|&id| {
-                    space.find_resolved(id).map(|child| {
-                        InventoryStack::item(child.type_id.clone(), child.properties.clone(), 1)
-                    })
+                    space
+                        .find_resolved(id)
+                        .map(|child| resolved_to_stack(space, definitions, child))
                 })
                 .collect(),
         )
@@ -1020,6 +1062,75 @@ mod tests {
         assert_eq!(base.attributes.willpower, defaults.willpower);
         assert_eq!(base.attributes.charisma, defaults.charisma);
         assert_eq!(base.attributes.focus, defaults.focus);
+    }
+
+    /// Regression: authored container contents must load with their stack
+    /// `quantity` and nested `contents:` intact — previously
+    /// `spawn_overworld_object_instance` flattened every child to
+    /// `InventoryStack::item(.., 1)`, dropping counts and grandchildren.
+    #[test]
+    fn resolved_to_stack_honors_quantity_and_nesting() {
+        use crate::world::map_layout::SpaceDefinition;
+
+        fn container_def(capacity: usize) -> OverworldObjectDefinition {
+            serde_yaml::from_str(&format!(
+                "name: C\ndescription: c\ncolliding: false\nmovable: false\nstorable: true\ncontainer_capacity: {capacity}\nrender:\n  z_index: 1.0\n  debug_color: [1, 2, 3]\n  debug_size: 0.5\n"
+            ))
+            .unwrap()
+        }
+
+        let space_yaml = r#"
+authored_id: t
+width: 8
+height: 8
+fill_floor_type: grass
+objects:
+  - type: iron_chest
+    placement: { x: 2, y: 2 }
+    contents:
+      - type: apple
+        quantity: 5
+      - type: small_pouch
+        contents:
+          - type: herb
+"#;
+        let mut space: SpaceDefinition = serde_yaml::from_str(space_yaml).unwrap();
+        space.resolve_objects(1);
+
+        let mut defs = std::collections::HashMap::new();
+        defs.insert("iron_chest".to_owned(), container_def(12));
+        defs.insert("small_pouch".to_owned(), container_def(4));
+        defs.insert("apple".to_owned(), def_from(""));
+        defs.insert("herb".to_owned(), def_from(""));
+        let definitions = OverworldObjectDefinitions::new_for_test(defs);
+
+        let chest = space
+            .resolved_objects
+            .iter()
+            .find(|o| o.type_id == "iron_chest")
+            .expect("chest resolved");
+        let children: Vec<InventoryStack> = chest
+            .contents
+            .iter()
+            .filter_map(|&id| space.find_resolved(id))
+            .map(|c| resolved_to_stack(&space, &definitions, c))
+            .collect();
+
+        let apple = children.iter().find(|s| s.type_id == "apple").unwrap();
+        assert_eq!(apple.quantity, 5);
+        assert!(apple.contained_slots.is_none());
+
+        let pouch = children
+            .iter()
+            .find(|s| s.type_id == "small_pouch")
+            .unwrap();
+        let slots = pouch.contained_slots.as_ref().expect("pouch has slots");
+        assert_eq!(slots.len(), 4, "padded to small_pouch capacity");
+        assert_eq!(slots[0].as_ref().map(|s| s.type_id.as_str()), Some("herb"));
+        assert!(
+            slots[1..].iter().all(|s| s.is_none()),
+            "trailing slots empty"
+        );
     }
 
     fn def_from(extra: &str) -> OverworldObjectDefinition {

@@ -12,6 +12,7 @@ pub const RECENT_TYPES_CAP: usize = 12;
 /// memory without limit.
 pub const UNDO_STACK_CAP: usize = 256;
 
+use crate::player::components::InventoryStack;
 use crate::world::components::{SpaceId, TilePosition};
 use crate::world::floor_definitions::{derive_floor_id, FloorFlavor, FloorTypeId};
 use crate::world::map_layout::{
@@ -701,6 +702,11 @@ pub struct FragmentObject {
     pub properties: HashMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub behavior: Option<MapBehavior>,
+    /// Container contents captured on copy. Dense slot vec cloned straight from
+    /// the `Container` component; empty for non-container objects. `#[serde(
+    /// default)]` keeps older saved templates (no `contents` key) parsing.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub contents: Vec<Option<InventoryStack>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -794,6 +800,76 @@ pub enum VendorStashEditingField {
     },
 }
 
+// ── Container contents editor ───────────────────────────────────────────────
+
+/// Which container a contents operation targets: `None` = the selected
+/// object's own top-level container; `Some(top)` = the nested container
+/// sitting in the object's top-level slot `top`. Depth is capped at 2 by
+/// `accepts_storable_containers: false` on pouches.
+pub type ContainerRef = Option<usize>;
+
+/// Full address of one contents slot: its container plus the slot index.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SlotAddr {
+    pub container: ContainerRef,
+    pub index: usize,
+}
+
+/// The active inline-edit cursor inside the Contents section. Only one of
+/// these (across every editor panel) is `Some` at a time; the click handlers
+/// that arm one clear the property / stack / vendor edit state and vice-versa.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ContentsEditTarget {
+    /// A slot's stack count (`InventoryStack.quantity`).
+    Quantity { addr: SlotAddr },
+    /// The key of the slot item's property at `prop_index` (sorted order).
+    PropertyKey { addr: SlotAddr, prop_index: usize },
+    /// The value of the slot item's property at `prop_index` (sorted order).
+    PropertyValue { addr: SlotAddr, prop_index: usize },
+}
+
+/// "Pick from palette" arm for the Contents section. While `Some`, the next
+/// click on an `EditorPaletteItem` is captured by `handle_contents_palette_pick`
+/// (instead of arming the brush) and writes an item into the target container.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ContentsPickTarget {
+    /// The container object whose `Container` component is being edited.
+    pub object_id: u64,
+    /// Which container within that object receives the item.
+    pub container: ContainerRef,
+    /// `Some(index)` retypes an existing slot; `None` fills the first empty slot.
+    pub replace: Option<usize>,
+}
+
+/// Transient edit state for the Contents section of the Properties sidebar.
+/// The slots themselves live in the entity's `Container` component (the single
+/// source of truth); this buffer holds only which cell is being edited / armed.
+#[derive(Resource, Default)]
+pub struct EditorContentsBuffer {
+    /// The container object the section currently reflects. Reset whenever the
+    /// selection changes so stale edit/pick arms don't leak across objects.
+    pub object_id: Option<u64>,
+    /// Active inline-edit cursor. `None` = no contents cell has focus.
+    pub editing: Option<ContentsEditTarget>,
+    /// Buffered text for the currently-edited cell.
+    pub edit_text: String,
+    /// Top-level slot whose nested container contents are expanded, if any.
+    pub expanded: Option<usize>,
+    /// Armed palette-pick target; see `ContentsPickTarget`.
+    pub pending_item_pick: Option<ContentsPickTarget>,
+}
+
+impl EditorContentsBuffer {
+    /// Drop every transient cell/arm state, keeping the resource but clearing
+    /// edit focus, expansion, and any armed pick.
+    pub fn clear_transient(&mut self) {
+        self.editing = None;
+        self.edit_text.clear();
+        self.expanded = None;
+        self.pending_item_pick = None;
+    }
+}
+
 /// Bundle the per-map-edit buffers into a single `SystemParam` so callers
 /// like `apply_modal_confirmed` can take both with one slot — Bevy caps
 /// system parameter count at 16, and threading this many resources through
@@ -878,13 +954,15 @@ pub enum UndoOp {
     },
     /// Spawn a new object at the given position with given properties.
     /// `behavior` carries any per-instance `MapBehavior` so undo-of-delete
-    /// (and cut/paste round-trips) preserve NPC roam/chase config.
+    /// (and cut/paste round-trips) preserve NPC roam/chase config; `contents`
+    /// carries a container's slots so undo-of-delete restores a stocked chest.
     Spawn {
         type_id: String,
         space_id: SpaceId,
         tile: TilePosition,
         properties: HashMap<String, String>,
         behavior: Option<MapBehavior>,
+        contents: Vec<Option<InventoryStack>>,
     },
     /// Remove portal at the given index from EditorPortalBuffer.
     RemovePortal {

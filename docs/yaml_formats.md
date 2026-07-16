@@ -217,7 +217,14 @@ Fields:
 - Default: empty list
 - Meaning: items stored inside this object. Intended for container objects such as barrels.
 - A bare string entry (e.g. `- special_potion`) refers to another instance's symbolic `id`.
-- An inline mapping (e.g. `- type: potion`) defines a child object on the spot. Inline children may themselves carry `properties`, nested `contents`, etc., but never `placement`.
+- An inline mapping (e.g. `- type: potion`) defines a child object on the spot. Inline children may themselves carry `properties`, nested `contents`, a `quantity`, etc., but never `placement`.
+- The map editor's Properties sidebar shows a **Contents** section for any placed object whose definition declares `container_capacity`; add / remove / re-quantify items and edit their properties there (one level of nesting supported). Contents survive save, copy/paste, and undo. Item modifiers are the one thing map YAML can't express — they're dropped on save.
+
+### `quantity` (contained items only)
+- Type: positive integer
+- Optional: yes
+- Default: `1`
+- Meaning: stack count for an item sitting inside a container's `contents`. Only consumed during `contents` recursion; a top-level placement uses the `quantity` *property* instead (via the editor's Stack section).
 
 ### `behavior`
 - Type: mapping or `null`

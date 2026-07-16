@@ -6,7 +6,7 @@ use crate::editor::resources::{
 };
 use crate::editor::systems::insert_editor_visuals_pub;
 use crate::ui::settings::{EditorAction, EditorHotkeyInput};
-use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
+use crate::world::components::{Container, OverworldObject, SpaceResident, TilePosition};
 use crate::world::floor_map::FloorMaps;
 use crate::world::floor_render::FloorRenderDirty;
 use crate::world::object_definitions::OverworldObjectDefinitions;
@@ -31,7 +31,13 @@ pub fn handle_undo_redo(
     editor_camera: Res<EditorCamera>,
     asset_server: Res<AssetServer>,
     mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
-    objects: Query<(Entity, &OverworldObject, &SpaceResident, &TilePosition)>,
+    objects: Query<(
+        Entity,
+        &OverworldObject,
+        &SpaceResident,
+        &TilePosition,
+        Option<&Container>,
+    )>,
 ) {
     if modal_state.active.is_some() {
         return;
@@ -101,12 +107,19 @@ fn execute_op(
     editor_camera: &EditorCamera,
     asset_server: &AssetServer,
     texture_atlas_layouts: &mut Assets<TextureAtlasLayout>,
-    objects: &Query<(Entity, &OverworldObject, &SpaceResident, &TilePosition)>,
+    objects: &Query<(
+        Entity,
+        &OverworldObject,
+        &SpaceResident,
+        &TilePosition,
+        Option<&Container>,
+    )>,
 ) -> UndoOp {
     match op {
         UndoOp::Despawn { object_id } => {
-            if let Some((entity, obj, resident, tile)) =
-                objects.iter().find(|(_, o, _, _)| o.object_id == object_id)
+            if let Some((entity, obj, resident, tile, container)) = objects
+                .iter()
+                .find(|(_, o, _, _, _)| o.object_id == object_id)
             {
                 let type_id = object_registry
                     .type_id(obj.object_id)
@@ -117,6 +130,7 @@ fn execute_op(
                     .cloned()
                     .unwrap_or_default();
                 let behavior = object_registry.behavior(obj.object_id).cloned();
+                let contents = container.map(|c| c.slots.clone()).unwrap_or_default();
                 let space_id = resident.space_id;
                 let tile = *tile;
                 commands.entity(entity).despawn();
@@ -126,6 +140,7 @@ fn execute_op(
                     tile,
                     properties,
                     behavior,
+                    contents,
                 }
             } else {
                 UndoOp::Despawn { object_id }
@@ -137,6 +152,7 @@ fn execute_op(
             tile,
             properties,
             behavior,
+            contents,
         } => {
             let new_id = if properties.is_empty() {
                 object_registry.allocate_runtime_id(type_id.clone())
@@ -153,7 +169,7 @@ fn execute_op(
                 object_registry,
                 new_id,
                 &type_id,
-                None,
+                (!contents.is_empty()).then(|| contents.clone()),
                 space_id,
                 tile,
                 None,

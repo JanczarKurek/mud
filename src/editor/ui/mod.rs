@@ -1,6 +1,7 @@
 #![allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub mod building_panel;
 pub mod color_picker;
+pub mod contents;
 pub mod lighting_panel;
 pub mod mobs_panel;
 pub mod modal;
@@ -480,13 +481,14 @@ pub fn handle_save_button_click(
     spawn_group_buffer: Res<crate::editor::resources::EditorSpawnGroupBuffer>,
     lighting_buffer: Res<crate::editor::resources::EditorLightingBuffer>,
     vendor_stash_buffer: Res<crate::editor::resources::EditorVendorStashBuffer>,
-    object_registry: Res<crate::world::object_registry::ObjectRegistry>,
+    mut object_registry: ResMut<crate::world::object_registry::ObjectRegistry>,
     floor_maps: Res<crate::world::floor_map::FloorMaps>,
     objects: Query<
         (
             &crate::world::components::OverworldObject,
             &crate::world::components::SpaceResident,
             &crate::world::components::TilePosition,
+            Option<&crate::world::components::Container>,
         ),
         (
             bevy::prelude::Without<crate::npc::components::SpawnGroupMember>,
@@ -511,6 +513,10 @@ pub fn handle_save_button_click(
                 &editor_context.authored_id,
                 object_registry.next_runtime_id(),
             );
+            // Reconcile the registry to the re-baked id range (see handle_editor_save).
+            if let Some(def) = space_definitions.get(&editor_context.authored_id) {
+                object_registry.sync_resolved_objects(&def.resolved_objects);
+            }
             editor_state.dirty = false;
         }
     }
@@ -709,7 +715,15 @@ pub fn handle_save_as_template_button_click(
     editor_context: Res<EditorContext>,
     object_registry: Res<ObjectRegistry>,
     floor_maps: Res<FloorMaps>,
-    objects: Query<(&OverworldObject, &SpaceResident, &TilePosition), Without<Player>>,
+    objects: Query<
+        (
+            &OverworldObject,
+            &SpaceResident,
+            &TilePosition,
+            Option<&crate::world::components::Container>,
+        ),
+        Without<Player>,
+    >,
     mut modal_state: ResMut<ModalState>,
 ) {
     for interaction in &btn {

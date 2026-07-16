@@ -182,7 +182,9 @@ pub fn sync_properties_panel(
     object_definitions: Res<OverworldObjectDefinitions>,
     dialog_index: Res<EditorDialogIndex>,
     stack_edit: Res<EditorStackEdit>,
+    contents_buffer: Res<crate::editor::resources::EditorContentsBuffer>,
     object_query: Query<&OverworldObject>,
+    container_query: Query<(&OverworldObject, &crate::world::components::Container)>,
     mut root_query: Query<&mut Node, With<EditorPropertiesRoot>>,
     mut header_query: Query<&mut Text, With<EditorPropertiesHeader>>,
     content_query: Query<Entity, With<EditorPropertiesContent>>,
@@ -220,6 +222,7 @@ pub fn sync_properties_panel(
         && !object_registry.is_changed()
         && !dialog_index.is_changed()
         && !stack_edit.is_changed()
+        && !contents_buffer.is_changed()
     {
         return;
     }
@@ -421,6 +424,26 @@ pub fn sync_properties_panel(
                 .unwrap_or(1)
                 .clamp(1, max_stack);
             spawn_stack_section(content, current, max_stack, &stack_edit);
+        }
+
+        // ── Container contents ──────────────────────────────────────────────
+        let capacity = definition_id
+            .as_deref()
+            .and_then(|id| object_definitions.get(id))
+            .and_then(|def| def.container_capacity);
+        if let Some(capacity) = capacity {
+            if let Some((_, container)) = container_query
+                .iter()
+                .find(|(o, _)| o.object_id == selected_id)
+            {
+                crate::editor::ui::contents::spawn_contents_section(
+                    content,
+                    capacity,
+                    container,
+                    &object_definitions,
+                    &contents_buffer,
+                );
+            }
         }
     });
 }
@@ -778,6 +801,7 @@ pub fn handle_property_row_click(
     rows: Query<(&EditorPropertyRow, &Interaction), (Changed<Interaction>, With<Button>)>,
     mut prop_buffer: ResMut<EditorPropertyEditBuffer>,
     mut vendor_stash_buffer: ResMut<crate::editor::resources::EditorVendorStashBuffer>,
+    mut contents_buffer: ResMut<crate::editor::resources::EditorContentsBuffer>,
 ) {
     for (row, interaction) in &rows {
         if *interaction == Interaction::Pressed {
@@ -787,10 +811,12 @@ pub fn handle_property_row_click(
                 continue;
             }
             if let Some(initial_value) = prop_buffer.entries.get(index).map(|e| e.1.clone()) {
-                // Drop any active vendor-stash edit so the keyboard pipeline
-                // doesn't end up routing keystrokes into both panels.
+                // Drop any active vendor-stash / contents edit so the keyboard
+                // pipeline doesn't route keystrokes into multiple panels.
                 vendor_stash_buffer.editing = None;
                 vendor_stash_buffer.edit_text.clear();
+                contents_buffer.editing = None;
+                contents_buffer.edit_text.clear();
                 prop_buffer.editing_index = Some(index);
                 prop_buffer.editing_field = EditingField::Value;
                 prop_buffer.edit_text = initial_value;
@@ -804,11 +830,14 @@ pub fn handle_add_property_button(
     add_btns: Query<&Interaction, (Changed<Interaction>, With<EditorPropertyAddButton>)>,
     mut prop_buffer: ResMut<EditorPropertyEditBuffer>,
     mut vendor_stash_buffer: ResMut<crate::editor::resources::EditorVendorStashBuffer>,
+    mut contents_buffer: ResMut<crate::editor::resources::EditorContentsBuffer>,
 ) {
     for interaction in &add_btns {
         if *interaction == Interaction::Pressed {
             vendor_stash_buffer.editing = None;
             vendor_stash_buffer.edit_text.clear();
+            contents_buffer.editing = None;
+            contents_buffer.edit_text.clear();
             let new_index = prop_buffer.entries.len();
             prop_buffer.entries.push((String::new(), String::new()));
             prop_buffer.editing_index = Some(new_index);
@@ -1080,6 +1109,7 @@ pub fn handle_stack_input_click(
     mut stack_edit: ResMut<EditorStackEdit>,
     mut prop_buffer: ResMut<EditorPropertyEditBuffer>,
     mut vendor_stash_buffer: ResMut<crate::editor::resources::EditorVendorStashBuffer>,
+    mut contents_buffer: ResMut<crate::editor::resources::EditorContentsBuffer>,
 ) {
     for interaction in &inputs {
         if *interaction != Interaction::Pressed {
@@ -1092,6 +1122,8 @@ pub fn handle_stack_input_click(
         prop_buffer.edit_text.clear();
         vendor_stash_buffer.editing = None;
         vendor_stash_buffer.edit_text.clear();
+        contents_buffer.editing = None;
+        contents_buffer.edit_text.clear();
         stack_edit.editing = true;
         stack_edit.text = stack_count_of(&object_registry, selected).to_string();
     }

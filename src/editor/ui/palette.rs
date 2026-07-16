@@ -611,12 +611,15 @@ pub fn handle_palette_clicks(
     mut editor_state: ResMut<EditorState>,
     items: Query<(&EditorPaletteItem, &Interaction), (Changed<Interaction>, With<Button>)>,
     vendor_stash_buffer: Res<crate::editor::resources::EditorVendorStashBuffer>,
+    contents_buffer: Res<crate::editor::resources::EditorContentsBuffer>,
 ) {
-    // Vendor-stash ware picking has priority: when a pick is armed, palette
-    // clicks belong to the stash flow (handled by
-    // `handle_vendor_stash_palette_pick`), not to the object brush. Without
-    // this gate, picking a ware would also arm the brush.
-    if vendor_stash_buffer.pending_ware_pick.is_some() {
+    // Vendor-stash ware picking and container-contents picking have priority:
+    // when either arm is set, palette clicks belong to that flow (handled by
+    // `handle_vendor_stash_palette_pick` / `handle_contents_palette_pick`),
+    // not the object brush. Without this gate, picking would also arm the brush.
+    if vendor_stash_buffer.pending_ware_pick.is_some()
+        || contents_buffer.pending_item_pick.is_some()
+    {
         return;
     }
     for (item, interaction) in &items {

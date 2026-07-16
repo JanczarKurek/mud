@@ -19,6 +19,7 @@ use crate::world::components::{
     SpaceResident, TilePosition, ViewPosition,
 };
 use crate::world::lighting::LightSource;
+use crate::world::map_layout::SpaceDefinitions;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::resources::SpaceManager;
@@ -74,6 +75,34 @@ pub fn despawn_projected_local_player(
     }
 }
 
+/// Where a character enters the world, given an already-resolved title-screen
+/// pick. Falls back to the authored bootstrap space, and only then to
+/// `current_space_id` — which tracks whichever space the player last stood in
+/// (`sync_client_world_projection`) and is persisted in the world snapshot, so
+/// it drifts off the bootstrap space and is a last resort, not the default.
+fn resolve_spawn_space(
+    space_manager: &SpaceManager,
+    bootstrap_space_id: &str,
+    explicit_pick: Option<SpaceId>,
+    current_space_id: SpaceId,
+) -> SpaceId {
+    explicit_pick
+        .or_else(|| space_manager.persistent_space_id(bootstrap_space_id))
+        .unwrap_or(current_space_id)
+}
+
+/// Whether to place a loaded character at the spawn point rather than resume
+/// them at their persisted location. An explicit map pick relocates them —
+/// that's the point of picking. Otherwise only a character with no saved space,
+/// or one parked at the origin (never actually placed), gets moved.
+fn needs_spawn_location(
+    explicit_pick: Option<SpaceId>,
+    saved_space_id: Option<SpaceId>,
+    saved_tile: TilePosition,
+) -> bool {
+    explicit_pick.is_some() || saved_space_id.is_none() || (saved_tile.x == 0 && saved_tile.y == 0)
+}
+
 pub fn spawn_embedded_player_authoritative(
     mut commands: Commands,
     world_config: Res<WorldConfig>,
@@ -84,7 +113,8 @@ pub fn spawn_embedded_player_authoritative(
     db: Option<Res<crate::accounts::AccountDbHandle>>,
     mut var_stores: Option<ResMut<crate::dialog::resources::CharacterVarStores>>,
     selected: Option<Res<crate::app::state::LocalSelectedCharacter>>,
-    selected_map: Option<Res<crate::ui::settings::SelectedStartingMap>>,
+    mut selected_map: Option<ResMut<crate::ui::settings::SelectedStartingMap>>,
+    space_definitions: Res<SpaceDefinitions>,
     loadout: Res<StartingLoadout>,
 ) {
     if snapshot_status
@@ -94,16 +124,41 @@ pub fn spawn_embedded_player_authoritative(
         return;
     }
 
-    // Resolve the map a *new* (or origin-positioned) character should spawn in.
-    // The title-screen map picker sets `SelectedStartingMap`; `None` (or an
-    // authored id that isn't a live persistent space) falls back to the
-    // bootstrap space via `world_config.current_space_id`. A returning
-    // character with a real saved position resumes there regardless.
-    let spawn_space_id = selected_map
-        .as_ref()
-        .and_then(|s| s.map_id.as_deref())
-        .and_then(|id| space_manager.persistent_space_id(id))
-        .unwrap_or(world_config.current_space_id);
+    // Resolve the map this character spawns in.
+    //
+    // An explicit title-screen pick (`SelectedStartingMap::map_id`) overrides a
+    // returning character's saved position — relocating is the whole point of
+    // picking. The pick is *consumed* here, so the next launch resumes the
+    // character wherever they left off instead of yanking them back.
+    //
+    // With no pick, a returning character resumes at their saved position and a
+    // new one starts in the authored bootstrap space. Note the fallback resolves
+    // `bootstrap_space_id` through `SpaceManager` rather than reading
+    // `world_config.current_space_id`: the latter tracks whichever space the
+    // player last stood in (`sync_client_world_projection`) and is persisted in
+    // the world snapshot, so it drifts off the bootstrap space over time.
+    let explicit_map_id = selected_map.as_ref().and_then(|s| s.map_id.clone());
+    let explicit_pick = explicit_map_id
+        .as_deref()
+        .and_then(|id| space_manager.persistent_space_id(id));
+    if let Some(map_id) = &explicit_map_id {
+        if explicit_pick.is_none() {
+            warn!(
+                "starting map '{map_id}' is not a live persistent space; falling back to bootstrap space '{}'",
+                space_definitions.bootstrap_space_id
+            );
+        }
+        if let Some(selected_map) = selected_map.as_mut() {
+            selected_map.map_id = None;
+            selected_map.dirty = true;
+        }
+    }
+    let spawn_space_id = resolve_spawn_space(
+        &space_manager,
+        &space_definitions.bootstrap_space_id,
+        explicit_pick,
+        world_config.current_space_id,
+    );
     let (spawn_width, spawn_height) = space_manager
         .get(spawn_space_id)
         .map(|space| (space.width, space.height))
@@ -149,7 +204,7 @@ pub fn spawn_embedded_player_authoritative(
     if let Some(mut dump) = dump {
         dump.player_id = player_id;
         let needs_spawn_location =
-            dump.space_id.is_none() || (dump.tile_position.x == 0 && dump.tile_position.y == 0);
+            needs_spawn_location(explicit_pick, dump.space_id, dump.tile_position);
         if needs_spawn_location {
             dump.space_id = Some(spawn_space_id);
             dump.tile_position = TilePosition::ground(spawn_width / 2, spawn_height / 2);
@@ -599,5 +654,90 @@ pub fn apply_player_appearance(
                 };
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::world::map_layout::SpacePermanence;
+    use crate::world::resources::RuntimeSpace;
+
+    fn space_manager_with(spaces: &[(u64, &str)]) -> SpaceManager {
+        let mut manager = SpaceManager::default();
+        for (id, authored_id) in spaces {
+            manager.insert_space(RuntimeSpace {
+                id: SpaceId(*id),
+                authored_id: (*authored_id).to_owned(),
+                width: 32,
+                height: 32,
+                fill_floor_type: "grass".to_owned(),
+                permanence: SpacePermanence::Persistent,
+                instance_owner: None,
+                lighting: default(),
+            });
+        }
+        manager
+    }
+
+    #[test]
+    fn spawn_space_prefers_explicit_pick() {
+        let manager = space_manager_with(&[(1, "overworld"), (3, "island")]);
+        let picked = resolve_spawn_space(&manager, "overworld", Some(SpaceId(3)), SpaceId(3));
+        assert_eq!(picked, SpaceId(3));
+    }
+
+    /// Regression: `current_space_id` follows the player between spaces and is
+    /// written into the world snapshot, so a snapshot saved while standing on
+    /// `island` must not become the spawn point for pick-less characters.
+    #[test]
+    fn spawn_space_falls_back_to_bootstrap_not_drifted_current_space() {
+        let manager = space_manager_with(&[(1, "overworld"), (3, "island")]);
+        let drifted = SpaceId(3);
+        assert_eq!(
+            resolve_spawn_space(&manager, "overworld", None, drifted),
+            SpaceId(1)
+        );
+    }
+
+    #[test]
+    fn spawn_space_falls_back_to_current_space_when_bootstrap_is_absent() {
+        let manager = space_manager_with(&[(3, "island")]);
+        assert_eq!(
+            resolve_spawn_space(&manager, "overworld", None, SpaceId(3)),
+            SpaceId(3)
+        );
+    }
+
+    #[test]
+    fn explicit_pick_relocates_a_character_with_a_saved_position() {
+        assert!(needs_spawn_location(
+            Some(SpaceId(1)),
+            Some(SpaceId(3)),
+            TilePosition::ground(37, 3),
+        ));
+    }
+
+    #[test]
+    fn no_pick_resumes_a_character_with_a_saved_position() {
+        assert!(!needs_spawn_location(
+            None,
+            Some(SpaceId(3)),
+            TilePosition::ground(37, 3),
+        ));
+    }
+
+    #[test]
+    fn no_pick_still_places_unplaced_characters() {
+        assert!(needs_spawn_location(
+            None,
+            None,
+            TilePosition::ground(37, 3)
+        ));
+        assert!(needs_spawn_location(
+            None,
+            Some(SpaceId(3)),
+            TilePosition::ground(0, 0)
+        ));
     }
 }

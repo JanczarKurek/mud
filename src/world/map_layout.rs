@@ -132,6 +132,12 @@ pub struct MapObjectInstance {
     pub placement: Option<TileCoordinate>,
     #[serde(default)]
     pub contents: Vec<MapObjectChild>,
+    /// Stack count when this instance sits inside a container's `contents:`.
+    /// Only consumed during contents recursion (see `resolved_to_stack` in
+    /// `src/world/setup.rs`); a top-level placement uses the
+    /// `properties["quantity"]` mechanism instead. Absent/`1` = a single item.
+    #[serde(default)]
+    pub quantity: Option<u32>,
     #[serde(default)]
     pub behavior: Option<MapBehavior>,
     #[serde(default)]
@@ -171,6 +177,8 @@ pub struct ResolvedObject {
     pub properties: ObjectProperties,
     pub placement: Option<TileCoordinate>,
     pub contents: Vec<u64>,
+    /// Stack count when contained in a parent (from `MapObjectInstance.quantity`).
+    pub quantity: Option<u32>,
     pub behavior: Option<MapBehavior>,
     pub facing: Option<Direction>,
     pub routine: Option<RoutineInstanceDef>,
@@ -528,6 +536,7 @@ impl SpaceDefinition {
                             properties: group.properties.clone(),
                             placement: Some(*tile),
                             contents: Vec::new(),
+                            quantity: None,
                             behavior: None,
                             facing: group.facing,
                             routine: None,
@@ -939,6 +948,7 @@ fn walk_instance(
         properties: instance.properties.clone(),
         placement: instance.placement,
         contents: Vec::with_capacity(instance.contents.len()),
+        quantity: instance.quantity,
         behavior: instance.behavior,
         facing: instance.facing,
         routine: instance.routine.clone(),

@@ -40,7 +40,8 @@ use crate::editor::systems::{
     handle_editor_middle_drag_pan, handle_editor_right_click, handle_editor_save,
     handle_editor_zoom, init_editor_client_space, init_editor_context, init_portal_buffer,
     open_file_dialog_shortcut, open_save_as_shortcut, process_modal_confirm,
-    reset_space_to_authored, sync_editor_lighting_to_world, sync_editor_view_to_client,
+    reconcile_editor_registry_types, reset_space_to_authored, sync_editor_lighting_to_world,
+    sync_editor_view_to_client,
     sync_portal_overlays, sync_tile_transforms_editor, update_editor_cursor_ghost,
 };
 use crate::editor::templates::EditorTemplatesIndex;
@@ -48,6 +49,12 @@ use crate::editor::ui::building_panel::{
     handle_building_panel_clicks, sync_building_panel, sync_building_panel_visibility,
 };
 use crate::editor::ui::color_picker::EditorColorPickerAssets;
+use crate::editor::ui::contents::{
+    handle_contents_add_button, handle_contents_add_prop_button, handle_contents_expand_button,
+    handle_contents_keyboard_input, handle_contents_palette_pick, handle_contents_prop_row_click,
+    handle_contents_qty_cell_click, handle_contents_remove_button, handle_contents_type_cell_click,
+    sync_contents_buffer_selection,
+};
 use crate::editor::ui::lighting_panel::{
     handle_lighting_panel_clicks, handle_lighting_scrubber_drag, sync_lighting_panel,
     sync_lighting_panel_visibility, sync_lighting_scrubber_visual,
@@ -121,6 +128,7 @@ fn has_modal(s: Res<ModalState>) -> bool {
 fn reset_editor_session_state(
     mut editor_state: ResMut<EditorState>,
     mut vendor_stash_buffer: ResMut<EditorVendorStashBuffer>,
+    mut contents_buffer: ResMut<crate::editor::resources::EditorContentsBuffer>,
 ) {
     editor_state.selection = None;
     editor_state.paste_state.active = false;
@@ -136,6 +144,8 @@ fn reset_editor_session_state(
     vendor_stash_buffer.editing = None;
     vendor_stash_buffer.edit_text.clear();
     vendor_stash_buffer.pending_ware_pick = None;
+    contents_buffer.object_id = None;
+    contents_buffer.clear_transient();
 }
 
 /// Re-scan `assets/dialogs/` when the editor opens so the dropdown list is
@@ -232,6 +242,7 @@ impl Plugin for EditorPlugin {
             .init_resource::<EditorSpawnGroupBuffer>()
             .init_resource::<EditorLightingBuffer>()
             .init_resource::<EditorVendorStashBuffer>()
+            .init_resource::<crate::editor::resources::EditorContentsBuffer>()
             .init_resource::<EditorPickRectResult>()
             .init_resource::<EditorDialogIndex>()
             .init_resource::<EditorFloorRenderState>()
@@ -337,6 +348,16 @@ impl Plugin for EditorPlugin {
                 )
                     .run_if(in_state(ClientAppState::MapEditor))
                     .run_if(no_modal),
+            )
+            // Keep the ObjectRegistry's type_ids aligned with each live object's
+            // authoritative `definition_id` so inspection UI can't mislabel an
+            // object whose registry slot drifted. Runs before the status bar so a
+            // reconciled type is visible the same frame.
+            .add_systems(
+                Update,
+                reconcile_editor_registry_types
+                    .before(sync_status_bar)
+                    .run_if(in_state(ClientAppState::MapEditor)),
             )
             // Status bar always runs (even with a modal open) so cursor
             // coordinates stay live.
@@ -538,6 +559,32 @@ impl Plugin for EditorPlugin {
             .add_systems(
                 Update,
                 handle_vendor_stash_keyboard_input
+                    .run_if(in_state(ClientAppState::MapEditor))
+                    .run_if(no_modal),
+            )
+            // Container contents editor (Properties sidebar section).
+            .add_systems(
+                Update,
+                (
+                    sync_contents_buffer_selection,
+                    handle_contents_add_button,
+                    handle_contents_type_cell_click,
+                    handle_contents_remove_button,
+                    handle_contents_expand_button,
+                    handle_contents_qty_cell_click,
+                    handle_contents_prop_row_click,
+                    handle_contents_add_prop_button,
+                    // Same ordering rationale as the vendor pick handler: run
+                    // after `handle_palette_clicks` (which bails when armed) so
+                    // the same palette click doesn't also arm the object brush.
+                    handle_contents_palette_pick
+                        .after(crate::editor::ui::palette::handle_palette_clicks),
+                )
+                    .run_if(in_state(ClientAppState::MapEditor)),
+            )
+            .add_systems(
+                Update,
+                handle_contents_keyboard_input
                     .run_if(in_state(ClientAppState::MapEditor))
                     .run_if(no_modal),
             );

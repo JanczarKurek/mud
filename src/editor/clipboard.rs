@@ -23,9 +23,9 @@ use crate::editor::resources::{
 };
 use crate::game::commands::GameCommand;
 use crate::game::resources::PendingGameCommands;
-use crate::player::components::Player;
+use crate::player::components::{InventoryStack, Player};
 use crate::ui::settings::{EditorAction, EditorKeybindings};
-use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
+use crate::world::components::{Container, OverworldObject, SpaceResident, TilePosition};
 use crate::world::floor_map::FloorMaps;
 use crate::world::object_registry::ObjectRegistry;
 
@@ -40,7 +40,7 @@ pub fn fragment_from_selection(
     selection: EditorSelection,
     include_floors: bool,
     active_floor_index: i32,
-    objects: impl IntoIterator<Item = (u64, TilePosition)>,
+    objects: impl IntoIterator<Item = (u64, TilePosition, Vec<Option<InventoryStack>>)>,
     object_registry: &ObjectRegistry,
     floor_maps: &FloorMaps,
 ) -> MapFragment {
@@ -50,7 +50,7 @@ pub fn fragment_from_selection(
         objects: Vec::new(),
         floors: Vec::new(),
     };
-    for (object_id, tile) in objects {
+    for (object_id, tile, contents) in objects {
         if !selection.contains(tile.x, tile.y) {
             continue;
         }
@@ -76,6 +76,7 @@ pub fn fragment_from_selection(
             type_id: type_id.to_owned(),
             properties,
             behavior,
+            contents,
         });
     }
     if include_floors {
@@ -110,7 +111,16 @@ pub fn handle_clipboard_shortcuts(
     mut undo_stack: ResMut<UndoStack>,
     mut pending_commands: ResMut<PendingGameCommands>,
     mut commands: Commands,
-    objects: Query<(Entity, &OverworldObject, &SpaceResident, &TilePosition), Without<Player>>,
+    objects: Query<
+        (
+            Entity,
+            &OverworldObject,
+            &SpaceResident,
+            &TilePosition,
+            Option<&Container>,
+        ),
+        Without<Player>,
+    >,
 ) {
     if editor_state.palette_filter_focused {
         return;
@@ -141,10 +151,10 @@ pub fn handle_clipboard_shortcuts(
     // fragment so paste mimics the placement of just that object at the
     // cursor.
     if let Some(selected_id) = editor_state.selected_object_id {
-        let hit = objects.iter().find(|(_, obj, resident, _)| {
+        let hit = objects.iter().find(|(_, obj, resident, _, _)| {
             obj.object_id == selected_id && resident.space_id == editor_context.space_id
         });
-        let Some((entity, obj, _, tile)) = hit else {
+        let Some((entity, obj, _, tile, container)) = hit else {
             info!("Copy/Cut: selected object not found in current space");
             return;
         };
@@ -157,6 +167,7 @@ pub fn handle_clipboard_shortcuts(
             .cloned()
             .unwrap_or_default();
         let behavior = object_registry.behavior(obj.object_id).cloned();
+        let contents = container.map(|c| c.slots.clone()).unwrap_or_default();
         clipboard.fragment = Some(MapFragment {
             width: 1,
             height: 1,
@@ -167,6 +178,7 @@ pub fn handle_clipboard_shortcuts(
                 type_id: type_id.clone(),
                 properties: properties.clone(),
                 behavior,
+                contents: contents.clone(),
             }],
             floors: Vec::new(),
         });
@@ -177,6 +189,7 @@ pub fn handle_clipboard_shortcuts(
                 tile: *tile,
                 properties,
                 behavior,
+                contents,
             });
             commands.entity(entity).despawn();
             editor_state.selected_object_id = None;
@@ -196,15 +209,17 @@ pub fn handle_clipboard_shortcuts(
 
     // Collect (object_id, tile) for objects in the active editing space; passed
     // to `fragment_from_selection` which filters by selection bbox.
-    let mut object_entries: Vec<(u64, TilePosition, Entity)> = Vec::new();
-    for (entity, obj, resident, tile) in &objects {
+    let mut object_entries: Vec<(u64, TilePosition, Entity, Vec<Option<InventoryStack>>)> =
+        Vec::new();
+    for (entity, obj, resident, tile, container) in &objects {
         if resident.space_id != selection.space_id {
             continue;
         }
         if !selection.contains(tile.x, tile.y) {
             continue;
         }
-        object_entries.push((obj.object_id, *tile, entity));
+        let contents = container.map(|c| c.slots.clone()).unwrap_or_default();
+        object_entries.push((obj.object_id, *tile, entity, contents));
     }
 
     let include_floors = !shift;
@@ -213,7 +228,9 @@ pub fn handle_clipboard_shortcuts(
         selection,
         include_floors,
         active_floor_index,
-        object_entries.iter().map(|(id, tile, _)| (*id, *tile)),
+        object_entries
+            .iter()
+            .map(|(id, tile, _, contents)| (*id, *tile, contents.clone())),
         &object_registry,
         &floor_maps,
     );
@@ -230,7 +247,7 @@ pub fn handle_clipboard_shortcuts(
     // Cut path: despawn objects + clear floors, build a Composite undo so a
     // single Ctrl+Z restores everything atomically.
     let mut composite_ops: Vec<UndoOp> = Vec::new();
-    for (object_id, tile, entity) in &object_entries {
+    for (object_id, tile, entity, contents) in &object_entries {
         let type_id = object_registry
             .type_id(*object_id)
             .map(str::to_owned)
@@ -246,6 +263,7 @@ pub fn handle_clipboard_shortcuts(
             tile: *tile,
             properties,
             behavior,
+            contents: contents.clone(),
         });
         commands.entity(*entity).despawn();
     }
@@ -293,7 +311,16 @@ pub fn handle_editor_delete_key(
     mut editor_state: ResMut<EditorState>,
     mut undo_stack: ResMut<UndoStack>,
     mut commands: Commands,
-    objects: Query<(Entity, &OverworldObject, &SpaceResident, &TilePosition), Without<Player>>,
+    objects: Query<
+        (
+            Entity,
+            &OverworldObject,
+            &SpaceResident,
+            &TilePosition,
+            Option<&Container>,
+        ),
+        Without<Player>,
+    >,
 ) {
     if editor_state.palette_filter_focused {
         return;
@@ -303,10 +330,10 @@ pub fn handle_editor_delete_key(
     }
 
     if let Some(selected_id) = editor_state.selected_object_id {
-        let hit = objects.iter().find(|(_, obj, resident, _)| {
+        let hit = objects.iter().find(|(_, obj, resident, _, _)| {
             obj.object_id == selected_id && resident.space_id == editor_context.space_id
         });
-        let Some((entity, obj, _, tile)) = hit else {
+        let Some((entity, obj, _, tile, container)) = hit else {
             editor_state.selected_object_id = None;
             return;
         };
@@ -319,12 +346,14 @@ pub fn handle_editor_delete_key(
             .cloned()
             .unwrap_or_default();
         let behavior = object_registry.behavior(obj.object_id).cloned();
+        let contents = container.map(|c| c.slots.clone()).unwrap_or_default();
         undo_stack.push_undo(UndoOp::Spawn {
             type_id,
             space_id: editor_context.space_id,
             tile: *tile,
             properties,
             behavior,
+            contents,
         });
         commands.entity(entity).despawn();
         editor_state.selected_object_id = None;
@@ -339,7 +368,7 @@ pub fn handle_editor_delete_key(
         return;
     }
     let mut composite_ops: Vec<UndoOp> = Vec::new();
-    for (entity, obj, resident, tile) in &objects {
+    for (entity, obj, resident, tile, container) in &objects {
         if resident.space_id != selection.space_id {
             continue;
         }
@@ -355,12 +384,14 @@ pub fn handle_editor_delete_key(
             .cloned()
             .unwrap_or_default();
         let behavior = object_registry.behavior(obj.object_id).cloned();
+        let contents = container.map(|c| c.slots.clone()).unwrap_or_default();
         composite_ops.push(UndoOp::Spawn {
             type_id,
             space_id: selection.space_id,
             tile: *tile,
             properties,
             behavior,
+            contents,
         });
         commands.entity(entity).despawn();
     }
@@ -378,21 +409,30 @@ pub fn fragment_from_state(
     editor_context: &EditorContext,
     object_registry: &ObjectRegistry,
     floor_maps: &FloorMaps,
-    objects: &Query<(&OverworldObject, &SpaceResident, &TilePosition), Without<Player>>,
+    objects: &Query<
+        (
+            &OverworldObject,
+            &SpaceResident,
+            &TilePosition,
+            Option<&Container>,
+        ),
+        Without<Player>,
+    >,
 ) -> Option<MapFragment> {
     let selection = editor_state.selection?;
     if selection.space_id != editor_context.space_id {
         return None;
     }
-    let mut object_entries: Vec<(u64, TilePosition)> = Vec::new();
-    for (obj, resident, tile) in objects.iter() {
+    let mut object_entries: Vec<(u64, TilePosition, Vec<Option<InventoryStack>>)> = Vec::new();
+    for (obj, resident, tile, container) in objects.iter() {
         if resident.space_id != selection.space_id {
             continue;
         }
         if !selection.contains(tile.x, tile.y) {
             continue;
         }
-        object_entries.push((obj.object_id, *tile));
+        let contents = container.map(|c| c.slots.clone()).unwrap_or_default();
+        object_entries.push((obj.object_id, *tile, contents));
     }
     let fragment = fragment_from_selection(
         selection,
@@ -463,7 +503,7 @@ pub fn stamp_fragment(
             object_registry,
             new_id,
             &fo.type_id,
-            None,
+            (!fo.contents.is_empty()).then(|| fo.contents.clone()),
             editor_context.space_id,
             tile,
             None,
@@ -542,6 +582,7 @@ pub fn rotate_fragment_cw(fragment: &MapFragment) -> MapFragment {
             type_id: fo.type_id.clone(),
             properties: fo.properties.clone(),
             behavior: fo.behavior,
+            contents: fo.contents.clone(),
         });
     }
     for ff in &fragment.floors {
@@ -571,6 +612,7 @@ pub fn flip_fragment_horizontal(fragment: &MapFragment) -> MapFragment {
             type_id: fo.type_id.clone(),
             properties: fo.properties.clone(),
             behavior: fo.behavior,
+            contents: fo.contents.clone(),
         });
     }
     for ff in &fragment.floors {
@@ -600,6 +642,7 @@ pub fn flip_fragment_vertical(fragment: &MapFragment) -> MapFragment {
             type_id: fo.type_id.clone(),
             properties: fo.properties.clone(),
             behavior: fo.behavior,
+            contents: fo.contents.clone(),
         });
     }
     for ff in &fragment.floors {
@@ -903,6 +946,7 @@ mod tests {
                     type_id: "tree".to_owned(),
                     properties: std::collections::HashMap::new(),
                     behavior: None,
+                    contents: Vec::new(),
                 },
                 FragmentObject {
                     dx: 2,
@@ -911,6 +955,7 @@ mod tests {
                     type_id: "lamp".to_owned(),
                     properties: props,
                     behavior: None,
+                    contents: Vec::new(),
                 },
             ],
             floors: vec![
@@ -926,6 +971,47 @@ mod tests {
                 },
             ],
         }
+    }
+
+    /// Saved templates from before the `contents` field existed must still
+    /// parse — the field is `#[serde(default)]`, so a missing key yields `[]`.
+    #[test]
+    fn fragment_without_contents_key_defaults_empty() {
+        let yaml = "dx: 0\ndy: 0\ntype: chest\n";
+        let parsed: FragmentObject = serde_yaml::from_str(yaml).expect("deserialize");
+        assert!(parsed.contents.is_empty());
+    }
+
+    /// Copying a container object into a fragment captures its slots so paste
+    /// can restock the chest.
+    #[test]
+    fn fragment_from_selection_captures_container_contents() {
+        let space_id = SpaceId(1);
+        let selection = EditorSelection {
+            space_id,
+            min: TilePosition::ground(0, 0),
+            max: TilePosition::ground(1, 1),
+        };
+        let mut registry = ObjectRegistry::default();
+        let id = registry.allocate_runtime_id("iron_chest");
+        let contents = vec![
+            Some(InventoryStack::item(
+                "apple",
+                std::collections::HashMap::new(),
+                5,
+            )),
+            None,
+        ];
+        let frag = fragment_from_selection(
+            selection,
+            false,
+            0,
+            vec![(id, TilePosition::ground(0, 0), contents.clone())],
+            &registry,
+            &FloorMaps::default(),
+        );
+        assert_eq!(frag.objects.len(), 1);
+        assert_eq!(frag.objects[0].contents, contents);
     }
 
     #[test]
@@ -948,6 +1034,7 @@ mod tests {
                         max_y: 6,
                     },
                 }),
+                contents: Vec::new(),
             }],
             floors: Vec::new(),
         };
@@ -1012,12 +1099,12 @@ mod tests {
             true,
             0, // active_z
             vec![
-                (id_a, TilePosition::ground(10, 20)),
-                (id_b, TilePosition::ground(12, 21)),
+                (id_a, TilePosition::ground(10, 20), Vec::new()),
+                (id_b, TilePosition::ground(12, 21), Vec::new()),
                 // Out of selection — must be filtered.
-                (id_a, TilePosition::ground(0, 0)),
+                (id_a, TilePosition::ground(0, 0), Vec::new()),
                 // Different floor — multi-floor filter excludes it.
-                (id_b, TilePosition::new(11, 20, 2)),
+                (id_b, TilePosition::new(11, 20, 2), Vec::new()),
             ],
             &registry,
             &floor_maps,
@@ -1053,6 +1140,7 @@ mod tests {
                 type_id: "wall".into(),
                 properties: std::collections::HashMap::new(),
                 behavior: None,
+                contents: Vec::new(),
             }],
             floors: vec![FragmentFloor {
                 dx: 2,
@@ -1083,6 +1171,7 @@ mod tests {
                 type_id: "rock".into(),
                 properties: std::collections::HashMap::new(),
                 behavior: None,
+                contents: Vec::new(),
             }],
             floors: Vec::new(),
         };
@@ -1104,6 +1193,7 @@ mod tests {
                 type_id: "rock".into(),
                 properties: std::collections::HashMap::new(),
                 behavior: None,
+                contents: Vec::new(),
             }],
             floors: Vec::new(),
         };
@@ -1125,6 +1215,7 @@ mod tests {
                     type_id: "a".into(),
                     properties: std::collections::HashMap::new(),
                     behavior: None,
+                    contents: Vec::new(),
                 },
                 FragmentObject {
                     dx: 0,
@@ -1133,6 +1224,7 @@ mod tests {
                     type_id: "b".into(),
                     properties: std::collections::HashMap::new(),
                     behavior: None,
+                    contents: Vec::new(),
                 },
             ],
             floors: Vec::new(),

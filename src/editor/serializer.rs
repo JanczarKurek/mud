@@ -8,8 +8,8 @@ use crate::editor::resources::{
     EditorVendorStashBuffer,
 };
 use crate::npc::components::SpawnGroupMember;
-use crate::player::components::Player;
-use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
+use crate::player::components::{InventoryStack, Player};
+use crate::world::components::{Container, OverworldObject, SpaceResident, TilePosition};
 use crate::world::map_layout::{
     MapBehavior, SpaceLightingDef, SpacePermanence, SpawnGroupDef, TileCoordinate, VendorStashDef,
 };
@@ -84,6 +84,56 @@ struct ExplicitOutput {
     placement: TileCoordinate,
     #[serde(skip_serializing_if = "Option::is_none")]
     behavior: Option<MapBehavior>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    contents: Vec<ContainedObjectOutput>,
+}
+
+/// Serialize twin of an inline `MapObjectChild` (a container's `contents:`
+/// entry). Mirrors the read-side `MapObjectInstance` shape so authored maps
+/// round-trip. `MapObjectChild::Reference` is never emitted: the editor's
+/// source of truth is the flattened `Container.slots`, which carries no
+/// symbolic ids, so every child is written inline.
+#[derive(Serialize)]
+struct ContainedObjectOutput {
+    #[serde(rename = "type")]
+    type_id: String,
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    properties: HashMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    quantity: Option<u32>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    contents: Vec<ContainedObjectOutput>,
+}
+
+/// Pack a container's slots into a dense `contents:` list, dropping empty
+/// slots (`.flatten()`) so YAML's gapless list round-trips exactly.
+fn slots_to_contents(slots: &[Option<InventoryStack>]) -> Vec<ContainedObjectOutput> {
+    slots.iter().flatten().map(stack_to_contained).collect()
+}
+
+fn stack_to_contained(stack: &InventoryStack) -> ContainedObjectOutput {
+    if !stack.modifiers.is_empty() {
+        // Map YAML `contents:` has no field for per-instance modifiers, so
+        // they can't round-trip. Editor-authored contents never carry them
+        // (no UI creates them); warn in case a runtime-mutated container is
+        // ever saved from the editor.
+        bevy::log::warn!(
+            "Editor save: dropping {} modifier(s) on contained item '{}' — \
+             map YAML contents cannot express item modifiers",
+            stack.modifiers.len(),
+            stack.type_id,
+        );
+    }
+    ContainedObjectOutput {
+        type_id: stack.type_id.clone(),
+        properties: stack.properties.clone(),
+        quantity: (stack.quantity > 1).then_some(stack.quantity),
+        contents: stack
+            .contained_slots
+            .as_deref()
+            .map(slots_to_contents)
+            .unwrap_or_default(),
+    }
 }
 
 /// Collect objects from ECS, serialize as YAML, write to disk.
@@ -96,7 +146,12 @@ pub fn serialize_and_save(
     vendor_stash_buffer: &EditorVendorStashBuffer,
     object_registry: &ObjectRegistry,
     objects: &bevy::prelude::Query<
-        (&OverworldObject, &SpaceResident, &TilePosition),
+        (
+            &OverworldObject,
+            &SpaceResident,
+            &TilePosition,
+            Option<&Container>,
+        ),
         (
             bevy::prelude::Without<SpawnGroupMember>,
             bevy::prelude::Without<Player>,
@@ -109,9 +164,10 @@ pub fn serialize_and_save(
         String,
         HashMap<String, String>,
         Option<MapBehavior>,
+        Vec<ContainedObjectOutput>,
         TileCoordinate,
     )> = Vec::new();
-    for (obj, resident, tile) in objects.iter() {
+    for (obj, resident, tile, container) in objects.iter() {
         if resident.space_id != ctx.space_id {
             continue;
         }
@@ -124,11 +180,15 @@ pub fn serialize_and_save(
             .cloned()
             .unwrap_or_default();
         let behavior = object_registry.behavior(obj.object_id).cloned();
+        let contents = container
+            .map(|c| slots_to_contents(&c.slots))
+            .unwrap_or_default();
         items.push((
             obj.object_id,
             type_id,
             properties,
             behavior,
+            contents,
             TileCoordinate {
                 x: tile.x,
                 y: tile.y,
@@ -139,8 +199,10 @@ pub fn serialize_and_save(
 
     let mut anonymous: HashMap<String, Vec<TileCoordinate>> = HashMap::new();
     let mut explicit: Vec<ExplicitOutput> = Vec::new();
-    for (_object_id, type_id, properties, behavior, tile) in items {
-        if properties.is_empty() && behavior.is_none() {
+    for (_object_id, type_id, properties, behavior, contents, tile) in items {
+        // A populated container can't be anonymous: `AnonymousOutput` has no
+        // `contents:` field, so it would silently drop the items.
+        if properties.is_empty() && behavior.is_none() && contents.is_empty() {
             anonymous.entry(type_id).or_default().push(tile);
         } else {
             explicit.push(ExplicitOutput {
@@ -148,6 +210,7 @@ pub fn serialize_and_save(
                 properties,
                 placement: tile,
                 behavior,
+                contents,
             });
         }
     }
@@ -336,6 +399,121 @@ mod tests {
         let yaml = serde_yaml::to_string(&output).expect("serialize");
         let parsed: SpaceDefinition = serde_yaml::from_str(&yaml).expect("parse");
         assert_eq!(parsed.lighting, lighting);
+    }
+
+    /// A container's slots must serialize into a `contents:` block that parses
+    /// back with quantity and one level of nesting intact — the write side of
+    /// the round-trip the editor relies on.
+    #[test]
+    fn container_contents_round_trip_through_yaml() {
+        let pouch = InventoryStack {
+            type_id: "small_pouch".into(),
+            properties: HashMap::new(),
+            quantity: 1,
+            contained_slots: Some(vec![
+                Some(InventoryStack::item("herb", HashMap::new(), 3)),
+                None,
+            ]),
+            modifiers: Vec::new(),
+        };
+        let slots = vec![
+            Some(InventoryStack::item("apple", HashMap::new(), 5)),
+            None,
+            Some(pouch),
+        ];
+        let explicit = ExplicitOutput {
+            type_id: "iron_chest".into(),
+            properties: HashMap::new(),
+            placement: TileCoordinate { x: 2, y: 3, z: 0 },
+            behavior: None,
+            contents: slots_to_contents(&slots),
+        };
+        // Dense packing: the empty slot between apple and pouch is dropped.
+        assert_eq!(explicit.contents.len(), 2);
+
+        let output = SpaceOutput {
+            authored_id: "t".into(),
+            width: 8,
+            height: 8,
+            fill_floor_type: "grass".into(),
+            permanence: SpacePermanence::Persistent,
+            lighting: SpaceLightingDef::default(),
+            portals: Vec::new(),
+            floors: HashMap::new(),
+            objects: vec![ObjectEntryOutput::Explicit(explicit)],
+            spawn_groups: Vec::new(),
+            vendor_stashes: Vec::new(),
+        };
+        let yaml = serde_yaml::to_string(&output).expect("serialize");
+        let mut parsed: SpaceDefinition = serde_yaml::from_str(&yaml).expect("parse");
+        parsed.resolve_objects(1);
+
+        let chest = parsed
+            .resolved_objects
+            .iter()
+            .find(|o| o.type_id == "iron_chest")
+            .expect("chest");
+        let child_types: Vec<(&str, Option<u32>)> = chest
+            .contents
+            .iter()
+            .filter_map(|&id| parsed.find_resolved(id))
+            .map(|c| (c.type_id.as_str(), c.quantity))
+            .collect();
+        assert!(child_types.contains(&("apple", Some(5))));
+        assert!(child_types.iter().any(|(t, _)| *t == "small_pouch"));
+
+        let pouch = chest
+            .contents
+            .iter()
+            .filter_map(|&id| parsed.find_resolved(id))
+            .find(|c| c.type_id == "small_pouch")
+            .expect("pouch");
+        let grandchildren: Vec<&str> = pouch
+            .contents
+            .iter()
+            .filter_map(|&id| parsed.find_resolved(id))
+            .map(|c| c.type_id.as_str())
+            .collect();
+        assert_eq!(grandchildren, vec!["herb"]);
+    }
+
+    /// An empty container stays in the anonymous (grouped) bucket; a populated
+    /// one is forced into an explicit entry that can carry `contents:`.
+    #[test]
+    fn empty_container_is_anonymous_populated_is_explicit() {
+        let empty = slots_to_contents(&[None, None]);
+        assert!(empty.is_empty());
+        let populated =
+            slots_to_contents(&[Some(InventoryStack::item("apple", HashMap::new(), 1))]);
+        assert_eq!(populated.len(), 1);
+    }
+
+    /// Per-instance item modifiers have no YAML representation and are dropped
+    /// on save (with a warning) — documents the limitation.
+    #[test]
+    fn modifiers_are_dropped_on_serialize() {
+        use crate::combat::damage_type::DamageType;
+        use crate::combat::modifiers::{ItemModifier, ModifierDuration, ModifierEffect};
+        let stack = InventoryStack {
+            type_id: "sword".into(),
+            properties: HashMap::new(),
+            quantity: 1,
+            contained_slots: None,
+            modifiers: vec![ItemModifier {
+                type_ex: "flaming".into(),
+                lvl: 1,
+                effect: ModifierEffect::BonusDamage {
+                    dice: Some((1, 6)),
+                    bonus: 0,
+                    damage_type: DamageType::Fire,
+                },
+                duration: ModifierDuration::Permanent,
+                label: String::new(),
+            }],
+        };
+        let out = stack_to_contained(&stack);
+        assert_eq!(out.type_id, "sword");
+        // No modifier data survives — the output struct has no field for it.
     }
 
     #[test]

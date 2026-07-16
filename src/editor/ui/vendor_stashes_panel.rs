@@ -601,6 +601,7 @@ pub fn handle_vendor_stashes_panel_clicks(
     mut buffer: ResMut<EditorVendorStashBuffer>,
     mut editor_state: ResMut<EditorState>,
     mut prop_buffer: ResMut<crate::editor::resources::EditorPropertyEditBuffer>,
+    mut contents_buffer: ResMut<crate::editor::resources::EditorContentsBuffer>,
 ) {
     // Row toggles selection (expand / collapse the wares editor).
     for (row, interaction) in &rows {
@@ -671,10 +672,12 @@ pub fn handle_vendor_stashes_panel_clicks(
             continue;
         }
         commit_active_edit(&mut buffer);
-        // Clear competing property-panel edit to keep the keyboard pipeline
-        // single-owner.
+        // Clear competing property-panel / contents edits to keep the keyboard
+        // pipeline single-owner.
         prop_buffer.editing_index = None;
         prop_buffer.edit_text.clear();
+        contents_buffer.editing = None;
+        contents_buffer.edit_text.clear();
         let initial = buffer
             .stashes
             .get(field.stash_index)
@@ -695,6 +698,8 @@ pub fn handle_vendor_stashes_panel_clicks(
         commit_active_edit(&mut buffer);
         prop_buffer.editing_index = None;
         prop_buffer.edit_text.clear();
+        contents_buffer.editing = None;
+        contents_buffer.edit_text.clear();
         // type_id is a palette-pick target, not a text field — clicking it
         // arms the next palette click to fill the field. Clicking the same
         // type_id cell again cancels the arm. This avoids the truly bad UX

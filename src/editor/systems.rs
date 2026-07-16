@@ -24,7 +24,8 @@ use crate::npc::spawn_groups::SpawnGroupRegistry;
 use crate::player::components::Player;
 use crate::world::animation::VisualOffset;
 use crate::world::components::{
-    OverworldObject, Quantity, SpaceId, SpaceResident, TilePosition, ViewPosition, WorldVisual,
+    Container, OverworldObject, Quantity, SpaceId, SpaceResident, TilePosition, ViewPosition,
+    WorldVisual,
 };
 use crate::world::floor_definitions::{FloorTilesetDefinitions, FloorTypeId};
 use crate::world::floor_map::FloorMaps;
@@ -189,12 +190,24 @@ pub fn reset_space_contents_from_def(
 pub fn reset_space_to_authored(
     mut commands: Commands,
     editor_context: Res<EditorContext>,
-    space_definitions: Res<SpaceDefinitions>,
+    mut space_definitions: ResMut<SpaceDefinitions>,
     object_definitions: Res<OverworldObjectDefinitions>,
     mut object_registry: ResMut<ObjectRegistry>,
     mut floor_maps: ResMut<FloorMaps>,
     mut reset_deps: EditorSpaceResetDeps,
 ) {
+    // Re-resolve the editing space from disk into a fresh runtime-id range above
+    // every currently-allocated id. A loaded world snapshot
+    // (`load_world_from_snapshot`) reassigns sequential ids across *all* spaces,
+    // so this space's authored ids are not globally unique at runtime and would
+    // collide with the still-live entities of other spaces — scrambling the
+    // shared `ObjectRegistry` and producing "crate reports as hedge" mislabels.
+    // Re-baking above `next_runtime_id` keeps this space's ids disjoint from
+    // everything else. `load_single_from_disk` is a no-op (returns false) for a
+    // never-saved map (e.g. New Map) whose YAML isn't on disk yet; in that case
+    // the in-memory definition is used unchanged.
+    space_definitions
+        .load_single_from_disk(&editor_context.authored_id, object_registry.next_runtime_id());
     let Some(def) = space_definitions.get(&editor_context.authored_id) else {
         return;
     };
@@ -209,6 +222,40 @@ pub fn reset_space_to_authored(
         &reset_deps.residents,
         &reset_deps.portal_markers,
     );
+}
+
+/// Editor safety net mirroring `mirror_client_world_objects_into_registry`
+/// (`src/world/mod.rs`), which only runs in-game. Keeps
+/// `ObjectRegistry.type_id(object_id)` aligned with each live object's
+/// authoritative `definition_id` — the same field that drives the sprite — so a
+/// stale or colliding registry slot can never mislabel an object in the editor's
+/// inspection UI (status bar, properties panel, context menu). `register_existing`
+/// preserves properties when the type is unchanged and clears stale ones when it
+/// flips (the slot's old owner is gone by definition once the type differs).
+///
+/// Scoped to the **editing space only**. When a world snapshot is loaded
+/// (`load_world_from_snapshot` reassigns sequential runtime ids across every
+/// space), the edited space's authored ids can collide with the *still-live*
+/// entities of other spaces. Those other-space entities are never displayed in
+/// the editor, but reconciling them here would fight this space over the shared
+/// registry slot and flip-flop the label every frame. Only the edited space is
+/// ever inspected, so only it needs the guarantee.
+pub fn reconcile_editor_registry_types(
+    editor_context: Res<EditorContext>,
+    mut object_registry: ResMut<ObjectRegistry>,
+    objects: Query<(&OverworldObject, &SpaceResident), Without<Player>>,
+) {
+    for (obj, resident) in &objects {
+        if resident.space_id != editor_context.space_id {
+            continue;
+        }
+        let mismatched = object_registry
+            .type_id(obj.object_id)
+            .is_none_or(|existing| existing != obj.definition_id);
+        if mismatched {
+            object_registry.register_existing(obj.object_id, obj.definition_id.clone());
+        }
+    }
 }
 
 // ── Initialization ────────────────────────────────────────────────────────────
@@ -967,7 +1014,13 @@ pub fn handle_editor_right_click(
     mut prop_buffer: ResMut<EditorPropertyEditBuffer>,
     mut undo_stack: ResMut<UndoStack>,
     mut portal_buffer: ResMut<EditorPortalBuffer>,
-    objects: Query<(Entity, &OverworldObject, &SpaceResident, &TilePosition)>,
+    objects: Query<(
+        Entity,
+        &OverworldObject,
+        &SpaceResident,
+        &TilePosition,
+        Option<&Container>,
+    )>,
     object_registry: Res<ObjectRegistry>,
     mut commands: Commands,
     panel_roots: crate::editor::ui::EditorPanelRoots,
@@ -1022,10 +1075,10 @@ pub fn handle_editor_right_click(
         return;
     }
 
-    let hit = objects.iter().find(|(_, _, resident, pos)| {
+    let hit = objects.iter().find(|(_, _, resident, pos, _)| {
         resident.space_id == editor_context.space_id && **pos == tile
     });
-    if let Some((entity, obj, _, _)) = hit {
+    if let Some((entity, obj, _, _, container)) = hit {
         let deleted_id = obj.object_id;
         let type_id = object_registry
             .type_id(deleted_id)
@@ -1036,12 +1089,14 @@ pub fn handle_editor_right_click(
             .cloned()
             .unwrap_or_default();
         let behavior = object_registry.behavior(deleted_id).cloned();
+        let contents = container.map(|c| c.slots.clone()).unwrap_or_default();
         undo_stack.push_undo(UndoOp::Spawn {
             type_id,
             space_id: editor_context.space_id,
             tile,
             properties,
             behavior,
+            contents,
         });
         commands.entity(entity).despawn();
         if editor_state.selected_object_id == Some(deleted_id) {
@@ -1534,10 +1589,15 @@ pub fn handle_editor_save(
     spawn_group_buffer: Res<EditorSpawnGroupBuffer>,
     lighting_buffer: Res<EditorLightingBuffer>,
     vendor_stash_buffer: Res<crate::editor::resources::EditorVendorStashBuffer>,
-    object_registry: Res<ObjectRegistry>,
+    mut object_registry: ResMut<ObjectRegistry>,
     floor_maps: Res<FloorMaps>,
     objects: Query<
-        (&OverworldObject, &SpaceResident, &TilePosition),
+        (
+            &OverworldObject,
+            &SpaceResident,
+            &TilePosition,
+            Option<&Container>,
+        ),
         (Without<SpawnGroupMember>, Without<Player>),
     >,
     mut space_definitions: ResMut<SpaceDefinitions>,
@@ -1560,6 +1620,13 @@ pub fn handle_editor_save(
             &editor_context.authored_id,
             object_registry.next_runtime_id(),
         );
+        // `load_single_from_disk` re-baked the space into a fresh id range but
+        // did not touch the registry; reconcile so the new ids are registered
+        // and `next_runtime_id` advances past them (else a later placement or
+        // reload can re-use a baked id and mislabel a live object).
+        if let Some(def) = space_definitions.get(&editor_context.authored_id) {
+            object_registry.sync_resolved_objects(&def.resolved_objects);
+        }
         editor_state.dirty = false;
         info!("Saved map '{}'", editor_context.authored_id);
     }
@@ -2451,7 +2518,12 @@ pub fn apply_modal_confirmed(
     object_definitions: Res<OverworldObjectDefinitions>,
     mut object_registry: ResMut<ObjectRegistry>,
     objects_save: Query<
-        (&OverworldObject, &SpaceResident, &TilePosition),
+        (
+            &OverworldObject,
+            &SpaceResident,
+            &TilePosition,
+            Option<&Container>,
+        ),
         (Without<SpawnGroupMember>, Without<Player>),
     >,
     mut reset_deps: EditorSpaceResetDeps,
@@ -2502,6 +2574,10 @@ pub fn apply_modal_confirmed(
                 );
                 id
             } else {
+                // New space: `instantiate_space` takes the registry immutably and
+                // cannot register the ids it spawns, so register the re-baked
+                // resolved objects first (matching the GenerateDungeon path).
+                object_registry.sync_resolved_objects(&def.resolved_objects);
                 instantiate_space(
                     &mut commands,
                     &mut space_manager,
@@ -2557,6 +2633,10 @@ pub fn apply_modal_confirmed(
             );
             space_definitions
                 .load_single_from_disk(&authored_id, object_registry.next_runtime_id());
+            // Reconcile the registry to the re-baked id range (see handle_editor_save).
+            if let Some(def) = space_definitions.get(&authored_id) {
+                object_registry.sync_resolved_objects(&def.resolved_objects);
+            }
             editor_state.dirty = false;
             info!("Saved map as '{authored_id}'");
         }
