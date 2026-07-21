@@ -41,8 +41,8 @@ use crate::editor::systems::{
     handle_editor_zoom, init_editor_client_space, init_editor_context, init_portal_buffer,
     open_file_dialog_shortcut, open_save_as_shortcut, process_modal_confirm,
     reconcile_editor_registry_types, reset_space_to_authored, sync_editor_lighting_to_world,
-    sync_editor_view_to_client,
-    sync_portal_overlays, sync_tile_transforms_editor, update_editor_cursor_ghost,
+    sync_editor_view_to_client, sync_portal_overlays, sync_tile_transforms_editor,
+    update_editor_cursor_ghost,
 };
 use crate::editor::templates::EditorTemplatesIndex;
 use crate::editor::ui::building_panel::{

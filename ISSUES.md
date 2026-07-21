@@ -41,9 +41,9 @@ Ogre Brute L10 + Dire Wight L12 elites carry the loot). Remaining follow-ups:
 - AOL-style equipment **drop protection** hook on death (noted in `progression.md` §8 rule 3).
 - Old world snapshots keep a stale persisted NPC `AttackProfile` until the NPC respawns
   (`persistence` prefers the dump); damage/crit resolve from current defs at snapshot time.
-- New-creature placement is provisional: the Ogre Brute shares the cyclops's southeast zone and
-  the Dire Wight haunts the fire-elemental glade (proven-walkable bounds) — give them their own
-  lairs when the map grows.
+- ~~New-creature placement is provisional~~ — resolved by the Emberbrook overworld redesign:
+  the Ogre Brute dens in NW Thornwood and the Dire Wight guards the founder's vault in the
+  underworld (each with its own spawn group and lair).
 - Utility skills **Lore / Spellcraft / Heal** still have no mechanic and **Survival** is a
   binary gather gate (`docs/utility_systems.md` Slices 4–5) — deferred from the combat-focused
   pass by design.

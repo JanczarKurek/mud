@@ -1,4 +1,5 @@
-extends: obstacle
+extends: movable_obstacle
+weight: 7.0
 name: Bench
 description: A long wooden bench, worn smooth by years of use.
 rotatable: true

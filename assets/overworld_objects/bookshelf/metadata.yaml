@@ -1,4 +1,5 @@
-extends: obstacle
+extends: movable_obstacle
+weight: 18.0
 name: Bookshelf
 description: A tall shelf crammed with worn, colourful books.
 rotatable: true

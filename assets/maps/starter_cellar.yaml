@@ -33,10 +33,11 @@ tiles: |
   cNNNNNNNNNNd
 
 portals:
+  # Back up through the Gilded Toad's trapdoor (the tile beside the hatch).
   - id: cellar_exit
     source: { x: 5, y: 0 }
     destination_space_id: overworld
-    destination_tile: { x: 6, y: 18 }
+    destination_tile: { x: 43, y: 31 }
     destination_permanence: persistent
 
 spawn_groups:
@@ -67,6 +68,7 @@ objects:
     contents:
       - type: apple
       - type: potion
+      - type: wooden_shield
 
   - type: lever
     placement: { x: 9, y: 5 }

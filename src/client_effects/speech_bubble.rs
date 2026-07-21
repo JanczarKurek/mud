@@ -6,6 +6,8 @@
 //! one-shot pattern from `vfx.rs`; the bubble is presentation-only and
 //! never round-trips back to the server.
 
+use std::collections::HashMap;
+
 use bevy::prelude::*;
 use bevy::sprite::{Anchor, SpriteImageMode};
 use bevy::text::{Justify, TextBounds, TextLayoutInfo};
@@ -45,10 +47,31 @@ const BUBBLE_PADDING: Vec2 = Vec2::new(10.0, 6.0);
 /// the panel-frame's 8-px 9-slice corners don't crowd before resize.
 const BUBBLE_INITIAL_SIZE: Vec2 = Vec2::new(32.0, 24.0);
 
+/// Display cap on bubble text length, in characters. A proxy for ~3 lines at
+/// the 128 px wrap width / font-11 (~20 chars per line); overflow is cut and
+/// suffixed with `...`. Server `/say` already caps at 200 chars, but NPC
+/// barks are unbounded, so this is the uniform display-side guard.
+const BUBBLE_MAX_CHARS: usize = 64;
+
+/// Most simultaneous bubbles kept alive per speaker. A 4th message despawns
+/// the oldest immediately (older ones also expire on their own TTL).
+const MAX_BUBBLES_PER_SPEAKER: usize = 3;
+
+/// Vertical gap between stacked bubbles for the same speaker, in pixels.
+const BUBBLE_STACK_GAP: f32 = 4.0;
+
+/// Live bubbles per speaker `object_id`, ordered oldest -> newest. Drives the
+/// vertical restack so rapid messages don't overlap at a single head offset.
+#[derive(Resource, Default)]
+pub struct SpeechBubbleStacks(pub HashMap<u64, Vec<Entity>>);
+
 #[derive(Component)]
 pub struct SpeechBubble {
     pub child_text: Entity,
     pub resize_pending: bool,
+    /// Rendered backdrop height in pixels — seeded from the initial size and
+    /// updated once text layout resolves, so the restack can pack tightly.
+    pub height_px: f32,
 }
 
 pub fn consume_speech_bubble_events(
@@ -57,6 +80,7 @@ pub fn consume_speech_bubble_events(
     world_config: Res<WorldConfig>,
     theme: Res<UiThemeAssets>,
     palette: Res<Palette>,
+    mut stacks: ResMut<SpeechBubbleStacks>,
     mut commands: Commands,
 ) {
     let events = std::mem::take(&mut pending_ui_events.events);
@@ -76,6 +100,7 @@ pub fn consume_speech_bubble_events(
         };
 
         let text_color = text_color_for_style(style, &palette);
+        let text = truncate_bubble_text(&text);
 
         let text_entity = commands
             .spawn((
@@ -123,10 +148,32 @@ pub fn consume_speech_bubble_events(
             SpeechBubble {
                 child_text: text_entity,
                 resize_pending: true,
+                height_px: BUBBLE_INITIAL_SIZE.y,
             },
         ));
         parent.add_child(text_entity);
+        let bubble_entity = parent.id();
+
+        // Register into the speaker's stack; a 4th bubble evicts the oldest
+        // immediately so at most MAX_BUBBLES_PER_SPEAKER stay on screen.
+        let stack = stacks.0.entry(speaker_object_id).or_default();
+        stack.push(bubble_entity);
+        while stack.len() > MAX_BUBBLES_PER_SPEAKER {
+            let oldest = stack.remove(0);
+            commands.entity(oldest).despawn();
+        }
     }
+}
+
+/// Cap bubble text to `BUBBLE_MAX_CHARS`, suffixing `...` (ASCII — the default
+/// font lacks a `…` glyph). Keeps rapid or verbose lines from ballooning into
+/// tall multi-line bubbles.
+fn truncate_bubble_text(text: &str) -> String {
+    if text.chars().count() <= BUBBLE_MAX_CHARS {
+        return text.to_string();
+    }
+    let kept: String = text.chars().take(BUBBLE_MAX_CHARS).collect();
+    format!("{}...", kept.trim_end())
 }
 
 /// Once Bevy's text layout produces a non-zero `TextLayoutInfo.size`, snap
@@ -146,9 +193,47 @@ pub fn resize_speech_bubble_backdrops(
         if layout.size.x <= 0.0 || layout.size.y <= 0.0 {
             continue;
         }
-        sprite.custom_size = Some(layout.size + BUBBLE_PADDING * 2.0);
+        let sized = layout.size + BUBBLE_PADDING * 2.0;
+        sprite.custom_size = Some(sized);
+        bubble.height_px = sized.y;
         bubble.resize_pending = false;
     }
+}
+
+/// Reflows each speaker's live bubbles into a vertical stack so multiple
+/// messages in quick succession don't overlap at a single head offset. Prunes
+/// entries whose entity despawned (via TTL or eviction), then packs the stack
+/// newest-at-bottom (just above the head) with older bubbles lifted above it.
+pub fn restack_speech_bubbles(
+    mut stacks: ResMut<SpeechBubbleStacks>,
+    world_config: Res<WorldConfig>,
+    mut bubble_q: Query<(&SpeechBubble, &mut AttachedToObject)>,
+) {
+    let base_lift = world_config.tile_size * BUBBLE_LIFT_TILES;
+    stacks.0.retain(|_speaker, entities| {
+        entities.retain(|entity| bubble_q.contains(*entity));
+        if entities.is_empty() {
+            return false;
+        }
+        // Walk newest -> oldest, tracking the top edge of the bubble just
+        // placed below so each older bubble sits GAP above it.
+        let mut prev_top: Option<f32> = None;
+        for entity in entities.iter().rev() {
+            let Ok((bubble, mut attached)) = bubble_q.get_mut(*entity) else {
+                continue;
+            };
+            let half_height = bubble.height_px * 0.5;
+            let center = match prev_top {
+                None => base_lift,
+                Some(top) => top + BUBBLE_STACK_GAP + half_height,
+            };
+            if (attached.offset_pixels.y - center).abs() > f32::EPSILON {
+                attached.offset_pixels.y = center;
+            }
+            prev_top = Some(center + half_height);
+        }
+        true
+    });
 }
 
 /// Tint applied on top of the panel-frame texture. We keep the bubble

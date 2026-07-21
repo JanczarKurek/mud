@@ -1,7 +1,19 @@
+# ============================================================================
+# THE UNDERWORLD — caves below the Cinder Hills sinkhole.
+#
+# Difficulty: goblin stragglers (L2) near the entrance, restless skeletons
+# (L3) in the main cavern, and the FOUNDER'S VAULT in the north-east: a locked
+# gate (the goblin iron key fits, or Thievery/Athletics), a dire wight boss
+# (L12), and the best loot in the game (Aldric Ember's plate & tower shield).
+# Gathering: cave mushrooms (the mushroom-brew recipe is found down here),
+# ore nodes, crystal clusters, arcane motes.
+#
+# Grid note: text row 0 = y0 = SOUTH edge.
+# ============================================================================
 authored_id: underworld
 permanence: persistent
-width: 28
-height: 18
+width: 36
+height: 24
 fill_floor_type: cave_floor
 lighting:
   outdoor_ambient: [60, 55, 55]
@@ -14,39 +26,56 @@ legend:
   "m": cave_mushroom
 
 tiles: |
-  ############################
-  #..........................#
-  #.........*..m.............#
-  #....................m.....#
-  #.m....######.#######......#
-  #..m.*.#............#..*...#
-  #......#......#.*...#.#....#
-  #......#......#.....#.#....#
-  #......#......#.....#.###..#
-  #......#....*.......#...#..#
-  #......#.......m....#.###..#
-  #......#............#......#
-  #.......##.#####.####...*..#
-  #...m.*...............m....#
-  #....m.....###...###.....m.#
-  #........m........*........#
-  #..........................#
-  ############################
+  ####################################
+  #..................................#
+  #.....................#..m.........#
+  #...m.................#.*..........#
+  #.m..*................#............#
+  #.....................#............#
+  #.......#######....m..#............#
+  #.......#..........................#
+  #.......#.......*.......m....m*....#
+  #....m..#.............m............#
+  #..mm...#...........#####..........#
+  #.......#....m...............m..m..#
+  #.......#...m.....m................#
+  #.................m................#
+  #.............######..m............#
+  #..................................#
+  #.m....m........m...........m......#
+  #...m..........m..........####.#####
+  #.........................#........#
+  #..........*..............#........#
+  #...*m.......m............#........#
+  #.............m..m........#.*......#
+  #.....m...................#........#
+  ####################################
 
 portals:
   - id: surface_return
     source: { x: 3, y: 14 }
     destination_space_id: overworld
-    destination_tile: { x: 31, y: 23 }
+    destination_tile: { x: 57, y: 16 }   # beside the Cinder Hills sinkhole
     destination_permanence: persistent
 
 objects:
+  # -- entrance ---------------------------------------------------------------
   - type: portal_arch
     placement: { x: 3, y: 14 }
+  - type: sign_post
+    placement: { x: 4, y: 15 }
+    properties:
+      text: "Cold air, colder company. The founder's vault lies east - its gate is locked, and its keeper does not sleep."
+  - type: torch
+    placement: { x: 5, y: 13 }
+
+  # -- loot & gathering in the main cavern -------------------------------------
   - type: barrel
     placement: { x: 10, y: 15 }
     contents:
       - type: potion
+      - type: light_scroll            # a light in the dark
+      - type: mushroom_brew_recipe    # brew it at the village campfire
       - type: scroll
         properties:
           spell_id: spark_bolt
@@ -54,21 +83,78 @@ objects:
     placement: { x: 16, y: 13 }
   - type: copper_amulet
     placement: { x: 23, y: 11 }
+  - type: ore_node
+    placement:
+      - { x: 10, y: 3 }
+      - { x: 24, y: 16 }
+  - type: arcane_mote
+    placement:
+      - { x: 25, y: 5 }
+      - { x: 14, y: 7 }
+
+  # -- goblin stragglers near the entrance (L2, do not respawn) -----------------
   - type: goblin
     placement: { x: 10, y: 8 }
     behavior:
       kind: roam_and_chase
-      bounds:
-        min_x: 8
-        min_y: 5
-        max_x: 13
-        max_y: 11
+      step_interval_seconds: 0.85
+      detect_distance_tiles: 5
+      disengage_distance_tiles: 8
+      bounds: { min_x: 9, min_y: 5, max_x: 18, max_y: 12 }
   - type: goblin
     placement: { x: 22, y: 14 }
     behavior:
       kind: roam_and_chase
-      bounds:
-        min_x: 15
-        min_y: 11
-        max_x: 25
-        max_y: 15
+      step_interval_seconds: 0.85
+      detect_distance_tiles: 5
+      disengage_distance_tiles: 8
+      bounds: { min_x: 15, min_y: 11, max_x: 25, max_y: 16 }
+
+  # -- the founder's vault (NE) --------------------------------------------------
+  # Gate is locked (lock_id 7 — the goblins' iron key fits; Thievery or
+  # Athletics also work). Inside: the dire wight and Aldric Ember's gear.
+  - type: wooden_door_n
+    placement: { x: 30, y: 17 }
+    properties:
+      state: locked
+  - type: torch
+    placement: { x: 27, y: 18 }
+  - type: iron_chest
+    placement: { x: 33, y: 21 }
+    properties:
+      state: locked
+    contents:
+      - type: plate_armor
+      - type: tower_shield
+      - type: frost_lance_scroll
+      - type: gold_coin
+        quantity: 50
+
+spawn_groups:
+  # L3 — the restless dead of the main cavern.
+  - id: deep_skeletons
+    template: skeleton
+    max_count: 3
+    respawn_mean_seconds: 180.0
+    area:
+      bounds: { min_x: 9, min_y: 3, max_x: 24, max_y: 13 }
+    behavior:
+      kind: roam_and_chase
+      step_interval_seconds: 0.8
+      detect_distance_tiles: 5
+      disengage_distance_tiles: 8
+      bounds: { min_x: 1, min_y: 1, max_x: 25, max_y: 16 }
+
+  # L12 — the wight that took the founder. Slow to return once put down.
+  - id: founders_wight
+    template: dire_wight
+    max_count: 1
+    respawn_mean_seconds: 900.0
+    area:
+      bounds: { min_x: 28, min_y: 18, max_x: 34, max_y: 22 }
+    behavior:
+      kind: roam_and_chase
+      step_interval_seconds: 0.7
+      detect_distance_tiles: 6
+      disengage_distance_tiles: 9
+      bounds: { min_x: 27, min_y: 18, max_x: 34, max_y: 22 }

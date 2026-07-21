@@ -474,6 +474,8 @@ pub fn process_game_commands(
                     &mut player_queries.p2(),
                     &mut command_outputs.ui_events,
                     &mut command_outputs.container_viewers,
+                    &object_registry,
+                    &definitions,
                 );
             }
             GameCommand::CloseContainer { object_id } => {
@@ -1980,6 +1982,8 @@ fn handle_open_container(
     >,
     ui_events: &mut PendingGameUiEvents,
     container_viewers: &mut ContainerViewers,
+    object_registry: &ObjectRegistry,
+    definitions: &OverworldObjectDefinitions,
 ) {
     let Ok((
         _,
@@ -2004,6 +2008,23 @@ fn handle_open_container(
     if container_query.get_mut(entity).is_err() || !is_near_player(&player_position, &tile_position)
     {
         chat_log_state.push_narrator("That container is out of reach.");
+        return;
+    }
+
+    // A locked container must be unlocked first (pick / force / key — the
+    // stateful `locked -> closed` interactions), not opened straight into
+    // the panel.
+    let current_state = object_registry
+        .properties(object_id)
+        .and_then(|p| p.get("state").cloned())
+        .or_else(|| {
+            object_registry
+                .type_id(object_id)
+                .and_then(|type_id| definitions.get(type_id))
+                .and_then(|def| def.initial_state.clone())
+        });
+    if current_state.as_deref() == Some("locked") {
+        chat_log_state.push_narrator("It's locked.");
         return;
     }
 
@@ -7406,11 +7427,12 @@ mod tests {
         );
     }
 
-    /// The migrated `assets/maps/overworld.yaml` must produce a `FloorMap`
-    /// at floor index 1 that paints `wooden_floor` over the upper storey of
-    /// the spawn-area building (x=2..7, y=2..7). If this fails, the in-game
-    /// `is_indoor_tile` predicate has no data to chew on and the upper floor
-    /// would render through the player when they step inside.
+    /// `assets/maps/overworld.yaml` must produce a `FloorMap` at floor
+    /// index 1 that paints `wooden_floor` over the tavern loft (the upper
+    /// storey of the Gilded Toad, interior x=39..44, y=27..31). If this
+    /// fails, the in-game `is_indoor_tile` predicate has no data to chew on
+    /// and the upper floor would render through the player when they step
+    /// inside.
     #[test]
     fn overworld_yaml_paints_wooden_floor_on_upper_storey() {
         let app = setup_server_app();
@@ -7419,7 +7441,7 @@ mod tests {
         let upper = floor_maps
             .get(space_id, 1)
             .expect("FloorMap at floor index 1 must exist after loading overworld.yaml");
-        for (x, y) in [(2, 2), (5, 5), (7, 6), (3, 7)] {
+        for (x, y) in [(39, 27), (41, 28), (43, 30), (44, 31)] {
             assert_eq!(
                 upper.get(x, y).map(String::as_str),
                 Some("wooden_floor"),
@@ -7427,8 +7449,12 @@ mod tests {
             );
         }
         assert!(
-            upper.get(3, 3).is_none(),
-            "(3, 3) on floor 1 should be a gap (door / wall hole), not painted"
+            upper.get(39, 28).is_none(),
+            "(39, 28) on floor 1 should be the stairwell gap, not painted"
+        );
+        assert!(
+            upper.get(39, 29).is_none(),
+            "(39, 29) on floor 1 should be the stairwell gap, not painted"
         );
     }
 

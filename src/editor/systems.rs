@@ -206,8 +206,10 @@ pub fn reset_space_to_authored(
     // everything else. `load_single_from_disk` is a no-op (returns false) for a
     // never-saved map (e.g. New Map) whose YAML isn't on disk yet; in that case
     // the in-memory definition is used unchanged.
-    space_definitions
-        .load_single_from_disk(&editor_context.authored_id, object_registry.next_runtime_id());
+    space_definitions.load_single_from_disk(
+        &editor_context.authored_id,
+        object_registry.next_runtime_id(),
+    );
     let Some(def) = space_definitions.get(&editor_context.authored_id) else {
         return;
     };

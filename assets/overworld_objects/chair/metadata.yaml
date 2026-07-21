@@ -1,4 +1,5 @@
-extends: obstacle
+extends: movable_obstacle
+weight: 4.0
 name: Chair
 description: A simple wooden chair. It can be turned to face any direction.
 rotatable: true

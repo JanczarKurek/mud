@@ -1,4 +1,5 @@
-extends: obstacle
+extends: movable_obstacle
+weight: 3.0
 name: Stool
 description: A round three-legged stool.
 render:

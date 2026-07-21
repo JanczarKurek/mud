@@ -1,4 +1,5 @@
-extends: obstacle
+extends: movable_obstacle
+weight: 18.0
 name: Cabinet
 description: A wooden wardrobe with panelled doors and iron handles.
 rotatable: true

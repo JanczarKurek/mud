@@ -1,4 +1,5 @@
-extends: obstacle
+extends: movable_obstacle
+weight: 20.0
 name: Bed
 description: A wood-framed bed with a soft mattress and a thick blanket.
 rotatable: true

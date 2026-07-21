@@ -1,4 +1,5 @@
-extends: obstacle
+extends: movable_obstacle
+weight: 10.0
 name: Table
 description: A sturdy wooden table.
 rotatable: true

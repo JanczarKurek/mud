@@ -51,12 +51,12 @@ tiles: |
 
 # Return to the overworld. The player arrives ON this tile from the overworld
 # portal; stepping onto it again sends them back beside the overworld arch
-# (39,25) — not onto it — so there is no instant bounce loop.
+# (46,25) — not onto it — so there is no instant bounce loop.
 portals:
   - id: pg_exit
     source: { x: 14, y: 12 }
     destination_space_id: overworld
-    destination_tile: { x: 39, y: 25 }
+    destination_tile: { x: 46, y: 25 }
 
 objects:
   # ---- Hub / entrance -----------------------------------------------------

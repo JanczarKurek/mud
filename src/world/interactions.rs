@@ -626,6 +626,12 @@ pub fn sync_container_visual_state(
             {
                 return None;
             }
+            // Only drive the open<->closed pair. Any other state (e.g. an
+            // authored "locked" chest) belongs to the interaction system —
+            // clobbering it here would silently unlock map content.
+            if state.0 != "open" && state.0 != "closed" {
+                return None;
+            }
             let want = if container_viewers.has_viewers(object.object_id) {
                 "open"
             } else {
@@ -839,6 +845,49 @@ mod tests {
             "pick_lock never succeeded at max Thievery: final state = {}",
             current_state(&mut app, door_id)
         );
+    }
+
+    /// An authored `state: locked` container must survive the container
+    /// visual-sync system — it only drives the open<->closed pair, so a
+    /// viewerless locked chest must NOT be flipped to "closed".
+    #[test]
+    fn locked_container_survives_visual_sync() {
+        let mut app = setup_app();
+        let _player = spawn_test_player(&mut app, Class::Vagabond, 1, 0, 10, 10);
+        let (_entity, chest_id) = spawn_locked_door(&mut app, "iron_chest", 11, 10);
+        for _ in 0..3 {
+            app.update();
+        }
+        assert_eq!(
+            current_state(&mut app, chest_id),
+            "locked",
+            "visual sync must not clobber an authored locked chest to closed"
+        );
+    }
+
+    /// OpenContainer on a locked chest must refuse (no viewers registered)
+    /// until the lock is dealt with via pick / force / key.
+    #[test]
+    fn open_container_refuses_locked_chest() {
+        let mut app = setup_app();
+        let _player = spawn_test_player(&mut app, Class::Vagabond, 1, 0, 10, 10);
+        let (_entity, chest_id) = spawn_locked_door(&mut app, "iron_chest", 11, 10);
+        app.update();
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push(GameCommand::OpenContainer {
+                object_id: chest_id,
+            });
+        app.update();
+
+        assert!(
+            !app.world()
+                .resource::<crate::game::resources::ContainerViewers>()
+                .has_viewers(chest_id),
+            "a locked container must not open into the panel"
+        );
+        assert_eq!(current_state(&mut app, chest_id), "locked");
     }
 
     #[test]

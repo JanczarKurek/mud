@@ -1,4070 +1,631 @@
+# ============================================================================
+# EMBERBROOK — the showcase overworld.
+#
+# One coherent valley, difficulty radiating outward from a safe village at the
+# map center (new players spawn at the geometric center (35,25) — the plaza).
+#
+#   Center  Emberbrook Village   safe zone: shop, tavern, quests, crafting
+#   West    Emberbrook Fields    L1  rats (the villager's hunter quest)
+#   North   Thornwood            L2-3 goblin watch; NE goblin camp (archer,
+#                                mage, hidden bear traps, the stolen key)
+#   NW      Ogre den             L10 elite guarding an off-limits clearing
+#   South   The Old Yard         L3  skeleton cemetery + plate-puzzle crypt
+#   East    Cinder Hills         L6 fire elemental glade, L8 cyclops lair,
+#                                ore veins, sinkhole down to the underworld
+#   Below   Underworld           L3 -> L12 dire-wight vault (end-game loot)
+#
+# NOTE ON THE GRID: text row 0 of `tiles:` is world y=0 = the SOUTH edge
+# (Bevy +y = north), so this file reads "upside down" — the last line is the
+# northern forest. Keep every row exactly 70 chars.
+# ============================================================================
 authored_id: overworld
+permanence: persistent
 width: 70
 height: 50
 fill_floor_type: grass
-permanence: persistent
-lighting:
-  outdoor_ambient:
-  - 220
-  - 220
-  - 230
-  indoor_ambient:
-  - 48
-  - 50
-  - 60
-  has_day_night: true
-  outdoor_curve:
-  - time: 0.2
-    color:
-    - 1
-    - 1
-    - 1
-    alpha: 0.98
-  - time: 0.25
-    color:
-    - 4
-    - 4
-    - 4
-    alpha: 0.95
-  - time: 0.3
-    color:
-    - 2
-    - 2
-    - 2
-    alpha: 0.0
-  - time: 0.7
-    color:
-    - 1
-    - 1
-    - 1
-    alpha: 0.0
-  - time: 0.75
-    color:
-    - 1
-    - 1
-    - 1
-    alpha: 0.95
-  - time: 0.8
-    color:
-    - 1
-    - 1
-    - 1
-    alpha: 0.98
-portals:
-- id: starter_cellar_entrance
-  source:
-    x: 35
-    y: 20
-  destination_space_id: starter_cellar
-  destination_tile:
-    x: 6
-    y: 1
-  destination_permanence: ephemeral
-- id: underworld_sinkhole
-  source:
-    x: 35
-    y: 46
-  destination_space_id: underworld
-  destination_tile:
-    x: 3
-    y: 14
-- id: proving_grounds_entrance
-  source:
-    x: 40
-    y: 25
-  destination_space_id: proving_grounds
-  destination_tile:
-    x: 14
-    y: 12
+
+# Lighting: omitted on purpose — engine default outdoor day/night curve.
+
+legend:
+  "P": pine_tree
+  "T": oak_tree
+  "W": water
+  "f": fence
+  "h": hedge
+  "o": stone
+  "#": cave_wall
+  "*": crystal_cluster
+  ",": flowers
+  "B": berry_bush
+  "x": tombstone
+  "S": wall_s
+  "N": wall_n
+  "E": wall_e
+  "V": wall_w
+  "a": wall_corner_sw
+  "b": wall_corner_se
+  "c": wall_corner_nw
+  "d": wall_corner_ne
+
+tiles: |
+  TPPPPTPPPPTTPTTPPPPPTPTPTPTPPPPPPTPPPPPPPPPPPPPTTPTPPPTTPPPPTPPTPPPTP#
+  P.................WWW................................................#
+  P........T........WWW.hhhhhhhhhhhhhhhhhhhhh.....##..#...###########..#
+  T.................WWW.h.............aSSSSbh.............#.........##.#
+  P......T.......T..WWW.h.x..x........V....Eh........#....#.........##.#
+  P.........T.......WWW.h.............V....Eh.............#.........#..#
+  P.................WWW.h.x..x..x.....V....Eh.............#.........#..#
+  T.......T....T....WWW.h.............cN.NNdh......#......#.........#..#
+  P.......T....T....WWW.h....x..x..x........h.........##..####..######.#
+  T........TT.......WWW.h...................h.......o.............o..#.#
+  P.................WWW.hhhhhhhhhh..hhhhhhhhh.....o....o...............#
+  P.................WWW................................#...#.....#.....#
+  T.......B.....T...WWW.......................T..........#.............#
+  P.................WWW..............T............##.........#.o.......#
+  P.................WWW...........................#.##............##...#
+  P.................WWW........................................#.......#
+  P.T..............TWWW...aSSSSSb.....................#..#.............#
+  P............T....WWW...V.....E...................##...........#...o.#
+  P..T.............TWWW...V.....E....................#.#...............#
+  TT.fffffff.ffffff.WWW...V.....E..................#.o...#...#.o.......#
+  T..........T......WWW...cNN.NNd...........................#..o...#...#
+  T....,...,..,,..,.WWW.............................o........oo#.#..o..#
+  P.....B.....,.,B..WWW.............................o.....o.........#..#
+  T........T.,,.,...WWW............................................#...#
+  T..........T..........................................oooo.o.o...#...#
+  P...fffffffffff.....................................o.......*.o.#o...#
+  P...f.........f.......................aS.SSSSb...#...............o...#
+  P...f.T..TT.TTf...WWW.................V......E..##............o...o..#
+  T...f...T..B......WWW......aSS.SSb....V......E..#.............o.oo##.#
+  T...f.....T.......WWW......V.....E....V......E..o#.......*...........#
+  P...f.T.TT..T.f...WWW......V.....E....V......E...................##..#
+  T...f.........f...WWW......V.....E....V......E......o.*.......o..#..##
+  P.T.fffffffffff...WWW......cNNNNNd....cNNNNNNd..#o#...oooo.o.o.......#
+  P.............T...WWW...........................#.................##.#
+  P............T....WWW.............................oo..#.##.......o...#
+  P..TT.............WWW.................................#..#..........o#
+  T.....TP.....T.P.PWWW....PP....P........P...P.PP.P........P.TP.P.....#
+  P......P....PP..P.WWW.PP..TPP...P......P..P..P..P..P........P.P...P.P#
+  P...PTPP.......T..WWWP....B...T......T.TPTPPBP.PPP.P..........TPPP...#
+  PP.....P....P...P.WWW....P....P..T........P...PP..........TP..P.TT..P#
+  PT.PPP.P......P...WWW..PP.P.P...T.....P...TPP.P.PPPPPP..PPPPPPP..PPP.#
+  PP.....P......PP.PWWW.....P...T.P......P.PT..P..P.............P..P.TP#
+  P.PPPPPP.PPP....P.WWWP.P...P.PPP.P....P.....P.PTP.............PPP...P#
+  P.P.......P......PWWW.PPPP....P.P...........P.P.P.............P..P...#
+  PPP.......PT.P..T.WWWP...P.P.PPPT.........PP..P.P.............PP..P..#
+  PPP.......P......PWWW.PT..P.P..T...PP.P..P...P..P.............PPP.P..#
+  PPP.......PP...P..WWW...P....P...P..PP....PP..TTP.............PPP....#
+  P.P.......P..PTP.PWWWP.P...P.P.PP.....T...T....PPPPPPPPPPPPPPPPP.T...#
+  PPPPPPPPPPP.....P.WWW.PP.PP.....P..P.TP.P...T..PP...PP......P..P..P.P#
+  PPPPPTPPPTPPPPTPPTPPTTPTPPTPTTPPPPPTPPPTPPPPPPTPPPPTPTPPPPPTTTTPTTPPP#
+
+# Floors. Rects are disjoint by construction except cave_floor (Cinder Hills)
+# under the eastern road tiles — cave_floor is listed first so the road wins.
 floors:
   cave_floor:
-    placement:
-    - x: 34
-      y: 16
-    - x: 35
-      y: 16
-    - x: 35
-      y: 17
-    - x: 36
-      y: 17
-    - x: 37
-      y: 17
-    - x: 38
-      y: 17
-    - x: 38
-      y: 18
-    - x: 39
-      y: 18
-    - x: 39
-      y: 19
-    - x: 40
-      y: 19
-    - x: 35
-      y: 20
-    - x: 36
-      y: 20
-    - x: 37
-      y: 20
-    - x: 38
-      y: 20
-    - x: 34
-      y: 21
-    - x: 34
-      y: 22
-    - x: 39
-      y: 22
-    - x: 40
-      y: 22
-    - x: 41
-      y: 22
-    - x: 34
-      y: 23
-    - x: 35
-      y: 23
-    - x: 38
-      y: 23
-    - x: 42
-      y: 23
-    - x: 35
-      y: 24
-    - x: 36
-      y: 24
-    - x: 37
-      y: 24
-    - x: 41
-      y: 24
-    - x: 35
-      y: 25
-    - x: 36
-      y: 25
-    - x: 40
-      y: 25
-    - x: 35
-      y: 26
-    - x: 37
-      y: 26
-    - x: 38
-      y: 26
-    - x: 39
-      y: 26
-    - x: 40
-      y: 26
-    - x: 33
-      y: 27
-    - x: 34
-      y: 27
-    - x: 37
-      y: 27
-    - x: 38
-      y: 27
-    - x: 39
-      y: 27
-    - x: 33
-      y: 28
-    - x: 34
-      y: 28
-    - x: 35
-      y: 28
-    - x: 36
-      y: 28
-    - x: 37
-      y: 28
-    - x: 39
-      y: 28
-    - x: 40
-      y: 28
-    - x: 41
-      y: 29
-    - x: 42
-      y: 29
-    - x: 37
-      y: 30
-    - x: 34
-      y: 31
-    - x: 35
-      y: 31
-    - x: 36
-      y: 31
-    - x: 39
-      y: 32
+    rects:
+      - { x: 48, y: 2, w: 21, h: 35 }     # Cinder Hills
   water:
-    placement:
-    - x: 40
-      y: 30
-    - x: 41
-      y: 30
-    - x: 42
-      y: 30
-    - x: 43
-      y: 30
-    - x: 44
-      y: 30
-    - x: 40
-      y: 31
-    - x: 41
-      y: 31
-    - x: 42
-      y: 31
-    - x: 43
-      y: 31
-    - x: 44
-      y: 31
-    - x: 40
-      y: 32
-    - x: 41
-      y: 32
-    - x: 42
-      y: 32
-    - x: 43
-      y: 32
-    - x: 44
-      y: 32
-  wooden_floor:
-    placement:
-    - x: 2
-      y: 2
-      z: 1
-    - x: 3
-      y: 2
-      z: 1
-    - x: 4
-      y: 2
-      z: 1
-    - x: 5
-      y: 2
-      z: 1
-    - x: 6
-      y: 2
-      z: 1
-    - x: 7
-      y: 2
-      z: 1
-    - x: 2
-      y: 3
-      z: 1
-    - x: 5
-      y: 3
-      z: 1
-    - x: 6
-      y: 3
-      z: 1
-    - x: 7
-      y: 3
-      z: 1
-    - x: 2
-      y: 4
-      z: 1
-    - x: 3
-      y: 4
-      z: 1
-    - x: 4
-      y: 4
-      z: 1
-    - x: 5
-      y: 4
-      z: 1
-    - x: 6
-      y: 4
-      z: 1
-    - x: 7
-      y: 4
-      z: 1
-    - x: 2
-      y: 5
-      z: 1
-    - x: 3
-      y: 5
-      z: 1
-    - x: 4
-      y: 5
-      z: 1
-    - x: 5
-      y: 5
-      z: 1
-    - x: 6
-      y: 5
-      z: 1
-    - x: 7
-      y: 5
-      z: 1
-    - x: 2
-      y: 6
-      z: 1
-    - x: 3
-      y: 6
-      z: 1
-    - x: 4
-      y: 6
-      z: 1
-    - x: 5
-      y: 6
-      z: 1
-    - x: 6
-      y: 6
-      z: 1
-    - x: 7
-      y: 6
-      z: 1
-    - x: 2
-      y: 7
-      z: 1
-    - x: 3
-      y: 7
-      z: 1
-    - x: 4
-      y: 7
-      z: 1
-    - x: 5
-      y: 7
-      z: 1
-    - x: 6
-      y: 7
-      z: 1
-    - x: 41
-      y: 27
-      z: 1
-    - x: 42
-      y: 27
-      z: 1
-    - x: 43
-      y: 27
-      z: 1
-    - x: 41
-      y: 28
-      z: 1
-    - x: 42
-      y: 28
-      z: 1
-    - x: 43
-      y: 28
-      z: 1
-  dirt_path:
-    placement:
-    - x: 5
-      y: 19
-    - x: 5
-      y: 20
-    - x: 5
-      y: 21
-    - x: 5
-      y: 22
-    - x: 5
-      y: 23
-    - x: 5
-      y: 24
-    - x: 5
-      y: 25
-    - x: 5
-      y: 26
-    - x: 6
-      y: 26
-    - x: 7
-      y: 26
-    - x: 8
-      y: 26
-    - x: 9
-      y: 26
-    - x: 10
-      y: 26
-    - x: 11
-      y: 26
-    - x: 12
-      y: 26
-    - x: 13
-      y: 26
-    - x: 14
-      y: 26
-    - x: 15
-      y: 26
-    - x: 16
-      y: 26
-    - x: 17
-      y: 26
-    - x: 18
-      y: 26
-    - x: 19
-      y: 26
-    - x: 20
-      y: 26
-    - x: 21
-      y: 26
-    - x: 22
-      y: 26
-    - x: 23
-      y: 26
-    - x: 24
-      y: 26
-    - x: 25
-      y: 26
-    - x: 26
-      y: 26
-    - x: 27
-      y: 26
-    - x: 28
-      y: 26
-    - x: 29
-      y: 26
-    - x: 30
-      y: 26
-    - x: 31
-      y: 26
-    - x: 32
-      y: 26
-    - x: 33
-      y: 26
-    - x: 34
-      y: 26
-    - x: 35
-      y: 27
-    - x: 28
-      y: 28
-    - x: 29
-      y: 28
-    - x: 29
-      y: 29
-    - x: 30
-      y: 29
-    - x: 31
-      y: 29
-    - x: 35
-      y: 29
-    - x: 30
-      y: 30
-    - x: 31
-      y: 30
-    - x: 32
-      y: 30
-    - x: 35
-      y: 30
-    - x: 31
-      y: 31
-    - x: 32
-      y: 31
-    - x: 33
-      y: 31
-    - x: 32
-      y: 32
-    - x: 33
-      y: 32
-    - x: 34
-      y: 32
-    - x: 35
-      y: 32
-    - x: 32
-      y: 33
-    - x: 33
-      y: 33
-    - x: 34
-      y: 33
-    - x: 35
-      y: 33
-    - x: 35
-      y: 34
-    - x: 35
-      y: 35
-    - x: 35
-      y: 36
-    - x: 35
-      y: 37
-    - x: 35
-      y: 38
-    - x: 35
-      y: 39
-    - x: 35
-      y: 40
-    - x: 35
-      y: 41
-    - x: 35
-      y: 42
-    - x: 35
-      y: 43
-    - x: 35
-      y: 44
+    rects:
+      - { x: 18, y: 1, w: 3, h: 23 }      # the Ember, south of the bridge
+      - { x: 18, y: 27, w: 3, h: 22 }     # the Ember, north of the bridge
   sand:
-    placement:
-    - x: 2
-      y: 28
-    - x: 4
-      y: 28
-    - x: 5
-      y: 28
-    - x: 6
-      y: 28
-    - x: 7
-      y: 28
-    - x: 8
-      y: 28
-    - x: 9
-      y: 28
-    - x: 10
-      y: 28
-    - x: 11
-      y: 28
-    - x: 12
-      y: 28
-    - x: 13
-      y: 28
-    - x: 14
-      y: 28
-    - x: 15
-      y: 28
-    - x: 16
-      y: 28
-    - x: 17
-      y: 28
-    - x: 18
-      y: 28
-    - x: 19
-      y: 28
-    - x: 20
-      y: 28
-    - x: 21
-      y: 28
-    - x: 22
-      y: 28
-    - x: 24
-      y: 28
-    - x: 25
-      y: 28
-    - x: 26
-      y: 28
-    - x: 3
-      y: 29
-    - x: 4
-      y: 29
-    - x: 5
-      y: 29
-    - x: 6
-      y: 29
-    - x: 7
-      y: 29
-    - x: 8
-      y: 29
-    - x: 9
-      y: 29
-    - x: 10
-      y: 29
-    - x: 11
-      y: 29
-    - x: 12
-      y: 29
-    - x: 13
-      y: 29
-    - x: 14
-      y: 29
-    - x: 15
-      y: 29
-    - x: 16
-      y: 29
-    - x: 17
-      y: 29
-    - x: 18
-      y: 29
-    - x: 19
-      y: 29
-    - x: 20
-      y: 29
-    - x: 21
-      y: 29
-    - x: 22
-      y: 29
-    - x: 23
-      y: 29
-    - x: 24
-      y: 29
-    - x: 25
-      y: 29
-    - x: 26
-      y: 29
-    - x: 2
-      y: 30
-    - x: 3
-      y: 30
-    - x: 25
-      y: 30
-    - x: 2
-      y: 31
-    - x: 3
-      y: 31
-    - x: 25
-      y: 31
-    - x: 26
-      y: 31
-    - x: 2
-      y: 32
-    - x: 3
-      y: 32
-    - x: 25
-      y: 32
-    - x: 26
-      y: 32
-    - x: 2
-      y: 33
-    - x: 3
-      y: 33
-    - x: 25
-      y: 33
-    - x: 26
-      y: 33
-    - x: 2
-      y: 34
-    - x: 3
-      y: 34
-    - x: 25
-      y: 34
-    - x: 26
-      y: 34
-    - x: 2
-      y: 35
-    - x: 3
-      y: 35
-    - x: 25
-      y: 35
-    - x: 26
-      y: 35
-    - x: 2
-      y: 36
-    - x: 3
-      y: 36
-    - x: 25
-      y: 36
-    - x: 26
-      y: 36
-    - x: 2
-      y: 37
-    - x: 3
-      y: 37
-    - x: 25
-      y: 37
-    - x: 26
-      y: 37
-    - x: 2
-      y: 38
-    - x: 3
-      y: 38
-    - x: 25
-      y: 38
-    - x: 26
-      y: 38
-    - x: 2
-      y: 39
-    - x: 3
-      y: 39
-    - x: 25
-      y: 39
-    - x: 26
-      y: 39
-    - x: 2
-      y: 40
-    - x: 3
-      y: 40
-    - x: 25
-      y: 40
-    - x: 26
-      y: 40
-    - x: 2
-      y: 41
-    - x: 3
-      y: 41
-    - x: 25
-      y: 41
-    - x: 26
-      y: 41
-    - x: 2
-      y: 42
-    - x: 3
-      y: 42
-    - x: 25
-      y: 42
-    - x: 26
-      y: 42
-    - x: 2
-      y: 43
-    - x: 3
-      y: 43
-    - x: 25
-      y: 43
-    - x: 26
-      y: 43
-    - x: 3
-      y: 44
-    - x: 25
-      y: 44
-    - x: 26
-      y: 44
-    - x: 2
-      y: 45
-    - x: 3
-      y: 45
-    - x: 26
-      y: 45
-    - x: 2
-      y: 46
-    - x: 3
-      y: 46
-    - x: 25
-      y: 46
-    - x: 26
-      y: 46
-    - x: 2
-      y: 47
-    - x: 4
-      y: 47
-    - x: 5
-      y: 47
-    - x: 6
-      y: 47
-    - x: 7
-      y: 47
-    - x: 8
-      y: 47
-    - x: 9
-      y: 47
-    - x: 10
-      y: 47
-    - x: 11
-      y: 47
-    - x: 12
-      y: 47
-    - x: 13
-      y: 47
-    - x: 14
-      y: 47
-    - x: 15
-      y: 47
-    - x: 16
-      y: 47
-    - x: 17
-      y: 47
-    - x: 18
-      y: 47
-    - x: 19
-      y: 47
-    - x: 20
-      y: 47
-    - x: 21
-      y: 47
-    - x: 22
-      y: 47
-    - x: 23
-      y: 47
-    - x: 24
-      y: 47
-    - x: 25
-      y: 47
-    - x: 26
-      y: 47
-    - x: 2
-      y: 48
-    - x: 3
-      y: 48
-    - x: 4
-      y: 48
-    - x: 5
-      y: 48
-    - x: 6
-      y: 48
-    - x: 7
-      y: 48
-    - x: 8
-      y: 48
-    - x: 9
-      y: 48
-    - x: 10
-      y: 48
-    - x: 11
-      y: 48
-    - x: 12
-      y: 48
-    - x: 13
-      y: 48
-    - x: 14
-      y: 48
-    - x: 15
-      y: 48
-    - x: 16
-      y: 48
-    - x: 17
-      y: 48
-    - x: 18
-      y: 48
-    - x: 19
-      y: 48
-    - x: 20
-      y: 48
-    - x: 21
-      y: 48
-    - x: 22
-      y: 48
-    - x: 23
-      y: 48
-    - x: 24
-      y: 48
-    - x: 25
-      y: 48
-    - x: 26
-      y: 48
+    rects:
+      - { x: 17, y: 1, w: 1, h: 23 }      # west bank
+      - { x: 21, y: 1, w: 1, h: 23 }      # east bank
+      - { x: 17, y: 27, w: 1, h: 22 }
+      - { x: 21, y: 27, w: 1, h: 22 }
   cobblestone:
-    placement:
-    - x: 8
-      y: 3
-    - x: 9
-      y: 3
-    - x: 10
-      y: 3
-    - x: 8
-      y: 4
-    - x: 9
-      y: 4
-    - x: 10
-      y: 4
-    - x: 8
-      y: 5
-    - x: 9
-      y: 5
-    - x: 10
-      y: 5
-    - x: 8
-      y: 6
-    - x: 9
-      y: 6
-    - x: 10
-      y: 6
-    - x: 8
-      y: 7
-    - x: 9
-      y: 7
-    - x: 10
-      y: 7
-    - x: 11
-      y: 7
-    - x: 12
-      y: 7
-    - x: 13
-      y: 7
-    - x: 14
-      y: 7
-    - x: 15
-      y: 7
-    - x: 16
-      y: 7
-    - x: 17
-      y: 7
-    - x: 8
-      y: 8
-    - x: 9
-      y: 8
-    - x: 10
-      y: 8
-    - x: 11
-      y: 8
-    - x: 12
-      y: 8
-    - x: 13
-      y: 8
-    - x: 14
-      y: 8
-    - x: 15
-      y: 8
-    - x: 16
-      y: 8
-    - x: 17
-      y: 8
-    - x: 8
-      y: 9
-    - x: 9
-      y: 9
-    - x: 10
-      y: 9
-    - x: 11
-      y: 9
-    - x: 12
-      y: 9
-    - x: 13
-      y: 9
-    - x: 14
-      y: 9
-    - x: 15
-      y: 9
-    - x: 16
-      y: 9
-    - x: 17
-      y: 9
-    - x: 8
-      y: 10
-    - x: 9
-      y: 10
-    - x: 10
-      y: 10
-    - x: 11
-      y: 10
-    - x: 12
-      y: 10
-    - x: 13
-      y: 10
-    - x: 14
-      y: 10
-    - x: 15
-      y: 10
-    - x: 16
-      y: 10
-    - x: 17
-      y: 10
-    - x: 8
-      y: 11
-    - x: 9
-      y: 11
-    - x: 10
-      y: 11
-    - x: 11
-      y: 11
-    - x: 12
-      y: 11
-    - x: 13
-      y: 11
-    - x: 14
-      y: 11
-    - x: 15
-      y: 11
-    - x: 16
-      y: 11
-    - x: 17
-      y: 11
-    - x: 8
-      y: 12
-    - x: 9
-      y: 12
-    - x: 10
-      y: 12
-    - x: 11
-      y: 12
-    - x: 12
-      y: 12
-    - x: 13
-      y: 12
-    - x: 14
-      y: 12
-    - x: 15
-      y: 12
-    - x: 16
-      y: 12
-    - x: 17
-      y: 12
-    - x: 8
-      y: 13
-    - x: 9
-      y: 13
-    - x: 10
-      y: 13
-    - x: 8
-      y: 14
-    - x: 9
-      y: 14
-    - x: 10
-      y: 14
-    - x: 8
-      y: 15
-    - x: 9
-      y: 15
-    - x: 10
-      y: 15
-    - x: 8
-      y: 16
-    - x: 9
-      y: 16
-    - x: 10
-      y: 16
-    - x: 8
-      y: 17
-    - x: 9
-      y: 17
-    - x: 10
-      y: 17
-    - x: 24
-      y: 17
-    - x: 25
-      y: 17
-    - x: 26
-      y: 17
-    - x: 27
-      y: 17
-    - x: 28
-      y: 17
-    - x: 29
-      y: 17
-    - x: 30
-      y: 17
-    - x: 31
-      y: 17
-    - x: 32
-      y: 17
-    - x: 33
-      y: 17
-    - x: 24
-      y: 18
-    - x: 25
-      y: 18
-    - x: 26
-      y: 18
-    - x: 27
-      y: 18
-    - x: 28
-      y: 18
-    - x: 29
-      y: 18
-    - x: 30
-      y: 18
-    - x: 31
-      y: 18
-    - x: 32
-      y: 18
-    - x: 33
-      y: 18
-    - x: 24
-      y: 19
-    - x: 25
-      y: 19
-    - x: 26
-      y: 19
-    - x: 27
-      y: 19
-    - x: 28
-      y: 19
-    - x: 29
-      y: 19
-    - x: 30
-      y: 19
-    - x: 31
-      y: 19
-    - x: 32
-      y: 19
-    - x: 33
-      y: 19
-    - x: 24
-      y: 20
-    - x: 25
-      y: 20
-    - x: 26
-      y: 20
-    - x: 27
-      y: 20
-    - x: 28
-      y: 20
-    - x: 29
-      y: 20
-    - x: 30
-      y: 20
-    - x: 31
-      y: 20
-    - x: 32
-      y: 20
-    - x: 33
-      y: 20
-    - x: 24
-      y: 21
-    - x: 25
-      y: 21
-    - x: 26
-      y: 21
-    - x: 27
-      y: 21
-    - x: 28
-      y: 21
-    - x: 29
-      y: 21
-    - x: 30
-      y: 21
-    - x: 31
-      y: 21
-    - x: 32
-      y: 21
-    - x: 33
-      y: 21
-    - x: 24
-      y: 22
-    - x: 25
-      y: 22
-    - x: 26
-      y: 22
-    - x: 27
-      y: 22
-    - x: 28
-      y: 22
-    - x: 29
-      y: 22
-    - x: 30
-      y: 22
-    - x: 31
-      y: 22
-    - x: 32
-      y: 22
-    - x: 33
-      y: 22
-    - x: 24
-      y: 23
-    - x: 25
-      y: 23
-    - x: 26
-      y: 23
-    - x: 27
-      y: 23
-    - x: 28
-      y: 23
-    - x: 29
-      y: 23
-    - x: 30
-      y: 23
-    - x: 31
-      y: 23
-    - x: 32
-      y: 23
-    - x: 33
-      y: 23
-    - x: 24
-      y: 24
-    - x: 25
-      y: 24
-    - x: 26
-      y: 24
-    - x: 27
-      y: 24
-    - x: 28
-      y: 24
-    - x: 29
-      y: 24
-    - x: 30
-      y: 24
-    - x: 31
-      y: 24
-    - x: 32
-      y: 24
-    - x: 33
-      y: 24
-  cave_floor#flooring:
-    placement:
-    - x: 24
-      y: 17
-      z: 1
-    - x: 25
-      y: 17
-      z: 1
-    - x: 26
-      y: 17
-      z: 1
-    - x: 27
-      y: 17
-      z: 1
-    - x: 28
-      y: 17
-      z: 1
-    - x: 29
-      y: 17
-      z: 1
-    - x: 30
-      y: 17
-      z: 1
-    - x: 31
-      y: 17
-      z: 1
-    - x: 32
-      y: 17
-      z: 1
-    - x: 33
-      y: 17
-      z: 1
-    - x: 24
-      y: 18
-      z: 1
-    - x: 25
-      y: 18
-      z: 1
-    - x: 26
-      y: 18
-      z: 1
-    - x: 27
-      y: 18
-      z: 1
-    - x: 28
-      y: 18
-      z: 1
-    - x: 29
-      y: 18
-      z: 1
-    - x: 30
-      y: 18
-      z: 1
-    - x: 31
-      y: 18
-      z: 1
-    - x: 32
-      y: 18
-      z: 1
-    - x: 33
-      y: 18
-      z: 1
-    - x: 24
-      y: 19
-      z: 1
-    - x: 25
-      y: 19
-      z: 1
-    - x: 26
-      y: 19
-      z: 1
-    - x: 27
-      y: 19
-      z: 1
-    - x: 28
-      y: 19
-      z: 1
-    - x: 29
-      y: 19
-      z: 1
-    - x: 30
-      y: 19
-      z: 1
-    - x: 31
-      y: 19
-      z: 1
-    - x: 32
-      y: 19
-      z: 1
-    - x: 33
-      y: 19
-      z: 1
-    - x: 24
-      y: 20
-      z: 1
-    - x: 25
-      y: 20
-      z: 1
-    - x: 26
-      y: 20
-      z: 1
-    - x: 27
-      y: 20
-      z: 1
-    - x: 28
-      y: 20
-      z: 1
-    - x: 29
-      y: 20
-      z: 1
-    - x: 30
-      y: 20
-      z: 1
-    - x: 31
-      y: 20
-      z: 1
-    - x: 32
-      y: 20
-      z: 1
-    - x: 33
-      y: 20
-      z: 1
-    - x: 24
-      y: 21
-      z: 1
-    - x: 25
-      y: 21
-      z: 1
-    - x: 26
-      y: 21
-      z: 1
-    - x: 27
-      y: 21
-      z: 1
-    - x: 28
-      y: 21
-      z: 1
-    - x: 29
-      y: 21
-      z: 1
-    - x: 30
-      y: 21
-      z: 1
-    - x: 31
-      y: 21
-      z: 1
-    - x: 32
-      y: 21
-      z: 1
-    - x: 33
-      y: 21
-      z: 1
-    - x: 24
-      y: 22
-      z: 1
-    - x: 25
-      y: 22
-      z: 1
-    - x: 26
-      y: 22
-      z: 1
-    - x: 27
-      y: 22
-      z: 1
-    - x: 28
-      y: 22
-      z: 1
-    - x: 29
-      y: 22
-      z: 1
-    - x: 30
-      y: 22
-      z: 1
-    - x: 31
-      y: 22
-      z: 1
-    - x: 32
-      y: 22
-      z: 1
-    - x: 33
-      y: 22
-      z: 1
-    - x: 24
-      y: 23
-      z: 1
-    - x: 25
-      y: 23
-      z: 1
-    - x: 26
-      y: 23
-      z: 1
-    - x: 27
-      y: 23
-      z: 1
-    - x: 28
-      y: 23
-      z: 1
-    - x: 29
-      y: 23
-      z: 1
-    - x: 30
-      y: 23
-      z: 1
-    - x: 31
-      y: 23
-      z: 1
-    - x: 32
-      y: 23
-      z: 1
-    - x: 33
-      y: 23
-      z: 1
-    - x: 24
-      y: 24
-      z: 1
-    - x: 25
-      y: 24
-      z: 1
-    - x: 26
-      y: 24
-      z: 1
-    - x: 27
-      y: 24
-      z: 1
-    - x: 28
-      y: 24
-      z: 1
-    - x: 29
-      y: 24
-      z: 1
-    - x: 30
-      y: 24
-      z: 1
-    - x: 31
-      y: 24
-      z: 1
-    - x: 32
-      y: 24
-      z: 1
-    - x: 33
-      y: 24
-      z: 1
+    rects:
+      - { x: 30, y: 22, w: 11, h: 7 }     # village plaza (spawn is 35,25)
+      - { x: 17, y: 24, w: 5, h: 3 }      # Ember Bridge
+  dirt_path:
+    rects:
+      - { x: 21, y: 24, w: 9, h: 3 }      # west road: bridge -> plaza
+      - { x: 41, y: 24, w: 9, h: 2 }      # east road: plaza -> arch/hills
+      - { x: 50, y: 24, w: 2, h: 3 }      # spur into the hills
+      - { x: 34, y: 29, w: 3, h: 12 }     # north road: plaza -> Thornwood
+      - { x: 31, y: 11, w: 4, h: 11 }     # south road: plaza -> Old Yard
+  wooden_floor:
+    rects:
+      - { x: 28, y: 29, w: 5, h: 3 }      # general store interior
+      - { x: 39, y: 27, w: 6, h: 5 }      # tavern interior
+      - { x: 25, y: 17, w: 5, h: 3 }      # storehouse interior
+      # Tavern loft (upper storey, floor index 1). The stairwell column
+      # (39,28)-(39,29) stays unpainted so the staircase can pass through;
+      # (39,27) is the landing. Covered tiles below read as "indoors".
+      - { x: 39, y: 27, w: 6, h: 1, z: 1 }
+      - { x: 40, y: 28, w: 5, h: 2, z: 1 }
+      - { x: 39, y: 30, w: 6, h: 2, z: 1 }
+  flagstone:
+    rects:
+      - { x: 37, y: 4, w: 4, h: 3 }       # crypt interior
+
+portals:
+  # Trapdoor in the tavern's back corner, down to the (ephemeral) cellar.
+  - id: cellar_hatch
+    source: { x: 44, y: 31 }
+    destination_space_id: starter_cellar
+    destination_tile: { x: 6, y: 1 }
+    destination_permanence: ephemeral
+  # Sinkhole in the Cinder Hills, down to the persistent underworld.
+  - id: underworld_sinkhole
+    source: { x: 58, y: 16 }
+    destination_space_id: underworld
+    destination_tile: { x: 3, y: 14 }
+  # Arch at the end of the east road: the systems-tutorial dungeon.
+  - id: proving_grounds_entrance
+    source: { x: 47, y: 25 }
+    destination_space_id: proving_grounds
+    destination_tile: { x: 14, y: 12 }
+
 objects:
-# ── Art-iteration demo: roadside garden + grove (just north of the y=26 path) ──
-- type: hedge
-  placement:
-  - { x: 9, y: 19 }
-  - { x: 10, y: 19 }
-  - { x: 11, y: 19 }
-  - { x: 12, y: 19 }
-  - { x: 13, y: 19 }
-  - { x: 14, y: 19 }
-  - { x: 9, y: 20 }
-  - { x: 9, y: 21 }
-  - { x: 9, y: 22 }
-  - { x: 14, y: 20 }
-  - { x: 14, y: 21 }
-  - { x: 14, y: 22 }
-  - { x: 9, y: 23 }
-  - { x: 10, y: 23 }
-  - { x: 13, y: 23 }
-  - { x: 14, y: 23 }
-- type: bush
-  placement:
-  - { x: 10, y: 20 }
-  - { x: 13, y: 22 }
-- type: flowering_bush
-  placement:
-  - { x: 12, y: 20 }
-  - { x: 10, y: 22 }
-- type: berry_bush
-  placement:
-  - { x: 11, y: 21 }   # in the walled garden
-  - { x: 16, y: 23 }   # roadside patch by the grove — pick one, the rest stay full
-  - { x: 17, y: 23 }
-- type: oak_tree
-  placement:
-  - { x: 16, y: 21 }
-  - { x: 18, y: 25 }
-- type: pine_tree
-  placement:
-  - { x: 17, y: 19 }
-  - { x: 19, y: 23 }
-  - { x: 15, y: 25 }
-- type: apple
-  placement:
-  - x: 52
-    y: 6
-  - x: 60
-    y: 14
-  - x: 37
-    y: 22
-  - x: 38
-    y: 22
-  - x: 37
-    y: 23
-- type: archer_goblin
-  placement:
-  - x: 54
-    y: 9
-  - x: 56
-    y: 14
-  - x: 38
-    y: 23
-- type: barrel
-  placement:
-  - x: 6
-    y: 3
-    z: 1
-  - x: 4
-    y: 4
-  - x: 4
-    y: 5
-    z: 1
-  - x: 14
-    y: 10
-  - x: 61
-    y: 14
-- type: blazing_fire
-  placement:
-  - x: 55
-    y: 36
-- type: book
-  placement:
-  - x: 25
-    y: 14
-- type: bronze_sword
-  placement:
-  - x: 13
-    y: 3
-  - x: 15
-    y: 15
-- type: campfire
-  placement:
-  - x: 10
-    y: 11
-  - x: 60
-    y: 33
-  - x: 56
-    y: 38
-- type: canvas_backpack
-  placement:
-  - x: 32
-    y: 41
-- type: chatterbox
-  placement:
-  - x: 4
-    y: 15
-- type: copper_amulet
-  placement:
-  - x: 37
-    y: 25
-- type: copper_coin
-  placement:
-  - x: 64
-    y: 10
-  - x: 17
-    y: 14
-  - x: 18
-    y: 14
-  - x: 19
-    y: 14
-  - x: 17
-    y: 15
-- type: cyclops
-  placement:
-  - x: 19
-    y: 15
-  - x: 54
-    y: 44
-  - x: 57
-    y: 47
-- type: fence
-  placement:
-  - x: 26
-    y: 4
-  - x: 27
-    y: 4
-  - x: 28
-    y: 4
-  - x: 29
-    y: 4
-  - x: 30
-    y: 4
-  - x: 31
-    y: 4
-  - x: 32
-    y: 4
-  - x: 33
-    y: 4
-  - x: 26
-    y: 5
-  - x: 33
-    y: 5
-  - x: 26
-    y: 6
-  - x: 33
-    y: 6
-  - x: 26
-    y: 7
-  - x: 33
-    y: 7
-  - x: 26
-    y: 8
-  - x: 33
-    y: 8
-  - x: 26
-    y: 9
-  - x: 33
-    y: 9
-  - x: 26
-    y: 10
-  - x: 33
-    y: 10
-  - x: 26
-    y: 11
-  - x: 33
-    y: 11
-  - x: 26
-    y: 12
-  - x: 27
-    y: 12
-  - x: 28
-    y: 12
-  - x: 29
-    y: 12
-  - x: 30
-    y: 12
-  - x: 31
-    y: 12
-  - x: 61
-    y: 47
-- type: fire_elemental
-  placement:
-  - x: 30
-    y: 8
-  - x: 40
-    y: 10
-  - x: 32
-    y: 12
-  - x: 34
-    y: 14
-- type: fishing_spot
-  placement:
-  - x: 40
-    y: 14
-  - x: 8
-    y: 30
-  - x: 14
-    y: 30
-  - x: 20
-    y: 30
-  - x: 4
-    y: 35
-  - x: 24
-    y: 38
-- type: flower_mana_potion_recipe
-  placement:
-  - x: 7
-    y: 7
-    z: 2
-- type: flowers
-  placement:
-  - x: 38
-    y: 4
-  - x: 24
-    y: 5
-  - x: 25
-    y: 5
-  - x: 30
-    y: 5
-  - x: 28
-    y: 6
-  - x: 32
-    y: 6
-  - x: 40
-    y: 6
-  - x: 29
-    y: 7
-  - x: 30
-    y: 8
-  - x: 31
-    y: 8
-  - x: 31
-    y: 9
-  - x: 3
-    y: 10
-  - x: 4
-    y: 10
-  - x: 18
-    y: 13
-  - x: 25
-    y: 13
-  - x: 39
-    y: 13
-  - x: 19
-    y: 14
-  - x: 41
-    y: 16
-  - x: 36
-    y: 18
-  - x: 38
-    y: 20
-  - x: 33
-    y: 23
-  - x: 34
-    y: 23
-  - x: 36
-    y: 23
-  - x: 37
-    y: 23
-  - x: 36
-    y: 24
-  - x: 37
-    y: 24
-  - x: 33
-    y: 25
-  - x: 2
-    y: 27
-  - x: 4
-    y: 27
-  - x: 7
-    y: 27
-  - x: 13
-    y: 27
-  - x: 20
-    y: 27
-  - x: 25
-    y: 27
-  - x: 30
-    y: 27
-  - x: 38
-    y: 27
-  - x: 31
-    y: 28
-  - x: 40
-    y: 29
-  - x: 27
-    y: 33
-  - x: 42
-    y: 33
-  - x: 1
-    y: 34
-  - x: 29
-    y: 35
-  - x: 1
-    y: 39
-  - x: 27
-    y: 40
-  - x: 28
-    y: 40
-- type: goblin
-  placement:
-  - x: 48
-    y: 9
-  - x: 49
-    y: 10
-  - x: 52
-    y: 13
-  - x: 49
-    y: 29
-  - x: 56
-    y: 29
-  - x: 60
-    y: 29
-  - x: 59
-    y: 30
-  - x: 55
-    y: 31
-  - x: 54
-    y: 34
-  - x: 43
-    y: 41
-  - x: 54
-    y: 47
-  - x: 58
-    y: 47
-- type: gold_coin
-  placement:
-  - x: 58
-    y: 48
-- type: herb_patch
-  placement:
-  - x: 19
-    y: 16
-  - x: 66
-    y: 25
-  - x: 27
-    y: 27
-  - x: 37
-    y: 33
-  - x: 29
-    y: 36
-  - x: 60
-    y: 36
-- type: iron_chest
-  placement:
-  - x: 24
-    y: 10
-  - x: 13
-    y: 11
-  - x: 44
-    y: 38
-- type: leather_legs
-  placement:
-  - x: 20
-    y: 14
-  - x: 58
-    y: 20
-- type: ore_node
-  placement:
-  - x: 52
-    y: 30
-  - x: 49
-    y: 33
-  - x: 61
-    y: 35
-  - x: 66
-    y: 35
-  - x: 62
-    y: 40
-  - x: 55
-    y: 43
-- type: pen
-  placement:
-  - x: 24
-    y: 14
-- type: player
-  placement:
-  - x: 15
-    y: 14
-  - x: 63
-    y: 44
-- type: portal_arch
-  placement:
-  - x: 34
-    y: 19
-  - x: 51
-    y: 44
-- type: potion
-  placement:
-  - x: 35
-    y: 44
-- type: rat
-  placement:
-  - x: 36
-    y: 14
-  - x: 18
-    y: 34
-  - x: 10
-    y: 40
-  - x: 25
-    y: 42
-  - x: 22
-    y: 44
-  - x: 25
-    y: 44
-  - x: 25
-    y: 46
-  - x: 23
-    y: 47
-  - x: 24
-    y: 47
-- type: rune_of_lesser_heal
-  placement:
-  - x: 25
-    y: 47
-- type: sign_post
-  placement:
-  - x: 5
-    y: 21
-  - x: 33
-    y: 43
-- type: silver_coin
-  placement:
-  - x: 7
-    y: 7
-    z: 1
-  - x: 18
-    y: 15
-- type: silver_ring
-  placement:
-  - x: 18
-    y: 16
-- type: sinkhole
-  placement:
-  - x: 38
-    y: 8
-- type: skeleton
-  placement:
-  - x: 30
-    y: 33
-  - x: 35
-    y: 46
-- type: small_pouch
-  placement:
-  - x: 40
-    y: 49
-- type: stair_n_high
-  placement:
-  - x: 25
-    y: 23
-  - x: 42
-    y: 29
-- type: stair_n_low
-  placement:
-  - x: 25
-    y: 22
-  - x: 42
-    y: 30
-- type: stone
-  placement:
-  - x: 17
-    y: 16
-  - x: 5
-    y: 27
-  - x: 3
-    y: 28
-  - x: 23
-    y: 28
-  - x: 2
-    y: 29
-  - x: 26
-    y: 30
-  - x: 50
-    y: 30
-  - x: 48
-    y: 32
-  - x: 63
-    y: 35
-  - x: 36
-    y: 42
-  - x: 60
-    y: 43
-  - x: 65
-    y: 43
-  - x: 2
-    y: 44
-  - x: 33
-    y: 44
-  - x: 34
-    y: 44
-  - x: 36
-    y: 44
-  - x: 52
-    y: 44
-  - x: 25
-    y: 45
-  - x: 33
-    y: 46
-  - x: 37
-    y: 46
-  - x: 48
-    y: 46
-  - x: 3
-    y: 47
-  - x: 32
-    y: 47
-- type: stone_step
-  placement:
-  - x: 3
-    y: 3
-  - x: 38
-    y: 47
-- type: traveler_boots
-  placement:
-  - x: 4
-    y: 3
-    z: 1
-- type: tree
-  placement:
-  - x: 45
-    y: 1
-  - x: 46
-    y: 1
-  - x: 47
-    y: 1
-  - x: 48
-    y: 1
-  - x: 49
-    y: 1
-  - x: 50
-    y: 1
-  - x: 52
-    y: 1
-  - x: 53
-    y: 1
-  - x: 54
-    y: 1
-  - x: 55
-    y: 1
-  - x: 56
-    y: 1
-  - x: 57
-    y: 1
-  - x: 58
-    y: 1
-  - x: 59
-    y: 1
-  - x: 60
-    y: 1
-  - x: 61
-    y: 1
-  - x: 62
-    y: 1
-  - x: 64
-    y: 1
-  - x: 66
-    y: 1
-  - x: 67
-    y: 1
-  - x: 68
-    y: 1
-  - x: 45
-    y: 2
-  - x: 46
-    y: 2
-  - x: 47
-    y: 2
-  - x: 48
-    y: 2
-  - x: 50
-    y: 2
-  - x: 52
-    y: 2
-  - x: 53
-    y: 2
-  - x: 55
-    y: 2
-  - x: 56
-    y: 2
-  - x: 58
-    y: 2
-  - x: 60
-    y: 2
-  - x: 61
-    y: 2
-  - x: 62
-    y: 2
-  - x: 63
-    y: 2
-  - x: 64
-    y: 2
-  - x: 65
-    y: 2
-  - x: 66
-    y: 2
-  - x: 67
-    y: 2
-  - x: 68
-    y: 2
-  - x: 45
-    y: 3
-  - x: 46
-    y: 3
-  - x: 47
-    y: 3
-  - x: 48
-    y: 3
-  - x: 49
-    y: 3
-  - x: 51
-    y: 3
-  - x: 52
-    y: 3
-  - x: 53
-    y: 3
-  - x: 54
-    y: 3
-  - x: 55
-    y: 3
-  - x: 56
-    y: 3
-  - x: 58
-    y: 3
-  - x: 59
-    y: 3
-  - x: 60
-    y: 3
-  - x: 62
-    y: 3
-  - x: 63
-    y: 3
-  - x: 64
-    y: 3
-  - x: 65
-    y: 3
-  - x: 66
-    y: 3
-  - x: 67
-    y: 3
-  - x: 46
-    y: 4
-  - x: 47
-    y: 4
-  - x: 48
-    y: 4
-  - x: 50
-    y: 4
-  - x: 51
-    y: 4
-  - x: 52
-    y: 4
-  - x: 53
-    y: 4
-  - x: 54
-    y: 4
-  - x: 55
-    y: 4
-  - x: 57
-    y: 4
-  - x: 58
-    y: 4
-  - x: 60
-    y: 4
-  - x: 61
-    y: 4
-  - x: 62
-    y: 4
-  - x: 63
-    y: 4
-  - x: 64
-    y: 4
-  - x: 66
-    y: 4
-  - x: 67
-    y: 4
-  - x: 68
-    y: 4
-  - x: 45
-    y: 5
-  - x: 46
-    y: 5
-  - x: 49
-    y: 5
-  - x: 50
-    y: 5
-  - x: 54
-    y: 5
-  - x: 55
-    y: 5
-  - x: 56
-    y: 5
-  - x: 57
-    y: 5
-  - x: 60
-    y: 5
-  - x: 61
-    y: 5
-  - x: 62
-    y: 5
-  - x: 65
-    y: 5
-  - x: 66
-    y: 5
-  - x: 67
-    y: 5
-  - x: 68
-    y: 5
-  - x: 45
-    y: 6
-  - x: 46
-    y: 6
-  - x: 47
-    y: 6
-  - x: 48
-    y: 6
-  - x: 49
-    y: 6
-  - x: 50
-    y: 6
-  - x: 55
-    y: 6
-  - x: 56
-    y: 6
-  - x: 59
-    y: 6
-  - x: 60
-    y: 6
-  - x: 61
-    y: 6
-  - x: 62
-    y: 6
-  - x: 63
-    y: 6
-  - x: 64
-    y: 6
-  - x: 65
-    y: 6
-  - x: 66
-    y: 6
-  - x: 67
-    y: 6
-  - x: 45
-    y: 7
-  - x: 46
-    y: 7
-  - x: 47
-    y: 7
-  - x: 48
-    y: 7
-  - x: 49
-    y: 7
-  - x: 50
-    y: 7
-  - x: 54
-    y: 7
-  - x: 55
-    y: 7
-  - x: 56
-    y: 7
-  - x: 57
-    y: 7
-  - x: 58
-    y: 7
-  - x: 59
-    y: 7
-  - x: 60
-    y: 7
-  - x: 61
-    y: 7
-  - x: 62
-    y: 7
-  - x: 63
-    y: 7
-  - x: 66
-    y: 7
-  - x: 67
-    y: 7
-  - x: 68
-    y: 7
-  - x: 45
-    y: 8
-  - x: 46
-    y: 8
-  - x: 48
-    y: 8
-  - x: 49
-    y: 8
-  - x: 52
-    y: 8
-  - x: 53
-    y: 8
-  - x: 54
-    y: 8
-  - x: 55
-    y: 8
-  - x: 56
-    y: 8
-  - x: 57
-    y: 8
-  - x: 58
-    y: 8
-  - x: 60
-    y: 8
-  - x: 61
-    y: 8
-  - x: 67
-    y: 8
-  - x: 68
-    y: 8
-  - x: 45
-    y: 9
-  - x: 47
-    y: 9
-  - x: 49
-    y: 9
-  - x: 50
-    y: 9
-  - x: 56
-    y: 9
-  - x: 57
-    y: 9
-  - x: 58
-    y: 9
-  - x: 59
-    y: 9
-  - x: 60
-    y: 9
-  - x: 61
-    y: 9
-  - x: 45
-    y: 10
-  - x: 46
-    y: 10
-  - x: 47
-    y: 10
-  - x: 48
-    y: 10
-  - x: 50
-    y: 10
-  - x: 51
-    y: 10
-  - x: 52
-    y: 10
-  - x: 53
-    y: 10
-  - x: 54
-    y: 10
-  - x: 55
-    y: 10
-  - x: 57
-    y: 10
-  - x: 59
-    y: 10
-  - x: 60
-    y: 10
-  - x: 61
-    y: 10
-  - x: 67
-    y: 10
-  - x: 68
-    y: 10
-  - x: 45
-    y: 11
-  - x: 46
-    y: 11
-  - x: 47
-    y: 11
-  - x: 49
-    y: 11
-  - x: 50
-    y: 11
-  - x: 51
-    y: 11
-  - x: 52
-    y: 11
-  - x: 53
-    y: 11
-  - x: 54
-    y: 11
-  - x: 55
-    y: 11
-  - x: 56
-    y: 11
-  - x: 57
-    y: 11
-  - x: 58
-    y: 11
-  - x: 61
-    y: 11
-  - x: 67
-    y: 11
-  - x: 68
-    y: 11
-  - x: 45
-    y: 13
-  - x: 45
-    y: 14
-  - x: 46
-    y: 14
-  - x: 49
-    y: 14
-  - x: 50
-    y: 14
-  - x: 51
-    y: 14
-  - x: 57
-    y: 14
-  - x: 58
-    y: 14
-  - x: 64
-    y: 14
-  - x: 66
-    y: 14
-  - x: 45
-    y: 15
-  - x: 47
-    y: 15
-  - x: 48
-    y: 15
-  - x: 50
-    y: 15
-  - x: 51
-    y: 15
-  - x: 52
-    y: 15
-  - x: 53
-    y: 15
-  - x: 56
-    y: 15
-  - x: 57
-    y: 15
-  - x: 58
-    y: 15
-  - x: 62
-    y: 15
-  - x: 64
-    y: 15
-  - x: 66
-    y: 15
-  - x: 67
-    y: 15
-  - x: 68
-    y: 15
-  - x: 45
-    y: 16
-  - x: 46
-    y: 16
-  - x: 47
-    y: 16
-  - x: 48
-    y: 16
-  - x: 49
-    y: 16
-  - x: 50
-    y: 16
-  - x: 51
-    y: 16
-  - x: 52
-    y: 16
-  - x: 53
-    y: 16
-  - x: 55
-    y: 16
-  - x: 56
-    y: 16
-  - x: 57
-    y: 16
-  - x: 58
-    y: 16
-  - x: 59
-    y: 16
-  - x: 60
-    y: 16
-  - x: 61
-    y: 16
-  - x: 62
-    y: 16
-  - x: 63
-    y: 16
-  - x: 65
-    y: 16
-  - x: 66
-    y: 16
-  - x: 67
-    y: 16
-  - x: 68
-    y: 16
-  - x: 45
-    y: 17
-  - x: 46
-    y: 17
-  - x: 47
-    y: 17
-  - x: 48
-    y: 17
-  - x: 50
-    y: 17
-  - x: 52
-    y: 17
-  - x: 53
-    y: 17
-  - x: 54
-    y: 17
-  - x: 55
-    y: 17
-  - x: 56
-    y: 17
-  - x: 57
-    y: 17
-  - x: 58
-    y: 17
-  - x: 59
-    y: 17
-  - x: 60
-    y: 17
-  - x: 61
-    y: 17
-  - x: 62
-    y: 17
-  - x: 63
-    y: 17
-  - x: 66
-    y: 17
-  - x: 67
-    y: 17
-  - x: 68
-    y: 17
-  - x: 45
-    y: 18
-  - x: 46
-    y: 18
-  - x: 48
-    y: 18
-  - x: 49
-    y: 18
-  - x: 50
-    y: 18
-  - x: 51
-    y: 18
-  - x: 52
-    y: 18
-  - x: 53
-    y: 18
-  - x: 54
-    y: 18
-  - x: 56
-    y: 18
-  - x: 57
-    y: 18
-  - x: 58
-    y: 18
-  - x: 59
-    y: 18
-  - x: 60
-    y: 18
-  - x: 61
-    y: 18
-  - x: 62
-    y: 18
-  - x: 63
-    y: 18
-  - x: 64
-    y: 18
-  - x: 65
-    y: 18
-  - x: 66
-    y: 18
-  - x: 67
-    y: 18
-  - x: 68
-    y: 18
-  - x: 45
-    y: 19
-  - x: 47
-    y: 19
-  - x: 48
-    y: 19
-  - x: 49
-    y: 19
-  - x: 51
-    y: 19
-  - x: 53
-    y: 19
-  - x: 55
-    y: 19
-  - x: 60
-    y: 19
-  - x: 62
-    y: 19
-  - x: 64
-    y: 19
-  - x: 65
-    y: 19
-  - x: 66
-    y: 19
-  - x: 67
-    y: 19
-  - x: 68
-    y: 19
-  - x: 45
-    y: 20
-  - x: 46
-    y: 20
-  - x: 47
-    y: 20
-  - x: 48
-    y: 20
-  - x: 49
-    y: 20
-  - x: 50
-    y: 20
-  - x: 51
-    y: 20
-  - x: 52
-    y: 20
-  - x: 53
-    y: 20
-  - x: 54
-    y: 20
-  - x: 55
-    y: 20
-  - x: 56
-    y: 20
-  - x: 60
-    y: 20
-  - x: 61
-    y: 20
-  - x: 62
-    y: 20
-  - x: 63
-    y: 20
-  - x: 65
-    y: 20
-  - x: 66
-    y: 20
-  - x: 68
-    y: 20
-  - x: 45
-    y: 21
-  - x: 46
-    y: 21
-  - x: 47
-    y: 21
-  - x: 48
-    y: 21
-  - x: 51
-    y: 21
-  - x: 52
-    y: 21
-  - x: 53
-    y: 21
-  - x: 54
-    y: 21
-  - x: 55
-    y: 21
-  - x: 56
-    y: 21
-  - x: 60
-    y: 21
-  - x: 61
-    y: 21
-  - x: 62
-    y: 21
-  - x: 63
-    y: 21
-  - x: 64
-    y: 21
-  - x: 65
-    y: 21
-  - x: 66
-    y: 21
-  - x: 67
-    y: 21
-  - x: 68
-    y: 21
-  - x: 45
-    y: 22
-  - x: 46
-    y: 22
-  - x: 47
-    y: 22
-  - x: 48
-    y: 22
-  - x: 49
-    y: 22
-  - x: 50
-    y: 22
-  - x: 51
-    y: 22
-  - x: 52
-    y: 22
-  - x: 53
-    y: 22
-  - x: 54
-    y: 22
-  - x: 55
-    y: 22
-  - x: 57
-    y: 22
-  - x: 58
-    y: 22
-  - x: 59
-    y: 22
-  - x: 60
-    y: 22
-  - x: 62
-    y: 22
-  - x: 63
-    y: 22
-  - x: 65
-    y: 22
-  - x: 66
-    y: 22
-  - x: 68
-    y: 22
-  - x: 45
-    y: 23
-  - x: 46
-    y: 23
-  - x: 47
-    y: 23
-  - x: 48
-    y: 23
-  - x: 49
-    y: 23
-  - x: 50
-    y: 23
-  - x: 51
-    y: 23
-  - x: 52
-    y: 23
-  - x: 53
-    y: 23
-  - x: 54
-    y: 23
-  - x: 55
-    y: 23
-  - x: 56
-    y: 23
-  - x: 59
-    y: 23
-  - x: 60
-    y: 23
-  - x: 61
-    y: 23
-  - x: 62
-    y: 23
-  - x: 64
-    y: 23
-  - x: 65
-    y: 23
-  - x: 66
-    y: 23
-  - x: 67
-    y: 23
-  - x: 68
-    y: 23
-  - x: 45
-    y: 24
-  - x: 46
-    y: 24
-  - x: 48
-    y: 24
-  - x: 49
-    y: 24
-  - x: 52
-    y: 24
-  - x: 53
-    y: 24
-  - x: 54
-    y: 24
-  - x: 55
-    y: 24
-  - x: 56
-    y: 24
-  - x: 59
-    y: 24
-  - x: 61
-    y: 24
-  - x: 63
-    y: 24
-  - x: 64
-    y: 24
-  - x: 65
-    y: 24
-  - x: 50
-    y: 42
-- type: villager
-  placement:
-  - x: 11
-    y: 8
-  - x: 67
-    y: 24
-# --- NPC "aliveness" demo: chatter pair, a day/night schedule, a patrol. ---
-# A gossiping pair — they trade speech-bubble lines when idle near each other.
-- type: townsfolk
-  placement: { x: 10, y: 19 }
-  facing: east
-- type: townsfolk
-  placement: { x: 11, y: 19 }
-  facing: west
-# Day/night schedule: works (taps + "working" pose) by day, walks off to sleep
-# at night. World clock boots at noon, so this one starts at its work tile.
-- type: townsfolk
-  placement: { x: 13, y: 21 }
-  routine:
-    schedule:
-      - { from: 0.25, to: 0.78, activity: work,  at: { x: 13, y: 18 }, face: north }
-      - { from: 0.78, to: 0.25, activity: sleep, at: { x: 18, y: 21 } }
-# Patrol: paces a rectangle with dwell pauses at the corners.
-- type: townsfolk
-  placement: { x: 20, y: 19 }
-  routine:
-    patrol:
-      mode: loop
-      waypoints:
-        - { x: 20, y: 19, dwell: 2.0 }
-        - { x: 20, y: 22, dwell: 1.0 }
-        - { x: 23, y: 22, dwell: 2.0 }
-        - { x: 23, y: 19, dwell: 1.0 }
-- type: wall_corner_ne
-  placement:
-  - x: 17
-    y: 6
-  - x: 6
-    y: 7
-    z: 1
-  - x: 7
-    y: 7
-  - x: 19
-    y: 17
-  - x: 7
-    y: 18
-  - x: 33
-    y: 24
-  - x: 33
-    y: 24
-    z: 2
-  - x: 58
-    y: 28
-  - x: 65
-    y: 28
-  - x: 67
-    y: 33
-  - x: 49
-    y: 48
-  - x: 56
-    y: 48
-  - x: 61
-    y: 48
-- type: wall_corner_nw
-  placement:
-  - x: 11
-    y: 6
-  - x: 2
-    y: 7
-  - x: 2
-    y: 7
-    z: 1
-  - x: 2
-    y: 18
-  - x: 24
-    y: 24
-  - x: 24
-    y: 24
-    z: 2
-  - x: 53
-    y: 28
-  - x: 61
-    y: 28
-  - x: 46
-    y: 33
-  - x: 47
-    y: 48
-  - x: 52
-    y: 48
-  - x: 59
-    y: 48
-- type: wall_corner_se
-  placement:
-  - x: 7
-    y: 2
-  - x: 7
-    y: 2
-    z: 1
-  - x: 17
-    y: 2
-  - x: 7
-    y: 13
-  - x: 33
-    y: 17
-  - x: 33
-    y: 17
-    z: 2
-  - x: 50
-    y: 28
-  - x: 67
-    y: 29
-- type: wall_corner_sw
-  placement:
-  - x: 2
-    y: 2
-  - x: 2
-    y: 2
-    z: 1
-  - x: 11
-    y: 2
-  - x: 2
-    y: 13
-  - x: 24
-    y: 17
-  - x: 24
-    y: 17
-    z: 2
-  - x: 46
-    y: 28
-- type: wall_e
-  placement:
-  - x: 7
-    y: 3
-  - x: 7
-    y: 3
-    z: 1
-  - x: 17
-    y: 3
-  - x: 7
-    y: 4
-  - x: 7
-    y: 4
-    z: 1
-  - x: 17
-    y: 4
-  - x: 7
-    y: 5
-  - x: 7
-    y: 5
-    z: 1
-  - x: 17
-    y: 5
-  - x: 7
-    y: 6
-  - x: 7
-    y: 6
-    z: 1
-  - x: 7
-    y: 14
-  - x: 7
-    y: 15
-  - x: 7
-    y: 16
-  - x: 7
-    y: 17
-  - x: 33
-    y: 18
-  - x: 33
-    y: 18
-    z: 2
-  - x: 33
-    y: 19
-  - x: 33
-    y: 19
-    z: 2
-  - x: 33
-    y: 20
-  - x: 33
-    y: 20
-    z: 2
-  - x: 33
-    y: 21
-  - x: 33
-    y: 21
-    z: 2
-  - x: 33
-    y: 22
-  - x: 33
-    y: 22
-    z: 2
-  - x: 33
-    y: 23
-  - x: 33
-    y: 23
-    z: 2
-- type: wall_n
-  placement:
-  - x: 12
-    y: 6
-  - x: 13
-    y: 6
-  - x: 15
-    y: 6
-  - x: 16
-    y: 6
-  - x: 3
-    y: 7
-  - x: 3
-    y: 7
-    z: 1
-  - x: 4
-    y: 7
-  - x: 4
-    y: 7
-    z: 1
-  - x: 6
-    y: 7
-  - x: 3
-    y: 18
-  - x: 5
-    y: 18
-  - x: 6
-    y: 18
-  - x: 25
-    y: 24
-  - x: 25
-    y: 24
-    z: 2
-  - x: 26
-    y: 24
-  - x: 26
-    y: 24
-    z: 2
-  - x: 27
-    y: 24
-  - x: 27
-    y: 24
-    z: 2
-  - x: 28
-    y: 24
-  - x: 28
-    y: 24
-    z: 2
-  - x: 29
-    y: 24
-  - x: 29
-    y: 24
-    z: 2
-  - x: 30
-    y: 24
-  - x: 30
-    y: 24
-    z: 2
-  - x: 31
-    y: 24
-  - x: 31
-    y: 24
-    z: 2
-  - x: 32
-    y: 24
-    z: 2
-  - x: 32
-    y: 24
-- type: wall_s
-  placement:
-  - x: 3
-    y: 2
-  - x: 3
-    y: 2
-    z: 1
-  - x: 4
-    y: 2
-  - x: 4
-    y: 2
-    z: 1
-  - x: 5
-    y: 2
-  - x: 5
-    y: 2
-    z: 1
-  - x: 6
-    y: 2
-  - x: 6
-    y: 2
-    z: 1
-  - x: 12
-    y: 2
-  - x: 13
-    y: 2
-  - x: 14
-    y: 2
-  - x: 15
-    y: 2
-  - x: 16
-    y: 2
-  - x: 3
-    y: 13
-  - x: 4
-    y: 13
-  - x: 5
-    y: 13
-  - x: 6
-    y: 13
-  - x: 25
-    y: 17
-  - x: 25
-    y: 17
-    z: 2
-  - x: 26
-    y: 17
-  - x: 26
-    y: 17
-    z: 2
-  - x: 27
-    y: 17
-  - x: 27
-    y: 17
-    z: 2
-  - x: 28
-    y: 17
-    z: 2
-  - x: 29
-    y: 17
-  - x: 29
-    y: 17
-    z: 2
-  - x: 30
-    y: 17
-  - x: 30
-    y: 17
-    z: 2
-  - x: 31
-    y: 17
-  - x: 31
-    y: 17
-    z: 2
-  - x: 32
-    y: 17
-  - x: 32
-    y: 17
-    z: 2
-  - x: 47
-    y: 28
-  - x: 48
-    y: 28
-  - x: 49
-    y: 28
-  - x: 54
-    y: 28
-  - x: 55
-    y: 28
-  - x: 56
-    y: 28
-  - x: 57
-    y: 28
-  - x: 62
-    y: 28
-  - x: 63
-    y: 28
-  - x: 64
-    y: 28
-  - x: 48
-    y: 48
-  - x: 53
-    y: 48
-  - x: 54
-    y: 48
-  - x: 55
-    y: 48
-  - x: 60
-    y: 48
-- type: wall_w
-  placement:
-  - x: 2
-    y: 3
-  - x: 2
-    y: 3
-    z: 1
-  - x: 11
-    y: 3
-  - x: 2
-    y: 4
-  - x: 2
-    y: 4
-    z: 1
-  - x: 11
-    y: 4
-  - x: 2
-    y: 5
-  - x: 2
-    y: 5
-    z: 1
-  - x: 11
-    y: 5
-  - x: 2
-    y: 6
-  - x: 2
-    y: 6
-    z: 1
-  - x: 2
-    y: 14
-  - x: 2
-    y: 15
-  - x: 2
-    y: 16
-  - x: 2
-    y: 17
-  - x: 24
-    y: 18
-  - x: 24
-    y: 18
-    z: 2
-  - x: 24
-    y: 19
-  - x: 24
-    y: 19
-    z: 2
-  - x: 24
-    y: 20
-  - x: 24
-    y: 20
-    z: 2
-  - x: 24
-    y: 21
-  - x: 24
-    y: 21
-    z: 2
-  - x: 24
-    y: 22
-  - x: 24
-    y: 22
-    z: 2
-  - x: 24
-    y: 23
-  - x: 24
-    y: 23
-    z: 2
-  - x: 46
-    y: 29
-  - x: 46
-    y: 30
-  - x: 67
-    y: 30
-  - x: 46
-    y: 31
-  - x: 67
-    y: 31
-  - x: 46
-    y: 32
-  - x: 67
-    y: 32
-- type: water
-  placement:
-  - x: 4
-    y: 30
-  - x: 5
-    y: 30
-  - x: 6
-    y: 30
-  - x: 7
-    y: 30
-  - x: 8
-    y: 30
-  - x: 9
-    y: 30
-  - x: 10
-    y: 30
-  - x: 11
-    y: 30
-  - x: 12
-    y: 30
-  - x: 13
-    y: 30
-  - x: 14
-    y: 30
-  - x: 15
-    y: 30
-  - x: 16
-    y: 30
-  - x: 17
-    y: 30
-  - x: 18
-    y: 30
-  - x: 19
-    y: 30
-  - x: 20
-    y: 30
-  - x: 21
-    y: 30
-  - x: 22
-    y: 30
-  - x: 23
-    y: 30
-  - x: 24
-    y: 30
-  - x: 4
-    y: 31
-  - x: 5
-    y: 31
-  - x: 6
-    y: 31
-  - x: 7
-    y: 31
-  - x: 8
-    y: 31
-  - x: 9
-    y: 31
-  - x: 10
-    y: 31
-  - x: 11
-    y: 31
-  - x: 12
-    y: 31
-  - x: 13
-    y: 31
-  - x: 14
-    y: 31
-  - x: 15
-    y: 31
-  - x: 16
-    y: 31
-  - x: 17
-    y: 31
-  - x: 18
-    y: 31
-  - x: 19
-    y: 31
-  - x: 20
-    y: 31
-  - x: 21
-    y: 31
-  - x: 22
-    y: 31
-  - x: 23
-    y: 31
-  - x: 24
-    y: 31
-  - x: 4
-    y: 32
-  - x: 5
-    y: 32
-  - x: 6
-    y: 32
-  - x: 7
-    y: 32
-  - x: 8
-    y: 32
-  - x: 9
-    y: 32
-  - x: 10
-    y: 32
-  - x: 11
-    y: 32
-  - x: 12
-    y: 32
-  - x: 13
-    y: 32
-  - x: 14
-    y: 32
-  - x: 15
-    y: 32
-  - x: 16
-    y: 32
-  - x: 17
-    y: 32
-  - x: 18
-    y: 32
-  - x: 19
-    y: 32
-  - x: 20
-    y: 32
-  - x: 21
-    y: 32
-  - x: 22
-    y: 32
-  - x: 23
-    y: 32
-  - x: 24
-    y: 32
-  - x: 4
-    y: 33
-  - x: 5
-    y: 33
-  - x: 6
-    y: 33
-  - x: 7
-    y: 33
-  - x: 8
-    y: 33
-  - x: 9
-    y: 33
-  - x: 10
-    y: 33
-  - x: 11
-    y: 33
-  - x: 12
-    y: 33
-  - x: 13
-    y: 33
-  - x: 14
-    y: 33
-  - x: 15
-    y: 33
-  - x: 16
-    y: 33
-  - x: 17
-    y: 33
-  - x: 18
-    y: 33
-  - x: 19
-    y: 33
-  - x: 20
-    y: 33
-  - x: 21
-    y: 33
-  - x: 22
-    y: 33
-  - x: 23
-    y: 33
-  - x: 24
-    y: 33
-  - x: 4
-    y: 34
-  - x: 5
-    y: 34
-  - x: 6
-    y: 34
-  - x: 7
-    y: 34
-  - x: 8
-    y: 34
-  - x: 9
-    y: 34
-  - x: 10
-    y: 34
-  - x: 11
-    y: 34
-  - x: 12
-    y: 34
-  - x: 13
-    y: 34
-  - x: 14
-    y: 34
-  - x: 15
-    y: 34
-  - x: 16
-    y: 34
-  - x: 17
-    y: 34
-  - x: 18
-    y: 34
-  - x: 19
-    y: 34
-  - x: 20
-    y: 34
-  - x: 21
-    y: 34
-  - x: 22
-    y: 34
-  - x: 23
-    y: 34
-  - x: 24
-    y: 34
-  - x: 4
-    y: 35
-  - x: 5
-    y: 35
-  - x: 6
-    y: 35
-  - x: 7
-    y: 35
-  - x: 8
-    y: 35
-  - x: 9
-    y: 35
-  - x: 10
-    y: 35
-  - x: 11
-    y: 35
-  - x: 12
-    y: 35
-  - x: 13
-    y: 35
-  - x: 14
-    y: 35
-  - x: 15
-    y: 35
-  - x: 16
-    y: 35
-  - x: 17
-    y: 35
-  - x: 18
-    y: 35
-  - x: 19
-    y: 35
-  - x: 20
-    y: 35
-  - x: 21
-    y: 35
-  - x: 22
-    y: 35
-  - x: 23
-    y: 35
-  - x: 24
-    y: 35
-  - x: 4
-    y: 36
-  - x: 5
-    y: 36
-  - x: 6
-    y: 36
-  - x: 7
-    y: 36
-  - x: 8
-    y: 36
-  - x: 9
-    y: 36
-  - x: 10
-    y: 36
-  - x: 11
-    y: 36
-  - x: 12
-    y: 36
-  - x: 13
-    y: 36
-  - x: 14
-    y: 36
-  - x: 15
-    y: 36
-  - x: 16
-    y: 36
-  - x: 17
-    y: 36
-  - x: 18
-    y: 36
-  - x: 19
-    y: 36
-  - x: 20
-    y: 36
-  - x: 21
-    y: 36
-  - x: 22
-    y: 36
-  - x: 23
-    y: 36
-  - x: 24
-    y: 36
-  - x: 4
-    y: 37
-  - x: 5
-    y: 37
-  - x: 6
-    y: 37
-  - x: 7
-    y: 37
-  - x: 8
-    y: 37
-  - x: 9
-    y: 37
-  - x: 10
-    y: 37
-  - x: 11
-    y: 37
-  - x: 12
-    y: 37
-  - x: 13
-    y: 37
-  - x: 14
-    y: 37
-  - x: 15
-    y: 37
-  - x: 16
-    y: 37
-  - x: 17
-    y: 37
-  - x: 18
-    y: 37
-  - x: 19
-    y: 37
-  - x: 20
-    y: 37
-  - x: 21
-    y: 37
-  - x: 22
-    y: 37
-  - x: 23
-    y: 37
-  - x: 24
-    y: 37
-  - x: 4
-    y: 38
-  - x: 5
-    y: 38
-  - x: 6
-    y: 38
-  - x: 7
-    y: 38
-  - x: 8
-    y: 38
-  - x: 9
-    y: 38
-  - x: 10
-    y: 38
-  - x: 11
-    y: 38
-  - x: 12
-    y: 38
-  - x: 13
-    y: 38
-  - x: 14
-    y: 38
-  - x: 15
-    y: 38
-  - x: 16
-    y: 38
-  - x: 17
-    y: 38
-  - x: 18
-    y: 38
-  - x: 19
-    y: 38
-  - x: 20
-    y: 38
-  - x: 21
-    y: 38
-  - x: 22
-    y: 38
-  - x: 23
-    y: 38
-  - x: 24
-    y: 38
-  - x: 4
-    y: 39
-  - x: 5
-    y: 39
-  - x: 6
-    y: 39
-  - x: 7
-    y: 39
-  - x: 8
-    y: 39
-  - x: 9
-    y: 39
-  - x: 10
-    y: 39
-  - x: 11
-    y: 39
-  - x: 12
-    y: 39
-  - x: 13
-    y: 39
-  - x: 14
-    y: 39
-  - x: 15
-    y: 39
-  - x: 16
-    y: 39
-  - x: 17
-    y: 39
-  - x: 18
-    y: 39
-  - x: 19
-    y: 39
-  - x: 20
-    y: 39
-  - x: 21
-    y: 39
-  - x: 22
-    y: 39
-  - x: 23
-    y: 39
-  - x: 24
-    y: 39
-  - x: 4
-    y: 40
-  - x: 5
-    y: 40
-  - x: 6
-    y: 40
-  - x: 7
-    y: 40
-  - x: 8
-    y: 40
-  - x: 9
-    y: 40
-  - x: 10
-    y: 40
-  - x: 11
-    y: 40
-  - x: 12
-    y: 40
-  - x: 13
-    y: 40
-  - x: 14
-    y: 40
-  - x: 15
-    y: 40
-  - x: 16
-    y: 40
-  - x: 17
-    y: 40
-  - x: 18
-    y: 40
-  - x: 19
-    y: 40
-  - x: 20
-    y: 40
-  - x: 21
-    y: 40
-  - x: 22
-    y: 40
-  - x: 23
-    y: 40
-  - x: 24
-    y: 40
-  - x: 4
-    y: 41
-  - x: 5
-    y: 41
-  - x: 6
-    y: 41
-  - x: 7
-    y: 41
-  - x: 8
-    y: 41
-  - x: 9
-    y: 41
-  - x: 10
-    y: 41
-  - x: 11
-    y: 41
-  - x: 12
-    y: 41
-  - x: 13
-    y: 41
-  - x: 14
-    y: 41
-  - x: 15
-    y: 41
-  - x: 16
-    y: 41
-  - x: 17
-    y: 41
-  - x: 18
-    y: 41
-  - x: 19
-    y: 41
-  - x: 20
-    y: 41
-  - x: 21
-    y: 41
-  - x: 22
-    y: 41
-  - x: 23
-    y: 41
-  - x: 24
-    y: 41
-  - x: 4
-    y: 42
-  - x: 5
-    y: 42
-  - x: 6
-    y: 42
-  - x: 7
-    y: 42
-  - x: 8
-    y: 42
-  - x: 9
-    y: 42
-  - x: 10
-    y: 42
-  - x: 11
-    y: 42
-  - x: 12
-    y: 42
-  - x: 13
-    y: 42
-  - x: 14
-    y: 42
-  - x: 15
-    y: 42
-  - x: 16
-    y: 42
-  - x: 17
-    y: 42
-  - x: 18
-    y: 42
-  - x: 19
-    y: 42
-  - x: 20
-    y: 42
-  - x: 21
-    y: 42
-  - x: 22
-    y: 42
-  - x: 23
-    y: 42
-  - x: 24
-    y: 42
-  - x: 4
-    y: 43
-  - x: 5
-    y: 43
-  - x: 6
-    y: 43
-  - x: 7
-    y: 43
-  - x: 8
-    y: 43
-  - x: 9
-    y: 43
-  - x: 10
-    y: 43
-  - x: 11
-    y: 43
-  - x: 12
-    y: 43
-  - x: 13
-    y: 43
-  - x: 14
-    y: 43
-  - x: 15
-    y: 43
-  - x: 16
-    y: 43
-  - x: 17
-    y: 43
-  - x: 18
-    y: 43
-  - x: 19
-    y: 43
-  - x: 20
-    y: 43
-  - x: 21
-    y: 43
-  - x: 22
-    y: 43
-  - x: 23
-    y: 43
-  - x: 24
-    y: 43
-  - x: 4
-    y: 44
-  - x: 5
-    y: 44
-  - x: 6
-    y: 44
-  - x: 7
-    y: 44
-  - x: 8
-    y: 44
-  - x: 9
-    y: 44
-  - x: 10
-    y: 44
-  - x: 11
-    y: 44
-  - x: 12
-    y: 44
-  - x: 13
-    y: 44
-  - x: 14
-    y: 44
-  - x: 15
-    y: 44
-  - x: 16
-    y: 44
-  - x: 17
-    y: 44
-  - x: 18
-    y: 44
-  - x: 19
-    y: 44
-  - x: 20
-    y: 44
-  - x: 21
-    y: 44
-  - x: 22
-    y: 44
-  - x: 23
-    y: 44
-  - x: 24
-    y: 44
-  - x: 4
-    y: 45
-  - x: 5
-    y: 45
-  - x: 6
-    y: 45
-  - x: 7
-    y: 45
-  - x: 8
-    y: 45
-  - x: 9
-    y: 45
-  - x: 10
-    y: 45
-  - x: 11
-    y: 45
-  - x: 12
-    y: 45
-  - x: 13
-    y: 45
-  - x: 14
-    y: 45
-  - x: 15
-    y: 45
-  - x: 16
-    y: 45
-  - x: 17
-    y: 45
-  - x: 18
-    y: 45
-  - x: 19
-    y: 45
-  - x: 20
-    y: 45
-  - x: 21
-    y: 45
-  - x: 22
-    y: 45
-  - x: 23
-    y: 45
-  - x: 24
-    y: 45
-  - x: 4
-    y: 46
-  - x: 5
-    y: 46
-  - x: 6
-    y: 46
-  - x: 7
-    y: 46
-  - x: 8
-    y: 46
-  - x: 9
-    y: 46
-  - x: 10
-    y: 46
-  - x: 11
-    y: 46
-  - x: 12
-    y: 46
-  - x: 13
-    y: 46
-  - x: 14
-    y: 46
-  - x: 15
-    y: 46
-  - x: 16
-    y: 46
-  - x: 17
-    y: 46
-  - x: 18
-    y: 46
-  - x: 19
-    y: 46
-  - x: 20
-    y: 46
-  - x: 21
-    y: 46
-  - x: 22
-    y: 46
-  - x: 23
-    y: 46
-  - x: 62
-    y: 48
-- type: wooden_shield
-  properties:
-    hidden_dc: '15'
-    state: sprung
-  placement:
-    x: 10
-    y: 9
-- type: bear_trap
-  properties:
-    text: Step here to enter the cellar.
-  placement:
-    x: 23
-    y: 10
-- type: scroll
-  properties:
-    text: South road leads to the old dungeon. Adventurers beware!
-  placement:
-    x: 13
-    y: 12
-- type: sign_post
-  properties:
-    text: The sinkhole ahead leads deep underground. Return is not guaranteed.
-  placement:
-    x: 40
-    y: 16
-- type: wooden_door
-  properties:
-    spell_id: lesser_heal
-  placement:
-    x: 58
-    y: 42
-- type: well
-  properties:
-    state: locked
-  placement:
-    x: 24
-    y: 46
-- type: portal_arch
-  placement:
-    x: 40
-    y: 25
-- type: sign_post
-  properties:
-    text: Proving Grounds ahead — a demo gauntlet of climbing, jumping, pushing, sneaking and hidden things. Step onto the arch to enter.
-  placement:
-    x: 41
-    y: 25
+  # ==== EMBERBROOK VILLAGE ==================================================
+  # -- plaza ------------------------------------------------------------------
+  - type: well
+    placement: { x: 33, y: 23 }
+  - type: sign_post
+    placement: { x: 36, y: 24 }
+    properties:
+      text: "Welcome to Emberbrook. West over the bridge: the fields. North: Thornwood - mind the goblins. East: the Cinder Hills and the Proving Grounds arch. South: the Old Yard. Rest easy inside the village."
+
+  # -- general store (door on the south wall) ----------------------------------
+  - type: wooden_door_s
+    placement: { x: 30, y: 28 }
+  - type: villager                # shopkeeper + the apple/hunter quest chain
+    placement: { x: 31, y: 30 }
+  - type: table                   # shop counter
+    placement: { x: 30, y: 30 }
+  - type: cabinet
+    placement: { x: 32, y: 31 }
+    facing: south
+  - type: crate
+    placement: { x: 28, y: 31 }
+  - type: barrel
+    placement: { x: 28, y: 29 }
+    contents:
+      - type: apple
+        quantity: 5
+  - type: crate                   # market stall out front
+    placement: { x: 31, y: 27 }
+
+  # -- The Gilded Toad tavern (door on the south wall) --------------------------
+  - type: wooden_door_s
+    placement: { x: 40, y: 26 }
+  - type: torch                   # street lamps flanking the door
+    placement:
+      - { x: 39, y: 25 }
+      - { x: 41, y: 25 }
+  - type: blazing_fire            # the hearth
+    placement: { x: 44, y: 29 }
+  - type: bed
+    placement: { x: 39, y: 31 }
+    facing: east
+  - type: side_table
+    placement: { x: 40, y: 31 }
+  - type: pen                     # for writing in the guest book
+    placement: { x: 40, y: 31 }
+  - type: bookshelf
+    placement: { x: 41, y: 31 }
+    facing: south
+  - type: cabinet
+    placement: { x: 42, y: 31 }
+    facing: south
+  # (43,31) stays free — travellers climbing out of the cellar arrive there.
+  - type: sinkhole                # trapdoor down to the tavern cellar
+    placement: { x: 44, y: 31 }
+  - type: rug
+    placement: { x: 41, y: 29 }
+  - type: table
+    placement: { x: 41, y: 29 }
+  - type: book                    # readable lore volume on the table
+    placement: { x: 41, y: 29 }
+    properties:
+      title: "The Ember Valley Almanac"
+      text: "Founder Aldric Ember raised this village between river and hills. His plate and shield were lost below the sinkhole when the wight took him. The goblins of Thornwood steal anything not nailed down - lately the storehouse key. Rest by a fire to recover; eat well and wounds close faster."
+  - type: chair
+    placement: { x: 40, y: 29 }
+    facing: east
+  - type: chair
+    placement: { x: 42, y: 29 }
+    facing: west
+  - type: chair
+    placement: { x: 41, y: 28 }
+    facing: north
+  - type: chair
+    placement: { x: 41, y: 30 }
+    facing: south
+  - type: bench
+    placement: { x: 42, y: 27 }
+    facing: south
+  - type: barrel
+    placement: { x: 44, y: 27 }
+    contents:
+      - type: apple
+        quantity: 3
+      - type: berries
+        quantity: 2
+  - type: chatterbox              # the tavern bard (dialog demo)
+    placement: { x: 43, y: 28 }
+  # Staircase to the loft: step south from (39,30) up the ramp, landing on
+  # the upper storey at (39,27). Same low/high pattern as proving_grounds.
+  - type: stair_n_low
+    placement: { x: 39, y: 29 }
+  - type: stair_n_high
+    placement: { x: 39, y: 28 }
+
+  # -- storehouse (locked; the goblins stole the key) ----------------------------
+  - type: wooden_door_n
+    placement: { x: 27, y: 20 }
+    properties:
+      state: locked
+  - type: sign_post
+    placement: { x: 28, y: 21 }
+    properties:
+      text: "Village storehouse. Lost the key? The Thornwood goblins took it, along with half our arrows. A deft hand or a strong shoulder might manage the lock."
+  - type: iron_chest
+    placement: { x: 26, y: 18 }
+    contents:
+      - type: flower_mana_potion_recipe
+      - type: swiftness_scroll
+      - type: magic_dart_scroll
+      - type: lesser_heal_scroll
+      - type: leather_helmet
+      - type: potion
+        quantity: 2
+      - type: gold_coin
+        quantity: 8
+  - type: crate
+    placement: { x: 29, y: 19 }
+    contents:
+      - type: arrow
+        quantity: 20
+  - type: barrel
+    placement: { x: 25, y: 17 }
+    contents:
+      - type: berries
+        quantity: 6
+
+  # -- village green: campfire = crafting station + stamina rest ------------------
+  - type: campfire
+    placement: { x: 24, y: 29 }
+  - type: bench
+    placement: { x: 23, y: 29 }
+    facing: east
+  - type: bench
+    placement: { x: 25, y: 29 }
+    facing: west
+
+  # -- villagers -------------------------------------------------------------------
+  # Stallkeeper: minds the market stall by day, sleeps in the tavern at night.
+  - type: townsfolk
+    placement: { x: 32, y: 26 }
+    routine:
+      schedule:
+        - { from: 0.27, to: 0.75, activity: work, at: { x: 32, y: 27 }, face: west }
+        - { from: 0.80, to: 0.22, activity: sleep, at: { x: 40, y: 30 }, face: west }
+  # Road warden: walks the whole main road, bridge to arch.
+  - type: townsfolk
+    placement: { x: 29, y: 25 }
+    routine:
+      patrol:
+        mode: ping_pong
+        waypoints:
+          - { x: 22, y: 25, dwell: 3.0 }
+          - { x: 46, y: 25, dwell: 3.0 }
+  # Gossip pair by the well (ambient chatter demo).
+  - type: townsfolk
+    placement: { x: 33, y: 22 }
+    behavior:
+      kind: roam
+      step_interval_seconds: 1.6
+      bounds: { min_x: 31, min_y: 21, max_x: 36, max_y: 24 }
+  - type: townsfolk
+    placement: { x: 34, y: 22 }
+    behavior:
+      kind: roam
+      step_interval_seconds: 1.8
+      bounds: { min_x: 31, min_y: 21, max_x: 36, max_y: 24 }
+
+  # -- proving grounds arch ----------------------------------------------------------
+  - type: portal_arch
+    placement: { x: 47, y: 25 }
+  - type: sign_post
+    placement: { x: 48, y: 26 }
+    properties:
+      text: "The Proving Grounds. A training hall where nothing is quite real: climbing, jumping, levers, plates, sneaking, hidden things. Step through the arch."
+
+  # ==== EMBERBROOK FIELDS (west, L1) ==============================================
+  - type: sign_post
+    placement: { x: 22, y: 27 }
+    properties:
+      text: "Ember Bridge. Beyond: the orchard and flower fields. Rats gnaw the south paddocks - the shopkeeper pays for culling them."
+  - type: apple                   # windfall apples under the orchard trees
+    placement:
+      - { x: 7, y: 28 }
+      - { x: 9, y: 28 }
+      - { x: 10, y: 30 }
+      - { x: 13, y: 30 }
+  - type: herb_patch
+    placement:
+      - { x: 8, y: 33 }
+      - { x: 12, y: 16 }
+  - type: fishing_spot
+    placement:
+      - { x: 18, y: 31 }
+      - { x: 20, y: 17 }
+      - { x: 19, y: 7 }
+
+  # ==== THORNWOOD (north, L2-3) ====================================================
+  - type: sign_post
+    placement: { x: 33, y: 40 }
+    properties:
+      text: "Thornwood. Goblins hold the deep woods - travel armed. Their camp lies northeast; something big dens in the northwest. Do not go northwest."
+  - type: herb_patch
+    placement:
+      - { x: 24, y: 36 }
+      - { x: 53, y: 37 }
+
+  # -- goblin camp (NE): the stolen key, hidden traps, ranged + caster foes -------
+  - type: sign_post
+    placement: { x: 56, y: 39 }
+    properties:
+      text: "GO AWAY. no humans. no wardens. no refunds. - the Thornwood boys"
+  - type: bear_trap
+    placement: { x: 54, y: 38 }
+    properties:
+      hidden_dc: "13"
+  - type: bear_trap
+    placement: { x: 56, y: 42 }
+    properties:
+      hidden_dc: "13"
+  - type: bear_trap
+    placement: { x: 51, y: 44 }
+    properties:
+      hidden_dc: "13"
+  - type: campfire
+    placement: { x: 55, y: 43 }
+  - type: barrel
+    placement: { x: 51, y: 45 }
+    contents:
+      - type: potion
+  - type: crate
+    placement: { x: 58, y: 44 }
+    contents:
+      - type: arrow
+        quantity: 15
+      - type: apple
+        quantity: 2
+  - type: iron_chest              # the storehouse key ended up here
+    placement: { x: 60, y: 45 }
+    contents:
+      - type: iron_key
+      - type: spark_bolt_scroll
+      - type: silver_coin
+        quantity: 12
+
+  # -- ogre den (NW, L10 elite) ------------------------------------------------------
+  - type: crate
+    placement: { x: 5, y: 45 }
+    contents:
+      - type: empower_weapon_scroll
+      - type: potion
+        quantity: 2
+      - type: gold_coin
+        quantity: 15
+
+  # ==== THE OLD YARD (south, L3) =====================================================
+  - type: sign_post
+    placement: { x: 34, y: 11 }
+    properties:
+      text: "The Old Yard. Respect the dead; they do not always return the courtesy. The crypt gate is weighted shut."
+  # Hidden cache among the graves — Aware mode (F) to spot it.
+  - type: iron_chest
+    placement: { x: 25, y: 3 }
+    properties:
+      hidden_dc: "14"
+    contents:
+      - type: wand_of_sparks
+      - type: cure_wounds_scroll
+      - type: silver_coin
+        quantity: 10
+
+  # -- the crypt: pressure-plate puzzle + guardian --------------------------------
+  - id: crypt_gate
+    type: wooden_door_n
+    placement: { x: 38, y: 7 }
+  - type: pressure_plate
+    placement: { x: 38, y: 9 }
+    properties:
+      target: crypt_gate
+  - type: barrel                  # push it onto the plate to hold the gate open
+    placement: { x: 39, y: 9 }
+  - type: sign_post
+    placement: { x: 40, y: 9 }
+    properties:
+      text: "The gate answers weight, not prayer."
+  - type: torch
+    placement: { x: 37, y: 6 }
+  - type: tombstone
+    placement: { x: 37, y: 5 }
+    properties:
+      title: "Aldric Ember"
+      text: "Founder of Emberbrook. His plate and shield went below with the wight that slew him. The key to the vault never left goblin hands."
+  - type: iron_chest
+    placement: { x: 39, y: 4 }
+    contents:
+      - type: chain_legs
+      - type: bless_scroll
+      - type: gold_coin
+        quantity: 6
+  - type: skeleton                # crypt guardian (does not respawn)
+    placement: { x: 39, y: 5 }
+    behavior:
+      kind: roam_and_chase
+      step_interval_seconds: 0.8
+      detect_distance_tiles: 3
+      disengage_distance_tiles: 5
+      bounds: { min_x: 37, min_y: 4, max_x: 40, max_y: 6 }
+
+  # ==== CINDER HILLS (east, L6-8) ======================================================
+  - type: sign_post
+    placement: { x: 51, y: 26 }
+    properties:
+      text: "The Cinder Hills. Ore veins aplenty - and things that burn and bite. Turn back if unseasoned."
+  - type: ore_node
+    placement:
+      - { x: 56, y: 14 }
+      - { x: 60, y: 18 }
+      - { x: 50, y: 26 }
+  - type: pickaxe                 # a prospector's abandoned pick
+    placement: { x: 59, y: 18 }
+
+  # -- sinkhole to the underworld ---------------------------------------------------
+  - type: sign_post
+    placement: { x: 57, y: 17 }
+    properties:
+      text: "A sinkhole breathes cold air. The founder's plate lies below, they say, hoarded by the wight that took him."
+
+  # -- fire elemental glade (L6) ------------------------------------------------------
+  - type: arcane_mote
+    placement:
+      - { x: 55, y: 30 }
+      - { x: 59, y: 26 }
+  - type: iron_chest
+    placement: { x: 58, y: 28 }
+    contents:
+      - type: flame_weapon_scroll
+      - type: fireball_scroll
+      - type: gold_coin
+        quantity: 10
+
+  # -- cyclops lair (SE, L8) -------------------------------------------------------------
+  - type: iron_chest
+    placement: { x: 63, y: 4 }
+    contents:
+      - type: steel_sword
+      - type: gold_coin
+        quantity: 30
+
 spawn_groups:
-- id: south_rats
-  template: rat
-  max_count: 3
-  respawn_mean_seconds: 30.0
-  area:
-    bounds:
-      min_x: 7
-      min_y: 31
-      max_x: 25
-      max_y: 47
-  behavior:
-    kind: roam
-    bounds:
-      min_x: 7
-      min_y: 31
-      max_x: 25
-      max_y: 47
-- id: north_goblin_post
-  template: goblin
-  max_count: 1
-  respawn_mean_seconds: 60.0
-  area:
-    bounds:
-      min_x: 44
-      min_y: 5
-      max_x: 52
-      max_y: 13
-  behavior:
-    kind: roam_and_chase
-    bounds:
-      min_x: 44
-      min_y: 5
-      max_x: 52
-      max_y: 13
-- id: east_goblin_camp
-  template: goblin
-  max_count: 2
-  respawn_mean_seconds: 45.0
-  area:
-    bounds:
-      min_x: 47
-      min_y: 26
-      max_x: 60
-      max_y: 34
-  behavior:
-    kind: roam_and_chase
-    bounds:
-      min_x: 47
-      min_y: 26
-      max_x: 60
-      max_y: 34
-- id: south_goblin_outpost
-  template: goblin
-  max_count: 1
-  respawn_mean_seconds: 60.0
-  area:
-    bounds:
-      min_x: 50
-      min_y: 43
-      max_x: 58
-      max_y: 49
-  behavior:
-    kind: roam_and_chase
-    bounds:
-      min_x: 50
-      min_y: 43
-      max_x: 58
-      max_y: 49
-- id: archer_goblin_post
-  template: archer_goblin
-  max_count: 1
-  respawn_mean_seconds: 90.0
-  area:
-    bounds:
-      min_x: 54
-      min_y: 8
-      max_x: 62
-      max_y: 16
-  behavior:
-    kind: roam_and_chase
-    bounds:
-      min_x: 54
-      min_y: 8
-      max_x: 62
-      max_y: 16
-- id: goblin_mage_circle
-  template: goblin_mage
-  max_count: 1
-  respawn_mean_seconds: 120.0
-  area:
-    bounds:
-      min_x: 49
-      min_y: 28
-      max_x: 58
-      max_y: 33
-  behavior:
-    kind: roam_and_chase
-    bounds:
-      min_x: 47
-      min_y: 26
-      max_x: 60
-      max_y: 34
-- id: cyclops_lair
-  template: cyclops
-  max_count: 1
-  respawn_mean_seconds: 180.0
-  area:
-    bounds:
-      min_x: 50
-      min_y: 42
-      max_x: 62
-      max_y: 49
-  behavior:
-    kind: roam_and_chase
-    bounds:
-      min_x: 50
-      min_y: 42
-      max_x: 62
-      max_y: 49
-- id: fire_elemental_glade
-  template: fire_elemental
-  max_count: 2
-  respawn_mean_seconds: 120.0
-  area:
-    bounds:
-      min_x: 28
-      min_y: 5
-      max_x: 40
-      max_y: 14
-  behavior:
-    kind: roam_and_chase
-    bounds:
-      min_x: 28
-      min_y: 5
-      max_x: 40
-      max_y: 14
-# L10 elite sharing the cyclops's proven-walkable territory — the southeast
-# corner is the high-level zone. `[tunable]` placement; move to its own ridge
-# when the map grows.
-- id: ogre_brute_den
-  template: ogre_brute
-  max_count: 1
-  respawn_mean_seconds: 240.0
-  area:
-    bounds:
-      min_x: 50
-      min_y: 42
-      max_x: 62
-      max_y: 49
-  behavior:
-    kind: roam_and_chase
-    bounds:
-      min_x: 50
-      min_y: 42
-      max_x: 62
-      max_y: 49
-# L12 elite haunting the fire-elemental glade at the map's north edge.
-- id: dire_wight_barrow
-  template: dire_wight
-  max_count: 1
-  respawn_mean_seconds: 300.0
-  area:
-    bounds:
-      min_x: 28
-      min_y: 5
-      max_x: 40
-      max_y: 14
-  behavior:
-    kind: roam_and_chase
-    bounds:
-      min_x: 28
-      min_y: 5
-      max_x: 40
-      max_y: 14
+  # L1 — the hunter quest's rats, south paddocks of the fields.
+  - id: field_rats
+    template: rat
+    max_count: 4
+    respawn_mean_seconds: 45.0
+    area:
+      bounds: { min_x: 4, min_y: 6, max_x: 16, max_y: 18 }
+    behavior:
+      kind: roam_and_chase
+      step_interval_seconds: 0.55
+      detect_distance_tiles: 4
+      disengage_distance_tiles: 6
+      bounds: { min_x: 3, min_y: 5, max_x: 17, max_y: 19 }
+
+  # L2 — goblin watch roaming the mid-forest.
+  - id: thornwood_goblins
+    template: goblin
+    max_count: 3
+    respawn_mean_seconds: 90.0
+    area:
+      bounds: { min_x: 24, min_y: 38, max_x: 44, max_y: 46 }
+    behavior:
+      kind: roam_and_chase
+      step_interval_seconds: 0.85
+      detect_distance_tiles: 5
+      disengage_distance_tiles: 8
+      bounds: { min_x: 22, min_y: 36, max_x: 46, max_y: 48 }
+
+  # L2-3 — the camp: melee escort, archers, and a caster.
+  - id: camp_goblins
+    template: goblin
+    max_count: 2
+    respawn_mean_seconds: 120.0
+    area:
+      bounds: { min_x: 50, min_y: 41, max_x: 60, max_y: 46 }
+    behavior:
+      kind: roam_and_chase
+      step_interval_seconds: 0.85
+      detect_distance_tiles: 5
+      disengage_distance_tiles: 8
+      bounds: { min_x: 48, min_y: 38, max_x: 62, max_y: 47 }
+  - id: camp_archers
+    template: archer_goblin
+    max_count: 2
+    respawn_mean_seconds: 180.0
+    area:
+      bounds: { min_x: 50, min_y: 42, max_x: 60, max_y: 46 }
+    behavior:
+      kind: roam_and_chase
+      step_interval_seconds: 0.9
+      detect_distance_tiles: 6
+      disengage_distance_tiles: 9
+      bounds: { min_x: 48, min_y: 40, max_x: 62, max_y: 47 }
+  - id: camp_mage
+    template: goblin_mage
+    max_count: 1
+    respawn_mean_seconds: 300.0
+    area:
+      bounds: { min_x: 52, min_y: 42, max_x: 58, max_y: 45 }
+    behavior:
+      kind: roam_and_chase
+      step_interval_seconds: 1.0
+      detect_distance_tiles: 6
+      disengage_distance_tiles: 9
+      bounds: { min_x: 49, min_y: 41, max_x: 61, max_y: 46 }
+
+  # L3 — restless dead of the Old Yard.
+  - id: yard_skeletons
+    template: skeleton
+    max_count: 3
+    respawn_mean_seconds: 150.0
+    area:
+      bounds: { min_x: 23, min_y: 3, max_x: 34, max_y: 9 }
+    behavior:
+      kind: roam_and_chase
+      step_interval_seconds: 0.8
+      detect_distance_tiles: 5
+      disengage_distance_tiles: 8
+      bounds: { min_x: 23, min_y: 3, max_x: 41, max_y: 9 }
+
+  # L6 — the glade's guardian.
+  - id: glade_elemental
+    template: fire_elemental
+    max_count: 1
+    respawn_mean_seconds: 360.0
+    area:
+      bounds: { min_x: 53, min_y: 25, max_x: 61, max_y: 31 }
+    behavior:
+      kind: roam_and_chase
+      step_interval_seconds: 0.75
+      detect_distance_tiles: 6
+      disengage_distance_tiles: 9
+      bounds: { min_x: 50, min_y: 23, max_x: 63, max_y: 33 }
+
+  # L8 — the cyclops of the lair.
+  - id: hill_cyclops
+    template: cyclops
+    max_count: 1
+    respawn_mean_seconds: 600.0
+    area:
+      bounds: { min_x: 57, min_y: 3, max_x: 65, max_y: 7 }
+    behavior:
+      kind: roam_and_chase
+      step_interval_seconds: 0.8
+      detect_distance_tiles: 6
+      disengage_distance_tiles: 10
+      bounds: { min_x: 56, min_y: 2, max_x: 66, max_y: 12 }
+
+  # L10 — the thing that dens in the northwest.
+  - id: wood_ogre
+    template: ogre_brute
+    max_count: 1
+    respawn_mean_seconds: 600.0
+    area:
+      bounds: { min_x: 3, min_y: 43, max_x: 9, max_y: 47 }
+    behavior:
+      kind: roam_and_chase
+      step_interval_seconds: 0.75
+      detect_distance_tiles: 6
+      disengage_distance_tiles: 10
+      bounds: { min_x: 2, min_y: 36, max_x: 10, max_y: 48 }
