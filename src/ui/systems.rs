@@ -8,7 +8,6 @@ use bevy::window::{CursorIcon, CustomCursor, CustomCursorImage, PrimaryWindow};
 use crate::game::commands::{
     GameCommand, InspectTarget, ItemDestination, ItemReference, ItemSlotRef, UseTarget,
 };
-use crate::game::helpers::is_near_player;
 use crate::game::resources::{
     ClientGameState, GameUiEvent, InventoryState, PendingGameCommands, PendingGameUiEvents,
 };
@@ -34,7 +33,9 @@ use crate::ui::resources::{
     ItemTargetingState, Quickbar, ShowCoordinates, SpellTargetingState, TakePartialState,
     UseOnState,
 };
+use crate::world::column::FloorGeometry;
 use crate::world::components::TilePosition;
+use crate::world::floors::VisibleFloorRange;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::WorldConfig;
@@ -266,6 +267,7 @@ fn cursor_icon_for_state(
 
 pub fn manage_open_containers(
     client_state: Res<ClientGameState>,
+    floor_defs: Res<crate::world::floor_definitions::FloorTilesetDefinitions>,
     mut docked_panel_state: ResMut<DockedPanelState>,
     mut pending_commands: ResMut<PendingGameCommands>,
 ) {
@@ -294,7 +296,12 @@ pub fn manage_open_containers(
                     .map(|object| (player_position, object))
             })
             .is_some_and(|(player_position, object)| {
-                object.is_container && is_near_player(&player_position, &object.tile_position)
+                object.is_container
+                    && FloorGeometry::client(&client_state.floor_maps, &floor_defs).reachable(
+                        &player_position,
+                        &object.tile_position,
+                        object.position.space_id,
+                    )
             }),
         // Pouch panels stay open as long as the underlying inventory slot is
         // still a container item. Slot empties / replaced with a non-pouch ->
@@ -1989,6 +1996,8 @@ pub fn handle_use_on_targeting(
     world_config: Res<WorldConfig>,
     state_resources: (Res<ContextMenuState>, Res<DockedPanelState>),
     client_state: Res<ClientGameState>,
+    visible_floors: Res<VisibleFloorRange>,
+    floor_defs: Res<crate::world::floor_definitions::FloorTilesetDefinitions>,
     mut pending_commands: ResMut<PendingGameCommands>,
     mut cursor_state: ResMut<CursorState>,
     mut use_on_state: ResMut<UseOnState>,
@@ -2040,7 +2049,14 @@ pub fn handle_use_on_targeting(
         cursor_position,
         &player_position,
         &world_config,
-        |o| is_near_player(&player_position, &o.tile_position),
+        &visible_floors,
+        |o| {
+            FloorGeometry::client(&client_state.floor_maps, &floor_defs).reachable(
+                &player_position,
+                &o.tile_position,
+                o.position.space_id,
+            )
+        },
     ) {
         pending_commands.push(GameCommand::UseItemOn {
             source,
@@ -2058,6 +2074,7 @@ pub fn handle_spell_targeting(
     world_config: Res<WorldConfig>,
     static_resources: (Res<ContextMenuState>, Res<DockedPanelState>),
     client_state: Res<ClientGameState>,
+    visible_floors: Res<VisibleFloorRange>,
     mut pending_commands: ResMut<PendingGameCommands>,
     mut cursor_state: ResMut<CursorState>,
     mut spell_targeting_state: ResMut<SpellTargetingState>,
@@ -2111,6 +2128,7 @@ pub fn handle_spell_targeting(
             cursor_position,
             &player_position,
             &world_config,
+            &visible_floors,
             |o| o.is_npc,
         )
         .map(|object| object.object_id);
@@ -2256,6 +2274,7 @@ pub fn handle_attack_targeting(
     world_config: Res<WorldConfig>,
     context_menu_state: Res<ContextMenuState>,
     client_state: Res<ClientGameState>,
+    visible_floors: Res<VisibleFloorRange>,
     mut pending_commands: ResMut<PendingGameCommands>,
     mut cursor_state: ResMut<CursorState>,
 ) {
@@ -2289,6 +2308,7 @@ pub fn handle_attack_targeting(
         cursor_position,
         &player_position,
         &world_config,
+        &visible_floors,
         |o| o.is_npc,
     )
     .map(|object| object.object_id);
@@ -2298,6 +2318,7 @@ pub fn handle_attack_targeting(
         cursor_position,
         &player_position,
         &world_config,
+        &visible_floors,
     )
     .map(|player| player.object_id);
 
@@ -2602,6 +2623,11 @@ pub fn handle_context_menu_opening(
     definitions: Res<OverworldObjectDefinitions>,
     spell_definitions: Res<SpellDefinitions>,
     client_state: Res<ClientGameState>,
+    // Bundled: this system is already at Bevy's 16-parameter ceiling.
+    floor_context: (
+        Res<VisibleFloorRange>,
+        Res<crate::world::floor_definitions::FloorTilesetDefinitions>,
+    ),
     mut context_menu_state: ResMut<ContextMenuState>,
     docked_panel_state: Res<DockedPanelState>,
     mut use_on_state: ResMut<UseOnState>,
@@ -2658,6 +2684,8 @@ pub fn handle_context_menu_opening(
         return;
     };
 
+    let (visible_floors, floor_defs) = floor_context;
+
     if !mouse_input.just_pressed(MouseButton::Right) {
         return;
     }
@@ -2693,7 +2721,11 @@ pub fn handle_context_menu_opening(
         .map(|(row, _, _)| row.object_id)
     {
         if let Some(object) = client_state.world_objects.get(&npc_object_id) {
-            let near = is_near_player(&player_position, &object.tile_position);
+            let near = FloorGeometry::client(&client_state.floor_maps, &floor_defs).reachable(
+                &player_position,
+                &object.tile_position,
+                object.position.space_id,
+            );
             let can_use =
                 near && object_is_usable(object.object_id, &object_registry, &definitions);
             let interaction = if near {
@@ -2795,8 +2827,13 @@ pub fn handle_context_menu_opening(
         cursor_position,
         &player_position,
         &world_config,
+        &visible_floors,
     ) {
-        let near = is_near_player(&player_position, &remote_player.tile_position);
+        let near = FloorGeometry::client(&client_state.floor_maps, &floor_defs).reachable(
+            &player_position,
+            &remote_player.tile_position,
+            remote_player.position.space_id,
+        );
         let can_use =
             near && object_is_usable(remote_player.object_id, &object_registry, &definitions);
         context_menu_state.show(
@@ -2835,6 +2872,7 @@ pub fn handle_context_menu_opening(
         cursor_position,
         &player_position,
         &world_config,
+        &visible_floors,
         |o| o.is_npc,
     )
     .or_else(|| {
@@ -2844,12 +2882,17 @@ pub fn handle_context_menu_opening(
             cursor_position,
             &player_position,
             &world_config,
+            &visible_floors,
             |_| true,
         )
     });
 
     if let Some(object) = best_object {
-        let near = is_near_player(&player_position, &object.tile_position);
+        let near = FloorGeometry::client(&client_state.floor_maps, &floor_defs).reachable(
+            &player_position,
+            &object.tile_position,
+            object.position.space_id,
+        );
         let can_use = near && object_is_usable(object.object_id, &object_registry, &definitions);
         let interaction = if near {
             applicable_interaction(object, &definitions)
@@ -3451,6 +3494,8 @@ pub fn handle_movable_dragging(
         Res<ItemTargetingState>,
     ),
     client_state: Res<ClientGameState>,
+    visible_floors: Res<VisibleFloorRange>,
+    floor_defs: Res<crate::world::floor_definitions::FloorTilesetDefinitions>,
     docked_panel_state: Res<DockedPanelState>,
     trade_popup_state: Res<crate::ui::resources::TradePopupState>,
     mut drag_state: ResMut<DragState>,
@@ -3561,7 +3606,15 @@ pub fn handle_movable_dragging(
             cursor_position,
             &player_position,
             &world_config,
-            |o| o.is_movable && is_near_player(&player_position, &o.tile_position),
+            &visible_floors,
+            |o| {
+                o.is_movable
+                    && FloorGeometry::client(&client_state.floor_maps, &floor_defs).reachable(
+                        &player_position,
+                        &o.tile_position,
+                        o.position.space_id,
+                    )
+            },
         ) {
             info!(
                 "drag_start world_object_id={} origin=({}, {}, {})",
@@ -3587,7 +3640,7 @@ pub fn handle_movable_dragging(
     // the final z to the column's stack top, so dropping onto a chest's
     // visible position lands on top of the chest.
     let target_tile =
-        cursor_to_ground_tile(window, cursor_position, &player_position, &world_config);
+        cursor_to_floor_tile(window, cursor_position, &player_position, &world_config);
     let drag_source = drag_state.source.take();
     let dragged_object_id = drag_state.object_id.take();
     let world_origin = drag_state.world_origin.take();
@@ -4893,7 +4946,7 @@ fn inventory_pouch_sub_slot(
 /// player's `z` plane (no perspective correction). Useful for "is the cursor
 /// on the player's own tile?" comparisons. For finding objects, use
 /// [`topmost_object_at_cursor`] (per-object projection). For *placement on
-/// the ground*, use [`cursor_to_ground_tile`] — when the player is on a
+/// the floor*, use [`cursor_to_floor_tile`] — when the player is on a
 /// half-block, the unprojected cursor maps to the wrong tile_y for ground
 /// targets because ground sprites are diagonally shifted by
 /// `floor_screen_offset`.
@@ -4915,24 +4968,35 @@ fn cursor_to_tile(
     )
 }
 
-/// Maps the cursor to a tile at `z = 0` (ground), reversing the ground
-/// floor's perspective shift relative to the player's `z`. Use this when the
-/// user is targeting *where on the ground* their action lands — drag-release
-/// placement, ground-targeted spells — so the cursor stays aligned with the
-/// visual ground tile under it when the player stands on a half-block.
+/// Maps the cursor to a tile on the **player's own floor plane**, reversing
+/// that plane's perspective shift relative to the player's raw `z`. Use this
+/// when the user is targeting *where on the floor* their action lands —
+/// drag-release placement, the coordinate readout — so the cursor stays
+/// aligned with the visual floor tile under it when the player stands on a
+/// half-block.
+///
+/// The plane is `floor_index(player.z) * 2`, i.e. the walking surface of the
+/// floor the player is on. For a player at `z = 0` or `z = 1` that is `0`,
+/// identical to the ground-plane projection this replaced; upstairs it
+/// follows the player. That matters because the merge paths
+/// (`merge_into_ground_stack` / `add_to_ground_stack`) compare the incoming
+/// tile *including `z`* — with a hardcoded `z = 0` a player on the upper floor
+/// could only ever merge into piles on the ground floor below them.
+///
 /// Server-side resolution (`resolve_world_drop_tile` etc.) still snaps the
-/// final `z` to the column's stack top, so dropping on a chest's visible
+/// final `z` to the column's landing surface, so dropping on a chest's visible
 /// position still places on top of the chest.
-fn cursor_to_ground_tile(
+fn cursor_to_floor_tile(
     window: &Window,
     cursor_position: Vec2,
     player_position: &TilePosition,
     world_config: &WorldConfig,
 ) -> TilePosition {
+    let plane_z = crate::world::components::floor_index(player_position.z) * 2;
     let window_center = Vec2::new(window.width() * 0.5, window.height() * 0.5);
     let cursor_offset = cursor_position - window_center;
     let floor_offset = crate::world::systems::floor_screen_offset(
-        0.0,
+        plane_z as f32,
         player_position.z as f32,
         world_config.tile_size,
     );
@@ -4944,7 +5008,7 @@ fn cursor_to_ground_tile(
     TilePosition::new(
         player_position.x + tile_offset_x,
         player_position.y + tile_offset_y,
-        0,
+        plane_z,
     )
 }
 
@@ -4988,12 +5052,21 @@ fn cursor_hits_tile(
 /// items on the same tile would all share `z = 0` and pickup would resolve
 /// to whichever the HashMap iterator yielded first — non-deterministic and
 /// not necessarily matching the visual top.
+///
+/// Candidates on a floor outside `visible_floors` are skipped — the same
+/// predicate `sync_tile_transforms` culls with, so **you can only click what
+/// you can see**. Without it, an object on the hidden storey above a roofed
+/// room wins the `higher z` tiebreak against the ground object genuinely under
+/// the cursor: `cursor_hits_tile` reverses each object's per-floor diagonal
+/// shift, so an upper-floor object at `(x-1, y+1, z=2)` lands on exactly the
+/// same screen cell as the ground object at `(x, y, 0)`.
 fn topmost_object_at_cursor<'a, F>(
     client_state: &'a ClientGameState,
     window: &Window,
     cursor_position: Vec2,
     player_position: &TilePosition,
     world_config: &WorldConfig,
+    visible_floors: &VisibleFloorRange,
     mut predicate: F,
 ) -> Option<&'a crate::game::resources::ClientWorldObjectState>
 where
@@ -5001,6 +5074,11 @@ where
 {
     let mut best: Option<&crate::game::resources::ClientWorldObjectState> = None;
     for object in client_state.world_objects.values() {
+        if !visible_floors.contains(crate::world::components::floor_index(
+            object.tile_position.z,
+        )) {
+            continue;
+        }
         if !predicate(object) {
             continue;
         }
@@ -5033,9 +5111,15 @@ fn topmost_remote_player_at_cursor<'a>(
     cursor_position: Vec2,
     player_position: &TilePosition,
     world_config: &WorldConfig,
+    visible_floors: &VisibleFloorRange,
 ) -> Option<&'a crate::game::resources::ClientRemotePlayerState> {
     let mut best: Option<&crate::game::resources::ClientRemotePlayerState> = None;
     for player in client_state.remote_players.values() {
+        if !visible_floors.contains(crate::world::components::floor_index(
+            player.tile_position.z,
+        )) {
+            continue;
+        }
         if !cursor_hits_tile(
             window,
             cursor_position,
@@ -5085,6 +5169,154 @@ pub fn update_hovered_tile(
         hovered.0 = None;
         return;
     };
-    let tile = cursor_to_ground_tile(window, cursor, &player, &world_config);
+    let tile = cursor_to_floor_tile(window, cursor, &player, &world_config);
     hovered.0 = Some(tile);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game::resources::ClientWorldObjectState;
+    use crate::world::components::{SpaceId, SpacePosition};
+    use crate::world::direction::Direction;
+
+    fn test_window() -> Window {
+        Window::default()
+    }
+
+    fn object_at(object_id: u64, space: SpaceId, tile: TilePosition) -> ClientWorldObjectState {
+        ClientWorldObjectState {
+            object_id,
+            definition_id: "chest".to_string(),
+            position: SpacePosition::new(space, tile),
+            tile_position: tile,
+            vitals: None,
+            is_container: false,
+            is_npc: false,
+            is_movable: true,
+            is_rotatable: false,
+            quantity: 1,
+            has_dialog: false,
+            facing: Direction::default(),
+            state: None,
+            is_shopkeeper: false,
+            is_hidden: false,
+            is_hostile: false,
+            is_targeting_local_player: false,
+            awareness: None,
+            placement_seq: object_id,
+        }
+    }
+
+    /// The regression this whole change exists for: under a roof, the upper
+    /// storey is culled from the render but its objects used to keep winning
+    /// the pick. `cursor_hits_tile` reverses each object's per-floor diagonal
+    /// shift, so an upper-floor object at `(x+1, y, z=2)` sits on exactly the
+    /// same screen cell as the ground object at `(x, y, 0)` — and the
+    /// `higher z wins` tiebreak handed it the click.
+    #[test]
+    fn picking_skips_objects_on_culled_floors() {
+        let space = SpaceId(1);
+        let player = TilePosition::new(10, 10, 0);
+        let world_config = WorldConfig {
+            current_space_id: SpaceId(1),
+            map_width: 64,
+            map_height: 64,
+            tile_size: 32.0,
+            fill_floor_type: String::new(),
+        };
+        let window = test_window();
+        // Cursor dead-centre = the player's own tile.
+        let cursor = Vec2::new(window.width() * 0.5, window.height() * 0.5);
+
+        let mut client_state = ClientGameState::default();
+        client_state
+            .world_objects
+            .insert(1, object_at(1, space, TilePosition::new(10, 10, 0)));
+        // Upper-floor object whose rendered cell coincides with the ground
+        // object's under this projection. One floor up shifts a sprite by
+        // `FLOOR_SHIFT_*_TILES` = (-0.75, +0.5) tiles, so the tile that lands
+        // back on the player's own screen cell is (x+1, y).
+        let upper = TilePosition::new(11, 10, 2);
+        client_state
+            .world_objects
+            .insert(2, object_at(2, space, upper));
+
+        // Roof overhead: only floor 0 is visible.
+        let culled = VisibleFloorRange {
+            player_floor: 0,
+            player_z: 0,
+            lowest_visible: 0,
+            highest_visible: 0,
+        };
+        let picked = topmost_object_at_cursor(
+            &client_state,
+            &window,
+            cursor,
+            &player,
+            &world_config,
+            &culled,
+            |_| true,
+        )
+        .expect("the ground object is under the cursor");
+        assert_eq!(
+            picked.object_id, 1,
+            "an object on a culled floor must not be clickable"
+        );
+
+        // With the roof gone (both floors rendered), the upper object is a
+        // legitimate target again and wins on z.
+        let open = VisibleFloorRange {
+            player_floor: 0,
+            player_z: 0,
+            lowest_visible: 0,
+            highest_visible: 1,
+        };
+        let picked = topmost_object_at_cursor(
+            &client_state,
+            &window,
+            cursor,
+            &player,
+            &world_config,
+            &open,
+            |_| true,
+        )
+        .expect("something is under the cursor");
+        assert_eq!(
+            picked.object_id, 2,
+            "with the floor visible the higher object still wins"
+        );
+    }
+
+    /// The drop plane follows the player's floor. At `z = 0`/`z = 1` it stays
+    /// the ground plane (the half-block perspective fix this projection was
+    /// written for); upstairs it reports the upper floor's surface, which is
+    /// what lets the ground-stack merge paths match piles on the player's own
+    /// floor instead of the one below.
+    #[test]
+    fn cursor_to_floor_tile_follows_the_players_floor() {
+        let world_config = WorldConfig {
+            current_space_id: SpaceId(1),
+            map_width: 64,
+            map_height: 64,
+            tile_size: 32.0,
+            fill_floor_type: String::new(),
+        };
+        let window = test_window();
+        let cursor = Vec2::new(window.width() * 0.5, window.height() * 0.5);
+
+        for (player_z, expected_plane) in [(0, 0), (1, 0), (2, 2), (3, 2)] {
+            let player = TilePosition::new(10, 10, player_z);
+            let tile = cursor_to_floor_tile(&window, cursor, &player, &world_config);
+            assert_eq!(
+                tile.z, expected_plane,
+                "player at z={player_z} should target the plane at z={expected_plane}"
+            );
+            assert_eq!(
+                (tile.x, tile.y),
+                (10, 10),
+                "a centred cursor is the player's own tile on their own plane"
+            );
+        }
+    }
 }

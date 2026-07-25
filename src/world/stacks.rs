@@ -1,6 +1,13 @@
+//! Stack helpers: thin, call-site-friendly wrappers over
+//! [`crate::world::column::Column`], which owns the actual model of what
+//! occupies a tile column at which `z`. Prefer building a `Column` directly
+//! when a call site needs more than one answer about the same `(x, y)` — each
+//! wrapper here walks the world once.
+
 use bevy::prelude::*;
 
 use crate::game::resources::PlacementSeqCounter;
+use crate::world::column::{Column, FloorGeometry};
 use crate::world::components::{
     OverworldObject, RenderStackOrder, SpaceId, SpaceResident, TilePosition,
 };
@@ -8,6 +15,8 @@ use crate::world::floor_definitions::FloorTilesetDefinitions;
 use crate::world::floor_map::FloorMaps;
 use crate::world::floors::{floormap_tile_walkable, MAX_FLOORS_ABOVE};
 use crate::world::object_definitions::OverworldObjectDefinitions;
+
+pub use crate::world::column::ColumnMember;
 
 /// Raw z (half-block units) of every painted FloorMap walkable surface in
 /// column `(space, x, y)`. Returns an empty Vec when no upper floors are
@@ -25,17 +34,6 @@ fn floormap_supports_in_column(
         .collect()
 }
 
-/// One member of a tile column as seen by the stack helpers. The helpers
-/// take an iterator of these so they're agnostic to Bevy `Query` filter
-/// types (`With<...>`, `Without<...>`) — callers pass their own filtered
-/// iterator built from whatever query they happen to hold.
-pub struct ColumnMember<'a> {
-    pub entity: Entity,
-    pub resident: &'a SpaceResident,
-    pub tile: &'a TilePosition,
-    pub object: &'a OverworldObject,
-}
-
 /// `z` of the surface above the topmost block or painted upper floor at
 /// column `(space, x, y)` — i.e. the `z` a newly placed object's *feet*
 /// would occupy. Returns `0` (ground) when the column is empty and no upper
@@ -43,14 +41,17 @@ pub struct ColumnMember<'a> {
 /// flat (`block_size == 0`) objects don't change the stack top, but painted
 /// FloorMap tiles do — a walkable FloorMap tile on floor N raises the stack
 /// top to `N * 2`.
+///
+/// This is the *raw* top, which ignores who is asking; for placement use
+/// [`Column::surface_from`] so a drop made below a ceiling can't resolve onto
+/// the floor above.
 pub fn stack_top_z<'a, I>(
     space: SpaceId,
     x: i32,
     y: i32,
     members: I,
     definitions: &OverworldObjectDefinitions,
-    floor_maps: &FloorMaps,
-    floor_defs: &FloorTilesetDefinitions,
+    geometry: FloorGeometry<'_>,
 ) -> i32
 where
     I: IntoIterator<Item = ColumnMember<'a>>,
@@ -62,8 +63,7 @@ where
         Entity::PLACEHOLDER,
         members,
         definitions,
-        floor_maps,
-        floor_defs,
+        geometry,
     )
 }
 
@@ -77,31 +77,12 @@ pub fn stack_top_z_excluding<'a, I>(
     exclude: Entity,
     members: I,
     definitions: &OverworldObjectDefinitions,
-    floor_maps: &FloorMaps,
-    floor_defs: &FloorTilesetDefinitions,
+    geometry: FloorGeometry<'_>,
 ) -> i32
 where
     I: IntoIterator<Item = ColumnMember<'a>>,
 {
-    let object_top = members
-        .into_iter()
-        .filter(|m| {
-            m.entity != exclude && m.resident.space_id == space && m.tile.x == x && m.tile.y == y
-        })
-        .filter_map(|m| {
-            let def = definitions.get(&m.object.definition_id)?;
-            if def.render.block_size == 0 {
-                return None;
-            }
-            Some(m.tile.z + def.render.block_size as i32)
-        })
-        .max()
-        .unwrap_or(0);
-    let floor_top = floormap_supports_in_column(floor_maps, floor_defs, space, x, y)
-        .into_iter()
-        .max()
-        .unwrap_or(0);
-    object_top.max(floor_top)
+    Column::from_world(space, x, y, exclude, members, definitions, geometry).top_surface()
 }
 
 /// True iff the topmost surface at column `(space, x, y)` (excluding
@@ -117,44 +98,12 @@ pub fn stack_top_is_walkable<'a, I>(
     exclude: Entity,
     members: I,
     definitions: &OverworldObjectDefinitions,
-    floor_maps: &FloorMaps,
-    floor_defs: &FloorTilesetDefinitions,
+    geometry: FloorGeometry<'_>,
 ) -> bool
 where
     I: IntoIterator<Item = ColumnMember<'a>>,
 {
-    let object_top = members
-        .into_iter()
-        .filter(|m| {
-            m.entity != exclude && m.resident.space_id == space && m.tile.x == x && m.tile.y == y
-        })
-        .filter_map(|m| {
-            let def = definitions.get(&m.object.definition_id)?;
-            if def.render.block_size == 0 {
-                return None;
-            }
-            Some((
-                m.tile.z + def.render.block_size as i32,
-                def.render.walkable_surface,
-            ))
-        })
-        .max_by_key(|(top, _)| *top);
-    let floor_top = floormap_supports_in_column(floor_maps, floor_defs, space, x, y)
-        .into_iter()
-        .max();
-    match (object_top, floor_top) {
-        (Some((oz, ow)), Some(fz)) => {
-            if oz >= fz {
-                ow
-            } else {
-                // Painted FloorMap currently always has walkable_surface = true.
-                true
-            }
-        }
-        (Some((_, ow)), None) => ow,
-        (None, Some(_)) => true,
-        (None, None) => true,
-    }
+    Column::from_world(space, x, y, exclude, members, definitions, geometry).top_is_walkable()
 }
 
 /// True iff a player at z=`player_z` can place a `placed_block_size`-tall

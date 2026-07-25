@@ -7,7 +7,6 @@ use bevy::prelude::*;
 use crate::crafting::recipes::RecipeDefinitions;
 use crate::crafting::stash::CharacterStash;
 use crate::game::commands::GameCommand;
-use crate::game::helpers::is_near_player;
 use crate::game::resources::{
     ChatLogState, GameEvent, InventoryState, PendingGameCommands, PendingGameEvents,
 };
@@ -96,6 +95,7 @@ pub fn process_craft_commands(
     object_defs: Res<crate::world::object_definitions::OverworldObjectDefinitions>,
     world_objects: Query<(&OverworldObject, &SpaceResident, &TilePosition), Without<Player>>,
     mut players: Query<CraftPlayerData, With<Player>>,
+    floors: crate::world::column::FloorGeometryParam,
 ) {
     if pending_commands.commands.is_empty() {
         return;
@@ -163,7 +163,7 @@ pub fn process_craft_commands(
                 let station_present = world_objects.iter().any(|(obj, res, tile)| {
                     res.space_id == player_space
                         && &obj.definition_id == station_type
-                        && is_near_player(&player_tile, tile)
+                        && floors.reachable(&player_tile, tile, player_space)
                 });
                 if !station_present {
                     let station_name = object_defs
@@ -297,6 +297,9 @@ mod tests {
         app.insert_resource(PendingXpGrants::default());
         app.insert_resource(RecipeDefinitions::load_from_disk());
         app.insert_resource(OverworldObjectDefinitions::load_from_disk());
+        // Floor geometry backs the reach gate — see `world::column`.
+        app.insert_resource(crate::world::floor_map::FloorMaps::default());
+        app.insert_resource(crate::world::floor_definitions::FloorTilesetDefinitions::default());
         app.add_systems(Update, process_craft_commands);
 
         // Player with 2 arrows in slot 0; knows `bolt_from_arrows` (no
@@ -376,6 +379,9 @@ mod tests {
         app.insert_resource(PendingXpGrants::default());
         app.insert_resource(RecipeDefinitions::load_from_disk());
         app.insert_resource(OverworldObjectDefinitions::load_from_disk());
+        // Floor geometry backs the reach gate — see `world::column`.
+        app.insert_resource(crate::world::floor_map::FloorMaps::default());
+        app.insert_resource(crate::world::floor_definitions::FloorTilesetDefinitions::default());
         app.add_systems(Update, process_craft_commands);
 
         let mut stash = CharacterStash::default();

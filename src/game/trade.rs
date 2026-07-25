@@ -20,7 +20,6 @@ use crate::game::commands::{GameCommand, ItemSlotRef};
 use crate::game::currency::{
     COPPER_PER_GOLD, COPPER_PER_SILVER, COPPER_TYPE_ID, GOLD_TYPE_ID, SILVER_TYPE_ID,
 };
-use crate::game::helpers::is_near_player;
 use crate::game::resources::{
     ChatLogState, GameUiEvent, InventoryState, PendingGameCommands, PendingGameUiEvents,
 };
@@ -382,6 +381,7 @@ pub fn cleanup_invalid_trades(
         (&OverworldObject, &SpaceResident, &TilePosition),
         (With<Shopkeeper>, Without<Player>),
     >,
+    floors: crate::world::column::FloorGeometryParam,
 ) {
     let mut to_close: Vec<(TradeSessionId, TradeOutcome, Vec<PlayerId>)> = Vec::new();
 
@@ -398,7 +398,7 @@ pub fn cleanup_invalid_trades(
                     .map(|(_, resident, tile)| (resident.space_id, *tile));
                 match (pos_a, pos_b) {
                     (Some((space_a, tile_a)), Some((space_b, tile_b))) => {
-                        if space_a != space_b || !is_near_player(&tile_a, &tile_b) {
+                        if space_a != space_b || !floors.reachable(&tile_a, &tile_b, space_a) {
                             (TradeOutcome::OutOfRange, vec![a, b])
                         } else {
                             continue;
@@ -421,7 +421,7 @@ pub fn cleanup_invalid_trades(
                     .map(|(_, resident, tile)| (resident.space_id, *tile));
                 match (pos_p, pos_shop) {
                     (Some((space_p, tile_p)), Some((space_s, tile_s))) => {
-                        if space_p != space_s || !is_near_player(&tile_p, &tile_s) {
+                        if space_p != space_s || !floors.reachable(&tile_p, &tile_s, space_p) {
                             (TradeOutcome::OutOfRange, vec![player])
                         } else {
                             continue;
@@ -491,6 +491,7 @@ pub fn process_trade_commands(
     >,
     mut stockpile_query: Query<(&OverworldObject, &mut Stockpile)>,
     skill_query: Query<(&PlayerIdentity, &crate::player::skills::SkillSheet), With<Player>>,
+    floors: crate::world::column::FloorGeometryParam,
 ) {
     let drained: Vec<_> = pending_commands.commands.drain(..).collect();
     let mut remaining = Vec::with_capacity(drained.len());
@@ -518,6 +519,7 @@ pub fn process_trade_commands(
                     &mut ui_events,
                     &player_queries.p0(),
                     &shopkeeper_query,
+                    floors.geometry(),
                 );
             }
             GameCommand::OfferTradeItem {
@@ -614,6 +616,7 @@ fn handle_initiate_trade(
         (&OverworldObject, &SpaceResident, &TilePosition),
         (With<Shopkeeper>, Without<Player>),
     >,
+    geometry: crate::world::column::FloorGeometry<'_>,
 ) {
     if active_trades.find_for_player(acting_player_id).is_some() {
         bevy::log::debug!(
@@ -661,8 +664,8 @@ fn handle_initiate_trade(
                 return;
             }
 
-            if !is_near_player(&acting_tile, target_tile) {
-                bevy::log::debug!("InitiateTrade rejected: target out of range");
+            if !geometry.reachable(&acting_tile, target_tile, acting_space) {
+                bevy::log::debug!("InitiateTrade rejected: target out of reach");
                 return;
             }
 
@@ -697,8 +700,8 @@ fn handle_initiate_trade(
                 );
                 return;
             };
-            if !is_near_player(&acting_tile, shop_tile) {
-                bevy::log::debug!("InitiateTrade rejected: shopkeeper out of range");
+            if !geometry.reachable(&acting_tile, shop_tile, acting_space) {
+                bevy::log::debug!("InitiateTrade rejected: shopkeeper out of reach");
                 return;
             }
 

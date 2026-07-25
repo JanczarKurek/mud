@@ -112,8 +112,9 @@ fn apply_floor_layer(
         if floor_idx <= 0 {
             continue;
         }
-        let surface_z = floor_idx * 2;
-        let support_z = surface_z - 1;
+        // One definition of where a floor lives, shared with the placement and
+        // reach paths — see `world::column`.
+        let support_z = crate::world::column::slab_cell_z(floor_idx);
         let (width, height) = grid.dimensions();
         for y in 0..height {
             for x in 0..width {

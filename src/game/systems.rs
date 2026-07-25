@@ -10,7 +10,7 @@ use crate::combat::scheduled::{
 use crate::game::commands::{
     GameCommand, InspectTarget, ItemDestination, ItemReference, ItemSlotRef, MoveDelta, UseTarget,
 };
-use crate::game::helpers::{colliders_in_space, is_near_player, player_space_id};
+use crate::game::helpers::{colliders_in_space, player_space_id, refuse};
 use crate::game::resources::{
     ChatLogState, ContainerViewers, GameUiEvent, InventoryState, PendingGameCommands,
     PendingGameUiEvents, VfxAnchor,
@@ -21,6 +21,7 @@ use crate::player::components::{
     stack_weight, AttributeSet, DerivedStats, Encumbered, EquippedItem, InventoryStack,
     MaxCarryWeight, MovementCooldown, Noclip, Player, PlayerId, PlayerIdentity, VitalStats,
 };
+use crate::world::column::FloorGeometry;
 use crate::world::components::{
     tile_distance_3d, Collider, Container, Facing, Movable, OverworldObject, Quantity, Rotatable,
     SpaceResident, TilePosition,
@@ -178,6 +179,7 @@ pub fn process_rotate_commands(
         (With<Rotatable>, Without<Player>),
     >,
     player_query: Query<(&PlayerIdentity, &SpaceResident, &TilePosition), With<Player>>,
+    floors: crate::world::column::FloorGeometryParam,
 ) {
     let original_len = pending_commands.commands.len();
     let mut remaining = Vec::with_capacity(original_len);
@@ -213,11 +215,11 @@ pub fn process_rotate_commands(
                 .find(|(resident, tile_position, object, _)| {
                     resident.space_id == player_space.space_id
                         && object.object_id == object_id
-                        && is_near_player(player_tile, tile_position)
+                        && floors.reachable(player_tile, tile_position, player_space.space_id)
                 })
         else {
             bevy::log::debug!(
-                "RotateObject {object_id} ignored: not rotatable, not nearby, or different space"
+                "RotateObject {object_id} ignored: not rotatable, not reachable, or different space"
             );
             continue;
         };
@@ -476,6 +478,8 @@ pub fn process_game_commands(
                     &mut command_outputs.container_viewers,
                     &object_registry,
                     &definitions,
+                    &space_authority.floor_maps,
+                    &space_authority.floor_defs,
                 );
             }
             GameCommand::CloseContainer { object_id } => {
@@ -516,6 +520,7 @@ pub fn process_game_commands(
                     &mut object_registry,
                     &definitions,
                     &spell_definitions,
+                    FloorGeometry::server(&space_authority.floor_maps, &space_authority.floor_defs),
                     &mut command_outputs.ui_events,
                     &mut pending_commands,
                     &mut command_outputs.pending_damage,
@@ -537,6 +542,7 @@ pub fn process_game_commands(
                     &mut object_registry,
                     &definitions,
                     &spell_definitions,
+                    FloorGeometry::server(&space_authority.floor_maps, &space_authority.floor_defs),
                     &mut command_outputs.ui_events,
                     &mut pending_commands,
                     &mut command_outputs.pending_damage,
@@ -863,6 +869,7 @@ pub fn process_game_commands(
                     &mut player_queries.p2(),
                     &object_registry,
                     &definitions,
+                    FloorGeometry::server(&space_authority.floor_maps, &space_authority.floor_defs),
                     &mut command_outputs.ui_events,
                 );
             }
@@ -880,6 +887,7 @@ pub fn process_game_commands(
                     &mut player_queries.p2(),
                     &mut object_registry,
                     &definitions,
+                    FloorGeometry::server(&space_authority.floor_maps, &space_authority.floor_defs),
                 );
             }
             GameCommand::Engrave {
@@ -894,6 +902,7 @@ pub fn process_game_commands(
                     &mut player_queries.p2(),
                     &mut object_registry,
                     &definitions,
+                    FloorGeometry::server(&space_authority.floor_maps, &space_authority.floor_defs),
                 );
             }
             GameCommand::AdminGrantXp { .. }
@@ -1529,8 +1538,7 @@ fn handle_jump_to(
             yi,
             column_members(),
             definitions,
-            floor_maps,
-            floor_defs,
+            FloorGeometry::server(floor_maps, floor_defs),
         );
         let stack_dz = (stack_top - source_z).max(0);
 
@@ -1746,16 +1754,21 @@ fn handle_object_move(
         let tiles = idx as i32 + 1;
 
         // Resting surface of this column, ignoring the object being pushed.
-        let stack_top = crate::world::stacks::stack_top_z_excluding(
+        // Measured from `prev_z` (the sliding object's current feet) so the
+        // shove follows the floor the object is actually on instead of
+        // snapping to a painted floor overhead — indoors, the raw column top
+        // is the ceiling, which used to trip the `too_steep` guard below on
+        // the very first tile and make all indoor furniture immovable.
+        let column = crate::world::column::Column::from_world(
             space_id,
             xi,
             yi,
             object_entity,
             column_members(),
             definitions,
-            floor_maps,
-            floor_defs,
+            FloorGeometry::server(floor_maps, floor_defs),
         );
+        let stack_top = column.surface_from(prev_z);
 
         // DC = mass + jump-distance cost from the origin to this candidate tile
         // (Euclidean horizontal + uphill terrain; downhill is free). The path was
@@ -1768,16 +1781,7 @@ fn handle_object_move(
 
         // Impassable checks — any of these stops the slide at the previous tile.
         let too_steep = (stack_top - prev_z).abs() > 1;
-        let onto_wall = !crate::world::stacks::stack_top_is_walkable(
-            space_id,
-            xi,
-            yi,
-            object_entity,
-            column_members(),
-            definitions,
-            floor_maps,
-            floor_defs,
-        );
+        let onto_wall = !column.surface_from_is_walkable(prev_z);
         let onto_player = xi == player_position.x && yi == player_position.y;
         let placed_top = stack_top + placed_block_size as i32;
         let into_collider = collider_positions
@@ -1984,6 +1988,8 @@ fn handle_open_container(
     container_viewers: &mut ContainerViewers,
     object_registry: &ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
+    floor_maps: &crate::world::floor_map::FloorMaps,
+    floor_defs: &crate::world::floor_definitions::FloorTilesetDefinitions,
 ) {
     let Ok((
         _,
@@ -2005,8 +2011,14 @@ fn handle_open_container(
         return;
     };
 
-    if container_query.get_mut(entity).is_err() || !is_near_player(&player_position, &tile_position)
+    if container_query.get_mut(entity).is_err()
+        || !FloorGeometry::server(floor_maps, floor_defs).reachable(
+            &player_position,
+            &tile_position,
+            player_space_resident.space_id,
+        )
     {
+        refuse(player_identity.id, "OpenContainer", "out of reach");
         chat_log_state.push_narrator("That container is out of reach.");
         return;
     }
@@ -2251,6 +2263,7 @@ fn handle_read_book(
     >,
     object_registry: &ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
+    geometry: FloorGeometry<'_>,
     ui_events: &mut PendingGameUiEvents,
 ) {
     let Some((type_id, properties, world_tile)) = resolve_text_source(
@@ -2266,16 +2279,17 @@ fn handle_read_book(
         return;
     };
 
-    let Ok((_, identity, inventory, mut chat_log, _, player_tile, _, _, _)) =
+    let Ok((_, identity, inventory, mut chat_log, player_space, player_tile, _, _, _)) =
         player_query.get_mut(player_entity)
     else {
         return;
     };
 
-    // Adjacency gate on world targets only — inventory items are owned, no
+    // Reach gate on world targets only — inventory items are owned, no
     // reach check needed.
     if let Some(target_tile) = world_tile {
-        if !is_near_player(&player_tile, &target_tile) {
+        if !geometry.reachable(&player_tile, &target_tile, player_space.space_id) {
+            refuse(identity.id, "ReadBook", "out of reach");
             chat_log.push_narrator("That's too far away to read.");
             return;
         }
@@ -2359,6 +2373,7 @@ fn handle_write_book(
     >,
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
+    geometry: FloorGeometry<'_>,
 ) {
     let Some((type_id, _, world_tile)) = resolve_text_source(
         source,
@@ -2376,14 +2391,15 @@ fn handle_write_book(
         return;
     }
 
-    let Ok((_, _identity, inventory, mut chat_log, _, player_tile, _, _, _)) =
+    let Ok((_, identity, inventory, mut chat_log, player_space, player_tile, _, _, _)) =
         player_query.get_mut(player_entity)
     else {
         return;
     };
 
     if let Some(target_tile) = world_tile {
-        if !is_near_player(&player_tile, &target_tile) {
+        if !geometry.reachable(&player_tile, &target_tile, player_space.space_id) {
+            refuse(identity.id, "WriteBook", "out of reach");
             chat_log.push_narrator("That's too far away to write in.");
             return;
         }
@@ -2463,6 +2479,7 @@ fn handle_engrave(
     >,
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
+    geometry: FloorGeometry<'_>,
 ) {
     let Some((type_id, properties, world_tile)) = resolve_text_source(
         source,
@@ -2487,13 +2504,14 @@ fn handle_engrave(
         return;
     }
 
-    let Ok((_, _, inventory, mut chat_log, _, player_tile, _, _, _)) =
+    let Ok((_, identity, inventory, mut chat_log, player_space, player_tile, _, _, _)) =
         player_query.get_mut(player_entity)
     else {
         return;
     };
     if let Some(target_tile) = world_tile {
-        if !is_near_player(&player_tile, &target_tile) {
+        if !geometry.reachable(&player_tile, &target_tile, player_space.space_id) {
+            refuse(identity.id, "Engrave", "out of reach");
             chat_log.push_narrator("That's too far away to engrave.");
             return;
         }
@@ -2709,6 +2727,7 @@ fn handle_use_item(
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
+    geometry: FloorGeometry<'_>,
     ui_events: &mut PendingGameUiEvents,
     pending_commands: &mut PendingGameCommands,
     pending_damage: &mut PendingDamageEvents,
@@ -2740,7 +2759,8 @@ fn handle_use_item(
         else {
             return;
         };
-        if !is_near_player(&player_position, &world_tile) {
+        if !geometry.reachable(&player_position, &world_tile, player_space_id) {
+            refuse(acting_player_id, "UseItem", "source out of reach");
             chat_log_state.push_narrator("That item is out of reach.");
             return;
         }
@@ -2966,6 +2986,7 @@ fn handle_use_item_on(
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
+    geometry: FloorGeometry<'_>,
     ui_events: &mut PendingGameUiEvents,
     pending_commands: &mut PendingGameCommands,
     pending_damage: &mut PendingDamageEvents,
@@ -2985,6 +3006,7 @@ fn handle_use_item_on(
             object_registry,
             definitions,
             spell_definitions,
+            geometry,
             ui_events,
             pending_commands,
             pending_damage,
@@ -3023,7 +3045,12 @@ fn handle_use_item_on(
                 else {
                     return;
                 };
-                if !is_near_player(&player_position, &source_tile) {
+                if !geometry.reachable(
+                    &player_position,
+                    &source_tile,
+                    player_space_resident.space_id,
+                ) {
+                    refuse(acting_player_id, "UseItemOn", "source out of reach");
                     chat_log_state.push_narrator("That item is out of reach.");
                     return;
                 }
@@ -3038,7 +3065,12 @@ fn handle_use_item_on(
             ) else {
                 return;
             };
-            if !is_near_player(&player_position, &target_position) {
+            if !geometry.reachable(
+                &player_position,
+                &target_position,
+                player_space_resident.space_id,
+            ) {
+                refuse(acting_player_id, "UseItemOn", "target out of reach");
                 chat_log_state.push_narrator("That target is out of reach.");
                 return;
             }
@@ -4146,7 +4178,12 @@ fn handle_move_item(
             ) else {
                 return;
             };
-            if !is_near_player(&player_position, &tile_position) {
+            if !FloorGeometry::server(floor_maps, floor_defs).reachable(
+                &player_position,
+                &tile_position,
+                space_resident.space_id,
+            ) {
+                refuse(local_player_id, "MoveItem/pickup", "out of reach");
                 chat_log_state.push_narrator("That item is out of reach.");
                 return;
             }
@@ -4201,6 +4238,20 @@ fn handle_move_item(
                 return;
             };
 
+            // Reach gate on the *origin*. This branch never had one — only the
+            // destination was range-checked — so a stale or hand-crafted client
+            // could shove any object anywhere in the space. The client's
+            // drag-start already enforces this, hence log-and-drop rather than
+            // a narrator line.
+            if !FloorGeometry::server(floor_maps, floor_defs).reachable(
+                &player_position,
+                &origin,
+                space_resident.space_id,
+            ) {
+                refuse(local_player_id, "MoveItem/move", "origin out of reach");
+                return;
+            }
+
             let weight = definitions
                 .get(&definition_id)
                 .map_or(0.0, |def| def.weight);
@@ -4216,7 +4267,11 @@ fn handle_move_item(
             // (mirrors `handle_jump_to`). The price now lives in the DC, not a
             // hard "destination must be near you" gate.
             let is_light = weight <= crate::game::traversal::PUSH_FREE_WEIGHT;
-            let lands_adjacent = is_near_player(&player_position, &target_tile);
+            let lands_adjacent = FloorGeometry::server(floor_maps, floor_defs).reachable(
+                &player_position,
+                &target_tile,
+                space_resident.space_id,
+            );
             let mut placed = false;
 
             if is_light && lands_adjacent {
@@ -4351,19 +4406,21 @@ fn handle_move_item(
 
             // Try merging into an existing same-type ground stack at the exact target
             // tile first, bypassing the "occupied by movable" rejection.
-            if is_near_player(&player_position, &target_tile)
-                && add_to_ground_stack(
-                    &type_id,
-                    stack_qty,
-                    target_tile,
-                    space_resident.space_id,
-                    object_query,
-                    quantity_query,
-                    object_registry,
-                    definitions,
-                    commands,
-                )
-            {
+            if FloorGeometry::server(floor_maps, floor_defs).reachable(
+                &player_position,
+                &target_tile,
+                space_resident.space_id,
+            ) && add_to_ground_stack(
+                &type_id,
+                stack_qty,
+                target_tile,
+                space_resident.space_id,
+                object_query,
+                quantity_query,
+                object_registry,
+                definitions,
+                commands,
+            ) {
                 return;
             }
 
@@ -4648,7 +4705,12 @@ fn handle_take_from_stack(
             ) else {
                 return;
             };
-            if !is_near_player(&player_position, &tile_position) {
+            if !FloorGeometry::server(floor_maps, floor_defs).reachable(
+                &player_position,
+                &tile_position,
+                space_resident.space_id,
+            ) {
+                refuse(local_player_id, "TakeFromStack", "out of reach");
                 return;
             }
             let world_qty = quantity_query.get(entity).map(|q| q.0).unwrap_or(1);
@@ -6460,8 +6522,7 @@ fn resolve_step_with_climb(
         y,
         column_members(),
         definitions,
-        floor_maps,
-        floor_defs,
+        FloorGeometry::server(floor_maps, floor_defs),
     );
     if stack_top > current_z && stack_top - current_z <= crate::game::traversal::CLIMB_MAX_DZ {
         let stack_top_walkable = crate::world::stacks::stack_top_is_walkable(
@@ -6471,8 +6532,7 @@ fn resolve_step_with_climb(
             Entity::PLACEHOLDER,
             column_members(),
             definitions,
-            floor_maps,
-            floor_defs,
+            FloorGeometry::server(floor_maps, floor_defs),
         );
         if stack_top_walkable {
             let above = TilePosition::new(x, y, stack_top);
@@ -6520,15 +6580,18 @@ fn resolve_step_with_climb(
 }
 
 /// Resolve a world-tile drop. Returns the chosen `TilePosition` (with `z`
-/// snapped to the stack top of the column) when the drop is allowed, else
-/// `None`. Rules:
+/// snapped to the landing surface of the column) when the drop is allowed,
+/// else `None`. Rules:
 ///   * target `(x, y)` must be on-map and horizontally within 1 tile of
 ///     the player;
-///   * the column's existing top must be reachable (within ±1 z of the
-///     player) AND the resulting new top must be at most `player_z + 2`
-///     (i.e. `crate::world::stacks::can_place_on_stack`);
-///   * the topmost block already in the column must have a walkable top
-///     surface (you can't drop onto a wall);
+///   * `z` snaps to `Column::surface_from(player_z)` — the highest surface in
+///     the column *not* separated from the player by a floor slab. Without the
+///     `_from` filter a drop made on the ground floor of a roofed room resolved
+///     onto the storey above, because a painted `walkable_surface` floor at
+///     floor 1 reports a raw stack top of `z = 2` for every column beneath it;
+///   * that landing surface must be reachable (within ±2 z of the player, i.e.
+///     `crate::world::stacks::can_place_on_stack`);
+///   * it must be a walkable surface (you can't drop onto a wall);
 ///   * for moves, `dragged_entity` is excluded from the column so an
 ///     object doesn't stack on itself.
 #[allow(clippy::too_many_arguments)]
@@ -6573,32 +6636,25 @@ fn resolve_world_drop_tile(
         })
     };
 
-    let stack_top = crate::world::stacks::stack_top_z_excluding(
+    // One column build answers both questions; `surface_from` scopes the
+    // landing surface to the player's side of any floor slab.
+    let column = crate::world::column::Column::from_world(
         space_id,
         target_tile.x,
         target_tile.y,
         dragged_entity,
         column_members(),
         definitions,
-        floor_maps,
-        floor_defs,
+        FloorGeometry::server(floor_maps, floor_defs),
     );
+    let stack_top = column.surface_from(player_position.z);
 
     let resolved = TilePosition::new(target_tile.x, target_tile.y, stack_top);
     if origin_tile == Some(resolved) {
         return Some(resolved);
     }
 
-    if !crate::world::stacks::stack_top_is_walkable(
-        space_id,
-        target_tile.x,
-        target_tile.y,
-        dragged_entity,
-        column_members(),
-        definitions,
-        floor_maps,
-        floor_defs,
-    ) {
+    if !column.surface_from_is_walkable(player_position.z) {
         return None;
     }
 
@@ -7332,6 +7388,142 @@ mod tests {
         let _ = map.set(x, y, Some("wooden_floor".to_string()));
     }
 
+    /// Dropping an item while standing on the ground floor of a roofed room
+    /// must land it at `z = 0`. Before `Column::surface_from`, the painted
+    /// `wooden_floor` at floor 1 reported a raw stack top of `z = 2` for the
+    /// whole column, `can_place_on_stack(0, 2, _)` accepted it, and the item
+    /// teleported through the ceiling onto the storey above.
+    #[test]
+    fn ground_floor_drop_under_a_roof_stays_on_the_ground() {
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+        // Roof over both the player's tile and the drop target.
+        paint_upper_floor(&mut app, 10, 10);
+        paint_upper_floor(&mut app, 11, 10);
+
+        {
+            let mut inv = app.world_mut().get_mut::<Inventory>(player).unwrap();
+            inv.backpack_slots[0] = Some(InventoryStack::item(
+                "pickaxe".to_owned(),
+                ObjectProperties::new(),
+                1,
+            ));
+        }
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                PlayerId(1),
+                GameCommand::MoveItem {
+                    source: ItemReference::Slot(ItemSlotRef::Backpack(0)),
+                    destination: ItemDestination::WorldTile(TilePosition::ground(11, 10)),
+                },
+            );
+        app.update();
+
+        let mut q = app.world_mut().query::<(&OverworldObject, &TilePosition)>();
+        // Scoped to the drop column — the authored map has its own pickaxes.
+        let pickaxe = q
+            .iter(app.world())
+            .find(|(o, tile)| o.definition_id == "pickaxe" && tile.x == 11 && tile.y == 10)
+            .map(|(_, tile)| *tile)
+            .expect("pickaxe spawned at the drop tile");
+        assert_eq!(
+            pickaxe,
+            TilePosition::new(11, 10, 0),
+            "a drop made below a ceiling must stay on the ground floor"
+        );
+    }
+
+    /// The mirror of the above: a player *on* the upper floor drops onto the
+    /// upper floor, so `surface_from` isn't just clamping everything to
+    /// ground.
+    #[test]
+    fn upper_floor_drop_stays_on_the_upper_floor() {
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+        app.world_mut()
+            .entity_mut(player)
+            .insert(TilePosition::new(10, 10, 2));
+        paint_upper_floor(&mut app, 10, 10);
+        paint_upper_floor(&mut app, 11, 10);
+
+        {
+            let mut inv = app.world_mut().get_mut::<Inventory>(player).unwrap();
+            inv.backpack_slots[0] = Some(InventoryStack::item(
+                "pickaxe".to_owned(),
+                ObjectProperties::new(),
+                1,
+            ));
+        }
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                PlayerId(1),
+                GameCommand::MoveItem {
+                    source: ItemReference::Slot(ItemSlotRef::Backpack(0)),
+                    // The client sends its own floor plane; the server snaps z.
+                    destination: ItemDestination::WorldTile(TilePosition::new(11, 10, 2)),
+                },
+            );
+        app.update();
+
+        let mut q = app.world_mut().query::<(&OverworldObject, &TilePosition)>();
+        // Scoped to the drop column — the authored map has its own pickaxes.
+        let pickaxe = q
+            .iter(app.world())
+            .find(|(o, tile)| o.definition_id == "pickaxe" && tile.x == 11 && tile.y == 10)
+            .map(|(_, tile)| *tile)
+            .expect("pickaxe spawned at the drop tile");
+        assert_eq!(
+            pickaxe,
+            TilePosition::new(11, 10, 2),
+            "a drop made on the upper floor must stay on the upper floor"
+        );
+    }
+
+    /// A `MoveItem` naming an object on the storey above must be refused even
+    /// though `is_near_player`'s `|dz| <= 2` window accepts it — the floor slab
+    /// at `z = 1` is in the way.
+    #[test]
+    fn picking_up_through_a_ceiling_is_refused() {
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+        paint_upper_floor(&mut app, 10, 10);
+        paint_upper_floor(&mut app, 11, 10);
+
+        // Pickaxe resting on the upper floor, one tile east and one floor up.
+        let object_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("pickaxe");
+        spawn_world_object(&mut app, "pickaxe", object_id, TilePosition::new(11, 10, 2));
+        app.update();
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                PlayerId(1),
+                GameCommand::MoveItem {
+                    source: ItemReference::WorldObject(object_id),
+                    destination: ItemDestination::Slot(ItemSlotRef::Backpack(0)),
+                },
+            );
+        app.update();
+
+        assert!(
+            app.world().get::<Inventory>(player).unwrap().backpack_slots[0].is_none(),
+            "an item one floor up must not be reachable through the ceiling"
+        );
+        let mut q = app.world_mut().query::<(&OverworldObject, &TilePosition)>();
+        assert!(
+            q.iter(app.world())
+                .any(|(o, tile)| o.object_id == object_id && *tile == TilePosition::new(11, 10, 2)),
+            "the object must still be sitting on the upper floor"
+        );
+    }
+
     #[test]
     fn upper_floor_walk_requires_walkable_surface_or_drops_down() {
         let mut app = setup_server_app();
@@ -7455,6 +7647,179 @@ mod tests {
         assert!(
             upper.get(39, 29).is_none(),
             "(39, 29) on floor 1 should be the stairwell gap, not painted"
+        );
+    }
+
+    /// The gate is not item-specific: *every* "act on a nearby object" command
+    /// routes through `FloorGeometry::reachable`, so a barrel on the storey
+    /// above can't be rotated through the ceiling either. `RotateObject` is the
+    /// representative here because it runs in its own system
+    /// (`process_rotate_commands`) rather than through `process_game_commands`,
+    /// so it also covers the `FloorGeometryParam` plumbing the standalone
+    /// systems (interact, hide, craft, trade) use.
+    #[test]
+    fn rotating_through_a_ceiling_is_refused() {
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+        paint_upper_floor(&mut app, 10, 10);
+        paint_upper_floor(&mut app, 11, 10);
+
+        let object_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("barrel");
+        // On the upper floor, one tile east: inside `is_near_player`'s window
+        // but behind the floor slab.
+        let upstairs =
+            spawn_world_object(&mut app, "barrel", object_id, TilePosition::new(11, 10, 2));
+        // The test spawn helper doesn't attach `Facing`; the rotate system
+        // queries for it, so give the barrel its default heading.
+        app.world_mut()
+            .entity_mut(upstairs)
+            .insert(Facing(crate::world::direction::Direction::default()));
+        app.update();
+        let before = *app.world().get::<Facing>(upstairs).unwrap();
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                PlayerId(1),
+                GameCommand::RotateObject {
+                    object_id,
+                    rotation: crate::game::commands::RotationDirection::Clockwise,
+                },
+            );
+        app.update();
+        assert_eq!(
+            *app.world().get::<Facing>(upstairs).unwrap(),
+            before,
+            "an object one floor up must not be rotatable through the ceiling"
+        );
+
+        // Same barrel on the player's own floor: rotates fine, proving the
+        // refusal above is the slab and not a broken command path.
+        app.world_mut()
+            .entity_mut(upstairs)
+            .insert(TilePosition::new(11, 10, 0));
+        app.update();
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                PlayerId(1),
+                GameCommand::RotateObject {
+                    object_id,
+                    rotation: crate::game::commands::RotationDirection::Clockwise,
+                },
+            );
+        app.update();
+        assert_ne!(
+            *app.world().get::<Facing>(upstairs).unwrap(),
+            before,
+            "the same object on the player's own floor must still rotate"
+        );
+        let _ = player;
+    }
+
+    /// The precondition `handle_object_move`'s sweep now relies on, checked
+    /// against real authored content. Pushing heavy furniture (a `table` is
+    /// weight 10, over `PUSH_FREE_WEIGHT`) walks the line tile by tile and
+    /// bails on `too_steep = |stack_top - prev_z| > 1`. With the raw column top
+    /// every tile under the tavern loft reported `stack_top = 2`, so the sweep
+    /// broke on its very first step and *all* indoor furniture read as "it
+    /// won't budge". Measured from the object's own feet it is 0, as it should
+    /// be. Asserted geometrically rather than by pushing a table, because the
+    /// push itself rolls a d20.
+    #[test]
+    fn tavern_ground_floor_columns_rest_at_z_zero_for_a_ground_actor() {
+        let mut app = setup_server_app();
+        let space_id = app.world().resource::<WorldConfig>().current_space_id;
+
+        let mut q = app
+            .world_mut()
+            .query_filtered::<(Entity, &SpaceResident, &TilePosition, &OverworldObject), Without<Player>>();
+        let members: Vec<_> = q
+            .iter(app.world())
+            .map(
+                |(entity, resident, tile, object)| crate::world::stacks::ColumnMember {
+                    entity,
+                    resident,
+                    tile,
+                    object,
+                },
+            )
+            .collect();
+
+        let column = crate::world::column::Column::from_world(
+            space_id,
+            42,
+            28,
+            Entity::PLACEHOLDER,
+            members,
+            app.world().resource::<OverworldObjectDefinitions>(),
+            FloorGeometry::server(
+                app.world().resource::<crate::world::floor_map::FloorMaps>(),
+                app.world()
+                    .resource::<crate::world::floor_definitions::FloorTilesetDefinitions>(),
+            ),
+        );
+
+        assert_eq!(
+            column.top_surface(),
+            2,
+            "the raw top of this column is the loft above it"
+        );
+        assert_eq!(
+            column.surface_from(0),
+            0,
+            "but an actor on the ground floor sees the ground"
+        );
+        assert!(
+            column.slab_between(0, 2),
+            "the loft slab is what separates them"
+        );
+    }
+
+    /// Same as `ground_floor_drop_under_a_roof_stays_on_the_ground`, but
+    /// against real authored content instead of a synthetic fixture: the
+    /// Gilded Toad's ground floor under its painted loft. This is the actual
+    /// in-game scenario — "walk into the nice room with furniture, move stuff
+    /// around, watch it teleport upstairs".
+    #[test]
+    fn dropping_inside_the_tavern_stays_on_its_ground_floor() {
+        let mut app = setup_server_app();
+        // (41, 28) and (42, 28) are both under `wooden_floor` on floor 1 —
+        // see `overworld_yaml_paints_wooden_floor_on_upper_storey`.
+        let player = spawn_player(&mut app, 1, 41, 28);
+
+        {
+            let mut inv = app.world_mut().get_mut::<Inventory>(player).unwrap();
+            inv.backpack_slots[0] = Some(InventoryStack::item(
+                "pickaxe".to_owned(),
+                ObjectProperties::new(),
+                1,
+            ));
+        }
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                PlayerId(1),
+                GameCommand::MoveItem {
+                    source: ItemReference::Slot(ItemSlotRef::Backpack(0)),
+                    destination: ItemDestination::WorldTile(TilePosition::ground(42, 28)),
+                },
+            );
+        app.update();
+
+        let mut q = app.world_mut().query::<(&OverworldObject, &TilePosition)>();
+        let dropped = q
+            .iter(app.world())
+            .find(|(o, tile)| o.definition_id == "pickaxe" && tile.x == 42 && tile.y == 28)
+            .map(|(_, tile)| *tile)
+            .expect("pickaxe spawned inside the tavern");
+        assert_eq!(
+            dropped.z, 0,
+            "an item set down on the tavern floor must not land in the loft"
         );
     }
 

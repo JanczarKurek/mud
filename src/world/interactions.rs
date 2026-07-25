@@ -11,7 +11,6 @@
 use bevy::prelude::*;
 
 use crate::game::commands::GameCommand;
-use crate::game::helpers::is_near_player;
 use crate::game::resources::{
     ContainerViewers, GameUiEvent, PendingGameCommands, PendingGameUiEvents, QueuedGameCommand,
 };
@@ -64,6 +63,7 @@ pub fn process_interact_commands(
         Without<Player>,
     >,
     mut player_query: Query<PlayerInteractQuery, With<Player>>,
+    floors: crate::world::column::FloorGeometryParam,
 ) {
     let drained: Vec<QueuedGameCommand> = pending_commands.commands.drain(..).collect();
     let mut remaining = Vec::with_capacity(drained.len());
@@ -122,7 +122,7 @@ pub fn process_interact_commands(
             .find(|(_, resident, tile, object, _)| {
                 resident.space_id == player_space.space_id
                     && object.object_id == object_id
-                    && is_near_player(player_tile, tile)
+                    && floors.reachable(player_tile, tile, player_space.space_id)
             })
             .map(|(_, _, _, object, state)| (object.definition_id.clone(), state.0.clone()))
         else {

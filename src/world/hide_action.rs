@@ -14,7 +14,6 @@ use std::collections::{HashMap, HashSet};
 use bevy::prelude::*;
 
 use crate::game::commands::GameCommand;
-use crate::game::helpers::is_near_player;
 use crate::game::resources::{PendingGameCommands, QueuedGameCommand};
 use crate::player::components::{BaseStats, ChatLog, Player, PlayerIdentity};
 use crate::player::skills::{skill_check, Skill, SkillSheet};
@@ -53,6 +52,7 @@ pub fn process_hide_commands(
         ),
         With<Player>,
     >,
+    floors: crate::world::column::FloorGeometryParam,
 ) {
     let drained: Vec<QueuedGameCommand> = pending_commands.commands.drain(..).collect();
     let mut remaining = Vec::with_capacity(drained.len());
@@ -83,7 +83,7 @@ pub fn process_hide_commands(
             object_query.iter().find(|(_, resident, tile, object, _)| {
                 resident.space_id == player_space.space_id
                     && object.object_id == object_id
-                    && is_near_player(player_tile, tile)
+                    && floors.reachable(player_tile, tile, player_space.space_id)
             })
         else {
             bevy::log::debug!(
@@ -191,6 +191,9 @@ render:
         let mut app = App::new();
         app.insert_resource(defs);
         app.insert_resource(PendingGameCommands::default());
+        // Floor geometry backs the reach gate — see `world::column`.
+        app.insert_resource(crate::world::floor_map::FloorMaps::default());
+        app.insert_resource(crate::world::floor_definitions::FloorTilesetDefinitions::default());
         app.add_systems(Update, process_hide_commands);
         app
     }
