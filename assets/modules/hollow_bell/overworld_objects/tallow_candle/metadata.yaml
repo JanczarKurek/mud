@@ -1,0 +1,23 @@
+extends: consumable
+name: Tallow Candle
+weight: 0.2
+max_stack_size: 20
+description:
+  - text: A stubby hand-dipped tallow candle, uneven and yellowed, with a long black wick. Sister Wick makes them herself with a great deal of muttering over the wick, and they burn steadier and longer than they have any right to in bad air.
+    stack_size: [1, 1]
+  - text: "{count_written} of Sister Wick's tallow candles, tied in a bundle with string."
+    stack_size: [2, ~]
+use_effects:
+  regen_multiplier: 1.6
+  regen_duration_seconds: 120
+use_texts:
+  - You light the candle. The flame stands up straight and stays there.
+  - The candle catches. The dark backs off a pace.
+  - You light one of Sister Wick's candles and feel unaccountably watched over.
+use_on_texts:
+  - You hold the candle up toward {target}.
+render:
+  z_index: 0.24
+  debug_color: [236, 222, 168]
+  debug_size: 0.4
+  sprite_path: modules/hollow_bell/overworld_objects/tallow_candle/sprite.png

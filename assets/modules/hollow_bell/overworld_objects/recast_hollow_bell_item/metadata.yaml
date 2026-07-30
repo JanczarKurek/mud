@@ -1,0 +1,10 @@
+extends: pickup
+name: The Re-Cast Hollow Bell
+weight: 40.0
+max_stack_size: 1
+description: Waist-high, pale bronze, still bright from the mould, with a band of black deep-iron round the crown and a two-hundred-year-old iron tongue hanging within. It weighs what a bell weighs. Tobin is extremely proud of it and has already pointed out the one flaw twice. Carry it down.
+render:
+  z_index: 0.24
+  debug_color: [214, 198, 142]
+  debug_size: 0.75
+  sprite_path: modules/hollow_bell/overworld_objects/recast_hollow_bell_item/sprite.png

@@ -4,6 +4,11 @@ name: Bed
 description: A wood-framed bed with a soft mattress and a thick blanket.
 rotatable: true
 render:
+  # Half-block furniture: you step up onto it (free auto-step, dz=1)
+  # rather than being stopped by it. `colliding` still comes from the
+  # `obstacle` base, so the flat step is blocked and the climb branch runs.
+  block_size: 1
+  walkable_surface: true
   z_index: 0.30
   debug_color: [152, 60, 60]
   debug_size: 1.0

@@ -1,0 +1,15 @@
+extends: equipment
+name: The Singing Pick
+weight: 4.5
+equipment_slot: weapon
+description: A miner's pick with a head of pale seam-bronze and a scarred ash haft. It hums in the hand and cuts stone as though the stone had agreed to it beforehand. Also a perfectly serviceable weapon, which is more than anyone has ever been able to say for an ordinary pickaxe.
+damage: "1d8+str_mod+level/2"
+attack_profile:
+  kind: melee
+  damage_type: pierce
+stats:
+  agility: 1
+render:
+  debug_color: [198, 212, 186]
+  debug_size: 0.58
+  sprite_path: modules/hollow_bell/overworld_objects/singing_pick/sprite.png

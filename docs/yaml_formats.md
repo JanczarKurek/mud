@@ -72,7 +72,7 @@ Top-level fields:
 - Meaning: per-floor-type overlays applied on top of `fill_floor_type` for the ground floor. Each key must match a directory under `assets/floors/`. The map loader paints the listed tiles/rectangles with that floor type; transition tilesets are looked up automatically wherever two adjacent tiles use different floor types (see [Floor Transition Metadata YAML](#5-floor-transition-metadata-yaml)).
 - Each placement mapping has two optional sub-fields, both default-empty:
   - `placement`: list of `{ x, y }` coordinates — single tiles painted with this floor.
-  - `rects`: list of `{ x, y, w, h, z? }` rectangles — axis-aligned blocks painted with this floor. `z` defaults to `0`; only `z = 0` (ground floor) is currently rendered.
+  - `rects`: list of `{ x, y, w, h, z? }` rectangles — axis-aligned blocks painted with this floor. `z` here is a **floor index**, not a raw `z` coordinate: `0` (the default) is the ground floor, `1` is the first storey up (walking surface at raw `z = 2`), and so on. Upper floors are rendered, walked on, and treated as solid material — see [`walkable_surface`](#walkable_surface) and [`occludes_floor_above`](#occludes_floor_above).
 
 Example:
 
@@ -1046,6 +1046,16 @@ The `text` value supports three count placeholders in addition to the normal `{p
 - Combined with `walkable_surface: true`, this lets the player auto-step up onto the object by `block_size` z units when walking into it — they snap onto its top and snap back down on stepping off
 - Block-sized objects (`block_size > 0`) are rendered bottom-anchored (sprite footprint sits on the tile, art rises upward), unless `rotation_by_facing` is set — rotated sprites stay center-anchored
 - Stacking: when an object is dropped on a tile already holding block-sized objects, it lands on top of the column (its feet at the stack top). The stack-top must be within `±1` z of the player and the resulting new top within `+2` z of the player's feet — caps how high you can build from where you're standing
+
+### `walkable_surface`
+- Type: boolean
+- Optional: yes
+- Default: `false`
+- Meaning: the object's top is something an actor can stand on. Upper floors are empty space by default — a tile at `z > 0` is only walkable if something puts a surface there. The ground floor is always walkable.
+- Pairs with [`block_size`](#block_size). A `block_size: b` object at feet-`z` presents a surface at `z + b`; with this flag the player auto-steps onto it (free when `b == 1`, SHIFT + an Athletics check when `b == 2`). Without it the object is a dead-end obstacle: the step is refused, and the player is *not* dropped through whatever floor the object is standing on.
+- With `block_size: 0` the object contributes no surface of its own and instead makes its *own* tile standable — flat decals and stair landings use this.
+- Note the opposite default on the floor-tileset schema, where `walkable_surface` defaults to `true`.
+- Half-block furniture (`chair`, `stool`, `bench`, `table`, `side_table`, `bed`) sets `block_size: 1` + `walkable_surface: true`, so you step up onto it rather than being stopped by it. Tall storage (`bookshelf`, `cabinet`) deliberately does not.
 
 ### `floor_mask_rect`
 - Type: array of 4 floats `[x0, y0, x1, y1]` or omitted
@@ -2314,13 +2324,15 @@ Top-level fields:
 - Type: boolean
 - Optional: yes
 - Default: `false`
-- Meaning: reserved for upper-storey floors; unused at `z = 0` in the current slice. Leave at default unless you're working on multi-storey support.
+- Meaning: tiles on floor N with this flag hide everything on floor N+1 and above from view when the player stands directly beneath them, and mark the tile "indoor". Ignored at floor index `0`. Walls and building floors opt in so interiors feel enclosed.
 
 ### `walkable_surface`
 - Type: boolean
 - Optional: yes
 - Default: `true`
-- Meaning: reserved; the ground floor is currently always walkable. Leave at default.
+- Meaning: a painted tile on floor index `N >= 1` presents a standable surface at raw `z = N * 2`, and its material occupies the half-block below (`z = N * 2 - 1`).
+- That material is what makes a floor **solid**: it stops a step from cascading down through the storey it belongs to, hides surfaces above it from a climb below, and blocks reach and line-of-sight between storeys.
+- **Keep this at the default.** An occluding-but-unwalkable floor tileset would read as an impassable ceiling to players while NPC pathing (`spatial::apply_floor_layer`) would still let NPCs fall through it. Nothing in `assets/floors/` sets it to `false`.
 
 ### `variants`
 - Type: mapping from corner-mask integer (`1..=15`) to a list of positive integer weights

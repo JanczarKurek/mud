@@ -1,0 +1,339 @@
+# ============================================================================
+# THE HOLLOW BELL — 2/5: THE WINDING WORKS (levels 4-6)
+#
+# The upper galleries. A central haulage-way still floored with iron rail,
+# flooded low workings to the south-west (sump crawlers), goblin squatters in
+# the eastern store-galleries, and Hettie Marl alive behind a rock-fall in
+# the west.
+#
+# Exits: `works_up` back to the pit-head; `foundry_stair` down to the Bell
+# Foundry, in the far south-east.
+#
+# Grid note: text row 0 = y0 = SOUTH edge, so this file reads bottom-up.
+# ============================================================================
+authored_id: hollow_bell/winding_works
+permanence: persistent
+width: 43
+height: 28
+fill_floor_type: cave_floor
+lighting:
+  # Underground: no day/night, and dark enough that the module's candles and
+  # the placed torches genuinely matter (they feed `light_level_at`, which
+  # the stealth/detection system reads).
+  outdoor_ambient: [44, 42, 46]
+  indoor_ambient: [38, 36, 40]
+  has_day_night: false
+
+legend:
+  "#": cave_wall
+  "m": cave_mushroom
+  "*": crystal_cluster
+
+tiles: |
+  ###########################################
+  #...........########........###############
+  #....m......########..........#############
+  #...........########...........############
+  #####..#############............###########
+  #....................#####.......##########
+  #.m..................#####........#########
+  #....................#####.........########
+  #########.###########.............#########
+  #.......................................###
+  #.......................................###
+  #.......................................###
+  #########.#################.###############
+  #........#...............#.................
+  #....m...#...............#.................
+  #........#...............#.................
+  #####.####...............#.................
+  #........................#.................
+  #...m....................#.................
+  #........#################.................
+  #........#.................................
+  #..*.....#.................................
+  #........#.................................
+  ##########.................................
+  #..........................................
+  #.........................#################
+  #....m....................#################
+  ###########################################
+
+floors:
+  # The haulage-way is properly floored and railed; the sump is water.
+  flagstone:
+    rects:
+      - { x: 1, y: 9, w: 38, h: 3 }
+      - { x: 26, y: 13, w: 17, h: 11 }
+  water:
+    rects:
+      - { x: 1, y: 20, w: 8, h: 3 }
+      - { x: 1, y: 13, w: 8, h: 4 }
+
+portals:
+  # Back up the cage-lift.
+  - id: works_up
+    source: { x: 21, y: 2 }
+    destination_space_id: hollow_bell/pithead
+    destination_tile: { x: 10, y: 7 }
+    destination_permanence: persistent
+
+  # Down to the foundry, from the far south-east store-gallery.
+  - id: foundry_stair
+    source: { x: 40, y: 14 }
+    destination_space_id: hollow_bell/foundry
+    destination_tile: { x: 4, y: 4 }
+    destination_permanence: persistent
+
+spawn_groups:
+  # The flooded low workings. This is the `down_the_shaft` hunting ground —
+  # Marten wants eight of them before he calls the haulage-way passable.
+  - id: sump_low_workings
+    template: hollow_bell/sump_crawler
+    max_count: 5
+    respawn_mean_seconds: 90.0
+    area:
+      bounds: { min_x: 1, min_y: 13, max_x: 8, max_y: 22 }
+    behavior:
+      kind: roam_and_chase
+      bounds: { min_x: 1, min_y: 12, max_x: 12, max_y: 23 }
+
+  - id: sump_haulage
+    template: hollow_bell/sump_crawler
+    max_count: 3
+    respawn_mean_seconds: 120.0
+    area:
+      bounds: { min_x: 10, min_y: 20, max_x: 24, max_y: 24 }
+    behavior:
+      kind: roam_and_chase
+      bounds: { min_x: 9, min_y: 18, max_x: 25, max_y: 25 }
+
+  # Vermin along the haulage-way — the easy tier, for a level 4 arrival.
+  - id: works_rats
+    template: rat
+    max_count: 6
+    respawn_mean_seconds: 60.0
+    area:
+      bounds: { min_x: 2, min_y: 9, max_x: 38, max_y: 11 }
+    behavior:
+      kind: roam_and_chase
+      bounds: { min_x: 1, min_y: 8, max_x: 39, max_y: 12 }
+
+  # Goblin scavengers in the eastern store-galleries, having the best month
+  # of their lives.
+  - id: works_goblins
+    template: goblin
+    max_count: 4
+    respawn_mean_seconds: 150.0
+    area:
+      bounds: { min_x: 27, min_y: 14, max_x: 42, max_y: 23 }
+    behavior:
+      kind: roam_and_chase
+      bounds: { min_x: 26, min_y: 13, max_x: 42, max_y: 24 }
+
+  - id: works_goblin_archers
+    template: archer_goblin
+    max_count: 2
+    respawn_mean_seconds: 200.0
+    area:
+      bounds: { min_x: 30, min_y: 16, max_x: 42, max_y: 22 }
+    behavior:
+      kind: roam_and_chase
+      bounds: { min_x: 26, min_y: 13, max_x: 42, max_y: 24 }
+
+objects:
+  # ── Cage-lift landing ──
+  - type: sinkhole
+    placement: { x: 21, y: 2 }
+  - type: torch
+    placement: { x: 20, y: 3 }
+  - type: torch
+    placement: { x: 22, y: 3 }
+  - id: works_landing_sign
+    type: sign_post
+    placement: { x: 20, y: 2 }
+    properties:
+      text: "LANDING. Haulage-way south, then east for the stores. WEST WORKINGS FLOODED — do not take a light past the second cross-cut. (Someone has scratched under this: 'took one anyway. sorry.')"
+
+  # ── The haulage-way: rail, and the last shift's leavings ──
+  - type: crate
+    placement:
+      - { x: 6, y: 10 }
+      - { x: 7, y: 10 }
+      - { x: 15, y: 9 }
+      - { x: 31, y: 11 }
+  - type: barrel
+    placement:
+      - { x: 12, y: 11 }
+      - { x: 25, y: 9 }
+  - type: torch
+    placement:
+      - { x: 4, y: 11 }
+      - { x: 13, y: 11 }
+      - { x: 22, y: 11 }
+      - { x: 33, y: 11 }
+
+  - type: book
+    placement: { x: 16, y: 10 }
+    properties:
+      title: "Shift-Note, Pinned to a Prop"
+      author_name: "T. Wend, day-shift"
+      text: |
+        Scrawled on the back of a candle-invoice and pushed onto a nail.
+
+        Bell's cracked. Everyone knows, nobody's saying.
+
+        Went down at dawn like always and the rope-shift come back up white
+        as milk saying it went off like a dropped pot. Old Poll says it'll
+        be recast by the month's end and it's nothing to fuss over.
+
+        Only the mine's gone quiet. Not quiet like when the pumps stop.
+        Quiet like when somebody in the room stops breathing and you don't
+        notice for a bit and then you do.
+
+        I'm not going to write down what I think it means because if I
+        write it down I'll have thought it.
+
+        Ore raised today, 9 corves.
+
+  # ── The flooded west workings, and Hettie behind the fall ──
+  - type: stone
+    placement:
+      - { x: 9, y: 17 }
+      - { x: 9, y: 18 }
+      - { x: 10, y: 17 }
+  - type: torch
+    placement: { x: 11, y: 18 }
+
+  # Hettie, behind the rock-fall. Reachable to *talk* to but walled off by
+  # the stones above — the rescue is a conversation, not a fight.
+  - type: hollow_bell/hettie_marl
+    placement: { x: 4, y: 18 }
+    facing: east
+
+  - type: book
+    placement: { x: 5, y: 21 }
+    properties:
+      title: "Counted On The Wall"
+      author_name: "H. Marl"
+      text: |
+        Twenty-two rows of five tally-marks, scratched into wet rock with
+        something blunt. The last row has two.
+
+        Underneath, in the same scratching hand, quite neatly:
+
+        Day 4 — worked out the drip on the left is faster than the drip on
+        the right by about a third. Named them. Bram and Tessy. Sorry.
+
+        Day 9 — got through all of Bramble and Bone and most of The Otter's
+        Wedding. Turns out I don't know the third verse of anything.
+
+        Day 15 — heard something big turn over. Not near. Under.
+
+        Day 20 — still the drips. Bram's slowing.
+
+        Day 22 — someone up the gallery with a light. About time.
+
+  # ── The eastern store-galleries: goblin squatters and a locked strongbox ──
+  - type: campfire
+    placement: { x: 33, y: 17 }
+  - type: crate
+    placement:
+      - { x: 30, y: 15 }
+      - { x: 31, y: 15 }
+      - { x: 36, y: 20 }
+  - type: barrel
+    placement:
+      - { x: 38, y: 16 }
+      - { x: 29, y: 21 }
+  - type: torch
+    placement:
+      - { x: 28, y: 15 }
+      - { x: 40, y: 21 }
+
+  # The shift-store. Locked; Thievery or Athletics gets you in. This is the
+  # first real reward on the floor, and it is deliberately worth the detour.
+  - type: iron_chest
+    placement: { x: 41, y: 22 }
+    properties:
+      state: locked
+    contents:
+      - type: hollow_bell/miners_draught
+        quantity: 3
+      - type: leather_armor
+      - type: silver_coin
+        quantity: 45
+      - type: lesser_heal_scroll
+
+  # A Perception-gated cache the goblins never found: a loose flag under the
+  # rail, with the day-shift's drinking money in it.
+  - type: iron_chest
+    placement: { x: 35, y: 23 }
+    properties:
+      hidden_dc: "14"
+    contents:
+      - type: silver_coin
+        quantity: 30
+      - type: hollow_bell/pit_tea
+        quantity: 2
+      - type: copper_amulet
+
+  - type: book
+    placement: { x: 34, y: 17 }
+    properties:
+      title: "A Goblin's Inventory"
+      author_name: "(unsigned; the hand is not a badger's)"
+      text: |
+        Charcoal on a scrap of sacking. The spelling is confident and wrong
+        throughout.
+
+        THINGS WE HAV FOUND IN THE BIG HOLE
+          - rope, lots
+          - a hat (mine)
+          - 40 candel
+          - a box we cannot opon (LEEV IT)
+          - a good stik
+          - meet, tinned, 11
+          - the singing (not a thing, canot be taken, we tryed)
+
+        NO BADGERS HAV COME FOR 3 WEEK. THE BIG HOLE IS OURS NOW.
+        THIS IS THE BEST MUNTH.
+
+        (Further down, in a shakier hand and much later:)
+
+        somthing in the deep is awake and it is not us
+        we shud go
+        nobody wil say it frist
+
+  # ── The way down: the foundry stair ──
+  - type: portal_arch
+    placement: { x: 40, y: 14 }
+  - id: works_down_sign
+    type: sign_post
+    placement: { x: 39, y: 14 }
+    properties:
+      text: "TO THE FOUNDRY. Mind your footing on the stair — it was cut for corves, not for legs. NO NAKED FLAMES BEYOND THIS POINT (someone has crossed this out and written: 'ha')"
+  - type: torch
+    placement: { x: 41, y: 15 }
+
+  # A prop stack you can shove around for cover — the push/pull system.
+  - type: barrel
+    placement:
+      - { x: 24, y: 10 }
+      - { x: 24, y: 11 }
+
+  # ── A bear trap the night-shift set, still armed, still patient ──
+  - type: bear_trap
+    placement: { x: 18, y: 21 }
+    properties:
+      hidden_dc: "12"
+
+  - type: cave_mushroom
+    placement:
+      - { x: 3, y: 14 }
+      - { x: 6, y: 22 }
+      - { x: 2, y: 26 }
+  - type: ore_node
+    placement:
+      - { x: 2, y: 5 }
+      - { x: 3, y: 6 }

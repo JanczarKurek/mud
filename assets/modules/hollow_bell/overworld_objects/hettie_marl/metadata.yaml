@@ -1,0 +1,102 @@
+extends: npc
+name: Hettie Marl
+description: A lean otter in a patched canvas jacket and knee-boots, hair cropped to the skull, a coil of rope always over one shoulder. Three weeks behind a rock-fall on sump-water and two candles, and she will tell you it was restful.
+level: 7
+dialog_node: HollowBellHettie
+stats:
+  strength: 12
+  agility: 14
+  constitution: 15
+  willpower: 15
+  charisma: 12
+  focus: 11
+damage: "1d8+2"
+attack_profile:
+  kind: melee
+  damage_type: pierce
+hp: "2d10+70+constitution*2"
+armor: 1
+shopkeeper:
+  wares:
+    - type_id: hollow_bell/tallow_candle
+      price_copper: 18
+      stock: 20
+    - type_id: pickaxe
+      price_copper: 210
+      stock: 2
+    - type_id: canvas_backpack
+      price_copper: 140
+      stock: 1
+    - type_id: small_pouch
+      price_copper: 95
+      stock: 3
+    - type_id: potion
+      price_copper: 54
+      stock: 4
+    - type_id: hollow_bell/miners_draught
+      price_copper: 40
+      stock: 6
+    - type_id: hollow_bell/bell_bronze_ore
+      price_copper: 90
+      stock: infinite
+    - type_id: hollow_bell/deep_iron_shard
+      price_copper: 160
+      stock: infinite
+    - type_id: hollow_bell/tallow_wax
+      price_copper: 14
+      stock: infinite
+    - type_id: iron_ore
+      price_copper: 18
+      stock: infinite
+npc_behavior:
+  hostile: false
+  step_interval_seconds: 1.1
+  idle_pause_chance: 0.5
+  detect_distance_tiles: 5
+  disengage_distance_tiles: 7
+chatter:
+  radius_tiles: 4
+  greetings:
+    - "Buying or gawping?"
+    - "Mind the rope."
+    - "Ha! You're still alive as well."
+  topics:
+    - - "Three weeks, Hettie."
+      - "Twenty-two days. I counted the drips, it's very reliable."
+      - "...That's worse. You know that's worse."
+    - - "Prices are insulting."
+      - "Prices are *survival*, Captain, and I'm the only one down there who came back up with stock."
+      - "Aye. Fair."
+    - - "You'll not go down again."
+      - "I'll go down tomorrow."
+      - "Hettie —"
+      - "I'll go down tomorrow, Marten."
+barks:
+  mutter:
+    - "*coils the rope tighter*"
+    - "*counts something under her breath*"
+    - "Still here. Still here."
+render:
+  debug_color: [108, 88, 66]
+  debug_size: 0.9
+  sprite_path: modules/hollow_bell/overworld_objects/hettie_marl/sprite.png
+  y_sort: true
+  animation:
+    sheet_path: modules/hollow_bell/overworld_objects/hettie_marl/sheet.png
+    frame_width: 32
+    frame_height: 48
+    sheet_columns: 4
+    sheet_rows: 2
+    clips:
+      idle:
+        row: 0
+        start_col: 0
+        frame_count: 4
+        fps: 3.0
+        looping: true
+      walk:
+        row: 1
+        start_col: 0
+        frame_count: 4
+        fps: 8.0
+        looping: true

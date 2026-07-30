@@ -1,0 +1,74 @@
+extends: npc
+name: Wax Wight
+description: A foundry-hand who lay down in the tallow store and did not get up. It still wears the apron. It burns from the inside, and it still turns toward the furnace when it does not know where else to go.
+level: 7
+stats:
+  strength: 15
+  agility: 9
+  constitution: 14
+  willpower: 8
+  charisma: 3
+  focus: 6
+# Budget: mean damage ≈ 2+1.3·7 ≈ 11; mean HP ≈ 20+11·7 ≈ 97.
+damage: "1d10+5"
+attack_profile:
+  kind: melee
+  damage_type: fire
+  on_hit_effects:
+    - kind: burning
+      chance: 0.3
+      magnitude: 2.0
+      seconds: 5.0
+      secondary_magnitude: 1.5
+hp: "2d10+52+constitution*2"
+armor: 2
+loot:
+  corpse_despawn_seconds: 60
+  drops:
+    - type_id: hollow_bell/tallow_wax
+      quantity: "uniform(1, 3)"
+      probability: 1.0
+    - type_id: copper_coin
+      quantity: "uniform(2, 12)"
+      probability: 1.0
+    - type_id: silver_coin
+      quantity: 1
+      probability: 0.4
+    - type_id: hollow_bell/tallow_candle
+      quantity: 1
+      probability: 0.3
+npc_behavior:
+  step_interval_seconds: 1.0
+  detect_distance_tiles: 8
+  disengage_distance_tiles: 14
+barks:
+  aggro:
+    - "*the apron creaks*"
+    - "*a low sound, almost a word*"
+  mutter:
+    - "*wax patters on stone*"
+    - "*turns slowly toward the furnace*"
+render:
+  debug_color: [196, 168, 96]
+  debug_size: 0.95
+  sprite_path: modules/hollow_bell/overworld_objects/wax_wight/sprite.png
+  y_sort: true
+  animation:
+    sheet_path: modules/hollow_bell/overworld_objects/wax_wight/sheet.png
+    frame_width: 32
+    frame_height: 48
+    sheet_columns: 4
+    sheet_rows: 2
+    clips:
+      idle:
+        row: 0
+        start_col: 0
+        frame_count: 4
+        fps: 3.0
+        looping: true
+      walk:
+        row: 1
+        start_col: 0
+        frame_count: 4
+        fps: 8.0
+        looping: true

@@ -1,0 +1,69 @@
+extends: npc
+name: Marten Coalbright
+description: A grey-muzzled badger in a soot-black pit-captain's coat, brass buttons dulled by three weeks of not being polished. He carries a whistle he has not blown since the day the shift did not come up.
+level: 6
+dialog_node: HollowBellMarten
+stats:
+  strength: 14
+  agility: 10
+  constitution: 14
+  willpower: 14
+  charisma: 12
+  focus: 11
+damage: "1d6+2"
+attack_profile:
+  kind: melee
+  damage_type: blunt
+hp: "2d8+60+constitution*2"
+armor: 2
+npc_behavior:
+  hostile: false
+  step_interval_seconds: 1.4
+  idle_pause_chance: 0.7
+  detect_distance_tiles: 4
+  disengage_distance_tiles: 6
+chatter:
+  radius_tiles: 4
+  greetings:
+    - "Wick."
+    - "Any change?"
+    - "You've not slept."
+  topics:
+    - - "Pumps are still down. Water's up another hand since Tuesday."
+      - "And the shaft?"
+      - "Shaft's sound. It's what's in it that isn't."
+    - - "Eleven names on that door."
+      - "Twelve, if we're honest about Hettie."
+      - "We're not being honest about Hettie. Not yet."
+    - - "That fox has read the casting books twice."
+      - "He's nineteen, Marten."
+      - "Aye. And he's right, which is worse."
+barks:
+  mutter:
+    - "*checks the rota again*"
+    - "Rope wants replacing."
+    - "*a long breath through the nose*"
+render:
+  debug_color: [64, 60, 58]
+  debug_size: 0.95
+  sprite_path: modules/hollow_bell/overworld_objects/marten_coalbright/sprite.png
+  y_sort: true
+  animation:
+    sheet_path: modules/hollow_bell/overworld_objects/marten_coalbright/sheet.png
+    frame_width: 32
+    frame_height: 48
+    sheet_columns: 4
+    sheet_rows: 2
+    clips:
+      idle:
+        row: 0
+        start_col: 0
+        frame_count: 4
+        fps: 3.0
+        looping: true
+      walk:
+        row: 1
+        start_col: 0
+        frame_count: 4
+        fps: 8.0
+        looping: true

@@ -1,0 +1,68 @@
+extends: npc
+name: Tobin Ashfoot
+description: A young rust-red fox in a scorched leather apron three sizes too big for him, brass calipers swinging from a belt loop. He has read the casting books twice and would very much like to tell you about it.
+level: 4
+dialog_node: HollowBellTobin
+stats:
+  strength: 10
+  agility: 13
+  constitution: 10
+  willpower: 12
+  charisma: 13
+  focus: 15
+damage: "1d6"
+attack_profile:
+  kind: melee
+  damage_type: blunt
+hp: "2d6+34+constitution*2"
+npc_behavior:
+  hostile: false
+  step_interval_seconds: 0.9
+  idle_pause_chance: 0.3
+  detect_distance_tiles: 5
+  disengage_distance_tiles: 7
+chatter:
+  radius_tiles: 4
+  greetings:
+    - "Oh — oh good, someone to talk to."
+    - "Do you know how a bell is tuned? No? Excellent."
+    - "I've had an idea."
+  topics:
+    - - "You cannot pour a clapper. That's the whole trouble."
+      - "Why ever not?"
+      - "Because two hundred years of getting hit is *in* it, and you can't pour that. You can only fetch it back."
+    - - "My master cast forty-one bells."
+      - "And you?"
+      - "Four. Doorbells. One of them's still wrong, and I know exactly why, which I think counts for something."
+    - - "The crown wants deep-iron."
+      - "That's in no book I ever read."
+      - "No. It isn't. I just know."
+barks:
+  mutter:
+    - "*sketches a bell-profile in the ash*"
+    - "Ratio's wrong. Ratio's wrong."
+    - "*hums a note, then another, then frowns*"
+render:
+  debug_color: [178, 84, 44]
+  debug_size: 0.88
+  sprite_path: modules/hollow_bell/overworld_objects/tobin_ashfoot/sprite.png
+  y_sort: true
+  animation:
+    sheet_path: modules/hollow_bell/overworld_objects/tobin_ashfoot/sheet.png
+    frame_width: 32
+    frame_height: 48
+    sheet_columns: 4
+    sheet_rows: 2
+    clips:
+      idle:
+        row: 0
+        start_col: 0
+        frame_count: 4
+        fps: 3.0
+        looping: true
+      walk:
+        row: 1
+        start_col: 0
+        frame_count: 4
+        fps: 8.0
+        looping: true

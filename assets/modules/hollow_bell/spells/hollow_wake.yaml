@@ -1,0 +1,14 @@
+# The Deeplistener's second phase. In pain and unable to sleep, it thrashes,
+# and more of its dreaming tears loose and digs its way out of the walls.
+name: Hollow Wake
+incantation: "*it thrashes, and the walls give birth*"
+mana_cost: 0.0
+targeting: untargeted
+range_tiles: 0
+effects:
+  vfx_on_cast: cast_flash
+  summons_creature:
+    type_id: hollow_bell/hollow_spawn
+    lifetime_seconds: 120.0
+    count: 2
+    follow_close_tiles: 4

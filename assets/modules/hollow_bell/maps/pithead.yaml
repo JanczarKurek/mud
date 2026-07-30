@@ -1,0 +1,249 @@
+# ============================================================================
+# THE HOLLOW BELL — 1/5: THE PIT-HEAD CAMP
+#
+# Safe hub. No hostiles, no spawn groups. What is left of Ashen Hollow after
+# three weeks: four people, a great rusted drum-wheel, canvas slung between
+# the winding-house and the ore-sheds, and a kettle that is always on.
+#
+# Layout: two stone buildings facing each other across a yard. North building
+# (y4-y8) is the winding-house — the shaft head and Marten. South building
+# (y10-y13) is the ore-shed — Sister Wick, and Hettie once she is up.
+#
+# Exits: `moor_road` (north edge) returns to the overworld; `cage_lift`
+# (winding-house floor) descends into the Winding Works.
+#
+# Grid note: text row 0 = y0 = SOUTH edge, so this file reads bottom-up.
+# ============================================================================
+authored_id: hollow_bell/pithead
+permanence: persistent
+width: 28
+height: 20
+fill_floor_type: dirt_path
+lighting:
+  # Open moor, but this far north and this late in the year it never gets
+  # properly bright. Day/night stays on — the delve below is where it's dark.
+  outdoor_ambient: [120, 118, 126]
+  indoor_ambient: [80, 76, 82]
+  has_day_night: true
+
+legend:
+  "S": wall_s
+  "N": wall_n
+  "E": wall_e
+  "W": wall_w
+  "a": wall_corner_sw
+  "b": wall_corner_se
+  "c": wall_corner_nw
+  "d": wall_corner_ne
+  ",": stone
+
+tiles: |
+  ............................
+  ....,.................,.....
+  ..,.....,.........,.........
+  ............................
+  ......aSSS.SSSSb............
+  ......W........E............
+  ......W........E............
+  ......W........E............
+  ......cNNNNNNNNd............
+  ............................
+  ......aSSSSSSSSb............
+  ......W........E............
+  ......W........E............
+  ......cNNN.NNNNd............
+  ............................
+  ..,.........................
+  .........,..........,.......
+  ............................
+  ....,...................,...
+  ............................
+
+floors:
+  # Both buildings have proper flagstone floors; the yard between them is
+  # cobbled. Everything else is churned moor-dirt.
+  flagstone:
+    rects:
+      - { x: 7, y: 5, w: 8, h: 3 }
+      - { x: 7, y: 11, w: 8, h: 2 }
+  cobblestone:
+    rects:
+      - { x: 7, y: 9, w: 8, h: 1 }
+
+portals:
+  # Back out onto the moor road. The overworld destination is the tile
+  # *beside* the arch up there, never on it, or you bounce straight back.
+  - id: moor_road
+    source: { x: 10, y: 19 }
+    destination_space_id: overworld
+    destination_tile: { x: 6, y: 44 }
+    destination_permanence: persistent
+
+  # The cage-lift, down the shaft. Mind the third rung; it lies.
+  - id: cage_lift
+    source: { x: 10, y: 6 }
+    destination_space_id: hollow_bell/winding_works
+    destination_tile: { x: 21, y: 3 }
+    destination_permanence: persistent
+
+objects:
+  # ── The winding-house: the shaft head, and Marten ──
+  - type: sinkhole
+    placement: { x: 10, y: 6 }
+  - type: torch
+    placement: { x: 7, y: 7 }
+  - type: torch
+    placement: { x: 14, y: 7 }
+
+  - type: hollow_bell/marten_coalbright
+    placement: { x: 12, y: 6 }
+    facing: west
+    routine:
+      schedule:
+        - { from: 0.0, to: 0.99, activity: work, at: { x: 12, y: 6 }, face: west }
+
+  - id: pithead_wheel_sign
+    type: sign_post
+    placement: { x: 8, y: 5 }
+    properties:
+      text: "ASHEN HOLLOW DELVE — WINDING HOUSE. Rope inspected the 3rd of each month. Below this line the captain's word is law, and the rock's word is louder."
+
+  # The names on the inside of the wheel-housing door. He does not know
+  # anyone has ever read it.
+  - type: book
+    placement: { x: 7, y: 5 }
+    properties:
+      title: "The Door"
+      author_name: "M. Coalbright"
+      text: |
+        Written small on the inside of the wheel-housing door, in pencil, in
+        a hand that got steadier as it went down the list.
+
+        Bram Coalbright. Tessy Wend. Old Poll. Ash Marlow. Nim Wick.
+        Fen Ashfoot. Bel Coalbright. Rook. Tam Wend. Cass Marlow.
+
+        And below those, crossed out, and written again, and crossed out
+        again, and then written a third time and left alone:
+
+        Hettie Marl.
+
+  - type: book
+    placement: { x: 13, y: 7 }
+    properties:
+      title: "Delve Ledger, Vol. XXXI"
+      author_name: "kept by the pit-captain of the day"
+      text: |
+        A working page, ruled in four columns. The hand changes every few
+        decades. The entries do not.
+
+          FIFTH DAY.  Ore raised, 11 corves.  Candles, 6d.  Bell rung.
+          SIXTH DAY.  Ore raised, 9 corves.   Candles, 6d.  Bell rung.
+          SEVENTH.    Rest day.               Candles, 2d.  Bell rung.
+          EIGHTH.     Ore raised, 14 corves.  Candles, 8d.  Bell rung.
+
+        Two hundred years of this. Nobody in any of these hands has ever
+        once written down *why*, because it did not occur to any of them
+        that it was the sort of thing a person would need to be told.
+
+        The last entry is three weeks old and in Marten Coalbright's hand.
+        It reads: FIFTEENTH. Ore raised, none. Candles, 6d. Bell —
+
+        The line stops there.
+
+  # ── The ore-shed: Sister Wick, and Hettie's stall once she is up ──
+  - type: hollow_bell/sister_wick
+    placement: { x: 8, y: 11 }
+    facing: east
+    routine:
+      patrol:
+        mode: ping_pong
+        waypoints:
+          - { x: 8, y: 11, dwell: 9.0 }
+          - { x: 12, y: 11, dwell: 9.0 }
+
+  # Hettie is placed here *and* behind the rock-fall in the Winding Works.
+  # The one down there is the one you rescue; this is the stall she sets up
+  # afterwards. Both share the HollowBellHettie node, which gates on
+  # $hollow_bell_hettie_rescued, so talking to her here beforehand simply
+  # replays the through-the-rock scene.
+  - type: hollow_bell/hettie_marl
+    placement: { x: 13, y: 12 }
+    facing: west
+
+  - type: bench
+    placement: { x: 10, y: 12 }
+    facing: south
+  - type: barrel
+    placement: { x: 14, y: 12 }
+  - type: crate
+    placement: { x: 7, y: 12 }
+  - type: crate
+    placement: { x: 7, y: 11 }
+
+  # ── Tobin's casting bench, out in the open under the canvas ──
+  - type: hollow_bell/tobin_ashfoot
+    placement: { x: 19, y: 9 }
+    facing: west
+    routine:
+      patrol:
+        mode: loop
+        waypoints:
+          - { x: 19, y: 9, dwell: 7.0 }
+          - { x: 20, y: 11, dwell: 4.0 }
+          - { x: 18, y: 11, dwell: 4.0 }
+  - type: table
+    placement: { x: 19, y: 10 }
+  - type: bookshelf
+    placement: { x: 21, y: 11 }
+    facing: south
+  - type: book
+    placement: { x: 20, y: 10 }
+    properties:
+      title: "A Founder's Instruction, Third Book"
+      author_name: "Ansel Ashfoot, bellwright"
+      text: |
+        On the tuning of the great bells.
+
+        The hum is the whole of it. Strike-note, prime, tierce, quint,
+        nominal — five partials, and the founder's entire art is in making
+        them agree. A bell out of true is not merely ugly. It is *idle*. It
+        says nothing, and nothing hears it.
+
+        My apprentice asks what a bell is for. I have given him the usual
+        answers — hours, alarms, weddings, the dead — and he has not been
+        satisfied by any of them, which I count a good sign in a boy.
+
+        The truer answer is this. A bell is a promise that somebody will
+        come and ring it again tomorrow. That is all it has ever been. The
+        bronze is incidental.
+
+        The founder pours what she means.
+
+  # ── The camp fire (a crafting station), the well, and the road out ──
+  - type: campfire
+    placement: { x: 10, y: 16 }
+  - type: bench
+    placement: { x: 9, y: 15 }
+    facing: north
+  - type: bench
+    placement: { x: 11, y: 15 }
+    facing: north
+  - type: well
+    placement: { x: 21, y: 16 }
+
+  - type: portal_arch
+    placement: { x: 10, y: 19 }
+  - id: pithead_road_sign
+    type: sign_post
+    placement: { x: 9, y: 18 }
+    properties:
+      text: "ASHEN HOLLOW half a mile. TURNPIKE nine miles. Below: THE DELVE. No unaccompanied persons past the winding-house — by order, M. Coalbright, Pit-Captain."
+
+  - type: fence
+    placement:
+      - { x: 3, y: 9 }
+      - { x: 3, y: 10 }
+      - { x: 3, y: 11 }
+      - { x: 24, y: 9 }
+      - { x: 24, y: 10 }
+      - { x: 24, y: 11 }

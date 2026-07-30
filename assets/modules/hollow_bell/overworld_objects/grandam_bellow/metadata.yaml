@@ -1,0 +1,53 @@
+extends: npc
+name: Grandam Bellow
+description: A translucent pale-blue badger matriarch in a bellwright's long apron, hands folded, her edges dissolving into ripples the shape of a struck bell. She has been dead two hundred years and waiting three weeks, and only one of those has annoyed her.
+level: 12
+dialog_node: HollowBellGrandam
+stats:
+  strength: 8
+  agility: 8
+  constitution: 12
+  willpower: 18
+  charisma: 15
+  focus: 17
+damage: "1d4"
+attack_profile:
+  kind: melee
+  damage_type: arcane
+hp: "2d8+90+constitution*2"
+# She drifts a step every few seconds and never leaves the bell-frame.
+npc_behavior:
+  hostile: false
+  step_interval_seconds: 6.0
+  idle_pause_chance: 0.85
+  detect_distance_tiles: 3
+  disengage_distance_tiles: 3
+barks:
+  mutter:
+    - "*a single note, very far off*"
+    - "Two hundred years is not so long."
+    - "*the air rings faintly*"
+render:
+  debug_color: [168, 208, 232]
+  debug_size: 0.95
+  sprite_path: modules/hollow_bell/overworld_objects/grandam_bellow/sprite.png
+  y_sort: true
+  animation:
+    sheet_path: modules/hollow_bell/overworld_objects/grandam_bellow/sheet.png
+    frame_width: 32
+    frame_height: 48
+    sheet_columns: 4
+    sheet_rows: 2
+    clips:
+      idle:
+        row: 0
+        start_col: 0
+        frame_count: 4
+        fps: 2.0
+        looping: true
+      walk:
+        row: 1
+        start_col: 0
+        frame_count: 4
+        fps: 5.0
+        looping: true

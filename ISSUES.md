@@ -34,8 +34,17 @@ and a gear tier to ~L12 (iron/steel swords, dagger, longbow, chain set, plate, t
 Ogre Brute L10 + Dire Wight L12 elites carry the loot). Remaining follow-ups:
 - **Two-handed `STR×1.5`** damage and **finesse** weapons (AGI-keyed melee to-hit).
 - **Damage-type resistances** — types are still cosmetic; monster-Lore reveals want them.
-- **Boss variants** (2–3× budget + mechanics) — the L20 Ancient Dragon in the sim is a
-  standard-budget stat block on purpose.
+- **NPC AoE now fans out**: a tile-targeted NPC cast damages every *player* in
+  `aoe.radius_tiles`, not only the current target (`build_npc_cast_outcome` emits an
+  `NpcAoeSplash`; `execute_npc_spell_cast` resolves it). Monsters deliberately do not
+  friendly-fire their own adds. Open: player-side companions are also spared, which is a
+  simplification rather than a considered rule.
+- ~~**Boss variants** (2–3× budget + mechanics)~~ — first three shipped in the
+  `hollow_bell` module (Cinderjack L8, Knell L11, The Deeplistener L14). Budget rule
+  established: **HP ×2–3, damage only ×1.2–1.4** — tripling damage one-shots a
+  level-appropriate character, so the budget goes into HP and mechanics. Mechanics use
+  `spellcasting:` `!self_hp_below_fraction` gates as phase triggers, plus the two engine
+  changes below. The L20 Ancient Dragon in the sim is still a standard-budget stat block.
 - **Trap-build UX**: tools (pickaxe/herb knife) deliberately carry no level growth; surface an
   in-game hint that they aren't weapons.
 - AOL-style equipment **drop protection** hook on death (noted in `progression.md` §8 rule 3).
@@ -59,6 +68,19 @@ items if/when we resume:
 - `FloorIndicatorLabel` HUD text.
 - Ladder / rope transition object kinds (sinkhole already exists).
 
+**Fixed:** floors are now solid to the *player* movement path too. Previously
+only NPCs respected them (`spatial::apply_floor_layer` inserts the slab as a
+pseudo-blocker); the player's `resolve_step_with_climb` and `resolve_landing_at`
+used the raw column top, so stepping into any obstacle standing on an upper
+floor cascaded past that floor to `z = 0`, a SHIFT-climb from inside a roofed
+room landed on the roof, and a jump across a roofed room landed on the roof.
+Both now go through `Column::surface_from` / `Column::slab_between`.
+`settle_pending_stacks` likewise restarts its compaction at each painted floor
+instead of running once from `z = 0`. Remaining sharp edge: an occluding-but-
+unwalkable floor tileset would read as impassable to players while NPCs still
+fall through it — no such tileset exists, and `walkable_surface` defaults to
+`true` for floors.
+
 ### Art
 - Transition tilesets for the new `flagstone` / `checkered_marble` floors (`assets/floors/transitions/<low>__<high>/`) — currently they meet terrain with a hard quadrant edge, acceptable indoors.
 - The barrel sprite deliberately softens the wall-set projection (a strict 1-floor cylinder under the (-36,-24)px/floor shear reads as a lying log — see `scripts/gen_container_set.py`), so objects stacked on a barrel sit slightly up-left of the drawn lid.
@@ -68,11 +90,15 @@ items if/when we resume:
 - Add validation for map YAML so invalid object IDs or out-of-bounds placements fail clearly.
 - Decide how decorative objects (flowers, etc.) should share tiles with blocking objects through explicit layering rules.
 - Decide how stacked map objects render visually once trees, items, and walls can share a tile.
+- **Editor save is still lossy for authoring form.** `SpaceOutput` (`src/editor/serializer.rs`) now round-trips authored `id:`, `facing:`, `routine:`, `quantity:` and `permanence:` (guarded by tests over every shipped map), but a save still flattens the compact `tiles:`/`legend:` ASCII grid and `floors:` rects into per-tile coordinate lists, and drops all comments. Hand-authored maps get much bigger and lose their documentation. Re-compacting floors into rects is the cheap half; re-emitting the char grid needs a heuristic for which objects belong in it.
+- `contents:` symbolic references (`MapObjectChild::Reference`) and per-item modifiers still cannot round-trip through an editor save — the editor's source of truth is the flattened `Container.slots`, which carries neither.
+- **Floor overlap resolution is non-deterministic.** `SpaceDefinition.floors` is a `HashMap<FloorTypeId, FloorPlacements>`, so when two floor rects cover the same tile the winner depends on hash iteration order and can differ between runs. `overworld.yaml`'s header comment claims "cave_floor is listed first so the road wins", but the resolved map has `cave_floor` winning on 17 tiles. Wants a deterministic order (`IndexMap`, or a `Vec` of layers).
+- Spawn-group `behavior:` blocks in map YAML accept `step_interval_seconds` / `detect_distance_tiles` / `disengage_distance_tiles`, but `MapBehavior` only has `bounds`, so serde silently ignores them. All 9 `overworld.yaml` groups author them to no effect — either wire them up or delete them.
 
 ### Gameplay polish
 - Introduce richer collision semantics than a single blocking flag.
 - Generalize the new NPC behavior system so mobs/NPCs can share the same behavior component layer.
-- Companion mechanic + timed summon spell shipped: `Faction` (PlayerSide/MonsterSide) + `Companion` components, faction-aware NPC targeting (`nearest_visible_enemy`), companion kill credit via `DamageSource::OwnedByPlayer`, and the `summons_creature` spell effect (`summon_wolf`). Deferred follow-ups: (a) a hard owner-distance leash so a companion can't chase an enemy arbitrarily far from its owner (today only the follow-when-idle pull recenters it); (b) an "owned-by-you" visual tint on the client (projection currently sends no owner info); (c) monster-owned companions are supported by the generic path (`Companion.owner_player = None`) but no NPC that summons is authored yet; (d) summon cap is hard-coded to 1/owner — no per-spell cap field.
+- Companion mechanic + timed summon spell shipped: `Faction` (PlayerSide/MonsterSide) + `Companion` components, faction-aware NPC targeting (`nearest_visible_enemy`), companion kill credit via `DamageSource::OwnedByPlayer`, and the `summons_creature` spell effect (`summon_wolf`). Deferred follow-ups: (a) a hard owner-distance leash so a companion can't chase an enemy arbitrarily far from its owner (today only the follow-when-idle pull recenters it); (b) an "owned-by-you" visual tint on the client (projection currently sends no owner info); ~~(c) monster-owned companions are supported by the generic path (`Companion.owner_player = None`) but no NPC that summons is authored yet~~ — **shipped**: `spawn_summoned_creature` now takes `owner_player: Option<PlayerId>` + an explicit `Faction`, NPC casts honor `summons_creature` through the `PendingNpcSummons` deferred queue (`apply_pending_npc_summons`), and Cinderjack / The Deeplistener both summon adds; (d) summon cap is hard-coded to 1/owner — no per-spell cap field. Note the cap despawns *pre-existing* companions before the `count` loop, so `count: 3` correctly yields three adds and a recast replaces them.
 - Decide how much scripting authority the embedded Python console should keep once server-authoritative logic exists.
 
 ## Risks

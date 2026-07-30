@@ -1,0 +1,19 @@
+# Knell, phase two (below half health): it stops being polite and sings the
+# whole chord at once, and the room rings. This is the module's proof that an
+# NPC AoE now damages everyone in the blast rather than only the current
+# target — radius 3, blooming ring by ring from the impact.
+name: Full Peal
+incantation: "*every shard sounds at once*"
+mana_cost: 0.0
+targeting: targeted_tile
+range_tiles: 8
+effects:
+  damage: "3d6+foc_mod+level/3"
+  damage_type: frost
+  aoe:
+    radius_tiles: 3
+    vfx_on_tile: frost_hit
+    pattern:
+      kind: spread
+      ring_delay_seconds: 0.08
+  vfx_on_target_hit: frost_hit

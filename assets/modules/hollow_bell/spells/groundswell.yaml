@@ -1,0 +1,18 @@
+# Not an attack so much as a consequence: something that size shifting its
+# weight, and the floor of the Undercroft answering. Wide, slow, and the
+# reason you do not fight the Deeplistener standing still.
+name: Groundswell
+incantation: "*the floor heaves*"
+mana_cost: 0.0
+targeting: targeted_tile
+range_tiles: 6
+effects:
+  damage: "3d8+str_mod"
+  damage_type: earth
+  aoe:
+    radius_tiles: 2
+    vfx_on_tile: earth_hit
+    pattern:
+      kind: spread
+      ring_delay_seconds: 0.12
+  vfx_on_target_hit: earth_hit

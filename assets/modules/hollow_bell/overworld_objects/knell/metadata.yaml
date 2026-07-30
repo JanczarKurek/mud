@@ -1,0 +1,103 @@
+extends: npc
+name: Knell, the Seam-Singer
+description: A floating cluster of pale crystalline shards turning slowly about a person's height of empty air, cold blue light in the gaps. It has no body. It has been listening to the seam for so long that it has learned to answer.
+level: 11
+stats:
+  strength: 8
+  agility: 15
+  constitution: 16
+  willpower: 17
+  charisma: 10
+  focus: 18
+# BOSS BUDGET: standard L11 is ~141 HP / ~16.3 mean damage. This resolves to
+# ~377 HP (x2.7). The basic ranged attack is deliberately AT standard budget
+# (~16 mean) rather than above it — Knell is a caster, and its real output is
+# `shard_song` (~14) and `full_peal` (~17.5 over a radius-3 blast).
+damage: "2d8+7"
+attack_profile:
+  kind: ranged
+  damage_type: frost
+base_range_tiles: 8
+hp: "4d12+290+constitution*4"
+armor: 2
+dodge_bonus: 2
+# Phase mechanic: the condition system used as a phase gate. Above half health
+# it picks you apart one shard at a time (single-target `shard_song`). Below
+# half it stops being polite and sings the whole chord at once — `full_peal`
+# is a real AoE, which only damages the party now that NPC casts fan out.
+# First-match-wins ordering means the phase-2 entry must come first.
+spellcasting:
+  spells:
+    - spell_id: hollow_bell/full_peal
+      cooldown_seconds: 14.0
+      target: target_tile
+      conditions:
+        - !self_hp_below_fraction 0.5
+        - !target_within_range 8
+    - spell_id: hollow_bell/shard_song
+      cooldown_seconds: 5.0
+      target: target
+      conditions:
+        - !target_within_range 8
+    - spell_id: hollow_bell/discord
+      cooldown_seconds: 20.0
+      target: target
+      conditions:
+        - !target_within_range 8
+        - !target_without_effect slow
+loot:
+  corpse_despawn_seconds: 600
+  drops:
+    - type_id: hollow_bell/knells_shard
+      quantity: 1
+      probability: 1.0
+    - type_id: hollow_bell/singing_pick
+      quantity: 1
+      probability: 1.0
+    - type_id: gold_coin
+      quantity: 3
+      probability: 1.0
+    - type_id: silver_coin
+      quantity: "uniform(5, 30)"
+      probability: 1.0
+    - type_id: hollow_bell/bell_bronze_ore
+      quantity: "uniform(1, 4)"
+      probability: 1.0
+    - type_id: frost_lance_scroll
+      quantity: 1
+      probability: 0.5
+npc_behavior:
+  step_interval_seconds: 0.7
+  detect_distance_tiles: 12
+  disengage_distance_tiles: 26
+barks:
+  aggro:
+    - "*the hum climbs a tone. Then another.*"
+    - "*every shard turns to face you at once*"
+  mutter:
+    - "*holds a chord, patiently*"
+    - "*one shard drifts loose, and rejoins*"
+render:
+  debug_color: [196, 226, 236]
+  debug_size: 1.05
+  sprite_path: modules/hollow_bell/overworld_objects/knell/sprite.png
+  y_sort: true
+  animation:
+    sheet_path: modules/hollow_bell/overworld_objects/knell/sheet.png
+    frame_width: 64
+    frame_height: 80
+    sheet_columns: 4
+    sheet_rows: 2
+    clips:
+      idle:
+        row: 0
+        start_col: 0
+        frame_count: 4
+        fps: 4.0
+        looping: true
+      walk:
+        row: 1
+        start_col: 0
+        frame_count: 4
+        fps: 6.0
+        looping: true

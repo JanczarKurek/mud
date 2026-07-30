@@ -1,0 +1,334 @@
+# ============================================================================
+# THE HOLLOW BELL — 3/5: THE BELL FOUNDRY (levels 6-9)
+#
+# A cathedral cut square out of the rock. The great hall (west, x1-28) is the
+# casting floor: packed sand, frozen runner-channels, and the furnace — which
+# is the crafting station for `recast_hollow_bell`. The east store-rooms
+# (x30-38) hold the tallow, reached through two doorways at y9 and y16. The
+# north end (y20-24) is the founder's own quarter.
+#
+# BOSS: Cinderjack, the Tallow King, hand-placed on the casting floor with no
+# spawn group, so he stays dead. Below two-thirds health he sloughs adds
+# (`slough_tallow`) — the mechanic the NPC-summon engine change exists for.
+#
+# Note: the founder's quarter is a plain ground-floor room, not the raised
+# gantry the fiction implies. Stacked floors are a paused PoC
+# (docs/stacked_floors_plan.md) and this module does not need them.
+#
+# Exits: `foundry_up` back to the Winding Works; `seam_descent` down to the
+# Singing Seam.
+#
+# Grid note: text row 0 = y0 = SOUTH edge, so this file reads bottom-up.
+# ============================================================================
+authored_id: hollow_bell/foundry
+permanence: persistent
+width: 40
+height: 26
+fill_floor_type: cave_floor
+lighting:
+  # Cold since the shift stopped. Lighting the furnace throws real light
+  # (radius 8) across the casting floor — a genuine before/after.
+  outdoor_ambient: [40, 34, 32]
+  indoor_ambient: [34, 28, 26]
+  has_day_night: false
+
+legend:
+  "#": cave_wall
+
+tiles: |
+  ########################################
+  #......................................#
+  #..####..........................####..#
+  #..####..........................####..#
+  #......................................#
+  #............................#.........#
+  #............................#.........#
+  #............................#.........#
+  #............................#.........#
+  #......................................#
+  #............................#.........#
+  #............................#.........#
+  #............................#.........#
+  #............................#.........#
+  #............................#.........#
+  #............................#.........#
+  #......................................#
+  #............................#.........#
+  #............................#.........#
+  #............................#.........#
+  #......................................#
+  #..######################......######..#
+  #..######################......######..#
+  #......................................#
+  #......................................#
+  ########################################
+
+floors:
+  # The casting floor proper is sand; approach, store-rooms and the founder's
+  # quarter are flagstone.
+  sand:
+    rects:
+      - { x: 1, y: 5, w: 28, h: 15 }
+  flagstone:
+    rects:
+      - { x: 1, y: 1, w: 38, h: 4 }
+      - { x: 1, y: 20, w: 38, h: 5 }
+      - { x: 30, y: 5, w: 9, h: 15 }
+
+portals:
+  - id: foundry_up
+    source: { x: 4, y: 1 }
+    destination_space_id: hollow_bell/winding_works
+    destination_tile: { x: 39, y: 14 }
+    destination_permanence: persistent
+
+  - id: seam_descent
+    source: { x: 30, y: 23 }
+    destination_space_id: hollow_bell/singing_seam
+    destination_tile: { x: 4, y: 3 }
+    destination_permanence: persistent
+
+spawn_groups:
+  # Wax wights in the east store-rooms, where the tallow is. Dangerous to
+  # loot, which is the point — `wick_and_wax` sends you in here.
+  - id: foundry_wights
+    template: hollow_bell/wax_wight
+    max_count: 5
+    respawn_mean_seconds: 140.0
+    area:
+      bounds: { min_x: 30, min_y: 5, max_x: 38, max_y: 19 }
+    behavior:
+      kind: roam_and_chase
+      bounds: { min_x: 29, min_y: 5, max_x: 38, max_y: 19 }
+
+  - id: foundry_drips
+    template: hollow_bell/tallow_drip
+    max_count: 6
+    respawn_mean_seconds: 70.0
+    area:
+      bounds: { min_x: 2, min_y: 6, max_x: 27, max_y: 19 }
+    behavior:
+      kind: roam_and_chase
+      bounds: { min_x: 1, min_y: 5, max_x: 28, max_y: 19 }
+
+  # The pour crew, still at it, in the southern approach.
+  - id: foundry_skeletons
+    template: skeleton
+    max_count: 3
+    respawn_mean_seconds: 180.0
+    area:
+      bounds: { min_x: 8, min_y: 1, max_x: 32, max_y: 4 }
+    behavior:
+      kind: roam_and_chase
+      bounds: { min_x: 1, min_y: 1, max_x: 38, max_y: 4 }
+
+objects:
+  # ── Arrival from the works (southern approach) ──
+  - type: portal_arch
+    placement: { x: 4, y: 1 }
+  - type: torch
+    placement:
+      - { x: 3, y: 1 }
+      - { x: 6, y: 1 }
+  - id: foundry_arrival_sign
+    type: sign_post
+    placement: { x: 5, y: 1 }
+    properties:
+      text: "THE BELL FOUNDRY. Aprons on the hooks. The sand is swept EVERY shift, no exceptions, I am not asking again. — A. Bellow, Founder"
+
+  # ── THE FURNACE — crafting station for the re-cast ──
+  - id: foundry_the_furnace
+    type: hollow_bell/foundry_furnace
+    placement: { x: 14, y: 12 }
+    facing: south
+  - type: barrel
+    placement:
+      - { x: 12, y: 12 }
+      - { x: 16, y: 12 }
+  - type: crate
+    placement:
+      - { x: 9, y: 11 }
+      - { x: 19, y: 11 }
+
+  # ── CINDERJACK. No spawn group: dead is dead, and the clapper is a
+  # guaranteed corpse drop. Leash covers the hall but not the doorways, so
+  # the store-rooms stay a separate fight. ──
+  - id: foundry_cinderjack
+    type: hollow_bell/cinderjack
+    placement: { x: 14, y: 16 }
+    facing: south
+    behavior:
+      kind: roam_and_chase
+      bounds: { min_x: 2, min_y: 5, max_x: 27, max_y: 19 }
+
+  # His hoard, heaped where he sits. Locked — he has been very firm with the
+  # goblins about it.
+  - type: iron_chest
+    placement: { x: 18, y: 18 }
+    properties:
+      state: locked
+    contents:
+      - type: gold_coin
+        quantity: 3
+      - type: hollow_bell/greater_heal_potion
+        quantity: 2
+      - type: chain_helmet
+      - type: hollow_bell/tallow_wax
+        quantity: 4
+
+  # ── The frozen pour: runner-channels set where they stood ──
+  - type: stone
+    placement:
+      - { x: 8, y: 8 }
+      - { x: 9, y: 8 }
+      - { x: 10, y: 8 }
+      - { x: 21, y: 15 }
+      - { x: 22, y: 15 }
+
+  - type: book
+    placement: { x: 11, y: 7 }
+    properties:
+      title: "Scratched Into The Sand-Floor"
+      author_name: "(no hand you recognise)"
+      text: |
+        Somebody has drawn in the packed sand with a finger, over and over,
+        in the same place, until it has worn a groove.
+
+        It is a crown. Just a crown, drawn badly, the way a child draws one
+        — a band and five points, none of them the same height.
+
+        Around it, dozens of times, at every angle, pressed deep:
+
+        MINE. MINE. MINE. MINE. MINE.
+
+        The last few are smeared. Something warm was dripping while it wrote.
+
+  # ── The east store-rooms: where the whole problem started ──
+  - type: barrel
+    placement:
+      - { x: 33, y: 6 }
+      - { x: 34, y: 6 }
+      - { x: 35, y: 6 }
+      - { x: 33, y: 7 }
+      - { x: 35, y: 8 }
+      - { x: 34, y: 18 }
+  - type: crate
+    placement:
+      - { x: 31, y: 12 }
+      - { x: 37, y: 13 }
+  - type: torch
+    placement:
+      - { x: 31, y: 5 }
+      - { x: 37, y: 19 }
+
+  - type: book
+    placement: { x: 34, y: 7 }
+    properties:
+      title: "Candle Invoices, Bundled"
+      author_name: "the foundry, sixty years of it"
+      text: |
+        Sixty years of invoices on a spike, and the same three lines over and
+        over in a dozen different hands.
+
+          Tallow, rendered, 40 stone .......... 2 pounds 8 shillings
+          Wick, cotton, 200 fathom ............ 14 shillings
+          Rendering, labour ................... 1 pound 2 shillings
+
+        And, once a year, in among them, always in the same place in the
+        bundle, always unremarked:
+
+          Rope, bell-shift, replacement ....... 9 shillings
+
+        Nine shillings a year, for two hundred years, to keep one rope good
+        enough that somebody could climb down in the dark and do a small dull
+        thing on time.
+
+        That is what it cost. It is written here in the same hand as the
+        candles because it was the same kind of thing.
+
+  # A cache the wights walk past twice an hour. Perception-gated.
+  - type: iron_chest
+    placement: { x: 38, y: 9 }
+    properties:
+      hidden_dc: "16"
+    contents:
+      - type: hollow_bell/deep_iron_shard
+        quantity: 2
+      - type: gold_coin
+        quantity: 2
+      - type: empower_weapon_scroll
+
+  # ── The founder's quarter, north end ──
+  - type: table
+    placement: { x: 18, y: 24 }
+  - type: bookshelf
+    placement: { x: 20, y: 24 }
+    facing: south
+  - type: torch
+    placement:
+      - { x: 16, y: 23 }
+      - { x: 22, y: 23 }
+  - type: bed
+    placement: { x: 6, y: 24 }
+    facing: east
+  - type: side_table
+    placement: { x: 6, y: 23 }
+    facing: south
+
+  - type: book
+    placement: { x: 17, y: 24 }
+    properties:
+      title: "Bellow's Book, the First Part"
+      author_name: "A. Bellow, Founder"
+      text: |
+        Being a plain account, set down because nobody else will.
+
+        We did not put the thing under the moor to sleep. I want that written
+        where the next founder will find it, because within three generations
+        somebody will decide that we did, and be proud of it.
+
+        We found it sleeping. Rook's grandfather broke into the round chamber
+        chasing a seam that turned out not to be there, and he stood on a
+        floor that was warm, and he came up and did not speak for two days.
+
+        We did not know what kept it under. We only knew that it stirred when
+        the delve was quiet and settled when we were noisy. It took four bad
+        years and two funerals to narrow "noisy" down to "a note, held, low,
+        at the same hour."
+
+        That is the whole of the discovery. There was no revelation and
+        nobody was chosen. We kept records and buried our dead, and
+        eventually the records said something.
+
+  - type: book
+    placement: { x: 19, y: 24 }
+    properties:
+      title: "Bellow's Book, the Second Part"
+      author_name: "A. Bellow, Founder"
+      text: |
+        On the casting itself.
+
+        Five parts of the seam-bronze to one of the black iron, and the black
+        iron in the crown only, where the note is born. I cannot tell you why
+        the black iron. I know that a bell without it rings true for a season
+        and then goes idle, and I have poured two that did, and I have
+        watched what an idle bell buys you.
+
+        The crown wants the deep iron. Write it in the book. Do not write
+        why — because you do not know why, and a founder who writes down a
+        reason she has invented will be believed.
+
+        My hands are not what they were. The next pour will be my last, and I
+        have decided what to do about that, and I shall not write that part
+        down either, because Tessy reads this book.
+
+  # ── The way down, in the north-east ──
+  - type: portal_arch
+    placement: { x: 30, y: 23 }
+  - type: torch
+    placement: { x: 29, y: 23 }
+  - id: foundry_down_sign
+    type: sign_post
+    placement: { x: 31, y: 23 }
+    properties:
+      text: "DOWN TO THE SEAM. Wadding for the ears in the box on the left — you WILL want it. The hum gets into your teeth and stays a week. Nobody past the seam without the captain's word."

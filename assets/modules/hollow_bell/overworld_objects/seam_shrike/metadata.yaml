@@ -1,0 +1,68 @@
+extends: npc
+name: Seam Shrike
+description: A crow-sized shrike whose flight feathers have gone to splinters of pale bell-bronze. It throws them. It also screams on exactly the note the seam hums, which is by some margin the worst part.
+level: 10
+stats:
+  strength: 10
+  agility: 17
+  constitution: 12
+  willpower: 10
+  charisma: 5
+  focus: 12
+# Budget: mean damage ≈ 2+1.3·10 = 15; mean HP ≈ 20+11·10 = 130.
+damage: "2d6+8"
+attack_profile:
+  kind: ranged
+  damage_type: pierce
+base_range_tiles: 7
+ammo_type: arrow
+hp: "2d10+70+constitution*3"
+dodge_bonus: 2
+loot:
+  corpse_despawn_seconds: 60
+  drops:
+    - type_id: hollow_bell/bell_bronze_ore
+      quantity: 1
+      probability: 0.35
+    - type_id: silver_coin
+      quantity: "uniform(1, 4)"
+      probability: 1.0
+    - type_id: arrow
+      quantity: "uniform(1, 8)"
+      probability: 0.4
+npc_behavior:
+  step_interval_seconds: 0.75
+  detect_distance_tiles: 10
+  disengage_distance_tiles: 16
+  perception: 3
+barks:
+  aggro:
+    - "*a scream on one clear ringing note*"
+    - "*bronze feathers rattle like coins*"
+  mutter:
+    - "*a single struck-metal chirp*"
+    - "*shifts on the roost, humming*"
+render:
+  debug_color: [214, 224, 206]
+  debug_size: 0.7
+  sprite_path: modules/hollow_bell/overworld_objects/seam_shrike/sprite.png
+  y_sort: true
+  animation:
+    sheet_path: modules/hollow_bell/overworld_objects/seam_shrike/sheet.png
+    frame_width: 32
+    frame_height: 48
+    sheet_columns: 4
+    sheet_rows: 2
+    clips:
+      idle:
+        row: 0
+        start_col: 0
+        frame_count: 4
+        fps: 3.0
+        looping: true
+      walk:
+        row: 1
+        start_col: 0
+        frame_count: 4
+        fps: 8.0
+        looping: true

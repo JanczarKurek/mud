@@ -1,0 +1,72 @@
+extends: npc
+name: Sump Crawler
+description: A pale segmented thing the length of an arm, wet translucent shell, no eyes at all and a great many thin white legs. It lives in the flooded low workings and resents every light it has never seen.
+level: 5
+stats:
+  strength: 12
+  agility: 13
+  constitution: 12
+  willpower: 6
+  charisma: 3
+  focus: 6
+# Budget: mean damage ≈ 2+1.3·5 ≈ 8.5; mean HP ≈ 20+11·5 ≈ 75.
+damage: "1d8+4"
+attack_profile:
+  kind: melee
+  damage_type: poison
+  on_hit_effects:
+    - kind: poisoned
+      chance: 0.25
+      magnitude: 1.5
+      seconds: 6.0
+      secondary_magnitude: 1.0
+hp: "2d8+38+constitution*2"
+armor: 1
+loot:
+  corpse_despawn_seconds: 45
+  drops:
+    - type_id: copper_coin
+      quantity: "uniform(1, 6)"
+      probability: 1.0
+    - type_id: green_herb
+      quantity: 1
+      probability: 0.25
+    - type_id: poison_flask
+      quantity: 1
+      probability: 0.15
+npc_behavior:
+  step_interval_seconds: 0.85
+  detect_distance_tiles: 7
+  disengage_distance_tiles: 10
+  perception: 2
+barks:
+  aggro:
+    - "*a dry clicking, very fast*"
+    - "*something long uncoils in the water*"
+  mutter:
+    - "*legs ticking on wet stone*"
+    - "*a slow ripple*"
+render:
+  debug_color: [206, 198, 176]
+  debug_size: 0.85
+  sprite_path: modules/hollow_bell/overworld_objects/sump_crawler/sprite.png
+  y_sort: true
+  animation:
+    sheet_path: modules/hollow_bell/overworld_objects/sump_crawler/sheet.png
+    frame_width: 32
+    frame_height: 48
+    sheet_columns: 4
+    sheet_rows: 2
+    clips:
+      idle:
+        row: 0
+        start_col: 0
+        frame_count: 4
+        fps: 3.0
+        looping: true
+      walk:
+        row: 1
+        start_col: 0
+        frame_count: 4
+        fps: 8.0
+        looping: true

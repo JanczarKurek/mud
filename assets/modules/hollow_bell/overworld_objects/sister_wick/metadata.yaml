@@ -1,0 +1,97 @@
+extends: npc
+name: Sister Wick
+description: A small brown mouse in undyed homespun, sleeves pinned back, a lit candle stub tucked behind one ear. She has been awake for most of eleven days and is being extremely organised about it.
+level: 5
+dialog_node: HollowBellWick
+stats:
+  strength: 8
+  agility: 12
+  constitution: 11
+  willpower: 15
+  charisma: 14
+  focus: 13
+damage: "1d4+1"
+attack_profile:
+  kind: melee
+  damage_type: blunt
+hp: "2d8+45+constitution*2"
+shopkeeper:
+  wares:
+    - type_id: potion
+      price_copper: 48
+      stock: 6
+    - type_id: hollow_bell/miners_draught
+      price_copper: 40
+      stock: 6
+    - type_id: hollow_bell/pit_tea
+      price_copper: 30
+      stock: 8
+    - type_id: hollow_bell/tallow_candle
+      price_copper: 22
+      stock: 12
+    - type_id: lesser_heal_scroll
+      price_copper: 90
+      stock: 3
+    - type_id: cure_wounds_scroll
+      price_copper: 260
+      stock: 2
+    - type_id: bless_scroll
+      price_copper: 110
+      stock: 2
+    - type_id: apple
+      price_copper: 5
+      stock: infinite
+    - type_id: green_herb
+      price_copper: 12
+      stock: infinite
+npc_behavior:
+  hostile: false
+  step_interval_seconds: 1.2
+  idle_pause_chance: 0.6
+  detect_distance_tiles: 4
+  disengage_distance_tiles: 6
+chatter:
+  radius_tiles: 4
+  greetings:
+    - "Sit down before you fall down."
+    - "Have you eaten?"
+    - "Kettle's on."
+  topics:
+    - - "I've four candles left and a mine full of tallow."
+      - "That's a grim sort of arithmetic, Sister."
+      - "It's the only sort on offer."
+    - - "The boy's not slept either."
+      - "He's nineteen. He doesn't know he's allowed to."
+      - "Then somebody had better tell him."
+    - - "Do you pray, Captain?"
+      - "I keep a rota."
+      - "That'll do. That's most of it, really."
+barks:
+  mutter:
+    - "*rolls a bandage tight*"
+    - "*mutters over a wick*"
+    - "Steady, steady."
+render:
+  debug_color: [156, 132, 104]
+  debug_size: 0.82
+  sprite_path: modules/hollow_bell/overworld_objects/sister_wick/sprite.png
+  y_sort: true
+  animation:
+    sheet_path: modules/hollow_bell/overworld_objects/sister_wick/sheet.png
+    frame_width: 32
+    frame_height: 48
+    sheet_columns: 4
+    sheet_rows: 2
+    clips:
+      idle:
+        row: 0
+        start_col: 0
+        frame_count: 4
+        fps: 3.0
+        looping: true
+      walk:
+        row: 1
+        start_col: 0
+        frame_count: 4
+        fps: 8.0
+        looping: true

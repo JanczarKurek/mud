@@ -268,9 +268,11 @@ pub struct SpellEffects {
     /// Spawn a transient world object at the cast location.
     #[serde(default)]
     pub spawns_object: Option<SpawnObjectSpec>,
-    /// Summon a timed friendly creature (a companion) that fights on the
-    /// caster's side. Its kills credit the caster. Only meaningful for
-    /// `targeted_tile` spells (the creature appears at the target tile).
+    /// Summon a timed creature (a companion) that fights on the caster's side.
+    /// A player's summon credits its kills to them. Honored for both player
+    /// and NPC casts: the creature appears at the target tile, or on the
+    /// caster's own tile for an untargeted/self cast — which is how a boss
+    /// drops adds around itself.
     #[serde(default)]
     pub summons_creature: Option<SummonSpec>,
     /// Deal `damage` to every entity within `aoe.radius_tiles` Chebyshev
@@ -367,8 +369,10 @@ pub struct SpawnObjectSpec {
 
 /// A timed friendly creature summoned by a spell. The creature is realized as a
 /// full hostile NPC (so it acquires and fights enemies through the normal AI),
-/// then tagged `Faction::PlayerSide` + `Companion` so it fights *for* the caster
-/// and its kills are credited to them. It despawns when its `lifetime_seconds`
+/// then tagged with the caster's `Faction` + `Companion` so it fights *for* the
+/// caster. A player's summon is `PlayerSide` and its kills are credited to them;
+/// an NPC's summon is `MonsterSide` with `owner_player: None` (a boss's adds).
+/// It despawns when its `lifetime_seconds`
 /// `Ttl` expires (or when the caster dies). One companion per owner: re-casting
 /// replaces the previous summon.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

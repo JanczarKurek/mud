@@ -1,0 +1,18 @@
+extends: consumable
+name: Greater Heal Potion
+weight: 0.5
+max_stack_size: 5
+description: A heavy cut-glass flask of deep red liquid, stoppered and wired with silver. Sister Wick's best, and she has very few, and she will notice if you waste one.
+use_effects:
+  restore_health: 80.0
+use_texts:
+  - You drink the flask down. Deep, immediate warmth.
+  - The red draught closes what was open.
+  - You feel the worst of it let go.
+use_on_texts:
+  - You try to get the flask into {target}.
+render:
+  z_index: 0.24
+  debug_color: [172, 32, 44]
+  debug_size: 0.48
+  sprite_path: modules/hollow_bell/overworld_objects/greater_heal_potion/sprite.png

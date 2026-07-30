@@ -1,0 +1,228 @@
+# ============================================================================
+# THE HOLLOW BELL — 5/5: THE UNDERCROFT (levels 12-14)
+#
+# The bottom. A round chamber older than the mine by a very long way — the
+# badgers did not cut this, they broke into it — with a floor of fitted black
+# stone worn into a shallow bowl by something enormous turning over in its
+# sleep, over and over, for centuries.
+#
+# The cracked Hollow Bell hangs at the centre. Grandam Bellow is at the frame,
+# and has been for two hundred years.
+#
+# BOSS: The Deeplistener. Hand-placed, no spawn group. Blind — its
+# `npc_behavior` sets `requires_line_of_sight: false`, because it hears you.
+# Below half health it tears more of its dreaming loose (`hollow_wake`
+# summons Hollow Spawn) and the floor answers when it moves (`groundswell`).
+#
+# TWO ENDINGS: kill it, or hand Grandam Bellow the re-cast bell and ring it.
+# The ring path runs through the HollowBellGrandam Yarn node into
+# `quests/the_deeplistener.py` via <<quest_command ... "ring">>.
+#
+# Exit: `undercroft_up` back to the Singing Seam. There is nothing below this.
+#
+# Grid note: text row 0 = y0 = SOUTH edge, so this file reads bottom-up.
+# ============================================================================
+authored_id: hollow_bell/undercroft
+permanence: persistent
+width: 34
+height: 28
+fill_floor_type: flagstone
+lighting:
+  # The darkest room in the module. The bell-scars on the Deeplistener's
+  # flanks are most of the light there is.
+  outdoor_ambient: [26, 26, 34]
+  indoor_ambient: [22, 22, 30]
+  has_day_night: false
+
+legend:
+  "#": cave_wall
+
+tiles: |
+  ##################################
+  #############........#############
+  ##########..............##########
+  ########..................########
+  ######......................######
+  #####........................#####
+  ####..........................####
+  ###............................###
+  ##..............................##
+  ##..............................##
+  #................................#
+  #................................#
+  #................................#
+  #................................#
+  #................................#
+  #................................#
+  #................................#
+  #................................#
+  ##..............................##
+  ##..............................##
+  ###............................###
+  ####..........................####
+  #####........................#####
+  ######......................######
+  ########..................########
+  ##########..............##########
+  #############........#############
+  ##################################
+
+floors:
+  # Fitted black stone, worn into a bowl. Whoever laid this floor was not the
+  # badgers and was not recent — and they laid it *around* the sleeper.
+  checkered_marble:
+    rects:
+      - { x: 10, y: 10, w: 14, h: 8 }
+
+portals:
+  # Back up to the seam. Two tiles clear of the arrival tile so you cannot
+  # bounce straight back the moment you land.
+  - id: undercroft_up
+    source: { x: 22, y: 3 }
+    destination_space_id: hollow_bell/singing_seam
+    destination_tile: { x: 37, y: 27 }
+    destination_permanence: persistent
+
+spawn_groups:
+  # A slow trickle around the rim. Deliberately small — the Deeplistener
+  # makes its own adds below half health, and the room should not already be
+  # full when that happens.
+  - id: undercroft_spawn
+    template: hollow_bell/hollow_spawn
+    max_count: 3
+    respawn_mean_seconds: 220.0
+    area:
+      bounds: { min_x: 3, min_y: 6, max_x: 30, max_y: 9 }
+    behavior:
+      kind: roam_and_chase
+      bounds: { min_x: 1, min_y: 4, max_x: 32, max_y: 23 }
+
+objects:
+  # ── Arrival ──
+  - type: portal_arch
+    placement: { x: 22, y: 3 }
+  - type: torch
+    placement:
+      - { x: 19, y: 4 }
+      - { x: 23, y: 4 }
+  - id: undercroft_arrival_sign
+    type: sign_post
+    placement: { x: 21, y: 4 }
+    properties:
+      text: "BELL-SHIFT. Down the steps, ring it once, come back up. Do not stand about. Do not take a light off the rope. Do not, whatever else you do, wait to hear whether anything answers."
+
+  # ── THE BELL, at the centre of the bowl ──
+  - id: undercroft_the_bell
+    type: hollow_bell/cracked_bell
+    placement: { x: 16, y: 13 }
+
+  # Grandam Bellow, at the frame. Two hundred years, and the last three weeks
+  # have been the annoying ones.
+  - id: undercroft_grandam
+    type: hollow_bell/grandam_bellow
+    placement: { x: 17, y: 13 }
+    facing: west
+
+  - type: torch
+    placement:
+      - { x: 14, y: 11 }
+      - { x: 19, y: 11 }
+      - { x: 14, y: 16 }
+      - { x: 19, y: 16 }
+
+  # ── THE DEEPLISTENER. No spawn group: it stays dead, or it stays asleep. ──
+  - id: undercroft_deeplistener
+    type: hollow_bell/deeplistener
+    placement: { x: 16, y: 21 }
+    facing: south
+    behavior:
+      kind: roam_and_chase
+      bounds: { min_x: 2, min_y: 4, max_x: 31, max_y: 24 }
+
+  # ── The rim: rubble, the founder's last things, and the fourth book ──
+  - type: stone
+    placement:
+      - { x: 6, y: 10 }
+      - { x: 7, y: 11 }
+      - { x: 27, y: 16 }
+      - { x: 26, y: 17 }
+      - { x: 11, y: 22 }
+      - { x: 22, y: 22 }
+
+  - type: tombstone
+    placement: { x: 8, y: 13 }
+    properties:
+      title: "ANSEL BELLOW, FOUNDER"
+      text: |
+        ANSEL BELLOW
+        FOUNDER OF ASHEN HOLLOW
+
+        SHE POURED WHAT SHE MEANT
+
+        (Below, added much later, in a different chisel:)
+        and she is still down here doing it
+
+  - type: book
+    placement: { x: 9, y: 13 }
+    properties:
+      title: "Bellow's Book, the Fourth Part"
+      author_name: "A. Bellow, Founder"
+      text: |
+        The last page, and my hand is very bad now, so I shall be brief.
+
+        A bell that must ring for two hundred years wants somebody in it who
+        minds whether it does. I have thought about this for a long time and
+        I cannot make the objection stick.
+
+        So: I shall go down with the pour, and they will hang me at the
+        bottom of the world, and every dawn some badger who was not born
+        when I died will climb down a rope and hit me with an iron bar, and
+        I shall be glad of it.
+
+        Tell Tessy it was not sad. Tell her it was the most *sensible* thing
+        I ever did, which is the highest praise our family has.
+
+        And tell whoever comes after — because somebody always comes after,
+        that is the entire lesson of this book — that the magic is not in
+        the bronze and it is not in me.
+
+        It is in the coming down at dawn. Two hundred years of ordinary
+        people doing a small dull thing reliably, on time, without being
+        thanked, because it wanted doing.
+
+        That is all it has ever been. Do not let them make it grander. If
+        they make it grander they will stop doing it.
+
+  - type: book
+    placement: { x: 25, y: 13 }
+    properties:
+      title: "The Fitted Floor"
+      author_name: "M. Coalbright — a note left three weeks ago"
+      text: |
+        Left weighted under a stone at the rim, in the pit-captain's hand,
+        written the day after the bell cracked.
+
+        Came down myself. Wanted to see it.
+
+        The crack runs lip to crown and it is not going to be mended, and
+        the boy Ashfoot is right that it wants recasting, and I have not
+        told him yet that I already know that.
+
+        Something else. I have been down this shaft four hundred times and
+        I never once looked at the floor.
+
+        It is fitted stone. Cut and laid, tight, no mortar, in a circle. We
+        did not do that. It was here.
+
+        Whoever laid it laid it *around* the thing. They knew it was there.
+        They knew what it was and they built it a floor and they went away
+        and they left us no note.
+
+        I have got nowhere pleasant with that thought and I have had three
+        weeks.
+
+  - type: crystal_cluster
+    placement:
+      - { x: 4, y: 16 }
+      - { x: 29, y: 11 }
+      - { x: 16, y: 25 }

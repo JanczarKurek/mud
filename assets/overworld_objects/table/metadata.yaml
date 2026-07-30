@@ -4,6 +4,11 @@ name: Table
 description: A sturdy wooden table.
 rotatable: true
 render:
+  # Half-block furniture: you step up onto it (free auto-step, dz=1)
+  # rather than being stopped by it. `colliding` still comes from the
+  # `obstacle` base, so the flat step is blocked and the climb branch runs.
+  block_size: 1
+  walkable_surface: true
   z_index: 0.28
   debug_color: [140, 98, 56]
   debug_size: 1.0

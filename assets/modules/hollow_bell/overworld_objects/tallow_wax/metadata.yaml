@@ -1,0 +1,14 @@
+extends: pickup
+name: Sack of Tallow Wax
+weight: 1.5
+max_stack_size: 20
+description:
+  - text: A greasy grey-white lump of rendered tallow, wrapped in waxed cloth and string. It smells faintly of the foundry, and faintly of something the foundry was not supposed to be rendering.
+    stack_size: [1, 1]
+  - text: "{count_written} lumps of rendered tallow, bundled in waxed cloth."
+    stack_size: [2, ~]
+render:
+  z_index: 0.24
+  debug_color: [222, 214, 186]
+  debug_size: 0.5
+  sprite_path: modules/hollow_bell/overworld_objects/tallow_wax/sprite.png

@@ -1,4 +1,5 @@
 use std::collections::{HashMap, VecDeque};
+use std::path::PathBuf;
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
@@ -16,8 +17,8 @@ use crate::player::components::InventoryStack;
 use crate::world::components::{SpaceId, TilePosition};
 use crate::world::floor_definitions::{derive_floor_id, FloorFlavor, FloorTypeId};
 use crate::world::map_layout::{
-    AmbientKeyframe, MapBehavior, PortalDefinition, SpaceLightingDef, SpawnGroupDef, TileRectangle,
-    VendorStashDef,
+    AmbientKeyframe, MapBehavior, PortalDefinition, SpaceLightingDef, SpacePermanence,
+    SpawnGroupDef, TileRectangle, VendorStashDef,
 };
 
 /// Metadata about the space being edited.
@@ -28,6 +29,14 @@ pub struct EditorContext {
     pub map_width: i32,
     pub map_height: i32,
     pub fill_floor_type: String,
+    /// Carried through from the opened map so a save writes back what the
+    /// author declared. `starter_cellar` and `proving_grounds` are
+    /// `ephemeral`; hardcoding `persistent` on save silently converted them.
+    pub permanence: SpacePermanence,
+    /// File the space was loaded from, so a save overwrites that file rather
+    /// than guessing `assets/maps/<authored_id>.yaml` — module maps live under
+    /// `assets/modules/<module>/maps/`. `None` for maps created in-editor.
+    pub source_path: Option<PathBuf>,
 }
 
 /// Which broad tool is active in the editor.

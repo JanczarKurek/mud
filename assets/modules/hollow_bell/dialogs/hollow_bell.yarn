@@ -1,0 +1,412 @@
+title: HollowBellMarten
+---
+// The Hollow Bell — Marten Coalbright, pit-captain of Ashen Hollow.
+// Yarn node titles and variables share one project-wide namespace, so every
+// title here is HollowBell* and every variable is $hollow_bell_*.
+//
+// $last_skill_check_success / $last_skill_check_total are declared once in
+// assets/dialogs/_system_vars.yarn. Read them; never re-declare them.
+<<declare $hollow_bell_intro_done = false>>
+<<declare $hollow_bell_shaft_started = false>>
+<<declare $hollow_bell_shaft_ready = false>>
+<<declare $hollow_bell_shaft_done = false>>
+<<declare $hollow_bell_hettie_started = false>>
+<<declare $hollow_bell_hettie_found = false>>
+<<declare $hollow_bell_hettie_done = false>>
+<<declare $hollow_bell_marten_bonus = false>>
+
+<<if $hollow_bell_hettie_done>>
+    Marten: She's set up by the ore-sheds, selling rope at a price that ought to be a crime.
+    Marten: I've not told her to stop.
+    -> How are you holding up, Captain?
+        Marten: There's eleven names on that door and one of them's come off it.
+        Marten: That's not nothing. That's the first thing in three weeks that isn't nothing.
+    -> Anything else needs doing?
+        Marten: Talk to the fox. He's got a scheme and, God help us, it's a good one.
+<<elseif $hollow_bell_hettie_found>>
+    Marten: You found her.
+    -> She's alive. She's coming up.
+        Marten: ...
+        Marten: *He turns and looks very hard at the map for a while.*
+        Marten: Right. Right. Good.
+        <<give_item "silver_coin" 40>>
+        <<give_item "hollow_bell/pit_tea" 3>>
+        <<set $hollow_bell_hettie_done to true>>
+        Marten: Take that. Don't argue about it, I haven't the strength today.
+<<elseif $hollow_bell_hettie_started>>
+    Marten: Western gallery. Past the sump, where the rail bends.
+    Marten: If there's a body, I want to know. If there isn't — I want to know that more.
+<<elseif $hollow_bell_shaft_done>>
+    Marten: Haulage-way's clear. That's the first honest bit of news since the fifteenth.
+    Marten: There's something else. I've not asked anyone yet because asking makes it real.
+    -> Ask me.
+        Marten: Hettie Marl. Day-shift. Twenty-two years down.
+        Marten: There was a fall in the western gallery and no body was ever found, and I have been telling myself that means nothing at all.
+        Marten: *He is still looking at the map.*
+        Marten: I would like to know either way.
+        <<start_quest "hollow_bell/the_lost_shift">>
+        <<set $hollow_bell_hettie_started to true>>
+        Marten: Go careful. That's an order and I've no right to give it.
+    -> Not just now.
+        Marten: Aye. It'll keep. It's kept three weeks.
+<<elseif $hollow_bell_shaft_ready>>
+    Marten: You've been busy down there.
+    -> The haulage-way's clear.
+        Marten: *He checks something off a list without looking at it.*
+        Marten: Then you're not a fool, and you're not dead, and that puts you ahead of most.
+        <<give_item "potion" 2>>
+        <<give_item "silver_coin" 30>>
+        <<quest_command "hollow_bell/down_the_shaft" "complete">>
+        <<set $hollow_bell_shaft_done to true>>
+        Marten: Cage-lift's yours. Mind the third rung, it lies.
+    -> [Persuade] That was worth more than a handful of silver, Captain.  <<if skill_rank("Persuasion") > 0 and $hollow_bell_marten_bonus == false>>
+        <<skill_check "Persuasion" 15>>
+        <<set $hollow_bell_marten_bonus to true>>
+        <<if $last_skill_check_success>>
+            Marten: *A long pause.*
+            Marten: Aye. It was. I'm out of the habit of paying people properly; there's been nobody to pay.
+            <<give_item "potion" 2>>
+            <<give_item "silver_coin" 30>>
+            <<give_item "hollow_bell/miners_draught" 2>>
+            <<quest_command "hollow_bell/down_the_shaft" "complete">>
+            <<set $hollow_bell_shaft_done to true>>
+            Marten: Don't make a thing of it.
+        <<else>>
+            Marten: It was worth exactly what the rota says it's worth, and the rota's the only thing holding this camp together.
+            Marten: Take it or don't.
+        <<endif>>
+<<elseif $hollow_bell_shaft_started>>
+    Marten: Crawlers. Eight of them, at least, before I'll call it passable.
+    Marten: They're in the low workings where the water is. Blind, fast, and they don't much care for lamps.
+    -> How will I know them?
+        Marten: You'll know them. They're the length of your arm and they've too many legs and they hunt by feel.
+        Marten: Don't fight them in the water if you can help it.
+<<elseif $hollow_bell_intro_done>>
+    Marten: Still here, then.
+    -> Tell me about the delve.
+        Marten: Two hundred years of hole. Three floors of working and one floor of something older that we had the sense not to touch.
+        Marten: We rang a bell down there every dawn. Don't ask me why, my grandmother didn't know either. You just did it.
+        Marten: Three weeks ago it cracked, and the mine went quiet, and my people didn't come up.
+    -> I'll clear the haulage-way.
+        <<start_quest "hollow_bell/down_the_shaft">>
+        <<set $hollow_bell_shaft_started to true>>
+        Marten: Eight crawlers. Come back and tell me when it's done.
+<<else>>
+    Marten: *He looks you over once, the way you'd look over a rope you were about to trust.*
+    Marten: Marten Coalbright. Pit-captain, for what that's worth with no pit running.
+    Marten: You'll be here about the mine. Everyone's here about the mine.
+    <<set $hollow_bell_intro_done to true>>
+    -> What happened?
+        Marten: The bell cracked. Then the day-shift went down and didn't come up. Then the night-shift went down after them.
+        Marten: *He does not say the next part.*
+        Marten: I've eleven names written on the inside of that door, and I'll not have a twelfth because somebody was brave in the dark.
+        Marten: So: the haulage-way is full of things with teeth. Clear it, and we'll talk like people.
+        -> Then I'll clear it.
+            <<start_quest "hollow_bell/down_the_shaft">>
+            <<set $hollow_bell_shaft_started to true>>
+            Marten: Eight crawlers, at least. The low workings, where the water is.
+        -> I'll think about it.
+            Marten: Think fast or think elsewhere. The kettle's free either way.
+    -> Who else is here?
+        Marten: Sister Wick, who mends people and won't be told to sleep.
+        Marten: And a fox called Tobin who is nineteen years old and reckons he can re-cast the bell.
+        Marten: *A pause.*
+        Marten: He might be right. That's the worst of it.
+===
+
+title: HollowBellWick
+---
+<<declare $hollow_bell_wax_started = false>>
+<<declare $hollow_bell_wax_done = false>>
+<<declare $hollow_bell_wick_bonus = false>>
+
+<<if $hollow_bell_wax_done>>
+    Sister Wick: There's light in every gallery down to the foundry now. That's your doing.
+    -> How are the wounded?
+        Sister Wick: There are no wounded. That's rather the trouble. There were eleven people and now there are none of either kind.
+        Sister Wick: So I make candles. One does what one can do.
+    -> Anything you need?
+        Sister Wick: Sleep, which I shan't take. Sit down and have some tea instead, it's the same thing at a distance.
+<<elseif $hollow_bell_wax_started>>
+    <<if has_item("hollow_bell/tallow_wax", 6)>>
+        Sister Wick: Oh — oh, you *did*.
+        -> Six sacks of tallow, Sister.
+            <<take_item "hollow_bell/tallow_wax" 6>>
+            <<give_item "hollow_bell/tallow_candle" 6>>
+            <<give_item "cure_wounds_scroll" 1>>
+            <<give_item "silver_coin" 24>>
+            <<set $hollow_bell_wax_done to true>>
+            Sister Wick: *She is already sorting it.* Bless you. Bless you, truly. Take these — they burn steadier than they ought to, and I'll not tell you why.
+        -> [Persuade] I nearly cooked for that tallow, Sister.  <<if skill_rank("Persuasion") > 0 and $hollow_bell_wick_bonus == false>>
+            <<skill_check "Persuasion" 14>>
+            <<set $hollow_bell_wick_bonus to true>>
+            <<if $last_skill_check_success>>
+                Sister Wick: *She stops sorting.* You did, didn't you. I keep forgetting to look at people.
+                <<take_item "hollow_bell/tallow_wax" 6>>
+                <<give_item "hollow_bell/tallow_candle" 6>>
+                <<give_item "cure_wounds_scroll" 1>>
+                <<give_item "silver_coin" 24>>
+                <<give_item "hollow_bell/greater_heal_potion" 1>>
+                <<set $hollow_bell_wax_done to true>>
+                Sister Wick: Take the red flask as well. I've three. Don't waste it, and don't die, and I shall consider us square.
+            <<else>>
+                Sister Wick: We have all nearly cooked, dear, and the candles still want making.
+                Sister Wick: Bring them when you have them.
+            <<endif>>
+        -> Not yet — I need them for something.
+            Sister Wick: Then they're needed. Off you go.
+    <<else>>
+        Sister Wick: Six sacks of tallow, when you can. There's a great deal of it walking about the foundry at the moment.
+        Sister Wick: *She says this with enormous restraint.*
+    <<endif>>
+<<else>>
+    Sister Wick: Sit down before you fall down. Have you eaten?
+    -> I'm all right, Sister.
+        Sister Wick: You are not, but you're upright, and I've learned to take the win.
+    -> Can I help with anything?
+        Sister Wick: Candles.
+        Sister Wick: *She holds up four stubs.* That is what stands between this camp and the dark, and I have run out of tallow.
+        Sister Wick: There is, I observe, a great deal of tallow in that foundry. Some of it is walking about. I try not to think about the distinction.
+        -> I'll bring you six sacks.
+            <<start_quest "hollow_bell/wick_and_wax">>
+            <<set $hollow_bell_wax_started to true>>
+            Sister Wick: Six. Bless you. Mind the heat — what's down there burns from the inside, and it does not go out when you'd like it to.
+        -> I'll see what I can find.
+            Sister Wick: That's all any of us are doing. Kettle's on when you come back.
+<<endif>>
+===
+
+title: HollowBellHettie
+---
+<<declare $hollow_bell_hettie_rescued = false>>
+
+<<if $hollow_bell_hettie_rescued>>
+    Hettie: Buying, or gawping? Both's fine, gawping's free.
+    -> How did you survive down there?
+        Hettie: Sump-water and two candles and a very great deal of not panicking.
+        Hettie: Panicking uses air, see. Costs you nothing to be calm and it costs you everything not to be.
+        Hettie: *She grins.* Also I sang. Twenty-two years of pit songs and I got through maybe half.
+    -> Marten's glad you're up.
+        Hettie: Marten has not said so and will not say so and I shall not make him.
+        Hettie: He wrote my name on that door, you know. Then he crossed it out. Then he wrote it again.
+        Hettie: *A pause.* I'd like it off the door for good, if it's all the same.
+    -> What's below the foundry?
+        Hettie: The seam. Then the bottom, which nobody works, because there's nothing down there to work.
+        Hettie: There's a bell and there's a floor worn into a dish, and if you stand still on it you can feel something turn over underneath.
+        Hettie: Twenty-two years I felt that. Never once thought to ask what it was.
+<<else>>
+    Hettie: *A voice through the rock-fall, perfectly level, as if you had knocked at a door.*
+    Hettie: Twenty-two days. I'd started to wonder.
+    -> Hettie Marl? Marten sent me.
+        Hettie: Course he did. Is he sleeping?
+        -> No.
+            Hettie: Course he's not.
+        -> I couldn't say.
+            Hettie: That's a no. I've known him thirty years.
+        Hettie: Right. There's a way through — second cross-cut, mind the props, they're rotten but they're honest about it.
+        Hettie: I'll get myself up. I've been getting myself up my whole life.
+        <<set $hollow_bell_hettie_rescued to true>>
+        <<set $hollow_bell_hettie_found to true>>
+        Hettie: Tell him I'm coming and tell him I've stock to sell. He'll want the second bit; it'll stop him doing the first bit at me.
+    -> Are you hurt?
+        Hettie: Hungry. Bored. Extremely tired of my own singing.
+        Hettie: Not hurt. Rock came down between me and the crawlers, which is the luckiest thing that's ever happened to anybody.
+        -> Then let's get you out.
+            Hettie: Second cross-cut. Mind the props.
+            <<set $hollow_bell_hettie_rescued to true>>
+            <<set $hollow_bell_hettie_found to true>>
+            Hettie: And tell Marten I'm coming, before he writes anything else on that door.
+<<endif>>
+===
+
+title: HollowBellTobin
+---
+<<declare $hollow_bell_tongue_started = false>>
+<<declare $hollow_bell_tongue_ready = false>>
+<<declare $hollow_bell_tongue_done = false>>
+<<declare $hollow_bell_seam_started = false>>
+<<declare $hollow_bell_seam_done = false>>
+
+<<if $hollow_bell_seam_done>>
+    Tobin: Fire the furnace and I'll talk you through it. Loudly. I'm told I get loud.
+    -> Will it hold the note?
+        Tobin: It'll hold the note. It's the same seam, the same tongue, and the crown's deep-iron which is *not* in any book and which is *correct*.
+        Tobin: I can't tell you how I know that. I've stopped trying to. It's the only part of this I'm certain of.
+    -> Your master would be proud.
+        Tobin: *He goes quiet for the first time since you met him.*
+        Tobin: He cast forty-one bells. I've cast four and three of them were doorbells.
+        Tobin: But he never cast one that had to hold something down. So we're both beginners, really. That helps.
+<<elseif $hollow_bell_seam_started>>
+    <<if has_item("hollow_bell/bell_bronze_ore", 5) and has_item("hollow_bell/deep_iron_shard", 3)>>
+        Tobin: Is that — is that *deep-iron*? You actually —
+        -> Five of bronze, three of iron.
+            <<take_item "hollow_bell/bell_bronze_ore" 5>>
+            <<take_item "hollow_bell/deep_iron_shard" 3>>
+            <<give_item "gold_coin" 4>>
+            <<give_item "hollow_bell/knells_shard" 1>>
+            <<give_recipe "hollow_bell/recast_hollow_bell">>
+            <<quest_command "hollow_bell/the_singing_seam" "complete">>
+            <<set $hollow_bell_seam_done to true>>
+            Tobin: Right. Right! Here — you'll want this, it's off the Singer and it's wasted on me.
+            Tobin: And here's the casting. Read it twice. Everyone reads it once and then ruins a bell.
+    <<else>>
+        Tobin: Five of bell-bronze from the seam itself — it has to be the same seam or the note goes off and the note is the entire point.
+        Tobin: And three shards of the black iron. From the bottom. I know. I *know*.
+        -> Why deep-iron?
+            Tobin: I don't know. I've read every casting book my master owned and it is in none of them.
+            Tobin: I just know it goes in the crown. Ask me again when it's rung and maybe I'll have an answer.
+    <<endif>>
+<<elseif $hollow_bell_tongue_done>>
+    Tobin: Right! Metal next. And this is where I need you to trust me and also to not laugh.
+    -> Go on.
+        Tobin: Five of bell-bronze, cut from the singing seam itself. Not ore from anywhere else — the *same* seam, or the note comes out wrong.
+        Tobin: And three shards of deep-iron from the bottom, for the crown.
+        Tobin: That second part is in no book. I know that. I want you to know I know that.
+        -> I'll get them.
+            <<start_quest "hollow_bell/the_singing_seam">>
+            <<set $hollow_bell_seam_started to true>>
+            Tobin: Take a pickaxe. Take *two*, the seam eats them.
+        -> Deep-iron. From the bottom. Where the thing is.
+            Tobin: ...Yes.
+            Tobin: I did say not to laugh. I notice you're not laughing.
+            <<start_quest "hollow_bell/the_singing_seam">>
+            <<set $hollow_bell_seam_started to true>>
+<<elseif $hollow_bell_tongue_ready>>
+    <<if has_item("hollow_bell/bell_clapper", 1)>>
+        Tobin: You've got it. You've actually got it. Give it here — careful, *careful* —
+        -> Here. It's heavier than it looks.
+            <<take_item "hollow_bell/bell_clapper" 1>>
+            <<give_item "gold_coin" 3>>
+            <<give_item "empower_weapon_scroll" 1>>
+            <<quest_command "hollow_bell/the_stolen_tongue" "complete">>
+            <<set $hollow_bell_tongue_done to true>>
+            Tobin: *He weighs it in both hands, and his face does something complicated.*
+            Tobin: Two hundred years of dawns, that is. You can feel it. You can *feel* it.
+            Tobin: Right. Metal next.
+    <<else>>
+        Tobin: It's down. I heard it from up here, I think the whole moor heard it.
+        Tobin: Go back and get the tongue off it. It'll be in the mess.
+    <<endif>>
+<<elseif $hollow_bell_tongue_started>>
+    Tobin: Big yellow thing on the casting floor. Wearing our clapper as a hat.
+    Tobin: It bows, apparently. Marten's grandmother wrote that down once and everyone thought she was joking.
+<<else>>
+    Tobin: Oh — oh good, someone to talk to. Do you know how a bell is tuned? No? Excellent, sit down.
+    -> Marten says you can re-cast the bell.
+        Tobin: I can! I can absolutely do that. I've read the books twice.
+        Tobin: *A beat.* There's one problem and it's a large one.
+        Tobin: You cannot pour a clapper. The tongue is two hundred years old and half of what makes that bell *that bell* is what two centuries of getting hit did to that particular lump of iron.
+        Tobin: You can't pour that. You can only fetch it back.
+        -> Where is it?
+            Tobin: On something's head. In the foundry.
+            Tobin: It's wearing it as a crown, because it found it and it's shiny and therefore, in its view, it is king.
+            -> Then I'll take it off him.
+                <<start_quest "hollow_bell/the_stolen_tongue">>
+                <<set $hollow_bell_tongue_started to true>>
+                Tobin: *He shakes your hand with both of his.* Right! Right. Mind the fire. It throws fire.
+            -> That's a terrible plan.
+                Tobin: It's the only plan! That's what makes it a good one!
+    -> [Lore] A bell that keeps a thing asleep. That's not metallurgy.  <<if skill_rank("Lore") > 1>>
+        Tobin: *He stops. Actually stops, mid-sentence, which I gather is rare.*
+        Tobin: No. It isn't, is it.
+        Tobin: There's a line in my master's third book — "the founder pours what she means" — and I always took it for poetry.
+        Tobin: I don't take it for poetry any more.
+    -> You're nineteen.
+        Tobin: I'm nineteen and I'm the only person alive who's read the casting books, so nineteen is what's on offer.
+        Tobin: *He says it cheerfully. It costs him something.*
+<<endif>>
+===
+
+title: HollowBellGrandam
+---
+<<declare $hollow_bell_grandam_met = false>>
+<<declare $hollow_bell_finale_started = false>>
+<<declare $hollow_bell_finale_ready = false>>
+<<declare $hollow_bell_finale_rang = false>>
+<<declare $hollow_bell_finale_done = false>>
+
+<<if $hollow_bell_finale_done>>
+    Grandam Bellow: Go up. There's tea, I'm told, and a fox who will want to hear every word of this twice.
+    -> Will it hold?
+        <<if $hollow_bell_finale_rang>>
+            Grandam Bellow: It will hold as long as somebody climbs down at dawn and rings it. That is the whole of the magic and it always was.
+            Grandam Bellow: Two hundred years of ordinary people doing a small thing reliably. Nothing else. Nothing grander.
+        <<else>>
+            Grandam Bellow: There's nothing left to hold. You saw to that.
+            Grandam Bellow: *A pause, like a note fading.* It was very old and it was not cruel. I'd have you carry that, and not as a weight. Just carry it.
+        <<endif>>
+<<elseif $hollow_bell_finale_ready>>
+    <<if $hollow_bell_finale_rang>>
+        Grandam Bellow: Listen. Listen to that.
+        Grandam Bellow: *Under the floor, something enormous settles, and stops searching, and is still.*
+        -> It's asleep.
+            <<give_item "gold_coin" 25>>
+            <<give_item "hollow_bell/hollow_bell_charm" 1>>
+            <<quest_command "hollow_bell/the_deeplistener" "complete">>
+            <<set $hollow_bell_finale_done to true>>
+            Grandam Bellow: It is. And it will stay so, so long as this hamlet keeps doing the dull thing every morning without knowing why.
+            Grandam Bellow: Take these. The little bell is from the same pour — your fox made two and kept neither, which tells you most of what he is.
+    <<else>>
+        Grandam Bellow: It's done, then.
+        -> It's done.
+            <<give_item "gold_coin" 25>>
+            <<give_item "hollow_bell/hollow_bell_charm" 1>>
+            <<quest_command "hollow_bell/the_deeplistener" "complete">>
+            <<set $hollow_bell_finale_done to true>>
+            Grandam Bellow: *She looks a long time at the place where it was.*
+            Grandam Bellow: Then Ashen Hollow need not climb down at dawn any more. That is a gift and a loss, and it will take them a generation to work out which.
+            Grandam Bellow: Take these. You've earned every part of it.
+<<elseif $hollow_bell_finale_started>>
+    <<if has_item("hollow_bell/recast_hollow_bell_item", 1)>>
+        Grandam Bellow: You brought it. Oh, well done — well *done*, that's a good bell, that's a very good bell.
+        Grandam Bellow: The frame's there. Hang it, and ring it, and we shall see.
+        -> Hang the bell and ring it.
+            <<take_item "hollow_bell/recast_hollow_bell_item" 1>>
+            <<quest_command "hollow_bell/the_deeplistener" "ring">>
+            Grandam Bellow: *You swing it. The note goes out flat and clean and does not stop.*
+            Grandam Bellow: *The searching stops. The great blind head turns, once, toward the sound — the way a person turns over toward a remembered room.*
+            Grandam Bellow: *And down it goes. And down. And the floor is quiet.*
+        -> Not yet. I'll deal with it my own way.
+            Grandam Bellow: As you like. I'll not argue with you; I've been dead two hundred years and it has made me a poor arguer.
+    <<else>>
+        Grandam Bellow: You'll want the bell, dear. It's rather the crux of the thing.
+        -> And if I just kill it?
+            Grandam Bellow: Then it dies. It is very old and very large and it is in a great deal of pain, and dying would end that.
+            Grandam Bellow: I'll not tell you it's the wrong answer. I've no standing to. I only ever knew the one.
+        -> Tell me about it again.
+            Grandam Bellow: It sleeps. It has always slept. We did not trap it — we found it sleeping and worked out, over a few bad generations, what kept it under.
+            Grandam Bellow: And then we rang a bell every dawn for two hundred years and wrote it in the ledger beside the price of candles.
+    <<endif>>
+<<elseif $hollow_bell_grandam_met>>
+    Grandam Bellow: Still here? Good. Ask, then.
+    -> What is it, exactly?
+        Grandam Bellow: Old. Older than the shaft, older than the hamlet, and I should not like to guess beyond that.
+        Grandam Bellow: It is not a demon and it is not a curse and nobody did anything wrong. It is a thing that lives under the moor and sleeps, and needs a sound to sleep to.
+        Grandam Bellow: Three weeks it's been awake. Imagine three weeks without sleeping and in pain and blind. Then imagine being the size of this room.
+    -> How are you still here?
+        Grandam Bellow: I poured myself in with the metal. On purpose, before you ask, and quite calmly.
+        Grandam Bellow: A bell that must ring for two hundred years wants somebody in it who minds whether it does.
+        Grandam Bellow: *Dryly.* It has been a very long two hundred years and I should not recommend it.
+    -> What do you want me to do?
+        Grandam Bellow: I want a great many things, dear, and wanting is all that's left me.
+        Grandam Bellow: Bring me a bell that rings true, and then decide. I shan't decide for you. That's the one courtesy I can still extend.
+        <<start_quest "hollow_bell/the_deeplistener">>
+        <<set $hollow_bell_finale_started to true>>
+<<else>>
+    Grandam Bellow: *The figure at the bell-frame does not turn round. Her edges come apart into ripples the shape of a struck bell and go back together again.*
+    Grandam Bellow: Two hundred years, and the first person down that shaft in three weeks is a stranger. Well.
+    <<set $hollow_bell_grandam_met to true>>
+    -> Who are you?
+        Grandam Bellow: Bellow. I cast that.
+        Grandam Bellow: *She indicates the split bronze without looking at it.* Badly, evidently, though in fairness it did have two centuries.
+    -> What's down here?
+        Grandam Bellow: Something that was asleep.
+        Grandam Bellow: *A pause, exactly the length of a held note.*
+        Grandam Bellow: You will want to sit down for the rest, and there is nowhere to sit, so you shall have to manage.
+    -> [Lore] This chamber is older than the mine.  <<if skill_rank("Lore") > 2>>
+        Grandam Bellow: *Now* she turns round.
+        Grandam Bellow: It is. We did not cut it. We broke into it, and had the sense to stop cutting, which for badgers is a considerable act of restraint.
+        Grandam Bellow: Whoever fitted that floor was not us and was not recent. And they fitted it *around* the sleeper. They knew it was there.
+        Grandam Bellow: I have had two hundred years to think about that and I have got nowhere pleasant.
+<<endif>>
+===

@@ -1,0 +1,13 @@
+extends: equipment
+name: The Deeplistener's Ear
+weight: 0.6
+equipment_slot: amulet
+description: A palm-sized disc of polished black stone on a leather thong, ringed with concentric ridges like a fingerprint, cool no matter how long you hold it. Prised from the beast's hide, worn smooth by two centuries of turning over in its sleep. Hold it and you hear things a very long way off, through rock.
+stats:
+  willpower: 2
+  focus: 2
+  constitution: 1
+render:
+  debug_color: [38, 40, 48]
+  debug_size: 0.46
+  sprite_path: modules/hollow_bell/overworld_objects/deeplisteners_ear/sprite.png

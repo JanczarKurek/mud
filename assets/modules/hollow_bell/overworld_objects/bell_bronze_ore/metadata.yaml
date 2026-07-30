@@ -1,0 +1,14 @@
+extends: pickup
+name: Bell-Bronze Ore
+weight: 3.0
+max_stack_size: 20
+description:
+  - text: A fist-sized chunk of pale crystalline ore shot through with bronze veins. It is faintly warm and it hums against your palm. Struck, it rings for an absurdly long time.
+    stack_size: [1, 1]
+  - text: "{count_written} chunks of bell-bronze ore. Together they hum very slightly out of tune with each other."
+    stack_size: [2, ~]
+render:
+  z_index: 0.24
+  debug_color: [206, 214, 178]
+  debug_size: 0.5
+  sprite_path: modules/hollow_bell/overworld_objects/bell_bronze_ore/sprite.png

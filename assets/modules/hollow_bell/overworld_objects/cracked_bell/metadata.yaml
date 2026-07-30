@@ -1,0 +1,9 @@
+extends: static_world
+name: The Hollow Bell
+description: Waist-high and then some, pale bronze gone dark with two hundred years of hands, hanging from an iron frame in the centre of the chamber. A single split runs from lip to crown. There is no tongue in it. Struck, it makes the sound of a cracked pot, and nothing at all in the delve is listening.
+colliding: true
+render:
+  z_index: 0.30
+  debug_color: [138, 126, 96]
+  debug_size: 1.0
+  sprite_path: modules/hollow_bell/overworld_objects/cracked_bell/sprite.png

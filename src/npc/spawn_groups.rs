@@ -311,6 +311,8 @@ pub fn tick_spawn_groups(
             let new_id = object_registry.allocate_runtime_id(runtime.def.template.clone());
             let synthetic = ResolvedObject {
                 id: new_id,
+                // Spawned at runtime by a spawn group, never authored by hand.
+                authored_id: None,
                 type_id: runtime.def.template.clone(),
                 properties: Default::default(),
                 placement: Some(TileCoordinate {

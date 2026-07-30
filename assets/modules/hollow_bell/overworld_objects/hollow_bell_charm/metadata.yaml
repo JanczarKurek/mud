@@ -1,0 +1,13 @@
+extends: equipment
+name: The Hollow Bell, Re-Cast
+weight: 0.3
+equipment_slot: ring
+description: Not the great bell — a hand-bell the size of an apple, cast from the same pour and worn on a finger-ring. Tobin made two and kept neither, which he will tell you was a practical decision about weight distribution and which was not. Ring it when you are lost.
+stats:
+  willpower: 2
+  charisma: 2
+  max_health: 20
+render:
+  debug_color: [222, 206, 150]
+  debug_size: 0.44
+  sprite_path: modules/hollow_bell/overworld_objects/hollow_bell_charm/sprite.png

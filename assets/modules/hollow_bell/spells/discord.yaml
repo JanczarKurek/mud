@@ -1,0 +1,15 @@
+# Knell's control tool: a note held slightly wrong, and your limbs argue with
+# each other about it.
+name: Discord
+incantation: "*two shards sound a half-tone apart, and hold*"
+mana_cost: 0.0
+targeting: targeted
+range_tiles: 8
+effects:
+  damage: "1d6+foc_mod"
+  damage_type: arcane
+  buffs_target:
+    - kind: slow
+      magnitude: 1.0
+      seconds: 6.0
+  vfx_on_target_hit: frost_hit

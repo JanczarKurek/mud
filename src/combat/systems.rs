@@ -236,12 +236,18 @@ pub fn resolve_battle_turn(
     floor_defs: Option<Res<crate::world::floor_definitions::FloorTilesetDefinitions>>,
     mut chat_log_query: Query<&mut ChatLog, With<Player>>,
     mut ui_events: ResMut<PendingGameUiEvents>,
-    mut pending_damage: ResMut<PendingDamageEvents>,
+    // Tupled for the same reason as `npc_reads`: this system is at Bevy's
+    // 16-system-param cap, and NPC summons need their own deferred queue.
+    mut pending_writes: (
+        ResMut<PendingDamageEvents>,
+        ResMut<crate::combat::resources::PendingNpcSummons>,
+    ),
     mut pending_noise: ResMut<crate::world::noise::PendingNoiseEvents>,
     mut pending_modifier_consumption: ResMut<PendingModifierConsumption>,
     mut commands: Commands,
 ) {
     let _t = crate::diagnostics::SystemTimer::new("combat:resolve_battle_turn", 1.0);
+    let (ref mut pending_damage, ref mut pending_summons) = pending_writes;
     battle_turn_timer.remaining_seconds -= time.delta_secs();
     if battle_turn_timer.remaining_seconds > 0.0 {
         return;
@@ -463,7 +469,8 @@ pub fn resolve_battle_turn(
                             target,
                             &mut combat_queries,
                             &mut ui_events,
-                            &mut pending_damage,
+                            pending_damage,
+                            pending_summons,
                             &mut chat_log_query,
                             &mut commands,
                         );
@@ -931,6 +938,39 @@ pub fn apply_pending_modifier_consumption(
     }
 }
 
+/// Drain `PendingNpcSummons`, spawning each boss's adds.
+///
+/// Separate from `resolve_battle_turn` because spawning needs
+/// `ResMut<ObjectRegistry>` and the definitions, which that system (already at
+/// the 16-param cap, and holding the registry immutably) cannot supply. The
+/// summons are tagged `MonsterSide` with `owner_player: None` — the
+/// monster-owned branch `Companion` was built for.
+pub fn apply_pending_npc_summons(
+    mut pending: ResMut<crate::combat::resources::PendingNpcSummons>,
+    definitions: Res<OverworldObjectDefinitions>,
+    mut object_registry: ResMut<ObjectRegistry>,
+    companion_query: Query<(Entity, &Companion), With<crate::npc::components::Npc>>,
+    mut commands: Commands,
+) {
+    if pending.requests.is_empty() {
+        return;
+    }
+    for request in pending.requests.drain(..) {
+        crate::game::systems::spawn_summoned_creature(
+            &mut commands,
+            &definitions,
+            &mut object_registry,
+            &companion_query,
+            &request.spec,
+            request.space_id,
+            request.tile,
+            request.caster,
+            None,
+            crate::npc::components::Faction::MonsterSide,
+        );
+    }
+}
+
 /// Apply a single NPC spell cast: emit damage events, apply buffs to target
 /// and caster, restore caster HP/mana for self-casts, broadcast VFX and
 /// chat. Mirrors the player cast handler's effect-application surface but
@@ -972,6 +1012,7 @@ fn execute_npc_spell_cast(
     )>,
     ui_events: &mut PendingGameUiEvents,
     pending_damage: &mut PendingDamageEvents,
+    pending_summons: &mut crate::combat::resources::PendingNpcSummons,
     chat_log_query: &mut Query<&mut ChatLog, With<Player>>,
     commands: &mut Commands,
 ) {
@@ -999,6 +1040,53 @@ fn execute_npc_spell_cast(
     }
     for msg in &outcome.chat_messages {
         broadcast_chat_line(chat_log_query, msg.clone());
+    }
+
+    // Resolve a tile-AoE splash against everyone standing in the blast. The
+    // builder is world-free by design, so entity resolution happens here.
+    // Only players take the splash: an NPC's AoE must not shred its own adds
+    // (a boss that summons into its own fireball would be unplayable), and
+    // player-side companions are spared for the same "no monster friendly
+    // fire" reason.
+    if let Some(splash) = &outcome.aoe_splash {
+        let entities = combat_queries.p0();
+        for (entity, _, _, space, position, _, _, _, _, player_identity, _, _, _, _, _) in
+            entities.iter()
+        {
+            if player_identity.is_none() || space.space_id != attacker.space_id {
+                continue;
+            }
+            if position.z != splash.center.z {
+                continue;
+            }
+            let dx = (position.x - splash.center.x).abs();
+            let dy = (position.y - splash.center.y).abs();
+            if dx.max(dy) > splash.radius_tiles {
+                continue;
+            }
+            pending_damage.push(DamageEvent {
+                target: entity,
+                amount: splash.amount,
+                source: DamageSource::Npc {
+                    entity: attacker.entity,
+                },
+                damage_type: splash.damage_type,
+                vfx_override: splash.vfx_override.clone(),
+            });
+        }
+    }
+
+    // Adds. Deferred: spawning needs `ResMut<ObjectRegistry>` that
+    // `resolve_battle_turn` (already at the system-param cap) doesn't hold.
+    if let Some(plan) = &outcome.summon {
+        pending_summons
+            .requests
+            .push(crate::combat::resources::NpcSummonRequest {
+                caster: attacker.entity,
+                space_id: attacker.space_id,
+                tile: plan.tile,
+                spec: plan.spec.clone(),
+            });
     }
 
     // Mutate the attacker (self-cast heal + self-buffs) and the target

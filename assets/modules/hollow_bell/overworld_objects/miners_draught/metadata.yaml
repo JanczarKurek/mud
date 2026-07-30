@@ -1,0 +1,18 @@
+extends: consumable
+name: Miner's Draught
+weight: 0.4
+max_stack_size: 10
+description: A squat brown bottle with a waxed cork and a hand-inked label in Sister Wick's cramped hand. Tastes of pine tar and regret. Puts you back on your feet, which is the entire brief.
+use_effects:
+  restore_health: 45.0
+use_texts:
+  - You knock back the miner's draught. It is genuinely horrible.
+  - Pine tar, and then warmth, and then your legs work again.
+  - You drink. Sister Wick would want you to make a face, and you oblige.
+use_on_texts:
+  - You tip the draught into {target}. It does not help.
+render:
+  z_index: 0.24
+  debug_color: [104, 66, 38]
+  debug_size: 0.45
+  sprite_path: modules/hollow_bell/overworld_objects/miners_draught/sprite.png

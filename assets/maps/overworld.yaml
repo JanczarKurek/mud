@@ -24,7 +24,20 @@ width: 70
 height: 50
 fill_floor_type: grass
 
-# Lighting: omitted on purpose — engine default outdoor day/night curve.
+# Lighting: hand-tuned day/night curve (overrides the engine default).
+# The curve is a full-screen tint: `alpha` is how strongly `color` is applied,
+# so alpha 0 = untinted daylight and alpha ~1 = near-black night. Dawn breaks
+# between 0.18 and 0.21, dusk falls between 0.80 and 0.82.
+lighting:
+  outdoor_ambient: [220, 220, 230]
+  indoor_ambient: [55, 50, 60]
+  has_day_night: true
+  outdoor_curve:
+    - { time: 0.00, color: [1, 1, 1],       alpha: 0.98 }   # deep night
+    - { time: 0.18, color: [2, 2, 2],       alpha: 0.94 }   # pre-dawn
+    - { time: 0.21, color: [11, 9, 9],      alpha: 0.0 }    # sunrise
+    - { time: 0.80, color: [255, 255, 255], alpha: 0.0 }    # daylight
+    - { time: 0.82, color: [1, 1, 1],       alpha: 0.99 }   # nightfall
 
 legend:
   "P": pine_tree
@@ -158,6 +171,11 @@ portals:
     source: { x: 47, y: 25 }
     destination_space_id: proving_grounds
     destination_tile: { x: 14, y: 12 }
+  # SW moor road: down the cage lift into the Hollow Bell delve.
+  - id: hollow_bell_entrance
+    source: { x: 6, y: 45 }
+    destination_space_id: hollow_bell/pithead
+    destination_tile: { x: 10, y: 18 }
 
 objects:
   # ==== EMBERBROOK VILLAGE ==================================================
@@ -506,6 +524,25 @@ objects:
       - type: steel_sword
       - type: gold_coin
         quantity: 30
+
+  # ==== HOLLOW BELL APPROACH (SW moor road) ==============================================
+  # Trailhead dressing around the `hollow_bell_entrance` portal at (6,45).
+  - type: portal_arch
+    placement: { x: 6, y: 45 }
+  - type: campfire
+    placement: { x: 8, y: 47 }
+  - type: stone
+    placement: { x: 8, y: 44 }
+  - type: stone
+    placement: { x: 4, y: 46 }
+  - type: sign_post
+    placement: { x: 5, y: 44 }
+    properties:
+      text: "ASHEN HOLLOW half a mile — the bell-bronze delve. NOTICE: the mine is closed and the shifts are not coming up. Pit-captain Coalbright will speak to anyone who can hold a lamp and is not a fool."
+  - type: sign_post
+    placement: { x: 7, y: 46 }
+    properties:
+      text: "Three weeks now, and the bell has not rung once. My grandmother would have known what that meant. — scratched below the notice, in a shaky hand"
 
 spawn_groups:
   # L1 — the hunter quest's rats, south paddocks of the fields.

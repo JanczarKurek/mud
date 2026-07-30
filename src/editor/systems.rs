@@ -154,14 +154,7 @@ pub fn reset_space_contents_from_def(
     // would read stale (type, properties, behavior) from the registry and
     // attach a `wooden_door`'s `state: locked` onto whatever new entity
     // happens to land on that id.
-    for object in &def.resolved_objects {
-        object_registry.replace_existing(
-            object.id,
-            object.type_id.clone(),
-            object.properties.clone(),
-            object.behavior,
-        );
-    }
+    object_registry.sync_resolved_objects(&def.resolved_objects);
 
     for object in &def.resolved_objects {
         if def.is_contained(object.id) {
@@ -280,12 +273,17 @@ pub fn init_editor_context(
         world_config.map_height as f32 * 0.5,
     );
 
+    let def = space_definitions.get(&authored_id);
     commands.insert_resource(EditorContext {
         space_id,
-        authored_id,
         map_width: world_config.map_width,
         map_height: world_config.map_height,
         fill_floor_type: world_config.fill_floor_type.clone(),
+        permanence: def
+            .map(|d| d.permanence)
+            .unwrap_or(crate::world::map_layout::SpacePermanence::Persistent),
+        source_path: def.and_then(|d| d.source_path.clone()),
+        authored_id,
     });
 }
 
@@ -2597,6 +2595,8 @@ pub fn apply_modal_confirmed(
             editor_context.map_width = def.width;
             editor_context.map_height = def.height;
             editor_context.fill_floor_type = def.fill_floor_type.clone();
+            editor_context.permanence = def.permanence;
+            editor_context.source_path = def.source_path.clone();
             world_config.current_space_id = space_id;
             world_config.map_width = def.width;
             world_config.map_height = def.height;
@@ -2623,6 +2623,9 @@ pub fn apply_modal_confirmed(
         }
         ModalConfirmed::SaveAs { authored_id } => {
             editor_context.authored_id = authored_id.clone();
+            // Save As writes a *new* file under the new name; keeping the old
+            // source path would overwrite the map we were editing instead.
+            editor_context.source_path = None;
             serialize_and_save(
                 editor_context,
                 portal_buffer,
@@ -2638,6 +2641,8 @@ pub fn apply_modal_confirmed(
             // Reconcile the registry to the re-baked id range (see handle_editor_save).
             if let Some(def) = space_definitions.get(&authored_id) {
                 object_registry.sync_resolved_objects(&def.resolved_objects);
+                // Subsequent plain saves target the file we just created.
+                editor_context.source_path = def.source_path.clone();
             }
             editor_state.dirty = false;
             info!("Saved map as '{authored_id}'");
@@ -2676,6 +2681,9 @@ pub fn apply_modal_confirmed(
             editor_context.map_width = width;
             editor_context.map_height = height;
             editor_context.fill_floor_type = fill_type.clone();
+            editor_context.permanence = crate::world::map_layout::SpacePermanence::Persistent;
+            // Never saved yet — the first save picks `assets/maps/<id>.yaml`.
+            editor_context.source_path = None;
             world_config.current_space_id = new_space_id;
             world_config.map_width = width;
             world_config.map_height = height;
@@ -2764,6 +2772,9 @@ pub fn apply_modal_confirmed(
             editor_context.map_width = def.width;
             editor_context.map_height = def.height;
             editor_context.fill_floor_type = def.fill_floor_type.clone();
+            editor_context.permanence = def.permanence;
+            // Freshly generated, never on disk — first save picks the default path.
+            editor_context.source_path = None;
             world_config.current_space_id = space_id;
             world_config.map_width = def.width;
             world_config.map_height = def.height;

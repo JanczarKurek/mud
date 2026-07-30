@@ -1,0 +1,31 @@
+extends: static_world
+name: Deep Iron Vein
+description: A black seam running crosswise through the older rock, cold enough to bead frost on the wall around it. It was here before the badgers were, and before the bell, and it does not hum. It is the only thing down here that doesn't.
+colliding: true
+states:
+  available:
+    colliding: true
+  depleted:
+    colliding: true
+initial_state: available
+interactions:
+  - verb: mine
+    label: Chip out deep iron
+    from: [available]
+    to: depleted
+    tool_gate:
+      required_type_id: pickaxe
+      fail_message: "You need a pickaxe to work the vein."
+    skill_gate:
+      skill: Survival
+      dc: !fixed 16
+    grants_items:
+      - type_id: hollow_bell/deep_iron_shard
+        quantity: 1
+        probability: 1.0
+    respawn_seconds: 420.0
+render:
+  z_index: 0.28
+  debug_color: [40, 44, 56]
+  debug_size: 0.86
+  sprite_path: modules/hollow_bell/overworld_objects/deep_iron_vein/sprite.png

@@ -1,0 +1,8 @@
+name: Pit Tea
+description: Water, leaves, three sugars, and about twenty minutes longer than any reasonable person would leave it. Sister Wick will show anyone who asks, and several who do not.
+inputs:
+  - { type_id: green_herb, count: 2 }
+outputs:
+  - { type_id: hollow_bell/pit_tea, count: 2 }
+station: campfire
+xp_award: 25

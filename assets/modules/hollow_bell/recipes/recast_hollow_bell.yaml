@@ -1,0 +1,10 @@
+name: Re-Cast the Hollow Bell
+description: Tobin's casting, out of the old books and one thing he made up. Fire the furnace, pour the seam-bronze, set the deep-iron in the crown, hang the two-hundred-year-old tongue. He will talk you through every step at a volume that is frankly dangerous in a mine.
+inputs:
+  - { type_id: hollow_bell/bell_bronze_ore, count: 5 }
+  - { type_id: hollow_bell/deep_iron_shard, count: 3 }
+  - { type_id: hollow_bell/bell_clapper, count: 1 }
+outputs:
+  - { type_id: hollow_bell/recast_hollow_bell_item, count: 1 }
+station: hollow_bell/foundry_furnace
+xp_award: 900

@@ -1,0 +1,94 @@
+extends: npc
+name: The Deeplistener
+description: Colossal, eyeless, mole-shaped the way a mountain is hill-shaped. Old bell-scars glow faint blue along its flanks. It is not attacking you. It is searching, and it hurts, and you are in the way.
+level: 14
+stats:
+  strength: 20
+  agility: 7
+  constitution: 20
+  willpower: 14
+  charisma: 8
+  focus: 10
+# BOSS BUDGET: standard L14 is ~174 HP / ~20.2 mean damage. This resolves to
+# ~522 HP (x3.0, the top of the band — it is the capstone) and ~22 mean damage
+# (x1.1). Slow (step 1.1s) and blind: its detect radius is huge but it has no
+# line-of-sight requirement, because it hears you. Kiting is the counterplay,
+# and `groundswell` is what punishes kiting badly.
+damage: "2d12+9"
+attack_profile:
+  kind: melee
+  damage_type: earth
+hp: "5d12+390+constitution*5"
+armor: 4
+crit_range: 19
+bab_track: full
+# Phase mechanic: below half health the pain drives it to thrash, tearing more
+# of its own dreaming loose. `hollow_wake` summons Hollow Spawn; `groundswell`
+# is the AoE it makes by simply moving.
+spellcasting:
+  spells:
+    - spell_id: hollow_bell/hollow_wake
+      cooldown_seconds: 30.0
+      target: self
+      conditions:
+        - !self_hp_below_fraction 0.5
+    - spell_id: hollow_bell/groundswell
+      cooldown_seconds: 13.0
+      target: target_tile
+      conditions:
+        - !target_within_range 6
+loot:
+  corpse_despawn_seconds: 900
+  drops:
+    - type_id: hollow_bell/deeplisteners_ear
+      quantity: 1
+      probability: 1.0
+    - type_id: gold_coin
+      quantity: 8
+      probability: 1.0
+    - type_id: silver_coin
+      quantity: "uniform(6, 36)"
+      probability: 1.0
+    - type_id: hollow_bell/deep_iron_shard
+      quantity: "uniform(1, 4)"
+      probability: 1.0
+    - type_id: hollow_bell/bellwrights_hammer
+      quantity: 1
+      probability: 0.5
+npc_behavior:
+  step_interval_seconds: 1.1
+  detect_distance_tiles: 14
+  disengage_distance_tiles: 40
+  requires_line_of_sight: false
+  perception: 6
+barks:
+  aggro:
+    - "*the floor tilts. It has noticed you.*"
+    - "*a sound too low to hear, felt in the teeth*"
+  mutter:
+    - "*it turns over, and over, and does not settle*"
+    - "*the blunt snout quests at the dark, searching for a sound that is not there*"
+render:
+  debug_color: [42, 38, 40]
+  debug_size: 1.6
+  sprite_path: modules/hollow_bell/overworld_objects/deeplistener/sprite.png
+  y_sort: true
+  animation:
+    sheet_path: modules/hollow_bell/overworld_objects/deeplistener/sheet.png
+    frame_width: 64
+    frame_height: 80
+    sheet_columns: 4
+    sheet_rows: 2
+    clips:
+      idle:
+        row: 0
+        start_col: 0
+        frame_count: 4
+        fps: 2.0
+        looping: true
+      walk:
+        row: 1
+        start_col: 0
+        frame_count: 4
+        fps: 5.0
+        looping: true

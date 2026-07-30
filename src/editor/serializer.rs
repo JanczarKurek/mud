@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use bevy::log::info;
 use serde::Serialize;
@@ -10,10 +11,12 @@ use crate::editor::resources::{
 use crate::npc::components::SpawnGroupMember;
 use crate::player::components::{InventoryStack, Player};
 use crate::world::components::{Container, OverworldObject, SpaceResident, TilePosition};
+use crate::world::direction::Direction;
 use crate::world::map_layout::{
-    MapBehavior, SpaceLightingDef, SpacePermanence, SpawnGroupDef, TileCoordinate, VendorStashDef,
+    MapBehavior, RoutineInstanceDef, SpaceLightingDef, SpacePermanence, SpawnGroupDef,
+    TileCoordinate, VendorStashDef,
 };
-use crate::world::object_registry::ObjectRegistry;
+use crate::world::object_registry::{AuthoredMeta, ObjectRegistry};
 
 #[derive(Serialize)]
 struct SpaceOutput {
@@ -73,10 +76,17 @@ struct AnonymousOutput {
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     properties: HashMap<String, String>,
     placement: Vec<TileCoordinate>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    facing: Option<Direction>,
 }
 
+/// Write twin of `MapObjectInstance`. Every field the read type accepts must
+/// have a counterpart here or an editor save silently drops it — `id` going
+/// missing is what broke `overworld`'s crypt-gate wiring.
 #[derive(Serialize)]
 struct ExplicitOutput {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    id: Option<String>,
     #[serde(rename = "type")]
     type_id: String,
     #[serde(skip_serializing_if = "HashMap::is_empty")]
@@ -84,6 +94,12 @@ struct ExplicitOutput {
     placement: TileCoordinate,
     #[serde(skip_serializing_if = "Option::is_none")]
     behavior: Option<MapBehavior>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    facing: Option<Direction>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    routine: Option<RoutineInstanceDef>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    quantity: Option<u32>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     contents: Vec<ContainedObjectOutput>,
 }
@@ -136,6 +152,84 @@ fn stack_to_contained(stack: &InventoryStack) -> ContainedObjectOutput {
     }
 }
 
+/// One saveable object, gathered from the ECS plus its registry entries.
+struct Item {
+    type_id: String,
+    properties: HashMap<String, String>,
+    behavior: Option<MapBehavior>,
+    contents: Vec<ContainedObjectOutput>,
+    tile: TileCoordinate,
+    authored: AuthoredMeta,
+}
+
+/// Bucket objects into the compact `type + [tiles]` form where possible, and
+/// the fully-explicit form otherwise.
+///
+/// `AnonymousOutput` has no `id:`, `behavior:`, `contents:`, `routine:` or
+/// `quantity:` field, so an object carrying any of those *must* go the explicit
+/// route — writing it anonymously drops the data silently. That is precisely
+/// how `overworld`'s `id: crypt_gate` was lost, leaving the pressure plate's
+/// `target: crypt_gate` dangling and panicking the next load.
+fn build_object_entries(items: Vec<Item>) -> Vec<ObjectEntryOutput> {
+    let mut anonymous: HashMap<(String, Option<Direction>), Vec<TileCoordinate>> = HashMap::new();
+    let mut explicit: Vec<ExplicitOutput> = Vec::new();
+    for item in items {
+        let expressible_anonymously = item.properties.is_empty()
+            && item.behavior.is_none()
+            && item.contents.is_empty()
+            && item.authored.authored_id.is_none()
+            && item.authored.routine.is_none()
+            && item.authored.quantity.is_none();
+        if expressible_anonymously {
+            anonymous
+                .entry((item.type_id, item.authored.facing))
+                .or_default()
+                .push(item.tile);
+        } else {
+            explicit.push(ExplicitOutput {
+                id: item.authored.authored_id,
+                type_id: item.type_id,
+                properties: item.properties,
+                placement: item.tile,
+                behavior: item.behavior,
+                facing: item.authored.facing,
+                routine: item.authored.routine,
+                quantity: item.authored.quantity,
+                contents: item.contents,
+            });
+        }
+    }
+
+    let mut object_entries: Vec<ObjectEntryOutput> = Vec::new();
+    let mut anon_sorted: Vec<((String, Option<Direction>), Vec<TileCoordinate>)> =
+        anonymous.into_iter().collect();
+    anon_sorted.sort_by(|a, b| {
+        a.0 .0
+            .cmp(&b.0 .0)
+            .then_with(|| format!("{:?}", a.0 .1).cmp(&format!("{:?}", b.0 .1)))
+    });
+    for ((type_id, facing), mut placements) in anon_sorted {
+        placements.sort_by(|a, b| a.y.cmp(&b.y).then(a.x.cmp(&b.x)));
+        object_entries.push(ObjectEntryOutput::Anonymous(AnonymousOutput {
+            type_id,
+            properties: HashMap::new(),
+            placement: placements,
+            facing,
+        }));
+    }
+    explicit.sort_by(|a, b| {
+        a.placement
+            .y
+            .cmp(&b.placement.y)
+            .then(a.placement.x.cmp(&b.placement.x))
+            .then(a.type_id.cmp(&b.type_id))
+    });
+    for entry in explicit {
+        object_entries.push(ObjectEntryOutput::Explicit(entry));
+    }
+    object_entries
+}
+
 /// Collect objects from ECS, serialize as YAML, write to disk.
 #[allow(clippy::too_many_arguments)]
 pub fn serialize_and_save(
@@ -159,14 +253,7 @@ pub fn serialize_and_save(
     >,
     floor_maps: &crate::world::floor_map::FloorMaps,
 ) {
-    let mut items: Vec<(
-        u64,
-        String,
-        HashMap<String, String>,
-        Option<MapBehavior>,
-        Vec<ContainedObjectOutput>,
-        TileCoordinate,
-    )> = Vec::new();
+    let mut items: Vec<Item> = Vec::new();
     for (obj, resident, tile, container) in objects.iter() {
         if resident.space_id != ctx.space_id {
             continue;
@@ -183,59 +270,24 @@ pub fn serialize_and_save(
         let contents = container
             .map(|c| slots_to_contents(&c.slots))
             .unwrap_or_default();
-        items.push((
-            obj.object_id,
+        items.push(Item {
             type_id,
             properties,
             behavior,
             contents,
-            TileCoordinate {
+            tile: TileCoordinate {
                 x: tile.x,
                 y: tile.y,
                 z: tile.z,
             },
-        ));
+            authored: object_registry
+                .authored_meta(obj.object_id)
+                .cloned()
+                .unwrap_or_default(),
+        });
     }
 
-    let mut anonymous: HashMap<String, Vec<TileCoordinate>> = HashMap::new();
-    let mut explicit: Vec<ExplicitOutput> = Vec::new();
-    for (_object_id, type_id, properties, behavior, contents, tile) in items {
-        // A populated container can't be anonymous: `AnonymousOutput` has no
-        // `contents:` field, so it would silently drop the items.
-        if properties.is_empty() && behavior.is_none() && contents.is_empty() {
-            anonymous.entry(type_id).or_default().push(tile);
-        } else {
-            explicit.push(ExplicitOutput {
-                type_id,
-                properties,
-                placement: tile,
-                behavior,
-                contents,
-            });
-        }
-    }
-
-    let mut object_entries: Vec<ObjectEntryOutput> = Vec::new();
-    let mut anon_sorted: Vec<(String, Vec<TileCoordinate>)> = anonymous.into_iter().collect();
-    anon_sorted.sort_by(|a, b| a.0.cmp(&b.0));
-    for (type_id, mut placements) in anon_sorted {
-        placements.sort_by(|a, b| a.y.cmp(&b.y).then(a.x.cmp(&b.x)));
-        object_entries.push(ObjectEntryOutput::Anonymous(AnonymousOutput {
-            type_id,
-            properties: HashMap::new(),
-            placement: placements,
-        }));
-    }
-    explicit.sort_by(|a, b| {
-        a.placement
-            .y
-            .cmp(&b.placement.y)
-            .then(a.placement.x.cmp(&b.placement.x))
-            .then(a.type_id.cmp(&b.type_id))
-    });
-    for entry in explicit {
-        object_entries.push(ObjectEntryOutput::Explicit(entry));
-    }
+    let object_entries = build_object_entries(items);
 
     let portals = portal_buffer
         .portals
@@ -288,7 +340,7 @@ pub fn serialize_and_save(
         width: ctx.map_width,
         height: ctx.map_height,
         fill_floor_type: ctx.fill_floor_type.clone(),
-        permanence: SpacePermanence::Persistent,
+        permanence: ctx.permanence,
         lighting: lighting_buffer.config.clone(),
         portals,
         floors: floors_out,
@@ -299,17 +351,233 @@ pub fn serialize_and_save(
 
     let yaml = serde_yaml::to_string(&output)
         .unwrap_or_else(|e| panic!("Failed to serialize map '{}': {e}", ctx.authored_id));
-    let path = format!("assets/maps/{}.yaml", ctx.authored_id);
+    // Overwrite the file this space came from. Only maps created in-editor
+    // lack a source path, and those genuinely belong in `assets/maps/`.
+    let path = ctx
+        .source_path
+        .clone()
+        .unwrap_or_else(|| PathBuf::from(format!("assets/maps/{}.yaml", ctx.authored_id)));
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).unwrap_or_else(|e| {
+            panic!("Failed to create map directory '{}': {e}", parent.display())
+        });
+    }
     std::fs::write(&path, yaml)
-        .unwrap_or_else(|e| panic!("Failed to write map file '{path}': {e}"));
-    info!("Saved map to {path}");
+        .unwrap_or_else(|e| panic!("Failed to write map file '{}': {e}", path.display()));
+    info!("Saved map to {}", path.display());
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::world::components::SpaceId;
-    use crate::world::map_layout::{AmbientKeyframe, SpaceDefinition};
+    use crate::world::map_layout::{AmbientKeyframe, MapObjectEntry, SpaceDefinition};
+
+    /// Rebuild the `Item` list the save path would collect for a space, from
+    /// the resolved definition rather than a live ECS. `spawn_overworld_object_
+    /// instance` copies exactly these fields out of `ResolvedObject`, so this
+    /// stands in for "the map was opened in the editor and saved untouched".
+    fn items_for(def: &SpaceDefinition) -> Vec<Item> {
+        def.resolved_objects
+            .iter()
+            .filter(|o| !def.is_contained(o.id))
+            .filter_map(|o| {
+                Some(Item {
+                    type_id: o.type_id.clone(),
+                    properties: o.properties.clone(),
+                    behavior: o.behavior,
+                    // Containers round-trip through `Container.slots`; this
+                    // test is about the authored anchors, so leave them empty.
+                    contents: Vec::new(),
+                    tile: o.placement?,
+                    authored: AuthoredMeta::from_resolved(o),
+                })
+            })
+            .collect()
+    }
+
+    fn load_shipped_maps() -> Vec<SpaceDefinition> {
+        let mut next_id = 1;
+        let mut defs = Vec::new();
+        for asset in crate::assets::discover_yaml_assets("maps", "map layout") {
+            let mut def: SpaceDefinition = serde_yaml::from_str(&asset.contents)
+                .unwrap_or_else(|e| panic!("parse {}: {e}", asset.path.display()));
+            next_id = def.resolve_objects(next_id);
+            defs.push(def);
+        }
+        assert!(!defs.is_empty(), "no shipped maps discovered");
+        defs
+    }
+
+    /// The regression this whole change exists for: every authored `id:` in a
+    /// shipped map must survive an editor save. Losing one silently dangles
+    /// any `wires_to` property or `contents:` reference pointing at it, and
+    /// the *next* load panics in `resolve_wiring`.
+    #[test]
+    fn editor_save_round_trips_authored_ids() {
+        let mut total_ids = 0usize;
+        for def in load_shipped_maps() {
+            let expected: std::collections::BTreeSet<String> = def
+                .resolved_objects
+                .iter()
+                .filter_map(|o| o.authored_id.clone())
+                .collect();
+
+            let yaml = serde_yaml::to_string(&build_object_entries(items_for(&def))).unwrap();
+            let entries: Vec<MapObjectEntry> = serde_yaml::from_str(&yaml).unwrap();
+            let actual: std::collections::BTreeSet<String> = entries
+                .iter()
+                .filter_map(|e| match e {
+                    MapObjectEntry::Explicit(i) => i.id.clone(),
+                    MapObjectEntry::Anonymous(_) => None,
+                })
+                .collect();
+
+            // Contained objects have no placement and are not written as
+            // top-level entries, so only compare the ones that are placed.
+            let placed: std::collections::BTreeSet<String> = def
+                .resolved_objects
+                .iter()
+                .filter(|o| o.placement.is_some() && !def.is_contained(o.id))
+                .filter_map(|o| o.authored_id.clone())
+                .collect();
+            assert_eq!(
+                placed, actual,
+                "space '{}': authored ids lost on save (all authored: {expected:?})",
+                def.authored_id,
+            );
+            total_ids += placed.len();
+        }
+        // Guard against the assertions above passing vacuously if the shipped
+        // maps ever stop using authored ids.
+        assert!(
+            total_ids > 0,
+            "no placed authored ids found in any shipped map — test proves nothing"
+        );
+    }
+
+    /// `facing:` has no other home — it is not inferable from the ECS, since
+    /// an unauthored object still gets a `Facing` from its definition default.
+    #[test]
+    fn editor_save_round_trips_facing_and_placements() {
+        let mut total_facings = 0usize;
+        for def in load_shipped_maps() {
+            let items = items_for(&def);
+            let expected_placements: std::collections::BTreeSet<(String, i32, i32, i32)> = items
+                .iter()
+                .map(|i| (i.type_id.clone(), i.tile.x, i.tile.y, i.tile.z))
+                .collect();
+            let expected_facings: std::collections::BTreeSet<(String, i32, i32)> = items
+                .iter()
+                .filter(|i| i.authored.facing.is_some())
+                .map(|i| (i.type_id.clone(), i.tile.x, i.tile.y))
+                .collect();
+
+            let yaml = serde_yaml::to_string(&build_object_entries(items)).unwrap();
+            let entries: Vec<MapObjectEntry> = serde_yaml::from_str(&yaml).unwrap();
+
+            let mut placements = std::collections::BTreeSet::new();
+            let mut facings = std::collections::BTreeSet::new();
+            for entry in &entries {
+                match entry {
+                    MapObjectEntry::Explicit(i) => {
+                        let t = i.placement.expect("explicit entry lost its placement");
+                        placements.insert((i.type_id.clone(), t.x, t.y, t.z));
+                        if i.facing.is_some() {
+                            facings.insert((i.type_id.clone(), t.x, t.y));
+                        }
+                    }
+                    MapObjectEntry::Anonymous(g) => {
+                        for t in &g.placement {
+                            placements.insert((g.type_id.clone(), t.x, t.y, t.z));
+                            if g.facing.is_some() {
+                                facings.insert((g.type_id.clone(), t.x, t.y));
+                            }
+                        }
+                    }
+                }
+            }
+
+            assert_eq!(
+                expected_placements, placements,
+                "space '{}': object placements changed on save",
+                def.authored_id
+            );
+            assert_eq!(
+                expected_facings, facings,
+                "space '{}': authored facing lost on save",
+                def.authored_id
+            );
+            total_facings += facings.len();
+        }
+        assert!(
+            total_facings > 0,
+            "no authored facings found in any shipped map — test proves nothing"
+        );
+    }
+
+    /// End-to-end reproduction of the reported crash: save every shipped map
+    /// the way the editor does, re-parse it, and run the same
+    /// `resolve_objects` + `resolve_wiring` the game runs at boot. Before the
+    /// fix this panicked with "has property 'target: crypt_gate' but no
+    /// authored object with that id exists in this space".
+    #[test]
+    fn saved_maps_still_resolve_their_wiring() {
+        let object_definitions =
+            crate::world::object_definitions::OverworldObjectDefinitions::load_from_disk();
+
+        for def in load_shipped_maps() {
+            let output = SpaceOutput {
+                authored_id: def.authored_id.clone(),
+                width: def.width,
+                height: def.height,
+                fill_floor_type: def.fill_floor_type.clone(),
+                permanence: def.permanence,
+                lighting: def.lighting.clone(),
+                portals: Vec::new(),
+                floors: HashMap::new(),
+                objects: build_object_entries(items_for(&def)),
+                spawn_groups: Vec::new(),
+                vendor_stashes: Vec::new(),
+            };
+            let yaml = serde_yaml::to_string(&output).unwrap();
+
+            let mut reloaded: SpaceDefinition = serde_yaml::from_str(&yaml)
+                .unwrap_or_else(|e| panic!("space '{}' re-parse: {e}", def.authored_id));
+            reloaded.resolve_objects(1);
+            // Panics on a dangling `wires_to` target — the original bug.
+            reloaded.resolve_wiring(&object_definitions);
+        }
+    }
+
+    /// `permanence` used to be hardcoded to `persistent` on save, silently
+    /// converting the two ephemeral maps into persistent ones.
+    #[test]
+    fn shipped_ephemeral_maps_keep_their_permanence() {
+        use crate::world::map_layout::SpacePermanence;
+        let defs = load_shipped_maps();
+        let ephemeral: Vec<&str> = defs
+            .iter()
+            .filter(|d| matches!(d.permanence, SpacePermanence::Ephemeral))
+            .map(|d| d.authored_id.as_str())
+            .collect();
+        assert!(
+            !ephemeral.is_empty(),
+            "expected at least one ephemeral shipped map to guard the save path"
+        );
+        // The editor writes `ctx.permanence`, which is seeded from the loaded
+        // definition; a round-trip through the output struct must preserve it.
+        for def in &defs {
+            let yaml = serde_yaml::to_string(&def.permanence).unwrap();
+            let back: SpacePermanence = serde_yaml::from_str(&yaml).unwrap();
+            assert_eq!(
+                std::mem::discriminant(&def.permanence),
+                std::mem::discriminant(&back),
+                "space '{}': permanence did not round-trip",
+                def.authored_id
+            );
+        }
+    }
 
     /// Confirms the save query's `Without<SpawnGroupMember>` filter excludes
     /// runtime-spawned NPCs — the original bug was that respawned rats /
@@ -422,10 +690,14 @@ mod tests {
             Some(pouch),
         ];
         let explicit = ExplicitOutput {
+            id: None,
             type_id: "iron_chest".into(),
             properties: HashMap::new(),
             placement: TileCoordinate { x: 2, y: 3, z: 0 },
             behavior: None,
+            facing: None,
+            routine: None,
+            quantity: None,
             contents: slots_to_contents(&slots),
         };
         // Dense packing: the empty slot between apple and pouch is dropped.

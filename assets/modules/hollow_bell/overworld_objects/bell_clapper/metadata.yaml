@@ -1,0 +1,10 @@
+extends: pickup
+name: The Bell's Tongue
+weight: 12.0
+max_stack_size: 1
+description: A heavy pitted iron bell-clapper the length of your forearm, the striking end polished mirror-bright by two hundred years of dawns. It is heavier than it has any business being, and Tobin will tell you at length that this is precisely the point — you cannot pour two centuries of getting hit into a mould. You can only fetch it back.
+render:
+  z_index: 0.24
+  debug_color: [92, 88, 84]
+  debug_size: 0.6
+  sprite_path: modules/hollow_bell/overworld_objects/bell_clapper/sprite.png

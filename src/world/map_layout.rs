@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -72,6 +73,12 @@ pub struct SpaceDefinition {
     /// via `legend`; unmapped characters are skipped (fill_floor_type applies).
     #[serde(default)]
     pub tiles: Option<String>,
+    /// File this definition was parsed from. Set by the loaders, not authored.
+    /// The editor writes a save back here so module maps (which live under
+    /// `assets/modules/<module>/maps/`) land in the right file instead of a
+    /// guessed `assets/maps/<authored_id>.yaml`.
+    #[serde(skip)]
+    pub source_path: Option<PathBuf>,
     #[serde(skip)]
     pub resolved_objects: Vec<ResolvedObject>,
     #[serde(skip)]
@@ -173,6 +180,11 @@ pub enum MapObjectEntry {
 #[derive(Clone, Debug)]
 pub struct ResolvedObject {
     pub id: u64,
+    /// The symbolic `id:` the author typed in the map YAML, if any. Kept
+    /// alongside the runtime `id` so an editor save can write the anchor back
+    /// out — without it, wiring targets (`wires_to`) and `contents:` references
+    /// silently dangle on the next load.
+    pub authored_id: Option<String>,
     pub type_id: String,
     pub properties: ObjectProperties,
     pub placement: Option<TileCoordinate>,
@@ -235,19 +247,19 @@ impl MapBehavior {
 /// the map YAML, while the *type* of each activity (pose, flavor barks) lives
 /// on the object definition's `activities:` block. Baked into a
 /// `crate::npc::routine::Routine` at spawn. See `docs/yaml_formats.md`.
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct RoutineInstanceDef {
     /// Walked when no schedule window is active. Omit for a pure schedule.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub patrol: Option<PatrolDef>,
     /// Time-of-day windows binding `time → activity → station tile`. First
     /// match wins; a window with `to < from` wraps midnight.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub schedule: Vec<ScheduleWindowDef>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct PatrolDef {
     #[serde(default)]
@@ -255,7 +267,7 @@ pub struct PatrolDef {
     pub waypoints: Vec<WaypointDef>,
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum PatrolModeDef {
@@ -268,7 +280,7 @@ pub enum PatrolModeDef {
     Once,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct WaypointDef {
     pub x: i32,
@@ -280,7 +292,7 @@ pub struct WaypointDef {
     pub dwell: f32,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct ScheduleWindowDef {
     /// Start of the window (inclusive), in `[0, 1)` world-clock time.
@@ -292,7 +304,7 @@ pub struct ScheduleWindowDef {
     /// Tile the NPC stands on while performing the activity.
     pub at: TileCoordinate,
     /// Direction to face while dwelling (e.g. toward a workbench).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub face: Option<Direction>,
 }
 
@@ -381,6 +393,7 @@ impl SpaceDefinitions {
             if definition.authored_id.trim().is_empty() {
                 definition.authored_id = asset.id.clone();
             }
+            definition.source_path = Some(asset.path.clone());
 
             next_object_id = definition.resolve_objects(next_object_id);
             spaces.insert(definition.authored_id.clone(), definition);
@@ -439,8 +452,13 @@ impl SpaceDefinitions {
         }
     }
 
-    /// Load a single map YAML from `assets/maps/{authored_id}.yaml` and insert it.
-    /// Returns `true` if successful. Skips validation assertions for portal destinations.
+    /// Re-read a single map YAML from disk and insert it. Returns `true` if
+    /// successful. Skips validation assertions for portal destinations.
+    ///
+    /// Reads the file the space was originally loaded from when it is already
+    /// known (module maps live under `assets/modules/<module>/maps/`, not
+    /// `assets/maps/`), falling back to `assets/maps/{authored_id}.yaml` for
+    /// spaces this `SpaceDefinitions` has never seen.
     ///
     /// `min_start_id` is the floor for newly-assigned runtime ids. Callers
     /// that share an `ObjectRegistry` with the editor (file open, save-and-
@@ -451,7 +469,11 @@ impl SpaceDefinitions {
     /// newly-spawned (different-type) entities on the next reset. Pass `0`
     /// when no shared registry exists yet (boot-time load).
     pub fn load_single_from_disk(&mut self, authored_id: &str, min_start_id: u64) -> bool {
-        let path = format!("assets/maps/{authored_id}.yaml");
+        let path = self
+            .spaces
+            .get(authored_id)
+            .and_then(|space| space.source_path.clone())
+            .unwrap_or_else(|| PathBuf::from(format!("assets/maps/{authored_id}.yaml")));
         let Ok(yaml) = std::fs::read_to_string(&path) else {
             return false;
         };
@@ -461,6 +483,7 @@ impl SpaceDefinitions {
         if def.authored_id.trim().is_empty() {
             def.authored_id = authored_id.to_owned();
         }
+        def.source_path = Some(path);
         // Pick an id range that doesn't collide with other already-loaded
         // spaces OR with the caller's runtime registry (via `min_start_id`).
         let other_spaces_max = self
@@ -532,6 +555,8 @@ impl SpaceDefinition {
                         next_id += 1;
                         resolved.push(ResolvedObject {
                             id,
+                            // Anonymous groups have no place to author an id.
+                            authored_id: None,
                             type_id: group.type_id.clone(),
                             properties: group.properties.clone(),
                             placement: Some(*tile),
@@ -789,6 +814,7 @@ impl SpaceDefinition {
             floors: HashMap::new(),
             legend: HashMap::new(),
             tiles: None,
+            source_path: None,
             resolved_objects: Vec::new(),
             object_indices: HashMap::new(),
             authored_id_lookup: HashMap::new(),
@@ -944,6 +970,7 @@ fn walk_instance(
     let parent_index = resolved.len();
     resolved.push(ResolvedObject {
         id,
+        authored_id: instance.id.clone(),
         type_id: instance.type_id.clone(),
         properties: instance.properties.clone(),
         placement: instance.placement,

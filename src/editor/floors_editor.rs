@@ -237,6 +237,8 @@ render:
             map_width: 100,
             map_height: 100,
             fill_floor_type: "grass".into(),
+            permanence: crate::world::map_layout::SpacePermanence::Persistent,
+            source_path: None,
         };
         let editor_state = EditorState {
             current_editing_floor,

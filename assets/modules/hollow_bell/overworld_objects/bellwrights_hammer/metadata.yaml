@@ -1,0 +1,18 @@
+extends: equipment
+name: The Bellwright's Hammer
+weight: 6.0
+equipment_slot: weapon
+description: "Grandam Bellow's own casting hammer — ash shaft bound in worn leather, a heavy bronze head gone green with age and inscribed round with tiny bell-marks. She had it with her when she went down to hang the bell and did not come back up. Two hundred years under the Deeplistener has done something to it. It rings when it lands. {properties.inscription_line|}"
+engravable: true
+# T4 two-hander, sized against the gear ladder: dice + STR + the level/2
+# growth term every real weapon carries.
+damage: "2d6+str_mod+level/2"
+attack_profile:
+  kind: melee
+  damage_type: blunt
+stats:
+  strength: 2
+render:
+  debug_color: [122, 148, 108]
+  debug_size: 0.6
+  sprite_path: modules/hollow_bell/overworld_objects/bellwrights_hammer/sprite.png

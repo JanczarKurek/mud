@@ -1,0 +1,12 @@
+extends: equipment
+name: The Tallow Crown
+weight: 3.5
+equipment_slot: helmet
+description: Cinderjack's crown, which was never a crown. Scrape the wax off and it is an honest iron half-helm, dented all over the top, and it has been keeping the heat off something for a very long time.
+stats:
+  constitution: 2
+  willpower: 1
+render:
+  debug_color: [206, 178, 96]
+  debug_size: 0.5
+  sprite_path: modules/hollow_bell/overworld_objects/tallow_crown/sprite.png

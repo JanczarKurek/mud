@@ -1,0 +1,13 @@
+# Knell, phase one: one shard at a time. Polite.
+name: Shard Song
+incantation: "*a single shard detaches and hangs, ringing*"
+mana_cost: 0.0
+targeting: targeted
+range_tiles: 8
+effects:
+  damage: "2d6+foc_mod+level/3"
+  damage_type: frost
+  # No `projectile:` block — the only missile sprite in the catalogue is
+  # `fireball_missile`, which would read as fire. Instantaneous, like
+  # `frost_lance`.
+  vfx_on_target_hit: frost_hit

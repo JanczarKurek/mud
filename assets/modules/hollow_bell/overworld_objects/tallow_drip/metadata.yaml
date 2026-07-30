@@ -1,0 +1,64 @@
+extends: npc
+name: Tallow Drip
+description: A fist-sized lump of dirty yellow candle-fat humping along the floor, a guttering flame on top and a glistening smear behind. It is warm. That is the unpleasant part.
+level: 3
+stats:
+  strength: 6
+  agility: 9
+  constitution: 8
+  willpower: 4
+  charisma: 2
+  focus: 5
+# Budget: mean damage ~2+1.3L, mean HP ~20+11L, scaled down as a swarm add.
+damage: "1d4+1"
+attack_profile:
+  kind: melee
+  damage_type: fire
+  on_hit_effects:
+    - kind: burning
+      chance: 0.2
+      magnitude: 1.0
+      seconds: 4.0
+      secondary_magnitude: 1.0
+hp: "1d6+14+constitution"
+loot:
+  corpse_despawn_seconds: 30
+  drops:
+    - type_id: hollow_bell/tallow_wax
+      quantity: 1
+      probability: 0.5
+npc_behavior:
+  step_interval_seconds: 0.7
+  detect_distance_tiles: 6
+  disengage_distance_tiles: 12
+barks:
+  aggro:
+    - "*a wet flop, and a hiss*"
+    - "*the flame gutters and leans toward you*"
+  mutter:
+    - "*drip*"
+    - "*sizzles quietly*"
+render:
+  debug_color: [214, 190, 92]
+  debug_size: 0.55
+  sprite_path: modules/hollow_bell/overworld_objects/tallow_drip/sprite.png
+  y_sort: true
+  animation:
+    sheet_path: modules/hollow_bell/overworld_objects/tallow_drip/sheet.png
+    frame_width: 32
+    frame_height: 48
+    sheet_columns: 4
+    sheet_rows: 2
+    clips:
+      idle:
+        row: 0
+        start_col: 0
+        frame_count: 4
+        fps: 3.0
+        looping: true
+      walk:
+        row: 1
+        start_col: 0
+        frame_count: 4
+        fps: 8.0
+        looping: true

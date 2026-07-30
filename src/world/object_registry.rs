@@ -4,7 +4,10 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::magic::resources::SpellDefinitions;
-use crate::world::map_layout::{MapBehavior, ObjectProperties, ResolvedObject, SpaceDefinitions};
+use crate::world::direction::Direction;
+use crate::world::map_layout::{
+    MapBehavior, ObjectProperties, ResolvedObject, RoutineInstanceDef, SpaceDefinitions,
+};
 use crate::world::object_definitions::{
     number_to_customary, number_to_written, OverworldObjectDefinitions,
 };
@@ -14,7 +17,43 @@ pub struct ObjectRegistry {
     type_ids: HashMap<u64, String>,
     properties: HashMap<u64, ObjectProperties>,
     behaviors: HashMap<u64, MapBehavior>,
+    authored: HashMap<u64, AuthoredMeta>,
     next_runtime_id: u64,
+}
+
+/// Authored-only fields that have no authoritative runtime representation but
+/// must survive an editor save round-trip.
+///
+/// `facing` and `routine` do get baked into components at spawn, but reading
+/// them back from the ECS would be wrong: an object with no authored `facing:`
+/// still gets a `Facing` component from its definition's `default_facing`, so
+/// the ECS cannot distinguish "authored north" from "defaulted north" and a
+/// save would sprout a `facing:` on every object in the map. `authored_id` has
+/// no runtime representation at all. Absent for objects created at runtime.
+#[derive(Clone, Debug, Default)]
+pub struct AuthoredMeta {
+    pub authored_id: Option<String>,
+    pub facing: Option<Direction>,
+    pub routine: Option<RoutineInstanceDef>,
+    pub quantity: Option<u32>,
+}
+
+impl AuthoredMeta {
+    pub fn from_resolved(object: &ResolvedObject) -> Self {
+        Self {
+            authored_id: object.authored_id.clone(),
+            facing: object.facing,
+            routine: object.routine.clone(),
+            quantity: object.quantity,
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.authored_id.is_none()
+            && self.facing.is_none()
+            && self.routine.is_none()
+            && self.quantity.is_none()
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -31,6 +70,7 @@ impl ObjectRegistry {
         let mut max_id = 0;
 
         let mut behaviors = HashMap::new();
+        let mut authored = HashMap::new();
 
         for definition in space_definitions.iter() {
             for object in &definition.resolved_objects {
@@ -44,6 +84,10 @@ impl ObjectRegistry {
                 if let Some(behavior) = &object.behavior {
                     behaviors.insert(object.id, *behavior);
                 }
+                let meta = AuthoredMeta::from_resolved(object);
+                if !meta.is_empty() {
+                    authored.insert(object.id, meta);
+                }
                 max_id = max_id.max(object.id);
             }
         }
@@ -52,6 +96,7 @@ impl ObjectRegistry {
             type_ids,
             properties,
             behaviors,
+            authored,
             next_runtime_id: max_id + 1,
         }
     }
@@ -69,6 +114,9 @@ impl ObjectRegistry {
             type_ids,
             properties,
             behaviors: HashMap::new(),
+            // World snapshots carry no authored metadata; the editor's source
+            // of truth for it is the map YAML, reloaded on file-open.
+            authored: HashMap::new(),
             next_runtime_id,
         }
     }
@@ -108,6 +156,24 @@ impl ObjectRegistry {
         self.behaviors.get(&object_id)
     }
 
+    /// Authored-YAML metadata for an object (symbolic id, facing, routine,
+    /// quantity). `None` for anything created at runtime. Read by the editor's
+    /// serializer so a save round-trips what the author wrote.
+    pub fn authored_meta(&self, object_id: u64) -> Option<&AuthoredMeta> {
+        self.authored.get(&object_id)
+    }
+
+    /// Attach (or, when every field is empty, clear) an object's authored
+    /// metadata. Keeping empty entries out of the map means `authored_meta`
+    /// answers "was anything authored here?" without a per-field check.
+    pub fn set_authored_meta(&mut self, object_id: u64, meta: AuthoredMeta) {
+        if meta.is_empty() {
+            self.authored.remove(&object_id);
+        } else {
+            self.authored.insert(object_id, meta);
+        }
+    }
+
     /// Replace (or remove) the behavior on a registered object. Used by the
     /// editor's per-NPC behavior panel; `None` clears any existing behavior.
     pub fn set_behavior(&mut self, object_id: u64, behavior: Option<MapBehavior>) {
@@ -144,6 +210,7 @@ impl ObjectRegistry {
         if type_changed {
             self.properties.insert(object_id, ObjectProperties::new());
             self.behaviors.remove(&object_id);
+            self.authored.remove(&object_id);
         } else {
             self.properties.entry(object_id).or_default();
         }
@@ -176,6 +243,9 @@ impl ObjectRegistry {
                 self.behaviors.remove(&object_id);
             }
         }
+        // Reset path: drop any authored metadata left by the id slot's previous
+        // owner. `sync_resolved_objects` re-attaches the correct one right after.
+        self.authored.remove(&object_id);
         if self.next_runtime_id <= object_id {
             self.next_runtime_id = object_id + 1;
         }
@@ -197,6 +267,7 @@ impl ObjectRegistry {
                 object.properties.clone(),
                 object.behavior,
             );
+            self.set_authored_meta(object.id, AuthoredMeta::from_resolved(object));
         }
     }
 
@@ -434,6 +505,7 @@ mod tests {
         fn resolved(id: u64, type_id: &str) -> ResolvedObject {
             ResolvedObject {
                 id,
+                authored_id: None,
                 type_id: type_id.to_owned(),
                 properties: ObjectProperties::new(),
                 placement: None,

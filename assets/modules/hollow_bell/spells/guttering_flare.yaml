@@ -1,0 +1,14 @@
+# Cinderjack's ranged filler: a gout of burning tallow. Small AoE so standing
+# on top of a friend is punished, but not so large that melee is unplayable.
+name: Guttering Flare
+incantation: "*it flings an armful of burning fat*"
+mana_cost: 0.0
+targeting: targeted_tile
+range_tiles: 5
+effects:
+  damage: "2d6+foc_mod"
+  damage_type: fire
+  aoe:
+    radius_tiles: 1
+    vfx_on_tile: fire_hit
+  vfx_on_target_hit: fire_hit

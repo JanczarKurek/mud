@@ -177,6 +177,14 @@ quests, vendors, the quest-log panel, and NPC spawn pools are all in. The
 next content unlocks are NPC caster AI, status effects, and richer world
 interactables (keys/locks, signs, pressure plates) — see `FEATURE_BACKLOG.md`.
 
+First large content drop: **`assets/modules/hollow_bell/`** ("The Hollow Bell"),
+a five-space L4→L14 dungeon reached by a portal in the north-west of the
+overworld — hub camp, 6 quests, 3 bosses, ~13 new creatures/NPCs, a crafting
+arc, two endings, and ~14 readable in-world documents. It is also the proof
+that a *module* can ship its own `maps/` (they register as `<module>/<stem>`
+via `discover_yaml_assets`), which `docs/modules/AUTHORING_GUIDE.md` §1 says
+the module pipeline does not generate — geography is still hand-authored.
+
 ## 6. Living-Document Rules
 
 Update this file when:

@@ -1,0 +1,20 @@
+extends: consumable
+name: Pit Tea
+weight: 0.3
+max_stack_size: 10
+description: A dented tin cup of very dark stewed tea, three sugars, a chip out of the rim. Stewed roughly twenty minutes longer than any reasonable person would leave it. Ashen Hollow runs on this, and you are expected to return the cup.
+use_effects:
+  regen_multiplier: 2.5
+  regen_duration_seconds: 90
+use_texts:
+  - You drink the pit tea. It is scalding, oversweet, and exactly right.
+  - The tea goes down like a hand on the shoulder.
+  - Three sugars. You feel steadier.
+use_on_texts:
+  - You offer {target} the tin cup.
+  - You hold the tea out to {target}, who does not take it.
+render:
+  z_index: 0.24
+  debug_color: [122, 84, 48]
+  debug_size: 0.45
+  sprite_path: modules/hollow_bell/overworld_objects/pit_tea/sprite.png

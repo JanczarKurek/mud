@@ -1,0 +1,100 @@
+extends: npc
+name: Cinderjack, the Tallow King
+description: A cart-sized mound of guttering yellow tallow with a rough grinning face melted into the front, wearing the Hollow Bell's iron clapper tilted on its head like a crown. It bows to you when you come in. Then it sets you on fire.
+level: 8
+stats:
+  strength: 18
+  agility: 8
+  constitution: 18
+  willpower: 10
+  charisma: 6
+  focus: 12
+# BOSS BUDGET (docs/balance/report.md §1): standard L8 is ~108 HP / ~12.4 mean
+# damage. This block resolves to ~324 HP (x3.0) and ~17 mean damage (x1.4).
+# The 2-3x budget goes almost entirely into HP and mechanics on purpose:
+# tripling damage instead would one-shot a level-appropriate character.
+damage: "2d8+8"
+attack_profile:
+  kind: melee
+  damage_type: fire
+  on_hit_effects:
+    - kind: burning
+      chance: 0.4
+      magnitude: 2.5
+      seconds: 6.0
+      secondary_magnitude: 1.5
+hp: "4d12+215+constitution*4"
+armor: 3
+crit_range: 19
+bab_track: full
+# Phase mechanic: below two-thirds health it sloughs pieces of itself off, and
+# the pieces get up. Self-cast so the adds land around Cinderjack rather than
+# on the player. First-match-wins ordering puts the summon above the filler.
+spellcasting:
+  spells:
+    - spell_id: hollow_bell/slough_tallow
+      cooldown_seconds: 22.0
+      target: self
+      conditions:
+        - !self_hp_below_fraction 0.66
+    - spell_id: hollow_bell/guttering_flare
+      cooldown_seconds: 11.0
+      target: target_tile
+      conditions:
+        - !target_within_range 5
+loot:
+  corpse_despawn_seconds: 600
+  drops:
+    - type_id: hollow_bell/bell_clapper
+      quantity: 1
+      probability: 1.0
+    - type_id: hollow_bell/tallow_crown
+      quantity: 1
+      probability: 1.0
+    - type_id: gold_coin
+      quantity: 2
+      probability: 1.0
+    - type_id: silver_coin
+      quantity: "uniform(4, 24)"
+      probability: 1.0
+    - type_id: hollow_bell/tallow_wax
+      quantity: "uniform(1, 6)"
+      probability: 1.0
+    - type_id: hollow_bell/greater_heal_potion
+      quantity: 1
+      probability: 0.5
+npc_behavior:
+  step_interval_seconds: 0.85
+  detect_distance_tiles: 11
+  disengage_distance_tiles: 30
+barks:
+  aggro:
+    - "*it bows. Wax runs off the crown and hisses on the sand.*"
+    - "*a delighted, bubbling sound*"
+  mutter:
+    - "*the crown slips. It nudges it straight with a dripping arm.*"
+    - "*hums, tunelessly, around a mouth that is only a dent*"
+render:
+  debug_color: [232, 196, 72]
+  debug_size: 1.2
+  sprite_path: modules/hollow_bell/overworld_objects/cinderjack/sprite.png
+  y_sort: true
+  animation:
+    sheet_path: modules/hollow_bell/overworld_objects/cinderjack/sheet.png
+    frame_width: 64
+    frame_height: 80
+    sheet_columns: 4
+    sheet_rows: 2
+    clips:
+      idle:
+        row: 0
+        start_col: 0
+        frame_count: 4
+        fps: 3.0
+        looping: true
+      walk:
+        row: 1
+        start_col: 0
+        frame_count: 4
+        fps: 6.0
+        looping: true

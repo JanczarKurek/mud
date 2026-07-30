@@ -148,12 +148,15 @@ impl PendingStackSettleEvents {
 /// Two passes per column:
 ///   1. **Compact block-sized members.** Collect block-sized objects
 ///      (excluding `removed_entity`), sort by current `z`, and re-assign `z`
-///      from `0` upward by cumulative `block_size`. Yields the new
-///      `stack_top` for the column.
-///   2. **Drop floaters.** Anything *else* in the column that sat above the
-///      new `stack_top` — players, NPCs, flat decals on the chest you just
-///      picked up — gets snapped down to `stack_top`. This is what makes
-///      picking the chest out from under your own feet leave you on the
+///      upward by cumulative `block_size` from the surface each one rests on.
+///      Compaction restarts at every painted upper-floor surface rather than
+///      running once from `0`, so a chair on the tavern loft settles onto the
+///      loft instead of being teleported down to the ground storey. Yields one
+///      new stack top per floor segment.
+///   2. **Drop floaters.** Anything *else* in the column that sat above every
+///      support — players, NPCs, flat decals on the chest you just picked up —
+///      gets snapped down to the nearest support at or below it. This is what
+///      makes picking the chest out from under your own feet leave you on the
 ///      ground instead of floating.
 ///
 /// Both passes mutate `TilePosition` directly; the state-diff pipeline
@@ -191,24 +194,12 @@ pub fn settle_pending_stacks(
         let member_entities: std::collections::HashSet<Entity> =
             members.iter().map(|(e, _, _)| *e).collect();
 
-        // Compact block members and record the new top.
-        let mut next_z = 0i32;
-        for (entity, _, bs) in members {
-            if let Ok((_, _, mut tile, _)) = object_query.get_mut(entity) {
-                if tile.z != next_z {
-                    tile.z = next_z;
-                }
-            }
-            next_z += bs as i32;
-        }
-        let new_stack_top = next_z;
-
-        // Pass 2: drop any floater that isn't sitting on a supported z. Support
-        // = ground (0), the new block stack top, or any painted-FloorMap
-        // walkable surface in this column. A player standing on an upper-floor
-        // wooden_floor at z=2 must stay at z=2 even when no block-sized object
-        // sits beneath them; previously they'd snap back to z=0.
-        let mut supports: Vec<i32> = vec![0, new_stack_top];
+        // Surfaces block members may rest on: the ground, plus every painted
+        // upper-floor surface in this column. Each one starts a fresh
+        // compaction segment — without this, `next_z` would run from 0 for the
+        // whole column and every block-sized object standing on an upper floor
+        // would be snapped through it to the ground storey.
+        let mut supports: Vec<i32> = vec![0];
         supports.extend(floormap_supports_in_column(
             &floor_maps,
             &floor_defs,
@@ -216,6 +207,47 @@ pub fn settle_pending_stacks(
             event.x,
             event.y,
         ));
+        let base_for = |z: i32| -> i32 {
+            supports
+                .iter()
+                .copied()
+                .filter(|s| *s <= z)
+                .max()
+                .unwrap_or(0)
+        };
+
+        // Compact block members segment by segment and record each segment's
+        // top. `members` is sorted by `z`, so the bases are non-decreasing and
+        // a single pass suffices.
+        let mut segment_tops: Vec<i32> = Vec::new();
+        let mut current_base: Option<i32> = None;
+        let mut next_z = 0i32;
+        for (entity, z, bs) in members {
+            let base = base_for(z);
+            if current_base != Some(base) {
+                if current_base.is_some() {
+                    segment_tops.push(next_z);
+                }
+                current_base = Some(base);
+                next_z = base;
+            }
+            if let Ok((_, _, mut tile, _)) = object_query.get_mut(entity) {
+                if tile.z != next_z {
+                    tile.z = next_z;
+                }
+            }
+            next_z += bs as i32;
+        }
+        if current_base.is_some() {
+            segment_tops.push(next_z);
+        }
+
+        // Pass 2: drop any floater that isn't sitting on a supported z. Support
+        // = ground (0), any painted-FloorMap walkable surface in this column
+        // (both already in `supports`), or the new top of any block segment. A
+        // player standing on an upper-floor wooden_floor at z=2 must stay at
+        // z=2 even when no block-sized object sits beneath them.
+        supports.extend(segment_tops);
         let landing_for = |z: i32| -> i32 {
             supports
                 .iter()

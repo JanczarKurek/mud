@@ -1,0 +1,12 @@
+extends: equipment
+name: Knell's Shard
+weight: 0.4
+equipment_slot: amulet
+description: A palm-length sliver of pale crystalline bell-bronze on a fine silver chain, still holding its note two floors up and a week later. Wearing it you can hear the delve breathing. Those who work with focus find this clarifying; everyone else finds it difficult to sleep.
+stats:
+  focus: 3
+  max_mana: 25
+render:
+  debug_color: [206, 230, 240]
+  debug_size: 0.46
+  sprite_path: modules/hollow_bell/overworld_objects/knells_shard/sprite.png

@@ -1,0 +1,272 @@
+# ============================================================================
+# THE HOLLOW BELL — 4/5: THE SINGING SEAM (levels 9-12)
+#
+# Below the foundry the rock changes. Three chambers stacked south to north,
+# joined by narrow cuts: the lower workings (arrival), the seam galleries
+# proper (bell-bronze faces to cut — this is where `the_singing_seam` sends
+# you), and Knell's chamber at the top.
+#
+# BOSS: Knell, the Seam-Singer, hand-placed in the north chamber with no
+# spawn group. Above half health it picks you apart one shard at a time;
+# below half it stops being polite and sings the whole chord at once
+# (`full_peal`, a radius-3 AoE) — the mechanic the NPC-AoE engine change
+# exists for.
+#
+# Exits: `seam_up` back to the Foundry; `undercroft_descent` to the bottom.
+#
+# Grid note: text row 0 = y0 = SOUTH edge, so this file reads bottom-up.
+# ============================================================================
+authored_id: hollow_bell/singing_seam
+permanence: persistent
+width: 42
+height: 30
+fill_floor_type: cave_floor
+lighting:
+  # The seam glows very faintly on its own. Marginally brighter than the
+  # works above, and much stranger.
+  outdoor_ambient: [46, 50, 58]
+  indoor_ambient: [40, 44, 52]
+  has_day_night: false
+
+legend:
+  "#": cave_wall
+  "*": crystal_cluster
+
+tiles: |
+  ##########################################
+  #........................................#
+  #........................................#
+  #........................................#
+  #...####.......................####......#
+  #...####.......................####......#
+  #........................................#
+  #.....*..................................#
+  #........................................#
+  #..........####.........####.............#
+  #..........####.........####.............#
+  #........................................#
+  #..............................*.........#
+  #........................................#
+  #####################..###################
+  #........................................#
+  #........................................#
+  #.......*................................#
+  #......####..............####............#
+  #......####..............####............#
+  #........................................#
+  #........................*...............#
+  #........................................#
+  #........................................#
+  ####################..####################
+  #........................................#
+  #........................................#
+  #........................................#
+  #........................................#
+  ##########################################
+
+floors:
+  # The old working floors are flagstone where the badgers cut them; Knell's
+  # chamber has never been floored by anybody.
+  flagstone:
+    rects:
+      - { x: 1, y: 1, w: 40, h: 13 }
+      - { x: 1, y: 15, w: 40, h: 9 }
+
+portals:
+  - id: seam_up
+    source: { x: 3, y: 3 }
+    destination_space_id: hollow_bell/foundry
+    destination_tile: { x: 31, y: 23 }
+    destination_permanence: persistent
+
+  - id: undercroft_descent
+    source: { x: 38, y: 27 }
+    destination_space_id: hollow_bell/undercroft
+    destination_tile: { x: 20, y: 3 }
+    destination_permanence: persistent
+
+spawn_groups:
+  # Shrikes roost in the roof of the seam galleries — ranged kiters, so the
+  # middle chamber plays very differently from the foundry.
+  - id: seam_shrikes
+    template: hollow_bell/seam_shrike
+    max_count: 5
+    respawn_mean_seconds: 160.0
+    area:
+      bounds: { min_x: 2, min_y: 15, max_x: 40, max_y: 23 }
+    behavior:
+      kind: roam_and_chase
+      bounds: { min_x: 1, min_y: 15, max_x: 40, max_y: 23 }
+
+  # The lower workings still have wights that wandered down from the foundry.
+  - id: seam_wights
+    template: hollow_bell/wax_wight
+    max_count: 3
+    respawn_mean_seconds: 180.0
+    area:
+      bounds: { min_x: 2, min_y: 2, max_x: 40, max_y: 12 }
+    behavior:
+      kind: roam_and_chase
+      bounds: { min_x: 1, min_y: 1, max_x: 40, max_y: 13 }
+
+  # And the first of the deep things, near the top.
+  - id: seam_spawn
+    template: hollow_bell/hollow_spawn
+    max_count: 2
+    respawn_mean_seconds: 240.0
+    area:
+      bounds: { min_x: 2, min_y: 16, max_x: 18, max_y: 22 }
+    behavior:
+      kind: roam_and_chase
+      bounds: { min_x: 1, min_y: 15, max_x: 40, max_y: 23 }
+
+objects:
+  # ── Arrival from the foundry ──
+  - type: portal_arch
+    placement: { x: 3, y: 3 }
+  - type: torch
+    placement:
+      - { x: 2, y: 4 }
+      - { x: 2, y: 2 }
+  - id: seam_arrival_sign
+    type: sign_post
+    placement: { x: 5, y: 3 }
+    properties:
+      text: "THE SEAM. Cut only the marked faces. Do NOT cut two faces at once — the note goes sour and everything in the gallery hears it. If it goes sour, stand still and wait. Do not run. Running is what they follow."
+
+  - type: book
+    placement: { x: 8, y: 2 }
+    properties:
+      title: "Bellow's Book, the Third Part"
+      author_name: "A. Bellow, Founder"
+      text: |
+        On the seam.
+
+        It hums. I have written that a dozen times in this book as though it
+        were a fact about metal, and it is not. It is a fact about *time*.
+
+        The seam has been in the dark under a sleeping thing for longer than
+        there have been badgers, and it has been listening the whole while,
+        the way a struck bell goes on listening after you have stopped
+        hitting it. Long enough and a thing that only listens will start to
+        answer. I do not know what to do with that. I am a founder, not a
+        philosopher, and my hands hurt.
+
+        Cut what you need and be civil about it. That is the whole of my
+        advice and it has kept four generations alive.
+
+  # ── The seam galleries: the faces you cut for `the_singing_seam` ──
+  - type: hollow_bell/seam_face
+    placement:
+      - { x: 1, y: 16 }
+      - { x: 1, y: 17 }
+      - { x: 1, y: 21 }
+      - { x: 40, y: 16 }
+      - { x: 40, y: 20 }
+      - { x: 40, y: 22 }
+      - { x: 20, y: 23 }
+      - { x: 25, y: 15 }
+  - type: torch
+    placement:
+      - { x: 3, y: 20 }
+      - { x: 36, y: 18 }
+      - { x: 21, y: 16 }
+
+  - type: crate
+    placement:
+      - { x: 8, y: 21 }
+      - { x: 33, y: 16 }
+  - type: barrel
+    placement: { x: 9, y: 21 }
+
+  # The seam crew's last cut, and the chest they never came back for.
+  - type: iron_chest
+    placement: { x: 4, y: 22 }
+    properties:
+      state: locked
+    contents:
+      - type: hollow_bell/bell_bronze_ore
+        quantity: 2
+      - type: hollow_bell/greater_heal_potion
+      - type: gold_coin
+        quantity: 2
+      - type: frost_lance_scroll
+
+  - type: book
+    placement: { x: 5, y: 22 }
+    properties:
+      title: "Cut-Tally, Seam Gallery"
+      author_name: "C. Marlow, seam crew"
+      text: |
+        A working slate, wiped and rewritten a hundred times. The last
+        writing has not been wiped.
+
+          Face 4 — three corves, good colour, note held.
+          Face 7 — two corves. Note went flat halfway. Stopped, waited,
+                   came back. Fine after.
+          Face 9 — DO NOT CUT. Note went flat and did not come back.
+                   Bram says leave it a month. Leaving it a month.
+
+        And under that, in a much worse hand, pressed so hard the slate is
+        scored:
+
+          bell didnt ring this morning
+          bell didnt ring this morning
+          the seam has stopped humming and started LISTENING and i can feel
+          it doing it
+
+  # ── Knell's chamber, north end ──
+  - id: seam_knell
+    type: hollow_bell/knell
+    placement: { x: 21, y: 26 }
+    facing: south
+    behavior:
+      kind: roam_and_chase
+      bounds: { min_x: 1, min_y: 25, max_x: 40, max_y: 28 }
+
+  # Deep-iron shows first up here, at the boundary of the older rock. Three
+  # veins — exactly what `the_singing_seam` asks for, if you can work in
+  # Knell's room.
+  - type: hollow_bell/deep_iron_vein
+    placement:
+      - { x: 2, y: 26 }
+      - { x: 39, y: 26 }
+      - { x: 12, y: 28 }
+      - { x: 30, y: 28 }
+
+  - type: crystal_cluster
+    placement:
+      - { x: 8, y: 27 }
+      - { x: 34, y: 27 }
+
+  - type: book
+    placement: { x: 26, y: 25 }
+    properties:
+      title: "A Child's Rhyme, Ashen Hollow"
+      author_name: "(everyone knows it; nobody knows why)"
+      text: |
+        Skipping-rhyme. Every badger in the hamlet can say it and not one of
+        them has ever thought about it.
+
+            One for the rope and two for the cage,
+            three for the candle and four for the wage,
+            five for the founder that poured it so fine —
+            RING it at dawn and it's yours and it's mine!
+
+            Six for the sand and seven for the sand,
+            eight for the thing with the terrible hand,
+            nine for the dark and the deep and the dumb —
+            RING it at dawn or it's coming, it's come!
+
+        The children shout the RING and everybody laughs.
+
+  # ── The way down ──
+  - type: portal_arch
+    placement: { x: 38, y: 27 }
+  - type: torch
+    placement: { x: 37, y: 27 }
+  - id: seam_down_sign
+    type: sign_post
+    placement: { x: 37, y: 26 }
+    properties:
+      text: "THE UNDERCROFT. Bell-shift only. One hand for the rope and one for the lamp. Ring it, and come straight back up, and do not stand about listening. — by order, every pit-captain since the founding"

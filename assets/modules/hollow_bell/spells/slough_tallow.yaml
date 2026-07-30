@@ -1,0 +1,16 @@
+# Cinderjack's adds phase. NPC-only: zero mana (NPC casts don't check mana
+# anyway) and no class_access, so it never shows up on a player's spell list.
+# Self-cast, so the three drips land around Cinderjack rather than on top of
+# the player.
+name: Slough Tallow
+incantation: "*it shudders, and pieces of it fall off, and the pieces get up*"
+mana_cost: 0.0
+targeting: untargeted
+range_tiles: 0
+effects:
+  vfx_on_cast: fire_hit
+  summons_creature:
+    type_id: hollow_bell/tallow_drip
+    lifetime_seconds: 75.0
+    count: 3
+    follow_close_tiles: 3

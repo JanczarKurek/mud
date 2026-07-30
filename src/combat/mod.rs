@@ -14,10 +14,11 @@ use bevy::prelude::*;
 use crate::app::state::{simulation_active, ClientAppState};
 use crate::combat::damage::apply_pending_damage;
 use crate::combat::modifiers::{tick_item_modifiers, ItemModifierTickTimer};
-use crate::combat::resources::{BattleTurnTimer, PendingModifierConsumption};
+use crate::combat::resources::{BattleTurnTimer, PendingModifierConsumption, PendingNpcSummons};
 use crate::combat::scheduled::{tick_scheduled_impacts, ScheduledImpacts};
 use crate::combat::systems::{
-    apply_pending_modifier_consumption, clear_invalid_combat_targets, resolve_battle_turn,
+    apply_pending_modifier_consumption, apply_pending_npc_summons, clear_invalid_combat_targets,
+    resolve_battle_turn,
 };
 use crate::game::systems::process_game_commands;
 use crate::magic::effects::tick_dot_effects;
@@ -30,6 +31,7 @@ impl Plugin for CombatPlugin {
         app.insert_resource(BattleTurnTimer::default())
             .insert_resource(ItemModifierTickTimer::default())
             .insert_resource(PendingModifierConsumption::default())
+            .init_resource::<PendingNpcSummons>()
             .init_resource::<ScheduledImpacts>()
             // Drop any in-flight missiles / pending AoE waves when leaving the
             // world, so they can't flash VFX into a freshly-loaded one.
@@ -52,6 +54,16 @@ impl Plugin for CombatPlugin {
                 Update,
                 tick_scheduled_impacts
                     .after(process_game_commands)
+                    .before(apply_pending_damage)
+                    .run_if(simulation_active),
+            )
+            // Boss adds. Must run after the cast queues them and before the
+            // damage drain, so a summon that lands this turn is a real entity
+            // by the time anything looks for targets.
+            .add_systems(
+                Update,
+                apply_pending_npc_summons
+                    .after(resolve_battle_turn)
                     .before(apply_pending_damage)
                     .run_if(simulation_active),
             )

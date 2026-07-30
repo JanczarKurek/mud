@@ -1,0 +1,31 @@
+extends: static_world
+name: Bell-Bronze Seam
+description: A face of the singing seam — pale crystalline ore in a wall of dark rock, humming just below hearing. Cut it and the note changes. Everything in the chamber notices when the note changes.
+colliding: true
+states:
+  available:
+    colliding: true
+  depleted:
+    colliding: true
+initial_state: available
+interactions:
+  - verb: mine
+    label: Cut bell-bronze
+    from: [available]
+    to: depleted
+    tool_gate:
+      required_type_id: pickaxe
+      fail_message: "You need a pickaxe to cut the seam."
+    skill_gate:
+      skill: Survival
+      dc: !fixed 13
+    grants_items:
+      - type_id: hollow_bell/bell_bronze_ore
+        quantity: "uniform(1, 2)"
+        probability: 1.0
+    respawn_seconds: 300.0
+render:
+  z_index: 0.28
+  debug_color: [196, 208, 172]
+  debug_size: 0.88
+  sprite_path: modules/hollow_bell/overworld_objects/seam_face/sprite.png

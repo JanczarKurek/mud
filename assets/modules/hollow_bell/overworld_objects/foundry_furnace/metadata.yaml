@@ -1,0 +1,28 @@
+extends: static_world
+name: The Foundry Furnace
+description: A squat brick-and-iron furnace the size of a cottage, its mouth choked with two centuries of clinker. Cold since the day the shift did not come up. Lit, it throws enough heat to melt bell-bronze and enough light to make the whole casting floor look briefly like a place where people worked.
+colliding: true
+states:
+  cold:
+    sprite_path: modules/hollow_bell/overworld_objects/foundry_furnace/cold.png
+    clear_light: true
+    colliding: true
+  lit:
+    sprite_path: modules/hollow_bell/overworld_objects/foundry_furnace/lit.png
+    light: { color: [255, 168, 72], radius: 8.0, intensity: 1.0 }
+    colliding: true
+initial_state: cold
+interactions:
+  - verb: light
+    label: Light the furnace
+    from: [cold]
+    to: lit
+  - verb: extinguish
+    label: Bank the fire
+    from: [lit]
+    to: cold
+render:
+  z_index: 0.30
+  debug_color: [148, 76, 44]
+  debug_size: 0.95
+  sprite_path: modules/hollow_bell/overworld_objects/foundry_furnace/cold.png

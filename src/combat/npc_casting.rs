@@ -109,6 +109,30 @@ pub struct NpcCastOutcome {
     pub vfx: Vec<GameUiEvent>,
     /// Chat-log narration to broadcast.
     pub chat_messages: Vec<String>,
+    /// Set for a tile-targeted cast that carries an `aoe` block and rolls
+    /// damage. The builder is deliberately world-free, so it cannot resolve
+    /// who is standing in the blast — it describes the splash and the caller
+    /// (`execute_npc_spell_cast`) fans it out over the entities it can see.
+    pub aoe_splash: Option<NpcAoeSplash>,
+    /// Set when the spell carries a `summons_creature` block. Queued through
+    /// `PendingNpcSummons` because spawning needs mutable registry access the
+    /// battle-turn system doesn't hold.
+    pub summon: Option<NpcSummonPlan>,
+}
+
+/// A tile-centred damage splash awaiting entity resolution by the caller.
+pub struct NpcAoeSplash {
+    pub center: TilePosition,
+    pub radius_tiles: i32,
+    pub amount: f32,
+    pub damage_type: crate::combat::damage_type::DamageType,
+    pub vfx_override: Option<String>,
+}
+
+/// Where and what an NPC cast wants to summon.
+pub struct NpcSummonPlan {
+    pub spec: crate::magic::resources::SummonSpec,
+    pub tile: TilePosition,
 }
 
 /// Build the cast payload for the spell at `spells[spell_idx]`. Returns
@@ -207,13 +231,13 @@ pub fn build_npc_cast_outcome(
             }
         }
         NpcSpellTargetKind::TargetTile => {
-            // Tile-target AoE — for NPC casts we keep the friendly-fire
-            // surface intentionally narrow: only the actual `target_entity`
-            // takes damage today. Fanning out to every entity in radius
-            // would require a separate world query that's not worth wiring
-            // in until enemy mages stand near each other in real content.
-            // Per-tile VFX still play over the full radius so the spell
-            // looks like an AoE on screen.
+            // Tile-target AoE. Per-tile VFX play over the full radius here;
+            // the damage splash is *described* rather than resolved, because
+            // this builder has no world access. `execute_npc_spell_cast`
+            // turns `aoe_splash` into one `DamageEvent` per victim standing
+            // in the blast. A tile-targeted spell with no `aoe` block still
+            // falls back to hitting only the primary target.
+            let mut splashed = false;
             if let Some(aoe) = spell.effects.aoe.as_ref() {
                 let radius = aoe.radius_tiles.max(0);
                 if let Some(tile_vfx_id) = aoe.vfx_on_tile.as_ref() {
@@ -231,8 +255,18 @@ pub fn build_npc_cast_outcome(
                         }
                     }
                 }
+                if damage > 0.0 {
+                    outcome.aoe_splash = Some(NpcAoeSplash {
+                        center: target_tile,
+                        radius_tiles: radius,
+                        amount: damage,
+                        damage_type,
+                        vfx_override: spell.effects.vfx_on_target_hit.clone(),
+                    });
+                    splashed = true;
+                }
             }
-            if damage > 0.0 {
+            if damage > 0.0 && !splashed {
                 outcome.damage_events.push(DamageEvent {
                     target: target_entity,
                     amount: damage,
@@ -255,6 +289,20 @@ pub fn build_npc_cast_outcome(
                 outcome.self_clears.push(*kind);
             }
         }
+    }
+
+    // Summons land on the cast tile — the caster's own tile for a self-cast,
+    // otherwise the target tile, so a boss can drop adds either on itself or
+    // on top of whoever it is fighting.
+    if let Some(spec) = spell.effects.summons_creature.as_ref() {
+        let tile = match target_kind {
+            NpcSpellTargetKind::SelfCast => attacker_tile,
+            _ => target_tile,
+        };
+        outcome.summon = Some(NpcSummonPlan {
+            spec: spec.clone(),
+            tile,
+        });
     }
 
     outcome
@@ -329,7 +377,125 @@ fn chebyshev_distance(a: TilePosition, b: TilePosition) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::combat::damage_expr::DamageExpr;
+    use crate::magic::resources::{
+        AoeSpec, SpellDamage, SpellDefinition, SpellEffects, SpellTargeting, SummonSpec,
+    };
     use crate::npc::spellcasting::NpcSpellEntry;
+
+    fn spell_with(effects: SpellEffects) -> SpellDefinition {
+        SpellDefinition {
+            name: "Test Spell".to_owned(),
+            incantation: "test".to_owned(),
+            mana_cost: 0.0,
+            targeting: SpellTargeting::TargetedTile,
+            range_tiles: 6,
+            class_access: Vec::new(),
+            min_caster_level: 0,
+            effects,
+        }
+    }
+
+    /// Run the builder with fixed caster/target geometry.
+    fn build(spell: &SpellDefinition, kind: NpcSpellTargetKind) -> NpcCastOutcome {
+        build_npc_cast_outcome(
+            spell,
+            kind,
+            Entity::PLACEHOLDER,
+            "Boss",
+            SpaceId(1),
+            TilePosition::new(1, 1, 0),
+            AttributeSet::default(),
+            10,
+            Entity::PLACEHOLDER,
+            "Victim",
+            TilePosition::new(5, 5, 0),
+        )
+    }
+
+    #[test]
+    fn tile_aoe_emits_a_splash_for_the_caller_to_resolve() {
+        let spell = spell_with(SpellEffects {
+            damage: SpellDamage(Some(DamageExpr::parse("4d6+10").unwrap())),
+            aoe: Some(AoeSpec {
+                radius_tiles: 3,
+                vfx_on_tile: None,
+                pattern: Default::default(),
+            }),
+            ..Default::default()
+        });
+        let outcome = build(&spell, NpcSpellTargetKind::TargetTile);
+
+        // The splash replaces the single-target event: the caller fans it out
+        // over everyone standing in the blast.
+        assert!(outcome.damage_events.is_empty());
+        let splash = outcome.aoe_splash.expect("tile AoE should emit a splash");
+        assert_eq!(splash.radius_tiles, 3);
+        assert_eq!(splash.center, TilePosition::new(5, 5, 0));
+        assert!(splash.amount > 0.0);
+    }
+
+    #[test]
+    fn tile_cast_without_an_aoe_block_still_hits_only_the_target() {
+        let spell = spell_with(SpellEffects {
+            damage: SpellDamage(Some(DamageExpr::parse("4d6+10").unwrap())),
+            ..Default::default()
+        });
+        let outcome = build(&spell, NpcSpellTargetKind::TargetTile);
+
+        assert!(outcome.aoe_splash.is_none());
+        assert_eq!(outcome.damage_events.len(), 1);
+    }
+
+    #[test]
+    fn single_target_cast_never_splashes() {
+        let spell = spell_with(SpellEffects {
+            damage: SpellDamage(Some(DamageExpr::parse("2d6").unwrap())),
+            aoe: Some(AoeSpec {
+                radius_tiles: 4,
+                vfx_on_tile: None,
+                pattern: Default::default(),
+            }),
+            ..Default::default()
+        });
+        let outcome = build(&spell, NpcSpellTargetKind::Target);
+
+        assert!(outcome.aoe_splash.is_none());
+        assert_eq!(outcome.damage_events.len(), 1);
+    }
+
+    #[test]
+    fn summon_plan_lands_on_the_target_tile_and_on_self_for_selfcast() {
+        let spell = spell_with(SpellEffects {
+            summons_creature: Some(SummonSpec {
+                type_id: "tallow_drip".to_owned(),
+                lifetime_seconds: 45.0,
+                count: 3,
+                follow_close_tiles: 2,
+            }),
+            ..Default::default()
+        });
+
+        let at_target = build(&spell, NpcSpellTargetKind::TargetTile)
+            .summon
+            .expect("summons_creature should produce a plan");
+        assert_eq!(at_target.tile, TilePosition::new(5, 5, 0));
+        assert_eq!(at_target.spec.count, 3);
+        assert_eq!(at_target.spec.type_id, "tallow_drip");
+
+        let on_self = build(&spell, NpcSpellTargetKind::SelfCast)
+            .summon
+            .expect("self-cast summons should also produce a plan");
+        assert_eq!(on_self.tile, TilePosition::new(1, 1, 0));
+    }
+
+    #[test]
+    fn no_summon_plan_when_the_spell_does_not_summon() {
+        let spell = spell_with(SpellEffects::default());
+        assert!(build(&spell, NpcSpellTargetKind::TargetTile)
+            .summon
+            .is_none());
+    }
 
     fn entry(
         spell_id: &str,

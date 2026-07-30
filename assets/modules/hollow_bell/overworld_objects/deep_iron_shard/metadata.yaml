@@ -1,0 +1,14 @@
+extends: pickup
+name: Deep Iron Shard
+weight: 2.0
+max_stack_size: 10
+description:
+  - text: A jagged shard of near-black metal with an oily blue sheen, colder than the room it is in. It came out of whatever the Undercroft was before the badgers broke into it. Nobody has ever worked out how to smelt it, which has not stopped anyone trying.
+    stack_size: [1, 1]
+  - text: "{count_written} shards of deep iron, beading frost in your pack."
+    stack_size: [2, ~]
+render:
+  z_index: 0.24
+  debug_color: [46, 52, 64]
+  debug_size: 0.48
+  sprite_path: modules/hollow_bell/overworld_objects/deep_iron_shard/sprite.png

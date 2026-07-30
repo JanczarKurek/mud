@@ -1375,15 +1375,23 @@ fn handle_move_player(
     });
 }
 
-/// Resolve the highest walkable surface in the column at `(x, y)` that the
-/// player can land on if they fall from `from_z`. Returns the resolved
-/// `TilePosition` (cascading down from `from_z` if needed), or `None` when no
-/// walkable surface exists.
+/// Resolve the highest walkable surface in the column at `(x, y)` that an
+/// actor standing at `source_z` can land on, scanning down from `from_z`.
+/// Returns the resolved `TilePosition`, or `None` when no walkable surface is
+/// reachable.
+///
+/// The scan is gated on `column.slab_between(source_z, z)`, and the gate is
+/// taken against **`source_z`**, not `from_z`: `from_z` is merely where the
+/// scan starts, so gating on it would compare a value against itself on the
+/// first iteration and never fire. Without this a jump across the ground floor
+/// of a roofed room lands the jumper on the roof.
 #[allow(clippy::too_many_arguments)]
 fn resolve_landing_at(
     x: i32,
     y: i32,
     from_z: i32,
+    source_z: i32,
+    column: &crate::world::column::Column,
     space_id: crate::world::components::SpaceId,
     collider_positions: &[TilePosition],
     object_query: &Query<
@@ -1395,6 +1403,13 @@ fn resolve_landing_at(
     floor_defs: &crate::world::floor_definitions::FloorTilesetDefinitions,
 ) -> Option<TilePosition> {
     for z in (0..=from_z).rev() {
+        // `continue`, not `break`: unlike the descent gate in
+        // `resolve_step_with_climb`, `z` here can start *above* `source_z`
+        // (landing on a wall top), so the tested interval is not monotone
+        // across the whole scan. The loop is a handful of iterations anyway.
+        if column.slab_between(source_z, z) {
+            continue;
+        }
         let candidate = TilePosition::new(x, y, z);
         if is_walkable_tile(
             candidate,
@@ -1530,25 +1545,32 @@ fn handle_jump_to(
         let dxi = xi - source.0;
         let dyi = yi - source.1;
 
-        // Apex of this tile's column (whether walkable on top or not — solid
-        // props still need to be cleared).
-        let stack_top = crate::world::stacks::stack_top_z(
+        let column = crate::world::column::Column::from_world(
             space_resident.space_id,
             xi,
             yi,
+            Entity::PLACEHOLDER,
             column_members(),
             definitions,
             FloorGeometry::server(floor_maps, floor_defs),
         );
+
+        // Apex of this tile's column (whether walkable on top or not — solid
+        // props still need to be cleared). Deliberately the *raw* top: you have
+        // to physically clear the storey above even when you can't land on it.
+        let stack_top = column.top_surface();
         let stack_dz = (stack_top - source_z).max(0);
 
-        // Landing candidate: cascade down from stack_top until we find a
-        // walkable surface. None ⇒ this tile is not a landing option, but it
-        // still contributes to the apex for subsequent tiles.
+        // Landing candidate: cascade down from the highest surface the jumper
+        // can actually reach from their own floor until we find a walkable one.
+        // None ⇒ this tile is not a landing option, but it still contributes to
+        // the apex for subsequent tiles.
         let landing = resolve_landing_at(
             xi,
             yi,
-            stack_top,
+            column.surface_from(source_z),
+            source_z,
+            &column,
             space_resident.space_id,
             collider_positions,
             object_query,
@@ -3852,7 +3874,8 @@ fn handle_cast_spell_at_tile(
             caster_space_id,
             target_tile,
             player_entity,
-            caster_id,
+            Some(caster_id),
+            crate::npc::components::Faction::PlayerSide,
         );
     }
 
@@ -3981,7 +4004,16 @@ fn spawn_spell_object(
 /// companion per owner: any existing companion of this player is despawned
 /// first, so a recast repositions/refreshes rather than stacking summons.
 #[allow(clippy::too_many_arguments)]
-fn spawn_summoned_creature(
+/// Spawn `summon_spec.count` creatures owned by `owner`.
+///
+/// `owner_player` is `Some` for a player's summon and `None` for an NPC's — a
+/// monster-owned companion is the `Companion.owner_player = None` path the
+/// component was designed for. `faction` picks the side the summons fight on:
+/// `PlayerSide` for player summons, `MonsterSide` for a boss's adds, so
+/// faction-aware targeting (`nearest_visible_enemy`) sends them at the right
+/// enemies.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn spawn_summoned_creature(
     commands: &mut Commands,
     definitions: &OverworldObjectDefinitions,
     object_registry: &mut ObjectRegistry,
@@ -3990,7 +4022,8 @@ fn spawn_summoned_creature(
     space_id: crate::world::components::SpaceId,
     target_tile: TilePosition,
     owner: Entity,
-    owner_id: PlayerId,
+    owner_player: Option<PlayerId>,
+    faction: crate::npc::components::Faction,
 ) {
     let type_id = summon_spec.type_id.as_str();
     let Some(definition) = definitions.get(type_id) else {
@@ -4031,6 +4064,7 @@ fn spawn_summoned_creature(
             target_tile,
             None,
         );
+        // realize_npc is what attaches Npc/HostileBehavior/CombatLeash.
         crate::world::setup::realize_npc(
             commands,
             entity,
@@ -4039,13 +4073,13 @@ fn spawn_summoned_creature(
             type_id,
             &behavior,
         );
-        // Overlay the companion identity *after* realize_npc so PlayerSide wins
-        // over the MonsterSide that the hostile branch inserted.
+        // Overlay the companion identity *after* realize_npc so the caller's
+        // chosen faction wins over the MonsterSide the hostile branch inserted.
         commands.entity(entity).insert((
-            crate::npc::components::Faction::PlayerSide,
+            faction,
             crate::npc::components::Companion {
                 owner,
-                owner_player: Some(owner_id),
+                owner_player,
                 follow_close_tiles: summon_spec.follow_close_tiles.max(1),
             },
             crate::world::ttl::Ttl {
@@ -6462,12 +6496,18 @@ fn is_walkable_tile(
 ///      walkable decal. Tried first so ground-level passage under an
 ///      unreachable surface isn't accidentally treated as an attempted climb.
 ///   2. **Climb** — flat path blocked at `current_z` *and* the column's
-///      `stack_top` reaches above. Allowed up to `CLIMB_MAX_DZ` half-blocks;
+///      surface reaches above. Allowed up to `CLIMB_MAX_DZ` half-blocks;
 ///      the caller (e.g. `handle_move_player`) gates on Athletics when
 ///      `dz_climbed > CLIMB_FREE_DZ`.
 ///   3. **Descent** — cliff edge. Cascade down to the highest walkable
 ///      surface ≤ `current_z`; `StepResolution.dz_fell` surfaces the drop so
 ///      the caller can apply fall damage.
+///
+/// Both the climb and the descent are **slab-aware**: floor material between
+/// the actor's feet and a candidate surface hides that surface. Without this
+/// a step into any collider standing on a painted upper floor cascades past
+/// the floor it is standing on and dumps the player on the ground storey, and
+/// a SHIFT-climb from inside a roofed room resolves onto the roof.
 fn resolve_step_with_climb(
     target_xy: (i32, i32),
     current_z: i32,
@@ -6503,10 +6543,16 @@ fn resolve_step_with_climb(
         });
     }
 
-    // 2. Climb path. Reached only when the flat path is blocked (collider at
-    //    `current_z`). Anything up to `CLIMB_MAX_DZ` half-blocks resolves;
-    //    the caller rolls Athletics if `dz_climbed > CLIMB_FREE_DZ`.
-    let column_members = || {
+    // The column at the target tile. Built lazily, *after* the flat-path
+    // early return, so an ordinary ground step (which short-circuits inside
+    // `is_walkable_tile` on `target.z == GROUND_FLOOR`) never pays for the
+    // query scan. Shared by the climb and descent branches below — this is
+    // one scan where the old code did two.
+    let column = crate::world::column::Column::from_world(
+        space_id,
+        x,
+        y,
+        Entity::PLACEHOLDER,
         object_query.iter().map(|(entity, resident, tile, object)| {
             crate::world::stacks::ColumnMember {
                 entity,
@@ -6514,50 +6560,65 @@ fn resolve_step_with_climb(
                 tile,
                 object,
             }
-        })
-    };
-    let stack_top = crate::world::stacks::stack_top_z(
-        space_id,
-        x,
-        y,
-        column_members(),
+        }),
         definitions,
         FloorGeometry::server(floor_maps, floor_defs),
     );
-    if stack_top > current_z && stack_top - current_z <= crate::game::traversal::CLIMB_MAX_DZ {
-        let stack_top_walkable = crate::world::stacks::stack_top_is_walkable(
-            space_id,
-            x,
-            y,
-            Entity::PLACEHOLDER,
-            column_members(),
-            definitions,
-            FloorGeometry::server(floor_maps, floor_defs),
-        );
-        if stack_top_walkable {
-            let above = TilePosition::new(x, y, stack_top);
-            let blocked_above = collider_positions.contains(&above);
-            let ceiling_above = object_query
-                .iter()
-                .filter(|(_, resident, tile, _)| resident.space_id == space_id && **tile == above)
-                .any(|(_, _, _, object)| {
-                    definitions.get(&object.definition_id).is_some_and(|def| {
-                        def.render.walkable_surface && def.render.block_size == 0
-                    })
-                });
-            if !blocked_above && !ceiling_above {
-                return Some(crate::game::traversal::StepResolution {
-                    landed: above,
-                    dz_climbed: stack_top - current_z,
-                    dz_fell: 0,
-                });
-            }
+
+    // 2. Climb path. Reached only when the flat path is blocked (collider at
+    //    `current_z`). Anything up to `CLIMB_MAX_DZ` half-blocks resolves;
+    //    the caller rolls Athletics if `dz_climbed > CLIMB_FREE_DZ`.
+    //
+    //    `surface_from` rather than the raw `top_surface`: standing on the
+    //    ground floor of a roofed room, the raw top *is* the storey above, so
+    //    the raw top would let a SHIFT-climb pass straight through the
+    //    ceiling. It also makes a climb onto a chest under that ceiling stop
+    //    on the chest instead of overshooting to the floor above.
+    let stack_top = column.surface_from(current_z);
+    if stack_top > current_z
+        && stack_top - current_z <= crate::game::traversal::CLIMB_MAX_DZ
+        && column.surface_from_is_walkable(current_z)
+    {
+        let above = TilePosition::new(x, y, stack_top);
+        let blocked_above = collider_positions.contains(&above);
+        let ceiling_above = object_query
+            .iter()
+            .filter(|(_, resident, tile, _)| resident.space_id == space_id && **tile == above)
+            .any(|(_, _, _, object)| {
+                definitions
+                    .get(&object.definition_id)
+                    .is_some_and(|def| def.render.walkable_surface && def.render.block_size == 0)
+            });
+        if !blocked_above && !ceiling_above {
+            return Some(crate::game::traversal::StepResolution {
+                landed: above,
+                dz_climbed: stack_top - current_z,
+                dz_fell: 0,
+            });
         }
     }
 
-    // 3. Descent. Cascade down to the highest walkable surface ≤ current_z.
+    // 3. Descent. Cascade down to the highest walkable surface ≤ current_z,
+    //    stopping at floor material. Walking off a ledge into open air still
+    //    drops you Tibia-style; walking into something standing *on* the floor
+    //    you share does not drop you through that floor.
+    //
+    //    `break`, not `continue`: the tested interval is `[z, current_z)` with
+    //    a *fixed* upper endpoint, so it only ever grows as `z` decreases and
+    //    the predicate is monotone — once a slab is in the way it is in the
+    //    way for every lower candidate. Rewriting the gate against `z + 1`
+    //    would destroy that and silently make `break` wrong.
+    //
+    //    Invariant this leans on: every floor tileset that occludes is also
+    //    walkable (`walkable_surface` defaults to true, see
+    //    `floor_definitions.rs`). An occluding-but-unwalkable floor would read
+    //    as an impassable ceiling to players while `spatial::apply_floor_layer`
+    //    still lets NPCs fall through it.
     if current_z > 0 {
         for z in (0..current_z).rev() {
+            if column.slab_between(current_z, z) {
+                break;
+            }
             let below = TilePosition::new(x, y, z);
             if is_walkable_tile(
                 below,
@@ -7554,6 +7615,324 @@ mod tests {
             tile,
             TilePosition::new(11, 10, 0),
             "player should drop off the upper floor to the ground"
+        );
+    }
+
+    /// The counterpart to the test above: walking into something that is
+    /// standing *on the floor you share* must not cascade past that floor.
+    ///
+    /// Before the descent gate, the flat step was blocked by the chair's
+    /// collider at z=2, the climb branch found no surface above, and the
+    /// descent ran `for z in (0..2).rev()` straight through the painted floor
+    /// to `z=0` — where `is_walkable_tile` returns true unconditionally. The
+    /// player was silently teleported to the ground storey, and the 2
+    /// half-block drop is exactly at `FALL_THRESHOLD_DZ` so there wasn't even
+    /// a damage message to explain it.
+    #[test]
+    fn stepping_onto_furniture_on_an_upper_floor_does_not_drop_to_the_ground() {
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+        app.world_mut()
+            .entity_mut(player)
+            .insert(TilePosition::new(10, 10, 2));
+        paint_upper_floor(&mut app, 10, 10);
+        paint_upper_floor(&mut app, 10, 11);
+
+        let object_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("chair");
+        spawn_world_object(&mut app, "chair", object_id, TilePosition::new(10, 11, 2));
+        app.update();
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                PlayerId(1),
+                GameCommand::MovePlayer {
+                    delta: MoveDelta { x: 0, y: 1 },
+                    climb: false,
+                },
+            );
+        app.update();
+
+        let tile = *app.world().get::<TilePosition>(player).unwrap();
+        assert_eq!(
+            tile,
+            TilePosition::new(10, 11, 3),
+            "player should step up onto the chair (half-block, free auto-step) \
+             and stay on floor 1, not fall through to the ground"
+        );
+    }
+
+    /// The descent gate on its own, isolated from the furniture change. A
+    /// bookshelf is a `block_size: 0` collider — it presents no surface, so
+    /// there is nothing to climb onto and the resolver falls through to the
+    /// descent branch. The step must simply be refused; before the gate it
+    /// cascaded past the painted floor to `z = 0`.
+    #[test]
+    fn stepping_into_an_unclimbable_obstacle_on_an_upper_floor_is_refused() {
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+        app.world_mut()
+            .entity_mut(player)
+            .insert(TilePosition::new(10, 10, 2));
+        paint_upper_floor(&mut app, 10, 10);
+        paint_upper_floor(&mut app, 10, 11);
+
+        let object_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("bookshelf");
+        spawn_world_object(
+            &mut app,
+            "bookshelf",
+            object_id,
+            TilePosition::new(10, 11, 2),
+        );
+        app.update();
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                PlayerId(1),
+                GameCommand::MovePlayer {
+                    delta: MoveDelta { x: 0, y: 1 },
+                    climb: false,
+                },
+            );
+        app.update();
+
+        let tile = *app.world().get::<TilePosition>(player).unwrap();
+        assert_eq!(
+            tile,
+            TilePosition::new(10, 10, 2),
+            "an unclimbable obstacle on the shared floor should block the step, \
+             not drop the player through the floor it is standing on"
+        );
+    }
+
+    /// The reported bug, against authored `overworld.yaml` coordinates: a chair
+    /// pushed onto the tavern loft at (40, 28), player standing one tile south
+    /// of it at (40, 29) on the same painted floor. Pairs with
+    /// `overworld_yaml_paints_wooden_floor_on_upper_storey`.
+    #[test]
+    fn bumping_furniture_on_the_tavern_loft_stays_on_the_loft() {
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 40, 29);
+        app.world_mut()
+            .entity_mut(player)
+            .insert(TilePosition::new(40, 29, 2));
+
+        let object_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("chair");
+        spawn_world_object(&mut app, "chair", object_id, TilePosition::new(40, 28, 2));
+        app.update();
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                PlayerId(1),
+                GameCommand::MovePlayer {
+                    delta: MoveDelta { x: 0, y: -1 },
+                    climb: false,
+                },
+            );
+        app.update();
+
+        let tile = *app.world().get::<TilePosition>(player).unwrap();
+        assert_eq!(
+            tile,
+            TilePosition::new(40, 28, 3),
+            "stepping into the loft chair must not teleport the player to the ground floor"
+        );
+    }
+
+    /// The anti-over-correction guard. The slab gate keys on the **target**
+    /// column, not the actor's own — (39, 29) is the authored stairwell gap, so
+    /// nothing is painted there and the descent must still find `stair_n_low`'s
+    /// top at z=1. Gating on the source column instead would wall the player
+    /// onto the loft with no way down.
+    #[test]
+    fn loft_stairwell_gap_still_drops_onto_the_stair_tread() {
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 40, 29);
+        app.world_mut()
+            .entity_mut(player)
+            .insert(TilePosition::new(40, 29, 2));
+        app.update();
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                PlayerId(1),
+                GameCommand::MovePlayer {
+                    delta: MoveDelta { x: -1, y: 0 },
+                    climb: false,
+                },
+            );
+        app.update();
+
+        let tile = *app.world().get::<TilePosition>(player).unwrap();
+        assert_eq!(
+            tile,
+            TilePosition::new(39, 29, 1),
+            "stepping into the stairwell gap should land on the stair_n_low tread"
+        );
+    }
+
+    /// End-to-end on real content: the only staircase in the game still works
+    /// after swapping the climb branch from the raw column top to
+    /// `Column::surface_from`. The synthetic twin is
+    /// `climbing_stair_chain_lands_on_painted_upper_floor`.
+    #[test]
+    fn climbing_the_tavern_stairs_reaches_the_loft() {
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 39, 30);
+        app.update();
+
+        // (39,30) ground → stair_n_low (39,29) → stair_n_high (39,28) → loft.
+        for _ in 0..3 {
+            app.world_mut()
+                .resource_mut::<PendingGameCommands>()
+                .push_for_player(
+                    PlayerId(1),
+                    GameCommand::MovePlayer {
+                        delta: MoveDelta { x: 0, y: -1 },
+                        climb: false,
+                    },
+                );
+            if let Some(mut cd) = app.world_mut().get_mut::<MovementCooldown>(player) {
+                cd.remaining_seconds = 0.0;
+            }
+            app.update();
+        }
+
+        let tile = *app.world().get::<TilePosition>(player).unwrap();
+        assert_eq!(
+            tile,
+            TilePosition::new(39, 27, 2),
+            "the authored stair chain should still carry the player onto the loft"
+        );
+    }
+
+    /// The climb branch's half of the same bug. Standing on the ground floor of
+    /// a roofed room, the *raw* column top is the storey above, so a climb onto
+    /// a chest under that ceiling read as a 2 half-block climb (blocked without
+    /// SHIFT — and with SHIFT it put you on the roof). `surface_from` hides the
+    /// slab-separated surface, so the climb correctly stops on the chest.
+    #[test]
+    fn climb_under_a_ceiling_stops_on_the_chest_not_through_the_floor() {
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+        paint_upper_floor(&mut app, 10, 10);
+        paint_upper_floor(&mut app, 11, 10);
+
+        let object_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("iron_chest");
+        spawn_world_object(
+            &mut app,
+            "iron_chest",
+            object_id,
+            TilePosition::ground(11, 10),
+        );
+        app.update();
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                PlayerId(1),
+                GameCommand::MovePlayer {
+                    delta: MoveDelta { x: 1, y: 0 },
+                    climb: false,
+                },
+            );
+        app.update();
+
+        let tile = *app.world().get::<TilePosition>(player).unwrap();
+        assert_eq!(
+            tile,
+            TilePosition::new(11, 10, 1),
+            "climb under a ceiling should stop on the chest at z=1"
+        );
+    }
+
+    /// `handle_jump_to` started its landing cascade at the *raw* column top,
+    /// which under a roof is already the storey above — so a jump across the
+    /// ground floor of a roofed room landed the jumper on the roof, and the
+    /// slab gate has to be taken against the jumper's `source_z` rather than
+    /// the scan start to catch it.
+    ///
+    /// Athletics is maxed so the roll clears the DC deterministically —
+    /// otherwise the buggy landing (`z = 2`, DC 15 for this hop instead of 5)
+    /// simply fails its check and the player stays put, and the test passes
+    /// for the wrong reason. The full landing tile is asserted: with the roll
+    /// guaranteed, a one-tile hop can only resolve on the target.
+    #[test]
+    fn jumping_across_a_roofed_room_stays_on_the_ground_floor() {
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+        paint_upper_floor(&mut app, 10, 10);
+        paint_upper_floor(&mut app, 11, 10);
+        if let Some(mut sheet) = app.world_mut().get_mut::<SkillSheet>(player) {
+            sheet.set_rank(crate::player::skills::Skill::Athletics, 20);
+        }
+        app.update();
+
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(
+                PlayerId(1),
+                GameCommand::JumpTo {
+                    target_tile: TilePosition::ground(11, 10),
+                },
+            );
+        app.update();
+
+        let tile = *app.world().get::<TilePosition>(player).unwrap();
+        assert_eq!(
+            tile,
+            TilePosition::ground(11, 10),
+            "a jump under a roof must resolve on the ground floor, not the storey above"
+        );
+    }
+
+    /// `settle_pending_stacks` pass 1 used to compact every block-sized member
+    /// of a column from `z = 0` upward, so anything standing on an upper floor
+    /// was snapped through it the moment its column settled. Now that furniture
+    /// carries `block_size: 1`, that would have re-introduced the reported bug
+    /// from the object side.
+    #[test]
+    fn settle_does_not_compact_upper_floor_objects_to_the_ground() {
+        let mut app = setup_server_app();
+        paint_upper_floor(&mut app, 10, 10);
+
+        let chair_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("chair");
+        let chair = spawn_world_object(&mut app, "chair", chair_id, TilePosition::new(10, 10, 2));
+        app.update();
+
+        let space_id = app.world().resource::<WorldConfig>().current_space_id;
+        app.world_mut()
+            .resource_mut::<crate::world::stacks::PendingStackSettleEvents>()
+            .push(crate::world::stacks::SettleStackEvent {
+                space_id,
+                x: 10,
+                y: 10,
+                removed_entity: None,
+            });
+        app.update();
+
+        assert_eq!(
+            *app.world().get::<TilePosition>(chair).unwrap(),
+            TilePosition::new(10, 10, 2),
+            "a chair on a painted upper floor must settle onto that floor, not the ground"
         );
     }
 
