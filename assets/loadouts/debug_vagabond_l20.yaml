@@ -1,0 +1,34 @@
+# Level-20 Vagabond kit for the "Debug Vagabond" preset. Agile skill monkey:
+# chain tier (the heaviest kit that keeps the traveler-boots dodge feel),
+# crossbow + bolts for ranged with a dagger backup, gathering tools for
+# skill testing, and a fat coin purse. Kept ~6 kg under the STR 10 soft
+# carry cap (40 kg) so picking up loot doesn't immediately encumber —
+# no steel sword or pickaxe, they tipped the kit to exactly 40.0 kg.
+equipment:
+  - slot: weapon
+    type_id: crossbow
+  - slot: ammo
+    type_id: bolt
+    quantity: 40
+  - slot: armor
+    type_id: chain_armor
+  - slot: helmet
+    type_id: chain_helmet
+  - slot: legs
+    type_id: chain_legs
+  - slot: boots
+    type_id: traveler_boots
+  - slot: ring
+    type_id: silver_ring
+  - slot: amulet
+    type_id: copper_amulet
+  - slot: backpack
+    type_id: canvas_backpack
+
+backpack:
+  - type_id: dagger
+  - type_id: poison_flask
+  - type_id: fishing_rod
+  - type_id: herb_knife
+  - type_id: gold_coin
+    quantity: 50

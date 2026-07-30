@@ -1,0 +1,12 @@
+# Level-1 baseline debug character (same build the old hardcoded auto-create
+# seeded). Balanced 12s spend the point-buy budget exactly (6 × +2 == 12).
+name: Debug
+class: Fighter
+level: 1
+attributes:
+  strength: 12
+  agility: 12
+  constitution: 12
+  willpower: 12
+  charisma: 12
+  focus: 12

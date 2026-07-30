@@ -1,0 +1,12 @@
+# Mid-level Focus caster for testing spells and mana scaling.
+name: Debug Wizard
+class: Wizard
+level: 6
+attributes:
+  strength: 8
+  agility: 12
+  constitution: 12
+  willpower: 12
+  charisma: 12
+  focus: 16
+loadout: debug_wizard_l6

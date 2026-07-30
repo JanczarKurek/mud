@@ -1,0 +1,12 @@
+# High-mid level Willpower caster.
+name: Debug Cleric
+class: Cleric
+level: 12
+attributes:
+  strength: 12
+  agility: 10
+  constitution: 14
+  willpower: 16
+  charisma: 10
+  focus: 10
+loadout: debug_cleric_l12

@@ -1,0 +1,33 @@
+# Level-12 Cleric kit for the "Debug Cleric" preset. Full chain + wooden
+# shield rather than the plate/tower elite tier: plate alone is 25 kg and a
+# STR 12 build (44 kg soft carry cap) would start Encumbered — half walking
+# speed. Chain keeps the whole kit near ~31 kg with loot headroom. Iron
+# sword is the mid martial tier (clerics are ThreeQuarter BAB), plus healing
+# scrolls and mana potions for the support role.
+equipment:
+  - slot: weapon
+    type_id: iron_sword
+  - slot: shield
+    type_id: wooden_shield
+  - slot: armor
+    type_id: chain_armor
+  - slot: helmet
+    type_id: chain_helmet
+  - slot: legs
+    type_id: chain_legs
+  - slot: boots
+    type_id: traveler_boots
+  - slot: amulet
+    type_id: copper_amulet
+  - slot: ring
+    type_id: silver_ring
+  - slot: backpack
+    type_id: canvas_backpack
+
+backpack:
+  - type_id: cure_wounds_scroll
+  - type_id: restore_scroll
+  - type_id: potion
+    quantity: 2
+  - type_id: gold_coin
+    quantity: 20

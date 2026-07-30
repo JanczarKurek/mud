@@ -9,8 +9,9 @@ use crate::app::plugin::AppRuntime;
 use crate::app::state::{ClientAppState, DebugMode};
 use crate::network::protocol::{CharacterSummary, ClientMessage, ServerMessage};
 use crate::network::resources::{TcpClientConfig, TcpClientConnection};
-use crate::player::classes::Class;
-use crate::player::components::{AttributeSet, PlayerAppearance};
+use crate::player::components::Inventory;
+use crate::player::debug_presets::DebugCharacterPresets;
+use crate::player::loadout::Loadouts;
 use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton, ThemedPanel};
 use crate::ui::theme::{Palette, UiThemeAssets};
 
@@ -109,6 +110,8 @@ fn request_character_list(
     mut connection: Option<ResMut<TcpClientConnection>>,
     db: Option<Res<crate::accounts::AccountDbHandle>>,
     debug: Option<Res<DebugMode>>,
+    presets: Option<Res<DebugCharacterPresets>>,
+    loadouts: Option<Res<Loadouts>>,
 ) {
     match state.runtime {
         AppRuntime::TcpClient => {
@@ -141,25 +144,49 @@ fn request_character_list(
                 let mut list = guard
                     .list_characters(crate::accounts::LOCAL_ACCOUNT_ID)
                     .unwrap_or_default();
-                // Debug mode never leaves the roster empty: auto-seed a default
-                // "Debug" Fighter so there's always a character to play without
-                // walking the Character Create form. Balanced 12s satisfy the
-                // point-buy budget (6 × +2 == POINT_BUY_BUDGET).
-                if debug && list.is_empty() {
-                    match guard.create_character(
-                        crate::accounts::LOCAL_ACCOUNT_ID,
-                        "Debug",
-                        Class::Fighter,
-                        AttributeSet::new(12, 12, 12, 12, 12, 12),
-                        PlayerAppearance::default(),
-                    ) {
-                        Ok(id) => {
-                            info!("debug: auto-created default character {id}");
+                // Debug mode auto-creates every YAML preset from
+                // `assets/debug_characters/` that isn't already in the roster
+                // (matched by name), so there are always ready-made characters
+                // at various levels without walking the Character Create form.
+                // Note this also means deleting a preset character recreates
+                // it on the next visit while debug mode is on.
+                if debug {
+                    if let (Some(presets), Some(loadouts)) =
+                        (presets.as_deref(), loadouts.as_deref())
+                    {
+                        let mut created_any = false;
+                        for (preset_id, preset) in presets.iter() {
+                            if list.iter().any(|c| c.name == preset.name) {
+                                continue;
+                            }
+                            let mut inventory = Inventory::default();
+                            loadouts
+                                .get(&preset.loadout)
+                                .expect("preset loadout ids are validated at startup")
+                                .apply_to(&mut inventory);
+                            match guard.create_character_at_level(
+                                crate::accounts::LOCAL_ACCOUNT_ID,
+                                &preset.name,
+                                preset.class,
+                                preset.attributes,
+                                preset.appearance,
+                                preset.level,
+                                inventory,
+                            ) {
+                                Ok(id) => {
+                                    info!("debug: auto-created preset '{preset_id}' as character {id}");
+                                    created_any = true;
+                                }
+                                Err(err) => {
+                                    warn!("debug: failed to create preset '{preset_id}': {err}")
+                                }
+                            }
+                        }
+                        if created_any {
                             list = guard
                                 .list_characters(crate::accounts::LOCAL_ACCOUNT_ID)
                                 .unwrap_or_default();
                         }
-                        Err(err) => warn!("debug: failed to auto-create character: {err}"),
                     }
                 }
                 list
@@ -679,5 +706,57 @@ fn cleanup_character_select_screen(
 ) {
     for entity in &root_query {
         commands.entity(entity).despawn();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The debug auto-create hook, run as the real Bevy system against an
+    /// in-memory DB and the bundled preset/loadout assets: every preset is
+    /// created with its authored level on first entry, and re-entering the
+    /// screen creates no duplicates.
+    #[test]
+    fn debug_mode_auto_creates_presets_idempotently() {
+        use crate::accounts::{db::AccountDb, AccountDbHandle};
+
+        let mut app = App::new();
+        app.insert_resource(CharacterSelectState::new(AppRuntime::EmbeddedClient))
+            .insert_resource(AccountDbHandle::new(AccountDb::open_in_memory().unwrap()))
+            .insert_resource(DebugMode(true))
+            .insert_resource(DebugCharacterPresets::load_from_disk())
+            .insert_resource(Loadouts::load_from_disk())
+            .add_systems(Update, request_character_list);
+
+        app.update();
+        let roster: Vec<(String, u32)> = app
+            .world()
+            .resource::<CharacterSelectState>()
+            .characters
+            .iter()
+            .map(|c| (c.name.clone(), c.level))
+            .collect();
+        for expected in [
+            ("Debug", 1),
+            ("Debug Wizard", 6),
+            ("Debug Cleric", 12),
+            ("Debug Vagabond", 20),
+        ] {
+            assert!(
+                roster.iter().any(|(n, l)| (n.as_str(), *l) == expected),
+                "missing preset {expected:?} in roster {roster:?}"
+            );
+        }
+
+        app.update();
+        assert_eq!(
+            app.world()
+                .resource::<CharacterSelectState>()
+                .characters
+                .len(),
+            roster.len(),
+            "re-entering character select must not duplicate presets"
+        );
     }
 }

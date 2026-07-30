@@ -2700,18 +2700,23 @@ The set of allowed skills mirrors `docs/progression.md §5`: `Athletics`,
 `Stealth`, `Perception`, `Lore`, `Spellcraft`, `Persuasion`, `Survival`,
 `Heal`, `Thievery`, `Endurance`.
 
-## 9. Starting Loadout YAML
+## 9. Loadout YAML
 
 Path:
-- `assets/loadouts/starter.yaml`
+- `assets/loadouts/*.yaml`
 
 Purpose:
-- Defines the inventory a brand-new character is granted on first login. Loaded
-  server-side into the `StartingLoadout` resource (`src/player/loadout.rs`) and
-  applied by `StartingLoadout::apply_to` when a fresh character is seeded
-  (embedded mode in `spawn_embedded_player_authoritative`, TCP in
-  `handle_select_character`). The file stem **must** be `starter` — the loader
-  panics at startup if no `starter.yaml` is found under any `loadouts` asset dir.
+- Defines an inventory kit. Every file in the subdir is loaded server-side into
+  the `Loadouts` resource (`src/player/loadout.rs`), keyed by file stem, and a
+  loadout is applied to an `Inventory` by `Loadout::apply_to`. The `starter`
+  loadout is what a brand-new character is granted on first login (embedded
+  mode in `spawn_embedded_player_authoritative`, TCP in
+  `handle_select_character`) — the loader panics at startup if no
+  `starter.yaml` is found under any `loadouts` asset dir. Other loadouts can be
+  referenced by file stem from debug character presets (§10). At startup every
+  loadout is cross-checked against the object registry: unknown `type_id`s and
+  equipment entries whose `slot` doesn't match the object's declared
+  `equipment_slot` panic.
 
 Top-level fields (both optional, default to empty):
 
@@ -2761,4 +2766,54 @@ backpack:
           damage_type: fire
         duration:
           kind: permanent
+```
+
+## 10. Debug Character Preset YAML
+
+Path:
+- `assets/debug_characters/*.yaml` (one preset per file)
+
+Purpose:
+- Ready-made characters for testing. In debug mode (`--debug` / `MUD2_DEBUG`),
+  embedded (single-player) runs auto-create every preset whose `name` is not
+  already in the roster each time the Character Select screen is entered, so
+  higher-level content can be tested without grinding. Loaded into the
+  `DebugCharacterPresets` resource (`src/player/debug_presets.rs`), keyed by
+  file stem; parse errors, out-of-range levels, illegal point-buy spends, and
+  unknown loadout references all panic at startup.
+- Note: because creation is keyed by name, deleting a preset character
+  recreates it on the next Character Select visit while debug mode is on.
+
+Fields:
+- `name` (string, required): character name, 3–24 chars, letters/digits/space/
+  `_`/`-`. Also the roster-match key for auto-creation.
+- `class` (string, required): `Fighter`, `Wizard`, `Cleric`, or `Vagabond`
+  (PascalCase, matching `Class`).
+- `level` (int, required): `1..=20` (`LEVEL_CAP`). The character is created
+  with the XP, derived stats, and banked skill points / ability bumps that
+  leveling 1 → `level` would have earned (points and bumps are banked unspent,
+  ready to allocate in the skills UI).
+- `attributes` (map, required): all six of `strength`, `agility`,
+  `constitution`, `willpower`, `charisma`, `focus`. Must satisfy the normal
+  point-buy rules (baseline 10, each value in `[8, 18]`, exactly 12 points
+  spent).
+- `appearance` (map, optional): `hair` / `torso` / `trousers`, each an
+  `{ r, g, b }` color. Defaults to the standard new-character appearance.
+- `loadout` (string, optional, default `starter`): file stem of a loadout under
+  `assets/loadouts/` (§9) baked into the character's starting inventory.
+
+Example:
+
+```yaml
+name: Debug Wizard
+class: Wizard
+level: 6
+attributes:
+  strength: 8
+  agility: 12
+  constitution: 12
+  willpower: 12
+  charisma: 12
+  focus: 16
+loadout: starter
 ```

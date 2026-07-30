@@ -2,6 +2,7 @@ pub mod admin_progression;
 pub mod check;
 pub mod classes;
 pub mod components;
+pub mod debug_presets;
 pub mod exertion;
 pub mod lifecycle;
 pub mod loadout;
@@ -39,13 +40,29 @@ use crate::player::systems::{
 
 pub struct PlayerServerPlugin;
 
+/// Startup cross-check: panic on any loadout that references a missing object
+/// type_id or equips an item into the wrong slot. Runs after
+/// `OverworldObjectDefinitions` is inserted so the registry is populated —
+/// same posture as `validate_recipes_against_objects`.
+fn validate_loadouts_against_objects(
+    loadouts: Res<crate::player::loadout::Loadouts>,
+    objects: Res<crate::world::object_definitions::OverworldObjectDefinitions>,
+) {
+    loadouts.validate_against(&objects);
+}
+
 pub struct PlayerClientPlugin;
 
 impl Plugin for PlayerServerPlugin {
     fn build(&self, app: &mut App) {
+        let loadouts = crate::player::loadout::Loadouts::load_from_disk();
+        let debug_presets = crate::player::debug_presets::DebugCharacterPresets::load_from_disk();
+        debug_presets.validate_against(&loadouts);
         app.init_resource::<PendingPlayerDeaths>()
             .init_resource::<PendingXpGrants>()
-            .insert_resource(crate::player::loadout::StartingLoadout::load_from_disk())
+            .insert_resource(loadouts)
+            .insert_resource(debug_presets)
+            .add_systems(Startup, validate_loadouts_against_objects)
             .add_systems(Update, refresh_derived_player_stats)
             .add_systems(
                 Update,

@@ -104,6 +104,22 @@ impl From<&Experience> for ExperienceView {
     }
 }
 
+/// Skill points and ability bumps banked by leveling 1 → `level` with fixed
+/// attributes. Used to seed characters created directly at a higher level
+/// (debug presets). Must stay in lockstep with the per-level awards in
+/// `apply_xp_grants` / `AdminSetLevel`; `banked_awards_match_level_up_pipeline`
+/// guards the equivalence.
+pub fn banked_awards_through_level(
+    class: Class,
+    attributes: &crate::player::components::AttributeSet,
+    level: u32,
+) -> (u32, u32) {
+    let points = level.saturating_sub(1)
+        * crate::player::skills::skill_points_for_level_up(class, attributes);
+    let bumps = level / 4;
+    (points, bumps)
+}
+
 /// Queued XP grant for a player, produced by combat on a kill, drained by
 /// `apply_xp_grants` after combat resolution. Decoupled from the combat loop
 /// so we don't borrow the `Experience` query inside the `ParamSet`.
@@ -257,5 +273,44 @@ mod tests {
             level: LEVEL_CAP,
         };
         assert_eq!(cap.xp_for_next(), None);
+    }
+
+    #[test]
+    fn banked_awards_match_level_up_pipeline() {
+        use crate::player::components::AttributeSet;
+        use crate::player::skills::skill_points_for_level_up;
+
+        // Mirror the per-level awards in `apply_xp_grants` (skill points each
+        // level, ability bump at every level divisible by 4) and assert the
+        // closed-form helper agrees at every level for every class.
+        let attribute_sets = [
+            AttributeSet::new(12, 12, 12, 12, 12, 12),
+            AttributeSet::new(8, 12, 12, 12, 12, 16),
+            AttributeSet::new(14, 14, 14, 10, 10, 8),
+        ];
+        for class in Class::ALL {
+            for attributes in &attribute_sets {
+                let mut points = 0;
+                let mut bumps = 0;
+                for level in 2..=LEVEL_CAP {
+                    points += skill_points_for_level_up(class, attributes);
+                    if level % 4 == 0 {
+                        bumps += 1;
+                    }
+                    assert_eq!(
+                        banked_awards_through_level(class, attributes, level),
+                        (points, bumps),
+                        "class {class:?} level {level}"
+                    );
+                }
+            }
+        }
+        // Level 1 banks nothing.
+        for class in Class::ALL {
+            assert_eq!(
+                banked_awards_through_level(class, &attribute_sets[0], 1),
+                (0, 0)
+            );
+        }
     }
 }

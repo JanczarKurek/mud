@@ -728,7 +728,7 @@ impl BaseStats {
     }
 }
 
-#[derive(Component, Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Component, Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct DerivedStats {
     #[allow(dead_code)]
     pub attributes: AttributeSet,

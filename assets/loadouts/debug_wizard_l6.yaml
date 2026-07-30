@@ -1,0 +1,28 @@
+# Level-6 Wizard kit for the "Debug Wizard" preset. Casters fight with
+# spells, so gear is light: dagger sidearm, leather protection, caster
+# jewelry (silver_ring: +2 WIL / +1 FOC), and a consumables pouch — wand of
+# sparks, mana potions, and a couple of scrolls to exercise item-cast paths.
+equipment:
+  - slot: weapon
+    type_id: dagger
+  - slot: armor
+    type_id: leather_armor
+  - slot: legs
+    type_id: leather_legs
+  - slot: boots
+    type_id: traveler_boots
+  - slot: ring
+    type_id: silver_ring
+  - slot: amulet
+    type_id: copper_amulet
+  - slot: backpack
+    type_id: canvas_backpack
+
+backpack:
+  - type_id: wand_of_sparks
+  - type_id: potion
+    quantity: 2
+  - type_id: fireball_scroll
+  - type_id: shield_scroll
+  - type_id: gold_coin
+    quantity: 10

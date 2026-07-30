@@ -11,7 +11,7 @@ use crate::player::components::{
     Inventory, MovementCooldown, Player, PlayerAppearance, PlayerId, PlayerIdentity, RegenBuffs,
     RegenTickers, SpriteLayer, VitalStats, WeaponDamage,
 };
-use crate::player::loadout::StartingLoadout;
+use crate::player::loadout::Loadouts;
 use crate::player::progression::Experience;
 use crate::player::skills::SkillSheet;
 use crate::world::components::{
@@ -115,7 +115,7 @@ pub fn spawn_embedded_player_authoritative(
     selected: Option<Res<crate::app::state::LocalSelectedCharacter>>,
     mut selected_map: Option<ResMut<crate::ui::settings::SelectedStartingMap>>,
     space_definitions: Res<SpaceDefinitions>,
-    loadout: Res<StartingLoadout>,
+    loadouts: Res<Loadouts>,
 ) {
     if snapshot_status
         .as_ref()
@@ -230,7 +230,7 @@ pub fn spawn_embedded_player_authoritative(
         );
         if needs_starter_seed {
             let mut starter = Inventory::default();
-            loadout.apply_to(&mut starter);
+            loadouts.starter().apply_to(&mut starter);
             commands.entity(entity).insert(starter);
         }
         if let Some(stores) = var_stores.as_deref_mut() {
@@ -250,7 +250,7 @@ pub fn spawn_embedded_player_authoritative(
         display_name,
     );
     let mut starter = Inventory::default();
-    loadout.apply_to(&mut starter);
+    loadouts.starter().apply_to(&mut starter);
     commands.entity(entity).insert(starter);
 }
 

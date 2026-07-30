@@ -290,6 +290,34 @@ impl AccountDb {
         attributes: AttributeSet,
         appearance: crate::player::components::PlayerAppearance,
     ) -> Result<i64, AuthError> {
+        self.create_character_at_level(
+            account_id,
+            name,
+            class,
+            attributes,
+            appearance,
+            1,
+            crate::player::components::Inventory::default(),
+        )
+    }
+
+    /// Like [`create_character`](Self::create_character), but the character
+    /// starts at `level` (with the XP, derived stats, and banked skill
+    /// points/ability bumps leveling 1 → `level` would have earned) and with
+    /// `seed_inventory` instead of an empty one. Used by the debug character
+    /// presets; normal creation always goes through `create_character`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_character_at_level(
+        &mut self,
+        account_id: i64,
+        name: &str,
+        class: Class,
+        attributes: AttributeSet,
+        appearance: crate::player::components::PlayerAppearance,
+        level: u32,
+        seed_inventory: crate::player::components::Inventory,
+    ) -> Result<i64, AuthError> {
+        let level = level.clamp(1, crate::player::progression::LEVEL_CAP);
         let normalized = validate_character_name(name)?;
         validate_point_buy(&attributes).map_err(AuthError::PointBuyInvalid)?;
 
@@ -313,7 +341,14 @@ impl AccountDb {
 
         // Seed an initial state_json so the next SelectCharacter has a dump
         // to restore (with the chosen class + attributes + appearance).
-        let dump = build_initial_dump(character_id, class, attributes, appearance);
+        let dump = build_initial_dump(
+            character_id,
+            class,
+            attributes,
+            appearance,
+            level,
+            seed_inventory,
+        );
         if let Ok(json) = serde_json::to_string(&dump) {
             self.conn.execute(
                 "UPDATE characters SET state_json = ?1, updated_at = ?2 WHERE character_id = ?3",
@@ -433,12 +468,16 @@ fn build_initial_dump(
     class: Class,
     attributes: AttributeSet,
     appearance: crate::player::components::PlayerAppearance,
+    level: u32,
+    inventory: crate::player::components::Inventory,
 ) -> PlayerStateDump {
     use crate::combat::components::{AttackProfile, CombatLeash};
     use crate::magic::effects::MagicEffects;
     use crate::player::components::{
-        BaseStats, ChatLog, DerivedStats, Inventory, MovementCooldown, PlayerId, VitalStats,
+        BaseStats, ChatLog, DerivedStats, MovementCooldown, PlayerId, VitalStats,
     };
+    use crate::player::progression::{banked_awards_through_level, xp_for_level, Experience};
+    use crate::player::skills::SkillSheet;
     use crate::world::components::TilePosition;
 
     let base_stats = BaseStats {
@@ -447,14 +486,28 @@ fn build_initial_dump(
         max_mana: 0,
         storage_slots: 8,
     };
-    let derived = DerivedStats::from_base_with_class(&base_stats, class, 1);
+    let derived = DerivedStats::from_base_with_class(&base_stats, class, level);
     let vital = VitalStats::full(derived.max_health as f32, derived.max_mana as f32);
+    // NOT `Experience::at_level` — that ctor leaves `current_xp` at 0, which
+    // would make the character re-earn the entire cumulative curve to level
+    // again (and the HUD XP bar misreport). Match `AdminSetLevel`.
+    let experience = Experience {
+        current_xp: xp_for_level(level),
+        level,
+    };
+    let (available_points, available_ability_bumps) =
+        banked_awards_through_level(class, &attributes, level);
+    let skill_sheet = SkillSheet {
+        ranks: [0; 10],
+        available_points,
+        available_ability_bumps,
+    };
 
     PlayerStateDump {
         player_id: PlayerId(character_id as u64),
         space_id: None,
         tile_position: TilePosition::ground(0, 0),
-        inventory: Inventory::default(),
+        inventory,
         chat_log: ChatLog::default(),
         base_stats,
         derived_stats: derived,
@@ -467,11 +520,11 @@ fn build_initial_dump(
         yarn_vars: Default::default(),
         facing: Default::default(),
         home_position: None,
-        experience: Default::default(),
+        experience,
         class,
         magic_effects: MagicEffects::default(),
         stash: Default::default(),
-        skill_sheet: Default::default(),
+        skill_sheet,
         appearance,
         discovered_tiles: Default::default(),
     }
@@ -660,6 +713,63 @@ mod tests {
             db.create_character(b, "shared", Class::Wizard, attrs, Default::default()),
             Err(AuthError::CharacterNameTaken)
         ));
+    }
+
+    #[test]
+    fn create_character_at_level_bakes_progression() {
+        use crate::player::components::{DerivedStats, Inventory, InventoryStack};
+        use crate::player::progression::{banked_awards_through_level, xp_for_level};
+
+        let mut db = AccountDb::open_in_memory().unwrap();
+        let account = db.create_account("iris", "hunter2!").unwrap();
+        let attrs = balanced_attrs();
+
+        let mut seed = Inventory::default();
+        seed.backpack_slots[0] = Some(InventoryStack::item("apple", Default::default(), 1));
+        let id = db
+            .create_character_at_level(
+                account,
+                "Veteran",
+                Class::Cleric,
+                attrs,
+                Default::default(),
+                12,
+                seed,
+            )
+            .unwrap();
+        let dump = db.load_character(id).unwrap().unwrap();
+
+        assert_eq!(dump.experience.level, 12);
+        assert_eq!(dump.experience.current_xp, xp_for_level(12));
+        assert_eq!(
+            dump.derived_stats,
+            DerivedStats::from_base_with_class(&dump.base_stats, Class::Cleric, 12)
+        );
+        let (points, bumps) = banked_awards_through_level(Class::Cleric, &attrs, 12);
+        assert_eq!(dump.skill_sheet.available_points, points);
+        assert_eq!(dump.skill_sheet.available_ability_bumps, bumps);
+        assert!(
+            dump.inventory.backpack_slots[0].is_some(),
+            "seed inventory should be baked into the initial dump"
+        );
+
+        // The roster summary reflects the baked level.
+        let listed = db.list_characters(account).unwrap();
+        assert_eq!(listed[0].level, 12);
+
+        // Plain create_character still yields a fresh level-1 character.
+        let plain = db
+            .create_character(account, "Rookie", Class::Fighter, attrs, Default::default())
+            .unwrap();
+        let plain_dump = db.load_character(plain).unwrap().unwrap();
+        assert_eq!(plain_dump.experience.level, 1);
+        assert_eq!(plain_dump.experience.current_xp, 0);
+        assert_eq!(plain_dump.skill_sheet.available_points, 0);
+        assert!(plain_dump
+            .inventory
+            .backpack_slots
+            .iter()
+            .all(|slot| slot.is_none()));
     }
 
     #[test]

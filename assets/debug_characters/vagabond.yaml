@@ -1,0 +1,13 @@
+# Level-cap skill monkey: Vagabond at 20 with Focus 14 banks 10 skill points
+# per level (190 total) plus 5 ability bumps — stress-tests the skills UI.
+name: Debug Vagabond
+class: Vagabond
+level: 20
+attributes:
+  strength: 10
+  agility: 16
+  constitution: 12
+  willpower: 10
+  charisma: 10
+  focus: 14
+loadout: debug_vagabond_l20
