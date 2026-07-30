@@ -82,22 +82,19 @@ render:
   debug_size: 1.05
   sprite_path: modules/hollow_bell/overworld_objects/knell/sprite.png
   y_sort: true
+  logical_height_tiles: 1.3
   animation:
     sheet_path: modules/hollow_bell/overworld_objects/knell/sheet.png
-    frame_width: 64
-    frame_height: 80
+    frame_width: 136
+    frame_height: 112
     sheet_columns: 4
-    sheet_rows: 2
+    sheet_rows: 8
     clips:
-      idle:
-        row: 0
-        start_col: 0
-        frame_count: 4
-        fps: 4.0
-        looping: true
-      walk:
-        row: 1
-        start_col: 0
-        frame_count: 4
-        fps: 6.0
-        looping: true
+      idle_s: { row: 0, start_col: 0, frame_count: 4, fps: 4.0, looping: true }
+      walk_s: { row: 1, start_col: 0, frame_count: 4, fps: 6.0, looping: true }
+      idle_n: { row: 2, start_col: 0, frame_count: 4, fps: 4.0, looping: true }
+      walk_n: { row: 3, start_col: 0, frame_count: 4, fps: 6.0, looping: true }
+      idle_e: { row: 4, start_col: 0, frame_count: 4, fps: 4.0, looping: true }
+      walk_e: { row: 5, start_col: 0, frame_count: 4, fps: 6.0, looping: true }
+      idle_w: { row: 6, start_col: 0, frame_count: 4, fps: 4.0, looping: true }
+      walk_w: { row: 7, start_col: 0, frame_count: 4, fps: 6.0, looping: true }
