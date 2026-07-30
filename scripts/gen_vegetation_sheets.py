@@ -14,8 +14,16 @@ Style: blocky, 2-3 shading levels, no anti-aliasing, transparent background,
 no pure-black outlines (darkened base colour instead).
 """
 
-from PIL import Image
+import hashlib
 import os
+
+from PIL import Image
+
+from wall_perspective import (
+    project,
+    canvas_for_content,
+    fill_polygon,
+)
 
 BG = (0, 0, 0, 0)
 
@@ -223,20 +231,67 @@ def gen_berries():
     save(img, "berries")
 
 
-# ── Hedge (tileable) ─────────────────────────────────────────────────────────
+# ── Hedge (tileable 3D slab) ─────────────────────────────────────────────────
 def gen_hedge():
-    img, px, rect, ellipse, disc = make_canvas(48, 48)
-    # Solid leafy block spanning the full width so segments butt seamlessly.
-    rect(0, 6, 48, 42, LEAF)
-    rect(0, 6, 48, 6, LEAF_MD)       # lit top band
-    rect(0, 6, 48, 2, LEAF_HI)       # bright crown
-    rect(0, 42, 48, 6, LEAF_DK)      # shaded base
-    # Leaf texture — a staggered dot grid using darks and lights
-    for y in range(10, 44, 4):
-        for x in range((y // 4) % 2 * 2, 48, 4):
-            px(x, y, LEAF_DK)
-            px(x + 1, y + 1, LEAF_HI)
+    """Oblique leafy box per docs/sprite_style.md: full-tile footprint
+    [0..1]×[0..1], height 0.45 floors. Lit top face, mid south face, dark
+    east face. Neighbouring hedge tiles overlap seamlessly: the top face's
+    far edge lands exactly on the north neighbour's south-face top, and
+    y-sort draws east/south tiles over this tile's protruding faces."""
+    H = 0.7
+    corners = [(x, y, z) for x in (0.0, 1.0) for y in (0.0, 1.0) for z in (0.0, H)]
+    cw, ch, anchor = canvas_for_content(corners)
+    img, px, rect, ellipse, disc = make_canvas(cw, ch)
+
+    def quad(pts, c):
+        fill_polygon(img, pts, c)
+
+    p = lambda fx, fy, fz: project(fx, fy, fz, anchor)
+    # Top face graded front-to-back so the crown reads rounded: bright at
+    # the south edge, falling off to shadow at the far (north) edge.
+    for (v0, v1, tone) in ((0.0, 0.28, LEAF_MD), (0.28, 0.62, LEAF),
+                           (0.62, 1.0, LEAF_DK)):
+        quad([p(0, v0, H), p(1, v0, H), p(1, v1, H), p(0, v1, H)], tone)
+    quad([p(1, 0, 0), p(1, 1, 0), p(1, 1, H), p(1, 0, H)], LEAF_SHADOW)  # east
+    quad([p(0, 0, 0), p(1, 0, 0), p(1, 0, H), p(0, 0, H)], LEAF)         # south
+
+    # Leaf texture: deterministic dot noise per face (hash-keyed, byte-stable).
+    def sprinkle(u_range, draw, tones):
+        for i in u_range:
+            d = hashlib.md5(f"hedge:{i}".encode()).digest()
+            draw(i, d[0], tones[d[1] % len(tones)])
+
+    # South face dots: u along x, v along height.
+    def south_dot(i, r, tone):
+        u = (i % 16) / 16.0 + 0.02
+        v = ((i // 16) % 4) / 4.0 + 0.1 + (r % 10) / 100.0
+        x, y = p(u, 0, v * H)
+        px(x, y, tone)
+        px(x + 1, y, tone)
+    sprinkle(range(64), south_dot, [LEAF_DK, LEAF_MD, LEAF_SHADOW])
+
+    # Top face dots: u along x, v along y depth; lighter tones near the
+    # south edge, darker toward the far edge to follow the crown grade.
+    for i in range(128):
+        d = hashlib.md5(f"hedgetop:{i}".encode()).digest()
+        u = (i % 16) / 16.0 + 0.02
+        v = ((i // 16) % 8) / 8.0 + (d[0] % 10) / 100.0
+        tones = [LEAF_HI, LEAF_MD] if v < 0.5 else [LEAF_MD, LEAF_DK]
+        tone = tones[d[1] % 2]
+        x, y = p(u, v, H)
+        px(x, y, tone)
+        px(x + 1, y, tone)
+
+    # Bumpy crown along the top-south edge so the box reads as foliage.
+    for i in range(12):
+        d = hashlib.md5(f"hedgecrown:{i}".encode()).digest()
+        u = (i + 0.5) / 12.0
+        x, y = p(u, 0.05, H)
+        disc(x, y, 2 + d[0] % 2, LEAF_MD)
+        disc(x, y - 1, 1 + d[0] % 2, LEAF_HI)
+
     save(img, "hedge")
+    print(f"  hedge tiles: {cw/48:.3f} x {ch/48:.3f}")
 
 
 if __name__ == "__main__":

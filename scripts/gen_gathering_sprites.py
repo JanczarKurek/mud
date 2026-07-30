@@ -450,11 +450,21 @@ def make_herb_patch() -> Image.Image:
 
 
 def make_ore_node() -> Image.Image:
-    """A craggy grey outcrop with rust-colored vein streaks. Bulky tile-filling
-    silhouette that reads as 'mineable rock'."""
-    img = new_img()
-    px, rect = helpers(img)
-    ground_shadow(rect, 16, 28, 11)
+    """A craggy grey outcrop with rust-colored vein streaks. Bulky, upright
+    boulder per docs/sprite_style.md: 48×40 own canvas (1.0 × 0.833 tiles),
+    bottom-anchored, lit top-west, shadowed east/base."""
+    img = Image.new("RGBA", (48, 40), BG)
+
+    def px(x: int, y: int, c):
+        if 0 <= x < 48 and 0 <= y < 40:
+            img.putpixel((x, y), c)
+
+    def rect(x: int, y: int, w: int, h: int, c):
+        for dy in range(h):
+            for dx in range(w):
+                px(x + dx, y + dy, c)
+
+    ground_shadow(rect, 24, 36, 17)
 
     rock_dark = (60, 55, 55, 255)
     rock = (115, 105, 100, 255)
@@ -464,57 +474,58 @@ def make_ore_node() -> Image.Image:
     rust = (170, 90, 50, 255)
     rust_hi = (220, 140, 90, 255)
 
-    # Wide irregular base
-    rect(4, 22, 25, 5, rock)
-    rect(6, 19, 21, 3, rock)
-    rect(9, 15, 15, 4, rock)
-    rect(12, 11, 9, 4, rock)
-    rect(14, 8, 5, 3, rock)
+    # Stepped irregular outcrop, wide base narrowing to twin peaks
+    rect(5, 30, 39, 6, rock)
+    rect(8, 25, 33, 5, rock)
+    rect(11, 19, 26, 6, rock)
+    rect(14, 13, 15, 6, rock)
+    rect(17, 8, 8, 5, rock)
+    rect(30, 16, 8, 6, rock)         # secondary east knob
 
     # Silhouette nibbles to break the rectangles
-    for (x, y) in [(3, 24), (3, 25), (28, 24), (28, 25), (29, 25),
-                   (5, 21), (27, 21), (8, 17), (24, 17), (11, 13), (21, 13),
-                   (13, 9), (19, 9)]:
+    for (x, y) in [(4, 33), (4, 34), (44, 33), (44, 34), (45, 34),
+                   (7, 28), (41, 28), (10, 22), (37, 22), (13, 16),
+                   (29, 16), (16, 10), (24, 10), (29, 18), (38, 18)]:
         px(x, y, rock)
-    # Outline shading
-    for (x, y) in [(3, 26), (29, 26), (4, 26), (28, 26),
-                   (5, 23), (27, 23), (8, 20), (26, 20),
-                   (11, 16), (23, 16), (13, 12), (20, 12)]:
+    # Outline shading along the step corners
+    for (x, y) in [(5, 35), (44, 35), (7, 29), (40, 29), (10, 24),
+                   (36, 24), (13, 18), (28, 18), (16, 12), (24, 12),
+                   (37, 21), (38, 21)]:
         px(x, y, rock_dark)
 
-    # Top-light highlights
-    for (x, y) in [(14, 8), (15, 8), (16, 8),
-                   (13, 9), (14, 9), (17, 9),
-                   (12, 12), (13, 11), (16, 11),
-                   (9, 16), (10, 15), (11, 15),
-                   (6, 20), (7, 19), (8, 19)]:
-        px(x, y, rock_hi)
-    for (x, y) in [(18, 9), (19, 10), (20, 12), (21, 13),
-                   (22, 16), (23, 17), (24, 17),
-                   (25, 20), (26, 21)]:
+    # Top-west light on each step's crown
+    for (x0, y0, w) in [(17, 8, 5), (16, 9, 3), (14, 13, 4), (11, 19, 5),
+                        (8, 25, 5), (5, 30, 4), (30, 16, 3)]:
+        rect(x0, y0, w, 1, rock_hi)
+        rect(x0, y0 + 1, 2, 1, rock_hi)
+    for (x, y) in [(25, 10), (27, 13), (28, 14), (33, 17), (35, 20),
+                   (38, 25), (40, 26), (42, 30)]:
         px(x, y, rock_mid)
 
-    # Bottom shadow
-    for (x, y) in [(5, 26), (6, 26), (7, 26), (20, 26), (21, 26), (22, 26),
-                   (8, 25), (9, 25), (23, 25), (24, 25), (25, 25)]:
+    # East + bottom shadow
+    rect(40, 25, 2, 5, rock_dark)
+    rect(35, 19, 2, 5, rock_dark)
+    rect(27, 13, 2, 5, rock_dark)
+    rect(23, 9, 2, 3, rock_dark)
+    for (x, y) in [(7, 35), (8, 35), (9, 35), (30, 35), (31, 35), (32, 35),
+                   (12, 34), (13, 34), (34, 34), (35, 34), (36, 34), (40, 34)]:
         px(x, y, rock_dark)
 
-    # Rust veins — diagonal streaks across the face
+    # Rust veins — diagonal streaks across the west face and base
     veins = [
-        (10, 18, rust_dark), (11, 18, rust), (12, 18, rust),
-        (13, 17, rust_hi), (14, 17, rust), (15, 17, rust),
-        (16, 16, rust_dark), (17, 16, rust),
-        (18, 15, rust), (19, 15, rust_dark),
+        (14, 26, rust_dark), (15, 26, rust), (16, 26, rust),
+        (17, 25, rust_hi), (18, 25, rust), (19, 25, rust),
+        (20, 24, rust_dark), (21, 24, rust),
+        (22, 23, rust), (23, 23, rust_dark),
 
-        (12, 22, rust), (13, 22, rust_dark),
-        (14, 23, rust_hi), (15, 23, rust),
-        (16, 23, rust), (17, 22, rust_dark),
-        (19, 22, rust),
-        (22, 21, rust_dark), (23, 21, rust),
+        (17, 32, rust), (18, 32, rust_dark),
+        (19, 33, rust_hi), (20, 33, rust),
+        (21, 33, rust), (22, 32, rust_dark),
+        (25, 32, rust), (26, 31, rust),
+        (31, 31, rust_dark), (32, 31, rust), (33, 30, rust_hi),
 
-        (15, 11, rust),
-        (16, 12, rust_dark),
-        (17, 13, rust_hi),
+        (19, 15, rust), (20, 16, rust_dark), (21, 17, rust_hi),
+        (33, 19, rust), (34, 20, rust_dark),
     ]
     for (x, y, c) in veins:
         px(x, y, c)

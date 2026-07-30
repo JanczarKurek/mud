@@ -1011,6 +1011,7 @@ The `text` value supports three count placeholders in addition to the normal `{p
 - Meaning: sprite height in tile units for oversized sprites
 - Used together with `sprite_width_tiles` to define non-square sprite dimensions
 - A tree occupying 1 tile but visually 2 tiles tall would use `sprite_height_tiles: 2.0`
+- **Must equal the PNG's pixel size ÷ 48** (both axes). The renderer sets `custom_size` from these fields, so a mismatch silently *scales* the art instead of cropping it. See `docs/sprite_style.md`
 
 ### `y_sort`
 - Type: boolean
@@ -1045,6 +1046,7 @@ The `text` value supports three count placeholders in addition to the normal `{p
 - The world's `z` axis is in half-block units (a real floor = 2 z); a half-block step up adds `+1` to z, a full-block step adds `+2`
 - Combined with `walkable_surface: true`, this lets the player auto-step up onto the object by `block_size` z units when walking into it — they snap onto its top and snap back down on stepping off
 - Block-sized objects (`block_size > 0`) are rendered bottom-anchored (sprite footprint sits on the tile, art rises upward), unless `rotation_by_facing` is set — rotated sprites stay center-anchored
+- **Art-height contract**: the sprite art should depict a 3D body whose top sits at half a floor of visual height for `block_size: 1` and a full floor for `block_size: 2`, so stacked objects render flush. See `docs/sprite_style.md` for the projection and how to draw this
 - Stacking: when an object is dropped on a tile already holding block-sized objects, it lands on top of the column (its feet at the stack top). The stack-top must be within `±1` z of the player and the resulting new top within `+2` z of the player's feet — caps how high you can build from where you're standing
 
 ### `walkable_surface`

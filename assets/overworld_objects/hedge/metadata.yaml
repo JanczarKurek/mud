@@ -6,5 +6,5 @@ render:
   debug_color: [46, 120, 56]
   debug_size: 1.0
   sprite_path: overworld_objects/hedge/sprite.png
-  sprite_width_tiles: 1.0
-  sprite_height_tiles: 1.0
+  sprite_width_tiles: 2.042
+  sprite_height_tiles: 1.375

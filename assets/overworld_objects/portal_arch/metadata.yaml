@@ -6,3 +6,6 @@ render:
   debug_color: [109, 196, 205]
   debug_size: 0.8
   sprite_path: overworld_objects/portal_arch/sprite.png
+  sprite_width_tiles: 1.333
+  sprite_height_tiles: 2.0
+  y_sort: true

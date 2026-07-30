@@ -6,3 +6,5 @@ render:
   debug_color: [88, 212, 220]
   debug_size: 0.78
   sprite_path: overworld_objects/crystal_cluster/sprite.png
+  sprite_width_tiles: 1.0
+  sprite_height_tiles: 1.333

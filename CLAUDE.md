@@ -105,5 +105,6 @@ The world consists of multiple independent spaces (Overworld, Underworld, epheme
 - `PLAN.md`: Detailed project plan
 - `AGENTS.md`: Repository contribution guidelines
 - `docs/yaml_formats.md`: YAML schema reference
+- `docs/sprite_style.md`: Sprite perspective/art conventions (projection, height, anchoring). Source of truth for all `scripts/gen_*.py` art and the gen-sprite skill.
 - `docs/progression.md`: Player progression design (D&D 3.5e-flavored: classes, XP/levels, skills, mana scaling, death penalty). Source of truth for `PLAN.md` Phase 6.
 - `common_issues.md`: Recurring bugs and root causes (read before debugging rendering/NPC issues)

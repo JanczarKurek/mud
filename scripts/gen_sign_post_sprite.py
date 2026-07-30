@@ -1,76 +1,67 @@
 """
 Generates assets/overworld_objects/sign_post/sprite.png
-Top-down pixel-art wooden sign post with directional board, 32×32 px.
+
+Upright-elevation wooden sign post per docs/sprite_style.md: 40×52 px
+(0.833 × 1.083 tiles), bottom-anchored. South-facing board on a post with
+lit top edges, shadowed east (right) sides, burnt-in text lines, and a
+ground contact shadow. Deterministic output.
 """
 
 from PIL import Image
 import os
 
-W, H = 32, 32
+W, H = 40, 52
 OUT_PATH = "assets/overworld_objects/sign_post/sprite.png"
 
 BG          = (0,   0,   0,   0)
-POST        = (110,  65,  20, 255)   # dark brown post
-POST_DARK   = ( 70,  38,   8, 255)
-POST_HI     = (150,  95,  35, 255)
-BOARD       = (200, 155,  70, 255)   # lighter wood board
-BOARD_DARK  = (140, 100,  40, 255)
-BOARD_HI    = (230, 190, 100, 255)
-TEXT_LINE   = ( 80,  50,  15, 255)   # dark burnt-in text lines
-SHADOW      = (  0,   0,   0,  60)   # ground shadow
+POST        = (110,  65,  20, 255)
+POST_DARK   = ( 70,  38,   8, 255)   # east shadow side
+POST_HI     = (150,  95,  35, 255)   # lit cap / west catch-light
+BOARD       = (200, 155,  70, 255)
+BOARD_DARK  = (140, 100,  40, 255)   # board underside / east edge
+BOARD_HI    = (230, 190, 100, 255)   # lit top edge
+TEXT_LINE   = ( 80,  50,  15, 255)
+NAIL        = ( 90,  90, 100, 255)
+SHADOW      = (  0,   0,   0,  60)
 
 img = Image.new("RGBA", (W, H), BG)
+
 
 def px(x, y, c):
     if 0 <= x < W and 0 <= y < H:
         img.putpixel((x, y), c)
+
 
 def rect(x, y, w, h, c):
     for dy in range(h):
         for dx in range(w):
             px(x + dx, y + dy, c)
 
-# ── Ground shadow (ellipse under post) ──────────────────────────────────────
-for ox in range(-4, 5):
-    px(15 + ox, 28, SHADOW)
-    if abs(ox) < 3:
-        px(15 + ox, 29, SHADOW)
 
-# ── Post (vertical, x:14-16, y:10-28) ───────────────────────────────────────
-rect(14, 10, 4, 19, POST)
-rect(14, 10, 1, 19, POST_DARK)   # left shadow
-rect(17, 10, 1, 19, POST_DARK)   # right shadow
-rect(15, 10, 2,  1, POST_HI)     # top highlight
+# ── Post (x 17..22, from cap down to the ground) ─────────────────────────
+rect(17, 6, 6, 45, POST)
+rect(21, 6, 2, 45, POST_DARK)      # east shadow side
+rect(17, 4, 6, 2, POST_HI)         # lit top cap
+for y in range(8, 50, 9):          # deterministic grain nicks
+    px(18, y, POST_DARK)
 
-# ── Sign board (x:5-26, y:5-14) ─────────────────────────────────────────────
-rect(5, 5, 22, 10, BOARD)
-# Border / frame
-rect(5,  5, 22,  1, BOARD_HI)    # top highlight
-rect(5, 14, 22,  1, BOARD_DARK)  # bottom shadow
-rect(5,  5,  1, 10, BOARD_DARK)  # left shadow
-rect(26, 5,  1, 10, BOARD_DARK)  # right shadow
+# ── Board (x 3..36, y 10..25), nailed to the post front ──────────────────
+rect(3, 10, 34, 16, BOARD)
+rect(3, 10, 34, 1, BOARD_HI)       # lit top edge
+rect(3, 25, 34, 1, BOARD_DARK)     # shadowed underside
+rect(35, 11, 2, 14, BOARD_DARK)    # east end grain
+rect(3, 11, 1, 14, BOARD_HI)       # west catch-light
+# Burnt-in text lines.
+for ty in (14, 18, 22):
+    rect(7, ty, 22 if ty != 18 else 17, 2, TEXT_LINE)
+# Nails into the post.
+px(19, 12, NAIL)
+px(20, 23, NAIL)
 
-# ── Directional arrow on board (pointing right) ────────────────────────────
-# Arrow shaft
-rect(8, 9, 10, 2, TEXT_LINE)
-# Arrow head
-px(18,  7, TEXT_LINE)
-px(19,  8, TEXT_LINE)
-px(20,  9, TEXT_LINE)
-px(20, 10, TEXT_LINE)
-px(19, 11, TEXT_LINE)
-px(18, 12, TEXT_LINE)
-
-# ── Small text lines (decorative horizontal lines suggesting text) ───────────
-rect(8, 7, 8, 1, TEXT_LINE)
-rect(8, 12, 8, 1, TEXT_LINE)
-
-# ── Nail dots on board corners ────────────────────────────────────────────────
-px( 7,  7, POST_DARK)
-px(24,  7, POST_DARK)
-px( 7, 12, POST_DARK)
-px(24, 12, POST_DARK)
+# ── Base + contact shadow ────────────────────────────────────────────────
+rect(16, 49, 8, 1, POST_DARK)
+rect(14, 51, 12, 1, SHADOW)
 
 os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
 img.save(OUT_PATH)
-print(f"Saved {OUT_PATH}  ({img.width}×{img.height})")
+print(f"wrote {OUT_PATH} ({W}x{H}) -> sprite_width_tiles: {W/48:.3f}, sprite_height_tiles: {H/48:.3f}")

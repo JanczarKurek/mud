@@ -6,3 +6,5 @@ render:
   debug_color: [160, 100, 40]
   debug_size: 1.0
   sprite_path: overworld_objects/fence/sprite.png
+  sprite_width_tiles: 1.0
+  sprite_height_tiles: 0.833

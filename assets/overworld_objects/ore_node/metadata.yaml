@@ -7,6 +7,9 @@ render:
   debug_color: [130, 110, 95]
   debug_size: 0.80
   sprite_path: overworld_objects/ore_node/sprite.png
+  sprite_width_tiles: 1.0
+  sprite_height_tiles: 0.833
+  y_sort: true
 states:
   available:
     colliding: true

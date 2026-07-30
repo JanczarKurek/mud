@@ -8,3 +8,6 @@ render:
   debug_color: [120, 120, 130]
   debug_size: 0.75
   sprite_path: overworld_objects/tombstone/sprite.png
+  sprite_width_tiles: 0.667
+  sprite_height_tiles: 0.833
+  y_sort: true

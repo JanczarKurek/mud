@@ -6,3 +6,6 @@ render:
   debug_color: [205, 170, 112]
   debug_size: 0.42
   sprite_path: overworld_objects/cave_mushroom/sprite.png
+  sprite_width_tiles: 0.5
+  sprite_height_tiles: 0.583
+  y_sort: true

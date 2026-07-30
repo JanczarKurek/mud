@@ -8,3 +8,6 @@ render:
   debug_color: [180, 130, 50]
   debug_size: 0.62
   sprite_path: overworld_objects/sign_post/sprite.png
+  sprite_width_tiles: 0.833
+  sprite_height_tiles: 1.083
+  y_sort: true
