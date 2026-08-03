@@ -1023,6 +1023,13 @@ pub struct SpaceLightingDef {
     pub indoor_ambient: [u8; 3],
     #[serde(default = "default_has_day_night")]
     pub has_day_night: bool,
+    /// Hue of the constant darkness overlay when `has_day_night` is false.
+    /// Defaults to black so a dim `outdoor_ambient` darkens the scene instead
+    /// of washing it with its own (grey) color; `outdoor_ambient` still
+    /// controls the overlay *strength*. Curve-driven spaces ignore this —
+    /// keyframe colors own the hue there.
+    #[serde(default)]
+    pub darkness_color: [u8; 3],
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub outdoor_curve: Vec<AmbientKeyframe>,
 }
@@ -1045,6 +1052,7 @@ impl Default for SpaceLightingDef {
             outdoor_ambient: default_outdoor_ambient(),
             indoor_ambient: default_indoor_ambient(),
             has_day_night: default_has_day_night(),
+            darkness_color: [0, 0, 0],
             outdoor_curve: Vec::new(),
         }
     }

@@ -43,8 +43,22 @@ pub fn process_dialog_commands(
     skill_snapshots: Res<crate::dialog::resources::PlayerSkillSnapshots>,
     project: Option<Res<YarnProject>>,
     mut commands: Commands,
-    player_query: Query<(Entity, &PlayerIdentity), With<Player>>,
-    npc_query: Query<(&OverworldObject, &DialogNode)>,
+    player_query: Query<
+        (
+            Entity,
+            &PlayerIdentity,
+            &crate::world::components::SpaceResident,
+            &crate::world::components::TilePosition,
+        ),
+        With<Player>,
+    >,
+    npc_query: Query<(
+        &OverworldObject,
+        &DialogNode,
+        &crate::world::components::SpaceResident,
+        &crate::world::components::TilePosition,
+    )>,
+    floors: crate::world::column::FloorGeometryParam,
     mut runners: Query<(&mut DialogueRunner, &DialogSession)>,
 ) {
     let original_len = pending_commands.commands.len();
@@ -70,10 +84,12 @@ pub fn process_dialog_commands(
             continue;
         }
 
-        let Some(acting_player_id) = queued
-            .player_id
-            .or_else(|| player_query.iter().next().map(|(_, identity)| identity.id))
-        else {
+        let Some(acting_player_id) = queued.player_id.or_else(|| {
+            player_query
+                .iter()
+                .next()
+                .map(|(_, identity, _, _)| identity.id)
+        }) else {
             continue;
         };
 
@@ -85,14 +101,35 @@ pub fn process_dialog_commands(
                     );
                     continue;
                 };
-                let Some(node_name) = npc_query.iter().find_map(|(object, node)| {
-                    (object.object_id == npc_object_id).then(|| node.0.clone())
-                }) else {
+                let Some((node_name, npc_resident, npc_tile)) =
+                    npc_query.iter().find_map(|(object, node, resident, tile)| {
+                        (object.object_id == npc_object_id)
+                            .then(|| (node.0.clone(), *resident, *tile))
+                    })
+                else {
                     bevy::log::warn!(
                         "TalkToNpc ignored: NPC {npc_object_id} missing or has no DialogNode"
                     );
                     continue;
                 };
+
+                // Range gate: the client hides Talk outside `talk_reachable`,
+                // so an out-of-range request means a stale or hand-crafted
+                // client — refuse silently, per the convention in
+                // `game::helpers::refuse`.
+                let in_range = player_query.iter().any(|(_, identity, resident, tile)| {
+                    identity.id == acting_player_id
+                        && resident.space_id == npc_resident.space_id
+                        && floors.talk_reachable(tile, &npc_tile, npc_resident.space_id)
+                });
+                if !in_range {
+                    crate::game::helpers::refuse(
+                        acting_player_id,
+                        "TalkToNpc",
+                        "npc out of talk range",
+                    );
+                    continue;
+                }
 
                 let storage = var_stores.get_or_insert(acting_player_id.0);
                 let mut runner = project
@@ -107,7 +144,16 @@ pub fn process_dialog_commands(
                     &skill_snapshots,
                     acting_player_id.0,
                 );
-                runner.start_node(&node_name);
+                // `start_node` panics on an unknown node; a typo'd
+                // `dialog_node` or a yarn file excluded at startup for parse
+                // errors must mute the NPC, not crash the server.
+                if let Err(err) = runner.try_start_node(&node_name) {
+                    bevy::log::error!(
+                        "TalkToNpc: NPC {npc_object_id} dialog node {node_name:?} cannot start \
+                         (typo'd dialog_node, or its yarn file failed to load?): {err}"
+                    );
+                    continue;
+                }
 
                 let session_id = sessions.allocate();
                 let runner_entity = commands

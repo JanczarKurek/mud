@@ -193,9 +193,7 @@ pub fn update_darkness_overlay(
         };
         evaluate_ambient_curve(curve, client_state.world_time)
     } else {
-        let rgb = srgb_u8_to_linear(lighting_cfg.outdoor_ambient);
-        let a = brightness_to_alpha(&rgb);
-        (rgb, a)
+        constant_darkness(lighting_cfg)
     };
 
     // Window in tiles (matches `WINDOW_W × WINDOW_H` square around player).
@@ -338,4 +336,48 @@ pub fn update_darkness_overlay(
 fn brightness_to_alpha(rgb: &[f32; 3]) -> f32 {
     let brightness = rgb[0].max(rgb[1]).max(rgb[2]);
     (1.0 - brightness).clamp(0.0, 0.95)
+}
+
+/// Constant (non-curve) outdoor darkness: `outdoor_ambient` brightness drives
+/// the overlay strength, `darkness_color` (default black) drives the hue. The
+/// two are deliberately decoupled — the overlay is alpha-blended *over* the
+/// scene, so painting it with the ambient color itself washes the world with
+/// that color instead of darkening it.
+fn constant_darkness(cfg: &crate::world::map_layout::SpaceLightingDef) -> ([f32; 3], f32) {
+    let ambient = srgb_u8_to_linear(cfg.outdoor_ambient);
+    (
+        srgb_u8_to_linear(cfg.darkness_color),
+        brightness_to_alpha(&ambient),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::world::map_layout::SpaceLightingDef;
+
+    #[test]
+    fn constant_darkness_hue_is_darkness_color_not_ambient() {
+        // A grey underground ambient must not tint the overlay grey — the
+        // default darkness_color is black, so only the alpha carries the
+        // ambient's brightness.
+        let cfg = SpaceLightingDef {
+            outdoor_ambient: [44, 42, 46],
+            has_day_night: false,
+            ..SpaceLightingDef::default()
+        };
+        let (rgb, alpha) = constant_darkness(&cfg);
+        assert_eq!(rgb, [0.0, 0.0, 0.0]);
+        let expected_alpha = brightness_to_alpha(&srgb_u8_to_linear(cfg.outdoor_ambient));
+        assert!((alpha - expected_alpha).abs() < 1e-6);
+        assert!(alpha > 0.5, "dim ambient must yield a strong overlay");
+
+        // A map can still opt into a tinted darkness.
+        let tinted = SpaceLightingDef {
+            darkness_color: [10, 20, 60],
+            ..cfg
+        };
+        let (rgb, _) = constant_darkness(&tinted);
+        assert_eq!(rgb, srgb_u8_to_linear([10, 20, 60]));
+    }
 }

@@ -2721,7 +2721,13 @@ pub fn handle_context_menu_opening(
         .map(|(row, _, _)| row.object_id)
     {
         if let Some(object) = client_state.world_objects.get(&npc_object_id) {
-            let near = FloorGeometry::client(&client_state.floor_maps, &floor_defs).reachable(
+            let geometry = FloorGeometry::client(&client_state.floor_maps, &floor_defs);
+            let near = geometry.reachable(
+                &player_position,
+                &object.tile_position,
+                object.position.space_id,
+            );
+            let talk_near = geometry.talk_reachable(
                 &player_position,
                 &object.tile_position,
                 object.position.space_id,
@@ -2746,7 +2752,7 @@ pub fn handle_context_menu_opening(
                 ),
                 object.is_npc,
                 near && object.quantity > 1,
-                near && object.is_npc && object.has_dialog,
+                talk_near && object.is_npc && object.has_dialog,
                 near && object.is_shopkeeper,
                 interaction,
             );
@@ -2888,7 +2894,13 @@ pub fn handle_context_menu_opening(
     });
 
     if let Some(object) = best_object {
-        let near = FloorGeometry::client(&client_state.floor_maps, &floor_defs).reachable(
+        let geometry = FloorGeometry::client(&client_state.floor_maps, &floor_defs);
+        let near = geometry.reachable(
+            &player_position,
+            &object.tile_position,
+            object.position.space_id,
+        );
+        let talk_near = geometry.talk_reachable(
             &player_position,
             &object.tile_position,
             object.position.space_id,
@@ -2912,7 +2924,7 @@ pub fn handle_context_menu_opening(
             ),
             object.is_npc,
             near && object.quantity > 1,
-            near && object.is_npc && object.has_dialog,
+            talk_near && object.is_npc && object.has_dialog,
             // "Trade" is enabled when adjacent to a shopkeeper NPC.
             near && object.is_shopkeeper,
             interaction,

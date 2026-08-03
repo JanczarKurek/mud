@@ -95,8 +95,9 @@ floors:
 - Optional: yes (defaults to outdoor-bright with day/night enabled)
 - Meaning: per-space ambient lighting consumed by the client darkness
   overlay (`src/world/darkness.rs`). The overlay draws a single fullscreen
-  quad whose color is the ambient tint and whose alpha is "how dark is
-  this pixel". Light sources subtract from the alpha to carve visibility
+  quad whose alpha is "how dark is this pixel"; its color is the curve
+  keyframe color when day/night is on, else `darkness_color` (black by
+  default). Light sources subtract from the alpha to carve visibility
   holes; they never add color. When the curve sets alpha to 0 (daylight),
   light sources are implicitly invisible.
 - Subfields:
@@ -104,9 +105,16 @@ floors:
     has an `occludes_floor_above` object (covered by a roof). Constant;
     not affected by the world clock. Alpha is derived from brightness.
     Default: `[55, 50, 60]`.
-  - `outdoor_ambient`: `[r, g, b]` u8 — constant outdoor color used when
-    `has_day_night: false`. Ignored when `has_day_night: true` (the curve
+  - `outdoor_ambient`: `[r, g, b]` u8 — when `has_day_night: false`, its
+    *brightness* sets the constant darkness strength (dimmer ambient =
+    more opaque overlay); the overlay's hue comes from `darkness_color`,
+    not from this field. Ignored when `has_day_night: true` (the curve
     drives both color and alpha in that case). Default: `[220, 220, 230]`.
+  - `darkness_color`: `[r, g, b]` u8 — hue of the constant darkness
+    overlay when `has_day_night: false`. Default: `[0, 0, 0]` (black),
+    which genuinely darkens the scene; a non-black value tints the
+    darkness (e.g. a faint blue for moonlit caverns). Curve-driven spaces
+    ignore this — keyframe `color`s own the hue there.
   - `has_day_night`: bool — when true, outdoor lighting is driven by
     `outdoor_curve`. When false, outdoor uses the constant
     `outdoor_ambient` (caves, dungeons). Default: `true`.
@@ -1786,6 +1794,22 @@ states:
 
 Name each pose sheet's clip `idle` — that is the clip the client plays while
 the NPC holds the pose. Use the `gen-sprite` skill to author the pose sheets.
+
+### `dialog_node` (NPC templates only)
+
+- Type: string
+- Optional: yes
+- Meaning: makes the NPC talkable. The value **must equal the `title:` of a
+  Yarn node** in `assets/dialogs/*.yarn` or a module's
+  `assets/modules/<name>/dialogs/*.yarn`; right-clicking the NPC within talk
+  range (3 tiles, same floor-slab rule as reach) then offers "Talk", which
+  starts a dialog session at that node. A per-instance `dialog_id` property on
+  the map placement overrides the template's node. Unrelated to `chatter` /
+  `barks` (ambient flavor, no player interaction).
+
+```yaml
+dialog_node: HollowBellTobin
+```
 
 ### `chatter` (NPC templates only)
 

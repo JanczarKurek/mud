@@ -112,6 +112,7 @@ title: HollowBellMarten
         Marten: And a fox called Tobin who is nineteen years old and reckons he can re-cast the bell.
         Marten: *A pause.*
         Marten: He might be right. That's the worst of it.
+<<endif>>
 ===
 
 title: HollowBellWick
@@ -356,6 +357,7 @@ title: HollowBellGrandam
             Grandam Bellow: *She looks a long time at the place where it was.*
             Grandam Bellow: Then Ashen Hollow need not climb down at dawn any more. That is a gift and a loss, and it will take them a generation to work out which.
             Grandam Bellow: Take these. You've earned every part of it.
+    <<endif>>
 <<elseif $hollow_bell_finale_started>>
     <<if has_item("hollow_bell/recast_hollow_bell_item", 1)>>
         Grandam Bellow: You brought it. Oh, well done — well *done*, that's a good bell, that's a very good bell.

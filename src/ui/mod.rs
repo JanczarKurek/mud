@@ -436,7 +436,8 @@ impl Plugin for UiPlugin {
                 handle_dialog_transcript_scrolling.after(sync_dialog_panel_transcript),
                 handle_dialog_panel_clicks
                     .after(sync_dialog_panel_options)
-                    .after(apply_game_ui_events),
+                    .after(apply_game_ui_events)
+                    .before(crate::game::CommandIntercept),
             )
                 .run_if(in_state(ClientAppState::InGame)),
         )

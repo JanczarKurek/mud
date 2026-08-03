@@ -638,6 +638,7 @@ mod tests {
             outdoor_ambient: [200, 180, 160],
             indoor_ambient: [40, 30, 30],
             has_day_night: true,
+            darkness_color: [0, 0, 0],
             outdoor_curve: vec![
                 AmbientKeyframe {
                     time: 0.0,

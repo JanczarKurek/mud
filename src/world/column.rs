@@ -152,6 +152,22 @@ impl<'a> FloorGeometry<'a> {
         crate::game::helpers::is_near_player(actor, target)
             && !self.slab_between(space, actor.x, actor.y, actor.z, target.z)
     }
+
+    /// The reach gate for starting a dialog: same slab rule as [`reachable`],
+    /// but with the wider [`is_within_talk_range`] horizontal window so a
+    /// player can hail an NPC from a few tiles away.
+    ///
+    /// [`reachable`]: Self::reachable
+    /// [`is_within_talk_range`]: crate::game::helpers::is_within_talk_range
+    pub fn talk_reachable(
+        &self,
+        actor: &TilePosition,
+        target: &TilePosition,
+        space: SpaceId,
+    ) -> bool {
+        crate::game::helpers::is_within_talk_range(actor, target)
+            && !self.slab_between(space, actor.x, actor.y, actor.z, target.z)
+    }
 }
 
 /// Bevy parameter form of [`FloorGeometry`]. Systems that need a reach check
@@ -175,6 +191,16 @@ impl FloorGeometryParam<'_> {
     /// Passthrough for [`FloorGeometry::reachable`].
     pub fn reachable(&self, actor: &TilePosition, target: &TilePosition, space: SpaceId) -> bool {
         self.geometry().reachable(actor, target, space)
+    }
+
+    /// Passthrough for [`FloorGeometry::talk_reachable`].
+    pub fn talk_reachable(
+        &self,
+        actor: &TilePosition,
+        target: &TilePosition,
+        space: SpaceId,
+    ) -> bool {
+        self.geometry().talk_reachable(actor, target, space)
     }
 }
 
@@ -525,6 +551,28 @@ mod tests {
 
         // Out of XY range is still out of range.
         assert!(!outdoors.reachable(&ground, &TilePosition::new(3, 0, 0), SPACE));
+    }
+
+    /// The wider dialog gate: hailing distance in XY, but the same slab rule —
+    /// no chatting through the ceiling.
+    #[test]
+    fn talk_reachable_is_wider_than_reach_but_still_slab_gated() {
+        let defs = floor_defs_with_wood();
+        let ground = TilePosition::new(0, 0, 0);
+
+        let open = floor_maps(&[]);
+        let outdoors = FloorGeometry::client(&open, &defs);
+        // 3 tiles out: talkable, not manipulable.
+        assert!(outdoors.talk_reachable(&ground, &TilePosition::new(3, 0, 0), SPACE));
+        assert!(!outdoors.reachable(&ground, &TilePosition::new(3, 0, 0), SPACE));
+        // 4 tiles out: too far to talk.
+        assert!(!outdoors.talk_reachable(&ground, &TilePosition::new(4, 0, 0), SPACE));
+
+        // A painted floor overhead blocks talk exactly like reach.
+        let roofed = floor_maps(&[1]);
+        let indoors = FloorGeometry::client(&roofed, &defs);
+        assert!(!indoors.talk_reachable(&ground, &TilePosition::new(2, 0, 2), SPACE));
+        assert!(indoors.talk_reachable(&ground, &TilePosition::new(2, 0, 0), SPACE));
     }
 
     #[test]

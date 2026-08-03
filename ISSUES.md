@@ -21,6 +21,12 @@ the project's broad direction lives in `PLAN.md`.
 - Decide when to delete the now-obsolete direct-mutation helpers still left in `ui::systems`.
 - Add dedicated ECS query helpers/system params for common same-space access patterns so AI and interaction systems stop hand-filtering residents.
 
+### Dialog & lighting (latent, found 2026-07-30)
+- `has_dialog` replication never validates that the Yarn node actually exists; a typo'd `dialog_node` (or a node in a yarn file excluded at startup for parse errors) yields a visible Talk entry whose click now no-ops with an error log — `try_start_node` replaced the panicking `start_node` on 2026-08-04. A load-time check of `dialog_node` values against compiled node titles would catch it at the source and hide the button.
+  Context: before 2026-08-04, one unparsable `.yarn` file wedged the *entire* Yarn project — the asset never finished loading, `YarnProject` was never inserted, and every dialog in the game went silently mute (this is how the Hollow Bell module's two missing `<<endif>>`s killed all Talk buttons). `dialog/plugin.rs` now pre-parses each file and excludes broken ones individually with an ERROR log, and `cargo test --lib` parses every repo yarn file; the per-file enumeration also retired the old CWD-vs-asset-root mismatch on the `assets/modules` folder source (discovery is still CWD-rooted, consistent with `crate::assets::module_dirs_with_names`).
+- `darkness.rs` builds its per-tile indoor bitmask from *object* occluders only, while `IndoorTileMap` (`floors.rs`) also counts painted upper-floor tiles — tiles under a painted storey get both the indoor sprite tint and the outdoor overlay (double darkening).
+- `gen_schemas` no longer compiles (`cargo check --features gen-schemas`): several types referenced from schema'd definitions (`AttributeSet`, `Class`, `Direction`, `LootTableDef`, `BabTrack`, `Skill`, `WallCorner`) lack `JsonSchema` derives, so `assets/schemas/*.json` is stale (predates the balance/creature fields and `lighting.darkness_color`).
+
 ### Combat & progression balance
 The **balance retune** shipped on top of the earlier BAB batch (see the rewritten
 `docs/balance/report.md` §1 for the full scaling scheme): modifier-based weapon/spell damage

@@ -51,6 +51,27 @@ pub fn is_near_player(player_position: &TilePosition, target_position: &TilePosi
         && (player_position.y - target_position.y).abs() <= 1
 }
 
+/// How far a conversation carries, in tiles. Wider than the manipulation reach
+/// (`is_near_player`) so a player doesn't have to stand nose-to-nose with an
+/// NPC to open a dialog; matches the feel of the ambient chatter radius.
+pub const TALK_RANGE_TILES: i32 = 3;
+
+/// Geometric half of the *talk* rule — Chebyshev-[`TALK_RANGE_TILES`]
+/// horizontally, same ±2 vertical window as [`is_near_player`].
+///
+/// **Call [`FloorGeometry::talk_reachable`] instead** when deciding whether a
+/// dialog may start; it pairs this window with the floor-slab test.
+///
+/// [`FloorGeometry::talk_reachable`]: crate::world::column::FloorGeometry::talk_reachable
+pub fn is_within_talk_range(
+    player_position: &TilePosition,
+    target_position: &TilePosition,
+) -> bool {
+    (player_position.z - target_position.z).abs() <= 2
+        && (player_position.x - target_position.x).abs() <= TALK_RANGE_TILES
+        && (player_position.y - target_position.y).abs() <= TALK_RANGE_TILES
+}
+
 /// Single funnel for "the client asked for something the server won't do".
 ///
 /// Refusals are *silent on the wire* where a correct client could never have
@@ -64,4 +85,24 @@ pub fn refuse(player_id: PlayerId, command: &str, reason: &str) {
         "refused player={} command={command} reason={reason}",
         player_id.0
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn talk_range_is_wider_than_reach_but_bounded() {
+        let origin = TilePosition::new(0, 0, 0);
+        let at = |x, y, z| TilePosition::new(x, y, z);
+
+        assert!(!is_near_player(&origin, &at(3, 0, 0)));
+        assert!(is_within_talk_range(&origin, &at(3, 0, 0)));
+        assert!(is_within_talk_range(&origin, &at(-3, 3, 0)));
+        assert!(!is_within_talk_range(&origin, &at(4, 0, 0)));
+        assert!(!is_within_talk_range(&origin, &at(0, -4, 0)));
+        // Same vertical window as `is_near_player`.
+        assert!(is_within_talk_range(&origin, &at(1, 1, 2)));
+        assert!(!is_within_talk_range(&origin, &at(1, 1, 3)));
+    }
 }

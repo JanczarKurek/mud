@@ -25,16 +25,9 @@ pub struct DialogServerPlugin;
 
 impl Plugin for DialogServerPlugin {
     fn build(&self, app: &mut App) {
-        let yarn_dir: PathBuf = PathBuf::from("dialogs");
-        let mut yarn_plugin = YarnSpinnerPlugin::with_yarn_source(YarnFileSource::folder(yarn_dir));
-        // Per-module dialog packs live at assets/modules/<name>/dialogs/*.yarn.
-        // `YarnFileSource::folder` globs `**/*.yarn` recursively, so a single
-        // source rooted at `modules` loads every module's dialog. Added only when
-        // the folder exists, because the folder source errors on a missing dir.
-        if Path::new("assets/modules").is_dir() {
-            yarn_plugin = yarn_plugin.add_yarn_source(YarnFileSource::folder("modules"));
-        }
-        app.add_plugins(yarn_plugin)
+        app.add_plugins(YarnSpinnerPlugin::with_yarn_sources(
+            validated_yarn_sources(),
+        ))
             .insert_resource(DialogSessionRegistry::default())
             .insert_resource(PendingDialogOptions::default())
             .insert_resource(CharacterVarStores::default())
@@ -77,5 +70,122 @@ impl Plugin for DialogServerPlugin {
             .add_observer(handle_yarn_stash_commands)
             .add_observer(handle_yarn_recipe_commands)
             .add_observer(handle_yarn_skill_check_command);
+    }
+}
+
+/// One [`YarnFileSource`] per `.yarn` file under `assets/dialogs/` and
+/// `assets/modules/` that actually parses.
+///
+/// Files are registered individually instead of via `YarnFileSource::folder`
+/// because bevy_yarnspinner treats a parse error as "this asset never finished
+/// loading": with folder sources, one broken file keeps `YarnProject` from
+/// ever being inserted and every dialog in the game dies with no in-game
+/// symptom. Pre-parsing here lets us exclude just the broken file with a loud
+/// error and keep the rest of the project alive.
+///
+/// Enumeration is CWD-relative like the rest of module asset discovery
+/// (`crate::assets::module_dirs_with_names`); the returned sources are
+/// asset-root-relative, so the two agree when the game runs from the project
+/// root.
+fn validated_yarn_sources() -> Vec<YarnFileSource> {
+    let mut files = Vec::new();
+    for root in ["assets/dialogs", "assets/modules"] {
+        collect_yarn_files(Path::new(root), &mut files);
+    }
+    files.sort();
+
+    let mut sources = Vec::new();
+    for path in files {
+        let source = match std::fs::read_to_string(&path) {
+            Ok(source) => source,
+            Err(err) => {
+                bevy::log::error!(
+                    "dialog: cannot read {}: {err}; excluded from the Yarn project",
+                    path.display()
+                );
+                continue;
+            }
+        };
+        if let Err(diagnostics) = check_yarn_parses(&path.to_string_lossy(), &source) {
+            bevy::log::error!(
+                "dialog: {} failed to parse and is excluded from the Yarn project \
+                 (other dialogs keep working):\n{diagnostics}",
+                path.display()
+            );
+            continue;
+        }
+        let asset_path: PathBuf = path.strip_prefix("assets").unwrap_or(&path).to_path_buf();
+        sources.push(YarnFileSource::file(asset_path));
+    }
+    if sources.is_empty() {
+        bevy::log::error!("dialog: no loadable .yarn files found; all dialogs are disabled");
+    }
+    sources
+}
+
+fn collect_yarn_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_yarn_files(&path, out);
+        } else if path.extension().is_some_and(|ext| ext == "yarn") {
+            out.push(path);
+        }
+    }
+}
+
+/// Mirrors the `StringsOnly` compile that bevy_yarnspinner's asset loader runs
+/// on every `.yarn` file: parsing happens before the strings-only early break,
+/// so this catches exactly the class of error that would wedge the asset load.
+fn check_yarn_parses(file_name: &str, source: &str) -> Result<(), String> {
+    use yarnspinner::compiler::{CompilationType, Compiler, File};
+    Compiler::new()
+        .with_compilation_type(CompilationType::StringsOnly)
+        .add_file(File {
+            file_name: file_name.to_string(),
+            source: source.to_string(),
+        })
+        .compile()
+        .map(|_| ())
+        .map_err(|err| err.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every `.yarn` file shipped in the repo must parse, because a single
+    /// unparsable file used to disable all dialogs game-wide (and now gets
+    /// excluded at startup, which still means its NPCs go mute).
+    #[test]
+    fn all_repo_yarn_files_parse() {
+        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut files = Vec::new();
+        for root in ["assets/dialogs", "assets/modules"] {
+            collect_yarn_files(&manifest_dir.join(root), &mut files);
+        }
+        files.sort();
+        assert!(
+            !files.is_empty(),
+            "no .yarn files found under assets/ — glob rot?"
+        );
+
+        let mut failures = Vec::new();
+        for path in &files {
+            let source = std::fs::read_to_string(path)
+                .unwrap_or_else(|err| panic!("cannot read {}: {err}", path.display()));
+            if let Err(diagnostics) = check_yarn_parses(&path.to_string_lossy(), &source) {
+                failures.push(format!("{}:\n{diagnostics}", path.display()));
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "{} yarn file(s) failed to parse:\n\n{}",
+            failures.len(),
+            failures.join("\n\n")
+        );
     }
 }
