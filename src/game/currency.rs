@@ -29,6 +29,23 @@ pub fn split(total: u32) -> (u32, u32, u32) {
     (gold, silver, copper)
 }
 
+/// Render a copper amount as the shortest `"3g 2s 4c"`-style string, omitting
+/// zero tiers (`0` → `"0c"`).
+pub fn format_compact(total: u32) -> String {
+    let (g, s, c) = split(total);
+    let mut out = String::new();
+    if g > 0 {
+        out.push_str(&format!("{}g ", g));
+    }
+    if s > 0 {
+        out.push_str(&format!("{}s ", s));
+    }
+    if c > 0 || (g == 0 && s == 0) {
+        out.push_str(&format!("{}c", c));
+    }
+    out.trim_end().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -36,6 +53,17 @@ mod tests {
     #[test]
     fn rates() {
         assert_eq!(COPPER_PER_GOLD, 240);
+    }
+
+    #[test]
+    fn format_compact_examples() {
+        assert_eq!(format_compact(0), "0c");
+        assert_eq!(format_compact(4), "4c");
+        assert_eq!(format_compact(12), "1s");
+        assert_eq!(format_compact(28), "2s 4c");
+        assert_eq!(format_compact(240), "1g");
+        assert_eq!(format_compact(720), "3g");
+        assert_eq!(format_compact(265), "1g 2s 1c");
     }
 
     #[test]

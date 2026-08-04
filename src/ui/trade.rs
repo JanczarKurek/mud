@@ -495,17 +495,7 @@ fn format_ware_label(ware: &WareView, definitions: &OverworldObjectDefinitions) 
         .get(&ware.type_id)
         .map(|def| def.name.clone())
         .unwrap_or_else(|| ware.display_name.clone());
-    let (g, s, c) = crate::game::currency::split(ware.price_copper);
-    let mut price = String::new();
-    if g > 0 {
-        price.push_str(&format!("{}g ", g));
-    }
-    if s > 0 {
-        price.push_str(&format!("{}s ", s));
-    }
-    if c > 0 || (g == 0 && s == 0) {
-        price.push_str(&format!("{}c", c));
-    }
+    let price = crate::game::currency::format_compact(ware.price_copper);
     let stock = match ware.stock_remaining {
         Some(n) => format!("  [{}]", n),
         None => String::new(),

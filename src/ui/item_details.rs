@@ -13,6 +13,7 @@ use bevy::window::PrimaryWindow;
 
 use crate::app::state::ClientAppState;
 use crate::game::resources::ClientGameState;
+use crate::game::trade::WareView;
 use crate::magic::resources::{SpellDefinitions, SpellTargeting};
 use crate::player::components::{InventoryStack, CHARGES_KEY};
 use crate::ui::components::ItemSlotKind;
@@ -35,6 +36,10 @@ const ITEM_DETAILS_SIZE: Vec2 = Vec2::new(320.0, 380.0);
 pub struct ItemDetailsContent {
     pub slot_kind: ItemSlotKind,
     pub last_rendered: Option<InventoryStack>,
+    /// Shop listing backing a `MerchantWare` slot. Tracked separately from
+    /// `last_rendered` because the synthetic ware stack doesn't change when
+    /// price or stock do.
+    pub last_ware: Option<WareView>,
 }
 
 /// One-shot queue for "open the details popup for this slot". The Inspect
@@ -130,6 +135,7 @@ fn handle_pending_item_details_opens(
         commands.entity(spawned.body).insert(ItemDetailsContent {
             slot_kind,
             last_rendered: None,
+            last_ware: None,
         });
         drag.focused = Some(root);
     }
@@ -165,10 +171,12 @@ fn sync_item_details_content(
             continue;
         };
 
-        if content.last_rendered.as_ref() == Some(&stack) {
+        let ware = ware_for_slot(&client_state, content.slot_kind);
+        if content.last_rendered.as_ref() == Some(&stack) && content.last_ware == ware {
             continue;
         }
         content.last_rendered = Some(stack.clone());
+        content.last_ware = ware.clone();
 
         let palette_snapshot = *palette;
         commands.entity(body_entity).despawn_related::<Children>();
@@ -180,11 +188,28 @@ fn sync_item_details_content(
                 &definitions,
                 &spell_definitions,
                 &stack,
+                ware.as_ref(),
             );
         });
     }
 }
 
+/// Resolve the live shop listing behind a `MerchantWare` slot, if any. Other
+/// slot kinds (including trade offers, which are real items) have no shop info.
+fn ware_for_slot(client_state: &ClientGameState, slot_kind: ItemSlotKind) -> Option<WareView> {
+    let ItemSlotKind::MerchantWare { ware_index } = slot_kind else {
+        return None;
+    };
+    client_state
+        .current_trade
+        .as_ref()?
+        .wares
+        .as_ref()?
+        .get(ware_index)
+        .cloned()
+}
+
+#[allow(clippy::too_many_arguments)]
 fn populate_item_details(
     parent: &mut ChildSpawnerCommands,
     palette: &Palette,
@@ -192,6 +217,7 @@ fn populate_item_details(
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
     stack: &InventoryStack,
+    ware: Option<&WareView>,
 ) {
     let definition = definitions.get(&stack.type_id);
 
@@ -204,6 +230,10 @@ fn populate_item_details(
         stack,
         definition,
     );
+
+    if let Some(ware) = ware {
+        spawn_shop_section(parent, palette, ware);
+    }
 
     if let Some(def) = definition {
         spawn_properties_section(parent, palette, def, stack);
@@ -379,6 +409,34 @@ fn spawn_properties_section(
     }
     spawn_section_header(parent, palette, "Properties");
     spawn_property_table(parent, palette, &rows);
+}
+
+/// Price / stock / persuasion rows shown when inspecting a merchant's ware
+/// from the trade window's Browse Wares column.
+fn spawn_shop_section(parent: &mut ChildSpawnerCommands, palette: &Palette, ware: &WareView) {
+    spawn_section_header(parent, palette, "Shop");
+    let mut rows: Vec<(String, String)> = vec![(
+        "Price".to_owned(),
+        crate::game::currency::format_compact(ware.price_copper),
+    )];
+    rows.push((
+        "Stock".to_owned(),
+        match ware.stock_remaining {
+            Some(n) => n.to_string(),
+            None => "Unlimited".to_owned(),
+        },
+    ));
+    spawn_property_table(parent, palette, &rows);
+    let pct = ware.persuasion_modifier_pct;
+    if pct != 0 {
+        // Negative = discount for the buyer.
+        let color = if pct < 0 {
+            Color::srgb(0.55, 0.85, 0.45)
+        } else {
+            Color::srgb(0.95, 0.45, 0.40)
+        };
+        spawn_colored_property_row(parent, palette, "Persuasion", &format!("{pct:+}%"), color);
+    }
 }
 
 fn spawn_spell_section(

@@ -2203,6 +2203,15 @@ pub fn handle_item_targeting(
             ),
             With<ContainerSlotImage>,
         >,
+        Query<
+            (
+                &ItemSlotButton,
+                &ComputedNode,
+                &UiGlobalTransform,
+                Option<&Visibility>,
+            ),
+            (With<Button>, With<crate::ui::components::TradeSlotButton>),
+        >,
     )>,
 ) {
     if cursor_state.mode != CursorMode::ItemTarget {
@@ -2672,6 +2681,15 @@ pub fn handle_context_menu_opening(
             ),
             With<ContainerSlotImage>,
         >,
+        Query<
+            (
+                &ItemSlotButton,
+                &ComputedNode,
+                &UiGlobalTransform,
+                Option<&Visibility>,
+            ),
+            (With<Button>, With<crate::ui::components::TradeSlotButton>),
+        >,
     )>,
 ) {
     let Ok(window) = window_query.single() else {
@@ -2783,13 +2801,22 @@ pub fn handle_context_menu_opening(
             .count()
     );
     if let Some(slot_kind) = hovered_slot {
+        // Trade-side rows are read-only previews: the item isn't in the
+        // player's hands yet, so every verb that acts on a possessed item
+        // (Use, Use On, Take..., Read) is suppressed — Inspect remains.
+        let is_trade_slot = matches!(
+            slot_kind,
+            ItemSlotKind::TradeUs { .. }
+                | ItemSlotKind::TradeThem { .. }
+                | ItemSlotKind::MerchantWare { .. }
+        );
         if let Some(stack) = stack_in_slot_kind(&client_state, &docked_panel_state, slot_kind) {
             let definition = definitions.get(&stack.type_id);
-            let can_use = definition.is_some_and(|d| d.is_usable());
+            let can_use = !is_trade_slot && definition.is_some_and(|d| d.is_usable());
             // Only gathering tools do anything when "used on" a world target; see
             // `is_use_on_capable`. Spell scrolls / enchant consumables / potions
             // target through the "Use" verb's own pickers instead.
-            let has_use_on = is_use_on_capable(&stack.type_id, &definitions);
+            let has_use_on = !is_trade_slot && is_use_on_capable(&stack.type_id, &definitions);
             // "Open" enabled for *inventory* pouches (a Backpack slot whose
             // item carries `contained_slots`). Pouches inside world
             // containers and equipment-slot pouches are intentionally
@@ -2804,16 +2831,22 @@ pub fn handle_context_menu_opening(
                 can_use,
                 has_use_on,
                 false,
-                stack_qty > 1,
+                !is_trade_slot && stack_qty > 1,
                 false,
                 false,
                 None,
             );
-            context_menu_state.set_can_read(can_read_target(&stack.type_id, &definitions));
+            context_menu_state
+                .set_can_read(!is_trade_slot && can_read_target(&stack.type_id, &definitions));
             info!(
                 "context_open_slot_success slot={slot_kind:?} type_id={} can_use={can_use}",
                 stack.type_id
             );
+            return;
+        }
+        if is_trade_slot {
+            // Empty trade slot (the drop-zone sentinel row) — swallow the
+            // click instead of punching through to the world behind the popup.
             return;
         }
     }
@@ -4393,8 +4426,23 @@ fn hovered_slot_kind_from_ui(
             ),
             With<ContainerSlotImage>,
         >,
+        Query<
+            (
+                &ItemSlotButton,
+                &ComputedNode,
+                &UiGlobalTransform,
+                Option<&Visibility>,
+            ),
+            (With<Button>, With<crate::ui::components::TradeSlotButton>),
+        >,
     )>,
 ) -> Option<ItemSlotKind> {
+    // Trade rows first: the trade popup floats above the docked panels, so a
+    // click that lands on it must not fall through to the inventory beneath
+    // (same priority as `handle_movable_dragging`).
+    if let Some(kind) = hovered_slot_in_family(cursor_position, &slot_queries.p4()) {
+        return Some(kind);
+    }
     if let Some(kind) = hovered_slot_in_family(cursor_position, &slot_queries.p0()) {
         return Some(kind);
     }
