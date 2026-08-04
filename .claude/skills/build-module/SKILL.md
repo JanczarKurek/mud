@@ -259,6 +259,17 @@ Wiring rules (these are the easy things to get wrong):
   turn-in branch on `<<if has_item("<item>", <n>)>>`, and consume with
   `<<take_item>>`. Do **not** call `start_quest`/`complete_quest`. (This mirrors
   the apples quest in `demo_villager.yarn`.)
+- **Every quest — any kind — ships a journal file**
+  `MODULE_DIR/journal/<quest-local-id>.yaml` (same stem as the quest's `.py`
+  when one exists) so it appears in the player's quest log. Stages key off the
+  same `$<module-id>_<local-id>_*` variables the dialog/script already sets;
+  see `docs/yaml_formats.md §11` for the schema (`title` + ordered `stages`
+  with `when`/`text`/`completed`, last match wins, `{$var}` interpolation).
+  Without one, a script-backed quest falls back to a bare auto-journal stub
+  ("Accepted." / "Completed.") and a yarn-only quest is invisible in the log.
+- `<<log_write "subsection" "title" "body">>` writes a `Quests`-section log
+  entry imperatively from dialog. Never point it at a subsection that has a
+  journal YAML — the evaluator overwrites it on the next variable change.
 - **kill** quests (step 5) call `<<start_quest "<module-id>/<local-id>">>` on
   accept and `<<complete_quest "<module-id>/<local-id>">>` on turn-in, and gate
   the turn-in branch on the quest variable the script sets (e.g.
@@ -271,9 +282,11 @@ Wiring rules (these are the easy things to get wrong):
   **Use** `$last_skill_check_success` / `$last_skill_check_total` — never
   `<<declare>>` them (they live in `_system_vars.yarn`; see step 4 intro).
 - Use only verified commands: `give_item`, `take_item`, `give_recipe`,
-  `start_quest`, `complete_quest`, `skill_check`, `stash_set`, plus standard
-  `declare`/`set`/`if`/`elseif`/`endif`/`jump`. Read-only functions: `has_item`,
-  `skill_rank`, `stash_has`, `stash_get_str/num/bool`.
+  `start_quest`, `complete_quest`, `quest_command`, `log_write`, `skill_check`,
+  `stash_set`, plus standard `declare`/`set`/`if`/`elseif`/`endif`/`jump`.
+  Read-only functions: `has_item`, `skill_rank`, `stash_has`,
+  `stash_get_str/num/bool`. (Typo'd command names are dropped **silently** by
+  the Yarn runtime — there is no warning to catch you.)
 - Non-quest townsfolk/merchant NPCs get a simple flavor node (a few lines, maybe
   a `<<jump>>` loop like `chatterbox.yarn`). Merchants need no special dialog
   command — the `shopkeeper:` YAML drives trading.
@@ -292,6 +305,8 @@ calls `<<start_quest "<module-id>/<local-id>">>` and
 
 ```python
 import mud_quest_api as q
+
+title = "<Quest Display Name>"   # used by the auto-journal log entry
 
 subscribes_to = ["ObjectKilled"]
 state = {"count": 0}
@@ -349,7 +364,9 @@ if any sprite is skipped or fails, the entity still works.
 - **Cross-references resolve**: re-check that every `<<give_item>>`/`<<take_item>>`
   type_id, every `loot`/`shop`/recipe id, every scroll `spell_id`, and every
   `dialog_node` ↔ Yarn `title` pair matches. Quest id == `.py` stem ==
-  `start_quest`/`complete_quest` argument.
+  `start_quest`/`complete_quest` argument == `journal/<stem>.yaml` stem, and
+  every journal `when`/`{$var}` variable is `<<declare>>`d in the module yarn.
+  (`cargo test --lib quest` runs the repo guards for both.)
 - **Compile gate**: run `cargo check` (must stay clean). Note: `cargo check` does
   **not** parse the YAML/Yarn assets — it only confirms the project still builds.
 - **Load gate (the real validator)**: run `cargo run --bin mud2` (or `--bin

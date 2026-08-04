@@ -14,6 +14,9 @@ title: HollowBellMarten
 <<declare $hollow_bell_hettie_found = false>>
 <<declare $hollow_bell_hettie_done = false>>
 <<declare $hollow_bell_marten_bonus = false>>
+// Mirrored from the down_the_shaft quest script so the journal template
+// (journal/down_the_shaft.yaml) can show live progress.
+<<declare $hollow_bell_crawlers = 0>>
 
 <<if $hollow_bell_hettie_done>>
     Marten: She's set up by the ore-sheds, selling rope at a price that ought to be a crime.
@@ -44,7 +47,6 @@ title: HollowBellMarten
         Marten: There was a fall in the western gallery and no body was ever found, and I have been telling myself that means nothing at all.
         Marten: *He is still looking at the map.*
         Marten: I would like to know either way.
-        <<start_quest "hollow_bell/the_lost_shift">>
         <<set $hollow_bell_hettie_started to true>>
         Marten: Go careful. That's an order and I've no right to give it.
     -> Not just now.
@@ -169,7 +171,6 @@ title: HollowBellWick
         Sister Wick: *She holds up four stubs.* That is what stands between this camp and the dark, and I have run out of tallow.
         Sister Wick: There is, I observe, a great deal of tallow in that foundry. Some of it is walking about. I try not to think about the distinction.
         -> I'll bring you six sacks.
-            <<start_quest "hollow_bell/wick_and_wax">>
             <<set $hollow_bell_wax_started to true>>
             Sister Wick: Six. Bless you. Mind the heat — what's down there burns from the inside, and it does not go out when you'd like it to.
         -> I'll see what I can find.
@@ -246,7 +247,6 @@ title: HollowBellTobin
             <<give_item "gold_coin" 4>>
             <<give_item "hollow_bell/knells_shard" 1>>
             <<give_recipe "hollow_bell/recast_hollow_bell">>
-            <<quest_command "hollow_bell/the_singing_seam" "complete">>
             <<set $hollow_bell_seam_done to true>>
             Tobin: Right. Right! Here — you'll want this, it's off the Singer and it's wasted on me.
             Tobin: And here's the casting. Read it twice. Everyone reads it once and then ruins a bell.
@@ -264,13 +264,11 @@ title: HollowBellTobin
         Tobin: And three shards of deep-iron from the bottom, for the crown.
         Tobin: That second part is in no book. I know that. I want you to know I know that.
         -> I'll get them.
-            <<start_quest "hollow_bell/the_singing_seam">>
             <<set $hollow_bell_seam_started to true>>
             Tobin: Take a pickaxe. Take *two*, the seam eats them.
         -> Deep-iron. From the bottom. Where the thing is.
             Tobin: ...Yes.
             Tobin: I did say not to laugh. I notice you're not laughing.
-            <<start_quest "hollow_bell/the_singing_seam">>
             <<set $hollow_bell_seam_started to true>>
 <<elseif $hollow_bell_tongue_ready>>
     <<if has_item("hollow_bell/bell_clapper", 1)>>

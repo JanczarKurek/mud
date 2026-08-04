@@ -2711,7 +2711,9 @@ Yarn `.yarn` files may invoke project-specific custom commands beyond
 | `<<take_item "type_id" count>>` | Remove up to `count` of `type_id` from the speaker's backpack. |
 | `<<give_recipe "recipe_id">>` | Mark `recipe_id` as learned. |
 | `<<stash_set key value>>` / `<<stash_delete key>>` | Mutate the per-character stash. |
-| `<<start_quest "quest_id">>` / `<<complete_quest "quest_id">>` | Quest state. |
+| `<<start_quest "quest_id">>` / `<<complete_quest "quest_id">>` | Quest state. **Requires a registered `.py` quest script** whose id matches `quest_id` (`assets/quests/<stem>.py` → `<stem>`; `assets/modules/<mod>/quests/<stem>.py` → `<mod>/<stem>`) — an unknown id warns server-side and silently no-ops in game. Guarded by the `yarn_quest_ids_have_registered_scripts` test. Yarn-only fetch/talk quests use `<<set $...>>` variables plus a journal YAML (§11) instead. |
+| `<<quest_command "quest_id" "command" ...>>` | Invoke the script's `on_command(command, args, state)` for an *active* quest. Same registered-`.py` requirement as above. |
+| `<<log_write "subsection" "title" "body">>` | Upsert an engine-owned entry in the `Quests` section of the player's Log panel. Args are literal strings (Yarn does not interpolate `{$var}` in command args). Don't target a subsection owned by a journal YAML (§11) — the evaluator re-renders it on every variable change and will overwrite this. |
 | `<<skill_check Skill DC>>` | Roll `Skill` against `DC` for the speaker. Writes `$last_skill_check_success` (bool) and `$last_skill_check_total` (number) into the player's Yarn variable store. Next branch reads via `<<if $last_skill_check_success>>`. |
 
 Library functions (read-only, callable from `<<if …>>` expressions):
@@ -2843,3 +2845,62 @@ attributes:
   focus: 16
 loadout: starter
 ```
+
+## 11. Quest Journal YAML
+
+Paths:
+- `assets/journal/*.yaml` (core quests)
+- `assets/modules/<module>/journal/*.yaml` (module quests)
+
+Declarative mapping from a player's Yarn variables to an entry in the
+`Quests` section of the Log panel. The journal id is the file stem, module-
+prefixed like every other module asset (`modules/hollow_bell/journal/
+wick_and_wax.yaml` → `hollow_bell/wick_and_wax`) — for script-backed quests
+use the same stem as the `.py` so the ids line up.
+
+This is how **yarn-only quests** (fetch/talk — no `.py` script) become
+visible in the quest log: the dialog flips `<<set $...>>` variables and the
+journal evaluator re-renders the entry whenever a variable changes. It also
+works for script-backed quests (scripts can mirror counters into Yarn
+variables via `q.set_var` for live progress templates).
+
+```yaml
+title: Down the Shaft            # entry title, required
+stages:                          # ordered; the LAST matching stage wins
+  - when: hollow_bell_shaft_started      # bare string = variable is truthy
+    text: |
+      Clear the sump crawlers from the low workings.
+      Crawlers culled: {$hollow_bell_crawlers}/8.
+  - when: { var: hollow_bell_shaft_ready, is: true }   # exact-match form
+    text: Report back to Marten at the pithead.
+  - when: hollow_bell_shaft_done
+    text: The haulage-way is clear.
+    completed: true              # appends " (complete)" to the title
+```
+
+Semantics:
+
+- `when` — bare string: truthy (`true`, nonzero number, non-empty string;
+  missing/undeclared = false). Map form `{ var, is }`: exact match on value
+  *and* type. The `$` prefix on variable names is optional. There is no
+  expression language — a stage watches exactly one variable.
+- `text` — supports `{$var}` interpolation. Whole numbers render without the
+  fractional part (`3`, not `3.0`); a missing variable renders `?` and warns.
+- No stage matching → no entry (the quest hasn't started for that player).
+  Entries are never deleted once written; later stages overwrite title/body
+  (engine-owned — the player's own notes on the entry survive).
+- A malformed file is logged and skipped at startup without affecting other
+  journals. The `repo_journal_files_parse_and_reference_declared_vars` test
+  additionally requires every referenced variable to be `<<declare>>`d in a
+  shipped `.yarn` file.
+
+Interaction with the other quest-log writers:
+
+- **Auto-journal**: a script-backed quest with *no* journal YAML gets an
+  automatic stub entry on `<<start_quest>>` ("Accepted.") and a
+  "Completed." / "Failed." marker on completion; the title comes from the
+  script's optional `title = "..."` global (else derived from the id). A
+  journal YAML *owns* its quest id — auto-journal skips it.
+- `<<log_write>>` (dialog) and `world.log_write(...)` (Python) write the
+  same section imperatively. Don't mix them with a journal YAML on the same
+  subsection: the evaluator overwrites it on the next variable change.

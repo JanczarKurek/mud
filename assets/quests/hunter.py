@@ -7,6 +7,8 @@
 
 import mud_quest_api as q
 
+title = "Hunter"
+
 subscribes_to = ["ObjectKilled"]
 
 state = {"rats": 0}

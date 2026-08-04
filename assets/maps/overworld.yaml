@@ -345,6 +345,25 @@ objects:
       step_interval_seconds: 1.8
       bounds: { min_x: 31, min_y: 21, max_x: 36, max_y: 24 }
 
+  # -- the Grey Ledger (traveling assessor's office, east edge of the plaza) ----
+  # Yarn-only quest-journal test NPCs from assets/modules/grey_ledger/.
+  # Removing that module leaves these two type refs dangling — drop this block
+  # with it.
+  - type: sign_post
+    placement: { x: 38, y: 22 }
+    properties:
+      text: "THE GREY LEDGER - registrations, censuses, seals. Queue orderly. Do not touch the bell."
+  - type: table                   # Quill's folding desk
+    placement: { x: 39, y: 23 }
+  - type: grey_ledger/assessor_quill
+    placement: { x: 39, y: 24 }
+  - type: crate                   # Moss's rampart of paper
+    placement: { x: 41, y: 23 }
+  - type: book
+    placement: { x: 41, y: 22 }
+  - type: grey_ledger/underclerk_moss
+    placement: { x: 41, y: 24 }
+
   # -- proving grounds arch ----------------------------------------------------------
   - type: portal_arch
     placement: { x: 47, y: 25 }

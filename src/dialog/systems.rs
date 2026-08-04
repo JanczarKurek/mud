@@ -474,6 +474,54 @@ pub fn handle_yarn_stash_commands(
     );
 }
 
+/// Observer: translates Yarn `<<log_write "subsection" "title" "body">>` into
+/// a `GameCommand::UpsertLogEntry` in the `Quests` log section for the acting
+/// player — the imperative counterpart of the declarative journal files
+/// (`assets/**/journal/*.yaml`). Args are literal strings; Yarn does not
+/// interpolate `{$var}` inside command arguments, so dynamic text belongs in
+/// journal templates. Don't mix it with a declarative journal id: the journal
+/// evaluator re-renders that subsection on every variable change and would
+/// overwrite what this wrote.
+pub fn handle_yarn_log_write_command(
+    event: On<ExecuteCommand>,
+    sessions: Query<&DialogSession>,
+    mut pending_commands: ResMut<PendingGameCommands>,
+) {
+    if event.command.name.as_str() != "log_write" {
+        return;
+    }
+    let Ok(session) = sessions.get(event.entity) else {
+        return;
+    };
+    let params = &event.command.parameters;
+    if params.len() != 3 {
+        bevy::log::warn!("yarn <<log_write>> requires (subsection, title, body)");
+        return;
+    }
+    let mut args = params.iter().map(|param| match param {
+        YarnValue::String(s) => s.clone(),
+        YarnValue::Number(n) => n.to_string(),
+        YarnValue::Boolean(b) => b.to_string(),
+    });
+    let subsection = args.next().unwrap();
+    let title = args.next().unwrap();
+    let body = args.next().unwrap();
+    if subsection.trim().is_empty() {
+        bevy::log::warn!("yarn <<log_write>>: subsection must not be empty");
+        return;
+    }
+    pending_commands.push_for_player(
+        PlayerIdType(session.player_id),
+        GameCommand::UpsertLogEntry {
+            section: crate::log::QUESTS_SECTION.to_owned(),
+            subsection,
+            title,
+            body,
+            owner: crate::log::LogOwner::Engine,
+        },
+    );
+}
+
 /// Observer: translates Yarn `<<give_item>>` / `<<take_item>>` into authoritative
 /// `GameCommand`s. Registering this as an `ExecuteCommand` observer (rather than
 /// per-runner `add_command`) keeps the source runner entity available so we can

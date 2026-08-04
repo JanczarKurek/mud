@@ -19,10 +19,13 @@ use bevy_yarnspinner::prelude::YarnValue;
 use crate::crafting::CharacterStash;
 use crate::dialog::components::DialogSession;
 use crate::dialog::resources::CharacterVarStores;
+use crate::game::commands::GameCommand;
 use crate::game::resources::PendingGameCommands;
+use crate::log::{LogOwner, LogState, QUESTS_SECTION};
 use crate::player::components::{Player, PlayerId, PlayerIdentity};
 use crate::quest::engine::QuestEngine;
 use crate::quest::events::PendingQuestEvents;
+use crate::quest::journal::QuestJournalRegistry;
 use crate::quest::python::{QuestApiContext, QuestApiOutbox};
 use crate::scripting_api::build::WorldSnapshotParams;
 use crate::scripting_api::{install_ctx, ApiContext};
@@ -52,6 +55,8 @@ pub fn drain_quest_commands(
     mut pending_quests: ResMut<PendingQuestCommands>,
     mut pending_commands: ResMut<PendingGameCommands>,
     mut var_stores: ResMut<CharacterVarStores>,
+    journal_registry: Res<QuestJournalRegistry>,
+    players: Query<(&PlayerIdentity, &CharacterStash), With<Player>>,
     snapshot_params: WorldSnapshotParams,
 ) {
     if pending_quests.entries.is_empty() {
@@ -77,20 +82,38 @@ pub fn drain_quest_commands(
         let context = Arc::new(QuestApiContext::new(snapshot, player_id, Some(var_store)));
         let trait_ctx: Arc<dyn ApiContext> = context.clone();
 
-        install_ctx(trait_ctx, || match &request {
-            QuestCommandRequest::Start { .. } => {
-                engine.start_quest(player_id, &quest_id);
-            }
+        let started = install_ctx(trait_ctx, || match &request {
+            QuestCommandRequest::Start { .. } => engine.start_quest(player_id, &quest_id),
             QuestCommandRequest::Dispatch { name, args, .. } => {
                 engine.dispatch_command(player_id, &quest_id, name, args.clone());
+                false
             }
         });
+
+        // Auto-journal: a freshly-started script quest gets a stub entry so it
+        // is always visible in the Log panel. Pushed before the outbox so a
+        // `world.log_write` in `on_start` overwrites the stub. Declarative
+        // journal files own their quest id — skip those.
+        if started && !journal_registry.has_quest(&quest_id) {
+            pending_commands.push_for_player(
+                PlayerId(player_id),
+                GameCommand::UpsertLogEntry {
+                    section: QUESTS_SECTION.to_owned(),
+                    subsection: quest_id.clone(),
+                    title: engine.display_title(&quest_id),
+                    body: "Accepted.".to_owned(),
+                    owner: LogOwner::Engine,
+                },
+            );
+        }
 
         apply_outbox(
             &mut engine,
             player_id,
             context.take_outbox(),
             &mut pending_commands,
+            &journal_registry,
+            &players,
         );
     }
 }
@@ -100,6 +123,8 @@ pub fn drain_quest_events(
     mut pending_events: ResMut<PendingQuestEvents>,
     mut pending_commands: ResMut<PendingGameCommands>,
     mut var_stores: ResMut<CharacterVarStores>,
+    journal_registry: Res<QuestJournalRegistry>,
+    players: Query<(&PlayerIdentity, &CharacterStash), With<Player>>,
     snapshot_params: WorldSnapshotParams,
 ) {
     if pending_events.events.is_empty() {
@@ -142,6 +167,8 @@ pub fn drain_quest_events(
             player_id,
             context.take_outbox(),
             &mut pending_commands,
+            &journal_registry,
+            &players,
         );
     }
 }
@@ -250,6 +277,8 @@ fn apply_outbox(
     player_id: u64,
     outbox: QuestApiOutbox,
     pending_commands: &mut PendingGameCommands,
+    journal_registry: &QuestJournalRegistry,
+    players: &Query<(&PlayerIdentity, &CharacterStash), With<Player>>,
 ) {
     for line in outbox.log_lines {
         info!("quest[{player_id}]: {line}");
@@ -257,10 +286,55 @@ fn apply_outbox(
     for command in outbox.commands {
         pending_commands.push_for_player(PlayerId(player_id), command);
     }
-    for quest_id in outbox.quest_complete {
-        engine.end_quest(player_id, &quest_id);
+    for (quest_ids, verdict) in [
+        (&outbox.quest_complete, "Completed."),
+        (&outbox.quest_fail, "Failed."),
+    ] {
+        for quest_id in quest_ids {
+            if !journal_registry.has_quest(quest_id) {
+                push_quest_end_entry(
+                    engine,
+                    player_id,
+                    quest_id,
+                    verdict,
+                    pending_commands,
+                    players,
+                );
+            }
+            engine.end_quest(player_id, quest_id);
+        }
     }
-    for quest_id in outbox.quest_fail {
-        engine.end_quest(player_id, &quest_id);
-    }
+}
+
+/// Auto-journal completion marker for a script quest without a declarative
+/// journal file: append the verdict to the entry's existing body (or start a
+/// fresh entry if none exists — e.g. a quest completed the same frame a
+/// script `log_write` is still queued).
+fn push_quest_end_entry(
+    engine: &QuestEngine,
+    player_id: u64,
+    quest_id: &str,
+    verdict: &str,
+    pending_commands: &mut PendingGameCommands,
+    players: &Query<(&PlayerIdentity, &CharacterStash), With<Player>>,
+) {
+    let existing_body = players
+        .iter()
+        .find(|(identity, _)| identity.id.0 == player_id)
+        .map(|(_, stash)| LogState::from_stash(stash))
+        .and_then(|log| log.entry(QUESTS_SECTION, quest_id).map(|e| e.body.clone()));
+    let body = match existing_body {
+        Some(body) if !body.is_empty() => format!("{body}\n\n— {verdict}"),
+        _ => verdict.to_owned(),
+    };
+    pending_commands.push_for_player(
+        PlayerId(player_id),
+        GameCommand::UpsertLogEntry {
+            section: QUESTS_SECTION.to_owned(),
+            subsection: quest_id.to_owned(),
+            title: engine.display_title(quest_id),
+            body,
+            owner: LogOwner::Engine,
+        },
+    );
 }

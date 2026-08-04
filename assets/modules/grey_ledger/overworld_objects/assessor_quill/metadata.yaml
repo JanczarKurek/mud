@@ -1,0 +1,33 @@
+extends: npc
+name: Assessor Quill
+description: A tall grey heron in a pince-nez behind a folding desk, armed with a stamp, an inkwell, and a bell nobody is permitted to ring.
+dialog_node: GreyLedgerQuill
+level: 2
+stats: { strength: 6, agility: 9, constitution: 9, willpower: 14, charisma: 10, focus: 14 }
+hp: "2d8+constitution"
+npc_behavior:
+  hostile: false
+  step_interval_seconds: 1.5
+  detect_distance_tiles: 5
+  disengage_distance_tiles: 8
+render:
+  sprite_path: modules/grey_ledger/overworld_objects/assessor_quill/sprite.png
+  debug_color: [140, 150, 165]
+  debug_size: 0.9
+  y_sort: true
+  logical_height_tiles: 1.2
+  animation:
+    sheet_path: modules/grey_ledger/overworld_objects/assessor_quill/sheet.png
+    frame_width: 96
+    frame_height: 96
+    sheet_columns: 4
+    sheet_rows: 8
+    clips:
+      idle_s: { row: 0, start_col: 0, frame_count: 4, fps: 3.0, looping: true }
+      walk_s: { row: 1, start_col: 0, frame_count: 4, fps: 8.0, looping: true }
+      idle_n: { row: 2, start_col: 0, frame_count: 4, fps: 3.0, looping: true }
+      walk_n: { row: 3, start_col: 0, frame_count: 4, fps: 8.0, looping: true }
+      idle_e: { row: 4, start_col: 0, frame_count: 4, fps: 3.0, looping: true }
+      walk_e: { row: 5, start_col: 0, frame_count: 4, fps: 8.0, looping: true }
+      idle_w: { row: 6, start_col: 0, frame_count: 4, fps: 3.0, looping: true }
+      walk_w: { row: 7, start_col: 0, frame_count: 4, fps: 8.0, looping: true }

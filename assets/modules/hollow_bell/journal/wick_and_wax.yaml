@@ -1,0 +1,14 @@
+# Journal for the yarn-only fetch quest "Wick and Wax" — no .py script;
+# the dialog drives $hollow_bell_wax_* and this file renders the entry.
+title: Wick and Wax
+stages:
+  - when: hollow_bell_wax_started
+    text: |
+      Sister Wick is down to four candle stubs and out of tallow. There is a
+      great deal of tallow in the foundry; some of it is walking about. Bring
+      her six sacks and try not to think about the distinction.
+  - when: hollow_bell_wax_done
+    text: |
+      Six sacks delivered. There's light in every gallery down to the foundry
+      now, and Sister Wick's candles burn steadier than they ought to.
+    completed: true

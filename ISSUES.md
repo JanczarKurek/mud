@@ -27,6 +27,11 @@ the project's broad direction lives in `PLAN.md`.
 - `darkness.rs` builds its per-tile indoor bitmask from *object* occluders only, while `IndoorTileMap` (`floors.rs`) also counts painted upper-floor tiles — tiles under a painted storey get both the indoor sprite tint and the outdoor overlay (double darkening).
 - `gen_schemas` no longer compiles (`cargo check --features gen-schemas`): several types referenced from schema'd definitions (`AttributeSet`, `Class`, `Direction`, `LootTableDef`, `BabTrack`, `Skill`, `WallCorner`) lack `JsonSchema` derives, so `assets/schemas/*.json` is stale (predates the balance/creature fields and `lighting.darkness_color`).
 
+### Quests & journal (noted 2026-08-04, during the quest-log fix)
+- **HeadlessServer has no dialog runtime** (`src/app/plugin.rs` skips `DialogServerPlugin` because YarnSpinner needs `AssetPlugin`), so `<<start_quest>>` — the only quest-start path — is unreachable in dedicated-server mode: quests cannot begin over TCP play. The declarative journal evaluator itself runs headless fine (it reads restored yarn vars); it's dialog execution that's missing.
+- bevy_yarnspinner drops unregistered/typo'd `<<commands>>` with no log at all. Mitigated for quest ids by the `yarn_quest_ids_have_registered_scripts` test; a general "unknown command" observer/lint would catch the rest (pairs with the `dialog_node`-validation idea above).
+- `assets/modules/hollow_bell/module.md` reward drift vs the shipped yarn: `down_the_shaft` promises `torch x10` (yarn gives `potion x2` + `silver_coin x30`), and `the_deeplistener` lists `deeplisteners_ear x1` as a reward (it's kill-loot only — deliberate per the comment in the quest script; the design doc is stale).
+
 ### Combat & progression balance
 The **balance retune** shipped on top of the earlier BAB batch (see the rewritten
 `docs/balance/report.md` §1 for the full scaling scheme): modifier-based weapon/spell damage

@@ -1,0 +1,15 @@
+# Journal for the yarn-only fetch quest "The Singing Seam" — no .py script;
+# the dialog drives $hollow_bell_seam_* and this file renders the entry.
+title: The Singing Seam
+stages:
+  - when: hollow_bell_seam_started
+    text: |
+      Tobin needs metal for the casting: five of bell-bronze cut from the
+      singing seam itself — the same seam, or the note comes out wrong — and
+      three shards of deep-iron from the bottom, for the crown. The second
+      part is in no book. He knows that.
+  - when: hollow_bell_seam_done
+    text: |
+      Bronze and deep-iron delivered, and the casting instructions are yours.
+      Read them twice — everyone reads them once and then ruins a bell.
+    completed: true

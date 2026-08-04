@@ -1,0 +1,186 @@
+title: GreyLedgerQuill
+---
+// The Grey Ledger — Assessor Quill, a heron with a stamp.
+// Verification module for the yarn-only quest-journal pipeline: every quest
+// here is pure Yarn (no .py), driven by $grey_ledger_* variables and rendered
+// into the log by assets/modules/grey_ledger/journal/*.yaml.
+// Node titles and variables share one project-wide namespace: everything is
+// GreyLedger* / $grey_ledger_*.
+//
+// Both hub nodes <<jump>> back to themselves after each action, so a single
+// conversation can advance several quests and re-render the journal many
+// times — deliberately convoluted.
+<<declare $grey_ledger_permit_started = false>>
+<<declare $grey_ledger_permit_form = false>>
+<<declare $grey_ledger_permit_stamped = false>>
+<<declare $grey_ledger_permit_countersigned = false>>
+<<declare $grey_ledger_permit_lost = false>>
+<<declare $grey_ledger_permit_reissued = false>>
+<<declare $grey_ledger_permit_done = false>>
+<<declare $grey_ledger_wax_started = false>>
+<<declare $grey_ledger_seal = "none">>
+<<declare $grey_ledger_wax_sticks = 0>>
+<<declare $grey_ledger_wax_done = false>>
+<<declare $grey_ledger_marginalia_i = false>>
+<<declare $grey_ledger_marginalia_ii = false>>
+<<declare $grey_ledger_marginalia_iii = false>>
+
+Quill: *The heron does not look up. Somewhere, a stamp descends with judicial finality.*
+Quill: Next.
+-> I'd like to register as an adventurer.  <<if not $grey_ledger_permit_started>>
+    Quill: Then you will want Form 7-C. Adventurer's Provisional Registration, in triplicate.
+    Quill: I do not keep the forms. Keeping the forms is Underclerk Moss's function. Mine is the stamp.
+    <<set $grey_ledger_permit_started to true>>
+    Quill: Obtain the form. Return. Do not touch the bell.
+    <<jump GreyLedgerQuill>>
+-> I have Form 7-C. Revision f.  <<if $grey_ledger_permit_form and not $grey_ledger_permit_stamped>>
+    Quill: *He examines it for a very long time. Then, at last, the stamp descends.*
+    Quill: Stamped. It is not, however, *countersigned*. The stamp attests that the form exists. The countersignature attests that the stamp was witnessed.
+    <<set $grey_ledger_permit_stamped to true>>
+    Quill: Moss countersigns. It is the one thing we let him do with the good pen.
+    <<jump GreyLedgerQuill>>
+-> Stamped and countersigned. I'd like to file it now.  <<if $grey_ledger_permit_countersigned and not $grey_ledger_permit_lost>>
+    Quill: *He receives the form with both wings, reads it twice, and places it — very gently — in a tray marked VOID.*
+    Quill: Revision f was withdrawn this morning. The current revision is g. The difference is a comma.
+    Quill: I appreciate that you have feelings about this. The Ledger does not.
+    <<set $grey_ledger_permit_lost to true>>
+    Quill: Moss will issue revision g. I am told he has started weeping preemptively.
+    <<jump GreyLedgerQuill>>
+-> Revision g. Countersigned in advance. In triplicate.  <<if $grey_ledger_permit_reissued and not $grey_ledger_permit_done>>
+    Quill: *The stamp descends three times, one per copy, each strike identical to the last.*
+    Quill: Filed. The first copy is for the Ledger. The second is for you. The third is for the second.
+    <<give_item "copper_coin" 30>>
+    <<give_item "potion" 1>>
+    <<set $grey_ledger_permit_done to true>>
+    Quill: You are now a provisionally registered adventurer. Provisionally is the highest tier we offer.
+    <<jump GreyLedgerQuill>>
+-> Moss says the office seal was never commissioned.  <<if $grey_ledger_permit_done and not $grey_ledger_wax_started>>
+    Quill: *For the first time, the heron looks up.*
+    Quill: That is correct, and it is the single largest irregularity this office has ever produced. We have been stamping. We should also have been *sealing*.
+    Quill: You will commission it, since you are registered and therefore eligible for errands. Two decisions are required: the colour of the wax, and the quantity of sticks.
+    <<set $grey_ledger_wax_started to true>>
+    Quill: Decide in any order. Revise freely. Commit once.
+    <<jump GreyLedgerQuill>>
+-> About the wax colour.  <<if $grey_ledger_wax_started and not $grey_ledger_wax_done>>
+    Quill: The candidates are crimson — traditional, alarming — and black, which photographs poorly but forgives everything.
+    -> Crimson. Let the Ledger alarm people.
+        <<set $grey_ledger_seal to "crimson">>
+        Quill: Noted. In crimson, appropriately.
+    -> Black. The Ledger should forgive.
+        <<set $grey_ledger_seal to "black">>
+        Quill: Noted. The Ledger forgives. The Ledger does not forget.
+    <<jump GreyLedgerQuill>>
+-> About the quantity of wax sticks.  <<if $grey_ledger_wax_started and not $grey_ledger_wax_done>>
+    Quill: One stick is frugal. Five is provident. Three is the auspicious number, per an annotation in the Ledger that nobody will admit to writing.
+    -> One stick.
+        <<set $grey_ledger_wax_sticks to 1>>
+        Quill: Frugal. The Ledger respects frugality and punishes it.
+    -> Three sticks.
+        <<set $grey_ledger_wax_sticks to 3>>
+        Quill: The auspicious number. I shall pretend not to be pleased.
+    -> Five sticks.
+        <<set $grey_ledger_wax_sticks to 5>>
+        Quill: Provident. We will lose two, of course. That is what the two are *for*.
+    <<jump GreyLedgerQuill>>
+-> Commission the seal as specified.  <<if $grey_ledger_wax_started and $grey_ledger_wax_sticks > 0 and $grey_ledger_seal != "none" and not $grey_ledger_wax_done>>
+    Quill: *He writes the commission in a hand so even it looks typeset, and signs it without flourish.*
+    <<give_item "copper_coin" 12>>
+    <<set $grey_ledger_wax_done to true>>
+    Quill: Commissioned. When it arrives, this office will finally be able to close a matter in a manner that *looks* closed.
+    <<jump GreyLedgerQuill>>
+-> Anything for the margins?  <<if not $grey_ledger_marginalia_iii>>
+    <<if not $grey_ledger_marginalia_i>>
+        Quill: Take this down precisely.
+        <<log_write "grey_ledger/marginalia_i" "Marginalia I" "In the margin of ledger page 44: a small drawing of a goose, annotated, in the Assessor's hand, 'NO'.">>
+        <<set $grey_ledger_marginalia_i to true>>
+        Quill: A margin note. The Ledger's way of muttering.
+    <<elseif not $grey_ledger_marginalia_ii>>
+        Quill: Another.
+        <<log_write "grey_ledger/marginalia_ii" "Marginalia II" "Page 71, lower margin: 'The bell was rung. Investigation ongoing. The bell has been moved higher.'">>
+        <<set $grey_ledger_marginalia_ii to true>>
+        Quill: Filed under matters-we-watch.
+    <<else>>
+        Quill: The last one. For now.
+        <<log_write "grey_ledger/marginalia_iii" "Marginalia III" "Page 90: 'Underclerk Moss requested a second good pen. Denied. One good pen is how we know which pen is good.'">>
+        <<set $grey_ledger_marginalia_iii to true>>
+        Quill: That concludes the marginalia. The margins, however, remain.
+    <<endif>>
+    <<jump GreyLedgerQuill>>
+-> On reflection, revise the first margin note.  <<if $grey_ledger_marginalia_i>>
+    Quill: Revision is permitted. Erasure is not.
+    <<log_write "grey_ledger/marginalia_i" "Marginalia I (revised)" "In the margin of ledger page 44: the goose drawing has been struck through and re-annotated 'NO — but see census'.">>
+    Quill: The note now says what it always should have. That is what revision is.
+    <<jump GreyLedgerQuill>>
+-> That's all.
+    Quill: It rarely is. Good day.
+===
+
+title: GreyLedgerMoss
+---
+Moss: *A small vole regards you over a rampart of paper.*
+Moss: If this is about the geese, the number I gave is the number I'm giving.
+-> Quill sent me for Form 7-C.  <<if $grey_ledger_permit_started and not $grey_ledger_permit_form>>
+    Moss: 7-C! Yes. Triplicate. One moment.
+    Moss: *A drawer. Another drawer. A third drawer that was inside the second drawer.*
+    <<set $grey_ledger_permit_form to true>>
+    Moss: There — revision f, all three copies. Press hard, you're writing for the copy underneath.
+    <<jump GreyLedgerMoss>>
+-> This form needs your countersignature.  <<if $grey_ledger_permit_stamped and not $grey_ledger_permit_countersigned>>
+    Moss: *He produces the good pen from somewhere inside his waistcoat, breathes on it, and signs all three copies without touching the desk.*
+    <<set $grey_ledger_permit_countersigned to true>>
+    Moss: Countersigned. That's my whole authority spent for the day, so make it count.
+    <<jump GreyLedgerMoss>>
+-> Revision f was voided. I need revision g.  <<if $grey_ledger_permit_lost and not $grey_ledger_permit_reissued>>
+    Moss: The comma. I *told* them the comma would come for us all.
+    Moss: *He fills out revision g himself, all three copies, and countersigns them in advance, which is against procedure and clearly an act of mercy.*
+    <<set $grey_ledger_permit_reissued to true>>
+    Moss: Pre-countersigned. Don't tell Quill. He'll want it un-signed and re-signed in the right order.
+    <<jump GreyLedgerMoss>>
+-> What geese?  <<if not $grey_ledger_census_started>>
+    Moss: The census! Of small things. Doors, buckets, geese — the countables the Ledger has no line for and deserves one.
+    Moss: Seven entries makes a submittable census. Report them to me one at a time; that is the lawful speed of counting.
+    <<set $grey_ledger_census_started to true>>
+    <<jump GreyLedgerCensus>>
+-> About the census.  <<if $grey_ledger_census_started and not $grey_ledger_census_done>>
+    <<jump GreyLedgerCensus>>
+-> Just passing through.
+    Moss: Nobody just passes through. It all goes in somewhere.
+===
+
+title: GreyLedgerCensus
+---
+// Census hub: each report bumps a counter and loops back here, so the journal
+// entry for census_of_small_things re-renders after every single option —
+// this is the live-interpolation stress loop.
+<<declare $grey_ledger_census_started = false>>
+<<declare $grey_ledger_census_doors = 0>>
+<<declare $grey_ledger_census_buckets = 0>>
+<<declare $grey_ledger_census_geese = 0>>
+<<declare $grey_ledger_census_total = 0>>
+<<declare $grey_ledger_census_done = false>>
+
+Moss: *The census ledger is open. The good pen hovers.* Report.
+-> A door.
+    <<set $grey_ledger_census_doors to $grey_ledger_census_doors + 1>>
+    <<set $grey_ledger_census_total to $grey_ledger_census_total + 1>>
+    Moss: Door. *scratch* Doors do well in this district.
+    <<jump GreyLedgerCensus>>
+-> A bucket.
+    <<set $grey_ledger_census_buckets to $grey_ledger_census_buckets + 1>>
+    <<set $grey_ledger_census_total to $grey_ledger_census_total + 1>>
+    Moss: Bucket. *scratch* Sound? Handle attached? ...I'll put 'bucket'.
+    <<jump GreyLedgerCensus>>
+-> A goose.
+    <<set $grey_ledger_census_geese to $grey_ledger_census_geese + 1>>
+    <<set $grey_ledger_census_total to $grey_ledger_census_total + 1>>
+    Moss: *He writes it down at arm's length, as if the number itself might bite.*
+    Moss: Goose. Noted. Regretted.
+    <<jump GreyLedgerCensus>>
+-> Submit the census.  <<if $grey_ledger_census_total >= 7 and not $grey_ledger_census_done>>
+    Moss: Seven or more entries — a lawful census! *He rules a line under the column with tremendous ceremony.*
+    <<give_item "copper_coin" 20>>
+    <<set $grey_ledger_census_done to true>>
+    Moss: Submitted. The Ledger now knows how many buckets there are, which puts it one ahead of everyone who owns a bucket.
+-> That's everything for now.
+    Moss: The count keeps. That's the beauty of it. Nothing else does, but the count keeps.
+===

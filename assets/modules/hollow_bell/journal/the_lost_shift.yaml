@@ -1,0 +1,19 @@
+# Journal for the yarn-only talk quest "The Lost Shift" — no .py script;
+# the dialog drives $hollow_bell_hettie_* and this file renders the entry.
+title: The Lost Shift
+stages:
+  - when: hollow_bell_hettie_started
+    text: |
+      Hettie Marl, day-shift, twenty-two years down. There was a fall in the
+      western gallery and no body was ever found. Marten would like to know
+      either way — past the sump, where the rail bends.
+  - when: hollow_bell_hettie_found
+    text: |
+      She's alive — walled in behind the rock-fall in the Winding Works, and
+      annoyingly calm about it. She'll bring herself up. Tell Marten she's
+      coming, before he writes anything else on that door.
+  - when: hollow_bell_hettie_done
+    text: |
+      Hettie is up, selling rope by the ore-sheds at a price that ought to be
+      a crime. One name has come off the door.
+    completed: true

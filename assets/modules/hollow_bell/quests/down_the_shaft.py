@@ -8,6 +8,8 @@
 
 import mud_quest_api as q
 
+title = "Down the Shaft"
+
 subscribes_to = ["ObjectKilled"]
 
 TARGET = "hollow_bell/sump_crawler"
@@ -20,6 +22,8 @@ def on_start(state):
     state["crawlers"] = 0
     q.set_var("hollow_bell_shaft_started", True)
     q.set_var("hollow_bell_shaft_ready", False)
+    # Mirrored so the journal template can render live progress.
+    q.set_var("hollow_bell_crawlers", 0)
     q.log("hollow_bell/down_the_shaft: started")
 
 
@@ -29,6 +33,7 @@ def on_event(ev, state):
     if ev["type_id"] != TARGET:
         return
     state["crawlers"] = state["crawlers"] + 1
+    q.set_var("hollow_bell_crawlers", state["crawlers"])
     q.log("hollow_bell/down_the_shaft: crawlers={}/{}".format(state["crawlers"], NEEDED))
     if state["crawlers"] >= NEEDED:
         q.set_var("hollow_bell_shaft_ready", True)

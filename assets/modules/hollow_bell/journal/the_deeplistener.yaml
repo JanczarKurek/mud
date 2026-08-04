@@ -1,0 +1,24 @@
+# Journal for hollow_bell/the_deeplistener (script-backed finale, two
+# endings). Last matching stage wins: `rang` outranks `ready` while both are
+# true, and `done` outranks everything once Grandam Bellow closes it out.
+title: The Deeplistener
+stages:
+  - when: hollow_bell_finale_started
+    text: |
+      Something old and blind sleeps under the moor, and it has been awake
+      and in pain for three weeks. Grandam Bellow wants a bell that rings
+      true — and then the decision is yours. She won't make it for you.
+  - when: hollow_bell_finale_ready
+    text: |
+      It is done, one way or the other. Return to Grandam Bellow at the
+      bell-frame.
+  - when: hollow_bell_finale_rang
+    text: |
+      The note went out flat and clean and did not stop. The great blind head
+      turned once toward the sound, and down it went, and the floor is quiet.
+      Tell Grandam Bellow.
+  - when: hollow_bell_finale_done
+    text: |
+      Ashen Hollow has its answer. What the hamlet does at dawn from now on —
+      and whether it still needs to — is settled.
+    completed: true

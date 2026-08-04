@@ -16,6 +16,8 @@
 
 import mud_quest_api as q
 
+title = "The Deeplistener"
+
 subscribes_to = ["ObjectKilled"]
 
 TARGET = "hollow_bell/deeplistener"

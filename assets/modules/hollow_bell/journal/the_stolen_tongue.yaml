@@ -1,0 +1,18 @@
+# Journal for hollow_bell/the_stolen_tongue (script-backed kill quest).
+title: The Stolen Tongue
+stages:
+  - when: hollow_bell_tongue_started
+    text: |
+      Tobin can re-cast the bell, but he cannot pour a clapper — two hundred
+      years of dawns live in that lump of iron. Cinderjack is wearing it as a
+      crown on the foundry's casting floor. Take it off him. Mind the fire;
+      it throws fire.
+  - when: hollow_bell_tongue_ready
+    text: |
+      Cinderjack is down. Recover the bell's tongue from the mess and bring
+      it to Tobin.
+  - when: hollow_bell_tongue_done
+    text: |
+      The tongue is back in a bellwright's hands. Tobin weighed it and his
+      face did something complicated. Metal next.
+    completed: true

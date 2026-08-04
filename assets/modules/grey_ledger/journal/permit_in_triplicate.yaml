@@ -1,0 +1,37 @@
+# Deep-stage-list test: seven ordered stages over a two-NPC back-and-forth,
+# last match wins. One {var,is} form thrown in for coverage.
+title: Permit in Triplicate
+stages:
+  - when: grey_ledger_permit_started
+    text: |
+      Registering as an adventurer requires Form 7-C, in triplicate. Assessor
+      Quill does not keep the forms — obtain them from Underclerk Moss. Do
+      not touch the bell.
+  - when: grey_ledger_permit_form
+    text: |
+      Form 7-C obtained, revision f, all three copies. Return to Quill for
+      the stamp. Press hard — you're writing for the copy underneath.
+  - when: grey_ledger_permit_stamped
+    text: |
+      Stamped. The stamp attests that the form exists; a countersignature
+      must attest that the stamp was witnessed. Moss countersigns — it's the
+      one thing they let him do with the good pen.
+  - when: { var: grey_ledger_permit_countersigned, is: true }
+    text: |
+      Stamped and countersigned. File the form with Assessor Quill.
+  - when: grey_ledger_permit_lost
+    text: |
+      REJECTED. Revision f was withdrawn this morning; the current revision
+      is g. The difference is a comma. Obtain revision g from Moss, who has
+      reportedly started weeping preemptively.
+  - when: grey_ledger_permit_reissued
+    text: |
+      Revision g obtained — pre-countersigned by Moss, against procedure and
+      clearly an act of mercy. File it with Quill. Again. Don't mention the
+      signing order.
+  - when: grey_ledger_permit_done
+    text: |
+      Filed in triplicate. The first copy is for the Ledger, the second is
+      for you, the third is for the second. You are now a provisionally
+      registered adventurer — the highest tier on offer.
+    completed: true

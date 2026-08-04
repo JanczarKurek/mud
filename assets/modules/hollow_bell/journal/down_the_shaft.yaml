@@ -1,0 +1,20 @@
+# Journal for hollow_bell/down_the_shaft (script-backed kill quest; the
+# script mirrors its kill count into $hollow_bell_crawlers for the template).
+title: Down the Shaft
+stages:
+  - when: hollow_bell_shaft_started
+    text: |
+      Marten Coalbright won't let anyone near the cage-lift until the
+      haulage-way is passable. Clear the sump crawlers from the low workings
+      of the Winding Works — don't fight them in the water.
+
+      Crawlers culled: {$hollow_bell_crawlers}/8.
+  - when: hollow_bell_shaft_ready
+    text: |
+      The haulage-way is passable. Report back to Marten at the pithead.
+  - when: hollow_bell_shaft_done
+    text: |
+      The haulage-way is clear and the cage-lift is open. Marten checked
+      something off a list without looking at it, which is as close as he
+      comes to gratitude.
+    completed: true

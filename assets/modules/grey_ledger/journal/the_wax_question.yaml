@@ -1,0 +1,36 @@
+# Exact-match test: string-valued {var,is} stages that switch live as the
+# player revises their choice, a numeric {var,is} stage, and string + number
+# interpolation in the completed body. Stage order matters (last match wins):
+# the sticks stage sits below `started` but above the colour stages, so a
+# chosen colour always outranks the sticks note, while sticks-first players
+# still see the auspicious-number text.
+title: The Wax Question
+stages:
+  - when: grey_ledger_wax_started
+    text: |
+      The office seal was never commissioned — the largest irregularity the
+      Grey Ledger has ever produced. Two decisions are required: the colour
+      of the wax, and the quantity of sticks. Decide in any order. Revise
+      freely. Commit once.
+  - when: { var: grey_ledger_wax_sticks, is: 3 }
+    text: |
+      Three sticks are on order — the auspicious number, per an annotation
+      nobody will admit to writing. Quill is pretending not to be pleased.
+      The colour currently stands at: {$grey_ledger_seal}.
+  - when: { var: grey_ledger_seal, is: "crimson" }
+    text: |
+      Current specification: crimson wax — traditional, alarming. Sticks on
+      order: {$grey_ledger_wax_sticks}. Quill awaits the commission, or a
+      change of heart.
+  - when: { var: grey_ledger_seal, is: "black" }
+    text: |
+      Current specification: black wax — photographs poorly but forgives
+      everything. Sticks on order: {$grey_ledger_wax_sticks}. Quill awaits
+      the commission, or a change of heart.
+  - when: grey_ledger_wax_done
+    text: |
+      Commissioned: {$grey_ledger_wax_sticks} stick(s) of
+      {$grey_ledger_seal} wax, in a hand so even it looks typeset. The Grey
+      Ledger will finally be able to close a matter in a manner that looks
+      closed.
+    completed: true

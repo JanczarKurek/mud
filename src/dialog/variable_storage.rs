@@ -13,6 +13,7 @@
 
 use std::any::Any;
 use std::collections::HashMap as StdHashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
 use bevy::platform::collections::HashMap;
@@ -54,11 +55,25 @@ impl From<YarnValueDump> for YarnValue {
 #[derive(Debug, Clone, Default)]
 pub struct PersistentVariableStorage {
     inner: Arc<RwLock<StdHashMap<String, YarnValue>>>,
+    /// Bumped on every mutation (`set`, `clear`, `restore`, and `extend` when
+    /// it actually inserts). Interior mutability means Bevy change detection
+    /// can't see writes; systems poll this instead (see
+    /// `quest::journal::evaluate_quest_journals`).
+    generation: Arc<AtomicU64>,
 }
 
 impl PersistentVariableStorage {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Monotonic mutation counter shared by all clones of this store.
+    pub fn generation(&self) -> u64 {
+        self.generation.load(Ordering::Relaxed)
+    }
+
+    fn bump_generation(&self) {
+        self.generation.fetch_add(1, Ordering::Relaxed);
     }
 
     fn validate_name(name: &str) -> Result<(), VariableStorageError> {
@@ -91,6 +106,10 @@ impl PersistentVariableStorage {
         for (name, value) in values {
             guard.insert(name, value.into());
         }
+        drop(guard);
+        // Restoring at login counts as a mutation so pollers re-evaluate
+        // against the freshly-loaded variables.
+        self.bump_generation();
     }
 }
 
@@ -102,6 +121,7 @@ impl VariableStorage for PersistentVariableStorage {
     fn set(&mut self, name: String, value: YarnValue) -> Result<(), VariableStorageError> {
         Self::validate_name(&name)?;
         self.inner.write().unwrap().insert(name, value);
+        self.bump_generation();
         Ok(())
     }
 
@@ -124,8 +144,16 @@ impl VariableStorage for PersistentVariableStorage {
         // Only insert keys that don't exist — preserves values set by prior
         // dialog sessions when a new runner re-declares defaults.
         let mut guard = self.inner.write().unwrap();
+        let mut inserted = false;
         for (name, value) in values {
-            guard.entry(name).or_insert(value);
+            guard.entry(name).or_insert_with(|| {
+                inserted = true;
+                value
+            });
+        }
+        drop(guard);
+        if inserted {
+            self.bump_generation();
         }
         Ok(())
     }
@@ -141,6 +169,7 @@ impl VariableStorage for PersistentVariableStorage {
 
     fn clear(&mut self) {
         self.inner.write().unwrap().clear();
+        self.bump_generation();
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -149,5 +178,47 @@ impl VariableStorage for PersistentVariableStorage {
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn set_bumps_generation_and_clones_share_it() {
+        let mut store = PersistentVariableStorage::new();
+        let clone = store.clone();
+        assert_eq!(store.generation(), 0);
+        store
+            .set("$flag".to_owned(), YarnValue::Boolean(true))
+            .unwrap();
+        assert_eq!(store.generation(), 1);
+        assert_eq!(clone.generation(), 1);
+    }
+
+    #[test]
+    fn extend_bumps_only_when_a_key_is_inserted() {
+        let mut store = PersistentVariableStorage::new();
+        let mut values = HashMap::default();
+        values.insert("$x".to_owned(), YarnValue::Number(1.0));
+        store.extend(values.clone()).unwrap();
+        let after_first = store.generation();
+        assert!(after_first > 0);
+        // Re-declaring the same defaults inserts nothing → no bump.
+        store.extend(values).unwrap();
+        assert_eq!(store.generation(), after_first);
+    }
+
+    #[test]
+    fn restore_and_clear_bump_generation() {
+        let mut store = PersistentVariableStorage::new();
+        store.restore(StdHashMap::from([(
+            "$x".to_owned(),
+            YarnValueDump::Number(2.0),
+        )]));
+        assert_eq!(store.generation(), 1);
+        store.clear();
+        assert_eq!(store.generation(), 2);
     }
 }

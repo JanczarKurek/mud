@@ -1,0 +1,32 @@
+# Live-interpolation test: the body re-renders after every single report in
+# the census loop. The middle stage is an exact-match on geese == 3: it
+# appears while exactly three geese are on record and vanishes at the fourth.
+title: Census of Small Things
+stages:
+  - when: grey_ledger_census_started
+    text: |
+      Underclerk Moss is taking a census of small things — doors, buckets,
+      geese — one report at a time, that being the lawful speed of counting.
+      Seven entries make a submittable census.
+
+      Doors: {$grey_ledger_census_doors}. Buckets:
+      {$grey_ledger_census_buckets}. Geese: {$grey_ledger_census_geese}.
+      Entries so far: {$grey_ledger_census_total}/7.
+  - when: { var: grey_ledger_census_geese, is: 3 }
+    text: |
+      Exactly three geese are on record, which the annotation in the Ledger
+      holds to be the auspicious number. Moss has asked that nobody report a
+      fourth. This is not how counting works, and he knows it.
+
+      Doors: {$grey_ledger_census_doors}. Buckets:
+      {$grey_ledger_census_buckets}. Geese: {$grey_ledger_census_geese}.
+      Entries so far: {$grey_ledger_census_total}/7.
+  - when: grey_ledger_census_done
+    text: |
+      Census submitted under a line ruled with tremendous ceremony. Final
+      count: {$grey_ledger_census_doors} doors,
+      {$grey_ledger_census_buckets} buckets, {$grey_ledger_census_geese}
+      geese — {$grey_ledger_census_total} entries. The Ledger now knows how
+      many buckets there are, which puts it one ahead of everyone who owns a
+      bucket.
+    completed: true

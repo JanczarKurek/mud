@@ -6,6 +6,8 @@
 
 import mud_quest_api as q
 
+title = "The Stolen Tongue"
+
 subscribes_to = ["ObjectKilled"]
 
 TARGET = "hollow_bell/cinderjack"

@@ -1,0 +1,14 @@
+# Journal for the yarn-only fetch quest at the haunted mill — no .py script;
+# the dialog drives $mill_last_grain_* and this file renders the entry.
+title: The Last Grain
+stages:
+  - when: mill_last_grain_started
+    text: |
+      Old Maple, the miller's ghost, never milled his last sack of moonshade
+      grain. Fetch it up from the flooded cellar below the mill — and mind
+      the rats; they came with the damp.
+  - when: mill_last_grain_done
+    text: |
+      The moonshade grain is handed over for one last good milling. Old
+      Maple can rest at last.
+    completed: true

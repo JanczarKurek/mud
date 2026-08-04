@@ -32,12 +32,33 @@ use crate::scripting_api::bindings::world_api;
 /// Stored per loaded quest module.
 pub struct QuestDef {
     pub name: String,
+    /// Optional `title = "..."` global — the display name used by the
+    /// auto-journal log entry. Falls back to [`derive_title`].
+    pub title: Option<String>,
     pub scope: Scope,
     pub default_state: Option<PyObjectRef>,
     pub subscribes_to: Vec<String>,
     pub on_start: Option<PyObjectRef>,
     pub on_event: Option<PyObjectRef>,
     pub on_command: Option<PyObjectRef>,
+}
+
+/// Fallback display title derived from a quest id: the segment after the last
+/// `/`, underscores as spaces, each word capitalized
+/// (`hollow_bell/down_the_shaft` → `Down The Shaft`).
+pub fn derive_title(quest_id: &str) -> String {
+    let stem = quest_id.rsplit('/').next().unwrap_or(quest_id);
+    stem.split('_')
+        .filter(|word| !word.is_empty())
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().chain(chars).collect::<String>(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 pub struct QuestEngine {
@@ -127,13 +148,17 @@ impl QuestEngine {
         let name = format!("{id_prefix}{stem}");
         let source = fs::read_to_string(path).map_err(|e| e.to_string())?;
 
-        let (scope, default_state, subscribes_to, on_start, on_event, on_command) =
+        let (scope, title, default_state, subscribes_to, on_start, on_event, on_command) =
             self.interpreter.enter(|vm| {
                 let scope = vm.new_scope_with_builtins();
                 vm.run_code_string(scope.clone(), &source, path.display().to_string())
                     .map_err(|e| format_py_error(vm, &e))?;
 
                 let globals = scope.globals.clone();
+                let title = globals
+                    .get_item("title", vm)
+                    .ok()
+                    .and_then(|obj| obj.try_to_value::<String>(vm).ok());
                 let default_state = globals.get_item("state", vm).ok();
                 let subscribes_to = read_subscribes_to(&globals, vm);
                 let on_start = globals.get_item("on_start", vm).ok();
@@ -142,6 +167,7 @@ impl QuestEngine {
 
                 Ok::<_, String>((
                     scope,
+                    title,
                     default_state,
                     subscribes_to,
                     on_start,
@@ -162,6 +188,7 @@ impl QuestEngine {
             name.clone(),
             QuestDef {
                 name,
+                title,
                 scope,
                 default_state,
                 subscribes_to,
@@ -300,6 +327,15 @@ impl QuestEngine {
             self.snapshot_states
                 .insert((player_id, quest_id.clone()), snapshot);
         }
+    }
+
+    /// Display title for a quest id: the script's `title` global when set,
+    /// else derived from the id.
+    pub fn display_title(&self, quest_id: &str) -> String {
+        self.quests
+            .get(quest_id)
+            .and_then(|def| def.title.clone())
+            .unwrap_or_else(|| derive_title(quest_id))
     }
 
     /// Remove active state — used by `complete_quest` / `fail_quest` API.
@@ -539,5 +575,12 @@ mod tests {
             python_to_json(&py, vm)
         });
         assert_eq!(restored, value);
+    }
+
+    #[test]
+    fn derive_title_prettifies_quest_ids() {
+        assert_eq!(derive_title("hollow_bell/down_the_shaft"), "Down The Shaft");
+        assert_eq!(derive_title("hunter"), "Hunter");
+        assert_eq!(derive_title("a__b"), "A B");
     }
 }
