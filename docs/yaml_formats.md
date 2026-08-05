@@ -2866,7 +2866,7 @@ variables via `q.set_var` for live progress templates).
 
 ```yaml
 title: Down the Shaft            # entry title, required
-stages:                          # ordered; the LAST matching stage wins
+stages:                          # ordered; EVERY matching stage renders a note
   - when: hollow_bell_shaft_started      # bare string = variable is truthy
     text: |
       Clear the sump crawlers from the low workings.
@@ -2886,9 +2886,15 @@ Semantics:
   expression language — a stage watches exactly one variable.
 - `text` — supports `{$var}` interpolation. Whole numbers render without the
   fractional part (`3`, not `3.0`); a missing variable renders `?` and warns.
+- The rendered body is the quest's full history: one note per matching stage,
+  in declaration order, separated by `---` lines the log panel draws as
+  horizontal rules. The LAST matching stage decides the `(complete)` title
+  suffix. Write quest flags cumulatively (`<<set $q_started>>` stays true
+  when `$q_done` is set) so earlier notes remain visible; a stage whose
+  variable is later cleared drops out of the history.
 - No stage matching → no entry (the quest hasn't started for that player).
-  Entries are never deleted once written; later stages overwrite title/body
-  (engine-owned — the player's own notes on the entry survive).
+  Entries are never deleted once written; later variable changes re-render
+  title/body (engine-owned — the player's own notes on the entry survive).
 - A malformed file is logged and skipped at startup without affecting other
   journals. The `repo_journal_files_parse_and_reference_declared_vars` test
   additionally requires every referenced variable to be `<<declare>>`d in a

@@ -26,6 +26,9 @@ Outputs to assets/ui/theme/:
   resize_grip.png   16x10, horizontal brass grip strip used by the docked
                     panels' bottom resize-edge handle. Tileable along
                     the panel's full width.
+  scroll_orb.png    12x12, golden orb scrollbar thumb ("ball") for
+                    scrollable panel bodies (e.g. the Log panel's quest
+                    history). Shaded to match the medallion buttons.
 
 Re-run after changes:
     python3 scripts/gen_ui_theme_assets.py
@@ -453,6 +456,45 @@ def gen_close_icon():
     img.save(f"{OUT_DIR}/close_icon.png")
 
 
+def gen_scroll_orb():
+    """12x12 golden orb used as the scrollbar thumb in scrollable panel
+    bodies. Shaded like a tiny 3D bulb: top-left key light with a specular
+    sparkle, dark outline rim with a faint brass bounce light along the
+    bottom — same brass ramp as the medallion buttons."""
+    img = new_img(12, 12, CLEAR)
+    cx = cy = 5.5
+    lx = ly = 4.0  # key-light center, top-left
+    for y in range(12):
+        for x in range(12):
+            dx = x - cx
+            dy = y - cy
+            r = math.hypot(dx, dy)
+            if r > 5.5:
+                continue
+            if r > 4.7:
+                # Outline rim; brass bounce light on the bottom arc.
+                if dy > 3.0 and abs(dx) < 3.0:
+                    px(img, x, y, BRASS_MID)
+                else:
+                    px(img, x, y, OUTLINE)
+                continue
+            d = math.hypot(x - lx, y - ly)
+            if d < 3.0:
+                px(img, x, y, BRASS_HI)
+            elif d < 5.2:
+                px(img, x, y, BRASS_MID)
+            elif d < 6.8:
+                px(img, x, y, BRASS_LO)
+            else:
+                px(img, x, y, BRASS_DARK)
+    # Specular sparkle: a crisp 2-px glint just above-left of the light
+    # center (stamped after the shading pass so it stays pixel-clean).
+    px(img, 3, 3, (255, 244, 205, 255))
+    px(img, 4, 3, (255, 236, 180, 255))
+    px(img, 3, 4, (255, 236, 180, 255))
+    img.save(f"{OUT_DIR}/scroll_orb.png")
+
+
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     gen_panel_frame()
@@ -466,6 +508,7 @@ def main():
     gen_undock_button()
     gen_resize_grip()
     gen_resize_corner()
+    gen_scroll_orb()
     print(f"Generated theme assets in {OUT_DIR}/")
 
 

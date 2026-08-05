@@ -29,6 +29,8 @@ pub struct UiThemeAssets {
     pub undock_button: Handle<Image>,
     pub resize_corner: Handle<Image>,
     pub resize_grip: Handle<Image>,
+    /// Golden orb scrollbar thumb for scrollable panel bodies.
+    pub scroll_orb: Handle<Image>,
     /// Tile-mode slicer for `resize_grip` — keeps the 16-px wide texture
     /// at native pixel size while it stretches horizontally across the
     /// docked panel's full width.
@@ -61,6 +63,7 @@ impl UiThemeAssets {
             undock_button: asset_server.load("ui/theme/undock_button.png"),
             resize_corner: asset_server.load("ui/theme/resize_corner.png"),
             resize_grip: asset_server.load("ui/theme/resize_grip.png"),
+            scroll_orb: asset_server.load("ui/theme/scroll_orb.png"),
             resize_grip_slicer: TextureSlicer {
                 // Zero border = the whole 16x10 image is the "center"
                 // region, tiled at native pixel size across the full

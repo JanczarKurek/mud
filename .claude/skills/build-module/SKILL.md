@@ -264,7 +264,8 @@ Wiring rules (these are the easy things to get wrong):
   when one exists) so it appears in the player's quest log. Stages key off the
   same `$<module-id>_<local-id>_*` variables the dialog/script already sets;
   see `docs/yaml_formats.md §11` for the schema (`title` + ordered `stages`
-  with `when`/`text`/`completed`, last match wins, `{$var}` interpolation).
+  with `when`/`text`/`completed`, `{$var}` interpolation; every matching
+  stage renders as a divider-separated note, last match sets `completed`).
   Without one, a script-backed quest falls back to a bare auto-journal stub
   ("Accepted." / "Completed.") and a yarn-only quest is invisible in the log.
 - `<<log_write "subsection" "title" "body">>` writes a `Quests`-section log

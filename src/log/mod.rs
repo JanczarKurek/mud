@@ -21,6 +21,9 @@ pub const LOG_STASH_KEY: &str = "log";
 
 /// Section name reserved for entries written by the quest engine.
 pub const QUESTS_SECTION: &str = "Quests";
+/// A body line consisting of exactly this string separates two notes in an
+/// engine-owned entry; the log panel renders it as a horizontal rule.
+pub const BODY_DIVIDER: &str = "---";
 /// Default user-owned section for free-form notes.
 pub const NOTES_SECTION: &str = "Notes";
 

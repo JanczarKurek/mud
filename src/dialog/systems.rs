@@ -308,11 +308,35 @@ pub fn forward_present_options(
     let Ok(session) = sessions.get(event.entity) else {
         return;
     };
+    // Yarn delivers every option, flagging ones whose trailing `<<if>>` line
+    // condition failed as `is_available: false` — hiding those is the game's
+    // job (and the runner would happily *select* one, taking a branch whose
+    // condition failed). Forward only the available options; `texts` and
+    // `ids` are built in the same pass so `DialogChoose { option_idx }`
+    // still resolves to the right `OptionId`.
     let mut texts = Vec::with_capacity(event.options.len());
     let mut ids = Vec::with_capacity(event.options.len());
     for option in &event.options {
+        if !option.is_available {
+            continue;
+        }
         texts.push(option.line.text_without_character_name());
         ids.push(option.id);
+    }
+    if ids.is_empty() {
+        // Content bug: every option was condition-gated off. Fall back to
+        // showing them all rather than soft-locking the dialog on an empty
+        // menu.
+        warn!(
+            "dialog session {}: all {} options are unavailable — check the \
+             node's option conditions; showing them anyway",
+            session.session_id,
+            event.options.len()
+        );
+        for option in &event.options {
+            texts.push(option.line.text_without_character_name());
+            ids.push(option.id);
+        }
     }
     pending_options.by_session.insert(session.session_id, ids);
     ui_events.push(

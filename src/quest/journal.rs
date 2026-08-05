@@ -9,13 +9,20 @@
 //!
 //! ```yaml
 //! title: Down the Shaft
-//! stages:                    # ordered; the LAST matching stage wins
+//! stages:                    # ordered; EVERY matching stage renders a note
 //!   - when: hollow_bell_shaft_started          # bare string = truthy
 //!     text: "Crawlers culled: {$hollow_bell_crawlers}/8."
 //!   - when: { var: hollow_bell_shaft_done, is: true }   # exact match form
 //!     text: The haulage-way is clear.
 //!     completed: true        # appends " (complete)" to the entry title
 //! ```
+//!
+//! The rendered body is the full history: one note per matching stage, in
+//! declaration order, separated by [`BODY_DIVIDER`] lines (drawn as
+//! horizontal rules by the log panel). The LAST matching stage decides the
+//! `completed` title suffix. Quest flags are cumulative by convention (a
+//! dialog sets `_started` and later adds `_done` without clearing the
+//! former), so earlier notes stay visible as the quest advances.
 //!
 //! `evaluate_quest_journals` polls each player's variable-store generation
 //! counter and re-renders on change, emitting `GameCommand::UpsertLogEntry`
@@ -156,30 +163,43 @@ pub fn parse_journal_decl(contents: &str) -> Result<JournalDecl, String> {
     if decl.stages.is_empty() {
         return Err("stages must not be empty".to_owned());
     }
+    let mut total_text = 0;
     for stage in &decl.stages {
         if stage.when.var().trim().is_empty() {
             return Err("stage `when` variable must not be empty".to_owned());
         }
-        // Static bound; interpolation can only shrink (`{$var}` → a number).
-        if stage.text.chars().count() > MAX_BODY_LEN {
-            return Err(format!("stage text exceeds {MAX_BODY_LEN} chars"));
-        }
+        // +5 for a "\n---\n" divider; every stage can match at once.
+        total_text += stage.text.chars().count() + 5;
+    }
+    // Static bound; interpolation can only shrink (`{$var}` → a number).
+    if total_text > MAX_BODY_LEN {
+        return Err(format!("combined stage text exceeds {MAX_BODY_LEN} chars"));
     }
     Ok(decl)
 }
 
-/// Render the entry for one player: the LAST stage whose `when` matches wins.
-/// No match → the quest hasn't started for this player → no entry.
+/// Render the entry for one player: every stage whose `when` matches becomes
+/// a note, in declaration order, divider-separated. The LAST matching stage
+/// decides the `completed` title suffix. No match → the quest hasn't started
+/// for this player → no entry.
 pub fn evaluate(decl: &JournalDecl, vars: &HashMap<String, YarnValue>) -> Option<RenderedEntry> {
-    let stage = decl.stages.iter().rev().find(|s| s.when.matches(vars))?;
+    let matched: Vec<&JournalStage> = decl
+        .stages
+        .iter()
+        .filter(|s| s.when.matches(vars))
+        .collect();
+    let last = matched.last()?;
     let mut title = decl.title.clone();
-    if stage.completed {
+    if last.completed {
         title.push_str(COMPLETED_SUFFIX);
     }
-    Some(RenderedEntry {
-        title,
-        body: interpolate(&stage.text, vars).trim_end().to_owned(),
-    })
+    let body = matched
+        .iter()
+        .map(|s| interpolate(&s.text, vars).trim().to_owned())
+        .filter(|note| !note.is_empty())
+        .collect::<Vec<_>>()
+        .join(&format!("\n{}\n", crate::log::BODY_DIVIDER));
+    Some(RenderedEntry { title, body })
 }
 
 /// Replace `{$var}` tokens with the variable's rendered value. Whole-number
@@ -314,22 +334,38 @@ stages:
     }
 
     #[test]
-    fn last_matching_stage_wins() {
+    fn matching_stages_accumulate_divider_separated_notes() {
         let v = vars(&[
             ("$shaft_started", YarnValue::Boolean(true)),
             ("$shaft_ready", YarnValue::Boolean(true)),
+            ("$crawlers", YarnValue::Number(8.0)),
         ]);
         let entry = evaluate(&decl(SHAFT), &v).unwrap();
         assert_eq!(entry.title, "Down the Shaft");
-        assert_eq!(entry.body, "Report back to Marten.");
+        assert_eq!(
+            entry.body,
+            "Crawlers culled: 8/8.\n---\nReport back to Marten."
+        );
     }
 
     #[test]
-    fn completed_stage_suffixes_title() {
+    fn non_matching_stage_is_skipped_in_history() {
+        // `shaft_ready` false → its note is absent even though later stages match.
         let v = vars(&[
             ("$shaft_started", YarnValue::Boolean(true)),
+            ("$crawlers", YarnValue::Number(8.0)),
             ("$shaft_done", YarnValue::Boolean(true)),
         ]);
+        let entry = evaluate(&decl(SHAFT), &v).unwrap();
+        assert_eq!(
+            entry.body,
+            "Crawlers culled: 8/8.\n---\nThe haulage-way is clear."
+        );
+    }
+
+    #[test]
+    fn last_matching_stage_decides_completed_suffix() {
+        let v = vars(&[("$shaft_done", YarnValue::Boolean(true))]);
         let entry = evaluate(&decl(SHAFT), &v).unwrap();
         assert_eq!(entry.title, "Down the Shaft (complete)");
         assert_eq!(entry.body, "The haulage-way is clear.");

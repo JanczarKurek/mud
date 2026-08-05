@@ -21,7 +21,7 @@ use crate::dialog::components::DialogSession;
 use crate::dialog::resources::CharacterVarStores;
 use crate::game::commands::GameCommand;
 use crate::game::resources::PendingGameCommands;
-use crate::log::{LogOwner, LogState, QUESTS_SECTION};
+use crate::log::{LogOwner, LogState, BODY_DIVIDER, QUESTS_SECTION};
 use crate::player::components::{Player, PlayerId, PlayerIdentity};
 use crate::quest::engine::QuestEngine;
 use crate::quest::events::PendingQuestEvents;
@@ -324,7 +324,7 @@ fn push_quest_end_entry(
         .map(|(_, stash)| LogState::from_stash(stash))
         .and_then(|log| log.entry(QUESTS_SECTION, quest_id).map(|e| e.body.clone()));
     let body = match existing_body {
-        Some(body) if !body.is_empty() => format!("{body}\n\n— {verdict}"),
+        Some(body) if !body.is_empty() => format!("{body}\n{BODY_DIVIDER}\n{verdict}"),
         _ => verdict.to_owned(),
     };
     pending_commands.push_for_player(

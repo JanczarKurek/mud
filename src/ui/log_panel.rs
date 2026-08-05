@@ -12,7 +12,10 @@
 //! `ClientGameState` resource changes (which is most of them).
 
 use bevy::input::keyboard::KeyCode;
+use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
+use bevy::ui::{ComputedNode, ScrollPosition, UiGlobalTransform};
+use bevy::window::PrimaryWindow;
 use bevy_terminal::{
     spawn_text_edit, spawn_text_edit_with, TerminalFocus, TextEdit, TextEditRoot, TextEditSubmit,
 };
@@ -20,7 +23,7 @@ use bevy_terminal::{
 use crate::app::state::{simulation_active, ClientAppState};
 use crate::game::commands::GameCommand;
 use crate::game::resources::{ClientGameState, PendingGameCommands};
-use crate::log::{LogEntry, LogOwner, LogState, NOTES_SECTION, QUESTS_SECTION};
+use crate::log::{LogEntry, LogOwner, LogState, BODY_DIVIDER, NOTES_SECTION, QUESTS_SECTION};
 use crate::ui::components::HudRoot;
 use crate::ui::movable_window::{
     find_window_by_id, spawn_movable_window, spawn_movable_window_close_button, MovableWindow,
@@ -33,6 +36,10 @@ const PANEL_SIZE: Vec2 = Vec2::new(560.0, 420.0);
 const PANEL_INITIAL_POS: Vec2 = Vec2::new(140.0, 80.0);
 const BOOKMARK_WIDTH: f32 = 110.0;
 const SUBENTRY_LIST_WIDTH: f32 = 160.0;
+/// Width of the scrollbar gutter beside the quest-note history.
+const SCROLLBAR_GUTTER_WIDTH: f32 = 12.0;
+/// Diameter of the golden ball that rides the scrollbar rail.
+const SCROLLBAR_BALL_SIZE: f32 = 12.0;
 
 /// Marker on the log window root. Holds the currently selected section /
 /// subsection plus transient editor state (whether the title is in
@@ -66,8 +73,26 @@ struct LogPanelEntryViewSlot;
 #[derive(Component)]
 struct LogPanelTitleSlot;
 
+/// Scroll viewport for the engine body (the quest note history). Owns the
+/// `Overflow::scroll_y()` and `ScrollPosition`; children are the note
+/// texts and divider rules rebuilt by `populate_body_display`.
 #[derive(Component)]
 struct LogPanelBodyDisplaySlot;
+
+/// Scrollbar track beside the body display viewport. Hidden while the
+/// content fits; `sync_body_display_scrollbar` toggles it and sizes the
+/// thumb.
+#[derive(Component)]
+struct LogPanelBodyScrollTrack;
+
+#[derive(Component)]
+struct LogPanelBodyScrollThumb;
+
+/// Caption slot between the body display and the notes editor ("My notes"),
+/// shown only for engine-owned entries. Lives outside the scroll viewport
+/// so it doesn't scroll away with a long history.
+#[derive(Component)]
+struct LogPanelNotesLabelSlot;
 
 #[derive(Component)]
 struct LogPanelEditorSlot;
@@ -151,6 +176,17 @@ pub fn register(app: &mut App) {
     )
     .add_systems(
         Update,
+        (
+            handle_body_display_scrolling,
+            handle_body_scrollbar_dragging,
+            sync_body_display_scrollbar,
+        )
+            .chain()
+            .run_if(in_state(ClientAppState::InGame))
+            .run_if(simulation_active),
+    )
+    .add_systems(
+        Update,
         consume_text_edit_submits.run_if(in_state(ClientAppState::InGame)),
     )
     .add_systems(
@@ -229,6 +265,7 @@ fn spawn_log_panel(commands: &mut Commands, theme: &UiThemeAssets, palette: &Pal
     });
 
     let palette = *palette;
+    let scroll_orb = theme.scroll_orb.clone();
     // `min_width: 0` and `overflow: clip` on every flex container in the
     // chain — without it, `min-width: auto` (CSS default for flex items)
     // lets a long unbreakable token in the body editor push the panel's
@@ -298,23 +335,104 @@ fn spawn_log_panel(commands: &mut Commands, theme: &UiThemeAssets, palette: &Pal
                         Node {
                             width: Val::Percent(100.0),
                             min_width: Val::Px(0.0),
+                            flex_shrink: 0.0,
                             overflow: Overflow::clip(),
                             ..default()
                         },
                         BackgroundColor(Color::NONE),
                         LogPanelTitleSlot,
                     ));
+                    // Scroll row: the body viewport + its scrollbar track.
+                    // `min_height: 0` + default shrink lets a long history
+                    // compress (and scroll) instead of pushing the notes
+                    // editor and buttons out of the panel.
                     view.spawn((
                         Node {
                             width: Val::Percent(100.0),
                             min_width: Val::Px(0.0),
-                            flex_direction: FlexDirection::Column,
-                            row_gap: Val::Px(4.0),
-                            overflow: Overflow::clip(),
+                            min_height: Val::Px(0.0),
+                            flex_direction: FlexDirection::Row,
+                            column_gap: Val::Px(4.0),
                             ..default()
                         },
                         BackgroundColor(Color::NONE),
-                        LogPanelBodyDisplaySlot,
+                    ))
+                    .with_children(|row| {
+                        row.spawn((
+                            Node {
+                                flex_grow: 1.0,
+                                min_width: Val::Px(0.0),
+                                min_height: Val::Px(0.0),
+                                flex_direction: FlexDirection::Column,
+                                row_gap: Val::Px(4.0),
+                                overflow: Overflow::scroll_y(),
+                                ..default()
+                            },
+                            ScrollPosition::default(),
+                            BackgroundColor(Color::NONE),
+                            LogPanelBodyDisplaySlot,
+                        ));
+                        row.spawn((
+                            Node {
+                                width: Val::Px(SCROLLBAR_GUTTER_WIDTH),
+                                flex_shrink: 0.0,
+                                ..default()
+                            },
+                            BackgroundColor(Color::NONE),
+                            Visibility::Hidden,
+                            LogPanelBodyScrollTrack,
+                        ))
+                        .with_children(|track| {
+                            // Thin golden rail the ball rides on, shaded as
+                            // a tiny brass rod (bright left edge, dark
+                            // right edge) so the ball reads as threaded on
+                            // a wire rather than floating in a slot.
+                            let rail_left = (SCROLLBAR_GUTTER_WIDTH - 2.0) / 2.0;
+                            track.spawn((
+                                Node {
+                                    position_type: PositionType::Absolute,
+                                    left: Val::Px(rail_left),
+                                    width: Val::Px(1.0),
+                                    top: Val::Px(0.0),
+                                    bottom: Val::Px(0.0),
+                                    ..default()
+                                },
+                                BackgroundColor(palette.border_hover),
+                            ));
+                            track.spawn((
+                                Node {
+                                    position_type: PositionType::Absolute,
+                                    left: Val::Px(rail_left + 1.0),
+                                    width: Val::Px(1.0),
+                                    top: Val::Px(0.0),
+                                    bottom: Val::Px(0.0),
+                                    ..default()
+                                },
+                                BackgroundColor(palette.border_idle),
+                            ));
+                            track.spawn((
+                                Node {
+                                    position_type: PositionType::Absolute,
+                                    left: Val::Px(0.0),
+                                    width: Val::Px(SCROLLBAR_BALL_SIZE),
+                                    height: Val::Px(SCROLLBAR_BALL_SIZE),
+                                    top: Val::Px(0.0),
+                                    ..default()
+                                },
+                                ImageNode::new(scroll_orb.clone()),
+                                LogPanelBodyScrollThumb,
+                            ));
+                        });
+                    });
+                    view.spawn((
+                        Node {
+                            width: Val::Percent(100.0),
+                            min_width: Val::Px(0.0),
+                            flex_shrink: 0.0,
+                            ..default()
+                        },
+                        BackgroundColor(Color::NONE),
+                        LogPanelNotesLabelSlot,
                     ));
                     view.spawn((
                         Node {
@@ -334,6 +452,7 @@ fn spawn_log_panel(commands: &mut Commands, theme: &UiThemeAssets, palette: &Pal
                         Node {
                             width: Val::Percent(100.0),
                             min_width: Val::Px(0.0),
+                            flex_shrink: 0.0,
                             column_gap: Val::Px(8.0),
                             flex_direction: FlexDirection::Row,
                             ..default()
@@ -425,7 +544,8 @@ fn rebuild_log_panel_contents(
     subentry_list_slots: Query<Entity, With<LogPanelSubentryListSlot>>,
     bookmark_column_slots: Query<Entity, With<LogPanelBookmarkColumnSlot>>,
     title_slots: Query<Entity, With<LogPanelTitleSlot>>,
-    body_display_slots: Query<Entity, With<LogPanelBodyDisplaySlot>>,
+    mut body_display_slots: Query<(Entity, &mut ScrollPosition), With<LogPanelBodyDisplaySlot>>,
+    notes_label_slots: Query<Entity, With<LogPanelNotesLabelSlot>>,
     buttons_slots: Query<Entity, With<LogPanelButtonsSlot>>,
     body_editors: Query<(Entity, &TextEditRoot), Without<LogPanelTitleEditor>>,
     mut text_edits: Query<&mut TextEdit>,
@@ -523,8 +643,14 @@ fn rebuild_log_panel_contents(
             }
         }
         root.editor_loaded_for = current_key.clone();
-        // Selection changed — drop title-edit mode without committing.
+        // Selection changed — drop title-edit mode without committing, and
+        // rewind the body history to the top for the new entry.
         root.editing_title = false;
+        if let Ok((_, mut scroll)) = body_display_slots.single_mut() {
+            if scroll.y != 0.0 {
+                scroll.y = 0.0;
+            }
+        }
     }
 
     let palette_copy = *palette;
@@ -561,11 +687,19 @@ fn rebuild_log_panel_contents(
         });
     }
 
-    if let Ok(slot) = body_display_slots.single() {
+    if let Ok((slot, _)) = body_display_slots.single() {
         commands.entity(slot).despawn_related::<Children>();
         let entry_clone = current_entry.clone();
         commands.entity(slot).with_children(|b| {
             populate_body_display(b, &palette_copy, entry_clone.as_ref());
+        });
+    }
+
+    if let Ok(slot) = notes_label_slots.single() {
+        commands.entity(slot).despawn_related::<Children>();
+        let entry_clone = current_entry.clone();
+        commands.entity(slot).with_children(|l| {
+            populate_notes_label(l, &palette_copy, entry_clone.as_ref());
         });
     }
 
@@ -844,18 +978,50 @@ fn populate_body_display(
     if !matches!(entry.owner, LogOwner::Engine) {
         return;
     }
-    parent.spawn((
-        Text::new(entry.body.clone()),
-        TextFont {
-            font_size: 13.0,
-            ..default()
-        },
-        TextColor(palette.text_primary),
-        Node {
-            width: Val::Percent(100.0),
-            ..default()
-        },
-    ));
+    // Engine bodies are a note history: lines of exactly `---` separate the
+    // notes and render as horizontal rules (see `log::BODY_DIVIDER`).
+    let divider = format!("\n{BODY_DIVIDER}\n");
+    let notes = entry
+        .body
+        .split(divider.as_str())
+        .filter(|note| !note.trim().is_empty());
+    for (index, note) in notes.enumerate() {
+        if index > 0 {
+            parent.spawn((
+                Node {
+                    width: Val::Percent(100.0),
+                    height: Val::Px(1.0),
+                    flex_shrink: 0.0,
+                    margin: UiRect::vertical(Val::Px(6.0)),
+                    ..default()
+                },
+                BackgroundColor(palette.border_slot),
+            ));
+        }
+        parent.spawn((
+            Text::new(note.to_owned()),
+            TextFont {
+                font_size: 13.0,
+                ..default()
+            },
+            TextColor(palette.text_primary),
+            Node {
+                width: Val::Percent(100.0),
+                flex_shrink: 0.0,
+                ..default()
+            },
+        ));
+    }
+}
+
+fn populate_notes_label(
+    parent: &mut ChildSpawnerCommands,
+    palette: &Palette,
+    entry: Option<&LogEntry>,
+) {
+    if !entry.is_some_and(|e| matches!(e.owner, LogOwner::Engine)) {
+        return;
+    }
     parent.spawn((
         Text::new("My notes".to_owned()),
         TextFont {
@@ -864,6 +1030,176 @@ fn populate_body_display(
         },
         TextColor(palette.text_muted),
     ));
+}
+
+/// Mouse-wheel scrolling for the body history viewport (mirrors
+/// `handle_dialog_transcript_scrolling`).
+fn handle_body_display_scrolling(
+    mut wheel_reader: MessageReader<MouseWheel>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    mut viewports: Query<
+        (
+            &Node,
+            &ComputedNode,
+            &UiGlobalTransform,
+            &mut ScrollPosition,
+        ),
+        With<LogPanelBodyDisplaySlot>,
+    >,
+) {
+    let Ok(window) = window_query.single() else {
+        return;
+    };
+    let Some(cursor) = window.cursor_position() else {
+        wheel_reader.clear();
+        return;
+    };
+    // ComputedNode geometry is in physical pixels; logical cursor → physical.
+    let cursor = cursor * window.scale_factor();
+
+    for event in wheel_reader.read() {
+        let mut delta_y = -event.y;
+        if event.unit == MouseScrollUnit::Line {
+            delta_y *= 21.0;
+        }
+        if delta_y == 0.0 {
+            continue;
+        }
+        for (node, computed, transform, mut scroll) in &mut viewports {
+            if !computed.contains_point(*transform, cursor) {
+                continue;
+            }
+            if node.overflow.y != bevy::ui::OverflowAxis::Scroll {
+                continue;
+            }
+            let max_offset =
+                (computed.content_size().y - computed.size().y) * computed.inverse_scale_factor();
+            if max_offset <= 0.0 {
+                break;
+            }
+            let target = (scroll.y + delta_y).clamp(0.0, max_offset);
+            if scroll.y != target {
+                scroll.y = target;
+            }
+            break;
+        }
+    }
+}
+
+/// Drag the scrollbar ball. Grabbing the ball keeps the grip point under
+/// the cursor for the whole drag (1:1 with mouse movement); pressing the
+/// rail elsewhere first centers the ball on the cursor, then drags. The
+/// grab offset (cursor-y minus ball-top at press time) lives in a `Local`
+/// so the grip survives the cursor leaving the gutter mid-drag.
+fn handle_body_scrollbar_dragging(
+    mouse: Res<ButtonInput<MouseButton>>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    tracks: Query<(&ComputedNode, &UiGlobalTransform, &Visibility), With<LogPanelBodyScrollTrack>>,
+    mut viewports: Query<(&ComputedNode, &mut ScrollPosition), With<LogPanelBodyDisplaySlot>>,
+    mut grab_offset: Local<Option<f32>>,
+) {
+    if !mouse.pressed(MouseButton::Left) {
+        *grab_offset = None;
+        return;
+    }
+    let Ok(window) = window_query.single() else {
+        return;
+    };
+    let Some(cursor) = window.cursor_position() else {
+        return;
+    };
+    let Ok((track_computed, track_transform, track_visibility)) = tracks.single() else {
+        return;
+    };
+    if *track_visibility == Visibility::Hidden {
+        *grab_offset = None;
+        return;
+    }
+    let Ok((computed, mut scroll)) = viewports.single_mut() else {
+        return;
+    };
+    let max_offset =
+        (computed.content_size().y - computed.size().y) * computed.inverse_scale_factor();
+    // All geometry in logical pixels, to match `cursor` and `scroll`.
+    let inv = track_computed.inverse_scale_factor();
+    let track_size = track_computed.size() * inv;
+    let track_center = track_transform.translation * inv;
+    let track_top = track_center.y - track_size.y / 2.0;
+    let travel = track_size.y - SCROLLBAR_BALL_SIZE;
+    if max_offset <= 0.0 || travel <= 0.0 {
+        return;
+    }
+
+    if mouse.just_pressed(MouseButton::Left) {
+        let track_left = track_center.x - track_size.x / 2.0;
+        let in_gutter = cursor.x >= track_left
+            && cursor.x <= track_left + track_size.x
+            && cursor.y >= track_top
+            && cursor.y <= track_top + track_size.y;
+        *grab_offset = if in_gutter {
+            let ball_top = track_top + (scroll.y / max_offset).clamp(0.0, 1.0) * travel;
+            let offset = cursor.y - ball_top;
+            if (0.0..=SCROLLBAR_BALL_SIZE).contains(&offset) {
+                Some(offset)
+            } else {
+                Some(SCROLLBAR_BALL_SIZE / 2.0)
+            }
+        } else {
+            None
+        };
+    }
+    let Some(offset) = *grab_offset else {
+        return;
+    };
+    let ball_top = (cursor.y - offset - track_top).clamp(0.0, travel);
+    let target = ball_top / travel * max_offset;
+    if (scroll.y - target).abs() > 0.01 {
+        scroll.y = target;
+    }
+}
+
+/// Show/position the scrollbar ball from the viewport's scroll state, and
+/// clamp the offset when the content shrinks (e.g. selecting a shorter
+/// entry). Read-then-write on every field so idle frames don't dirty
+/// layout.
+fn sync_body_display_scrollbar(
+    mut viewports: Query<(&ComputedNode, &mut ScrollPosition), With<LogPanelBodyDisplaySlot>>,
+    mut tracks: Query<(&ComputedNode, &mut Visibility), With<LogPanelBodyScrollTrack>>,
+    mut thumbs: Query<&mut Node, With<LogPanelBodyScrollThumb>>,
+) {
+    let Ok((computed, mut scroll)) = viewports.single_mut() else {
+        return;
+    };
+    let Ok((track_computed, mut track_visibility)) = tracks.single_mut() else {
+        return;
+    };
+    let viewport_h = computed.size().y;
+    let content_h = computed.content_size().y;
+    if viewport_h <= 0.0 || content_h <= viewport_h {
+        if *track_visibility != Visibility::Hidden {
+            *track_visibility = Visibility::Hidden;
+        }
+        if scroll.y != 0.0 {
+            scroll.y = 0.0;
+        }
+        return;
+    }
+    if *track_visibility != Visibility::Inherited {
+        *track_visibility = Visibility::Inherited;
+    }
+    let max_offset = (content_h - viewport_h) * computed.inverse_scale_factor();
+    if scroll.y > max_offset {
+        scroll.y = max_offset;
+    }
+    let Ok(mut thumb) = thumbs.single_mut() else {
+        return;
+    };
+    let track_h = track_computed.size().y * track_computed.inverse_scale_factor();
+    let travel = (track_h - SCROLLBAR_BALL_SIZE).max(0.0);
+    let top = Val::Px((scroll.y / max_offset).clamp(0.0, 1.0) * travel);
+    if thumb.top != top {
+        thumb.top = top;
+    }
 }
 
 fn populate_buttons(
