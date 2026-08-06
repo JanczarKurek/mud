@@ -17,7 +17,20 @@ type_complexity = "allow"
 too_many_arguments = "allow"
 
 [dependencies]
-bevy = { version = "0.18" }
+# Curated feature set: bevy's default is ["2d", "3d", "ui"], but the 2d/3d/ui
+# umbrellas each also pull `scene`, `audio` and `picking`, and this game uses
+# none of them (nor anything from 3d: pbr/gltf/light/anti-alias — ~250 MB of
+# rlibs, zero call sites; UI buttons run on `ui_focus_system`, which is not
+# picking-gated). The four sub-features below are bevy's own curated combos —
+# "2d + ui minus scene/audio/picking/3d" — so transitive feature requirements
+# stay consistent. If a new bevy API fails to resolve, look up which feature
+# gates it in bevy's Cargo.toml and add that feature here.
+bevy = { version = "0.18", default-features = false, features = [
+    "default_app",       # asset, log, state, window, input focus, custom cursor
+    "default_platform",  # winit, x11+wayland, multi_threaded, default font, std
+    "2d_bevy_render",    # sprites + gizmos + core pipeline + render
+    "ui_bevy_render",    # bevy_ui + its render backend
+] }
 bevy_terminal = { path = "crates/bevy_terminal" }
 bevy_yarnspinner = "0.8"
 # Only needed for `VariableStorageError`, which bevy_yarnspinner re-exports
@@ -60,15 +73,16 @@ webpki-roots = "0.26"
 rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"], optional = true }
 
 [features]
-default = ["dynamic_linking", "viewer-hot-reload"]
+default = ["dynamic_linking"]
 # Bevy's hot-reload-friendly dynamic linking. Great for `cargo run` iteration
 # (cuts incremental link times from seconds to ~0); must be OFF for release
 # builds, otherwise the binary needs `libbevy_dylib.so` next to it at runtime.
 # Drop with `cargo build --release --no-default-features`.
 dynamic_linking = ["bevy/dynamic_linking"]
 # Enables Bevy's `file_watcher` for the asset_viewer binary so spritesheet PNGs
-# hot-reload when edited externally. Dev-only — drop with
-# `--no-default-features` for release builds.
+# hot-reload when edited externally. Off by default so the game/server builds
+# skip the watcher; run the viewer with
+# `cargo run --bin asset_viewer --features viewer-hot-reload`.
 viewer-hot-reload = ["bevy/file_watcher"]
 gen-schemas = ["schemars"]
 dev-self-signed = ["rcgen"]
@@ -118,6 +132,13 @@ lto = "off"
 # compiled once and cached, so this costs one long cold build and nothing on
 # incremental rebuilds — standard Bevy guidance for usable dev-mode perf.
 [profile.dev.package."*"]
+opt-level = 3
+
+# `package."*"` does NOT cover proc-macros and build scripts — those use
+# build-override, whose dev default is opt-level 0. This crate expands 1,100+
+# derives (443 of them serde) on every rebuild, so running syn/serde_derive/
+# rustpython_derive/bevy's macros optimized pays for itself immediately.
+[profile.dev.build-override]
 opt-level = 3
 
 # Day-to-day `cargo run --release` profile: cargo defaults (16 codegen units,
