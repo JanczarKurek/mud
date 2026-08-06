@@ -11,8 +11,8 @@ use crate::game::commands::{
     GameCommand, InspectTarget, ItemDestination, ItemReference, ItemSlotRef, MoveDelta, UseTarget,
 };
 use crate::game::helpers::{
-    colliders_in_space, player_space_id, refuse, MovableObjectQuery, PlayerActorQuery,
-    WorldObjectQuery,
+    colliders_in_space, column_members, player_space_id, refuse, AthleticsQuery,
+    MovableObjectQuery, PlayerActorQuery, WorldObjectQuery,
 };
 use crate::game::resources::{
     ChatLogState, ContainerViewers, GameUiEvent, InventoryState, PendingGameCommands,
@@ -995,13 +995,7 @@ fn handle_move_player(
     object_query: &WorldObjectQuery,
     player_query: &mut PlayerActorQuery,
     player_magic_effects: &Query<&mut crate::magic::effects::MagicEffects, With<Player>>,
-    player_athletics: &Query<
-        (
-            &crate::player::components::BaseStats,
-            &crate::player::skills::SkillSheet,
-        ),
-        With<Player>,
-    >,
+    player_athletics: &AthleticsQuery,
     player_exertion: &mut Query<&mut crate::player::components::Exertion, With<Player>>,
     authored_spaces: &SpaceDefinitions,
     definitions: &OverworldObjectDefinitions,
@@ -1294,13 +1288,7 @@ fn handle_jump_to(
     collider_positions: &[TilePosition],
     object_query: &WorldObjectQuery,
     player_query: &mut PlayerActorQuery,
-    player_athletics: &Query<
-        (
-            &crate::player::components::BaseStats,
-            &crate::player::skills::SkillSheet,
-        ),
-        With<Player>,
-    >,
+    player_athletics: &AthleticsQuery,
     player_exertion: &mut Query<&mut crate::player::components::Exertion, With<Player>>,
     definitions: &OverworldObjectDefinitions,
     floor_defs: &crate::world::floor_definitions::FloorTilesetDefinitions,
@@ -1354,17 +1342,6 @@ fn handle_jump_to(
     let source_z = tile_position.z;
     let target = (target_tile.x, target_tile.y);
 
-    let column_members = || {
-        object_query.iter().map(|(entity, resident, tile, object)| {
-            crate::world::stacks::ColumnMember {
-                entity,
-                resident,
-                tile,
-                object,
-            }
-        })
-    };
-
     // Single Athletics roll up-front; the path sweep picks the farthest tile
     // whose per-tile DC the roll already cleared (fatigue raises each tile's DC
     // by `fatigue_dc`). dc=0 here so `success` is unused.
@@ -1395,7 +1372,7 @@ fn handle_jump_to(
             xi,
             yi,
             Entity::PLACEHOLDER,
-            column_members(),
+            column_members(object_query),
             definitions,
             FloorGeometry::server(floor_maps, floor_defs),
         );
@@ -1534,13 +1511,7 @@ fn handle_object_move(
     movement_cooldown: &mut MovementCooldown,
     chat_log: &mut ChatLogState,
     player_entity: Entity,
-    player_athletics: &Query<
-        (
-            &crate::player::components::BaseStats,
-            &crate::player::skills::SkillSheet,
-        ),
-        With<Player>,
-    >,
+    player_athletics: &AthleticsQuery,
     player_exertion: &mut Query<&mut crate::player::components::Exertion, With<Player>>,
     object_query: &WorldObjectQuery,
     collider_positions: &[TilePosition],
@@ -1586,17 +1557,6 @@ fn handle_object_move(
     let mut path = traversal::bresenham_line(source, target);
     path.truncate(traversal::PUSH_MAX_RANGE.max(0) as usize);
 
-    let column_members = || {
-        object_query.iter().map(|(entity, resident, tile, object)| {
-            crate::world::stacks::ColumnMember {
-                entity,
-                resident,
-                tile,
-                object,
-            }
-        })
-    };
-
     // Single Athletics roll up-front; the sweep picks the farthest tile whose
     // distance-scaled DC the roll already cleared (fatigue raises each DC).
     let roll = crate::player::skills::skill_check(
@@ -1628,7 +1588,7 @@ fn handle_object_move(
             xi,
             yi,
             object_entity,
-            column_members(),
+            column_members(object_query),
             definitions,
             FloorGeometry::server(floor_maps, floor_defs),
         );
@@ -3753,13 +3713,7 @@ fn handle_move_item(
     world_config: &WorldConfig,
     max_carry_query: &Query<&MaxCarryWeight, With<Player>>,
     hidden_query: &Query<&crate::world::hidden::Hidden, Without<Player>>,
-    player_athletics: &Query<
-        (
-            &crate::player::components::BaseStats,
-            &crate::player::skills::SkillSheet,
-        ),
-        With<Player>,
-    >,
+    player_athletics: &AthleticsQuery,
     player_exertion: &mut Query<&mut crate::player::components::Exertion, With<Player>>,
     pending_noise: &mut crate::world::noise::PendingNoiseEvents,
     pending_stack_settle: &mut crate::world::stacks::PendingStackSettleEvents,
@@ -5755,14 +5709,7 @@ fn resolve_step_with_climb(
         x,
         y,
         Entity::PLACEHOLDER,
-        object_query.iter().map(|(entity, resident, tile, object)| {
-            crate::world::stacks::ColumnMember {
-                entity,
-                resident,
-                tile,
-                object,
-            }
-        }),
+        column_members(object_query),
         definitions,
         FloorGeometry::server(floor_maps, floor_defs),
     );
@@ -5885,17 +5832,6 @@ fn resolve_world_drop_tile(
         return None;
     }
 
-    let column_members = || {
-        object_query.iter().map(|(entity, resident, tile, object)| {
-            crate::world::stacks::ColumnMember {
-                entity,
-                resident,
-                tile,
-                object,
-            }
-        })
-    };
-
     // One column build answers both questions; `surface_from` scopes the
     // landing surface to the player's side of any floor slab.
     let column = crate::world::column::Column::from_world(
@@ -5903,7 +5839,7 @@ fn resolve_world_drop_tile(
         target_tile.x,
         target_tile.y,
         dragged_entity,
-        column_members(),
+        column_members(object_query),
         definitions,
         FloorGeometry::server(floor_maps, floor_defs),
     );

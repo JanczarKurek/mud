@@ -1497,6 +1497,7 @@ fn resolve_extends_chain(
 
     stack.push(id.to_owned());
     let resolved_value = resolve_value_with_extends(
+        ExtendsOrigin::Object,
         id,
         raw_value,
         object_values,
@@ -1510,7 +1511,16 @@ fn resolve_extends_chain(
     resolved_value
 }
 
+/// Which catalogue `current_id` came from. Only affects the circular-chain
+/// guard placement and the panic wording; the resolution logic is identical.
+#[derive(Clone, Copy, PartialEq)]
+enum ExtendsOrigin {
+    Object,
+    Base,
+}
+
 fn resolve_value_with_extends(
+    origin: ExtendsOrigin,
     current_id: &str,
     raw_value: &Value,
     object_values: &HashMap<String, Value>,
@@ -1524,6 +1534,22 @@ fn resolve_value_with_extends(
         .and_then(|value| value.as_str().map(str::to_owned));
 
     if let Some(parent_id) = extends {
+        // Base entries guard the whole resolution up front (their parents may
+        // loop through either catalogue); object entries rely on
+        // `resolve_extends_chain`'s own guard for object parents and check
+        // only the base-parent branch below.
+        let circular_guard = || {
+            assert!(
+                !stack.iter().any(|ancestor| ancestor == &parent_id),
+                "Circular 'extends' chain detected while resolving '{}': {:?}",
+                current_id,
+                stack
+            );
+        };
+        if origin == ExtendsOrigin::Base {
+            circular_guard();
+        }
+
         let parent_value = if object_values.contains_key(&parent_id) {
             resolve_extends_chain(
                 &parent_id,
@@ -1533,14 +1559,12 @@ fn resolve_value_with_extends(
                 stack,
             )
         } else if let Some(parent_base_value) = base_values.get(&parent_id) {
-            assert!(
-                !stack.iter().any(|ancestor| ancestor == &parent_id),
-                "Circular 'extends' chain detected while resolving '{}': {:?}",
-                current_id,
-                stack
-            );
+            if origin == ExtendsOrigin::Object {
+                circular_guard();
+            }
             stack.push(parent_id.clone());
-            let resolved = resolve_base_value_with_extends(
+            let resolved = resolve_value_with_extends(
+                ExtendsOrigin::Base,
                 &parent_id,
                 parent_base_value,
                 object_values,
@@ -1551,63 +1575,12 @@ fn resolve_value_with_extends(
             stack.pop();
             resolved
         } else {
+            let what = match origin {
+                ExtendsOrigin::Object => "Object",
+                ExtendsOrigin::Base => "Base",
+            };
             panic!(
-                "Object '{}' extends missing parent definition/base '{}'",
-                current_id, parent_id
-            );
-        };
-
-        merge_yaml_values(parent_value, Value::Mapping(child_mapping))
-    } else {
-        Value::Mapping(child_mapping)
-    }
-}
-
-fn resolve_base_value_with_extends(
-    current_id: &str,
-    raw_value: &Value,
-    object_values: &HashMap<String, Value>,
-    base_values: &HashMap<String, Value>,
-    resolved_values: &mut HashMap<String, Value>,
-    stack: &mut Vec<String>,
-) -> Value {
-    let mut child_mapping = as_mapping_clone(raw_value, current_id);
-    let extends = child_mapping
-        .remove(Value::String("extends".to_owned()))
-        .and_then(|value| value.as_str().map(str::to_owned));
-
-    if let Some(parent_id) = extends {
-        assert!(
-            !stack.iter().any(|ancestor| ancestor == &parent_id),
-            "Circular 'extends' chain detected while resolving '{}': {:?}",
-            current_id,
-            stack
-        );
-
-        let parent_value = if let Some(parent_object_value) = object_values.get(&parent_id) {
-            let _ = parent_object_value;
-            resolve_extends_chain(
-                &parent_id,
-                object_values,
-                base_values,
-                resolved_values,
-                stack,
-            )
-        } else if let Some(parent_base_value) = base_values.get(&parent_id) {
-            stack.push(parent_id.clone());
-            let resolved = resolve_base_value_with_extends(
-                &parent_id,
-                parent_base_value,
-                object_values,
-                base_values,
-                resolved_values,
-                stack,
-            );
-            stack.pop();
-            resolved
-        } else {
-            panic!(
-                "Base '{}' extends missing parent definition/base '{}'",
+                "{what} '{}' extends missing parent definition/base '{}'",
                 current_id, parent_id
             );
         };

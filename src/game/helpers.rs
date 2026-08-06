@@ -70,6 +70,33 @@ pub type MovableObjectQuery<'w, 's> = Query<
 pub type ColliderQuery<'w, 's> =
     Query<'w, 's, (&'static SpaceResident, &'static TilePosition), With<Collider>>;
 
+/// The `(BaseStats, SkillSheet)` lookup used by every Athletics-gated action
+/// (jump, shove, climb).
+pub type AthleticsQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static crate::player::components::BaseStats,
+        &'static crate::player::skills::SkillSheet,
+    ),
+    With<Player>,
+>;
+
+/// Adapt the world-object query's rows into `ColumnMember`s for
+/// `Column::from_world` / stack settling.
+pub fn column_members<'a>(
+    object_query: &'a WorldObjectQuery,
+) -> impl Iterator<Item = crate::world::stacks::ColumnMember<'a>> + 'a {
+    object_query.iter().map(
+        |(entity, resident, tile, object)| crate::world::stacks::ColumnMember {
+            entity,
+            resident,
+            tile,
+            object,
+        },
+    )
+}
+
 pub fn player_space_id(player_entity: Entity, query: &PlayerLookupQuery) -> Option<SpaceId> {
     query.iter().find_map(|(entity, _, resident, _, _)| {
         (entity == player_entity).then_some(resident.space_id)
@@ -121,6 +148,21 @@ pub fn is_within_talk_range(
     (player_position.z - target_position.z).abs() <= 2
         && (player_position.x - target_position.x).abs() <= TALK_RANGE_TILES
         && (player_position.y - target_position.y).abs() <= TALK_RANGE_TILES
+}
+
+/// Resolve the acting player's query row for a queued command: `Some(id)`
+/// finds the matching player, `None` falls back to the first row — embedded
+/// mode's single local player. Generic over the row tuple; `id_of` extracts
+/// the `PlayerId` from a row.
+pub fn resolve_acting_player<I: Iterator>(
+    mut rows: I,
+    player_id: Option<PlayerId>,
+    id_of: impl Fn(&I::Item) -> PlayerId,
+) -> Option<I::Item> {
+    match player_id {
+        Some(id) => rows.find(|row| id_of(row) == id),
+        None => rows.next(),
+    }
 }
 
 /// Single funnel for "the client asked for something the server won't do".
