@@ -661,37 +661,24 @@ pub(crate) fn spawn_small_button<T: Component>(
     label: &str,
     marker: T,
 ) {
-    let (bg, border, text) = idle_colors(palette, style, false);
-    parent
-        .spawn((
-            Button,
-            ThemedButton::new(style),
-            marker,
-            Node {
-                min_width: px(52.0),
-                min_height: px(28.0),
-                padding: UiRect::axes(px(8.0), px(4.0)),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                border: UiRect::all(px(1.0)),
-                ..default()
-            },
-            ImageNode::new(theme.button_frame.clone())
-                .with_mode(theme.button_image_mode())
-                .with_color(bg),
-            BackgroundColor(Color::NONE),
-            BorderColor::all(border),
-        ))
-        .with_children(|button| {
-            button.spawn((
-                Text::new(label),
-                TextFont {
-                    font_size: 15.0,
-                    ..default()
-                },
-                TextColor(text),
-            ));
-        });
+    spawn_themed_button(
+        parent,
+        theme,
+        palette,
+        style,
+        Node {
+            min_width: px(52.0),
+            min_height: px(28.0),
+            padding: UiRect::axes(px(8.0), px(4.0)),
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
+            border: UiRect::all(px(1.0)),
+            ..default()
+        },
+        label,
+        15.0,
+        marker,
+    );
 }
 
 fn spawn_character_sheet_button(commands: &mut Commands, asset_server: &AssetServer) {
@@ -1649,36 +1636,23 @@ fn spawn_context_button<T: Component>(
     label: &str,
     marker: T,
 ) {
-    let (bg, border, text) = idle_colors(palette, ButtonStyle::Secondary, false);
-    parent
-        .spawn((
-            Button,
-            ThemedButton::new(ButtonStyle::Secondary),
-            marker,
-            Node {
-                width: percent(100.0),
-                min_height: px(28.0),
-                padding: UiRect::axes(px(8.0), px(4.0)),
-                align_items: AlignItems::Center,
-                border: UiRect::all(px(1.0)),
-                ..default()
-            },
-            ImageNode::new(theme.button_frame.clone())
-                .with_mode(theme.button_image_mode())
-                .with_color(bg),
-            BackgroundColor(Color::NONE),
-            BorderColor::all(border),
-        ))
-        .with_children(|button| {
-            button.spawn((
-                Text::new(label),
-                TextFont {
-                    font_size: 16.0,
-                    ..default()
-                },
-                TextColor(text),
-            ));
-        });
+    spawn_themed_button(
+        parent,
+        theme,
+        palette,
+        ButtonStyle::Secondary,
+        Node {
+            width: percent(100.0),
+            min_height: px(28.0),
+            padding: UiRect::axes(px(8.0), px(4.0)),
+            align_items: AlignItems::Center,
+            border: UiRect::all(px(1.0)),
+            ..default()
+        },
+        label,
+        16.0,
+        marker,
+    );
 }
 
 fn spawn_minimap_panel(
@@ -1825,34 +1799,21 @@ fn spawn_zoom_button<T: Component>(
     label: &str,
     marker: T,
 ) {
-    let (bg, border, text) = idle_colors(palette, ButtonStyle::Secondary, false);
-    parent
-        .spawn((
-            Button,
-            ThemedButton::new(ButtonStyle::Secondary),
-            marker,
-            Node {
-                width: px(26.0),
-                height: px(22.0),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                border: UiRect::all(px(1.0)),
-                ..default()
-            },
-            ImageNode::new(theme.button_frame.clone())
-                .with_mode(theme.button_image_mode())
-                .with_color(bg),
-            BackgroundColor(Color::NONE),
-            BorderColor::all(border),
-        ))
-        .with_children(|button| {
-            button.spawn((
-                Text::new(label),
-                TextFont {
-                    font_size: 14.0,
-                    ..default()
-                },
-                TextColor(text),
-            ));
-        });
+    spawn_themed_button(
+        parent,
+        theme,
+        palette,
+        ButtonStyle::Secondary,
+        Node {
+            width: px(26.0),
+            height: px(22.0),
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
+            border: UiRect::all(px(1.0)),
+            ..default()
+        },
+        label,
+        14.0,
+        marker,
+    );
 }

@@ -11,7 +11,7 @@ use bevy::prelude::*;
 use bevy::ui::{ComputedNode, ScrollPosition, UiGlobalTransform};
 use bevy::window::PrimaryWindow;
 
-use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton};
+use crate::ui::theme::widgets::{idle_colors, spawn_themed_button, ButtonStyle, ThemedButton};
 use crate::ui::theme::{Palette, UiThemeAssets};
 
 use super::display::{DisplayOption, DisplaySettings};
@@ -610,35 +610,22 @@ fn spawn_footer_button<M: Component>(
     label: &str,
     marker: M,
 ) {
-    let (bg, border, text) = idle_colors(palette, style, false);
-    parent
-        .spawn((
-            Button,
-            ThemedButton::new(style),
-            marker,
-            Node {
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                padding: UiRect::axes(px(20.0), px(12.0)),
-                border: UiRect::all(px(1.0)),
-                ..default()
-            },
-            ImageNode::new(theme.button_frame.clone())
-                .with_mode(theme.button_image_mode())
-                .with_color(bg),
-            BackgroundColor(Color::NONE),
-            BorderColor::all(border),
-        ))
-        .with_children(|button| {
-            button.spawn((
-                Text::new(label),
-                TextFont {
-                    font_size: 16.0,
-                    ..default()
-                },
-                TextColor(text),
-            ));
-        });
+    spawn_themed_button(
+        parent,
+        theme,
+        palette,
+        style,
+        Node {
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            padding: UiRect::axes(px(20.0), px(12.0)),
+            border: UiRect::all(px(1.0)),
+            ..default()
+        },
+        label,
+        16.0,
+        marker,
+    );
 }
 
 /// Mirror `SettingsUiState.open` onto the overlay root's `Display`.

@@ -16,7 +16,9 @@ use crate::player::components::{
     validate_point_buy, AppearanceRegion, AttributeSet, PlayerAppearance, RgbColor, ATTR_BASELINE,
     ATTR_CEILING, ATTR_FLOOR, POINT_BUY_BUDGET,
 };
-use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton, ThemedPanel};
+use crate::ui::theme::widgets::{
+    idle_colors, spawn_themed_button, ButtonStyle, ThemedButton, ThemedPanel,
+};
 use crate::ui::theme::{Palette, UiThemeAssets};
 
 pub struct CharacterCreateScreenPlugin {
@@ -836,36 +838,23 @@ fn spawn_small_button<M: Component>(
     label: &str,
     marker: M,
 ) {
-    let (bg, border, text) = idle_colors(palette, ButtonStyle::Secondary, false);
-    parent
-        .spawn((
-            Button,
-            ThemedButton::new(ButtonStyle::Secondary),
-            marker,
-            Node {
-                width: px(28.0),
-                height: px(28.0),
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                border: UiRect::all(px(1.0)),
-                ..default()
-            },
-            ImageNode::new(theme.button_frame.clone())
-                .with_mode(theme.button_image_mode())
-                .with_color(bg),
-            BackgroundColor(Color::NONE),
-            BorderColor::all(border),
-        ))
-        .with_children(|button| {
-            button.spawn((
-                Text::new(label),
-                TextFont {
-                    font_size: 18.0,
-                    ..default()
-                },
-                TextColor(text),
-            ));
-        });
+    spawn_themed_button(
+        parent,
+        theme,
+        palette,
+        ButtonStyle::Secondary,
+        Node {
+            width: px(28.0),
+            height: px(28.0),
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            border: UiRect::all(px(1.0)),
+            ..default()
+        },
+        label,
+        18.0,
+        marker,
+    );
 }
 
 fn spawn_action_button(
@@ -875,36 +864,23 @@ fn spawn_action_button(
     label: &str,
     action: CreateAction,
 ) {
-    let (bg, border, text) = idle_colors(palette, ButtonStyle::Primary, false);
-    parent
-        .spawn((
-            Button,
-            ThemedButton::new(ButtonStyle::Primary),
-            CreateActionButton(action),
-            Node {
-                flex_grow: 1.0,
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                padding: UiRect::axes(px(14.0), px(12.0)),
-                border: UiRect::all(px(1.0)),
-                ..default()
-            },
-            ImageNode::new(theme.button_frame.clone())
-                .with_mode(theme.button_image_mode())
-                .with_color(bg),
-            BackgroundColor(Color::NONE),
-            BorderColor::all(border),
-        ))
-        .with_children(|button| {
-            button.spawn((
-                Text::new(label),
-                TextFont {
-                    font_size: 18.0,
-                    ..default()
-                },
-                TextColor(text),
-            ));
-        });
+    spawn_themed_button(
+        parent,
+        theme,
+        palette,
+        ButtonStyle::Primary,
+        Node {
+            flex_grow: 1.0,
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            padding: UiRect::axes(px(14.0), px(12.0)),
+            border: UiRect::all(px(1.0)),
+            ..default()
+        },
+        label,
+        18.0,
+        CreateActionButton(action),
+    );
 }
 
 fn handle_name_field_keyboard(

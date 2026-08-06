@@ -8,7 +8,9 @@ use crate::app::plugin::AppRuntime;
 use crate::app::state::{ClientAppState, DebugMode};
 use crate::network::resources::{TcpClientConfig, TcpClientConnection};
 use crate::ui::settings::{SavedServerList, SelectedStartingMap};
-use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton, ThemedPanel};
+use crate::ui::theme::widgets::{
+    idle_colors, spawn_themed_button, ButtonStyle, ThemedButton, ThemedPanel,
+};
 use crate::ui::theme::{Palette, UiThemeAssets};
 use crate::world::map_layout::SpaceDefinitions;
 
@@ -667,36 +669,23 @@ fn spawn_action_button(
     label: &str,
     action: TitleAction,
 ) {
-    let (bg, border, text) = idle_colors(palette, ButtonStyle::Primary, false);
-    parent
-        .spawn((
-            Button,
-            ThemedButton::new(ButtonStyle::Primary),
-            TitleActionButton { action },
-            Node {
-                width: percent(100.0),
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                padding: UiRect::axes(px(18.0), px(14.0)),
-                border: UiRect::all(px(1.0)),
-                ..default()
-            },
-            ImageNode::new(theme.button_frame.clone())
-                .with_mode(theme.button_image_mode())
-                .with_color(bg),
-            BackgroundColor(Color::NONE),
-            BorderColor::all(border),
-        ))
-        .with_children(|button| {
-            button.spawn((
-                Text::new(label),
-                TextFont {
-                    font_size: 22.0,
-                    ..default()
-                },
-                TextColor(text),
-            ));
-        });
+    spawn_themed_button(
+        parent,
+        theme,
+        palette,
+        ButtonStyle::Primary,
+        Node {
+            width: percent(100.0),
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            padding: UiRect::axes(px(18.0), px(14.0)),
+            border: UiRect::all(px(1.0)),
+            ..default()
+        },
+        label,
+        22.0,
+        TitleActionButton { action },
+    );
 }
 
 /// Like [`spawn_action_button`] but tags the label with [`CleanStateLabel`] so
@@ -1350,36 +1339,23 @@ fn spawn_picker_button(
     label: &str,
     action: PickerAction,
 ) {
-    let (bg, border, text) = idle_colors(palette, ButtonStyle::Primary, false);
-    parent
-        .spawn((
-            Button,
-            ThemedButton::new(ButtonStyle::Primary),
-            action,
-            Node {
-                flex_grow: 1.0,
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                padding: UiRect::axes(px(14.0), px(10.0)),
-                border: UiRect::all(px(1.0)),
-                ..default()
-            },
-            ImageNode::new(theme.button_frame.clone())
-                .with_mode(theme.button_image_mode())
-                .with_color(bg),
-            BackgroundColor(Color::NONE),
-            BorderColor::all(border),
-        ))
-        .with_children(|button| {
-            button.spawn((
-                Text::new(label),
-                TextFont {
-                    font_size: 18.0,
-                    ..default()
-                },
-                TextColor(text),
-            ));
-        });
+    spawn_themed_button(
+        parent,
+        theme,
+        palette,
+        ButtonStyle::Primary,
+        Node {
+            flex_grow: 1.0,
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            padding: UiRect::axes(px(14.0), px(10.0)),
+            border: UiRect::all(px(1.0)),
+            ..default()
+        },
+        label,
+        18.0,
+        action,
+    );
 }
 
 fn spawn_direct_field(

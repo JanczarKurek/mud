@@ -12,7 +12,9 @@ use crate::network::resources::{TcpClientConfig, TcpClientConnection};
 use crate::player::components::Inventory;
 use crate::player::debug_presets::DebugCharacterPresets;
 use crate::player::loadout::Loadouts;
-use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton, ThemedPanel};
+use crate::ui::theme::widgets::{
+    idle_colors, spawn_themed_button, ButtonStyle, ThemedButton, ThemedPanel,
+};
 use crate::ui::theme::{Palette, UiThemeAssets};
 
 pub struct CharacterSelectScreenPlugin {
@@ -444,36 +446,23 @@ fn spawn_action_button(
     label: &str,
     action: CharacterSelectAction,
 ) {
-    let (bg, border, text) = idle_colors(palette, ButtonStyle::Primary, false);
-    parent
-        .spawn((
-            Button,
-            ThemedButton::new(ButtonStyle::Primary),
-            CharacterSelectActionButton { action },
-            Node {
-                flex_grow: 1.0,
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                padding: UiRect::axes(px(14.0), px(12.0)),
-                border: UiRect::all(px(1.0)),
-                ..default()
-            },
-            ImageNode::new(theme.button_frame.clone())
-                .with_mode(theme.button_image_mode())
-                .with_color(bg),
-            BackgroundColor(Color::NONE),
-            BorderColor::all(border),
-        ))
-        .with_children(|button| {
-            button.spawn((
-                Text::new(label),
-                TextFont {
-                    font_size: 18.0,
-                    ..default()
-                },
-                TextColor(text),
-            ));
-        });
+    spawn_themed_button(
+        parent,
+        theme,
+        palette,
+        ButtonStyle::Primary,
+        Node {
+            flex_grow: 1.0,
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            padding: UiRect::axes(px(14.0), px(12.0)),
+            border: UiRect::all(px(1.0)),
+            ..default()
+        },
+        label,
+        18.0,
+        CharacterSelectActionButton { action },
+    );
 }
 
 fn poll_character_messages(
