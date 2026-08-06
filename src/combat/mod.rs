@@ -14,11 +14,13 @@ use bevy::prelude::*;
 use crate::app::state::{simulation_active, ClientAppState};
 use crate::combat::damage::apply_pending_damage;
 use crate::combat::modifiers::{tick_item_modifiers, ItemModifierTickTimer};
-use crate::combat::resources::{BattleTurnTimer, PendingModifierConsumption, PendingNpcSummons};
+use crate::combat::resources::{
+    BattleTurnTimer, PendingModifierConsumption, PendingNpcSummons, PendingRetaliations,
+};
 use crate::combat::scheduled::{tick_scheduled_impacts, ScheduledImpacts};
 use crate::combat::systems::{
-    apply_pending_modifier_consumption, apply_pending_npc_summons, clear_invalid_combat_targets,
-    resolve_battle_turn,
+    apply_auto_retaliation, apply_pending_modifier_consumption, apply_pending_npc_summons,
+    clear_invalid_combat_targets, resolve_battle_turn,
 };
 use crate::game::systems::process_game_commands;
 use crate::magic::effects::tick_dot_effects;
@@ -32,12 +34,18 @@ impl Plugin for CombatPlugin {
             .insert_resource(ItemModifierTickTimer::default())
             .insert_resource(PendingModifierConsumption::default())
             .init_resource::<PendingNpcSummons>()
+            .init_resource::<PendingRetaliations>()
             .init_resource::<ScheduledImpacts>()
-            // Drop any in-flight missiles / pending AoE waves when leaving the
-            // world, so they can't flash VFX into a freshly-loaded one.
+            // Drop any in-flight missiles / pending AoE waves (and stale
+            // retaliation records, whose Entities would dangle) when leaving
+            // the world, so they can't leak into a freshly-loaded one.
             .add_systems(
                 OnExit(ClientAppState::InGame),
-                |mut scheduled: ResMut<ScheduledImpacts>| scheduled.items.clear(),
+                |mut scheduled: ResMut<ScheduledImpacts>,
+                 mut retaliations: ResMut<PendingRetaliations>| {
+                    scheduled.items.clear();
+                    retaliations.items.clear();
+                },
             )
             .add_systems(
                 Update,
@@ -65,6 +73,16 @@ impl Plugin for CombatPlugin {
                 apply_pending_npc_summons
                     .after(resolve_battle_turn)
                     .before(apply_pending_damage)
+                    .run_if(simulation_active),
+            )
+            // Auto-retaliate: lock an attacker for target-less players in that
+            // stance. Before the projection so the new target replicates the
+            // same frame it was recorded.
+            .add_systems(
+                Update,
+                apply_auto_retaliation
+                    .after(resolve_battle_turn)
+                    .before(crate::game::projection::collect_game_events_from_authority)
                     .run_if(simulation_active),
             )
             .add_systems(

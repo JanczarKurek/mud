@@ -38,6 +38,28 @@ pub struct NpcSummonRequest {
     pub spec: crate::magic::resources::SummonSpec,
 }
 
+/// One "an NPC committed an attack against a player" record from a battle tick.
+/// Recorded regardless of the to-hit outcome (a dodged or blocked swing still
+/// counts as being attacked), but only for committed attacks — an NPC merely
+/// aggroed/chasing out of range produces nothing.
+pub struct RetaliationHit {
+    pub player: Entity,
+    pub attacker: Entity,
+    /// Display name of the attacker, for the narrator line.
+    pub attacker_name: String,
+}
+
+/// Deferred auto-retaliate queue. `resolve_battle_turn` records each committed
+/// NPC attack on a player here; `apply_auto_retaliation` drains it and, for
+/// players in Auto-Retaliate mode with no current `CombatTarget`, locks one
+/// attacker as their target. Mirrors the `PendingDamageEvents` /
+/// `PendingNpcSummons` deferred-write pattern (the resolver is at Bevy's
+/// 16-system-param cap and cannot take the extra queries itself).
+#[derive(Resource, Default)]
+pub struct PendingRetaliations {
+    pub items: Vec<RetaliationHit>,
+}
+
 /// Deferred summon queue for NPC casts.
 ///
 /// `resolve_battle_turn` already sits at Bevy's 16-system-param cap and holds

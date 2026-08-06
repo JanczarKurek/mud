@@ -319,6 +319,27 @@ pub fn toggle_aware_on_keypress(
     }
 }
 
+/// Client toggle for Auto-Retaliate mode: on the bound key, reads the
+/// replicated `ClientGameState.auto_retaliate` and pushes the opposite.
+/// Suppressed while the Python console is focused. Mirrors
+/// `toggle_sneak_on_keypress`.
+pub fn toggle_auto_retaliate_on_keypress(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    keybindings: Res<Keybindings>,
+    console_state: Option<Res<PythonConsoleState>>,
+    client_state: Res<ClientGameState>,
+    mut pending_commands: ResMut<PendingGameCommands>,
+) {
+    if console_state.as_ref().is_some_and(|state| state.is_open) {
+        return;
+    }
+    if keybindings.just_pressed(Action::ToggleAutoRetaliate, &keyboard_input) {
+        pending_commands.push(GameCommand::SetAutoRetaliate {
+            auto_retaliate: !client_state.auto_retaliate,
+        });
+    }
+}
+
 /// Ctrl+Q rotates a nearby rotatable object counter-clockwise, Ctrl+E clockwise.
 /// Picks the rotatable object within Chebyshev-1 of the local player, tie-broken
 /// by Manhattan distance then object_id so the choice is deterministic across

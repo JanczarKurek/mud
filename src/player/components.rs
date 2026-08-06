@@ -61,6 +61,18 @@ pub const AWARE_PERCEPTION_BONUS: i32 = 5;
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct Aware;
 
+/// While present on a player, they are in **Auto-Retaliate** mode: when an NPC
+/// commits an attack against them (melee/ranged swing or hostile spell, even a
+/// dodged/blocked one) while they have no `CombatTarget`, the server locks one
+/// attacker as their target (see `combat::systems::apply_auto_retaliation`).
+/// Toggled by `GameCommand::SetAutoRetaliate`. Session-only state — never
+/// persisted, so a character always loads with it off. Replicated to the local
+/// client via `GameEvent::PlayerAutoRetaliateChanged` for the HUD indicator;
+/// presentation code must read `ClientGameState.auto_retaliate`, never this
+/// authoritative marker.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct AutoRetaliate;
+
 /// Present on a player who has died and is waiting to click "Continue" on the
 /// death overlay. While present they stay at HP 0 (regen is gated off below 1)
 /// and `process_game_commands` drops their other commands, so they can't move,

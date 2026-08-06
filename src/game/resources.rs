@@ -473,6 +473,12 @@ pub enum GameEvent {
     PlayerAwareChanged {
         aware: bool,
     },
+    /// The local player's Auto-Retaliate state changed. Drives the HUD mode
+    /// indicator. State, not a one-shot signal — folded into
+    /// `ClientGameState.auto_retaliate`.
+    PlayerAutoRetaliateChanged {
+        auto_retaliate: bool,
+    },
     /// The local player's Exertion (fatigue) meter changed. State, not a
     /// one-shot — folded into `ClientGameState.exertion`. Diffed at whole-point
     /// resolution in the projection so a continuously-decaying meter doesn't
@@ -774,6 +780,10 @@ pub struct ClientGameState {
     /// `PlayerAwareChanged`; the HUD mode box renders an indicator.
     #[serde(default)]
     pub aware: bool,
+    /// Whether the local player has Auto-Retaliate enabled. Driven by
+    /// `PlayerAutoRetaliateChanged`; the HUD mode box renders an indicator.
+    #[serde(default)]
+    pub auto_retaliate: bool,
     /// Replicated Exertion (fatigue) snapshot for the local player. `None`
     /// until the first `PlayerExertionChanged` event arrives. Drives the HUD
     /// fatigue bar.

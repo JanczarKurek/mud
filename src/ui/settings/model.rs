@@ -33,6 +33,8 @@ pub enum Action {
     ToggleSneak,
     /// Toggle the player's Aware state (slower, +passive Perception).
     ToggleAware,
+    /// Toggle Auto-Retaliate (being attacked with no target locks an attacker).
+    ToggleAutoRetaliate,
     /// Use the item bound to quick-use slot `0..QUICKBAR_SLOTS`. Holding the
     /// (non-remappable) Ctrl modifier turns this into the use-on flow — the
     /// pair is one bindable unit by design.
@@ -62,6 +64,7 @@ impl Action {
             Action::RotateCw => "Rotate object (CW)".to_owned(),
             Action::ToggleSneak => "Toggle sneaking".to_owned(),
             Action::ToggleAware => "Toggle awareness".to_owned(),
+            Action::ToggleAutoRetaliate => "Toggle auto-retaliate".to_owned(),
             Action::QuickbarUse(slot) => {
                 format!("Quickbar slot {} (hold Ctrl = use-on)", slot_label(slot))
             }
@@ -349,6 +352,7 @@ pub fn all_actions() -> Vec<Action> {
         Action::RotateCw,
         Action::ToggleSneak,
         Action::ToggleAware,
+        Action::ToggleAutoRetaliate,
     ];
     for slot in 0..QUICKBAR_SLOTS {
         v.push(Action::QuickbarUse(slot));
@@ -393,6 +397,10 @@ impl Default for Keybindings {
         map.insert(
             Action::ToggleAware,
             Bindings::one(Binding::plain(KeyCode::KeyF)),
+        );
+        map.insert(
+            Action::ToggleAutoRetaliate,
+            Bindings::one(Binding::plain(KeyCode::KeyG)),
         );
 
         // Quickbar: slot 0 -> Digit1 .. slot 8 -> Digit9, slot 9 -> Digit0.

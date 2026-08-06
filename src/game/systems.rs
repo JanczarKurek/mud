@@ -771,6 +771,17 @@ pub fn process_game_commands(
                         .remove::<crate::player::components::Aware>();
                 }
             }
+            GameCommand::SetAutoRetaliate { auto_retaliate } => {
+                if auto_retaliate {
+                    commands
+                        .entity(player_entity)
+                        .insert(crate::player::components::AutoRetaliate);
+                } else {
+                    commands
+                        .entity(player_entity)
+                        .remove::<crate::player::components::AutoRetaliate>();
+                }
+            }
             // Drained earlier by `process_acknowledge_death_commands` (player
             // plugin, CommandIntercept set). Reaching this arm means no
             // awaiting-respawn player matched, so silently drop it.

@@ -219,6 +219,46 @@ def gen_aware():
     return img
 
 
+# ── Retaliate (crossed swords) ──────────────────────────────────────────────────
+def gen_retaliate():
+    """Two crossed swords — the mode toggle for auto-retaliate. Grips at the
+    bottom corners, blades crossing mid-icon, tips toward the top corners."""
+    img = new_img()
+    STEEL = (188, 198, 214, 255)
+    STEEL_HI = (232, 238, 248, 255)
+    GUARD = (198, 154, 62, 255)
+    GRIP = (112, 76, 48, 255)
+
+    # Blade A: bottom-left grip toward top-right tip; 2 px wide.
+    for i in range(9):
+        x, y = 4 + i, 12 - i
+        px(img, x, y, STEEL)
+        px(img, x + 1, y, STEEL)
+    # Blade B: bottom-right grip toward top-left tip.
+    for i in range(9):
+        x, y = 11 - i, 12 - i
+        px(img, x, y, STEEL)
+        px(img, x - 1, y, STEEL)
+    # Bright tips + an edge highlight along each blade's upper side.
+    px(img, 13, 4, STEEL_HI)
+    px(img, 12, 4, STEEL_HI)
+    px(img, 2, 4, STEEL_HI)
+    px(img, 3, 4, STEEL_HI)
+    px(img, 10, 6, STEEL_HI)
+    px(img, 5, 6, STEEL_HI)
+    # Crossguards: short bars perpendicular to each blade, just above the grip.
+    px(img, 3, 11, GUARD)
+    px(img, 5, 13, GUARD)
+    px(img, 12, 11, GUARD)
+    px(img, 10, 13, GUARD)
+    # Grips trailing off the bottom corners, ending in a pommel pixel.
+    px(img, 3, 13, GRIP)
+    px(img, 2, 14, GRIP)
+    px(img, 12, 13, GRIP)
+    px(img, 13, 14, GRIP)
+    return img
+
+
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     gen_sun().save(os.path.join(OUT_DIR, "sun.png"))
@@ -226,7 +266,8 @@ def main():
     gen_cave().save(os.path.join(OUT_DIR, "cave.png"))
     gen_sneak().save(os.path.join(OUT_DIR, "sneak.png"))
     gen_aware().save(os.path.join(OUT_DIR, "aware.png"))
-    print(f"wrote {OUT_DIR}/sun.png, moon.png, cave.png, sneak.png, aware.png")
+    gen_retaliate().save(os.path.join(OUT_DIR, "retaliate.png"))
+    print(f"wrote {OUT_DIR}/sun.png, moon.png, cave.png, sneak.png, aware.png, retaliate.png")
 
 
 if __name__ == "__main__":

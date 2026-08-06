@@ -1,13 +1,18 @@
 { pkgs ? import <nixpkgs> {} }:
   let
     overrides = (builtins.fromTOML (builtins.readFile ./rust-toolchain.toml));
+    # NOTE: pass the plain packages here, never `.dev` outputs — makeLibraryPath
+    # keeps an explicitly-selected output as-is, and dev outputs' lib/ holds
+    # only pkgconfig/cmake files (no .so), which breaks the game at runtime
+    # ("error while loading shared libraries: libudev.so.1"). The .dev outputs
+    # belong in buildInputs / PKG_CONFIG_PATH below.
     libPath = with pkgs; lib.makeLibraryPath [
-      pkgs.alsa-lib.dev
-      pkgs.systemd.dev
+      pkgs.alsa-lib
+      pkgs.systemd # libudev.so.1
       pkgs.wayland
       pkgs.libxkbcommon
       pkgs.libffi
-      pkgs.expat.dev
+      pkgs.expat
       pkgs.vulkan-loader
       # load external libraries that you need in your rust project here
     ];

@@ -35,7 +35,7 @@ use crate::player::systems::{
     move_player_on_grid, refresh_derived_player_stats, rotate_nearby_object_on_shortcut,
     set_home_on_keypress, sync_authoritative_player_display,
     sync_authoritative_player_position_view, sync_projected_player_from_client_state,
-    toggle_aware_on_keypress, toggle_sneak_on_keypress,
+    toggle_auto_retaliate_on_keypress, toggle_aware_on_keypress, toggle_sneak_on_keypress,
 };
 
 pub struct PlayerServerPlugin;
@@ -176,6 +176,7 @@ impl Plugin for PlayerClientPlugin {
                     set_home_on_keypress,
                     toggle_sneak_on_keypress,
                     toggle_aware_on_keypress,
+                    toggle_auto_retaliate_on_keypress,
                 )
                     .run_if(in_state(ClientAppState::InGame))
                     .run_if(bevy_terminal::terminal_not_focused),

@@ -16,7 +16,7 @@ use crate::game::resources::{GameUiEvent, PendingGameUiEvents};
 use crate::magic::effects::MagicEffects;
 use crate::magic::resources::{EffectKind, EffectSpec, SpellDefinition, SpellDefinitions};
 use crate::npc::components::Companion;
-use crate::npc::spellcasting::{NpcSpellEntry, SpellcastingProfile};
+use crate::npc::spellcasting::{NpcSpellEntry, NpcSpellTargetKind, SpellcastingProfile};
 use crate::player::classes::{class_data, BabTrack, Class};
 use crate::player::components::{
     AmmoConsumption, AttributeSet, ChatLog, DefenseStats, DerivedStats, Inventory, Player,
@@ -241,13 +241,15 @@ pub fn resolve_battle_turn(
     mut pending_writes: (
         ResMut<PendingDamageEvents>,
         ResMut<crate::combat::resources::PendingNpcSummons>,
+        ResMut<crate::combat::resources::PendingRetaliations>,
     ),
     mut pending_noise: ResMut<crate::world::noise::PendingNoiseEvents>,
     mut pending_modifier_consumption: ResMut<PendingModifierConsumption>,
     mut commands: Commands,
 ) {
     let _t = crate::diagnostics::SystemTimer::new("combat:resolve_battle_turn", 1.0);
-    let (ref mut pending_damage, ref mut pending_summons) = pending_writes;
+    let (ref mut pending_damage, ref mut pending_summons, ref mut pending_retaliations) =
+        pending_writes;
     battle_turn_timer.remaining_seconds -= time.delta_secs();
     if battle_turn_timer.remaining_seconds > 0.0 {
         return;
@@ -475,6 +477,17 @@ pub fn resolve_battle_turn(
                             &mut commands,
                         );
                         npc_cast_updates.push((attacker.entity, spell_idx, now_seconds));
+                        // A hostile cast aimed at a player counts as being
+                        // attacked for auto-retaliate; self-buffs/heals don't.
+                        if target.is_player && entry.target_kind != NpcSpellTargetKind::SelfCast {
+                            pending_retaliations.items.push(
+                                crate::combat::resources::RetaliationHit {
+                                    player: target.entity,
+                                    attacker: attacker.entity,
+                                    attacker_name: attacker.name.clone(),
+                                },
+                            );
+                        }
                         continue;
                     }
                 }
@@ -553,6 +566,18 @@ pub fn resolve_battle_turn(
             attacker.position,
             crate::world::noise::ATTACK_NOISE,
         );
+
+        // Recorded before the to-hit roll on purpose: a dodged or blocked
+        // swing still counts as being attacked for auto-retaliate.
+        if !attacker.is_player && target.is_player {
+            pending_retaliations
+                .items
+                .push(crate::combat::resources::RetaliationHit {
+                    player: target.entity,
+                    attacker: attacker.entity,
+                    attacker_name: attacker.name.clone(),
+                });
+        }
 
         // Swinging a weapon is tiring — a committed attack costs the player
         // exertion whether it lands or misses (`utility_systems.md` §6.1).
@@ -935,6 +960,62 @@ pub fn apply_pending_modifier_consumption(
                 _ => true,
             }
         });
+    }
+}
+
+/// Drain `PendingRetaliations`: for each player in Auto-Retaliate mode who was
+/// attacked this battle tick and has no `CombatTarget`, lock one attacker
+/// (picked at random when several attacked) as their target. Players with an
+/// existing target — manual or from an earlier retaliation — are untouched, so
+/// the player's own choice always wins. Runs after `resolve_battle_turn` and
+/// before the projection collects events, so the inserted target replicates
+/// via `CombatTargetChanged` the same frame. Next tick
+/// `clear_invalid_combat_targets` re-validates it (death, space change,
+/// `CombatLeash`), which re-arms auto-lock for the next attacker.
+pub fn apply_auto_retaliation(
+    mut pending: ResMut<crate::combat::resources::PendingRetaliations>,
+    mut player_query: Query<
+        (Has<CombatTarget>, &mut ChatLog),
+        (With<Player>, With<crate::player::components::AutoRetaliate>),
+    >,
+    vitals_query: Query<&VitalStats>,
+    mut commands: Commands,
+) {
+    if pending.items.is_empty() {
+        return;
+    }
+    // Group by player, deduping attackers that committed several attacks
+    // (e.g. a swing and a spell) in the same tick.
+    let mut by_player: HashMap<Entity, Vec<(Entity, String)>> = HashMap::new();
+    for hit in std::mem::take(&mut pending.items) {
+        let attackers = by_player.entry(hit.player).or_default();
+        if !attackers.iter().any(|(entity, _)| *entity == hit.attacker) {
+            attackers.push((hit.attacker, hit.attacker_name));
+        }
+    }
+    for (player, mut attackers) in by_player {
+        // Not auto-retaliating (or despawned): the query filter rejects them.
+        let Ok((has_target, mut chat_log)) = player_query.get_mut(player) else {
+            continue;
+        };
+        if has_target {
+            continue;
+        }
+        // An attacker may have died to the player's own swing this very tick.
+        attackers.retain(|(attacker, _)| vitals_query.get(*attacker).is_ok_and(|v| v.health > 0.0));
+        if attackers.is_empty() {
+            continue;
+        }
+        let pick = if attackers.len() == 1 {
+            0
+        } else {
+            (crate::combat::damage_expr::roll_die(attackers.len(), player.to_bits()) - 1) as usize
+        };
+        let (attacker, name) = &attackers[pick];
+        commands
+            .entity(player)
+            .insert(CombatTarget { entity: *attacker });
+        chat_log.push_narrator(format!("You turn to face {name}."));
     }
 }
 
@@ -1393,5 +1474,140 @@ mod tests {
                 "melee attack {total} out of [1, 20] (salt={salt}) — elevation must be ignored"
             );
         }
+    }
+
+    // ── apply_auto_retaliation ──────────────────────────────────────────────
+
+    use crate::combat::resources::{PendingRetaliations, RetaliationHit};
+    use crate::player::components::AutoRetaliate;
+
+    fn retaliation_app() -> App {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.init_resource::<PendingRetaliations>();
+        app.add_systems(Update, apply_auto_retaliation);
+        app
+    }
+
+    fn spawn_attacker(app: &mut App, health: f32) -> Entity {
+        app.world_mut()
+            .spawn(VitalStats {
+                health,
+                max_health: 10.0,
+                mana: 0.0,
+                max_mana: 0.0,
+            })
+            .id()
+    }
+
+    fn push_hit(app: &mut App, player: Entity, attacker: Entity) {
+        app.world_mut()
+            .resource_mut::<PendingRetaliations>()
+            .items
+            .push(RetaliationHit {
+                player,
+                attacker,
+                attacker_name: "Rat".to_owned(),
+            });
+    }
+
+    #[test]
+    fn auto_retaliation_locks_an_attacker() {
+        let mut app = retaliation_app();
+        let player = app
+            .world_mut()
+            .spawn((Player, AutoRetaliate, ChatLog::default()))
+            .id();
+        let attacker = spawn_attacker(&mut app, 10.0);
+        push_hit(&mut app, player, attacker);
+        app.update();
+
+        let target = app.world().get::<CombatTarget>(player);
+        assert_eq!(target.map(|t| t.entity), Some(attacker));
+        let chat = app.world().get::<ChatLog>(player).unwrap();
+        assert!(
+            chat.lines.last().unwrap().contains("turn to face"),
+            "expected narrator line, got {:?}",
+            chat.lines.last()
+        );
+        assert!(
+            app.world()
+                .resource::<PendingRetaliations>()
+                .items
+                .is_empty(),
+            "queue must be drained"
+        );
+    }
+
+    #[test]
+    fn auto_retaliation_never_overrides_an_existing_target() {
+        let mut app = retaliation_app();
+        let manual_target = spawn_attacker(&mut app, 10.0);
+        let player = app
+            .world_mut()
+            .spawn((
+                Player,
+                AutoRetaliate,
+                ChatLog::default(),
+                CombatTarget {
+                    entity: manual_target,
+                },
+            ))
+            .id();
+        let attacker = spawn_attacker(&mut app, 10.0);
+        push_hit(&mut app, player, attacker);
+        app.update();
+
+        let target = app.world().get::<CombatTarget>(player).unwrap();
+        assert_eq!(target.entity, manual_target);
+    }
+
+    #[test]
+    fn auto_retaliation_requires_the_stance_marker() {
+        let mut app = retaliation_app();
+        let player = app.world_mut().spawn((Player, ChatLog::default())).id();
+        let attacker = spawn_attacker(&mut app, 10.0);
+        push_hit(&mut app, player, attacker);
+        app.update();
+
+        assert!(app.world().get::<CombatTarget>(player).is_none());
+    }
+
+    #[test]
+    fn auto_retaliation_ignores_dead_attackers() {
+        let mut app = retaliation_app();
+        let player = app
+            .world_mut()
+            .spawn((Player, AutoRetaliate, ChatLog::default()))
+            .id();
+        let dead = spawn_attacker(&mut app, 0.0);
+        push_hit(&mut app, player, dead);
+        app.update();
+
+        assert!(app.world().get::<CombatTarget>(player).is_none());
+        assert!(app
+            .world()
+            .resource::<PendingRetaliations>()
+            .items
+            .is_empty());
+    }
+
+    #[test]
+    fn auto_retaliation_picks_one_of_several_attackers() {
+        let mut app = retaliation_app();
+        let player = app
+            .world_mut()
+            .spawn((Player, AutoRetaliate, ChatLog::default()))
+            .id();
+        let a = spawn_attacker(&mut app, 10.0);
+        let b = spawn_attacker(&mut app, 10.0);
+        push_hit(&mut app, player, a);
+        push_hit(&mut app, player, b);
+        // Duplicate record of the same attacker must not skew or break the pick.
+        push_hit(&mut app, player, a);
+        app.update();
+
+        let target = app.world().get::<CombatTarget>(player).unwrap().entity;
+        assert!(target == a || target == b, "picked a queued attacker");
     }
 }

@@ -32,12 +32,13 @@ const ICON_TINT_ON: Color = Color::WHITE;
 const ICON_TINT_OFF: Color = Color::srgba(0.55, 0.55, 0.55, 0.55);
 
 /// The toggle-modes shown in the box, in display order.
-const MODES: [HudMode; 2] = [HudMode::Sneak, HudMode::Aware];
+const MODES: [HudMode; 3] = [HudMode::Sneak, HudMode::Aware, HudMode::AutoRetaliate];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HudMode {
     Sneak,
     Aware,
+    AutoRetaliate,
 }
 
 impl HudMode {
@@ -45,6 +46,7 @@ impl HudMode {
         match self {
             HudMode::Sneak => "ui/hud_indicators/sneak.png",
             HudMode::Aware => "ui/hud_indicators/aware.png",
+            HudMode::AutoRetaliate => "ui/hud_indicators/retaliate.png",
         }
     }
 
@@ -52,6 +54,7 @@ impl HudMode {
         match self {
             HudMode::Sneak => state.sneaking,
             HudMode::Aware => state.aware,
+            HudMode::AutoRetaliate => state.auto_retaliate,
         }
     }
 
@@ -64,6 +67,9 @@ impl HudMode {
             HudMode::Aware => GameCommand::SetAware {
                 aware: !state.aware,
             },
+            HudMode::AutoRetaliate => GameCommand::SetAutoRetaliate {
+                auto_retaliate: !state.auto_retaliate,
+            },
         }
     }
 
@@ -72,6 +78,9 @@ impl HudMode {
         match self {
             HudMode::Sneak => "Sneaking (V)\nSlower & quieter; roll Stealth vs detection.",
             HudMode::Aware => "Aware (F)\nSlower; +5 to spot hidden things & read foes.",
+            HudMode::AutoRetaliate => {
+                "Auto-retaliate (G)\nWhen attacked with no target, turn to face an attacker."
+            }
         }
     }
 }

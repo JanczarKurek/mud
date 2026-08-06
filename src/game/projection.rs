@@ -97,6 +97,7 @@ pub type ProjectionPlayerQuery<'w, 's> = Query<
             Option<&'static DiscoveredTiles>,
             Has<crate::player::components::Sneaking>,
             Has<crate::player::components::Aware>,
+            Has<crate::player::components::AutoRetaliate>,
             Option<&'static crate::player::sense::SenseReveals>,
             Option<&'static crate::player::components::Exertion>,
         ),
@@ -244,6 +245,7 @@ pub fn compute_events_for_peer(
             discovered_tiles,
             is_sneaking,
             is_aware,
+            is_auto_retaliate,
             sense_reveals,
             exertion,
         ),
@@ -394,6 +396,12 @@ pub fn compute_events_for_peer(
 
             if previous.aware != is_aware {
                 events.push(GameEvent::PlayerAwareChanged { aware: is_aware });
+            }
+
+            if previous.auto_retaliate != is_auto_retaliate {
+                events.push(GameEvent::PlayerAutoRetaliateChanged {
+                    auto_retaliate: is_auto_retaliate,
+                });
             }
 
             // Exertion decays continuously, so diff at whole-point resolution
@@ -1118,6 +1126,9 @@ pub fn apply_event_to_state(state: &mut ClientGameState, event: GameEvent) {
         GameEvent::PlayerAwareChanged { aware } => {
             state.aware = aware;
         }
+        GameEvent::PlayerAutoRetaliateChanged { auto_retaliate } => {
+            state.auto_retaliate = auto_retaliate;
+        }
         GameEvent::PlayerExertionChanged { exertion } => {
             state.exertion = Some(exertion);
         }
@@ -1352,6 +1363,10 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
         GameEvent::PlayerAwareChanged { aware } => debug!(
             "client aware updated: {} -> {}",
             client_state.aware, aware
+        ),
+        GameEvent::PlayerAutoRetaliateChanged { auto_retaliate } => debug!(
+            "client auto-retaliate updated: {} -> {}",
+            client_state.auto_retaliate, auto_retaliate
         ),
         GameEvent::PlayerExertionChanged { exertion } => debug!(
             "client exertion updated: {:?} -> {:.0}/{:.0}",
