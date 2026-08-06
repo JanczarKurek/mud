@@ -5925,22 +5925,16 @@ mod tests {
     use bevy::prelude::*;
 
     use super::*;
-    use crate::combat::components::{AttackProfile, CombatLeash};
     use crate::game::commands::{
         GameCommand, ItemDestination, ItemReference, ItemSlotRef, MoveDelta,
     };
     use crate::game::resources::ClientGameState;
-    use crate::game::GameServerPlugin;
-    use crate::magic::MagicServerPlugin;
     use crate::player::components::{
-        BaseStats, ChatLog, DefenseStats, DerivedStats, Inventory, MovementCooldown, Player,
-        PlayerId, PlayerIdentity, VitalStats, WeaponDamage,
+        ChatLog, Inventory, MovementCooldown, Player, PlayerId, PlayerIdentity,
     };
     use crate::player::skills::SkillSheet;
-    use crate::player::PlayerServerPlugin;
-    use crate::world::components::{Collider, OverworldObject};
+    use crate::world::components::OverworldObject;
     use crate::world::object_registry::ObjectRegistry;
-    use crate::world::WorldServerPlugin;
 
     #[test]
     fn aoe_pattern_tile_delays() {
@@ -5983,58 +5977,13 @@ mod tests {
     }
 
     fn setup_server_app() -> App {
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app.add_plugins((
-            GameServerPlugin,
-            WorldServerPlugin,
-            PlayerServerPlugin,
-            MagicServerPlugin,
-        ));
-        app.update();
-        app
+        crate::test_support::TestServerApp::new().build()
     }
 
+    // This file's harness historically spawned the player *with* `MagicEffects`
+    // (the network copy did not) — preserved via the `_with_magic` variant.
     fn spawn_player(app: &mut App, player_id: u64, x: i32, y: i32) -> Entity {
-        let base_stats = BaseStats::default();
-        let derived_stats = DerivedStats::from_base(&base_stats);
-        let max_health = derived_stats.max_health as f32;
-        let max_mana = derived_stats.max_mana as f32;
-        let current_space_id = app.world().resource::<WorldConfig>().current_space_id;
-        let object_id = app
-            .world_mut()
-            .resource_mut::<ObjectRegistry>()
-            .allocate_runtime_id("player");
-        app.world_mut()
-            .spawn((
-                Player,
-                PlayerIdentity::new(PlayerId(player_id)),
-                Inventory::default(),
-                ChatLog::default(),
-                (base_stats, derived_stats, SkillSheet::default()),
-                VitalStats::full(max_health, max_mana),
-                MovementCooldown::default(),
-                (
-                    AttackProfile::melee(),
-                    WeaponDamage::default(),
-                    DefenseStats::default(),
-                ),
-                CombatLeash {
-                    max_distance_tiles: 6,
-                },
-                crate::magic::effects::MagicEffects::default(),
-                Collider,
-                OverworldObject {
-                    object_id,
-                    definition_id: "player".to_owned(),
-                    placement_seq: 0,
-                },
-                SpaceResident {
-                    space_id: current_space_id,
-                },
-                TilePosition::ground(x, y),
-            ))
-            .id()
+        crate::test_support::spawn_server_player_with_magic(app, player_id, x, y)
     }
 
     fn spawn_world_object(
@@ -6122,15 +6071,7 @@ mod tests {
         let player_one = spawn_player(&mut app, 1, 10, 10);
         let player_two = spawn_player(&mut app, 2, 12, 10);
 
-        app.world_mut()
-            .resource_mut::<PendingGameCommands>()
-            .push_for_player(
-                crate::player::components::PlayerId(1),
-                GameCommand::MovePlayer {
-                    delta: MoveDelta { x: 1, y: 0 },
-                    climb: false,
-                },
-            );
+        crate::test_support::push_move(&mut app, 1, 1, 0);
 
         app.update();
 
@@ -6223,15 +6164,7 @@ mod tests {
         spawn_player(&mut app, 1, 10, 10);
         spawn_player(&mut app, 2, 11, 10);
 
-        app.world_mut()
-            .resource_mut::<PendingGameCommands>()
-            .push_for_player(
-                crate::player::components::PlayerId(1),
-                GameCommand::MovePlayer {
-                    delta: MoveDelta { x: 1, y: 0 },
-                    climb: false,
-                },
-            );
+        crate::test_support::push_move(&mut app, 1, 1, 0);
 
         app.update();
 
@@ -6731,15 +6664,7 @@ mod tests {
         // Walk east into "empty air" on floor 1 — Tibia-style, the player
         // drops to the ground floor (z=0) underneath rather than being
         // blocked.
-        app.world_mut()
-            .resource_mut::<PendingGameCommands>()
-            .push_for_player(
-                crate::player::components::PlayerId(1),
-                GameCommand::MovePlayer {
-                    delta: MoveDelta { x: 1, y: 0 },
-                    climb: false,
-                },
-            );
+        crate::test_support::push_move(&mut app, 1, 1, 0);
         app.update();
 
         let tile = *app.world().get::<TilePosition>(player).unwrap();
@@ -6777,15 +6702,7 @@ mod tests {
         spawn_world_object(&mut app, "chair", object_id, TilePosition::new(10, 11, 2));
         app.update();
 
-        app.world_mut()
-            .resource_mut::<PendingGameCommands>()
-            .push_for_player(
-                PlayerId(1),
-                GameCommand::MovePlayer {
-                    delta: MoveDelta { x: 0, y: 1 },
-                    climb: false,
-                },
-            );
+        crate::test_support::push_move(&mut app, 1, 0, 1);
         app.update();
 
         let tile = *app.world().get::<TilePosition>(player).unwrap();
@@ -6824,15 +6741,7 @@ mod tests {
         );
         app.update();
 
-        app.world_mut()
-            .resource_mut::<PendingGameCommands>()
-            .push_for_player(
-                PlayerId(1),
-                GameCommand::MovePlayer {
-                    delta: MoveDelta { x: 0, y: 1 },
-                    climb: false,
-                },
-            );
+        crate::test_support::push_move(&mut app, 1, 0, 1);
         app.update();
 
         let tile = *app.world().get::<TilePosition>(player).unwrap();
@@ -6863,15 +6772,7 @@ mod tests {
         spawn_world_object(&mut app, "chair", object_id, TilePosition::new(40, 28, 2));
         app.update();
 
-        app.world_mut()
-            .resource_mut::<PendingGameCommands>()
-            .push_for_player(
-                PlayerId(1),
-                GameCommand::MovePlayer {
-                    delta: MoveDelta { x: 0, y: -1 },
-                    climb: false,
-                },
-            );
+        crate::test_support::push_move(&mut app, 1, 0, -1);
         app.update();
 
         let tile = *app.world().get::<TilePosition>(player).unwrap();
@@ -6896,15 +6797,7 @@ mod tests {
             .insert(TilePosition::new(40, 29, 2));
         app.update();
 
-        app.world_mut()
-            .resource_mut::<PendingGameCommands>()
-            .push_for_player(
-                PlayerId(1),
-                GameCommand::MovePlayer {
-                    delta: MoveDelta { x: -1, y: 0 },
-                    climb: false,
-                },
-            );
+        crate::test_support::push_move(&mut app, 1, -1, 0);
         app.update();
 
         let tile = *app.world().get::<TilePosition>(player).unwrap();
@@ -6927,15 +6820,7 @@ mod tests {
 
         // (39,30) ground → stair_n_low (39,29) → stair_n_high (39,28) → loft.
         for _ in 0..3 {
-            app.world_mut()
-                .resource_mut::<PendingGameCommands>()
-                .push_for_player(
-                    PlayerId(1),
-                    GameCommand::MovePlayer {
-                        delta: MoveDelta { x: 0, y: -1 },
-                        climb: false,
-                    },
-                );
+            crate::test_support::push_move(&mut app, 1, 0, -1);
             if let Some(mut cd) = app.world_mut().get_mut::<MovementCooldown>(player) {
                 cd.remaining_seconds = 0.0;
             }
@@ -6974,15 +6859,7 @@ mod tests {
         );
         app.update();
 
-        app.world_mut()
-            .resource_mut::<PendingGameCommands>()
-            .push_for_player(
-                PlayerId(1),
-                GameCommand::MovePlayer {
-                    delta: MoveDelta { x: 1, y: 0 },
-                    climb: false,
-                },
-            );
+        crate::test_support::push_move(&mut app, 1, 1, 0);
         app.update();
 
         let tile = *app.world().get::<TilePosition>(player).unwrap();
@@ -7105,15 +6982,7 @@ mod tests {
 
         // Three eastward steps.
         for _ in 0..3 {
-            app.world_mut()
-                .resource_mut::<PendingGameCommands>()
-                .push_for_player(
-                    crate::player::components::PlayerId(1),
-                    GameCommand::MovePlayer {
-                        delta: MoveDelta { x: 1, y: 0 },
-                        climb: false,
-                    },
-                );
+            crate::test_support::push_move(&mut app, 1, 1, 0);
             // Clear movement cooldown between steps so the move actually
             // resolves on the next tick.
             if let Some(mut cd) = app.world_mut().get_mut::<MovementCooldown>(player) {
@@ -7345,15 +7214,7 @@ mod tests {
         // Paint an upper floor on the tile directly east of the player.
         paint_upper_floor(&mut app, 11, 10);
 
-        app.world_mut()
-            .resource_mut::<PendingGameCommands>()
-            .push_for_player(
-                crate::player::components::PlayerId(1),
-                GameCommand::MovePlayer {
-                    delta: MoveDelta { x: 1, y: 0 },
-                    climb: false,
-                },
-            );
+        crate::test_support::push_move(&mut app, 1, 1, 0);
         app.update();
 
         let tile = *app.world().get::<TilePosition>(player).unwrap();
@@ -7426,15 +7287,7 @@ mod tests {
             TilePosition::ground(11, 10),
         );
 
-        app.world_mut()
-            .resource_mut::<PendingGameCommands>()
-            .push_for_player(
-                crate::player::components::PlayerId(1),
-                GameCommand::MovePlayer {
-                    delta: MoveDelta { x: 1, y: 0 },
-                    climb: false,
-                },
-            );
+        crate::test_support::push_move(&mut app, 1, 1, 0);
         app.update();
 
         let tile = *app.world().get::<TilePosition>(player).unwrap();
@@ -7495,15 +7348,7 @@ mod tests {
             .allocate_runtime_id("barrel");
         spawn_world_object(&mut app, "barrel", barrel_id, TilePosition::ground(11, 10));
 
-        app.world_mut()
-            .resource_mut::<PendingGameCommands>()
-            .push_for_player(
-                crate::player::components::PlayerId(1),
-                GameCommand::MovePlayer {
-                    delta: MoveDelta { x: 1, y: 0 },
-                    climb: false,
-                },
-            );
+        crate::test_support::push_move(&mut app, 1, 1, 0);
         app.update();
 
         let tile = *app.world().get::<TilePosition>(player).unwrap();
@@ -7528,15 +7373,7 @@ mod tests {
             .allocate_runtime_id("tree");
         spawn_world_object(&mut app, "tree", tree_id, TilePosition::ground(11, 10));
 
-        app.world_mut()
-            .resource_mut::<PendingGameCommands>()
-            .push_for_player(
-                crate::player::components::PlayerId(1),
-                GameCommand::MovePlayer {
-                    delta: MoveDelta { x: 1, y: 0 },
-                    climb: false,
-                },
-            );
+        crate::test_support::push_move(&mut app, 1, 1, 0);
         app.update();
 
         let tile = *app.world().get::<TilePosition>(player).unwrap();

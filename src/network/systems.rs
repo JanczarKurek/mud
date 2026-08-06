@@ -1484,74 +1484,21 @@ mod tests {
     use bevy::prelude::*;
 
     use super::*;
-    use crate::combat::components::{AttackProfile, CombatLeash};
-    use crate::game::GameServerPlugin;
-    use crate::magic::MagicServerPlugin;
-    use crate::npc::NpcPlugin;
-    use crate::player::components::{
-        BaseStats, ChatLog, DefenseStats, DerivedStats, Inventory, MovementCooldown, Player,
-        PlayerId, PlayerIdentity, VitalStats, WeaponDamage,
-    };
-    use crate::player::PlayerServerPlugin;
+    use crate::player::components::{Player, PlayerId};
     use crate::world::components::{Collider, OverworldObject};
     use crate::world::object_registry::ObjectRegistry;
-    use crate::world::{WorldConfig, WorldServerPlugin};
+    use crate::world::WorldConfig;
 
+    // This file's harness historically registered `NpcPlugin` (the game copy
+    // did not) and spawned the player *without* `MagicEffects` — both preserved.
     fn setup_server_app() -> App {
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app.add_plugins((
-            GameServerPlugin,
-            WorldServerPlugin,
-            NpcPlugin,
-            PlayerServerPlugin,
-            MagicServerPlugin,
-        ));
-        app.update();
-        app
+        crate::test_support::TestServerApp::new()
+            .with_npc_plugin()
+            .build()
     }
 
     fn spawn_player(app: &mut App, player_id: u64, x: i32, y: i32) -> Entity {
-        let base_stats = BaseStats::default();
-        let derived_stats = DerivedStats::from_base(&base_stats);
-        let max_health = derived_stats.max_health as f32;
-        let max_mana = derived_stats.max_mana as f32;
-        let current_space_id = app.world().resource::<WorldConfig>().current_space_id;
-        let object_id = app
-            .world_mut()
-            .resource_mut::<ObjectRegistry>()
-            .allocate_runtime_id("player");
-        app.world_mut()
-            .spawn((
-                Player,
-                PlayerIdentity::new(PlayerId(player_id)),
-                Inventory::default(),
-                ChatLog::default(),
-                base_stats,
-                derived_stats,
-                crate::player::skills::SkillSheet::default(),
-                VitalStats::full(max_health, max_mana),
-                MovementCooldown::default(),
-                (
-                    AttackProfile::melee(),
-                    WeaponDamage::default(),
-                    DefenseStats::default(),
-                ),
-                CombatLeash {
-                    max_distance_tiles: 6,
-                },
-                Collider,
-                OverworldObject {
-                    object_id,
-                    definition_id: "player".to_owned(),
-                    placement_seq: 0,
-                },
-                crate::world::components::SpaceResident {
-                    space_id: current_space_id,
-                },
-                crate::world::components::TilePosition::ground(x, y),
-            ))
-            .id()
+        crate::test_support::spawn_server_player(app, player_id, x, y)
     }
 
     fn spawn_container(app: &mut App, type_id: &str, x: i32, y: i32) -> u64 {

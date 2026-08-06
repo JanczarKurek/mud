@@ -669,33 +669,16 @@ fn type_id_for(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::combat::components::{AttackProfile, CombatLeash};
     use crate::game::resources::PendingGameCommands;
-    use crate::game::GameServerPlugin;
-    use crate::magic::MagicServerPlugin;
-    use crate::player::components::{
-        BaseStats, DefenseStats, DerivedStats, EquippedItem, Inventory, InventoryStack,
-        MovementCooldown, VitalStats, WeaponDamage,
-    };
+    use crate::player::components::{EquippedItem, Inventory, InventoryStack};
     use crate::player::progression::Experience;
-    use crate::player::PlayerServerPlugin;
     use crate::world::components::{Collider, ObjectState};
     use crate::world::map_layout::ObjectProperties;
     use crate::world::object_registry::ObjectRegistry;
     use crate::world::WorldConfig;
-    use crate::world::WorldServerPlugin;
 
     fn setup_app() -> App {
-        let mut app = App::new();
-        app.add_plugins(bevy::MinimalPlugins);
-        app.add_plugins((
-            GameServerPlugin,
-            WorldServerPlugin,
-            PlayerServerPlugin,
-            MagicServerPlugin,
-        ));
-        app.update();
-        app
+        crate::test_support::TestServerApp::new().build()
     }
 
     fn spawn_test_player(
@@ -706,52 +689,16 @@ mod tests {
         x: i32,
         y: i32,
     ) -> Entity {
-        let base_stats = BaseStats::default();
-        let derived = DerivedStats::from_base(&base_stats);
-        let max_health = derived.max_health as f32;
-        let max_mana = derived.max_mana as f32;
+        let entity = crate::test_support::spawn_server_player_with_magic(app, 1, x, y);
         let mut sheet = SkillSheet::default();
         sheet.set_rank(Skill::Thievery, thievery);
         sheet.set_rank(Skill::Athletics, athletics);
-        let space_id = app.world().resource::<WorldConfig>().current_space_id;
-        let object_id = app
-            .world_mut()
-            .resource_mut::<ObjectRegistry>()
-            .allocate_runtime_id("player");
+        // Skill/class extras unique to this file, layered on the shared base
+        // (the custom sheet replaces the base bundle's default one).
         app.world_mut()
-            .spawn((
-                crate::player::components::Player,
-                PlayerIdentity::new(crate::player::components::PlayerId(1)),
-                Inventory::default(),
-                ChatLog::default(),
-                base_stats,
-                derived,
-                VitalStats::full(max_health, max_mana),
-                MovementCooldown::default(),
-                (
-                    AttackProfile::melee(),
-                    WeaponDamage::default(),
-                    DefenseStats::default(),
-                ),
-                CombatLeash {
-                    max_distance_tiles: 6,
-                },
-                (
-                    crate::magic::effects::MagicEffects::default(),
-                    sheet,
-                    class,
-                    Experience::default(),
-                ),
-                Collider,
-                OverworldObject {
-                    object_id,
-                    definition_id: "player".to_owned(),
-                    placement_seq: 0,
-                },
-                SpaceResident { space_id },
-                TilePosition::ground(x, y),
-            ))
-            .id()
+            .entity_mut(entity)
+            .insert((sheet, class, Experience::default()));
+        entity
     }
 
     fn spawn_locked_door(app: &mut App, type_id: &str, x: i32, y: i32) -> (Entity, u64) {

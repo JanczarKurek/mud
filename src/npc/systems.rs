@@ -2176,6 +2176,15 @@ mod tests {
 
     const TEST_SPACE: crate::world::components::SpaceId = crate::world::components::SpaceId(0);
 
+    /// `MinimalPlugins` app with the step-event queue the NPC movement systems
+    /// require. NPC tests register only the systems under test on top.
+    fn npc_test_app() -> App {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+        app
+    }
+
     fn default_roaming(bounds: RoamBounds, step: f32) -> RoamingBehavior {
         RoamingBehavior {
             bounds,
@@ -2330,9 +2339,7 @@ mod tests {
         use crate::world::floor_map::{FloorMap, FloorMaps};
         use std::collections::HashMap;
 
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+        let mut app = npc_test_app();
 
         // Paint floor index 1 with a walkable, occluding floor across the area.
         let mut maps = FloorMaps::default();
@@ -2467,9 +2474,7 @@ mod tests {
     /// (the bug from simultaneous same-tick movement onto the midpoint tile).
     #[test]
     fn monster_and_companion_lock_into_melee_not_drift() {
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+        let mut app = npc_test_app();
 
         let player = spawn_player(&mut app, 1, TilePosition::ground(10, 10));
         let wolf = spawn_companion_wolf(&mut app, TilePosition::ground(13, 10), player, 1);
@@ -2510,9 +2515,7 @@ mod tests {
     /// conga-chasing the owner across the map.
     #[test]
     fn companion_pulls_aggro_off_fleeing_owner() {
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+        let mut app = npc_test_app();
 
         let player = spawn_player(&mut app, 1, TilePosition::ground(10, 14));
         let wolf = spawn_companion_wolf(&mut app, TilePosition::ground(11, 10), player, 1);
@@ -2560,9 +2563,7 @@ mod tests {
 
     #[test]
     fn hostile_npc_targets_the_nearest_player() {
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+        let mut app = npc_test_app();
 
         spawn_player(&mut app, 1, TilePosition::ground(5, 5));
         let near_player = spawn_player(&mut app, 2, TilePosition::ground(2, 2));
@@ -2579,9 +2580,7 @@ mod tests {
 
     #[test]
     fn archer_retreats_when_player_too_close() {
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+        let mut app = npc_test_app();
 
         spawn_player(&mut app, 1, TilePosition::ground(5, 6));
         let archer = spawn_archer(&mut app, TilePosition::ground(5, 5), 6);
@@ -2599,9 +2598,7 @@ mod tests {
     #[test]
     fn archer_holds_at_preferred_distance() {
         // With range=6, preferred = (6-1).max(2) = 5. Tolerance 1.
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+        let mut app = npc_test_app();
 
         spawn_player(&mut app, 1, TilePosition::ground(5, 10));
         let archer = spawn_archer(&mut app, TilePosition::ground(5, 5), 6);
@@ -2620,9 +2617,7 @@ mod tests {
     fn archer_holds_within_dead_band() {
         // preferred = 5; dead-band = [4, 6].
         for player_y in [9, 10, 11] {
-            let mut app = App::new();
-            app.add_plugins(MinimalPlugins);
-            app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+            let mut app = npc_test_app();
 
             spawn_player(&mut app, 1, TilePosition::ground(5, player_y));
             let archer = spawn_archer(&mut app, TilePosition::ground(5, 5), 6);
@@ -2641,9 +2636,7 @@ mod tests {
     #[test]
     fn archer_chases_when_player_flees_past_band() {
         // preferred = 5, tolerance 1 → archer chases at distance > 6.
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+        let mut app = npc_test_app();
 
         spawn_player(&mut app, 1, TilePosition::ground(5, 12));
         let archer = spawn_archer(&mut app, TilePosition::ground(5, 5), 6);
@@ -2666,9 +2659,7 @@ mod tests {
         // stack the cornering colliders 5 half-blocks tall — beyond the
         // CLIMB_MAX_DZ ceiling — to actually trap it. The intent is unchanged:
         // an NPC with no escape route stands still.
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+        let mut app = npc_test_app();
 
         spawn_player(&mut app, 1, TilePosition::ground(5, 6));
         let archer = spawn_archer(&mut app, TilePosition::ground(5, 5), 6);
@@ -2698,9 +2689,7 @@ mod tests {
 
     #[test]
     fn melee_npc_closes_to_adjacent() {
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+        let mut app = npc_test_app();
 
         spawn_player(&mut app, 1, TilePosition::ground(5, 8));
         let npc = spawn_melee(&mut app, TilePosition::ground(5, 5));
@@ -2724,9 +2713,7 @@ mod tests {
         // opposite; that "targets you through the floor" behavior is the bug
         // we're removing. Half-block steps within a floor still target — see
         // `npc_targets_player_on_a_half_block_step`.)
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+        let mut app = npc_test_app();
 
         spawn_player(&mut app, 1, TilePosition::new(5, 6, 2));
         let npc = spawn_melee(&mut app, TilePosition::ground(5, 5));
@@ -2746,9 +2733,7 @@ mod tests {
         // step / chest (z=1) is still on floor 0 (`floor_index(1) == 0`), so the
         // NPC at z=0 detects and targets them. The gate keys on `floor_index`,
         // not raw z, precisely so Tibia-style auto-step combat keeps working.
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+        let mut app = npc_test_app();
 
         let player = spawn_player(&mut app, 1, TilePosition::new(5, 6, 1));
         let npc = spawn_melee(&mut app, TilePosition::ground(5, 5));
@@ -2769,9 +2754,7 @@ mod tests {
         // NPC loses direct contact (CombatTarget cleared → red dot off) but
         // falls into Alert aimed at their last tile, so it heads for the stairs
         // and follows if they're near.
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+        let mut app = npc_test_app();
 
         let player = spawn_player(&mut app, 1, TilePosition::ground(5, 6));
         let npc = spawn_melee(&mut app, TilePosition::ground(5, 5));
@@ -2961,9 +2944,7 @@ mod tests {
         // half-block apart — squarely in melee reach (dz=1) yet straddling the
         // `floor_index` boundary. The NPC must hold a stable Engage and never
         // flap to Alert / drop the CombatTarget, tick after tick.
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+        let mut app = npc_test_app();
 
         let player = spawn_player(&mut app, 1, TilePosition::new(5, 6, 2));
         let npc = spawn_melee(&mut app, TilePosition::new(5, 5, 1));
@@ -3005,9 +2986,7 @@ mod tests {
         // "cross-floor": a single auto-climb step closes it. The NPC stays in
         // Pursue with the target locked, rather than dropping to the cross-floor
         // Alert that the old `floor_index` gate triggered here.
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+        let mut app = npc_test_app();
 
         let player = spawn_player(&mut app, 1, TilePosition::new(5, 7, 2));
         let npc = spawn_melee(&mut app, TilePosition::new(5, 5, 1));
@@ -3036,9 +3015,7 @@ mod tests {
         // drop the target: the contact-grace window holds the CombatTarget and
         // keeps the NPC in Pursue. (Pre-hysteresis this strobed straight to
         // Alert the instant the ray was occluded.)
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+        let mut app = npc_test_app();
 
         let player = spawn_player(&mut app, 1, TilePosition::ground(5, 9));
         let npc = spawn_melee_los(&mut app, TilePosition::ground(5, 5));
@@ -3089,9 +3066,7 @@ mod tests {
         // Once the grace window lapses with sight still broken, the NPC concedes
         // contact: CombatTarget cleared and state drops to Alert (it heads for
         // the last-seen tile rather than chasing blind).
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+        let mut app = npc_test_app();
 
         spawn_player(&mut app, 1, TilePosition::ground(5, 9));
         let npc = spawn_melee_los(&mut app, TilePosition::ground(5, 5));
@@ -3249,9 +3224,7 @@ mod tests {
 
     #[test]
     fn idle_pause_skips_step() {
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+        let mut app = npc_test_app();
 
         let npc = app
             .world_mut()
@@ -3296,9 +3269,7 @@ mod tests {
     fn wander_momentum_biases_continue_direction() {
         // With momentum_bias=1.0 and last_step=(0,1), the NPC must continue
         // moving in the same direction.
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+        let mut app = npc_test_app();
 
         let npc = app
             .world_mut()
@@ -3344,9 +3315,7 @@ mod tests {
 
     #[test]
     fn los_blocks_aggro_through_wall() {
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+        let mut app = npc_test_app();
 
         spawn_player(&mut app, 1, TilePosition::ground(5, 8));
         let npc = app
@@ -3409,9 +3378,7 @@ mod tests {
 
     #[test]
     fn los_allows_aggro_with_clear_line() {
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+        let mut app = npc_test_app();
 
         spawn_player(&mut app, 1, TilePosition::ground(5, 8));
         let npc = app
@@ -3461,9 +3428,7 @@ mod tests {
     fn target_loyalty_holds_initial_player() {
         // Two players equidistant initially. NPC picks one. Then we move the
         // other player closer; loyalty should keep the original target.
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+        let mut app = npc_test_app();
 
         let first = spawn_player(&mut app, 1, TilePosition::ground(7, 5));
         let _second = spawn_player(&mut app, 2, TilePosition::ground(5, 7));
@@ -3506,9 +3471,7 @@ mod tests {
     fn astar_routes_around_wall() {
         // Wall plus the player on the other side: greedy would corner, A*
         // must find a path around.
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+        let mut app = npc_test_app();
 
         spawn_player(&mut app, 1, TilePosition::ground(8, 5));
         let npc = spawn_melee(&mut app, TilePosition::ground(5, 5));
@@ -3556,9 +3519,7 @@ mod tests {
             TilePosition::ground(2, 5),
             TilePosition::ground(1, 6),
         ] {
-            let mut app = App::new();
-            app.add_plugins(MinimalPlugins);
-            app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+            let mut app = npc_test_app();
             spawn_player(&mut app, 1, player_position);
             let npc = spawn_melee(&mut app, start);
 
@@ -3593,9 +3554,7 @@ mod tests {
             (TilePosition::ground(5, 2), TilePosition::ground(5, 4)),
             (TilePosition::ground(2, 5), TilePosition::ground(4, 5)),
         ] {
-            let mut app = App::new();
-            app.add_plugins(MinimalPlugins);
-            app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+            let mut app = npc_test_app();
             spawn_player(&mut app, 1, player_position);
             let npc = spawn_melee(&mut app, TilePosition::ground(5, 5));
 
@@ -3615,9 +3574,7 @@ mod tests {
     fn alert_walks_to_last_seen_then_returns_to_wander() {
         // Place NPC in Alert state directly and verify it walks toward
         // last_seen, then drops back to Wander on expiry.
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app.init_resource::<crate::world::step_triggers::PendingStepEvents>();
+        let mut app = npc_test_app();
 
         // No player nearby — only the alert memory.
         let npc = app

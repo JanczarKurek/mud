@@ -556,20 +556,12 @@ render:
         serde_yaml::from_str(&yaml).expect("definition parses")
     }
 
-    fn default_world_config() -> WorldConfig {
-        WorldConfig {
-            current_space_id: SpaceId(1),
-            map_width: 32,
-            map_height: 24,
-            tile_size: 48.0,
-            fill_floor_type: "grass".to_owned(),
-        }
-    }
+    use crate::test_support::test_world_config;
 
     #[test]
     fn authoritative_embedded_player_mirrors_position_and_vitals() {
         let mut app = App::new();
-        app.insert_resource(default_world_config());
+        app.insert_resource(test_world_config());
         app.insert_resource(ClientGameState {
             player_position: Some(SpacePosition::new(SpaceId(9), TilePosition::ground(7, 8))),
             player_vitals: Some(ClientVitalStats {
@@ -630,7 +622,7 @@ render:
     #[test]
     fn projected_client_player_tracks_client_state() {
         let mut app = App::new();
-        app.insert_resource(default_world_config());
+        app.insert_resource(test_world_config());
         app.insert_resource(ClientGameState {
             player_position: Some(SpacePosition::new(SpaceId(5), TilePosition::ground(10, 11))),
             player_vitals: Some(ClientVitalStats {

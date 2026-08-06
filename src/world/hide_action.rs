@@ -143,7 +143,6 @@ pub fn process_hide_commands(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::resources::QueuedGameCommand;
     use crate::player::components::{AttributeSet, PlayerId};
     use crate::world::components::SpaceId;
     use crate::world::object_definitions::{CanHideDef, OverworldObjectDefinition};
@@ -173,9 +172,8 @@ render:
     }
 
     fn build_app(defs: OverworldObjectDefinitions) -> App {
-        let mut app = App::new();
+        let mut app = crate::test_support::minimal_command_app();
         app.insert_resource(defs);
-        app.insert_resource(PendingGameCommands::default());
         // Floor geometry backs the reach gate — see `world::column`.
         app.insert_resource(crate::world::floor_map::FloorMaps::default());
         app.insert_resource(crate::world::floor_definitions::FloorTilesetDefinitions::default());
@@ -224,13 +222,11 @@ render:
     }
 
     fn queue_hide(app: &mut App, player_id: PlayerId, object_id: u64) {
-        app.world_mut()
-            .resource_mut::<PendingGameCommands>()
-            .commands
-            .push(QueuedGameCommand {
-                player_id: Some(player_id),
-                command: GameCommand::HideObject { object_id },
-            });
+        crate::test_support::push_player_command(
+            app,
+            player_id.0,
+            GameCommand::HideObject { object_id },
+        );
     }
 
     #[test]

@@ -19,5 +19,7 @@ pub mod player;
 pub mod quest;
 pub mod scripting;
 pub mod scripting_api;
+#[cfg(test)]
+pub mod test_support;
 pub mod ui;
 pub mod world;

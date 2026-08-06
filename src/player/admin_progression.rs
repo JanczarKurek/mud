@@ -302,11 +302,8 @@ mod tests {
     use crate::player::skills::Skill;
 
     fn make_app() -> App {
-        let mut app = App::new();
-        app.init_resource::<PendingGameCommands>()
-            .init_resource::<PendingGameEvents>()
-            .init_resource::<PendingGameUiEvents>()
-            .init_resource::<PendingXpGrants>()
+        let mut app = crate::test_support::minimal_command_app();
+        app.init_resource::<PendingXpGrants>()
             .add_systems(Update, process_admin_progression_commands);
         app
     }

@@ -1143,38 +1143,20 @@ fn read_world_dump(path: &Path) -> std::io::Result<WorldStateDump> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::combat::CombatPlugin;
-    use crate::game::GameServerPlugin;
-    use crate::magic::MagicServerPlugin;
     use crate::network::resources::TcpServerState;
-    use crate::npc::NpcPlugin;
     use crate::player::setup::spawn_player_authoritative;
-    use crate::player::PlayerServerPlugin;
-    use crate::quest::QuestPlugin;
-    use crate::world::WorldServerPlugin;
 
     fn setup_server_app(save_path: &Path) -> App {
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app.insert_resource(TcpServerState::default());
-        // CharacterVarStores normally comes from `DialogServerPlugin`, but that
-        // plugin pulls in YarnSpinner which needs `AssetPlugin`. Quest systems
-        // only require the resource to exist; inject the bare default here.
-        app.init_resource::<crate::dialog::resources::CharacterVarStores>();
-        app.add_plugins((
-            GameServerPlugin,
-            WorldServerPlugin,
-            NpcPlugin,
-            PlayerServerPlugin,
-            CombatPlugin,
-            MagicServerPlugin,
-            QuestPlugin::default(),
-            PersistenceServerPlugin {
-                save_path: save_path.to_path_buf(),
-            },
-        ));
-        app.update();
-        app
+        // Quest systems only require `CharacterVarStores` to exist — see
+        // `with_character_var_stores` for why it is injected directly.
+        crate::test_support::TestServerApp::new()
+            .with_tcp_server_state()
+            .with_character_var_stores()
+            .with_npc_plugin()
+            .with_combat_plugin()
+            .with_quest_plugin()
+            .with_persistence(save_path)
+            .build()
     }
 
     #[test]

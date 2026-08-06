@@ -144,9 +144,7 @@ mod tests {
     }
 
     fn build_app() -> App {
-        let mut app = App::new();
-        app.insert_resource(PendingGameCommands::default());
-        app.insert_resource(PendingGameUiEvents::default());
+        let mut app = crate::test_support::minimal_command_app();
         app.add_systems(Update, process_say_commands);
         app
     }
