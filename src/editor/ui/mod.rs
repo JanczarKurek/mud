@@ -9,6 +9,7 @@ pub mod palette;
 pub mod panel_roots;
 pub mod properties;
 pub mod spawn_groups_panel;
+pub mod style;
 pub mod templates_panel;
 pub mod vendor_stashes_panel;
 
@@ -30,6 +31,7 @@ use crate::editor::ui::mobs_panel::spawn_mobs_panel;
 use crate::editor::ui::palette::spawn_palette_panel;
 use crate::editor::ui::properties::spawn_properties_panel;
 use crate::editor::ui::spawn_groups_panel::spawn_spawn_groups_panel;
+use crate::editor::ui::style::{editor_button, HEADER_TEXT, PANEL_BG, TOP_BAR_BUTTON_COLORS};
 use crate::editor::ui::templates_panel::spawn_templates_panel;
 use crate::editor::ui::vendor_stashes_panel::spawn_vendor_stashes_panel;
 use crate::player::components::Player;
@@ -116,7 +118,7 @@ pub fn spawn_editor_hud(
                     flex_shrink: 0.0,
                     ..default()
                 },
-                BackgroundColor(Color::srgba(0.06, 0.04, 0.04, 0.92)),
+                BackgroundColor(PANEL_BG),
             ))
             .with_children(|bar| {
                 // Map name
@@ -126,7 +128,7 @@ pub fn spawn_editor_hud(
                         font_size: 15.0,
                         ..default()
                     },
-                    TextColor(Color::srgb(0.96, 0.84, 0.62)),
+                    TextColor(HEADER_TEXT),
                 ));
                 bar.spawn((
                     EditorDirtyIndicator,
@@ -230,29 +232,19 @@ pub fn spawn_editor_hud(
 }
 
 fn spawn_top_btn<M: Component>(parent: &mut ChildSpawnerCommands, label: &str, marker: M) {
-    parent
-        .spawn((
-            Button,
-            marker,
-            Node {
-                padding: UiRect::axes(Val::Px(10.0), Val::Px(5.0)),
-                border: UiRect::all(Val::Px(1.0)),
-                align_items: AlignItems::Center,
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.12, 0.08, 0.06, 0.90)),
-            BorderColor::all(Color::srgb(0.38, 0.28, 0.18)),
-        ))
-        .with_children(|btn| {
-            btn.spawn((
-                Text::new(label.to_owned()),
-                TextFont {
-                    font_size: 12.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(0.88, 0.84, 0.76)),
-            ));
-        });
+    editor_button(
+        parent,
+        marker,
+        Node {
+            padding: UiRect::axes(Val::Px(10.0), Val::Px(5.0)),
+            border: UiRect::all(Val::Px(1.0)),
+            align_items: AlignItems::Center,
+            ..default()
+        },
+        TOP_BAR_BUTTON_COLORS,
+        label,
+        12.0,
+    );
 }
 
 // ── Cleanup ───────────────────────────────────────────────────────────────────
@@ -464,10 +456,53 @@ fn btn_colors(interaction: Interaction, active: bool) -> (Color, Color) {
         (Interaction::Pressed, _) => (Color::srgb(0.55, 0.30, 0.14), Color::srgb(1.0, 0.88, 0.60)),
         (Interaction::Hovered, _) => (Color::srgb(0.28, 0.17, 0.10), Color::srgb(0.90, 0.75, 0.50)),
         (Interaction::None, true) => (Color::srgb(0.28, 0.16, 0.08), Color::srgb(0.90, 0.76, 0.50)),
-        (Interaction::None, false) => (
-            Color::srgba(0.12, 0.08, 0.06, 0.90),
-            Color::srgb(0.38, 0.28, 0.18),
-        ),
+        (Interaction::None, false) => (TOP_BAR_BUTTON_COLORS.bg, TOP_BAR_BUTTON_COLORS.border),
+    }
+}
+
+// ── Generic panel plumbing ───────────────────────────────────────────────────
+
+/// Returns the visibility-sync system for a panel: applies `flag(EditorState)`
+/// to the `Display` of every node tagged with the root marker `M`. Bevy 0.18
+/// uses `Display::Flex` / `Display::None` rather than a layout-aware
+/// `Visibility` for hide-and-collapse behavior. One shape serves all six
+/// togglable side panels; register with e.g.
+/// `sync_panel_visibility::<EditorTemplatesRoot>(|s| s.templates_panel_visible)`.
+pub fn sync_panel_visibility<M: Component>(
+    flag: fn(&EditorState) -> bool,
+) -> impl FnMut(Res<EditorState>, Query<&mut Node, With<M>>) {
+    move |editor_state: Res<EditorState>, mut roots: Query<&mut Node, With<M>>| {
+        if !editor_state.is_changed() {
+            return;
+        }
+        let target = if flag(&editor_state) {
+            Display::Flex
+        } else {
+            Display::None
+        };
+        for mut node in &mut roots {
+            if node.display != target {
+                node.display = target;
+            }
+        }
+    }
+}
+
+/// Returns a click-handler system for a toolbar button whose only effect is a
+/// mutation of `EditorState` (panel-visibility toggles, undo/redo requests,
+/// tool toggles). `action` runs once per `Interaction::Pressed` on any button
+/// tagged `M`; `EditorState` change-detection only trips when a press actually
+/// lands, same as the hand-written systems this replaces.
+pub fn on_editor_button_pressed<M: Component>(
+    action: fn(&mut EditorState),
+) -> impl FnMut(Query<&Interaction, (Changed<Interaction>, With<M>)>, ResMut<EditorState>) {
+    move |btn: Query<&Interaction, (Changed<Interaction>, With<M>)>,
+          mut editor_state: ResMut<EditorState>| {
+        for interaction in &btn {
+            if *interaction == Interaction::Pressed {
+                action(&mut editor_state);
+            }
+        }
     }
 }
 
@@ -567,133 +602,6 @@ pub fn handle_generate_dungeon_button_click(
     for interaction in &btn {
         if *interaction == Interaction::Pressed && modal_state.active.is_none() {
             open_generate_dungeon_dialog_impl(&mut modal_state, &floor_defs, &object_defs);
-        }
-    }
-}
-
-pub fn handle_portal_tool_button_click(
-    btn: Query<&Interaction, (Changed<Interaction>, With<EditorPortalToolButton>)>,
-    mut editor_state: ResMut<EditorState>,
-) {
-    for interaction in &btn {
-        if *interaction == Interaction::Pressed {
-            editor_state.current_tool = if editor_state.current_tool == EditorTool::Portal {
-                EditorTool::Brush
-            } else {
-                EditorTool::Portal
-            };
-        }
-    }
-}
-
-pub fn handle_building_tool_button_click(
-    btn: Query<&Interaction, (Changed<Interaction>, With<EditorBuildingToolButton>)>,
-    mut editor_state: ResMut<EditorState>,
-) {
-    for interaction in &btn {
-        if *interaction == Interaction::Pressed {
-            editor_state.current_tool = if editor_state.current_tool == EditorTool::BuildingDraw {
-                EditorTool::Brush
-            } else {
-                EditorTool::BuildingDraw
-            };
-            // Stop arming the door-swap when leaving the tool — avoids the
-            // next entry surprising the user with a click that swaps a wall.
-            if editor_state.current_tool != EditorTool::BuildingDraw {
-                editor_state.building.place_door_armed = false;
-            }
-        }
-    }
-}
-
-pub fn handle_undo_button_click(
-    btn: Query<&Interaction, (Changed<Interaction>, With<EditorUndoButton>)>,
-    mut editor_state: ResMut<EditorState>,
-) {
-    for interaction in &btn {
-        if *interaction == Interaction::Pressed {
-            editor_state.undo_requested = true;
-        }
-    }
-}
-
-pub fn handle_redo_button_click(
-    btn: Query<&Interaction, (Changed<Interaction>, With<EditorRedoButton>)>,
-    mut editor_state: ResMut<EditorState>,
-) {
-    for interaction in &btn {
-        if *interaction == Interaction::Pressed {
-            editor_state.redo_requested = true;
-        }
-    }
-}
-
-pub fn handle_select_tool_button_click(
-    btn: Query<&Interaction, (Changed<Interaction>, With<EditorSelectToolButton>)>,
-    mut editor_state: ResMut<EditorState>,
-) {
-    for interaction in &btn {
-        if *interaction == Interaction::Pressed {
-            editor_state.current_tool = if editor_state.current_tool == EditorTool::Select {
-                EditorTool::Brush
-            } else {
-                EditorTool::Select
-            };
-        }
-    }
-}
-
-pub fn handle_templates_toggle_button_click(
-    btn: Query<&Interaction, (Changed<Interaction>, With<EditorTemplatesToggleButton>)>,
-    mut editor_state: ResMut<EditorState>,
-) {
-    for interaction in &btn {
-        if *interaction == Interaction::Pressed {
-            editor_state.templates_panel_visible = !editor_state.templates_panel_visible;
-        }
-    }
-}
-
-pub fn handle_spawn_groups_toggle_button_click(
-    btn: Query<&Interaction, (Changed<Interaction>, With<EditorSpawnGroupsToggleButton>)>,
-    mut editor_state: ResMut<EditorState>,
-) {
-    for interaction in &btn {
-        if *interaction == Interaction::Pressed {
-            editor_state.spawn_groups_panel_visible = !editor_state.spawn_groups_panel_visible;
-        }
-    }
-}
-
-pub fn handle_mobs_toggle_button_click(
-    btn: Query<&Interaction, (Changed<Interaction>, With<EditorMobsToggleButton>)>,
-    mut editor_state: ResMut<EditorState>,
-) {
-    for interaction in &btn {
-        if *interaction == Interaction::Pressed {
-            editor_state.mobs_panel_visible = !editor_state.mobs_panel_visible;
-        }
-    }
-}
-
-pub fn handle_lighting_toggle_button_click(
-    btn: Query<&Interaction, (Changed<Interaction>, With<EditorLightingToggleButton>)>,
-    mut editor_state: ResMut<EditorState>,
-) {
-    for interaction in &btn {
-        if *interaction == Interaction::Pressed {
-            editor_state.lighting_panel_visible = !editor_state.lighting_panel_visible;
-        }
-    }
-}
-
-pub fn handle_vendor_stashes_toggle_button_click(
-    btn: Query<&Interaction, (Changed<Interaction>, With<EditorVendorStashesToggleButton>)>,
-    mut editor_state: ResMut<EditorState>,
-) {
-    for interaction in &btn {
-        if *interaction == Interaction::Pressed {
-            editor_state.vendor_stashes_panel_visible = !editor_state.vendor_stashes_panel_visible;
         }
     }
 }

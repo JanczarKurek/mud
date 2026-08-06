@@ -9,6 +9,9 @@ use bevy::prelude::*;
 
 use crate::editor::resources::{EditorClipboard, EditorState};
 use crate::editor::templates::{list_templates, load_template, EditorTemplatesIndex};
+use crate::editor::ui::style::{
+    editor_button, spawn_panel_chrome, spawn_scroll_body, TOP_BAR_BUTTON_COLORS,
+};
 
 /// Marker for the templates panel root node — used by `cursor_over_editor_panels`
 /// (so panel clicks don't fall through to the world) and by visibility-sync.
@@ -29,105 +32,31 @@ pub struct EditorTemplatesRefreshButton;
 const PANEL_WIDTH_PX: f32 = 200.0;
 
 pub fn spawn_templates_panel(parent: &mut ChildSpawnerCommands) {
-    parent
-        .spawn((
-            EditorTemplatesRoot,
-            Node {
-                width: Val::Px(PANEL_WIDTH_PX),
-                height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Column,
-                border: UiRect::left(Val::Px(1.0)),
-                display: Display::None,
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.06, 0.04, 0.04, 0.92)),
-            BorderColor::all(Color::srgb(0.30, 0.22, 0.15)),
-        ))
-        .with_children(|panel| {
-            // Header row: title + refresh.
-            panel
-                .spawn((
-                    Node {
-                        padding: UiRect::all(Val::Px(8.0)),
-                        align_items: AlignItems::Center,
-                        column_gap: Val::Px(6.0),
-                        border: UiRect::bottom(Val::Px(1.0)),
-                        ..default()
-                    },
-                    BorderColor::all(Color::srgb(0.30, 0.22, 0.15)),
-                ))
-                .with_children(|h| {
-                    h.spawn((
-                        Text::new("Templates"),
-                        TextFont {
-                            font_size: 14.0,
-                            ..default()
-                        },
-                        TextColor(Color::srgb(0.96, 0.84, 0.62)),
-                        Node {
-                            flex_grow: 1.0,
-                            ..default()
-                        },
-                    ));
-                    h.spawn((
-                        Button,
-                        EditorTemplatesRefreshButton,
-                        Node {
-                            padding: UiRect::axes(Val::Px(8.0), Val::Px(3.0)),
-                            border: UiRect::all(Val::Px(1.0)),
-                            ..default()
-                        },
-                        BackgroundColor(Color::srgba(0.12, 0.08, 0.06, 0.90)),
-                        BorderColor::all(Color::srgb(0.38, 0.28, 0.18)),
-                    ))
-                    .with_children(|btn| {
-                        btn.spawn((
-                            Text::new("Refresh"),
-                            TextFont {
-                                font_size: 12.0,
-                                ..default()
-                            },
-                            TextColor(Color::srgb(0.88, 0.84, 0.76)),
-                        ));
-                    });
-                });
-
-            // Scrollable content area; contents are rebuilt each time
-            // `EditorTemplatesIndex.names` changes.
-            panel.spawn((
-                EditorTemplatesContent,
+    spawn_panel_chrome(
+        parent,
+        EditorTemplatesRoot,
+        "Templates",
+        PANEL_WIDTH_PX,
+        |h| {
+            editor_button(
+                h,
+                EditorTemplatesRefreshButton,
                 Node {
-                    width: Val::Percent(100.0),
-                    flex_direction: FlexDirection::Column,
-                    flex_grow: 1.0,
-                    overflow: Overflow::scroll_y(),
+                    padding: UiRect::axes(Val::Px(8.0), Val::Px(3.0)),
+                    border: UiRect::all(Val::Px(1.0)),
                     ..default()
                 },
-                bevy::ui::ScrollPosition::default(),
-            ));
-        });
-}
-
-/// Applies `templates_panel_visible` by toggling the panel root's `Display`.
-/// Bevy 0.18 uses `Display::Flex` / `Display::None` rather than a layout-aware
-/// `Visibility` for hide-and-collapse behavior.
-pub fn sync_templates_panel_visibility(
-    editor_state: Res<EditorState>,
-    mut roots: Query<&mut Node, With<EditorTemplatesRoot>>,
-) {
-    if !editor_state.is_changed() {
-        return;
-    }
-    let target = if editor_state.templates_panel_visible {
-        Display::Flex
-    } else {
-        Display::None
-    };
-    for mut node in &mut roots {
-        if node.display != target {
-            node.display = target;
-        }
-    }
+                TOP_BAR_BUTTON_COLORS,
+                "Refresh",
+                12.0,
+            );
+        },
+        |panel| {
+            // Scrollable content area; contents are rebuilt each time
+            // `EditorTemplatesIndex.names` changes.
+            spawn_scroll_body(panel, EditorTemplatesContent);
+        },
+    );
 }
 
 /// Lazy-load the on-disk template list when the panel becomes visible. Also

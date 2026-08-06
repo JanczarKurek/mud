@@ -5,6 +5,7 @@ use bevy::ui::{ComputedNode, ScrollPosition, UiGlobalTransform};
 use bevy::window::PrimaryWindow;
 
 use crate::editor::resources::{EditorState, EditorTool};
+use crate::editor::ui::style::{BUTTON_BORDER, HEADER_TEXT, PANEL_BG, PANEL_BORDER};
 use crate::world::floor_definitions::{FloorFlavor, FloorTilesetDefinitions};
 use crate::world::object_definitions::OverworldObjectDefinitions;
 
@@ -74,8 +75,8 @@ pub fn spawn_palette_panel(
                 overflow: Overflow::clip_y(),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.06, 0.04, 0.04, 0.92)),
-            BorderColor::all(Color::srgb(0.30, 0.22, 0.15)),
+            BackgroundColor(PANEL_BG),
+            BorderColor::all(PANEL_BORDER),
         ))
         .with_children(|panel| {
             // Header
@@ -86,7 +87,7 @@ pub fn spawn_palette_panel(
                         border: UiRect::bottom(Val::Px(1.0)),
                         ..default()
                     },
-                    BorderColor::all(Color::srgb(0.30, 0.22, 0.15)),
+                    BorderColor::all(PANEL_BORDER),
                 ))
                 .with_children(|h| {
                     h.spawn((
@@ -95,7 +96,7 @@ pub fn spawn_palette_panel(
                             font_size: 14.0,
                             ..default()
                         },
-                        TextColor(Color::srgb(0.96, 0.84, 0.62)),
+                        TextColor(HEADER_TEXT),
                     ));
                 });
 
@@ -272,7 +273,7 @@ pub fn spawn_palette_panel(
                         border: UiRect::axes(Val::Px(0.0), Val::Px(1.0)),
                         ..default()
                     },
-                    BorderColor::all(Color::srgb(0.30, 0.22, 0.15)),
+                    BorderColor::all(PANEL_BORDER),
                 ))
                 .with_children(|h| {
                     h.spawn((
@@ -281,7 +282,7 @@ pub fn spawn_palette_panel(
                             font_size: 14.0,
                             ..default()
                         },
-                        TextColor(Color::srgb(0.96, 0.84, 0.62)),
+                        TextColor(HEADER_TEXT),
                     ));
                 });
 
@@ -385,7 +386,7 @@ fn spawn_floor_row(
                 ..default()
             },
             BackgroundColor(swatch_color),
-            BorderColor::all(Color::srgb(0.40, 0.30, 0.20)),
+            BorderColor::all(BUTTON_BORDER),
         ));
         btn.spawn((
             Text::new(label.to_owned()),
@@ -883,7 +884,7 @@ pub fn sync_recent_strip(
                             ..default()
                         },
                         BackgroundColor(color),
-                        BorderColor::all(Color::srgb(0.40, 0.30, 0.20)),
+                        BorderColor::all(BUTTON_BORDER),
                     ));
                     btn.spawn((
                         Text::new(name),

@@ -17,6 +17,7 @@ use crate::editor::resources::{
     PickRectTarget, UndoOp, UndoStack,
 };
 use crate::editor::ui::spawn_groups_panel::open_spawn_group_modal;
+use crate::editor::ui::style::{editor_action_button, spawn_panel_chrome, spawn_scroll_body};
 use crate::world::map_layout::{MapBehavior, SpawnArea, SpawnGroupDef};
 use crate::world::object_definitions::OverworldObjectDefinitions;
 
@@ -39,78 +40,16 @@ pub struct EditorMobGroupButton {
 const PANEL_WIDTH_PX: f32 = 220.0;
 
 pub fn spawn_mobs_panel(parent: &mut ChildSpawnerCommands) {
-    parent
-        .spawn((
-            EditorMobsRoot,
-            Node {
-                width: Val::Px(PANEL_WIDTH_PX),
-                height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Column,
-                border: UiRect::left(Val::Px(1.0)),
-                display: Display::None,
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.06, 0.04, 0.04, 0.92)),
-            BorderColor::all(Color::srgb(0.30, 0.22, 0.15)),
-        ))
-        .with_children(|panel| {
-            panel
-                .spawn((
-                    Node {
-                        padding: UiRect::all(Val::Px(8.0)),
-                        align_items: AlignItems::Center,
-                        column_gap: Val::Px(6.0),
-                        border: UiRect::bottom(Val::Px(1.0)),
-                        ..default()
-                    },
-                    BorderColor::all(Color::srgb(0.30, 0.22, 0.15)),
-                ))
-                .with_children(|h| {
-                    h.spawn((
-                        Text::new("Mobs"),
-                        TextFont {
-                            font_size: 14.0,
-                            ..default()
-                        },
-                        TextColor(Color::srgb(0.96, 0.84, 0.62)),
-                        Node {
-                            flex_grow: 1.0,
-                            ..default()
-                        },
-                    ));
-                });
-
-            panel.spawn((
-                EditorMobsContent,
-                Node {
-                    width: Val::Percent(100.0),
-                    flex_direction: FlexDirection::Column,
-                    flex_grow: 1.0,
-                    overflow: Overflow::scroll_y(),
-                    ..default()
-                },
-                bevy::ui::ScrollPosition::default(),
-            ));
-        });
-}
-
-pub fn sync_mobs_panel_visibility(
-    editor_state: Res<EditorState>,
-    mut roots: Query<&mut Node, With<EditorMobsRoot>>,
-) {
-    if !editor_state.is_changed() {
-        return;
-    }
-    let target = if editor_state.mobs_panel_visible {
-        Display::Flex
-    } else {
-        Display::None
-    };
-    for mut node in &mut roots {
-        if node.display != target {
-            node.display = target;
-        }
-    }
+    spawn_panel_chrome(
+        parent,
+        EditorMobsRoot,
+        "Mobs",
+        PANEL_WIDTH_PX,
+        |_| {},
+        |panel| {
+            spawn_scroll_body(panel, EditorMobsContent);
+        },
+    );
 }
 
 /// Build / rebuild the mob row list. Only runs when the panel is visible and
@@ -230,28 +169,12 @@ pub fn sync_mobs_panel(
 }
 
 fn action_button<M: Component>(parent: &mut ChildSpawnerCommands, label: &str, marker: M) {
-    parent
-        .spawn((
-            Button,
-            marker,
-            Node {
-                padding: UiRect::axes(Val::Px(8.0), Val::Px(3.0)),
-                border: UiRect::all(Val::Px(1.0)),
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.14, 0.10, 0.08, 0.95)),
-            BorderColor::all(Color::srgb(0.40, 0.30, 0.20)),
-        ))
-        .with_children(|b| {
-            b.spawn((
-                Text::new(label.to_owned()),
-                TextFont {
-                    font_size: 10.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(0.92, 0.86, 0.74)),
-            ));
-        });
+    editor_action_button(
+        parent,
+        label,
+        marker,
+        UiRect::axes(Val::Px(8.0), Val::Px(3.0)),
+    );
 }
 
 /// "Place" — arms single-mob placement via the same `selected_type_id` +

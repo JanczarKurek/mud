@@ -8,6 +8,10 @@ use crate::editor::resources::{
     EditorState, EditorTool, PendingStackCountChanges, PickRectTarget, UndoOp, UndoStack,
 };
 use crate::editor::systems::insert_editor_visuals_pub;
+use crate::editor::ui::style::{
+    editor_action_button, editor_button, ButtonColors, BUTTON_BG, BUTTON_BORDER, BUTTON_TEXT,
+    HEADER_TEXT, PANEL_BG, PANEL_BORDER,
+};
 use crate::world::components::{OverworldObject, Quantity, TilePosition};
 use crate::world::map_layout::{MapBehavior, TileRectangle};
 use crate::world::object_definitions::OverworldObjectDefinitions;
@@ -120,8 +124,8 @@ pub fn spawn_properties_panel(parent: &mut ChildSpawnerCommands) {
                 display: Display::None,
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.06, 0.04, 0.04, 0.92)),
-            BorderColor::all(Color::srgb(0.30, 0.22, 0.15)),
+            BackgroundColor(PANEL_BG),
+            BorderColor::all(PANEL_BORDER),
         ))
         .with_children(|panel| {
             // Header
@@ -134,7 +138,7 @@ pub fn spawn_properties_panel(parent: &mut ChildSpawnerCommands) {
                         row_gap: Val::Px(2.0),
                         ..default()
                     },
-                    BorderColor::all(Color::srgb(0.30, 0.22, 0.15)),
+                    BorderColor::all(PANEL_BORDER),
                 ))
                 .with_children(|h| {
                     h.spawn((
@@ -143,7 +147,7 @@ pub fn spawn_properties_panel(parent: &mut ChildSpawnerCommands) {
                             font_size: 14.0,
                             ..default()
                         },
-                        TextColor(Color::srgb(0.96, 0.84, 0.62)),
+                        TextColor(HEADER_TEXT),
                     ));
                     h.spawn((
                         EditorPropertiesHeader,
@@ -477,7 +481,7 @@ fn spawn_stack_section(
                     font_size: 12.0,
                     ..default()
                 },
-                TextColor(Color::srgb(0.96, 0.84, 0.62)),
+                TextColor(HEADER_TEXT),
             ));
             sec.spawn((
                 StackReadout,
@@ -557,7 +561,7 @@ fn spawn_stack_section(
                         font_size: 11.0,
                         ..default()
                     },
-                    TextColor(Color::srgb(0.92, 0.86, 0.74)),
+                    TextColor(BUTTON_TEXT),
                 ));
             });
         });
@@ -576,8 +580,8 @@ fn stack_step_button(parent: &mut ChildSpawnerCommands, label: &str, delta: i32)
                 border: UiRect::all(Val::Px(1.0)),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.14, 0.10, 0.08, 0.95)),
-            BorderColor::all(Color::srgb(0.40, 0.30, 0.20)),
+            BackgroundColor(BUTTON_BG),
+            BorderColor::all(BUTTON_BORDER),
         ))
         .with_children(|b| {
             b.spawn((
@@ -586,7 +590,7 @@ fn stack_step_button(parent: &mut ChildSpawnerCommands, label: &str, delta: i32)
                     font_size: 12.0,
                     ..default()
                 },
-                TextColor(Color::srgb(0.92, 0.86, 0.74)),
+                TextColor(BUTTON_TEXT),
             ));
         });
 }
@@ -612,7 +616,7 @@ fn spawn_behavior_section(parent: &mut ChildSpawnerCommands, behavior: Option<&M
                     font_size: 12.0,
                     ..default()
                 },
-                TextColor(Color::srgb(0.96, 0.84, 0.62)),
+                TextColor(HEADER_TEXT),
             ));
             sec.spawn((
                 Text::new(behavior_summary(behavior)),
@@ -644,7 +648,7 @@ fn spawn_behavior_section(parent: &mut ChildSpawnerCommands, behavior: Option<&M
                     ..default()
                 },
                 BackgroundColor(Color::srgba(0.16, 0.10, 0.06, 0.95)),
-                BorderColor::all(Color::srgb(0.40, 0.30, 0.20)),
+                BorderColor::all(BUTTON_BORDER),
             ))
             .with_children(|b| {
                 b.spawn((
@@ -653,35 +657,19 @@ fn spawn_behavior_section(parent: &mut ChildSpawnerCommands, behavior: Option<&M
                         font_size: 10.0,
                         ..default()
                     },
-                    TextColor(Color::srgb(0.92, 0.86, 0.74)),
+                    TextColor(BUTTON_TEXT),
                 ));
             });
         });
 }
 
 fn behavior_button(parent: &mut ChildSpawnerCommands, label: &str, kind: BehaviorButtonKind) {
-    parent
-        .spawn((
-            Button,
-            BehaviorSetButton { kind },
-            Node {
-                padding: UiRect::axes(Val::Px(6.0), Val::Px(3.0)),
-                border: UiRect::all(Val::Px(1.0)),
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.14, 0.10, 0.08, 0.95)),
-            BorderColor::all(Color::srgb(0.40, 0.30, 0.20)),
-        ))
-        .with_children(|b| {
-            b.spawn((
-                Text::new(label),
-                TextFont {
-                    font_size: 10.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(0.92, 0.86, 0.74)),
-            ));
-        });
+    editor_action_button(
+        parent,
+        label,
+        BehaviorSetButton { kind },
+        UiRect::axes(Val::Px(6.0), Val::Px(3.0)),
+    );
 }
 
 fn behavior_summary(behavior: Option<&MapBehavior>) -> String {
@@ -723,7 +711,7 @@ fn spawn_dialog_section(
                     font_size: 12.0,
                     ..default()
                 },
-                TextColor(Color::srgb(0.96, 0.84, 0.62)),
+                TextColor(HEADER_TEXT),
             ));
             sec.spawn((
                 Text::new(format!(
@@ -771,29 +759,23 @@ fn dialog_button(
     } else {
         Color::srgb(0.25, 0.18, 0.12)
     };
-    parent
-        .spawn((
-            Button,
-            DialogSelectButton { dialog_id },
-            Node {
-                width: Val::Percent(100.0),
-                padding: UiRect::axes(Val::Px(6.0), Val::Px(3.0)),
-                border: UiRect::all(Val::Px(1.0)),
-                ..default()
-            },
-            BackgroundColor(bg),
-            BorderColor::all(border),
-        ))
-        .with_children(|b| {
-            b.spawn((
-                Text::new(label.to_owned()),
-                TextFont {
-                    font_size: 10.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(0.92, 0.86, 0.74)),
-            ));
-        });
+    editor_button(
+        parent,
+        DialogSelectButton { dialog_id },
+        Node {
+            width: Val::Percent(100.0),
+            padding: UiRect::axes(Val::Px(6.0), Val::Px(3.0)),
+            border: UiRect::all(Val::Px(1.0)),
+            ..default()
+        },
+        ButtonColors {
+            bg,
+            border,
+            text: BUTTON_TEXT,
+        },
+        label,
+        10.0,
+    );
 }
 
 /// Click a property row to enter edit mode for that value.

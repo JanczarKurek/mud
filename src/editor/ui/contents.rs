@@ -110,7 +110,7 @@ fn sorted_props(stack: &InventoryStack) -> Vec<(String, String)> {
 
 // ── Rendering ────────────────────────────────────────────────────────────────
 
-const HDR: Color = Color::srgb(0.96, 0.84, 0.62);
+const HDR: Color = crate::editor::ui::style::HEADER_TEXT;
 const DIM: Color = Color::srgb(0.70, 0.66, 0.60);
 const ROW_BG: Color = Color::srgba(0.10, 0.08, 0.06, 0.70);
 const ROW_BG_EDIT: Color = Color::srgba(0.20, 0.15, 0.08, 0.90);

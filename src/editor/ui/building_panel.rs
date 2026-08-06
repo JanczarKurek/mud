@@ -11,6 +11,9 @@
 use bevy::prelude::*;
 
 use crate::editor::resources::{EditorState, EditorTool};
+use crate::editor::ui::style::{
+    editor_button, spawn_panel_chrome, spawn_scroll_body, ButtonColors,
+};
 use crate::world::building_presets::BuildingPresets;
 use crate::world::floor_definitions::FloorTilesetDefinitions;
 
@@ -54,42 +57,13 @@ pub struct BuildingPanelSnapshot {
 const PANEL_WIDTH_PX: f32 = 200.0;
 
 pub fn spawn_building_panel(parent: &mut ChildSpawnerCommands) {
-    parent
-        .spawn((
-            EditorBuildingRoot,
-            Node {
-                width: Val::Px(PANEL_WIDTH_PX),
-                height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Column,
-                border: UiRect::left(Val::Px(1.0)),
-                display: Display::None,
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.06, 0.04, 0.04, 0.92)),
-            BorderColor::all(Color::srgb(0.30, 0.22, 0.15)),
-        ))
-        .with_children(|panel| {
-            // Header.
-            panel
-                .spawn((
-                    Node {
-                        padding: UiRect::all(Val::Px(8.0)),
-                        border: UiRect::bottom(Val::Px(1.0)),
-                        ..default()
-                    },
-                    BorderColor::all(Color::srgb(0.30, 0.22, 0.15)),
-                ))
-                .with_children(|h| {
-                    h.spawn((
-                        Text::new("Building"),
-                        TextFont {
-                            font_size: 14.0,
-                            ..default()
-                        },
-                        TextColor(Color::srgb(0.96, 0.84, 0.62)),
-                    ));
-                });
-
+    spawn_panel_chrome(
+        parent,
+        EditorBuildingRoot,
+        "Building",
+        PANEL_WIDTH_PX,
+        |_| {},
+        |panel| {
             // Static hint.
             panel
                 .spawn((Node {
@@ -108,38 +82,9 @@ pub fn spawn_building_panel(parent: &mut ChildSpawnerCommands) {
                 });
 
             // Scrollable content — preset rows, then floor override rows, then door-arm button.
-            panel.spawn((
-                EditorBuildingContent,
-                Node {
-                    width: Val::Percent(100.0),
-                    flex_direction: FlexDirection::Column,
-                    flex_grow: 1.0,
-                    overflow: Overflow::scroll_y(),
-                    ..default()
-                },
-                bevy::ui::ScrollPosition::default(),
-            ));
-        });
-}
-
-/// Show the panel only while the building tool is active.
-pub fn sync_building_panel_visibility(
-    editor_state: Res<EditorState>,
-    mut roots: Query<&mut Node, With<EditorBuildingRoot>>,
-) {
-    if !editor_state.is_changed() {
-        return;
-    }
-    let target = if editor_state.current_tool == EditorTool::BuildingDraw {
-        Display::Flex
-    } else {
-        Display::None
-    };
-    for mut node in &mut roots {
-        if node.display != target {
-            node.display = target;
-        }
-    }
+            spawn_scroll_body(panel, EditorBuildingContent);
+        },
+    );
 }
 
 /// Build the preset/floor/door rows when the panel becomes visible. Rebuilt
@@ -234,8 +179,8 @@ pub fn sync_building_panel(
         }
 
         section_header(c, "Door");
-        c.spawn((
-            Button,
+        editor_button(
+            c,
             EditorBuildingDoorArmButton,
             Node {
                 width: Val::Percent(100.0),
@@ -245,23 +190,18 @@ pub fn sync_building_panel(
                 border: UiRect::all(Val::Px(1.0)),
                 ..default()
             },
-            BackgroundColor(row_bg(door_armed)),
-            BorderColor::all(row_border(door_armed)),
-        ))
-        .with_children(|btn| {
-            btn.spawn((
-                Text::new(if door_armed {
-                    "ARMED — click a wall"
-                } else {
-                    "Place door (click a wall)"
-                }),
-                TextFont {
-                    font_size: 12.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(0.92, 0.86, 0.72)),
-            ));
-        });
+            ButtonColors {
+                bg: row_bg(door_armed),
+                border: row_border(door_armed),
+                text: Color::srgb(0.92, 0.86, 0.72),
+            },
+            if door_armed {
+                "ARMED — click a wall"
+            } else {
+                "Place door (click a wall)"
+            },
+            12.0,
+        );
     });
 }
 
@@ -300,8 +240,8 @@ fn empty_note(c: &mut ChildSpawnerCommands, label: &str) {
 }
 
 fn spawn_row<M: Component>(c: &mut ChildSpawnerCommands, label: &str, active: bool, marker: M) {
-    c.spawn((
-        Button,
+    editor_button(
+        c,
         marker,
         Node {
             width: Val::Percent(100.0),
@@ -310,19 +250,14 @@ fn spawn_row<M: Component>(c: &mut ChildSpawnerCommands, label: &str, active: bo
             border: UiRect::bottom(Val::Px(1.0)),
             ..default()
         },
-        BackgroundColor(row_bg(active)),
-        BorderColor::all(row_border(active)),
-    ))
-    .with_children(|btn| {
-        btn.spawn((
-            Text::new(label.to_owned()),
-            TextFont {
-                font_size: 11.0,
-                ..default()
-            },
-            TextColor(Color::srgb(0.88, 0.84, 0.78)),
-        ));
-    });
+        ButtonColors {
+            bg: row_bg(active),
+            border: row_border(active),
+            text: Color::srgb(0.88, 0.84, 0.78),
+        },
+        label,
+        11.0,
+    );
 }
 
 fn row_bg(active: bool) -> Color {

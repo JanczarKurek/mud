@@ -22,6 +22,11 @@ use bevy::window::PrimaryWindow;
 use crate::editor::resources::{
     EditorLightingBuffer, EditorState, LightingKeyframeDraft, ModalKind, ModalState,
 };
+use crate::editor::ui::style::{
+    editor_action_button, editor_button, scroll_body_node, spawn_panel_chrome,
+    ACCENT_BUTTON_COLORS, ACTION_BUTTON_COLORS, BUTTON_BORDER, BUTTON_TEXT, HEADER_TEXT,
+    PANEL_BORDER,
+};
 use crate::world::lighting::WorldClock;
 use crate::world::map_layout::AmbientKeyframe;
 
@@ -97,82 +102,25 @@ const SCRUBBER_HEIGHT_PX: f32 = 14.0;
 const COLOR_STEP: i16 = 16;
 
 pub fn spawn_lighting_panel(parent: &mut ChildSpawnerCommands) {
-    parent
-        .spawn((
-            EditorLightingRoot,
-            Node {
-                width: Val::Px(PANEL_WIDTH_PX),
-                height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Column,
-                border: UiRect::left(Val::Px(1.0)),
-                display: Display::None,
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.06, 0.04, 0.04, 0.92)),
-            BorderColor::all(Color::srgb(0.30, 0.22, 0.15)),
-        ))
-        .with_children(|panel| {
-            // Header
-            panel
-                .spawn((
-                    Node {
-                        padding: UiRect::all(Val::Px(8.0)),
-                        align_items: AlignItems::Center,
-                        border: UiRect::bottom(Val::Px(1.0)),
-                        ..default()
-                    },
-                    BorderColor::all(Color::srgb(0.30, 0.22, 0.15)),
-                ))
-                .with_children(|h| {
-                    h.spawn((
-                        Text::new("Lighting"),
-                        TextFont {
-                            font_size: 14.0,
-                            ..default()
-                        },
-                        TextColor(Color::srgb(0.96, 0.84, 0.62)),
-                        Node {
-                            flex_grow: 1.0,
-                            ..default()
-                        },
-                    ));
-                });
-
-            // Body (scrollable)
+    spawn_panel_chrome(
+        parent,
+        EditorLightingRoot,
+        "Lighting",
+        PANEL_WIDTH_PX,
+        |_| {},
+        |panel| {
+            // Body (scrollable) — standard scroll column plus inner padding
+            // and row gaps between the panel's sections.
+            let mut body = scroll_body_node();
+            body.padding = UiRect::all(Val::Px(8.0));
+            body.row_gap = Val::Px(8.0);
             panel.spawn((
                 EditorLightingContent,
-                Node {
-                    width: Val::Percent(100.0),
-                    flex_direction: FlexDirection::Column,
-                    flex_grow: 1.0,
-                    padding: UiRect::all(Val::Px(8.0)),
-                    row_gap: Val::Px(8.0),
-                    overflow: Overflow::scroll_y(),
-                    ..default()
-                },
+                body,
                 bevy::ui::ScrollPosition::default(),
             ));
-        });
-}
-
-/// Toggle panel display via `EditorState::lighting_panel_visible`.
-pub fn sync_lighting_panel_visibility(
-    editor_state: Res<EditorState>,
-    mut roots: Query<&mut Node, With<EditorLightingRoot>>,
-) {
-    if !editor_state.is_changed() {
-        return;
-    }
-    let target = if editor_state.lighting_panel_visible {
-        Display::Flex
-    } else {
-        Display::None
-    };
-    for mut node in &mut roots {
-        if node.display != target {
-            node.display = target;
-        }
-    }
+        },
+    );
 }
 
 /// Rebuild the panel contents whenever the buffer or visibility flag changes.
@@ -245,7 +193,7 @@ pub fn sync_lighting_panel(
                         font_size: 11.0,
                         ..default()
                     },
-                    TextColor(Color::srgb(0.92, 0.86, 0.74)),
+                    TextColor(BUTTON_TEXT),
                 ));
             });
 
@@ -266,11 +214,11 @@ pub fn sync_lighting_panel(
                 ..default()
             },
             BackgroundColor(if buffer.config.has_day_night {
-                Color::srgba(0.18, 0.12, 0.06, 0.95)
+                ACCENT_BUTTON_COLORS.bg
             } else {
                 Color::srgba(0.10, 0.07, 0.06, 0.80)
             }),
-            BorderColor::all(Color::srgb(0.55, 0.40, 0.22)),
+            BorderColor::all(ACCENT_BUTTON_COLORS.border),
         ))
         .with_children(|b| {
             b.spawn((
@@ -279,7 +227,7 @@ pub fn sync_lighting_panel(
                     font_size: 11.0,
                     ..default()
                 },
-                TextColor(Color::srgb(0.96, 0.86, 0.66)),
+                TextColor(ACCENT_BUTTON_COLORS.text),
             ));
         });
 
@@ -364,7 +312,7 @@ pub fn sync_lighting_panel(
                                     kf.color[1],
                                     kf.color[2],
                                 )),
-                                BorderColor::all(Color::srgb(0.40, 0.30, 0.20)),
+                                BorderColor::all(BUTTON_BORDER),
                             ));
                             line.spawn((
                                 Text::new(format!("t={:.3}  α={:.2}", kf.time, kf.alpha)),
@@ -372,7 +320,7 @@ pub fn sync_lighting_panel(
                                     font_size: 11.0,
                                     ..default()
                                 },
-                                TextColor(Color::srgb(0.92, 0.86, 0.74)),
+                                TextColor(BUTTON_TEXT),
                                 Node {
                                     flex_grow: 1.0,
                                     ..default()
@@ -418,8 +366,8 @@ pub fn sync_lighting_panel(
                 justify_content: JustifyContent::Center,
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.18, 0.12, 0.06, 0.95)),
-            BorderColor::all(Color::srgb(0.55, 0.40, 0.22)),
+            BackgroundColor(ACCENT_BUTTON_COLORS.bg),
+            BorderColor::all(ACCENT_BUTTON_COLORS.border),
         ))
         .with_children(|b| {
             b.spawn((
@@ -428,7 +376,7 @@ pub fn sync_lighting_panel(
                     font_size: 11.0,
                     ..default()
                 },
-                TextColor(Color::srgb(0.96, 0.86, 0.66)),
+                TextColor(ACCENT_BUTTON_COLORS.text),
             ));
         });
     });
@@ -441,14 +389,14 @@ fn section_label(parent: &mut ChildSpawnerCommands, text: &str) {
             font_size: 12.0,
             ..default()
         },
-        TextColor(Color::srgb(0.96, 0.84, 0.62)),
+        TextColor(HEADER_TEXT),
         Node {
             margin: UiRect::top(Val::Px(4.0)),
             border: UiRect::bottom(Val::Px(1.0)),
             padding: UiRect::bottom(Val::Px(2.0)),
             ..default()
         },
-        BorderColor::all(Color::srgb(0.30, 0.22, 0.15)),
+        BorderColor::all(PANEL_BORDER),
     ));
 }
 
@@ -474,7 +422,7 @@ fn ambient_row(
                     ..default()
                 },
                 BackgroundColor(Color::srgb_u8(rgb[0], rgb[1], rgb[2])),
-                BorderColor::all(Color::srgb(0.40, 0.30, 0.20)),
+                BorderColor::all(BUTTON_BORDER),
             ));
             for (channel, value, target) in [
                 ("R", rgb[0], targets[0]),
@@ -517,55 +465,29 @@ fn stepper_button(
     target: AmbientStepperTarget,
     delta: i16,
 ) {
-    parent
-        .spawn((
-            Button,
-            LightingAmbientStepperButton { target, delta },
-            Node {
-                width: Val::Px(20.0),
-                padding: UiRect::axes(Val::Px(2.0), Val::Px(1.0)),
-                border: UiRect::all(Val::Px(1.0)),
-                justify_content: JustifyContent::Center,
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.14, 0.10, 0.08, 0.95)),
-            BorderColor::all(Color::srgb(0.40, 0.30, 0.20)),
-        ))
-        .with_children(|b| {
-            b.spawn((
-                Text::new(label.to_owned()),
-                TextFont {
-                    font_size: 10.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(0.92, 0.86, 0.74)),
-            ));
-        });
+    editor_button(
+        parent,
+        LightingAmbientStepperButton { target, delta },
+        Node {
+            width: Val::Px(20.0),
+            padding: UiRect::axes(Val::Px(2.0), Val::Px(1.0)),
+            border: UiRect::all(Val::Px(1.0)),
+            justify_content: JustifyContent::Center,
+            ..default()
+        },
+        ACTION_BUTTON_COLORS,
+        label,
+        10.0,
+    );
 }
 
 fn row_action_button<M: Component>(parent: &mut ChildSpawnerCommands, label: &str, marker: M) {
-    parent
-        .spawn((
-            Button,
-            marker,
-            Node {
-                padding: UiRect::axes(Val::Px(6.0), Val::Px(3.0)),
-                border: UiRect::all(Val::Px(1.0)),
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.14, 0.10, 0.08, 0.95)),
-            BorderColor::all(Color::srgb(0.40, 0.30, 0.20)),
-        ))
-        .with_children(|b| {
-            b.spawn((
-                Text::new(label.to_owned()),
-                TextFont {
-                    font_size: 10.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(0.92, 0.86, 0.74)),
-            ));
-        });
+    editor_action_button(
+        parent,
+        label,
+        marker,
+        UiRect::axes(Val::Px(6.0), Val::Px(3.0)),
+    );
 }
 
 /// Click + button handlers for the lighting panel. Bundles row select, action

@@ -25,8 +25,8 @@ use crate::editor::hotkeys::{
 use crate::editor::resources::{
     EditorCamera, EditorClipboard, EditorCursorMarker, EditorLightingBuffer,
     EditorPasteGhostMarker, EditorPickRectResult, EditorPortalBuffer, EditorPropertyEditBuffer,
-    EditorSpawnGroupBuffer, EditorStackEdit, EditorState, EditorVendorStashBuffer, ModalState,
-    PendingStackCountChanges, UndoStack,
+    EditorSpawnGroupBuffer, EditorStackEdit, EditorState, EditorTool, EditorVendorStashBuffer,
+    ModalState, PendingStackCountChanges, UndoStack,
 };
 use crate::editor::selection::{
     handle_editor_pick_rect_drag, handle_editor_select_drag, handle_editor_select_hotkey,
@@ -46,7 +46,7 @@ use crate::editor::systems::{
 };
 use crate::editor::templates::EditorTemplatesIndex;
 use crate::editor::ui::building_panel::{
-    handle_building_panel_clicks, sync_building_panel, sync_building_panel_visibility,
+    handle_building_panel_clicks, sync_building_panel, EditorBuildingRoot,
 };
 use crate::editor::ui::color_picker::EditorColorPickerAssets;
 use crate::editor::ui::contents::{
@@ -57,11 +57,11 @@ use crate::editor::ui::contents::{
 };
 use crate::editor::ui::lighting_panel::{
     handle_lighting_panel_clicks, handle_lighting_scrubber_drag, sync_lighting_panel,
-    sync_lighting_panel_visibility, sync_lighting_scrubber_visual,
+    sync_lighting_scrubber_visual, EditorLightingRoot,
 };
 use crate::editor::ui::mobs_panel::{
     apply_pick_rect_for_new_spawn_group, handle_mobs_panel_group_clicks,
-    handle_mobs_panel_place_clicks, sync_mobs_panel, sync_mobs_panel_visibility,
+    handle_mobs_panel_place_clicks, sync_mobs_panel, EditorMobsRoot,
 };
 use crate::editor::ui::modal::{
     apply_pick_rect_result_to_modal, handle_color_picker_hue_drag, handle_color_picker_sv_drag,
@@ -85,25 +85,23 @@ use crate::editor::ui::properties::{
 };
 use crate::editor::ui::spawn_groups_panel::{
     handle_spawn_groups_panel_clicks, render_spawn_group_overlay, sync_spawn_groups_panel,
-    sync_spawn_groups_panel_visibility,
+    EditorSpawnGroupsRoot,
 };
 use crate::editor::ui::templates_panel::{
-    handle_templates_panel_clicks, sync_templates_panel, sync_templates_panel_visibility,
+    handle_templates_panel_clicks, sync_templates_panel, EditorTemplatesRoot,
 };
 use crate::editor::ui::vendor_stashes_panel::{
     handle_vendor_stash_keyboard_input, handle_vendor_stash_palette_pick,
-    handle_vendor_stashes_panel_clicks, sync_vendor_stashes_panel,
-    sync_vendor_stashes_panel_visibility,
+    handle_vendor_stashes_panel_clicks, sync_vendor_stashes_panel, EditorVendorStashesRoot,
 };
 use crate::editor::ui::{
-    cleanup_editor_hud, handle_building_tool_button_click, handle_exit_button_click,
-    handle_generate_dungeon_button_click, handle_lighting_toggle_button_click,
-    handle_mobs_toggle_button_click, handle_new_map_button_click, handle_open_button_click,
-    handle_portal_tool_button_click, handle_redo_button_click, handle_save_as_button_click,
-    handle_save_as_template_button_click, handle_save_button_click,
-    handle_select_tool_button_click, handle_spawn_groups_toggle_button_click,
-    handle_templates_toggle_button_click, handle_undo_button_click,
-    handle_vendor_stashes_toggle_button_click, spawn_editor_hud, sync_editor_top_bar,
+    cleanup_editor_hud, handle_exit_button_click, handle_generate_dungeon_button_click,
+    handle_new_map_button_click, handle_open_button_click, handle_save_as_button_click,
+    handle_save_as_template_button_click, handle_save_button_click, on_editor_button_pressed,
+    spawn_editor_hud, sync_editor_top_bar, sync_panel_visibility, EditorBuildingToolButton,
+    EditorLightingToggleButton, EditorMobsToggleButton, EditorPortalToolButton, EditorRedoButton,
+    EditorSelectToolButton, EditorSpawnGroupsToggleButton, EditorTemplatesToggleButton,
+    EditorUndoButton, EditorVendorStashesToggleButton,
 };
 use crate::editor::undo::handle_undo_redo;
 use crate::world::animation::AnimatedSprite;
@@ -479,7 +477,10 @@ impl Plugin for EditorPlugin {
                 )
                     .run_if(in_state(ClientAppState::MapEditor)),
             )
-            // Toolbar button handlers
+            // Toolbar button handlers. The buttons whose whole job is one
+            // `EditorState` mutation (tool toggles, undo/redo requests, panel
+            // visibility flips) share the generic `on_editor_button_pressed`
+            // system; the rest need extra resources and stay bespoke.
             .add_systems(
                 Update,
                 (
@@ -488,17 +489,51 @@ impl Plugin for EditorPlugin {
                     handle_save_as_button_click,
                     handle_new_map_button_click,
                     handle_generate_dungeon_button_click,
-                    handle_portal_tool_button_click,
-                    handle_undo_button_click,
-                    handle_redo_button_click,
-                    handle_select_tool_button_click,
+                    on_editor_button_pressed::<EditorPortalToolButton>(|s| {
+                        s.current_tool = if s.current_tool == EditorTool::Portal {
+                            EditorTool::Brush
+                        } else {
+                            EditorTool::Portal
+                        };
+                    }),
+                    on_editor_button_pressed::<EditorUndoButton>(|s| s.undo_requested = true),
+                    on_editor_button_pressed::<EditorRedoButton>(|s| s.redo_requested = true),
+                    on_editor_button_pressed::<EditorSelectToolButton>(|s| {
+                        s.current_tool = if s.current_tool == EditorTool::Select {
+                            EditorTool::Brush
+                        } else {
+                            EditorTool::Select
+                        };
+                    }),
                     handle_save_as_template_button_click,
-                    handle_templates_toggle_button_click,
-                    handle_spawn_groups_toggle_button_click,
-                    handle_mobs_toggle_button_click,
-                    handle_lighting_toggle_button_click,
-                    handle_vendor_stashes_toggle_button_click,
-                    handle_building_tool_button_click,
+                    on_editor_button_pressed::<EditorTemplatesToggleButton>(|s| {
+                        s.templates_panel_visible = !s.templates_panel_visible;
+                    }),
+                    on_editor_button_pressed::<EditorSpawnGroupsToggleButton>(|s| {
+                        s.spawn_groups_panel_visible = !s.spawn_groups_panel_visible;
+                    }),
+                    on_editor_button_pressed::<EditorMobsToggleButton>(|s| {
+                        s.mobs_panel_visible = !s.mobs_panel_visible;
+                    }),
+                    on_editor_button_pressed::<EditorLightingToggleButton>(|s| {
+                        s.lighting_panel_visible = !s.lighting_panel_visible;
+                    }),
+                    on_editor_button_pressed::<EditorVendorStashesToggleButton>(|s| {
+                        s.vendor_stashes_panel_visible = !s.vendor_stashes_panel_visible;
+                    }),
+                    on_editor_button_pressed::<EditorBuildingToolButton>(|s| {
+                        s.current_tool = if s.current_tool == EditorTool::BuildingDraw {
+                            EditorTool::Brush
+                        } else {
+                            EditorTool::BuildingDraw
+                        };
+                        // Stop arming the door-swap when leaving the tool —
+                        // avoids the next entry surprising the user with a
+                        // click that swaps a wall.
+                        if s.current_tool != EditorTool::BuildingDraw {
+                            s.building.place_door_armed = false;
+                        }
+                    }),
                     handle_exit_button_click,
                 )
                     .run_if(in_state(ClientAppState::MapEditor)),
@@ -507,7 +542,9 @@ impl Plugin for EditorPlugin {
             .add_systems(
                 Update,
                 (
-                    sync_building_panel_visibility,
+                    sync_panel_visibility::<EditorBuildingRoot>(|s| {
+                        s.current_tool == EditorTool::BuildingDraw
+                    }),
                     sync_building_panel,
                     handle_building_panel_clicks,
                 )
@@ -517,18 +554,20 @@ impl Plugin for EditorPlugin {
             .add_systems(
                 Update,
                 (
-                    sync_templates_panel_visibility,
+                    sync_panel_visibility::<EditorTemplatesRoot>(|s| s.templates_panel_visible),
                     sync_templates_panel,
                     handle_templates_panel_clicks,
-                    sync_spawn_groups_panel_visibility,
+                    sync_panel_visibility::<EditorSpawnGroupsRoot>(|s| {
+                        s.spawn_groups_panel_visible
+                    }),
                     sync_spawn_groups_panel,
                     handle_spawn_groups_panel_clicks,
-                    sync_mobs_panel_visibility,
+                    sync_panel_visibility::<EditorMobsRoot>(|s| s.mobs_panel_visible),
                     sync_mobs_panel,
                     handle_mobs_panel_place_clicks,
                     handle_mobs_panel_group_clicks,
                     apply_pick_rect_for_new_spawn_group,
-                    sync_lighting_panel_visibility,
+                    sync_panel_visibility::<EditorLightingRoot>(|s| s.lighting_panel_visible),
                     sync_lighting_panel,
                     sync_lighting_scrubber_visual,
                     handle_lighting_panel_clicks,
@@ -543,7 +582,9 @@ impl Plugin for EditorPlugin {
             .add_systems(
                 Update,
                 (
-                    sync_vendor_stashes_panel_visibility,
+                    sync_panel_visibility::<EditorVendorStashesRoot>(|s| {
+                        s.vendor_stashes_panel_visible
+                    }),
                     sync_vendor_stashes_panel,
                     handle_vendor_stashes_panel_clicks,
                     // `handle_palette_clicks` checks `pending_ware_pick` and

@@ -15,6 +15,10 @@ use crate::editor::resources::{
     EditorState, EditorVendorStashBuffer, VendorStashEditingField, VendorWarePickTarget,
 };
 use crate::editor::ui::palette::EditorPaletteItem;
+use crate::editor::ui::style::{
+    editor_action_button, editor_button, spawn_panel_chrome, spawn_scroll_body,
+    ACCENT_BUTTON_COLORS, BUTTON_TEXT,
+};
 use crate::game::shop::{StockModeDef, StockWord, WareDef};
 use crate::world::map_layout::VendorStashDef;
 use crate::world::object_definitions::OverworldObjectDefinitions;
@@ -79,99 +83,29 @@ pub struct EditorVendorStashAddWareButton {
 const PANEL_WIDTH_PX: f32 = 280.0;
 
 pub fn spawn_vendor_stashes_panel(parent: &mut ChildSpawnerCommands) {
-    parent
-        .spawn((
-            EditorVendorStashesRoot,
-            Node {
-                width: Val::Px(PANEL_WIDTH_PX),
-                height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Column,
-                border: UiRect::left(Val::Px(1.0)),
-                display: Display::None,
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.06, 0.04, 0.04, 0.92)),
-            BorderColor::all(Color::srgb(0.30, 0.22, 0.15)),
-        ))
-        .with_children(|panel| {
-            panel
-                .spawn((
-                    Node {
-                        padding: UiRect::all(Val::Px(8.0)),
-                        align_items: AlignItems::Center,
-                        column_gap: Val::Px(6.0),
-                        border: UiRect::bottom(Val::Px(1.0)),
-                        ..default()
-                    },
-                    BorderColor::all(Color::srgb(0.30, 0.22, 0.15)),
-                ))
-                .with_children(|h| {
-                    h.spawn((
-                        Text::new("Vendor Stashes"),
-                        TextFont {
-                            font_size: 14.0,
-                            ..default()
-                        },
-                        TextColor(Color::srgb(0.96, 0.84, 0.62)),
-                        Node {
-                            flex_grow: 1.0,
-                            ..default()
-                        },
-                    ));
-                    h.spawn((
-                        Button,
-                        EditorVendorStashAddButton,
-                        Node {
-                            padding: UiRect::axes(Val::Px(8.0), Val::Px(3.0)),
-                            border: UiRect::all(Val::Px(1.0)),
-                            ..default()
-                        },
-                        BackgroundColor(Color::srgba(0.18, 0.12, 0.06, 0.95)),
-                        BorderColor::all(Color::srgb(0.55, 0.40, 0.22)),
-                    ))
-                    .with_children(|btn| {
-                        btn.spawn((
-                            Text::new("+ Add"),
-                            TextFont {
-                                font_size: 12.0,
-                                ..default()
-                            },
-                            TextColor(Color::srgb(0.96, 0.86, 0.66)),
-                        ));
-                    });
-                });
-
-            panel.spawn((
-                EditorVendorStashesContent,
+    spawn_panel_chrome(
+        parent,
+        EditorVendorStashesRoot,
+        "Vendor Stashes",
+        PANEL_WIDTH_PX,
+        |h| {
+            editor_button(
+                h,
+                EditorVendorStashAddButton,
                 Node {
-                    width: Val::Percent(100.0),
-                    flex_direction: FlexDirection::Column,
-                    flex_grow: 1.0,
-                    overflow: Overflow::scroll_y(),
+                    padding: UiRect::axes(Val::Px(8.0), Val::Px(3.0)),
+                    border: UiRect::all(Val::Px(1.0)),
                     ..default()
                 },
-                bevy::ui::ScrollPosition::default(),
-            ));
-        });
-}
-
-pub fn sync_vendor_stashes_panel_visibility(
-    editor_state: Res<EditorState>,
-    mut roots: Query<&mut Node, With<EditorVendorStashesRoot>>,
-) {
-    if !editor_state.is_changed() {
-        return;
-    }
-    let target = if editor_state.vendor_stashes_panel_visible {
-        Display::Flex
-    } else {
-        Display::None
-    };
-    for mut node in &mut roots {
-        if node.display != target {
-            node.display = target;
-        }
-    }
+                ACCENT_BUTTON_COLORS,
+                "+ Add",
+                12.0,
+            );
+        },
+        |panel| {
+            spawn_scroll_body(panel, EditorVendorStashesContent);
+        },
+    );
 }
 
 /// Rebuild rows whenever the buffer or visibility flag changes.
@@ -507,7 +441,7 @@ fn ware_field_button<M: Component>(
         (
             Color::srgba(0.10, 0.07, 0.06, 0.80),
             Color::srgb(0.25, 0.18, 0.12),
-            Color::srgb(0.92, 0.86, 0.74),
+            BUTTON_TEXT,
         )
     };
     parent
@@ -542,28 +476,12 @@ fn ware_field_button<M: Component>(
 }
 
 fn action_button<M: Component>(parent: &mut ChildSpawnerCommands, label: &str, marker: M) {
-    parent
-        .spawn((
-            Button,
-            marker,
-            Node {
-                padding: UiRect::axes(Val::Px(6.0), Val::Px(2.0)),
-                border: UiRect::all(Val::Px(1.0)),
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.14, 0.10, 0.08, 0.95)),
-            BorderColor::all(Color::srgb(0.40, 0.30, 0.20)),
-        ))
-        .with_children(|b| {
-            b.spawn((
-                Text::new(label.to_owned()),
-                TextFont {
-                    font_size: 10.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(0.92, 0.86, 0.74)),
-            ));
-        });
+    editor_action_button(
+        parent,
+        label,
+        marker,
+        UiRect::axes(Val::Px(6.0), Val::Px(2.0)),
+    );
 }
 
 /// Click handlers: row select, action buttons, add button, field-edit kick-off.

@@ -12,6 +12,7 @@ use crate::editor::ui::color_picker::{
     ensure_hue_strip, ensure_sv_pad, hsv_to_rgb, rgb_to_hsv, EditorColorPickerAssets,
     HUE_STRIP_WIDTH, SV_PAD_SIZE,
 };
+use crate::editor::ui::style::{ACCENT_BUTTON_COLORS, BUTTON_BORDER, TOP_BAR_BUTTON_COLORS};
 use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton, ThemedPanel};
 use crate::ui::theme::{Palette, UiThemeAssets};
 
@@ -458,7 +459,7 @@ fn spawn_picker_field_section(
                 for (oi, opt) in picker.options.iter().enumerate() {
                     let selected = picker.selected == oi;
                     let bg = if selected {
-                        Color::srgba(0.18, 0.12, 0.06, 0.95)
+                        ACCENT_BUTTON_COLORS.bg
                     } else {
                         Color::srgba(0.10, 0.07, 0.06, 0.80)
                     };
@@ -494,7 +495,7 @@ fn spawn_picker_field_section(
                                 ..default()
                             },
                             BackgroundColor(opt.swatch),
-                            BorderColor::all(Color::srgb(0.40, 0.30, 0.20)),
+                            BorderColor::all(BUTTON_BORDER),
                         ));
                         btn.spawn((
                             Text::new(opt.label.clone()),
@@ -1196,10 +1197,7 @@ fn radio_row<K, M>(
                 let (bg, border) = if selected {
                     (Color::srgb(0.28, 0.16, 0.08), Color::srgb(0.90, 0.76, 0.50))
                 } else {
-                    (
-                        Color::srgba(0.12, 0.08, 0.06, 0.90),
-                        Color::srgb(0.38, 0.28, 0.18),
-                    )
+                    (TOP_BAR_BUTTON_COLORS.bg, TOP_BAR_BUTTON_COLORS.border)
                 };
                 row.spawn((
                     Button,
