@@ -12,7 +12,7 @@
 //! `ClientGameState` resource changes (which is most of them).
 
 use bevy::input::keyboard::KeyCode;
-use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
+use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, ScrollPosition, UiGlobalTransform};
 use bevy::window::PrimaryWindow;
@@ -1054,34 +1054,23 @@ fn handle_body_display_scrolling(
         wheel_reader.clear();
         return;
     };
-    // ComputedNode geometry is in physical pixels; logical cursor → physical.
-    let cursor = cursor * window.scale_factor();
-
     for event in wheel_reader.read() {
-        let mut delta_y = -event.y;
-        if event.unit == MouseScrollUnit::Line {
-            delta_y *= 21.0;
-        }
+        let delta_y = crate::ui::scroll::wheel_delta_y(event);
         if delta_y == 0.0 {
             continue;
         }
         for (node, computed, transform, mut scroll) in &mut viewports {
-            if !computed.contains_point(*transform, cursor) {
-                continue;
+            match crate::ui::scroll::apply_wheel_scroll(
+                cursor,
+                delta_y,
+                node,
+                computed,
+                transform,
+                &mut scroll,
+            ) {
+                crate::ui::scroll::WheelScrollOutcome::Miss => continue,
+                _ => break,
             }
-            if node.overflow.y != bevy::ui::OverflowAxis::Scroll {
-                continue;
-            }
-            let max_offset =
-                (computed.content_size().y - computed.size().y) * computed.inverse_scale_factor();
-            if max_offset <= 0.0 {
-                break;
-            }
-            let target = (scroll.y + delta_y).clamp(0.0, max_offset);
-            if scroll.y != target {
-                scroll.y = target;
-            }
-            break;
         }
     }
 }

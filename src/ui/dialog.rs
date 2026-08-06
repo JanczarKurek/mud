@@ -5,7 +5,7 @@
 //! current option buttons, and a Continue button. Click handlers queue
 //! `DialogAdvance` / `DialogChoose` / `DialogEnd` game commands.
 
-use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
+use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, ScrollPosition, UiGlobalTransform};
 use bevy::window::PrimaryWindow;
@@ -455,34 +455,29 @@ pub fn handle_dialog_transcript_scrolling(
     let Some(cursor) = window.cursor_position() else {
         return;
     };
-    // ComputedNode geometry is in physical pixels; logical cursor → physical.
-    let cursor = cursor * window.scale_factor();
-
     for event in wheel_reader.read() {
-        let mut delta_y = -event.y;
-        if event.unit == MouseScrollUnit::Line {
-            delta_y *= 21.0;
-        }
+        let delta_y = crate::ui::scroll::wheel_delta_y(event);
         if delta_y == 0.0 {
             continue;
         }
         for (node, computed, transform, mut scroll) in &mut viewport_query {
-            if !computed.contains_point(*transform, cursor) {
-                continue;
+            match crate::ui::scroll::apply_wheel_scroll(
+                cursor,
+                delta_y,
+                node,
+                computed,
+                transform,
+                &mut scroll,
+            ) {
+                crate::ui::scroll::WheelScrollOutcome::Miss => continue,
+                crate::ui::scroll::WheelScrollOutcome::Unscrollable => break,
+                crate::ui::scroll::WheelScrollOutcome::Scrolled => {
+                    // User took manual control — disable auto-pin until the
+                    // next transcript update reasserts it.
+                    render_state.pin_to_bottom_pending = false;
+                    break;
+                }
             }
-            if node.overflow.y != bevy::ui::OverflowAxis::Scroll {
-                continue;
-            }
-            let max_offset =
-                (computed.content_size().y - computed.size().y) * computed.inverse_scale_factor();
-            if max_offset <= 0.0 {
-                break;
-            }
-            scroll.y = (scroll.y + delta_y).clamp(0.0, max_offset);
-            // User took manual control — disable auto-pin until the next
-            // transcript update reasserts it.
-            render_state.pin_to_bottom_pending = false;
-            break;
         }
     }
 }

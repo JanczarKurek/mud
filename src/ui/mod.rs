@@ -22,6 +22,7 @@ pub mod quickbar;
 pub mod recipe_book;
 pub mod resources;
 pub mod retro_bar;
+pub(crate) mod scroll;
 pub mod settings;
 pub mod setup;
 pub mod skills_panel;

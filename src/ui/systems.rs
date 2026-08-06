@@ -1,6 +1,6 @@
 use crate::ui::hit_test::point_in_ui_node;
 use bevy::ecs::query::QueryFilter;
-use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
+use bevy::input::mouse::MouseWheel;
 use bevy::log::info;
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, ScrollPosition, UiGlobalTransform};
@@ -4092,9 +4092,9 @@ pub fn handle_docked_panel_scrolling(
     };
 
     for mouse_wheel in mouse_wheel_reader.read() {
-        let mut delta_y = -mouse_wheel.y;
-        if mouse_wheel.unit == MouseScrollUnit::Line {
-            delta_y *= 21.0;
+        let delta_y = crate::ui::scroll::wheel_delta_y(mouse_wheel);
+        if delta_y == 0.0 {
+            continue;
         }
 
         for (body, node, computed, global_transform, mut scroll_position, visibility) in
@@ -4103,25 +4103,24 @@ pub fn handle_docked_panel_scrolling(
             if *visibility == Visibility::Hidden {
                 continue;
             }
-            if !point_in_ui_node(cursor_position, computed, global_transform) {
-                continue;
+            match crate::ui::scroll::apply_wheel_scroll(
+                cursor_position,
+                delta_y,
+                node,
+                computed,
+                global_transform,
+                &mut scroll_position,
+            ) {
+                crate::ui::scroll::WheelScrollOutcome::Miss => continue,
+                crate::ui::scroll::WheelScrollOutcome::Unscrollable => break,
+                crate::ui::scroll::WheelScrollOutcome::Scrolled => {
+                    info!(
+                        "panel_scroll panel_id={} scroll_y={:.1}",
+                        body.panel_id, scroll_position.y
+                    );
+                    break;
+                }
             }
-            if node.overflow.y != bevy::ui::OverflowAxis::Scroll || delta_y == 0.0 {
-                continue;
-            }
-
-            let max_offset =
-                (computed.content_size() - computed.size()) * computed.inverse_scale_factor();
-            if max_offset.y <= 0.0 {
-                break;
-            }
-
-            scroll_position.y = (scroll_position.y + delta_y).clamp(0.0, max_offset.y);
-            info!(
-                "panel_scroll panel_id={} scroll_y={:.1}/{:.1}",
-                body.panel_id, scroll_position.y, max_offset.y
-            );
-            break;
         }
     }
 }
