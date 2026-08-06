@@ -1,7 +1,29 @@
 use bevy::prelude::*;
 
-use crate::player::components::{Player, PlayerId, PlayerIdentity};
+use crate::combat::components::CombatTarget;
+use crate::game::resources::{ChatLogState, InventoryState};
+use crate::player::components::{MovementCooldown, Player, PlayerId, PlayerIdentity, VitalStats};
 use crate::world::components::{Collider, OverworldObject, SpaceId, SpaceResident, TilePosition};
+
+/// The full mutable view of a player acting on a server command — identity,
+/// inventory, chat log, position and vitals. One shared alias instead of
+/// re-spelling the nine-field tuple in every command handler.
+pub type PlayerActorQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        &'static PlayerIdentity,
+        &'static mut InventoryState,
+        &'static mut ChatLogState,
+        &'static mut SpaceResident,
+        &'static mut TilePosition,
+        &'static mut MovementCooldown,
+        &'static mut VitalStats,
+        Option<&'static CombatTarget>,
+    ),
+    With<Player>,
+>;
 
 pub type PlayerLookupQuery<'w, 's> = Query<
     'w,

@@ -15,18 +15,16 @@ use std::collections::HashMap;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::combat::components::CombatTarget;
 use crate::game::commands::{GameCommand, ItemSlotRef};
 use crate::game::currency::{
     COPPER_PER_GOLD, COPPER_PER_SILVER, COPPER_TYPE_ID, GOLD_TYPE_ID, SILVER_TYPE_ID,
 };
+use crate::game::helpers::PlayerActorQuery;
 use crate::game::resources::{
-    ChatLogState, GameUiEvent, InventoryState, PendingGameCommands, PendingGameUiEvents,
+    GameUiEvent, InventoryState, PendingGameCommands, PendingGameUiEvents,
 };
 use crate::game::shop::{Shopkeeper, StockMode, Stockpile};
-use crate::player::components::{
-    InventoryStack, MaxCarryWeight, MovementCooldown, Player, PlayerId, PlayerIdentity, VitalStats,
-};
+use crate::player::components::{InventoryStack, MaxCarryWeight, Player, PlayerId, PlayerIdentity};
 use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
 use crate::world::map_layout::ObjectProperties;
 use crate::world::object_definitions::OverworldObjectDefinitions;
@@ -469,20 +467,7 @@ pub fn process_trade_commands(
             ),
             With<Player>,
         >,
-        Query<
-            (
-                Entity,
-                &PlayerIdentity,
-                &mut InventoryState,
-                &mut ChatLogState,
-                &mut SpaceResident,
-                &mut TilePosition,
-                &mut MovementCooldown,
-                &mut VitalStats,
-                Option<&CombatTarget>,
-            ),
-            With<Player>,
-        >,
+        PlayerActorQuery,
     )>,
     max_carry_query: Query<&MaxCarryWeight, With<Player>>,
     shopkeeper_query: Query<
@@ -737,20 +722,7 @@ fn handle_offer_trade_item(
     quantity: u32,
     active_trades: &mut ActiveTrades,
     definitions: &OverworldObjectDefinitions,
-    player_inventory_query: &mut Query<
-        (
-            Entity,
-            &PlayerIdentity,
-            &mut InventoryState,
-            &mut ChatLogState,
-            &mut SpaceResident,
-            &mut TilePosition,
-            &mut MovementCooldown,
-            &mut VitalStats,
-            Option<&CombatTarget>,
-        ),
-        With<Player>,
-    >,
+    player_inventory_query: &mut PlayerActorQuery,
 ) {
     let Some(side) = side_for_session_player(active_trades, session_id, acting_player_id) else {
         return;
@@ -871,20 +843,7 @@ fn handle_confirm_trade(
     active_trades: &mut ActiveTrades,
     ui_events: &mut PendingGameUiEvents,
     definitions: &OverworldObjectDefinitions,
-    player_inventory_query: &mut Query<
-        (
-            Entity,
-            &PlayerIdentity,
-            &mut InventoryState,
-            &mut ChatLogState,
-            &mut SpaceResident,
-            &mut TilePosition,
-            &mut MovementCooldown,
-            &mut VitalStats,
-            Option<&CombatTarget>,
-        ),
-        With<Player>,
-    >,
+    player_inventory_query: &mut PlayerActorQuery,
     max_carry_query: &Query<&MaxCarryWeight, With<Player>>,
     stockpile_query: &mut Query<(&OverworldObject, &mut Stockpile)>,
     skill_query: &Query<(&PlayerIdentity, &crate::player::skills::SkillSheet), With<Player>>,
@@ -976,20 +935,7 @@ fn handle_browse_shop_buy(
     quantity: u32,
     active_trades: &mut ActiveTrades,
     _definitions: &OverworldObjectDefinitions,
-    player_inventory_query: &mut Query<
-        (
-            Entity,
-            &PlayerIdentity,
-            &mut InventoryState,
-            &mut ChatLogState,
-            &mut SpaceResident,
-            &mut TilePosition,
-            &mut MovementCooldown,
-            &mut VitalStats,
-            Option<&CombatTarget>,
-        ),
-        With<Player>,
-    >,
+    player_inventory_query: &mut PlayerActorQuery,
     stockpile_query: &Query<(&OverworldObject, &mut Stockpile)>,
 ) {
     if quantity == 0 {
@@ -1096,20 +1042,7 @@ fn commit_player_to_shop_trade(
     player: PlayerId,
     shop_object_id: u64,
     definitions: &OverworldObjectDefinitions,
-    player_inventory_query: &mut Query<
-        (
-            Entity,
-            &PlayerIdentity,
-            &mut InventoryState,
-            &mut ChatLogState,
-            &mut SpaceResident,
-            &mut TilePosition,
-            &mut MovementCooldown,
-            &mut VitalStats,
-            Option<&CombatTarget>,
-        ),
-        With<Player>,
-    >,
+    player_inventory_query: &mut PlayerActorQuery,
     max_carry_query: &Query<&MaxCarryWeight, With<Player>>,
     stockpile_query: &mut Query<(&OverworldObject, &mut Stockpile)>,
     persuasion_ranks: u8,
@@ -1336,20 +1269,7 @@ fn commit_player_to_player_trade(
     player_a: PlayerId,
     player_b: PlayerId,
     definitions: &OverworldObjectDefinitions,
-    player_inventory_query: &mut Query<
-        (
-            Entity,
-            &PlayerIdentity,
-            &mut InventoryState,
-            &mut ChatLogState,
-            &mut SpaceResident,
-            &mut TilePosition,
-            &mut MovementCooldown,
-            &mut VitalStats,
-            Option<&CombatTarget>,
-        ),
-        With<Player>,
-    >,
+    player_inventory_query: &mut PlayerActorQuery,
     max_carry_query: &Query<&MaxCarryWeight, With<Player>>,
 ) -> bool {
     // Resolve player entities.
