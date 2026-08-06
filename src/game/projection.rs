@@ -62,6 +62,21 @@ fn in_interest_radius(local: TilePosition, other: TilePosition) -> bool {
     dx.abs() <= INTEREST_RADIUS && dy.abs() <= INTEREST_RADIUS
 }
 
+/// Push `$event` when the previous and projected values differ.
+///
+/// `$previous` and `$current` are compared with `!=`; when they differ,
+/// `$event` is evaluated and pushed onto `$events`. Whether the pushed value
+/// is cloned, copied, or moved is decided by the `$event` expression at the
+/// call site; `Option` baselines are handled by wrapping `$current` in
+/// `Some(..)` at the call site too.
+macro_rules! diff_emit {
+    ($events:expr, $previous:expr, $current:expr, $event:expr $(,)?) => {
+        if $previous != $current {
+            $events.push($event);
+        }
+    };
+}
+
 pub type ProjectionPlayerQuery<'w, 's> = Query<
     'w,
     's,
@@ -190,6 +205,97 @@ pub fn compute_events_for_peer(
 ) -> Vec<GameEvent> {
     let mut events = Vec::new();
 
+    emit_world_time_events(previous, world_clock, &mut events);
+
+    let (local, deferred_remote_candidates) = emit_player_events(
+        local_player_id,
+        previous,
+        player_query,
+        object_query,
+        &mut events,
+    );
+    emit_remote_player_events(
+        previous,
+        local.space_id,
+        local.tile,
+        deferred_remote_candidates,
+        &mut events,
+    );
+
+    let Some(local_space_id) = local.space_id else {
+        return events;
+    };
+    // `tile` is set in the same branch as `space_id`; if we have one we have
+    // the other. Unwrap here so all the downstream vicinity filters can read
+    // a plain TilePosition.
+    let local_tile = local
+        .tile
+        .expect("LocalPlayerContext::tile should be Some whenever space_id is Some (set together)");
+
+    emit_floor_events(
+        previous,
+        floor_diff_cache,
+        floor_maps,
+        local_space_id,
+        local_tile,
+        &mut events,
+    );
+    emit_space_events(previous, space_manager, local_space_id, &mut events);
+    emit_container_events(
+        previous,
+        container_query,
+        local_space_id,
+        local_tile,
+        &mut events,
+    );
+    emit_world_object_events(
+        local_player_id,
+        previous,
+        world_object_query,
+        local_space_id,
+        local_tile,
+        local.entity,
+        &local.revealed,
+        &mut events,
+    );
+    emit_trade_events(
+        local_player_id,
+        previous,
+        active_trades,
+        stockpile_query,
+        object_definitions,
+        local.persuasion_ranks,
+        &mut events,
+    );
+
+    events
+}
+
+/// Facts about the local player captured while iterating the player query in
+/// [`emit_player_events`], consumed by the downstream per-domain emitters
+/// (vicinity filters, awareness gating, trade pricing).
+struct LocalPlayerContext {
+    space_id: Option<SpaceId>,
+    tile: Option<TilePosition>,
+    entity: Option<Entity>,
+    persuasion_ranks: u8,
+    /// NPC object ids the local player currently has a Perception "read" on
+    /// (from `SenseReveals`); gates the awareness marker in
+    /// [`emit_world_object_events`].
+    revealed: std::collections::HashSet<u64>,
+}
+
+/// A remote player observed during the player loop, deferred so the
+/// same-space + vicinity filter can use the local player's position
+/// regardless of iteration order.
+type RemoteCandidate = (SpaceResident, TilePosition, ClientRemotePlayerState);
+
+/// World-clock domain: emit `WorldTimeChanged` on epsilon move or heartbeat.
+fn emit_world_time_events(
+    previous: &ClientGameState,
+    world_clock: &WorldClock,
+    events: &mut Vec<GameEvent>,
+) {
     // World clock: emit on epsilon move OR heartbeat. Wraparound across the
     // 1.0 → 0.0 seam is handled by the rem_euclid distance below.
     let dt = (world_clock.time_of_day - previous.world_time + 1.0).rem_euclid(1.0);
@@ -202,26 +308,31 @@ pub fn compute_events_for_peer(
             time_of_day: world_clock.time_of_day,
         });
     }
+}
 
-    let mut local_player_object_id: Option<u64> = None;
+/// Player domain: diffs every local-player-facing slice of state (identity,
+/// inventory, chat, position, vitals, buffs/effects, combat, progression,
+/// discovery). Remote players encountered while iterating are deferred and
+/// returned for [`emit_remote_player_events`].
+fn emit_player_events(
+    local_player_id: PlayerId,
+    previous: &ClientGameState,
+    player_query: &ProjectionPlayerQuery,
+    object_query: &ProjectionObjectQuery,
+    events: &mut Vec<GameEvent>,
+) -> (LocalPlayerContext, Vec<RemoteCandidate>) {
     let mut local_space_id: Option<SpaceId> = None;
     let mut local_tile_position: Option<TilePosition> = None;
     let mut local_persuasion_ranks: u8 = 0;
-    let mut seen_remote_player_ids: std::collections::HashSet<PlayerId> =
-        std::collections::HashSet::new();
-    // Remote players are projected after the player loop ends so we know
-    // local_space_id / local_tile_position regardless of iteration order.
-    let mut deferred_remote_candidates: Vec<(
-        SpaceResident,
-        TilePosition,
-        ClientRemotePlayerState,
-    )> = Vec::new();
-
     let mut local_player_entity: Option<Entity> = None;
     // NPC object ids the local player currently has a Perception "read" on,
-    // captured from their `SenseReveals` during the player loop and consumed in
-    // the world-object loop to gate the awareness marker.
+    // captured from their `SenseReveals` during the player loop and consumed
+    // in the world-object loop to gate the awareness marker.
     let mut local_revealed: std::collections::HashSet<u64> = std::collections::HashSet::new();
+    // Remote players are projected after the player loop ends so we know
+    // local_space_id / local_tile_position regardless of iteration order.
+    let mut deferred_remote_candidates: Vec<RemoteCandidate> = Vec::new();
+
     for (
         (player_entity, identity),
         inventory,
@@ -260,7 +371,6 @@ pub fn compute_events_for_peer(
         };
 
         if identity.id == local_player_id {
-            local_player_object_id = Some(player_object.object_id);
             local_player_entity = Some(player_entity);
             local_space_id = Some(space_resident.space_id);
             local_tile_position = Some(*tile_position);
@@ -277,17 +387,23 @@ pub fn compute_events_for_peer(
                 });
             }
 
-            if previous.inventory != *inventory {
-                events.push(GameEvent::InventoryChanged {
+            diff_emit!(
+                events,
+                previous.inventory,
+                *inventory,
+                GameEvent::InventoryChanged {
                     inventory: inventory.clone(),
-                });
-            }
+                },
+            );
 
-            if previous.chat_log_lines != chat_log.lines {
-                events.push(GameEvent::ChatLogChanged {
+            diff_emit!(
+                events,
+                previous.chat_log_lines,
+                chat_log.lines,
+                GameEvent::ChatLogChanged {
                     lines: chat_log.lines.clone(),
-                });
-            }
+                },
+            );
 
             let current_player_position =
                 SpacePosition::new(space_resident.space_id, *tile_position);
@@ -301,17 +417,23 @@ pub fn compute_events_for_peer(
                 });
             }
 
-            if previous.player_vitals != Some(projected_vitals) {
-                events.push(GameEvent::PlayerVitalsChanged {
+            diff_emit!(
+                events,
+                previous.player_vitals,
+                Some(projected_vitals),
+                GameEvent::PlayerVitalsChanged {
                     vitals: projected_vitals,
-                });
-            }
+                },
+            );
 
-            if previous.player_storage_slots != derived_stats.storage_slots {
-                events.push(GameEvent::PlayerStorageChanged {
+            diff_emit!(
+                events,
+                previous.player_storage_slots,
+                derived_stats.storage_slots,
+                GameEvent::PlayerStorageChanged {
                     storage_slots: derived_stats.storage_slots,
-                });
-            }
+                },
+            );
 
             // Carry weight: build a snapshot from the optional components.
             // Falls back to a default if either is missing (first frame
@@ -388,21 +510,30 @@ pub fn compute_events_for_peer(
                 });
             }
 
-            if previous.sneaking != is_sneaking {
-                events.push(GameEvent::PlayerSneakingChanged {
+            diff_emit!(
+                events,
+                previous.sneaking,
+                is_sneaking,
+                GameEvent::PlayerSneakingChanged {
                     sneaking: is_sneaking,
-                });
-            }
+                },
+            );
 
-            if previous.aware != is_aware {
-                events.push(GameEvent::PlayerAwareChanged { aware: is_aware });
-            }
+            diff_emit!(
+                events,
+                previous.aware,
+                is_aware,
+                GameEvent::PlayerAwareChanged { aware: is_aware },
+            );
 
-            if previous.auto_retaliate != is_auto_retaliate {
-                events.push(GameEvent::PlayerAutoRetaliateChanged {
+            diff_emit!(
+                events,
+                previous.auto_retaliate,
+                is_auto_retaliate,
+                GameEvent::PlayerAutoRetaliateChanged {
                     auto_retaliate: is_auto_retaliate,
-                });
-            }
+                },
+            );
 
             // Exertion decays continuously, so diff at whole-point resolution
             // (and an epsilon on the cap) to avoid emitting an event every frame.
@@ -426,11 +557,14 @@ pub fn compute_events_for_peer(
             let current_target_object_id = combat_target
                 .and_then(|combat_target| object_query.get(combat_target.entity).ok())
                 .map(|object| object.object_id);
-            if previous.current_target_object_id != current_target_object_id {
-                events.push(GameEvent::CombatTargetChanged {
+            diff_emit!(
+                events,
+                previous.current_target_object_id,
+                current_target_object_id,
+                GameEvent::CombatTargetChanged {
                     target_object_id: current_target_object_id,
-                });
-            }
+                },
+            );
 
             let projected_experience: Option<ExperienceView> = experience.map(ExperienceView::from);
             if previous.experience != projected_experience {
@@ -447,11 +581,14 @@ pub fn compute_events_for_peer(
             }
 
             let projected_attributes = derived_stats.attributes;
-            if previous.attributes != Some(projected_attributes) {
-                events.push(GameEvent::PlayerAttributesChanged {
+            diff_emit!(
+                events,
+                previous.attributes,
+                Some(projected_attributes),
+                GameEvent::PlayerAttributesChanged {
                     attributes: projected_attributes,
-                });
-            }
+                },
+            );
 
             // Combat stats. Server derives every displayed number so the UI
             // never has to mirror combat math — see CLAUDE.md "EmbeddedClient
@@ -505,21 +642,27 @@ pub fn compute_events_for_peer(
                     has_shield,
                 }
             };
-            if previous.combat_stats != Some(projected_combat_stats) {
-                events.push(GameEvent::PlayerCombatStatsChanged {
+            diff_emit!(
+                events,
+                previous.combat_stats,
+                Some(projected_combat_stats),
+                GameEvent::PlayerCombatStatsChanged {
                     stats: projected_combat_stats,
-                });
-            }
+                },
+            );
 
             // Only the `recipes:known` slice of the stash is replicated.
             // Other stash entries (quest state, future features) stay on
             // the server.
             let projected_recipes = stash.map(|s| s.learned_recipes()).unwrap_or_default();
-            if previous.learned_recipes != projected_recipes {
-                events.push(GameEvent::LearnedRecipesChanged {
+            diff_emit!(
+                events,
+                previous.learned_recipes,
+                projected_recipes,
+                GameEvent::LearnedRecipesChanged {
                     recipes: projected_recipes,
-                });
-            }
+                },
+            );
 
             // Replicate the per-character Log. Whole-state snapshot on any
             // change — fine until log payloads grow large enough that
@@ -527,11 +670,14 @@ pub fn compute_events_for_peer(
             let projected_log = stash
                 .map(crate::log::LogState::from_stash)
                 .unwrap_or_default();
-            if previous.log_state != projected_log {
-                events.push(GameEvent::LogStateChanged {
+            diff_emit!(
+                events,
+                previous.log_state,
+                projected_log,
+                GameEvent::LogStateChanged {
                     state: projected_log,
-                });
-            }
+                },
+            );
 
             // Replicate the skill sheet. Whole-snapshot diff against the
             // previous projection — small payload (10 u8s + a u32) so this
@@ -592,15 +738,43 @@ pub fn compute_events_for_peer(
         }
     }
 
+    (
+        LocalPlayerContext {
+            space_id: local_space_id,
+            tile: local_tile_position,
+            entity: local_player_entity,
+            persuasion_ranks: local_persuasion_ranks,
+            revealed: local_revealed,
+        },
+        deferred_remote_candidates,
+    )
+}
+
+/// Remote-player domain: same-space + vicinity filter over the deferred
+/// candidates, upserting changed entries and removing baseline entries that
+/// fell out of view.
+fn emit_remote_player_events(
+    previous: &ClientGameState,
+    local_space_id: Option<SpaceId>,
+    local_tile_position: Option<TilePosition>,
+    mut deferred_remote_candidates: Vec<RemoteCandidate>,
+    events: &mut Vec<GameEvent>,
+) {
+    let mut seen_remote_player_ids: std::collections::HashSet<PlayerId> =
+        std::collections::HashSet::new();
+
     if let (Some(local_space), Some(local_tile)) = (local_space_id, local_tile_position) {
         for (resident, tile, projected) in deferred_remote_candidates.drain(..) {
             if resident.space_id != local_space || !in_interest_radius(local_tile, tile) {
                 continue;
             }
             seen_remote_player_ids.insert(projected.player_id);
-            if previous.remote_players.get(&projected.player_id) != Some(&projected) {
-                events.push(GameEvent::RemotePlayerUpserted { player: projected });
-            }
+            diff_emit!(
+                events,
+                previous.remote_players.get(&projected.player_id),
+                Some(&projected),
+                GameEvent::RemotePlayerUpserted { player: projected },
+            );
         }
     }
 
@@ -611,18 +785,19 @@ pub fn compute_events_for_peer(
             });
         }
     }
+}
 
-    let Some(local_space_id) = local_space_id else {
-        return events;
-    };
-    // local_tile_position is set in the same branch as local_space_id; if we
-    // have one we have the other. Unwrap here so all the downstream vicinity
-    // filters can read a plain TilePosition.
-    let local_tile = local_tile_position.expect(
-        "local_tile_position should be Some whenever local_space_id is Some (set together)",
-    );
-    let _ = local_player_object_id;
-
+/// Floor domain: full-grid `FloorMapReplaced` at bootstrap / on resize, plus
+/// vicinity-filtered per-tile `FloorTileSet` deltas, memoized through
+/// `floor_diff_cache` on quiet frames.
+fn emit_floor_events(
+    previous: &ClientGameState,
+    floor_diff_cache: &mut FloorDiffCache,
+    floor_maps: &FloorMaps,
+    local_space_id: SpaceId,
+    local_tile: TilePosition,
+    events: &mut Vec<GameEvent>,
+) {
     // The per-tile window diff below is O((2R+1)²) per z-level — ~3.7k tile
     // compares per floor per peer. Its outcome can only change when a grid
     // mutated or this peer's window moved, so skip it on quiet frames. The
@@ -699,7 +874,16 @@ pub fn compute_events_for_peer(
             }
         }
     }
+}
 
+/// Space domain: `CurrentSpaceChanged` when the local player's space (or its
+/// metadata) differs from the baseline.
+fn emit_space_events(
+    previous: &ClientGameState,
+    space_manager: &SpaceManager,
+    local_space_id: SpaceId,
+    events: &mut Vec<GameEvent>,
+) {
     if let Some(runtime_space) = space_manager.get(local_space_id) {
         let current_space = ClientSpaceState {
             space_id: runtime_space.id,
@@ -709,13 +893,26 @@ pub fn compute_events_for_peer(
             fill_floor_type: runtime_space.fill_floor_type.clone(),
             lighting: runtime_space.lighting.clone(),
         };
-        if previous.current_space.as_ref() != Some(&current_space) {
-            events.push(GameEvent::CurrentSpaceChanged {
+        diff_emit!(
+            events,
+            previous.current_space.as_ref(),
+            Some(&current_space),
+            GameEvent::CurrentSpaceChanged {
                 space: current_space,
-            });
-        }
+            },
+        );
     }
+}
 
+/// Container domain: upserts changed in-range container slot lists and
+/// removes baseline entries that fell out of view.
+fn emit_container_events(
+    previous: &ClientGameState,
+    container_query: &ProjectionContainerQuery,
+    local_space_id: SpaceId,
+    local_tile: TilePosition,
+    events: &mut Vec<GameEvent>,
+) {
     let mut current_container_ids = std::collections::HashSet::new();
     for (container, object, resident, tile_position) in container_query.iter() {
         if resident.space_id != local_space_id {
@@ -726,12 +923,15 @@ pub fn compute_events_for_peer(
         }
         current_container_ids.insert(object.object_id);
         let current_slots = &container.slots;
-        if previous.container_slots.get(&object.object_id) != Some(current_slots) {
-            events.push(GameEvent::ContainerChanged {
+        diff_emit!(
+            events,
+            previous.container_slots.get(&object.object_id),
+            Some(current_slots),
+            GameEvent::ContainerChanged {
                 object_id: object.object_id,
                 slots: current_slots.clone(),
-            });
-        }
+            },
+        );
     }
 
     for stale_object_id in previous.container_slots.keys() {
@@ -741,7 +941,22 @@ pub fn compute_events_for_peer(
             });
         }
     }
+}
 
+/// World-object domain: upserts changed in-range world objects (with the
+/// hidden-object and awareness gating) and removes baseline entries that
+/// fell out of view.
+#[allow(clippy::too_many_arguments)]
+fn emit_world_object_events(
+    local_player_id: PlayerId,
+    previous: &ClientGameState,
+    world_object_query: &ProjectionWorldObjectQuery,
+    local_space_id: SpaceId,
+    local_tile: TilePosition,
+    local_player_entity: Option<Entity>,
+    local_revealed: &std::collections::HashSet<u64>,
+    events: &mut Vec<GameEvent>,
+) {
     let mut current_world_object_ids = std::collections::HashSet::new();
     for (
         space_resident,
@@ -889,7 +1104,20 @@ pub fn compute_events_for_peer(
             });
         }
     }
+}
 
+/// Trade domain: projects the local player's active trade session (partner
+/// name, shop wares with persuasion-adjusted prices) and diffs it against
+/// the baseline.
+fn emit_trade_events(
+    local_player_id: PlayerId,
+    previous: &ClientGameState,
+    active_trades: &ActiveTrades,
+    stockpile_query: &ProjectionStockpileQuery,
+    object_definitions: &OverworldObjectDefinitions,
+    local_persuasion_ranks: u8,
+    events: &mut Vec<GameEvent>,
+) {
     // Trade projection: find the local player's active trade (if any) and
     // diff its `ClientTradeView` against the previous baseline. Partner name
     // is built from the partner's PlayerId / NPC display name; for shop
@@ -966,13 +1194,14 @@ pub fn compute_events_for_peer(
                     }
                 })
             });
-    if previous.current_trade != projected_trade {
-        events.push(GameEvent::TradeStateChanged {
+    diff_emit!(
+        events,
+        previous.current_trade,
+        projected_trade,
+        GameEvent::TradeStateChanged {
             state: projected_trade,
-        });
-    }
-
-    events
+        },
+    );
 }
 
 /// Embedded-mode wrapper: picks the local player's id from the single
