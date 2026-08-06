@@ -30,6 +30,7 @@ const CLIENT_SUBDIR: &str = "client";
 const ACCOUNTS_DB_FILE: &str = "accounts.db";
 const WORLD_SNAPSHOT_REL: &str = "saves/world-state.json";
 const CLIENT_ASSETS_SUBDIR: &str = "assets";
+#[cfg(unix)]
 const ADMIN_SOCKET_FILE: &str = "admin.sock";
 const QUICKBAR_SUBDIR: &str = "quickbar";
 const UI_STATE_SUBDIR: &str = "ui_state";
@@ -104,6 +105,7 @@ pub fn data_root_dir() -> PathBuf {
 
 /// Default location of the admin REPL UNIX socket for `role`. Returns
 /// `None` for `TcpClient` because that role doesn't host an admin REPL.
+#[cfg(unix)]
 pub fn default_admin_socket_path(runtime: AppRuntime) -> Option<PathBuf> {
     let role_dir = match runtime {
         AppRuntime::EmbeddedClient => data_root().join(EMBEDDED_SUBDIR),

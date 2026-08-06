@@ -16,6 +16,8 @@ cargo check                                     # Always run after changes befor
 cargo test                                      # Run tests
 cargo fmt                                       # Format code
 cargo clippy                                    # Lint (fix warnings before merging)
+packaging/build-appimage.sh                     # Linux AppImage (run inside nix-shell)
+packaging/build-windows.sh                      # Windows x86_64 zip via mingw cross-compile (run inside nix-shell)
 ```
 
 ## Architecture

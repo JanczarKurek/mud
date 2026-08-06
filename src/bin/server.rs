@@ -22,10 +22,12 @@ use mud2::app::cli::{server_into_plugin, ServerCli};
 /// react to SIGINT.
 static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
 
+#[cfg(unix)]
 extern "C" fn sigint_handler(_: libc::c_int) {
     SHUTDOWN_REQUESTED.store(true, Ordering::Relaxed);
 }
 
+#[cfg(unix)]
 fn install_shutdown_signal_handler() {
     // SAFETY: `sigint_handler` is async-signal-safe — it only performs a
     // relaxed atomic store on a static. Make sure SIGINT/SIGTERM aren't
@@ -42,6 +44,15 @@ fn install_shutdown_signal_handler() {
             libc::signal(signum, sigint_handler as *const () as libc::sighandler_t);
         }
     }
+}
+
+#[cfg(not(unix))]
+fn install_shutdown_signal_handler() {
+    // Headless server on Windows is out of scope — only the mud2 client bin is
+    // packaged there (packaging/build-windows.sh). Ctrl-C falls through to the
+    // default console behavior (immediate termination, no graceful autosave).
+    // If a Windows server ever matters, install SetConsoleCtrlHandler
+    // (windows-sys) to set SHUTDOWN_REQUESTED instead.
 }
 
 fn exit_on_signal_flag(mut app_exit: MessageWriter<AppExit>) {

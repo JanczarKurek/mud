@@ -36,6 +36,14 @@
       };
     };
 
+    # Windows cross toolchain for packaging/build-windows.sh.
+    # pkgsCross.mingwW64 = x86_64-w64-mingw32 (gcc 14.x, posix thread model —
+    # hence the winpthreads lib below). First `nix-shell` after adding this
+    # pulls a sizable closure and may compile gcc if the channel snapshot
+    # isn't hydra-cached; subsequent entries are instant.
+    mingwCC = pkgs.pkgsCross.mingwW64.stdenv.cc;
+    winPthreads = pkgs.pkgsCross.mingwW64.windows.pthreads;
+
     # FHS sandbox for producing portable (non-Nix) Linux binaries. Inside this
     # env, /lib64/ld-linux-x86-64.so.2 exists and pkg-config / linkers resolve
     # libs at FHS paths instead of /nix/store. Combined with the RUSTFLAGS
@@ -115,6 +123,33 @@ in
       pkgs.patchelf
       pkgs.rsync
     ];
+    # nativeBuildInputs (NOT buildInputs) for the mingw cross compiler: the
+    # cc-wrapper setup hook exports plain $CC for host-role compilers, which
+    # would hijack cc-rs for native builds of libsqlite3-sys/ring/etc. In the
+    # build role it only exports the harmless CC_FOR_BUILD. All binaries are
+    # prefixed x86_64-w64-mingw32-* so no PATH shadowing either way.
+    nativeBuildInputs = [
+      mingwCC
+      mingwCC.bintools # x86_64-w64-mingw32-objdump/ar for the DLL-import scan
+      pkgs.zip         # packaging/build-windows.sh
+    ];
+
+    # Windows cross-compile knobs, target-scoped so host builds are untouched.
+    # Kept here (absolute store paths) rather than .cargo/config.toml — and
+    # note CARGO_TARGET_*_RUSTFLAGS env would fully OVERRIDE any config-file
+    # rustflags for the target, so keep all windows rustflags in this one spot.
+    CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER = "${mingwCC}/bin/x86_64-w64-mingw32-gcc";
+    CC_x86_64_pc_windows_gnu = "${mingwCC}/bin/x86_64-w64-mingw32-gcc";
+    CXX_x86_64_pc_windows_gnu = "${mingwCC}/bin/x86_64-w64-mingw32-g++";
+    AR_x86_64_pc_windows_gnu = "${mingwCC.bintools}/bin/x86_64-w64-mingw32-ar";
+    # -L winpthreads: gcc's posix thread model needs it at link time.
+    # -static-libgcc: drops the libgcc_s_seh-1.dll runtime dependency.
+    CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS =
+      "-L native=${winPthreads}/lib -C link-arg=-static-libgcc";
+    # Where build-windows.sh copies mingw runtime DLLs from if the exe still
+    # imports any (libwinpthread-1.dll et al).
+    MUD2_MINGW_DLL_DIR = "${winPthreads}/bin";
+
     RUSTC_VERSION = overrides.toolchain.channel;
     # https://github.com/rust-lang/rust-bindgen#environment-variables
     LIBCLANG_PATH = pkgs.lib.makeLibraryPath [ pkgs.llvmPackages_latest.libclang.lib ];
@@ -122,10 +157,13 @@ in
       export PATH=$PATH:''${CARGO_HOME:-~/.cargo}/bin
       export PATH=$PATH:''${RUSTUP_HOME:-~/.rustup}/toolchains/$RUSTC_VERSION-x86_64-unknown-linux-gnu/bin/
       '';
-    # Add precompiled library to rustc search path
-    RUSTFLAGS = (builtins.map (a: ''-L ${a}/lib'') [
-      # add libraries here (e.g. pkgs.libvmi)
-    ]);
+    # NOTE: do NOT set a RUSTFLAGS env var here, even an empty one. Cargo
+    # treats a set-but-empty $RUSTFLAGS as authoritative and then SKIPS every
+    # target-scoped rustflags source (.cargo/config.toml [target.*] rustflags
+    # AND the CARGO_TARGET_*_RUSTFLAGS vars above). The template's empty
+    # `RUSTFLAGS = []` silently disabled mold on host builds and broke the
+    # Windows cross link. Add per-target flags via CARGO_TARGET_*_RUSTFLAGS
+    # or .cargo/config.toml instead.
     PKG_CONFIG_PATH = lib.makeSearchPath ''lib/pkgconfig'' [
       pkgs.systemd.dev
       pkgs.alsa-lib.dev

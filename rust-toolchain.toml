@@ -1,2 +1,5 @@
 [toolchain]
 channel = "stable"
+# Windows cross-compilation target for packaging/build-windows.sh. rustup
+# auto-installs the std for it on the next cargo invocation.
+targets = ["x86_64-pc-windows-gnu"]

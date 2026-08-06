@@ -22,6 +22,7 @@ use std::path::PathBuf;
 use clap::{Args, Parser};
 
 use crate::app::clean_cache::Command;
+#[cfg(unix)]
 use crate::app::paths::default_admin_socket_path;
 use crate::app::plugin::{AppRuntime, ClientTlsArgs, GameAppPlugin, ServerTlsArgs};
 
