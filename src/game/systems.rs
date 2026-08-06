@@ -375,17 +375,25 @@ pub fn process_game_commands(
             continue;
         }
 
+        // Space + collider snapshot shared by the movement/item arms below.
+        // Computed up front because ParamSet only lends one query at a time,
+        // which otherwise forces every arm to repeat the same two statements.
+        let source_space_id = player_space_id(player_entity, &player_queries.p1());
+        let collider_positions = source_space_id
+            .map(|space_id| colliders_in_space(space_id, &player_queries.p0()))
+            .unwrap_or_default();
+
         match queued_command.command {
             GameCommand::MovePlayer { delta, climb } => {
-                let Some(source_space_id) = player_space_id(player_entity, &player_queries.p1())
-                else {
+                if source_space_id.is_none() {
                     continue;
+                }
+                let flags = MovementFlags {
+                    encumbered: command_outputs.player_encumbered.get(player_entity).is_ok(),
+                    noclip: command_outputs.player_noclip.get(player_entity).is_ok(),
+                    sneaking: command_outputs.player_sneaking.get(player_entity).is_ok(),
+                    aware: command_outputs.player_aware.get(player_entity).is_ok(),
                 };
-                let collider_positions = colliders_in_space(source_space_id, &player_queries.p0());
-                let encumbered = command_outputs.player_encumbered.get(player_entity).is_ok();
-                let noclip = command_outputs.player_noclip.get(player_entity).is_ok();
-                let sneaking = command_outputs.player_sneaking.get(player_entity).is_ok();
-                let aware = command_outputs.player_aware.get(player_entity).is_ok();
                 handle_move_player(
                     player_entity,
                     delta,
@@ -402,10 +410,7 @@ pub fn process_game_commands(
                     &object_registry,
                     &mut space_authority.space_manager,
                     &mut space_authority.floor_maps,
-                    encumbered,
-                    noclip,
-                    sneaking,
-                    aware,
+                    flags,
                     &mut commands,
                     &mut command_outputs.pending_steps,
                     &mut command_outputs.pending_noise,
@@ -413,11 +418,9 @@ pub fn process_game_commands(
                 );
             }
             GameCommand::JumpTo { target_tile } => {
-                let Some(source_space_id) = player_space_id(player_entity, &player_queries.p1())
-                else {
+                if source_space_id.is_none() {
                     continue;
-                };
-                let collider_positions = colliders_in_space(source_space_id, &player_queries.p0());
+                }
                 handle_jump_to(
                     player_entity,
                     target_tile,
@@ -435,8 +438,7 @@ pub fn process_game_commands(
                 );
             }
             GameCommand::SetCombatTarget { target_object_id } => {
-                let Some(source_space_id) = player_space_id(player_entity, &player_queries.p1())
-                else {
+                let Some(source_space_id) = source_space_id else {
                     continue;
                 };
                 let target_entity = target_object_id.and_then(|object_id| {
@@ -616,11 +618,9 @@ pub fn process_game_commands(
                 source,
                 destination,
             } => {
-                let Some(source_space_id) = player_space_id(player_entity, &player_queries.p1())
-                else {
+                if source_space_id.is_none() {
                     continue;
-                };
-                let collider_positions = colliders_in_space(source_space_id, &player_queries.p0());
+                }
                 handle_move_item(
                     player_entity,
                     source,
@@ -650,11 +650,9 @@ pub fn process_game_commands(
                 amount,
                 destination,
             } => {
-                let Some(source_space_id) = player_space_id(player_entity, &player_queries.p1())
-                else {
+                if source_space_id.is_none() {
                     continue;
-                };
-                let collider_positions = colliders_in_space(source_space_id, &player_queries.p0());
+                }
                 handle_take_from_stack(
                     player_entity,
                     source,
@@ -681,11 +679,9 @@ pub fn process_game_commands(
                 type_id,
                 tile_position,
             } => {
-                let Some(source_space_id) = player_space_id(player_entity, &player_queries.p1())
-                else {
+                if source_space_id.is_none() {
                     continue;
-                };
-                let collider_positions = colliders_in_space(source_space_id, &player_queries.p0());
+                }
                 handle_admin_spawn(
                     player_entity,
                     &type_id,
@@ -730,139 +726,35 @@ pub fn process_game_commands(
             GameCommand::AdminSetVitals { health, mana } => {
                 handle_admin_set_vitals(player_entity, health, mana, &mut player_queries.p2());
             }
-            GameCommand::AdminSetObjectState { .. } => {
-                // Drained by `process_interact_commands` in `CommandIntercept`.
-                bevy::log::warn!(
-                    "process_game_commands saw AdminSetObjectState — check system ordering"
-                );
-            }
             // Drained earlier by `handle_set_home_commands` (player plugin,
             // CommandIntercept set). If we reach this arm, no player matched
             // the queued command so silently drop it.
             GameCommand::SetHome => {}
             GameCommand::SetSneaking { sneaking } => {
-                if sneaking {
-                    commands
-                        .entity(player_entity)
-                        .insert(crate::player::components::Sneaking);
-                } else {
-                    commands
-                        .entity(player_entity)
-                        .remove::<crate::player::components::Sneaking>();
-                }
+                toggle_marker::<crate::player::components::Sneaking>(
+                    &mut commands,
+                    player_entity,
+                    sneaking,
+                );
             }
             GameCommand::SetAware { aware } => {
-                if aware {
-                    commands
-                        .entity(player_entity)
-                        .insert(crate::player::components::Aware);
-                } else {
-                    commands
-                        .entity(player_entity)
-                        .remove::<crate::player::components::Aware>();
-                }
+                toggle_marker::<crate::player::components::Aware>(
+                    &mut commands,
+                    player_entity,
+                    aware,
+                );
             }
             GameCommand::SetAutoRetaliate { auto_retaliate } => {
-                if auto_retaliate {
-                    commands
-                        .entity(player_entity)
-                        .insert(crate::player::components::AutoRetaliate);
-                } else {
-                    commands
-                        .entity(player_entity)
-                        .remove::<crate::player::components::AutoRetaliate>();
-                }
+                toggle_marker::<crate::player::components::AutoRetaliate>(
+                    &mut commands,
+                    player_entity,
+                    auto_retaliate,
+                );
             }
             // Drained earlier by `process_acknowledge_death_commands` (player
             // plugin, CommandIntercept set). Reaching this arm means no
             // awaiting-respawn player matched, so silently drop it.
             GameCommand::AcknowledgeDeath => {}
-            GameCommand::EditorSetFloorTile { .. } => {
-                // Drained by `process_floor_commands` in `CommandIntercept` before this system runs.
-                bevy::log::warn!(
-                    "process_game_commands saw EditorSetFloorTile — check system ordering"
-                );
-            }
-            GameCommand::TalkToNpc { .. }
-            | GameCommand::DialogAdvance { .. }
-            | GameCommand::DialogChoose { .. }
-            | GameCommand::DialogEnd { .. } => {
-                // Dialog commands are drained by `process_dialog_commands`
-                // before this system runs. If one slips through here it
-                // means the scheduler ran us out of order.
-                bevy::log::warn!(
-                    "process_game_commands saw a dialog command — check system ordering"
-                );
-            }
-            GameCommand::RotateObject { .. } => {
-                // Rotate commands are drained by `process_rotate_commands`
-                // in `CommandIntercept` before this system runs.
-                bevy::log::warn!(
-                    "process_game_commands saw a rotate command — check system ordering"
-                );
-            }
-            GameCommand::InteractWithObject { .. } | GameCommand::ApplyToolInteraction { .. } => {
-                // Drained by `process_interact_commands` in `CommandIntercept`.
-                bevy::log::warn!(
-                    "process_game_commands saw an interact command — check system ordering"
-                );
-            }
-            GameCommand::HideObject { .. } => {
-                // Drained by `process_hide_commands` in `CommandIntercept`.
-                bevy::log::warn!(
-                    "process_game_commands saw a hide command — check system ordering"
-                );
-            }
-            GameCommand::InitiateTrade { .. }
-            | GameCommand::OfferTradeItem { .. }
-            | GameCommand::WithdrawTradeItem { .. }
-            | GameCommand::ToggleTradeReady { .. }
-            | GameCommand::ConfirmTrade { .. }
-            | GameCommand::CancelTrade { .. }
-            | GameCommand::BrowseShopBuy { .. } => {
-                // Drained by `process_trade_commands` in `CommandIntercept`
-                // before this system runs.
-                bevy::log::warn!(
-                    "process_game_commands saw a trade command — check system ordering"
-                );
-            }
-            GameCommand::StashMutate { .. }
-            | GameCommand::LearnRecipe { .. }
-            | GameCommand::CraftItem { .. } => {
-                // Drained by crafting systems (CraftingServerPlugin) in
-                // `CommandIntercept` before this system runs.
-                bevy::log::warn!(
-                    "process_game_commands saw a crafting command — check system ordering"
-                );
-            }
-            GameCommand::Say { .. } => {
-                // Drained by `process_say_commands` in `CommandIntercept`
-                // before this system runs.
-                bevy::log::warn!(
-                    "process_game_commands saw a chat command — check system ordering"
-                );
-            }
-            GameCommand::UpsertLogEntry { .. }
-            | GameCommand::DeleteLogEntry { .. }
-            | GameCommand::SetQuestPlayerNotes { .. } => {
-                // Drained by `process_log_commands` (LogServerPlugin) in
-                // `CommandIntercept` before this system runs.
-                bevy::log::warn!("process_game_commands saw a log command — check system ordering");
-            }
-            GameCommand::AllocateSkillPoint { .. } => {
-                // Drained by `process_allocate_skill_commands` (PlayerServerPlugin)
-                // in `CommandIntercept` before this system runs.
-                bevy::log::warn!(
-                    "process_game_commands saw an allocate-skill command — check system ordering"
-                );
-            }
-            GameCommand::AllocateAbilityBump { .. } => {
-                // Drained by `process_allocate_ability_bump_commands`
-                // (PlayerServerPlugin) in `CommandIntercept` before this runs.
-                bevy::log::warn!(
-                    "process_game_commands saw an allocate-ability-bump command — check ordering"
-                );
-            }
             GameCommand::ReadBook { source } => {
                 handle_read_book(
                     player_entity,
@@ -907,28 +799,27 @@ pub fn process_game_commands(
                     FloorGeometry::server(&space_authority.floor_maps, &space_authority.floor_defs),
                 );
             }
-            GameCommand::AdminGrantXp { .. }
-            | GameCommand::AdminSetLevel { .. }
-            | GameCommand::AdminGrantSkillPoints { .. }
-            | GameCommand::AdminSetSkillRank { .. }
-            | GameCommand::AdminSetAttribute { .. }
-            | GameCommand::AdminSetClass { .. }
-            | GameCommand::AdminFullHeal => {
-                // Drained by `process_admin_progression_commands`
-                // (PlayerServerPlugin) in `CommandIntercept` before this
-                // system runs.
-                bevy::log::warn!(
-                    "process_game_commands saw an admin-progression command — check system ordering"
-                );
-            }
-            GameCommand::AdminToggleGodMode | GameCommand::AdminToggleNoclip => {
-                // Drained by `process_admin_toggle_commands` (PlayerServerPlugin)
-                // in `CommandIntercept` before this system runs.
-                bevy::log::warn!(
-                    "process_game_commands saw an admin-toggle command — check system ordering"
-                );
+            // Every remaining variant is drained by a dedicated system in the
+            // `CommandIntercept` set before this dispatcher runs (dialog,
+            // trade, crafting, chat, log, rotate, interact, hide, floor/editor
+            // and admin-progression commands). Reaching this arm means the
+            // scheduler ran us out of order.
+            other => {
+                let debug = format!("{other:?}");
+                let variant = debug.split([' ', '{', '(']).next().unwrap_or("?");
+                bevy::log::warn!("process_game_commands saw {variant} — check system ordering");
             }
         }
+    }
+}
+
+/// Insert or remove a zero-sized marker component according to `on`. Serves
+/// the Set{Sneaking,Aware,AutoRetaliate} command arms.
+fn toggle_marker<T: Component + Default>(commands: &mut Commands, entity: Entity, on: bool) {
+    if on {
+        commands.entity(entity).insert(T::default());
+    } else {
+        commands.entity(entity).remove::<T>();
     }
 }
 
@@ -1086,6 +977,16 @@ fn handle_take_item(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Marker-derived movement state read once in the dispatcher and passed down
+/// as data instead of four positional bools.
+#[derive(Clone, Copy, Debug)]
+struct MovementFlags {
+    encumbered: bool,
+    noclip: bool,
+    sneaking: bool,
+    aware: bool,
+}
+
 fn handle_move_player(
     player_entity: Entity,
     delta: MoveDelta,
@@ -1108,15 +1009,18 @@ fn handle_move_player(
     object_registry: &ObjectRegistry,
     space_manager: &mut SpaceManager,
     floor_maps: &mut FloorMaps,
-    encumbered: bool,
-    noclip: bool,
-    sneaking: bool,
-    aware: bool,
+    flags: MovementFlags,
     commands: &mut Commands,
     pending_steps: &mut crate::world::step_triggers::PendingStepEvents,
     pending_noise: &mut crate::world::noise::PendingNoiseEvents,
     pending_damage: &mut PendingDamageEvents,
 ) {
+    let MovementFlags {
+        encumbered,
+        noclip,
+        sneaking,
+        aware,
+    } = flags;
     let Ok((
         _,
         _,
