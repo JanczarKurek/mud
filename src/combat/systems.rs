@@ -210,23 +210,24 @@ pub fn resolve_battle_turn(
         Query<&mut Inventory, With<Player>>,
         Query<&mut SpellcastingProfile>,
         Query<&mut crate::player::components::Exertion, With<Player>>,
-        // p5: a player's class (BAB track, Weapon Focus, Backstab) and live
-        // sneak flag. p0 is already at the max query tuple arity, so this
-        // rides the ParamSet and is pre-collected into a map before the p0
-        // snapshot loop.
-        Query<(Entity, &Class, Has<crate::player::components::Sneaking>)>,
     )>,
     definitions: Res<OverworldObjectDefinitions>,
     object_registry: Res<ObjectRegistry>,
     spell_definitions: Res<SpellDefinitions>,
-    // Separate from the p0 ParamSet on purpose: `Companion` is touched by no
-    // other combat query, so a disjoint read avoids both a tuple-arity overflow
-    // on p0 and any aliasing conflict. Bundled with the AiState read (backstab
-    // awareness check — its writer `update_roaming_npcs` is ordered before
-    // this system) as a tuple so the system stays under Bevy's 16-param cap.
-    npc_reads: (
+    // Separate from the p0 ParamSet on purpose: these components are touched by
+    // no other combat query, so disjoint read-only access avoids both a
+    // tuple-arity overflow on p0 and any aliasing conflict. Tupled so the
+    // system stays under Bevy's 16-param cap.
+    // `.0`: Companion (kill credit for player-owned summons).
+    // `.1`: AiState (backstab awareness check — its writer
+    //       `update_roaming_npcs` is ordered before this system).
+    // `.2`: a player's class (BAB track, Weapon Focus, Backstab) and live
+    //       sneak flag; p0 is already at the max query tuple arity, so this
+    //       is pre-collected into a map before the p0 snapshot loop.
+    aux_reads: (
         Query<&Companion>,
         Query<&crate::npc::components::AiState, With<crate::npc::components::Npc>>,
+        Query<(Entity, &Class, Has<crate::player::components::Sneaking>)>,
     ),
     collider_query: Query<
         (&SpaceResident, &TilePosition, Option<&OverworldObject>),
@@ -236,7 +237,7 @@ pub fn resolve_battle_turn(
     floor_defs: Option<Res<crate::world::floor_definitions::FloorTilesetDefinitions>>,
     mut chat_log_query: Query<&mut ChatLog, With<Player>>,
     mut ui_events: ResMut<PendingGameUiEvents>,
-    // Tupled for the same reason as `npc_reads`: this system is at Bevy's
+    // Tupled for the same reason as `aux_reads`: this system is at Bevy's
     // 16-system-param cap, and NPC summons need their own deferred queue.
     mut pending_writes: (
         ResMut<PendingDamageEvents>,
@@ -271,10 +272,9 @@ pub fn resolve_battle_turn(
     );
 
     // Pre-collect each player's class, BAB track, and sneak flag keyed by
-    // entity. ParamSet access is exclusive, so this must finish before we
-    // borrow p0 for the snapshot loop.
-    let player_tracks: HashMap<Entity, (Class, BabTrack, bool)> = combat_queries
-        .p5()
+    // entity, so the p0 snapshot loop below can look them up per combatant.
+    let player_tracks: HashMap<Entity, (Class, BabTrack, bool)> = aux_reads
+        .2
         .iter()
         .map(|(entity, class, sneaking)| (entity, (*class, class_data(*class).bab_track, sneaking)))
         .collect();
@@ -305,7 +305,7 @@ pub fn resolve_battle_turn(
                     .unwrap_or_else(DamageExpr::melee_default);
                 let is_player = player_identity.is_some();
                 let player_id = player_identity.map(|identity| identity.id.0);
-                let owner_player = npc_reads
+                let owner_player = aux_reads
                     .0
                     .get(entity)
                     .ok()
@@ -600,121 +600,28 @@ pub fn resolve_battle_turn(
                 .remove::<crate::player::components::Sneaking>();
         }
 
-        // Stage 1: to-hit roll vs dodge DC. Misses spend ammo and play the
-        // projectile but deal no damage. A natural 20 always hits and a natural
-        // 1 always misses regardless of modifiers (`progression.md` §7.1), so
-        // even lopsided matchups keep a 5% hit/whiff floor.
-        let (d20, attack_total) = attack_roll_total(attacker, target, attacker.object_id);
-        let dc = dodge_dc(target);
-        let hit = d20 == 20 || (d20 != 1 && attack_total >= dc);
-        if !hit {
-            ui_events.push_broadcast(GameUiEvent::AttackDodged {
-                attacker_object_id: attacker.object_id,
-                target_object_id: target.object_id,
-            });
-            broadcast_chat_line(
-                &mut chat_log_query,
-                format!("[{} dodges {}'s attack]", target.name, attacker.name),
-            );
+        // Stage 1: to-hit roll.
+        let Some(d20) = roll_to_hit(attacker, target, &mut ui_events, &mut chat_log_query) else {
             continue;
-        }
+        };
 
-        // Stage 2: roll weapon damage. Level is passed for expressions with a
-        // `level` term. A raw d20 at or above the attacker's crit threshold
-        // upgrades the landed hit to a critical: the damage expression is
-        // rolled TWICE (3.5e-style, distinct salt so same-nanosecond rolls
-        // stay independent) and summed, before block/armor. Enchant
-        // `BonusDamage` riders are not doubled.
-        let crit = d20 >= attacker.crit_threshold;
-        let mut damage = attacker
-            .damage_expr
-            .roll(&attacker.attributes, attacker.level as i32)
-            .max(1);
-        if crit {
-            damage += attacker
-                .damage_expr
-                .roll_salted(
-                    &attacker.attributes,
-                    attacker.level as i32,
-                    attacker.object_id.wrapping_add(0xC417_C417),
-                )
-                .max(1);
-        }
+        // Stage 2: roll weapon damage.
+        let (mut damage, crit) = roll_weapon_damage(attacker, d20);
 
-        // Backstab (`progression.md` §3.4): a sneaking player striking an NPC
-        // that is UNAWARE of them (not targeting, pursuing, engaging, or
-        // fleeing from the attacker — Alert/searching still counts as
-        // unaware). Vagabonds add their scaling class dice; anyone else gets
-        // a small flat opener bonus. Applied once (never doubled by crit) and
-        // still subject to block/armor below.
-        let backstab = attacker.is_player
-            && attacker.sneaking
-            && !target.is_player
-            && !crate::npc::detection::npc_aware_of(
-                npc_reads.1.get(target_entity).ok(),
-                target.target,
-                attacker.entity,
-            );
-        if backstab {
-            let bonus = match attacker.class {
-                Some(Class::Vagabond) => {
-                    let dice = crate::combat::formulas::backstab_dice(attacker.level);
-                    let mut total = 0i32;
-                    for i in 0..dice {
-                        total += crate::combat::damage_expr::roll_die(
-                            6,
-                            attacker.object_id.wrapping_add(0x00BA_C5AB + i as u64),
-                        );
-                    }
-                    total
-                }
-                _ => crate::combat::formulas::BACKSTAB_FLAT_BONUS,
-            };
-            damage += bonus.max(0);
-            broadcast_chat_line(
-                &mut chat_log_query,
-                format!(
-                    "[{} strikes {} from the shadows: +{bonus} backstab damage]",
-                    attacker.name, target.name
-                ),
-            );
-        }
+        // Backstab opener bonus (never doubled by crit).
+        damage += apply_backstab(attacker, target, &aux_reads.1, &mut chat_log_query);
 
-        // Stage 3: block roll (only if defender wields a shield). Chance is
-        // shield's `block_chance` + AGI_mod * 2, clamped to [0, 95] so a hit
-        // is never fully unstoppable. On a successful block the FULL `block`
-        // value is removed (deterministic) — the old uniform 0..block roll made
-        // a wooden shield worth <0.5 dmg/hit, a defensive system that did
-        // nothing. The randomness now lives solely in the chance gate.
-        if target.has_shield {
-            let chance_pct = crate::combat::formulas::effective_block_chance_pct(
-                target.block_chance_pct,
-                target.attributes.agility,
-            );
-            let chance = chance_pct as f32 / 100.0;
-            // Salt with target object id so attacker/defender pairs roll
-            // independently from on-hit effect rolls.
-            if roll_chance(chance, target.object_id.wrapping_add(0xB10C_B10C)) {
-                let block_amount = target.block.max(0);
-                damage = (damage - block_amount).max(1);
-                ui_events.push_broadcast(GameUiEvent::AttackBlocked {
-                    attacker_object_id: attacker.object_id,
-                    target_object_id: target.object_id,
-                    amount: block_amount,
-                });
-                broadcast_chat_line(
-                    &mut chat_log_query,
-                    format!("[{} blocks {block_amount} damage]", target.name),
-                );
-            }
-        }
+        // Stage 3: block roll.
+        damage = roll_block(
+            attacker,
+            target,
+            damage,
+            &mut ui_events,
+            &mut chat_log_query,
+        );
 
-        // Stage 4: armor mitigation — deterministic FULL `armor` value, floored
-        // so a hit always lands at least 1. The item card now means what it
-        // says (`armor: 4` blocks 4); armor values on items/creatures are tuned
-        // for full-value subtraction (roughly half the old numbers).
-        let armor_reduction = target.armor.max(0);
-        let damage = (damage - armor_reduction).max(1);
+        // Stage 4: armor mitigation.
+        let damage = apply_armor_mitigation(target, damage);
 
         let mut target_query = combat_queries.p1();
         let Ok((target_vitals, mut target_magic)) = target_query.get_mut(target_entity) else {
@@ -748,47 +655,15 @@ pub fn resolve_battle_turn(
             vfx_override,
         });
 
-        // Modifier-driven bonus elemental damage. Each `BonusDamage`
-        // enchantment on the attacker's equipped weapon lands as its own
-        // `DamageEvent` so the element shows its own number and hit VFX
-        // (`vfx_override: None` falls back to `damage_type.default_hit_vfx_id`).
-        for (i, m) in attacker.weapon_modifiers.iter().enumerate() {
-            let ModifierEffect::BonusDamage {
-                dice,
-                bonus,
-                damage_type,
-            } = &m.effect
-            else {
-                continue;
-            };
-            let salt = attacker.object_id.wrapping_add(0x00B0_0000 + i as u64);
-            let extra = roll_bonus_damage(*dice, *bonus, salt).max(0);
-            if extra == 0 {
-                continue;
-            }
-            pending_damage.push(DamageEvent {
-                target: target_entity,
-                amount: extra as f32,
-                source: damage_source,
-                damage_type: *damage_type,
-                vfx_override: None,
-            });
-            broadcast_chat_line(
-                &mut chat_log_query,
-                format!(
-                    "[{}'s {} sears {} for {extra} {} damage]",
-                    attacker.name,
-                    enchantment_label(m),
-                    target.name,
-                    damage_type.display_name()
-                ),
-            );
-            if matches!(m.duration, ModifierDuration::Charges { .. }) {
-                pending_modifier_consumption
-                    .spent
-                    .push((attacker.entity, m.type_ex.clone()));
-            }
-        }
+        // Modifier-driven bonus elemental damage.
+        apply_bonus_damage(
+            attacker,
+            target,
+            damage_source,
+            pending_damage,
+            &mut chat_log_query,
+            &mut pending_modifier_consumption,
+        );
 
         // Sleep-wakes-on-damage is handled centrally in
         // `apply_pending_damage` so every damage source — melee, ranged,
@@ -820,84 +695,16 @@ pub fn resolve_battle_turn(
             );
         }
 
-        // Roll the attacker's on-hit effects, from both the weapon definition
-        // and any per-instance modifiers on the equipped weapon. Each entry is
-        // rolled independently; rolled specs go through `apply_effects_lazy` so
-        // a flaming weapon striking a freshly-spawned NPC (no `MagicEffects`
-        // component yet) still ignites it.
-        let caster = if attacker.is_player {
-            attacker.player_id.map(PlayerId)
-        } else if attacker.owner_player.is_some() {
-            // Companion on-hit DoTs (e.g. a flaming summon) credit the owner too.
-            attacker.owner_player
-        } else {
-            None
-        };
-        let mut rolled_specs: Vec<EffectSpec> = Vec::new();
-
-        if let Some(on_hit_effects) = definitions
-            .get(&attacker.definition_id)
-            .and_then(|def| def.attack_profile.as_ref())
-            .map(|profile| profile.on_hit_effects.as_slice())
-        {
-            for (i, on_hit) in on_hit_effects.iter().enumerate() {
-                let salt = attacker.object_id.wrapping_add((i as u64) << 16);
-                if !roll_chance(on_hit.chance, salt) {
-                    continue;
-                }
-                rolled_specs.push(EffectSpec {
-                    kind: on_hit.kind,
-                    magnitude: on_hit.magnitude,
-                    seconds: on_hit.seconds,
-                    secondary_magnitude: on_hit.secondary_magnitude,
-                });
-                broadcast_chat_line(
-                    &mut chat_log_query,
-                    format!(
-                        "[{} is afflicted by {}]",
-                        target.name,
-                        effect_kind_display_name(on_hit.kind)
-                    ),
-                );
-            }
-        }
-
-        // Per-instance `OnHit` modifiers (enchantments). Distinct salt offset
-        // so they roll independently from the definition effects above. A
-        // successful application spends one charge on charge-limited modifiers.
-        for (i, m) in attacker.weapon_modifiers.iter().enumerate() {
-            let ModifierEffect::OnHit { chance, spec } = &m.effect else {
-                continue;
-            };
-            let salt = attacker.object_id.wrapping_add(0x00E0_0000 + i as u64);
-            if !roll_chance(*chance, salt) {
-                continue;
-            }
-            rolled_specs.push(*spec);
-            broadcast_chat_line(
-                &mut chat_log_query,
-                format!(
-                    "[{} is afflicted by {}]",
-                    target.name,
-                    effect_kind_display_name(spec.kind)
-                ),
-            );
-            if matches!(m.duration, ModifierDuration::Charges { .. }) {
-                pending_modifier_consumption
-                    .spent
-                    .push((attacker.entity, m.type_ex.clone()));
-            }
-        }
-
-        if !rolled_specs.is_empty() {
-            crate::magic::effects::apply_effects_lazy(
-                target_entity,
-                &rolled_specs,
-                caster,
-                target_magic.as_deref_mut(),
-                &mut commands,
-            );
-        }
+        // On-hit effects (definition + per-instance enchantments).
+        apply_on_hit_effects(
+            attacker,
+            target,
+            &definitions,
+            &mut chat_log_query,
+            &mut pending_modifier_consumption,
+            target_magic.as_deref_mut(),
+            &mut commands,
+        );
     }
 
     // Apply queued cooldown updates from NPC spell casts. Done after the
@@ -912,6 +719,303 @@ pub fn resolve_battle_turn(
                 }
             }
         }
+    }
+}
+
+/// Stage 1: to-hit roll vs dodge DC. Misses spend ammo and play the
+/// projectile but deal no damage. A natural 20 always hits and a natural
+/// 1 always misses regardless of modifiers (`progression.md` §7.1), so
+/// even lopsided matchups keep a 5% hit/whiff floor.
+///
+/// Returns `Some(raw_d20)` on a landed hit (the raw face feeds the crit
+/// check) or `None` on a miss, after broadcasting the dodge feedback.
+fn roll_to_hit(
+    attacker: &CombatantSnapshot,
+    target: &CombatantSnapshot,
+    ui_events: &mut PendingGameUiEvents,
+    chat_log_query: &mut Query<&mut ChatLog, With<Player>>,
+) -> Option<i32> {
+    let (d20, attack_total) = attack_roll_total(attacker, target, attacker.object_id);
+    let dc = dodge_dc(target);
+    let hit = d20 == 20 || (d20 != 1 && attack_total >= dc);
+    if !hit {
+        ui_events.push_broadcast(GameUiEvent::AttackDodged {
+            attacker_object_id: attacker.object_id,
+            target_object_id: target.object_id,
+        });
+        broadcast_chat_line(
+            chat_log_query,
+            format!("[{} dodges {}'s attack]", target.name, attacker.name),
+        );
+        return None;
+    }
+    Some(d20)
+}
+
+/// Stage 2: roll weapon damage. Level is passed for expressions with a
+/// `level` term. A raw d20 at or above the attacker's crit threshold
+/// upgrades the landed hit to a critical: the damage expression is
+/// rolled TWICE (3.5e-style, distinct salt so same-nanosecond rolls
+/// stay independent) and summed, before block/armor. Enchant
+/// `BonusDamage` riders are not doubled.
+///
+/// Returns `(damage, crit)`.
+fn roll_weapon_damage(attacker: &CombatantSnapshot, d20: i32) -> (i32, bool) {
+    let crit = d20 >= attacker.crit_threshold;
+    let mut damage = attacker
+        .damage_expr
+        .roll(&attacker.attributes, attacker.level as i32)
+        .max(1);
+    if crit {
+        damage += attacker
+            .damage_expr
+            .roll_salted(
+                &attacker.attributes,
+                attacker.level as i32,
+                attacker.object_id.wrapping_add(0xC417_C417),
+            )
+            .max(1);
+    }
+    (damage, crit)
+}
+
+/// Backstab (`progression.md` §3.4): a sneaking player striking an NPC
+/// that is UNAWARE of them (not targeting, pursuing, engaging, or
+/// fleeing from the attacker — Alert/searching still counts as
+/// unaware). Vagabonds add their scaling class dice; anyone else gets
+/// a small flat opener bonus. Applied once (never doubled by crit) and
+/// still subject to block/armor.
+///
+/// Returns the bonus damage to add, `0` when the backstab conditions
+/// don't hold.
+fn apply_backstab(
+    attacker: &CombatantSnapshot,
+    target: &CombatantSnapshot,
+    ai_state_query: &Query<&crate::npc::components::AiState, With<crate::npc::components::Npc>>,
+    chat_log_query: &mut Query<&mut ChatLog, With<Player>>,
+) -> i32 {
+    let backstab = attacker.is_player
+        && attacker.sneaking
+        && !target.is_player
+        && !crate::npc::detection::npc_aware_of(
+            ai_state_query.get(target.entity).ok(),
+            target.target,
+            attacker.entity,
+        );
+    if !backstab {
+        return 0;
+    }
+    let bonus = match attacker.class {
+        Some(Class::Vagabond) => {
+            let dice = crate::combat::formulas::backstab_dice(attacker.level);
+            let mut total = 0i32;
+            for i in 0..dice {
+                total += crate::combat::damage_expr::roll_die(
+                    6,
+                    attacker.object_id.wrapping_add(0x00BA_C5AB + i as u64),
+                );
+            }
+            total
+        }
+        _ => crate::combat::formulas::BACKSTAB_FLAT_BONUS,
+    };
+    broadcast_chat_line(
+        chat_log_query,
+        format!(
+            "[{} strikes {} from the shadows: +{bonus} backstab damage]",
+            attacker.name, target.name
+        ),
+    );
+    bonus.max(0)
+}
+
+/// Stage 3: block roll (only if defender wields a shield). Chance is
+/// shield's `block_chance` + AGI_mod * 2, clamped to [0, 95] so a hit
+/// is never fully unstoppable. On a successful block the FULL `block`
+/// value is removed (deterministic) — the old uniform 0..block roll made
+/// a wooden shield worth <0.5 dmg/hit, a defensive system that did
+/// nothing. The randomness now lives solely in the chance gate.
+///
+/// Returns the post-block damage (unchanged when there is no shield or
+/// the block roll fails).
+fn roll_block(
+    attacker: &CombatantSnapshot,
+    target: &CombatantSnapshot,
+    damage: i32,
+    ui_events: &mut PendingGameUiEvents,
+    chat_log_query: &mut Query<&mut ChatLog, With<Player>>,
+) -> i32 {
+    if !target.has_shield {
+        return damage;
+    }
+    let chance_pct = crate::combat::formulas::effective_block_chance_pct(
+        target.block_chance_pct,
+        target.attributes.agility,
+    );
+    let chance = chance_pct as f32 / 100.0;
+    // Salt with target object id so attacker/defender pairs roll
+    // independently from on-hit effect rolls.
+    if !roll_chance(chance, target.object_id.wrapping_add(0xB10C_B10C)) {
+        return damage;
+    }
+    let block_amount = target.block.max(0);
+    ui_events.push_broadcast(GameUiEvent::AttackBlocked {
+        attacker_object_id: attacker.object_id,
+        target_object_id: target.object_id,
+        amount: block_amount,
+    });
+    broadcast_chat_line(
+        chat_log_query,
+        format!("[{} blocks {block_amount} damage]", target.name),
+    );
+    (damage - block_amount).max(1)
+}
+
+/// Stage 4: armor mitigation — deterministic FULL `armor` value, floored
+/// so a hit always lands at least 1. The item card now means what it
+/// says (`armor: 4` blocks 4); armor values on items/creatures are tuned
+/// for full-value subtraction (roughly half the old numbers).
+fn apply_armor_mitigation(target: &CombatantSnapshot, damage: i32) -> i32 {
+    (damage - target.armor.max(0)).max(1)
+}
+
+/// Modifier-driven bonus elemental damage. Each `BonusDamage`
+/// enchantment on the attacker's equipped weapon lands as its own
+/// `DamageEvent` so the element shows its own number and hit VFX
+/// (`vfx_override: None` falls back to `damage_type.default_hit_vfx_id`).
+fn apply_bonus_damage(
+    attacker: &CombatantSnapshot,
+    target: &CombatantSnapshot,
+    damage_source: DamageSource,
+    pending_damage: &mut PendingDamageEvents,
+    chat_log_query: &mut Query<&mut ChatLog, With<Player>>,
+    pending_modifier_consumption: &mut PendingModifierConsumption,
+) {
+    for (i, m) in attacker.weapon_modifiers.iter().enumerate() {
+        let ModifierEffect::BonusDamage {
+            dice,
+            bonus,
+            damage_type,
+        } = &m.effect
+        else {
+            continue;
+        };
+        let salt = attacker.object_id.wrapping_add(0x00B0_0000 + i as u64);
+        let extra = roll_bonus_damage(*dice, *bonus, salt).max(0);
+        if extra == 0 {
+            continue;
+        }
+        pending_damage.push(DamageEvent {
+            target: target.entity,
+            amount: extra as f32,
+            source: damage_source,
+            damage_type: *damage_type,
+            vfx_override: None,
+        });
+        broadcast_chat_line(
+            chat_log_query,
+            format!(
+                "[{}'s {} sears {} for {extra} {} damage]",
+                attacker.name,
+                enchantment_label(m),
+                target.name,
+                damage_type.display_name()
+            ),
+        );
+        if matches!(m.duration, ModifierDuration::Charges { .. }) {
+            pending_modifier_consumption
+                .spent
+                .push((attacker.entity, m.type_ex.clone()));
+        }
+    }
+}
+
+/// Roll the attacker's on-hit effects, from both the weapon definition
+/// and any per-instance modifiers on the equipped weapon. Each entry is
+/// rolled independently; rolled specs go through `apply_effects_lazy` so
+/// a flaming weapon striking a freshly-spawned NPC (no `MagicEffects`
+/// component yet) still ignites it.
+fn apply_on_hit_effects(
+    attacker: &CombatantSnapshot,
+    target: &CombatantSnapshot,
+    definitions: &OverworldObjectDefinitions,
+    chat_log_query: &mut Query<&mut ChatLog, With<Player>>,
+    pending_modifier_consumption: &mut PendingModifierConsumption,
+    target_magic: Option<&mut crate::magic::effects::MagicEffects>,
+    commands: &mut Commands,
+) {
+    let caster = if attacker.is_player {
+        attacker.player_id.map(PlayerId)
+    } else if attacker.owner_player.is_some() {
+        // Companion on-hit DoTs (e.g. a flaming summon) credit the owner too.
+        attacker.owner_player
+    } else {
+        None
+    };
+    let mut rolled_specs: Vec<EffectSpec> = Vec::new();
+
+    if let Some(on_hit_effects) = definitions
+        .get(&attacker.definition_id)
+        .and_then(|def| def.attack_profile.as_ref())
+        .map(|profile| profile.on_hit_effects.as_slice())
+    {
+        for (i, on_hit) in on_hit_effects.iter().enumerate() {
+            let salt = attacker.object_id.wrapping_add((i as u64) << 16);
+            if !roll_chance(on_hit.chance, salt) {
+                continue;
+            }
+            rolled_specs.push(EffectSpec {
+                kind: on_hit.kind,
+                magnitude: on_hit.magnitude,
+                seconds: on_hit.seconds,
+                secondary_magnitude: on_hit.secondary_magnitude,
+            });
+            broadcast_chat_line(
+                chat_log_query,
+                format!(
+                    "[{} is afflicted by {}]",
+                    target.name,
+                    effect_kind_display_name(on_hit.kind)
+                ),
+            );
+        }
+    }
+
+    // Per-instance `OnHit` modifiers (enchantments). Distinct salt offset
+    // so they roll independently from the definition effects above. A
+    // successful application spends one charge on charge-limited modifiers.
+    for (i, m) in attacker.weapon_modifiers.iter().enumerate() {
+        let ModifierEffect::OnHit { chance, spec } = &m.effect else {
+            continue;
+        };
+        let salt = attacker.object_id.wrapping_add(0x00E0_0000 + i as u64);
+        if !roll_chance(*chance, salt) {
+            continue;
+        }
+        rolled_specs.push(*spec);
+        broadcast_chat_line(
+            chat_log_query,
+            format!(
+                "[{} is afflicted by {}]",
+                target.name,
+                effect_kind_display_name(spec.kind)
+            ),
+        );
+        if matches!(m.duration, ModifierDuration::Charges { .. }) {
+            pending_modifier_consumption
+                .spent
+                .push((attacker.entity, m.type_ex.clone()));
+        }
+    }
+
+    if !rolled_specs.is_empty() {
+        crate::magic::effects::apply_effects_lazy(
+            target.entity,
+            &rolled_specs,
+            caster,
+            target_magic,
+            commands,
+        );
     }
 }
 
@@ -1088,8 +1192,6 @@ fn execute_npc_spell_cast(
         Query<&mut Inventory, With<Player>>,
         Query<&mut SpellcastingProfile>,
         Query<&mut crate::player::components::Exertion, With<Player>>,
-        // p5: mirrors `resolve_battle_turn`'s ParamSet arity (unused here).
-        Query<(Entity, &Class, Has<crate::player::components::Sneaking>)>,
     )>,
     ui_events: &mut PendingGameUiEvents,
     pending_damage: &mut PendingDamageEvents,
