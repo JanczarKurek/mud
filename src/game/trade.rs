@@ -1610,6 +1610,14 @@ fn insert_one_offer(
         if let Some(capacity) = definition.container_capacity {
             new_stack.contained_slots = Some(vec![None; capacity]);
         }
+        // Shop stock arrives fully charged, mirroring `handle_give_item`.
+        // A player-to-player offer of a partially-used item already carries
+        // `charges_remaining` in its properties — leave that untouched.
+        if let Some(max_charges) = definition.max_charges {
+            if !definition.infinite_uses && new_stack.charges_remaining().is_none() {
+                new_stack.set_charges_remaining(max_charges);
+            }
+        }
         inventory.backpack_slots[empty_index] = Some(new_stack);
         current_weight += per_unit_weight * take as f32;
         remaining -= take;
@@ -1643,6 +1651,58 @@ mod tests {
         };
         assert!(infinite.try_take(1_000_000));
         assert!(matches!(infinite.stock, StockMode::Infinite));
+    }
+
+    #[test]
+    fn insert_one_offer_charges_fresh_stock_but_preserves_used_charges() {
+        let definitions = OverworldObjectDefinitions::load_from_disk();
+        let definition = definitions
+            .get("wand_of_sparks")
+            .expect("wand_of_sparks definition with max_charges");
+        let max_charges = definition.max_charges.expect("wand declares max_charges");
+        let max_carry = MaxCarryWeight {
+            soft_cap: 1000.0,
+            hard_cap: 1000.0,
+        };
+
+        // Shop stock (no properties) arrives fully charged, like /give.
+        let mut inventory = InventoryState::default();
+        let fresh_offer = TradeOfferEntry {
+            source: OfferSource::Stockpile { ware_index: 0 },
+            type_id: "wand_of_sparks".to_owned(),
+            properties: ObjectProperties::new(),
+            quantity: 1,
+        };
+        assert!(insert_one_offer(
+            &fresh_offer,
+            &mut inventory,
+            &definitions,
+            &max_carry
+        ));
+        let stack = inventory.backpack_slots[0].as_ref().unwrap();
+        assert_eq!(stack.charges_remaining(), Some(max_charges));
+
+        // A traded partially-used wand keeps its recorded charges.
+        let mut inventory = InventoryState::default();
+        let mut used_properties = ObjectProperties::new();
+        used_properties.insert(
+            crate::player::components::CHARGES_KEY.to_owned(),
+            "7".to_owned(),
+        );
+        let used_offer = TradeOfferEntry {
+            source: OfferSource::PlayerSlot(ItemSlotRef::Backpack(0)),
+            type_id: "wand_of_sparks".to_owned(),
+            properties: used_properties,
+            quantity: 1,
+        };
+        assert!(insert_one_offer(
+            &used_offer,
+            &mut inventory,
+            &definitions,
+            &max_carry
+        ));
+        let stack = inventory.backpack_slots[0].as_ref().unwrap();
+        assert_eq!(stack.charges_remaining(), Some(7));
     }
 
     #[test]

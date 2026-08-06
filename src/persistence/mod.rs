@@ -1066,6 +1066,12 @@ fn load_world_from_snapshot(
                 );
                 entity.insert(crate::world::step_triggers::OnSteppedTriggers(triggers));
             }
+            // `PressurePlate` is likewise pure config re-derived from the
+            // definition; the plate's current pressed/released state rides in
+            // the persisted `ObjectState` restored above.
+            if let Some(plate) = definition.pressure_plate.as_ref() {
+                entity.insert(crate::world::pressure_plate::PressurePlate::from_def(plate));
+            }
         }
 
         // Restore `Hidden` from the snapshot's per-instance dc + detected_by.
@@ -1321,6 +1327,98 @@ mod tests {
             })
         };
         assert!(has_restored_barrel);
+
+        let _ = std::fs::remove_file(save_path);
+    }
+
+    /// Pressure plates are pure config re-derived from the definition on load
+    /// (like `OnSteppedTriggers`); a reloaded plate must still carry the
+    /// `PressurePlate` component or it silently stops driving its wired target.
+    #[test]
+    fn reloaded_pressure_plate_keeps_component() {
+        let save_path =
+            std::env::temp_dir().join(format!("mud2-plate-load-{}.json", std::process::id()));
+        let _ = std::fs::remove_file(&save_path);
+
+        let dump = WorldStateDump {
+            format_version: 14,
+            saved_at_unix_seconds: 0,
+            world_config: WorldConfigDump {
+                current_space_id: Some(crate::world::components::SpaceId(7)),
+                map_width: 32,
+                map_height: 24,
+                tile_size: 48.0,
+                fill_floor_type: Some("grass".to_owned()),
+            },
+            map_layout: Some(MapLayoutDump {
+                width: 32,
+                height: 24,
+                fill_floor_type: "grass".to_owned(),
+            }),
+            spaces: vec![RuntimeSpaceDump {
+                id: crate::world::components::SpaceId(7),
+                authored_id: "overworld".to_owned(),
+                width: 32,
+                height: 24,
+                fill_floor_type: "grass".to_owned(),
+                permanence: SpacePermanence::Persistent,
+                instance_owner: None,
+            }],
+            network: NetworkStateDump {
+                next_connection_id: 1,
+            },
+            world_objects: vec![WorldObjectStateDump {
+                object_id: 43,
+                definition_id: "pressure_plate".to_owned(),
+                properties: std::collections::HashMap::from([(
+                    "state".to_owned(),
+                    "pressed".to_owned(),
+                )]),
+                space_id: Some(crate::world::components::SpaceId(7)),
+                tile_position: Some(TilePosition::ground(7, 6)),
+                collider: false,
+                movable: false,
+                rotatable: false,
+                storable: false,
+                container_slots: None,
+                npc: None,
+                quantity: None,
+                remaining_ttl: None,
+                facing: None,
+                hidden_detected_by: Vec::new(),
+                hidden_dc: None,
+            }],
+            floor_maps: vec![],
+            spawn_groups: vec![],
+            world_time: 0.25,
+        };
+        write_world_dump(&save_path, &dump).unwrap();
+
+        let mut app = setup_server_app(&save_path);
+        app.update();
+        assert!(app.world().resource::<WorldSnapshotStatus>().loaded);
+
+        let world = app.world_mut();
+        let mut plate_query = world.query::<(
+            &OverworldObject,
+            &crate::world::pressure_plate::PressurePlate,
+            &ObjectState,
+        )>();
+        let plates = plate_query
+            .iter(world)
+            .filter(|(object, _, _)| object.definition_id == "pressure_plate")
+            .collect::<Vec<_>>();
+        assert_eq!(
+            plates.len(),
+            1,
+            "reloaded pressure plate must keep its PressurePlate component"
+        );
+        let (_, plate, state) = plates[0];
+        assert_eq!(plate.pressed_state, "pressed");
+        // The dump said "pressed", but nothing stands on the plate after
+        // reload, so the very first tick drives it to its released state —
+        // which is itself proof the restored component is live and simulating.
+        assert_eq!(state.0, plate.released_state);
 
         let _ = std::fs::remove_file(save_path);
     }
