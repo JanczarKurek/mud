@@ -240,6 +240,29 @@ impl PendingGameCommands {
             command,
         });
     }
+
+    /// Drain only the commands `matcher` claims, leaving everything else queued
+    /// in order. The matcher returns `Ok(payload)` to claim a command or
+    /// `Err(command)` to hand it back untouched.
+    pub fn drain_matching<T>(
+        &mut self,
+        mut matcher: impl FnMut(GameCommand) -> Result<T, GameCommand>,
+    ) -> Vec<(Option<PlayerId>, T)> {
+        let drained = std::mem::take(&mut self.commands);
+        let mut remaining = Vec::with_capacity(drained.len());
+        let mut claimed = Vec::new();
+        for queued in drained {
+            match matcher(queued.command) {
+                Ok(payload) => claimed.push((queued.player_id, payload)),
+                Err(command) => remaining.push(QueuedGameCommand {
+                    player_id: queued.player_id,
+                    command,
+                }),
+            }
+        }
+        self.commands = remaining;
+        claimed
+    }
 }
 
 #[derive(Resource, Default)]

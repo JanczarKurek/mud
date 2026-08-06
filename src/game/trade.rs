@@ -478,11 +478,17 @@ pub fn process_trade_commands(
     skill_query: Query<(&PlayerIdentity, &crate::player::skills::SkillSheet), With<Player>>,
     floors: crate::world::column::FloorGeometryParam,
 ) {
-    let drained: Vec<_> = pending_commands.commands.drain(..).collect();
-    let mut remaining = Vec::with_capacity(drained.len());
-
-    for queued in drained {
-        let acting_player_id = match queued.player_id {
+    for (queued_player_id, command) in pending_commands.drain_matching(|command| match command {
+        claimed @ (GameCommand::InitiateTrade { .. }
+        | GameCommand::OfferTradeItem { .. }
+        | GameCommand::WithdrawTradeItem { .. }
+        | GameCommand::ToggleTradeReady { .. }
+        | GameCommand::ConfirmTrade { .. }
+        | GameCommand::CancelTrade { .. }
+        | GameCommand::BrowseShopBuy { .. }) => Ok(claimed),
+        other => Err(other),
+    }) {
+        let acting_player_id = match queued_player_id {
             Some(id) => id,
             None => {
                 // Embedded mode: trade commands target the single local player.
@@ -495,7 +501,7 @@ pub fn process_trade_commands(
             }
         };
 
-        match queued.command {
+        match command {
             GameCommand::InitiateTrade { target } => {
                 handle_initiate_trade(
                     acting_player_id,
@@ -572,14 +578,10 @@ pub fn process_trade_commands(
                     &stockpile_query,
                 );
             }
-            other => remaining.push(crate::game::resources::QueuedGameCommand {
-                player_id: queued.player_id,
-                command: other,
-            }),
+            // The matcher above only claims the trade/shop variants.
+            _ => {}
         }
     }
-
-    pending_commands.commands = remaining;
 }
 
 fn handle_initiate_trade(

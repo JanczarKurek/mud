@@ -2,9 +2,9 @@ use bevy::prelude::*;
 
 use crate::combat::systems::chebyshev_distance;
 use crate::game::commands::GameCommand;
+use crate::game::helpers::resolve_acting_player;
 use crate::game::resources::{
-    ChatLogState, GameUiEvent, PendingGameCommands, PendingGameUiEvents, QueuedGameCommand,
-    SpeechBubbleStyle,
+    ChatLogState, GameUiEvent, PendingGameCommands, PendingGameUiEvents, SpeechBubbleStyle,
 };
 use crate::player::components::{Player, PlayerIdentity};
 use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
@@ -26,27 +26,11 @@ pub fn process_say_commands(
         With<Player>,
     >,
 ) {
-    let drained: Vec<_> = pending_commands.commands.drain(..).collect();
-    let mut remaining = Vec::with_capacity(drained.len());
-
-    for queued in drained {
-        let text = match queued.command {
-            GameCommand::Say { text } => text,
-            other => {
-                remaining.push(QueuedGameCommand {
-                    player_id: queued.player_id,
-                    command: other,
-                });
-                continue;
-            }
-        };
-
-        let speaker = match queued.player_id {
-            Some(id) => player_query
-                .iter()
-                .find(|(identity, _, _, _, _)| identity.id == id),
-            None => player_query.iter().next(),
-        };
+    for (queued_player_id, text) in pending_commands.drain_matching(|command| match command {
+        GameCommand::Say { text } => Ok(text),
+        other => Err(other),
+    }) {
+        let speaker = resolve_acting_player(player_query.iter(), queued_player_id, |row| row.0.id);
         let Some((speaker_identity, speaker_space, speaker_tile, speaker_object, _)) = speaker
         else {
             continue;
@@ -94,8 +78,6 @@ pub fn process_say_commands(
             });
         }
     }
-
-    pending_commands.commands = remaining;
 }
 
 /// Drop characters the bubble font can't render. The default Bevy font in

@@ -321,72 +321,55 @@ pub fn process_allocate_skill_commands(
     >,
     mut events: ResMut<PendingGameEvents>,
 ) {
-    let queued = std::mem::take(&mut pending_commands.commands);
-    let mut remaining = Vec::with_capacity(queued.len());
-
-    for cmd in queued {
-        match cmd.command {
-            GameCommand::AllocateSkillPoint { skill, ranks } => {
-                let mut applied_for_local = false;
-                for (identity, mut sheet, class, experience, mut chat_log) in
-                    player_query.iter_mut()
-                {
-                    let matches = match cmd.player_id {
-                        Some(id) => identity.id == id,
-                        None => true,
-                    };
-                    if !matches {
-                        continue;
-                    }
-                    let outcome = allocate_skill_ranks(
-                        &mut sheet,
-                        *class,
-                        experience.level,
+    for (player_id, (skill, ranks)) in pending_commands.drain_matching(|command| match command {
+        GameCommand::AllocateSkillPoint { skill, ranks } => Ok((skill, ranks)),
+        other => Err(other),
+    }) {
+        let mut applied_for_local = false;
+        for (identity, mut sheet, class, experience, mut chat_log) in player_query.iter_mut() {
+            let matches = match player_id {
+                Some(id) => identity.id == id,
+                None => true,
+            };
+            if !matches {
+                continue;
+            }
+            let outcome =
+                allocate_skill_ranks(&mut sheet, *class, experience.level, skill, ranks.max(1));
+            match outcome {
+                AllocationOutcome::Applied {
+                    new_rank,
+                    remaining_points,
+                } => {
+                    events.events.push(GameEvent::SkillRanksChanged {
                         skill,
-                        ranks.max(1),
-                    );
-                    match outcome {
-                        AllocationOutcome::Applied {
-                            new_rank,
-                            remaining_points,
-                        } => {
-                            events.events.push(GameEvent::SkillRanksChanged {
-                                skill,
-                                new_rank,
-                                remaining_points,
-                            });
-                            applied_for_local = true;
-                        }
-                        AllocationOutcome::AtMaxRank => {
-                            chat_log.push_narrator(format!(
-                                "{} is already at the maximum rank for your level.",
-                                skill.label()
-                            ));
-                        }
-                        AllocationOutcome::InsufficientPoints => {
-                            chat_log.push_narrator(format!(
-                                "Not enough skill points to raise {}.",
-                                skill.label()
-                            ));
-                        }
-                    }
-                    break;
+                        new_rank,
+                        remaining_points,
+                    });
+                    applied_for_local = true;
                 }
-                if !applied_for_local {
-                    bevy::log::debug!(
-                        "AllocateSkillPoint command for player {:?} produced no event",
-                        cmd.player_id
-                    );
+                AllocationOutcome::AtMaxRank => {
+                    chat_log.push_narrator(format!(
+                        "{} is already at the maximum rank for your level.",
+                        skill.label()
+                    ));
+                }
+                AllocationOutcome::InsufficientPoints => {
+                    chat_log.push_narrator(format!(
+                        "Not enough skill points to raise {}.",
+                        skill.label()
+                    ));
                 }
             }
-            other => remaining.push(crate::game::resources::QueuedGameCommand {
-                player_id: cmd.player_id,
-                command: other,
-            }),
+            break;
+        }
+        if !applied_for_local {
+            bevy::log::debug!(
+                "AllocateSkillPoint command for player {:?} produced no event",
+                player_id
+            );
         }
     }
-
-    pending_commands.commands = remaining;
 }
 
 /// Server system: drains `GameCommand::AllocateAbilityBump` in the
@@ -406,43 +389,31 @@ pub fn process_allocate_ability_bump_commands(
         With<Player>,
     >,
 ) {
-    let queued = std::mem::take(&mut pending_commands.commands);
-    let mut remaining = Vec::with_capacity(queued.len());
-
-    for cmd in queued {
-        match cmd.command {
-            GameCommand::AllocateAbilityBump { attribute } => {
-                for (identity, mut sheet, mut base, mut chat_log) in player_query.iter_mut() {
-                    let matches = match cmd.player_id {
-                        Some(id) => identity.id == id,
-                        None => true,
-                    };
-                    if !matches {
-                        continue;
-                    }
-                    match allocate_ability_bump(&mut sheet, &mut base, attribute) {
-                        AbilityBumpOutcome::Applied {
-                            kind, new_value, ..
-                        } => {
-                            chat_log
-                                .push_narrator(format!("{} raised to {new_value}.", kind.label()));
-                        }
-                        AbilityBumpOutcome::NoBumpsAvailable => {
-                            chat_log
-                                .push_narrator("You have no ability points to spend.".to_owned());
-                        }
-                    }
-                    break;
+    for (player_id, attribute) in pending_commands.drain_matching(|command| match command {
+        GameCommand::AllocateAbilityBump { attribute } => Ok(attribute),
+        other => Err(other),
+    }) {
+        for (identity, mut sheet, mut base, mut chat_log) in player_query.iter_mut() {
+            let matches = match player_id {
+                Some(id) => identity.id == id,
+                None => true,
+            };
+            if !matches {
+                continue;
+            }
+            match allocate_ability_bump(&mut sheet, &mut base, attribute) {
+                AbilityBumpOutcome::Applied {
+                    kind, new_value, ..
+                } => {
+                    chat_log.push_narrator(format!("{} raised to {new_value}.", kind.label()));
+                }
+                AbilityBumpOutcome::NoBumpsAvailable => {
+                    chat_log.push_narrator("You have no ability points to spend.".to_owned());
                 }
             }
-            other => remaining.push(crate::game::resources::QueuedGameCommand {
-                player_id: cmd.player_id,
-                command: other,
-            }),
+            break;
         }
     }
-
-    pending_commands.commands = remaining;
 }
 
 /// Hook into the level-up loop: award `skill_points_for_level_up` points,

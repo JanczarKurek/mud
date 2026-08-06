@@ -18,7 +18,6 @@ use bevy::prelude::*;
 use crate::game::commands::GameCommand;
 use crate::game::resources::{
     GameEvent, GameUiEvent, PendingGameCommands, PendingGameEvents, PendingGameUiEvents,
-    QueuedGameCommand,
 };
 use crate::player::classes::Class;
 use crate::player::components::{
@@ -48,9 +47,6 @@ pub fn process_admin_progression_commands(
     mut events: ResMut<PendingGameEvents>,
     mut ui_events: ResMut<PendingGameUiEvents>,
 ) {
-    let queued = std::mem::take(&mut pending_commands.commands);
-    let mut remaining = Vec::with_capacity(queued.len());
-
     // UI-driven admin commands (the GM tools panel) push with `player_id: None`;
     // network peers always carry `Some` (set in `push_for_player`). Resolve
     // `None` to the local player so the panel buttons target the acting player
@@ -58,10 +54,19 @@ pub fn process_admin_progression_commands(
     // treat an unset id.
     let local_player_id = player_query.iter().next().map(|p| p.0.id);
 
-    for cmd in queued {
-        match cmd.command {
+    for (queued_player_id, command) in pending_commands.drain_matching(|command| match command {
+        claimed @ (GameCommand::AdminGrantXp { .. }
+        | GameCommand::AdminSetLevel { .. }
+        | GameCommand::AdminGrantSkillPoints { .. }
+        | GameCommand::AdminSetSkillRank { .. }
+        | GameCommand::AdminSetAttribute { .. }
+        | GameCommand::AdminSetClass { .. }
+        | GameCommand::AdminFullHeal) => Ok(claimed),
+        other => Err(other),
+    }) {
+        match command {
             GameCommand::AdminGrantXp { amount } => {
-                let Some(target) = cmd.player_id.or(local_player_id) else {
+                let Some(target) = queued_player_id.or(local_player_id) else {
                     continue;
                 };
                 xp_grants.grants.push(PendingXpGrant {
@@ -70,7 +75,7 @@ pub fn process_admin_progression_commands(
                 });
             }
             GameCommand::AdminSetLevel { level } => {
-                let Some(target) = cmd.player_id.or(local_player_id) else {
+                let Some(target) = queued_player_id.or(local_player_id) else {
                     continue;
                 };
                 let target_level = level.clamp(1, LEVEL_CAP);
@@ -126,7 +131,7 @@ pub fn process_admin_progression_commands(
                 }
             }
             GameCommand::AdminGrantSkillPoints { amount } => {
-                let Some(target) = cmd.player_id.or(local_player_id) else {
+                let Some(target) = queued_player_id.or(local_player_id) else {
                     continue;
                 };
                 for (identity, _exp, mut sheet, _base, _class, _vitals, mut chat) in
@@ -143,7 +148,7 @@ pub fn process_admin_progression_commands(
                 }
             }
             GameCommand::AdminSetSkillRank { skill, rank } => {
-                let Some(target) = cmd.player_id.or(local_player_id) else {
+                let Some(target) = queued_player_id.or(local_player_id) else {
                     continue;
                 };
                 for (identity, _exp, mut sheet, _base, _class, _vitals, mut chat) in
@@ -163,7 +168,7 @@ pub fn process_admin_progression_commands(
                 }
             }
             GameCommand::AdminSetAttribute { kind, value } => {
-                let Some(target) = cmd.player_id.or(local_player_id) else {
+                let Some(target) = queued_player_id.or(local_player_id) else {
                     continue;
                 };
                 for (identity, _exp, _sheet, mut base, _class, _vitals, mut chat) in
@@ -178,7 +183,7 @@ pub fn process_admin_progression_commands(
                 }
             }
             GameCommand::AdminSetClass { class: new_class } => {
-                let Some(target) = cmd.player_id.or(local_player_id) else {
+                let Some(target) = queued_player_id.or(local_player_id) else {
                     continue;
                 };
                 for (identity, _exp, _sheet, _base, mut class, _vitals, mut chat) in
@@ -196,7 +201,7 @@ pub fn process_admin_progression_commands(
                 }
             }
             GameCommand::AdminFullHeal => {
-                let Some(target) = cmd.player_id.or(local_player_id) else {
+                let Some(target) = queued_player_id.or(local_player_id) else {
                     continue;
                 };
                 for (identity, _exp, _sheet, _base, _class, mut vitals, mut chat) in
@@ -211,14 +216,10 @@ pub fn process_admin_progression_commands(
                     break;
                 }
             }
-            other => remaining.push(QueuedGameCommand {
-                player_id: cmd.player_id,
-                command: other,
-            }),
+            // The matcher above only claims the Admin* progression variants.
+            _ => {}
         }
     }
-
-    pending_commands.commands = remaining;
 }
 
 /// Drains the two debug/GM toggle commands (`AdminToggleGodMode` /
@@ -243,17 +244,17 @@ pub fn process_admin_toggle_commands(
     >,
     mut commands: Commands,
 ) {
-    let queued = std::mem::take(&mut pending_commands.commands);
-    let mut remaining = Vec::with_capacity(queued.len());
-
     // `None` (from the GM tools panel) resolves to the local player; network
     // peers always carry `Some`. See `process_admin_progression_commands`.
     let local_player_id = player_query.iter().next().map(|p| p.1.id);
 
-    for cmd in queued {
-        match cmd.command {
+    for (queued_player_id, command) in pending_commands.drain_matching(|command| match command {
+        claimed @ (GameCommand::AdminToggleGodMode | GameCommand::AdminToggleNoclip) => Ok(claimed),
+        other => Err(other),
+    }) {
+        match command {
             GameCommand::AdminToggleGodMode => {
-                let Some(target) = cmd.player_id.or(local_player_id) else {
+                let Some(target) = queued_player_id.or(local_player_id) else {
                     continue;
                 };
                 for (entity, identity, has_god, _has_noclip, mut chat) in player_query.iter_mut() {
@@ -271,7 +272,7 @@ pub fn process_admin_toggle_commands(
                 }
             }
             GameCommand::AdminToggleNoclip => {
-                let Some(target) = cmd.player_id.or(local_player_id) else {
+                let Some(target) = queued_player_id.or(local_player_id) else {
                     continue;
                 };
                 for (entity, identity, _has_god, has_noclip, mut chat) in player_query.iter_mut() {
@@ -288,14 +289,10 @@ pub fn process_admin_toggle_commands(
                     break;
                 }
             }
-            other => remaining.push(QueuedGameCommand {
-                player_id: cmd.player_id,
-                command: other,
-            }),
+            // The matcher above only claims the two toggle variants.
+            _ => {}
         }
     }
-
-    pending_commands.commands = remaining;
 }
 
 #[cfg(test)]

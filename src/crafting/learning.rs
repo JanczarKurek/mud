@@ -33,18 +33,13 @@ pub fn process_learn_recipe_commands(
     if pending_commands.commands.is_empty() {
         return;
     }
-    let drained: Vec<_> = std::mem::take(&mut pending_commands.commands);
-    let mut remaining = Vec::with_capacity(drained.len());
-
-    for queued in drained {
-        let GameCommand::LearnRecipe { ref recipe_id } = queued.command else {
-            remaining.push(queued);
-            continue;
-        };
-
-        let acting = queued
-            .player_id
-            .or_else(|| players.iter().next().map(|(identity, _, _)| identity.id));
+    for (queued_player_id, recipe_id) in pending_commands.drain_matching(|command| match command {
+        GameCommand::LearnRecipe { recipe_id } => Ok(recipe_id),
+        other => Err(other),
+    }) {
+        let recipe_id = &recipe_id;
+        let acting =
+            queued_player_id.or_else(|| players.iter().next().map(|(identity, _, _)| identity.id));
         let Some(PlayerId(target_id)) = acting else {
             continue;
         };
@@ -78,8 +73,6 @@ pub fn process_learn_recipe_commands(
             break;
         }
     }
-
-    pending_commands.commands = remaining;
 }
 
 /// Queue `LearnRecipe` for every auto-learn recipe whose class matches

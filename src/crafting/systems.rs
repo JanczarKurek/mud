@@ -25,18 +25,13 @@ pub fn process_stash_commands(
     if pending_commands.commands.is_empty() {
         return;
     }
-    let drained: Vec<_> = std::mem::take(&mut pending_commands.commands);
-    let mut remaining = Vec::with_capacity(drained.len());
-
-    for queued in drained {
-        let GameCommand::StashMutate { ref key, ref value } = queued.command else {
-            remaining.push(queued);
-            continue;
-        };
-
-        let acting = queued
-            .player_id
-            .or_else(|| players.iter().next().map(|(identity, _)| identity.id));
+    for (queued_player_id, (key, value)) in pending_commands.drain_matching(|command| match command
+    {
+        GameCommand::StashMutate { key, value } => Ok((key, value)),
+        other => Err(other),
+    }) {
+        let acting =
+            queued_player_id.or_else(|| players.iter().next().map(|(identity, _)| identity.id));
         let Some(PlayerId(target_id)) = acting else {
             // No player to address — drop silently. Matches existing
             // unaddressed-command posture (e.g. `SetHome`).
@@ -48,10 +43,10 @@ pub fn process_stash_commands(
             if identity.id.0 != target_id {
                 continue;
             }
-            match value {
+            match &value {
                 Some(json) => stash.set(key.clone(), json.clone()),
                 None => {
-                    stash.delete(key);
+                    stash.delete(&key);
                 }
             }
             applied = true;
@@ -64,8 +59,6 @@ pub fn process_stash_commands(
             );
         }
     }
-
-    pending_commands.commands = remaining;
 }
 
 type CraftPlayerData<'a> = (
@@ -100,17 +93,16 @@ pub fn process_craft_commands(
     if pending_commands.commands.is_empty() {
         return;
     }
-    let drained: Vec<_> = std::mem::take(&mut pending_commands.commands);
-    let mut remaining = Vec::with_capacity(drained.len());
     let mut deferred_gives: Vec<crate::game::resources::QueuedGameCommand> = Vec::new();
 
-    'commands: for queued in drained {
-        let GameCommand::CraftItem { ref recipe_id } = queued.command else {
-            remaining.push(queued);
-            continue;
-        };
-
-        let acting = queued.player_id.or_else(|| {
+    'commands: for (queued_player_id, recipe_id) in
+        pending_commands.drain_matching(|command| match command {
+            GameCommand::CraftItem { recipe_id } => Ok(recipe_id),
+            other => Err(other),
+        })
+    {
+        let recipe_id = &recipe_id;
+        let acting = queued_player_id.or_else(|| {
             players
                 .iter()
                 .next()
@@ -207,7 +199,6 @@ pub fn process_craft_commands(
         }
     }
 
-    pending_commands.commands = remaining;
     pending_commands.commands.extend(deferred_gives);
 }
 

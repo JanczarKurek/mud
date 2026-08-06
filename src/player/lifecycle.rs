@@ -237,68 +237,55 @@ pub fn process_acknowledge_death_commands(
     world_config: Res<WorldConfig>,
     mut commands: Commands,
 ) {
-    let queued = std::mem::take(&mut pending_commands.commands);
-    let mut remaining = Vec::with_capacity(queued.len());
-
-    for cmd in queued {
-        match cmd.command {
-            GameCommand::AcknowledgeDeath => {
-                for (
-                    entity,
-                    identity,
-                    mut vitals,
-                    mut space_resident,
-                    mut tile_position,
-                    mut movement,
-                    mut chat_log,
-                    view_position,
-                    facing,
-                ) in player_query.iter_mut()
-                {
-                    let matches = match cmd.player_id {
-                        Some(id) => identity.id == id,
-                        None => true,
-                    };
-                    if !matches {
-                        continue;
-                    }
-
-                    // Heal to full (moved here from handle_player_deaths).
-                    vitals.health = vitals.max_health.max(1.0);
-                    vitals.mana = vitals.max_mana.max(0.0);
-
-                    let (target_space, target_tile) = resolve_respawn_destination(
-                        identity.home_position,
-                        &space_manager,
-                        &world_config,
-                    );
-
-                    space_resident.space_id = target_space;
-                    *tile_position = target_tile;
-                    movement.remaining_seconds = 0.0;
-
-                    if let Some(mut view) = view_position {
-                        view.space_id = target_space;
-                        view.tile = target_tile;
-                    }
-                    if let Some(mut facing) = facing {
-                        facing.0 = crate::world::direction::Direction::default();
-                    }
-
-                    chat_log.push_narrator("You are taken to safer ground.");
-
-                    commands.entity(entity).remove::<AwaitingRespawn>();
-                    break;
-                }
+    for (player_id, ()) in pending_commands.drain_matching(|command| match command {
+        GameCommand::AcknowledgeDeath => Ok(()),
+        other => Err(other),
+    }) {
+        for (
+            entity,
+            identity,
+            mut vitals,
+            mut space_resident,
+            mut tile_position,
+            mut movement,
+            mut chat_log,
+            view_position,
+            facing,
+        ) in player_query.iter_mut()
+        {
+            let matches = match player_id {
+                Some(id) => identity.id == id,
+                None => true,
+            };
+            if !matches {
+                continue;
             }
-            other => remaining.push(crate::game::resources::QueuedGameCommand {
-                player_id: cmd.player_id,
-                command: other,
-            }),
+
+            // Heal to full (moved here from handle_player_deaths).
+            vitals.health = vitals.max_health.max(1.0);
+            vitals.mana = vitals.max_mana.max(0.0);
+
+            let (target_space, target_tile) =
+                resolve_respawn_destination(identity.home_position, &space_manager, &world_config);
+
+            space_resident.space_id = target_space;
+            *tile_position = target_tile;
+            movement.remaining_seconds = 0.0;
+
+            if let Some(mut view) = view_position {
+                view.space_id = target_space;
+                view.tile = target_tile;
+            }
+            if let Some(mut facing) = facing {
+                facing.0 = crate::world::direction::Direction::default();
+            }
+
+            chat_log.push_narrator("You are taken to safer ground.");
+
+            commands.entity(entity).remove::<AwaitingRespawn>();
+            break;
         }
     }
-
-    pending_commands.commands = remaining;
 }
 
 /// Death drain (`progression.md` §8): backpack always empties; each
@@ -407,57 +394,45 @@ pub fn handle_set_home_commands(
     >,
     db: Option<Res<AccountDbHandle>>,
 ) {
-    let queued = std::mem::take(&mut pending_commands.commands);
-    let mut remaining = Vec::with_capacity(queued.len());
+    for (player_id, ()) in pending_commands.drain_matching(|command| match command {
+        GameCommand::SetHome => Ok(()),
+        other => Err(other),
+    }) {
+        let mut applied = false;
+        for (mut identity, space_resident, tile_position, mut chat_log) in player_query.iter_mut() {
+            let matches = match player_id {
+                Some(id) => identity.id == id,
+                None => true,
+            };
+            if !matches {
+                continue;
+            }
+            identity.home_position = Some((space_resident.space_id, *tile_position));
+            chat_log.push_narrator("This place is now your home — you'll respawn here.");
+            applied = true;
 
-    for cmd in queued {
-        match cmd.command {
-            GameCommand::SetHome => {
-                let mut applied = false;
-                for (mut identity, space_resident, tile_position, mut chat_log) in
-                    player_query.iter_mut()
-                {
-                    let matches = match cmd.player_id {
-                        Some(id) => identity.id == id,
-                        None => true,
-                    };
-                    if !matches {
-                        continue;
-                    }
-                    identity.home_position = Some((space_resident.space_id, *tile_position));
-                    chat_log.push_narrator("This place is now your home — you'll respawn here.");
-                    applied = true;
-
-                    // Persist immediately so a crash before the next autosave
-                    // doesn't lose the choice. Best-effort: log and continue
-                    // on DB error.
-                    if let Some(db_handle) = db.as_deref() {
-                        if let Err(err) = persist_home(
-                            db_handle,
-                            identity.id.0,
-                            space_resident.space_id,
-                            *tile_position,
-                        ) {
-                            bevy::log::warn!("failed to persist home_position: {err}");
-                        }
-                    }
-                    break;
-                }
-                if !applied {
-                    bevy::log::debug!(
-                        "SetHome command for player {:?} dropped: no matching player",
-                        cmd.player_id
-                    );
+            // Persist immediately so a crash before the next autosave
+            // doesn't lose the choice. Best-effort: log and continue
+            // on DB error.
+            if let Some(db_handle) = db.as_deref() {
+                if let Err(err) = persist_home(
+                    db_handle,
+                    identity.id.0,
+                    space_resident.space_id,
+                    *tile_position,
+                ) {
+                    bevy::log::warn!("failed to persist home_position: {err}");
                 }
             }
-            other => remaining.push(crate::game::resources::QueuedGameCommand {
-                player_id: cmd.player_id,
-                command: other,
-            }),
+            break;
+        }
+        if !applied {
+            bevy::log::debug!(
+                "SetHome command for player {:?} dropped: no matching player",
+                player_id
+            );
         }
     }
-
-    pending_commands.commands = remaining;
 }
 
 fn persist_home(

@@ -25,24 +25,14 @@ pub fn process_log_commands(
     if pending_commands.commands.is_empty() {
         return;
     }
-    let drained: Vec<_> = std::mem::take(&mut pending_commands.commands);
-    let mut remaining = Vec::with_capacity(drained.len());
-
-    for queued in drained {
-        let is_log = matches!(
-            queued.command,
-            GameCommand::UpsertLogEntry { .. }
-                | GameCommand::DeleteLogEntry { .. }
-                | GameCommand::SetQuestPlayerNotes { .. }
-        );
-        if !is_log {
-            remaining.push(queued);
-            continue;
-        }
-
-        let acting = queued
-            .player_id
-            .or_else(|| players.iter().next().map(|(identity, _)| identity.id));
+    for (queued_player_id, command) in pending_commands.drain_matching(|command| match command {
+        claimed @ (GameCommand::UpsertLogEntry { .. }
+        | GameCommand::DeleteLogEntry { .. }
+        | GameCommand::SetQuestPlayerNotes { .. }) => Ok(claimed),
+        other => Err(other),
+    }) {
+        let acting =
+            queued_player_id.or_else(|| players.iter().next().map(|(identity, _)| identity.id));
         let Some(PlayerId(target_id)) = acting else {
             continue;
         };
@@ -56,13 +46,11 @@ pub fn process_log_commands(
         };
 
         let mut log = LogState::from_stash(&stash);
-        let mutated = apply_command(&queued.command, &mut log);
+        let mutated = apply_command(&command, &mut log);
         if mutated {
             log.write_to_stash(&mut stash);
         }
     }
-
-    pending_commands.commands = remaining;
 }
 
 /// Returns `true` when the command mutated `log` (so the caller should flush

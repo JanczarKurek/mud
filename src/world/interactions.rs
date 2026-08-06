@@ -11,6 +11,7 @@
 use bevy::prelude::*;
 
 use crate::game::commands::GameCommand;
+use crate::game::helpers::resolve_acting_player;
 use crate::game::resources::{
     ContainerViewers, GameUiEvent, PendingGameCommands, PendingGameUiEvents, QueuedGameCommand,
 };
@@ -65,14 +66,16 @@ pub fn process_interact_commands(
     mut player_query: Query<PlayerInteractQuery, With<Player>>,
     floors: crate::world::column::FloorGeometryParam,
 ) {
-    let drained: Vec<QueuedGameCommand> = pending_commands.commands.drain(..).collect();
-    let mut remaining = Vec::with_capacity(drained.len());
-
-    for queued in drained {
+    for (queued_player_id, command) in pending_commands.drain_matching(|command| match command {
+        claimed @ (GameCommand::InteractWithObject { .. }
+        | GameCommand::ApplyToolInteraction { .. }
+        | GameCommand::AdminSetObjectState { .. }) => Ok(claimed),
+        other => Err(other),
+    }) {
         // `bypass_tool_gate` is set for `ApplyToolInteraction` — those entries
         // come from `handle_use_item_on` after it has already verified the tool
         // was in the player's inventory and consumed a charge on the source.
-        let (object_id, verb, bypass_tool_gate) = match queued.command {
+        let (object_id, verb, bypass_tool_gate) = match command {
             GameCommand::InteractWithObject { object_id, verb } => (object_id, verb, false),
             GameCommand::ApplyToolInteraction {
                 target_object_id,
@@ -89,13 +92,8 @@ pub fn process_interact_commands(
                 );
                 continue;
             }
-            other => {
-                remaining.push(QueuedGameCommand {
-                    player_id: queued.player_id,
-                    command: other,
-                });
-                continue;
-            }
+            // The matcher above only claims the three variants handled here.
+            _ => continue,
         };
 
         let Some((
@@ -107,14 +105,11 @@ pub fn process_interact_commands(
             _class,
             inventory,
             mut chat_log,
-        )) = (match queued.player_id {
-            Some(id) => player_query.iter_mut().find(|row| row.0.id == id),
-            None => player_query.iter_mut().next(),
-        })
+        )) = resolve_acting_player(player_query.iter_mut(), queued_player_id, |row| row.0.id)
         else {
             continue;
         };
-        let actor_id = queued.player_id.or(Some(identity.id));
+        let actor_id = queued_player_id.or(Some(identity.id));
 
         // Locate the target stateful object on the same floor + Chebyshev-1.
         let Some((object_def_id, current_state)) = stateful_query
@@ -235,7 +230,7 @@ pub fn process_interact_commands(
                     if qty == 0 {
                         continue;
                     }
-                    remaining.push(QueuedGameCommand {
+                    pending_commands.commands.push(QueuedGameCommand {
                         player_id: Some(player_id),
                         command: GameCommand::GiveItem {
                             type_id: drop.type_id.clone(),
@@ -274,8 +269,6 @@ pub fn process_interact_commands(
             0,
         );
     }
-
-    pending_commands.commands = remaining;
 }
 
 /// Audible radius (in tiles) of an interaction verb, for the noise field.

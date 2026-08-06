@@ -14,7 +14,8 @@ use std::collections::{HashMap, HashSet};
 use bevy::prelude::*;
 
 use crate::game::commands::GameCommand;
-use crate::game::resources::{PendingGameCommands, QueuedGameCommand};
+use crate::game::helpers::resolve_acting_player;
+use crate::game::resources::PendingGameCommands;
 use crate::player::components::{BaseStats, ChatLog, Player, PlayerIdentity};
 use crate::player::skills::{skill_check, Skill, SkillSheet};
 use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
@@ -54,26 +55,12 @@ pub fn process_hide_commands(
     >,
     floors: crate::world::column::FloorGeometryParam,
 ) {
-    let drained: Vec<QueuedGameCommand> = pending_commands.commands.drain(..).collect();
-    let mut remaining = Vec::with_capacity(drained.len());
-
-    for queued in drained {
-        let object_id = match queued.command {
-            GameCommand::HideObject { object_id } => object_id,
-            other => {
-                remaining.push(QueuedGameCommand {
-                    player_id: queued.player_id,
-                    command: other,
-                });
-                continue;
-            }
-        };
-
+    for (queued_player_id, object_id) in pending_commands.drain_matching(|command| match command {
+        GameCommand::HideObject { object_id } => Ok(object_id),
+        other => Err(other),
+    }) {
         let Some((identity, player_space, player_tile, base_stats, skill_sheet, mut chat_log)) =
-            (match queued.player_id {
-                Some(id) => player_query.iter_mut().find(|row| row.0.id == id),
-                None => player_query.iter_mut().next(),
-            })
+            resolve_acting_player(player_query.iter_mut(), queued_player_id, |row| row.0.id)
         else {
             continue;
         };
@@ -151,8 +138,6 @@ pub fn process_hide_commands(
             result.total
         ));
     }
-
-    pending_commands.commands = remaining;
 }
 
 #[cfg(test)]
