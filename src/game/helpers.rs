@@ -3,7 +3,9 @@ use bevy::prelude::*;
 use crate::combat::components::CombatTarget;
 use crate::game::resources::{ChatLogState, InventoryState};
 use crate::player::components::{MovementCooldown, Player, PlayerId, PlayerIdentity, VitalStats};
-use crate::world::components::{Collider, OverworldObject, SpaceId, SpaceResident, TilePosition};
+use crate::world::components::{
+    Collider, Movable, OverworldObject, SpaceId, SpaceResident, TilePosition,
+};
 
 /// The full mutable view of a player acting on a server command — identity,
 /// inventory, chat log, position and vitals. One shared alias instead of
@@ -36,6 +38,33 @@ pub type PlayerLookupQuery<'w, 's> = Query<
         &'static OverworldObject,
     ),
     With<Player>,
+>;
+
+/// Every non-player world object with its location — the standard lookup query
+/// for command handlers resolving an `object_id`.
+pub type WorldObjectQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        &'static SpaceResident,
+        &'static TilePosition,
+        &'static OverworldObject,
+    ),
+    Without<Player>,
+>;
+
+/// Same view restricted to `Movable` objects (push/pull/pick-up targets).
+pub type MovableObjectQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        &'static SpaceResident,
+        &'static TilePosition,
+        &'static OverworldObject,
+    ),
+    (With<Movable>, Without<Player>),
 >;
 
 pub type ColliderQuery<'w, 's> =

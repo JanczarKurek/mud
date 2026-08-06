@@ -6,6 +6,7 @@ pub mod helpers;
 pub mod projection;
 pub mod resources;
 pub mod shop;
+pub(crate) mod slots;
 pub mod systems;
 pub mod trade;
 pub mod traversal;

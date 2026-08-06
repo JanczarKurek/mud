@@ -518,7 +518,6 @@ pub fn process_trade_commands(
                     source,
                     quantity,
                     &mut active_trades,
-                    &definitions,
                     &mut player_queries.p1(),
                 );
             }
@@ -721,7 +720,6 @@ fn handle_offer_trade_item(
     source: ItemSlotRef,
     quantity: u32,
     active_trades: &mut ActiveTrades,
-    definitions: &OverworldObjectDefinitions,
     player_inventory_query: &mut PlayerActorQuery,
 ) {
     let Some(side) = side_for_session_player(active_trades, session_id, acting_player_id) else {
@@ -744,8 +742,7 @@ fn handle_offer_trade_item(
     let Ok((_, _, inventory, _, _, _, _, _, _)) = player_inventory_query.get(player_entity) else {
         return;
     };
-    let Some((type_id, properties, available)) = read_player_slot(&source, inventory, definitions)
-    else {
+    let Some((type_id, properties, available)) = read_player_slot(&source, inventory) else {
         return;
     };
 
@@ -1061,7 +1058,7 @@ fn commit_player_to_shop_trade(
     let max_carry = max_carry_query.get(entity).copied().unwrap_or_default();
 
     // Validate player coin offers against current inventory.
-    if !validate_offers_against(&session.offers_a, &inv, definitions) {
+    if !validate_offers_against(&session.offers_a, &inv) {
         return false;
     }
 
@@ -1216,17 +1213,8 @@ fn side_for_session_player(
 fn read_player_slot(
     slot: &ItemSlotRef,
     inventory: &InventoryState,
-    definitions: &OverworldObjectDefinitions,
 ) -> Option<(String, ObjectProperties, u32)> {
     match slot {
-        ItemSlotRef::Backpack(idx) => {
-            let stack = inventory.backpack_slots.get(*idx)?.as_ref()?;
-            Some((
-                stack.type_id.clone(),
-                stack.properties.clone(),
-                stack.quantity,
-            ))
-        }
         ItemSlotRef::Equipment(equipment_slot) => {
             let item = inventory.equipment_item(*equipment_slot)?;
             // Ammo slots track quantity separately on the inventory; other
@@ -1241,21 +1229,13 @@ fn read_player_slot(
             };
             Some((item.type_id.clone(), item.properties.clone(), qty))
         }
-        ItemSlotRef::PouchInBackpack {
-            backpack_slot,
-            sub_slot,
-        } => {
-            let outer = inventory.backpack_slots.get(*backpack_slot)?.as_ref()?;
-            let nested = outer.contained_slots.as_ref()?.get(*sub_slot)?.as_ref()?;
+        _ => {
+            let stack = crate::game::slots::player_stack_slot(inventory, *slot)?.as_ref()?;
             Some((
-                nested.type_id.clone(),
-                nested.properties.clone(),
-                nested.quantity,
+                stack.type_id.clone(),
+                stack.properties.clone(),
+                stack.quantity,
             ))
-        }
-        ItemSlotRef::Container { .. } => {
-            let _ = definitions;
-            None
         }
     }
 }
@@ -1300,10 +1280,10 @@ fn commit_player_to_player_trade(
 
     // Step 1: validate that every offer source still resolves to at least the
     // promised quantity.
-    if !validate_offers_against(&session.offers_a, &inv_a, definitions) {
+    if !validate_offers_against(&session.offers_a, &inv_a) {
         return false;
     }
-    if !validate_offers_against(&session.offers_b, &inv_b, definitions) {
+    if !validate_offers_against(&session.offers_b, &inv_b) {
         return false;
     }
 
@@ -1340,11 +1320,7 @@ fn commit_player_to_player_trade(
     true
 }
 
-fn validate_offers_against(
-    offers: &[TradeOfferEntry],
-    inventory: &InventoryState,
-    definitions: &OverworldObjectDefinitions,
-) -> bool {
+fn validate_offers_against(offers: &[TradeOfferEntry], inventory: &InventoryState) -> bool {
     // Group offers by source slot and ensure the slot still holds enough
     // matching items. Stockpile-sourced offers are validated separately at
     // commit time and skipped here.
@@ -1354,9 +1330,7 @@ fn validate_offers_against(
             continue;
         };
         *required.entry(*slot).or_insert(0) += offer.quantity;
-        let Some((type_id, _properties, available)) =
-            read_player_slot(slot, inventory, definitions)
-        else {
+        let Some((type_id, _properties, available)) = read_player_slot(slot, inventory) else {
             return false;
         };
         if type_id != offer.type_id {
@@ -1385,22 +1359,6 @@ fn remove_offered_from(offers: &[TradeOfferEntry], inventory: &mut InventoryStat
 
 fn decrement_player_slot(slot: &ItemSlotRef, amount: u32, inventory: &mut InventoryState) -> bool {
     match slot {
-        ItemSlotRef::Backpack(idx) => {
-            let Some(slot) = inventory.backpack_slots.get_mut(*idx) else {
-                return false;
-            };
-            let Some(stack) = slot else {
-                return false;
-            };
-            if stack.quantity < amount {
-                return false;
-            }
-            stack.quantity -= amount;
-            if stack.quantity == 0 {
-                *slot = None;
-            }
-            true
-        }
         ItemSlotRef::Equipment(equipment_slot) => {
             use crate::world::object_definitions::EquipmentSlot;
             if matches!(equipment_slot, EquipmentSlot::Ammo) {
@@ -1419,35 +1377,24 @@ fn decrement_player_slot(slot: &ItemSlotRef, amount: u32, inventory: &mut Invent
                 inventory.take_equipment_item(*equipment_slot).is_some()
             }
         }
-        ItemSlotRef::PouchInBackpack {
-            backpack_slot,
-            sub_slot,
-        } => {
-            let Some(outer) = inventory.backpack_slots.get_mut(*backpack_slot) else {
+        ItemSlotRef::Container { .. } => false,
+        _ => {
+            let Some(option_slot) = crate::game::slots::player_stack_slot_mut(inventory, *slot)
+            else {
                 return false;
             };
-            let Some(outer_stack) = outer else {
+            let Some(stack) = option_slot else {
                 return false;
             };
-            let Some(contained) = outer_stack.contained_slots.as_mut() else {
-                return false;
-            };
-            let Some(inner_slot) = contained.get_mut(*sub_slot) else {
-                return false;
-            };
-            let Some(inner_stack) = inner_slot else {
-                return false;
-            };
-            if inner_stack.quantity < amount {
+            if stack.quantity < amount {
                 return false;
             }
-            inner_stack.quantity -= amount;
-            if inner_stack.quantity == 0 {
-                *inner_slot = None;
+            stack.quantity -= amount;
+            if stack.quantity == 0 {
+                *option_slot = None;
             }
             true
         }
-        ItemSlotRef::Container { .. } => false,
     }
 }
 

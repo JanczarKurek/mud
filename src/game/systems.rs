@@ -10,10 +10,17 @@ use crate::combat::scheduled::{
 use crate::game::commands::{
     GameCommand, InspectTarget, ItemDestination, ItemReference, ItemSlotRef, MoveDelta, UseTarget,
 };
-use crate::game::helpers::{colliders_in_space, player_space_id, refuse, PlayerActorQuery};
+use crate::game::helpers::{
+    colliders_in_space, player_space_id, refuse, MovableObjectQuery, PlayerActorQuery,
+    WorldObjectQuery,
+};
 use crate::game::resources::{
     ChatLogState, ContainerViewers, GameUiEvent, InventoryState, PendingGameCommands,
     PendingGameUiEvents, VfxAnchor,
+};
+use crate::game::slots::{
+    find_container_entity, player_stack_slot, player_stack_slot_mut, reduce_option_slot,
+    stack_slot_mut,
 };
 use crate::magic::resources::{AoePattern, SpellDefinition, SpellDefinitions};
 use crate::npc::components::Npc;
@@ -23,7 +30,7 @@ use crate::player::components::{
 };
 use crate::world::column::FloorGeometry;
 use crate::world::components::{
-    tile_distance_3d, Collider, Container, Facing, Movable, OverworldObject, Quantity, Rotatable,
+    tile_distance_3d, Collider, Container, Facing, OverworldObject, Quantity, Rotatable,
     SpaceResident, TilePosition,
 };
 use crate::world::direction::Direction;
@@ -327,11 +334,8 @@ pub fn process_game_commands(
     mut object_registry: ResMut<ObjectRegistry>,
     mut space_authority: SpaceAuthority,
     world_config: Res<WorldConfig>,
-    object_query: Query<(Entity, &SpaceResident, &TilePosition, &OverworldObject), Without<Player>>,
-    movable_query: Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        (With<Movable>, Without<Player>),
-    >,
+    object_query: WorldObjectQuery,
+    movable_query: MovableObjectQuery,
     mut container_query: Query<&mut Container>,
     mut player_queries: ParamSet<(
         Query<(&SpaceResident, &TilePosition), With<Collider>>,
@@ -1087,10 +1091,7 @@ fn handle_move_player(
     delta: MoveDelta,
     climb: bool,
     collider_positions: &[TilePosition],
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     player_query: &mut PlayerActorQuery,
     player_magic_effects: &Query<&mut crate::magic::effects::MagicEffects, With<Player>>,
     player_athletics: &Query<
@@ -1353,10 +1354,7 @@ fn resolve_landing_at(
     column: &crate::world::column::Column,
     space_id: crate::world::components::SpaceId,
     collider_positions: &[TilePosition],
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     definitions: &OverworldObjectDefinitions,
     floor_maps: &crate::world::floor_map::FloorMaps,
     floor_defs: &crate::world::floor_definitions::FloorTilesetDefinitions,
@@ -1390,10 +1388,7 @@ fn handle_jump_to(
     player_entity: Entity,
     target_tile: TilePosition,
     collider_positions: &[TilePosition],
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     player_query: &mut PlayerActorQuery,
     player_athletics: &Query<
         (
@@ -1643,10 +1638,7 @@ fn handle_object_move(
         With<Player>,
     >,
     player_exertion: &mut Query<&mut crate::player::components::Exertion, With<Player>>,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     collider_positions: &[TilePosition],
     definitions: &OverworldObjectDefinitions,
     floor_maps: &crate::world::floor_map::FloorMaps,
@@ -1920,10 +1912,7 @@ fn handle_set_combat_target(
 fn handle_open_container(
     player_entity: Entity,
     object_id: u64,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     container_query: &mut Query<&mut Container>,
     player_query: &mut PlayerActorQuery,
     ui_events: &mut PendingGameUiEvents,
@@ -2048,10 +2037,7 @@ fn player_has_pen(inventory: &InventoryState) -> bool {
 fn resolve_text_source(
     source: ItemReference,
     player_entity: Entity,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     player_query: &PlayerActorQuery,
     object_registry: &ObjectRegistry,
 ) -> Option<(String, ObjectProperties, Option<TilePosition>)> {
@@ -2097,10 +2083,7 @@ fn resolve_text_source(
 fn mutate_text_source(
     source: ItemReference,
     player_entity: Entity,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     player_query: &mut PlayerActorQuery,
     object_registry: &mut ObjectRegistry,
     mutator: impl FnOnce(&mut ObjectProperties),
@@ -2159,10 +2142,7 @@ fn mutate_text_source(
 fn handle_read_book(
     player_entity: Entity,
     source: ItemReference,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     player_query: &mut PlayerActorQuery,
     object_registry: &ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
@@ -2256,10 +2236,7 @@ fn handle_write_book(
     source: ItemReference,
     title: &str,
     text: &str,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     player_query: &mut PlayerActorQuery,
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
@@ -2349,10 +2326,7 @@ fn handle_engrave(
     player_entity: Entity,
     source: ItemReference,
     inscription: &str,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     player_query: &mut PlayerActorQuery,
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
@@ -2424,10 +2398,7 @@ fn handle_inspect(
     player_entity: Entity,
     target: InspectTarget,
     container_query: &mut Query<&mut Container>,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     quantity_query: &Query<&Quantity>,
     player_query: &mut PlayerActorQuery,
     player_derived_stats_query: &Query<&DerivedStats, With<Player>>,
@@ -2559,10 +2530,7 @@ fn handle_use_item(
     player_entity: Entity,
     source: ItemReference,
     container_query: &mut Query<&mut Container>,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     player_query: &mut PlayerActorQuery,
     regen_buffs_query: &mut Query<&mut crate::player::components::RegenBuffs, With<Player>>,
     exertion_query: &mut Query<&mut crate::player::components::Exertion, With<Player>>,
@@ -2817,10 +2785,7 @@ fn handle_use_item_on(
         ),
         With<Player>,
     >,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
@@ -3018,27 +2983,12 @@ fn item_modifiers_at_mut(
     slot: ItemSlotRef,
 ) -> Option<&mut Vec<ItemModifier>> {
     match slot {
-        ItemSlotRef::Backpack(index) => inventory
-            .backpack_slots
-            .get_mut(index)?
-            .as_mut()
-            .map(|stack| &mut stack.modifiers),
         ItemSlotRef::Equipment(equipment_slot) => inventory
             .equipment_item_mut(equipment_slot)
             .map(|item| &mut item.modifiers),
-        ItemSlotRef::PouchInBackpack {
-            backpack_slot,
-            sub_slot,
-        } => inventory
-            .backpack_slots
-            .get_mut(backpack_slot)?
-            .as_mut()?
-            .contained_slots
-            .as_mut()?
-            .get_mut(sub_slot)?
+        _ => player_stack_slot_mut(inventory, slot)?
             .as_mut()
             .map(|stack| &mut stack.modifiers),
-        ItemSlotRef::Container { .. } => None,
     }
 }
 
@@ -3124,10 +3074,7 @@ fn handle_cast_spell_at_item(
     spell_id: &str,
     target_slot: ItemSlotRef,
     container_query: &mut Query<&mut Container>,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     player_query: &mut PlayerActorQuery,
     player_magic_effects_query: &mut Query<&mut crate::magic::effects::MagicEffects, With<Player>>,
     player_class_level: &Query<
@@ -3252,10 +3199,7 @@ fn handle_cast_spell_at(
     spell_id: &str,
     target_object_id: u64,
     container_query: &mut Query<&mut Container>,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     player_query: &mut PlayerActorQuery,
     npc_vitals_query: &mut Query<(&mut VitalStats, &OverworldObject), (With<Npc>, Without<Player>)>,
     player_magic_effects_query: &mut Query<&mut crate::magic::effects::MagicEffects, With<Player>>,
@@ -3485,10 +3429,7 @@ fn handle_cast_spell_at_tile(
     spell_id: &str,
     target_tile: TilePosition,
     container_query: &mut Query<&mut Container>,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     player_query: &mut PlayerActorQuery,
     player_magic_effects_query: &mut Query<&mut crate::magic::effects::MagicEffects, With<Player>>,
     player_class_level: &Query<
@@ -3913,14 +3854,8 @@ fn handle_move_item(
     destination: ItemDestination,
     container_query: &mut Query<&mut Container>,
     player_query: &mut PlayerActorQuery,
-    movable_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        (With<Movable>, Without<Player>),
-    >,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    movable_query: &MovableObjectQuery,
+    object_query: &WorldObjectQuery,
     quantity_query: &Query<&Quantity>,
     collider_positions: &[TilePosition],
     object_registry: &mut ObjectRegistry,
@@ -3998,7 +3933,7 @@ fn handle_move_item(
             if let Ok(container) = container_query.get(entity) {
                 stack.contained_slots = Some(container.slots.clone());
             }
-            if is_player_destination(slot_ref)
+            if is_player_slot(slot_ref)
                 && would_overload_carry(&inventory_state, &stack, &max_carry, definitions)
             {
                 chat_log_state.push_narrator("Too heavy — you can't lift that.");
@@ -4163,8 +4098,7 @@ fn handle_move_item(
             // moves. Within-player rearranges are always allowed; the source
             // weight has already been removed by the take above so the helper
             // would mis-report otherwise.
-            let crosses_into_player =
-                !is_player_source_slot(slot_ref) && is_player_destination(destination_ref);
+            let crosses_into_player = !is_player_slot(slot_ref) && is_player_slot(destination_ref);
             let stack_for_restore = stack.clone();
             if crosses_into_player
                 && would_overload_carry(&inventory_state, &stack, &max_carry, definitions)
@@ -4289,14 +4223,8 @@ fn handle_take_from_stack(
     container_query: &mut Query<&mut Container>,
     player_query: &mut PlayerActorQuery,
     collider_positions: &[TilePosition],
-    movable_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        (With<Movable>, Without<Player>),
-    >,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    movable_query: &MovableObjectQuery,
+    object_query: &WorldObjectQuery,
     quantity_query: &Query<&Quantity>,
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
@@ -4359,7 +4287,7 @@ fn handle_take_from_stack(
             match destination {
                 ItemDestination::Slot(dst_slot_ref) => {
                     let crosses_into_player =
-                        !is_player_source_slot(src_slot_ref) && is_player_destination(dst_slot_ref);
+                        !is_player_slot(src_slot_ref) && is_player_slot(dst_slot_ref);
                     if crosses_into_player {
                         let probe_stack = InventoryStack::item(
                             src_type_id.clone(),
@@ -4510,7 +4438,7 @@ fn handle_take_from_stack(
                 ItemDestination::Slot(s) => s,
                 ItemDestination::WorldTile(_) => return,
             };
-            if is_player_destination(destination_slot)
+            if is_player_slot(destination_slot)
                 && would_overload_carry(&inventory_state, &new_stack, &max_carry, definitions)
             {
                 chat_log_state.push_narrator("Too heavy — you can't lift that.");
@@ -4558,10 +4486,7 @@ fn merge_into_ground_stack(
     dragged_object_id: u64,
     target_tile: TilePosition,
     space_id: crate::world::components::SpaceId,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     quantity_query: &Query<&Quantity>,
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
@@ -4630,10 +4555,7 @@ fn add_to_ground_stack(
     qty: u32,
     tile: TilePosition,
     space_id: crate::world::components::SpaceId,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     quantity_query: &Query<&Quantity>,
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
@@ -4799,14 +4721,7 @@ fn handle_admin_teleport(
     ));
 }
 
-fn handle_admin_despawn(
-    object_id: u64,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
-    commands: &mut Commands,
-) {
+fn handle_admin_despawn(object_id: u64, object_query: &WorldObjectQuery, commands: &mut Commands) {
     let Some((entity, _, _, _)) = object_query
         .iter()
         .find(|(_, _, _, object)| object.object_id == object_id)
@@ -4864,10 +4779,7 @@ fn resolve_player_entity(
 fn find_object_entity(
     object_id: u64,
     space_id: crate::world::components::SpaceId,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
 ) -> Option<(Entity, TilePosition)> {
     object_query
         .iter()
@@ -4880,10 +4792,7 @@ fn find_object_entity(
 fn find_combat_target_entity(
     object_id: u64,
     source_space_id: crate::world::components::SpaceId,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     player_lookup_query: &Query<
         (
             Entity,
@@ -4910,10 +4819,7 @@ fn find_combat_target_entity(
 fn find_movable_entity_with_definition(
     object_id: u64,
     space_id: crate::world::components::SpaceId,
-    movable_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        (With<Movable>, Without<Player>),
-    >,
+    movable_query: &MovableObjectQuery,
     player_id: PlayerId,
     hidden_query: &Query<&crate::world::hidden::Hidden, Without<Player>>,
 ) -> Option<(Entity, TilePosition, String)> {
@@ -4949,10 +4855,7 @@ fn item_reference_view(
     item_reference: ItemReference,
     inventory_state: &InventoryState,
     container_query: &mut Query<&mut Container>,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     object_registry: &ObjectRegistry,
 ) -> Option<ItemView> {
     match item_reference {
@@ -4981,10 +4884,7 @@ struct ItemView {
 
 fn view_for_world_object(
     object_id: u64,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     object_registry: &ObjectRegistry,
 ) -> Option<ItemView> {
     let definition_id = object_query.iter().find_map(|(_, _, _, object)| {
@@ -5004,18 +4904,10 @@ fn view_for_world_object(
 fn stack_in_slot_ref(
     inventory_state: &InventoryState,
     container_query: &mut Query<&mut Container>,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     slot_ref: ItemSlotRef,
 ) -> Option<InventoryStack> {
     match slot_ref {
-        ItemSlotRef::Backpack(slot_index) => inventory_state
-            .backpack_slots
-            .get(slot_index)
-            .cloned()
-            .flatten(),
         ItemSlotRef::Equipment(slot) => inventory_state.equipment_item(slot).map(|item| {
             let quantity = if slot == EquipmentSlot::Ammo {
                 inventory_state.ammo_quantity.max(1)
@@ -5037,16 +4929,7 @@ fn stack_in_slot_ref(
             let container = container_query.get_mut(entity).ok()?;
             container.slots.get(slot_index).cloned().flatten()
         }
-        ItemSlotRef::PouchInBackpack {
-            backpack_slot,
-            sub_slot,
-        } => inventory_state
-            .backpack_slots
-            .get(backpack_slot)?
-            .as_ref()?
-            .contained_slots
-            .as_ref()?
-            .get(sub_slot)
+        _ => player_stack_slot(inventory_state, slot_ref)
             .cloned()
             .flatten(),
     }
@@ -5055,16 +4938,10 @@ fn stack_in_slot_ref(
 fn take_item_from_slot_ref(
     inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     slot_ref: ItemSlotRef,
 ) -> Option<InventoryStack> {
     match slot_ref {
-        ItemSlotRef::Backpack(slot_index) => {
-            inventory_state.backpack_slots.get_mut(slot_index)?.take()
-        }
         ItemSlotRef::Equipment(slot) => {
             let quantity = if slot == EquipmentSlot::Ammo {
                 let q = inventory_state.ammo_quantity.max(1);
@@ -5082,25 +4959,7 @@ fn take_item_from_slot_ref(
                 )
             })
         }
-        ItemSlotRef::Container {
-            object_id,
-            slot_index,
-        } => {
-            let entity = find_container_entity(object_id, object_query)?;
-            let mut container = container_query.get_mut(entity).ok()?;
-            container.slots.get_mut(slot_index)?.take()
-        }
-        ItemSlotRef::PouchInBackpack {
-            backpack_slot,
-            sub_slot,
-        } => inventory_state
-            .backpack_slots
-            .get_mut(backpack_slot)?
-            .as_mut()?
-            .contained_slots
-            .as_mut()?
-            .get_mut(sub_slot)?
-            .take(),
+        _ => stack_slot_mut(inventory_state, container_query, object_query, slot_ref)?.take(),
     }
 }
 
@@ -5148,10 +5007,7 @@ fn place_stack_in_option_slot(
 fn place_stack_in_slot_ref(
     inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     stack: InventoryStack,
     slot_ref: ItemSlotRef,
     definitions: &OverworldObjectDefinitions,
@@ -5160,76 +5016,43 @@ fn place_stack_in_slot_ref(
         return false;
     }
 
-    match slot_ref {
-        ItemSlotRef::Backpack(slot_index) => {
-            let Some(slot) = inventory_state.backpack_slots.get_mut(slot_index) else {
-                return false;
-            };
-            place_stack_in_option_slot(slot, stack, definitions)
-        }
-        ItemSlotRef::Equipment(slot) => {
-            place_item_in_equipment_slot(inventory_state, definitions, slot, stack)
-        }
+    // Recursion guard: a storable container into a destination that refuses
+    // storable containers (e.g. pouch-in-pouch) is rejected. The flag lives on
+    // the *destination* container's definition so the rule is fully
+    // YAML-driven.
+    let dest_def = match slot_ref {
         ItemSlotRef::Container {
             object_id: container_object_id,
-            slot_index,
-        } => {
-            // Recursion guard: storable container into a container that
-            // refuses storable containers (e.g. pouch) is rejected. The flag
-            // lives on the *destination* container's definition so the rule
-            // is fully YAML-driven.
-            let dest_def = object_query
-                .iter()
-                .find(|(_, _, _, obj)| obj.object_id == container_object_id)
-                .and_then(|(_, _, _, obj)| definitions.get(&obj.definition_id));
-            if let Some(dest) = dest_def {
-                if !dest.accepts_storable_containers
-                    && is_storable_container(&stack.type_id, definitions)
-                {
-                    return false;
-                }
-            }
-            let Some(entity) = find_container_entity(container_object_id, object_query) else {
-                return false;
-            };
-            let Ok(mut container) = container_query.get_mut(entity) else {
-                return false;
-            };
-            let Some(slot) = container.slots.get_mut(slot_index) else {
-                return false;
-            };
-            place_stack_in_option_slot(slot, stack, definitions)
-        }
-        ItemSlotRef::PouchInBackpack {
-            backpack_slot,
-            sub_slot,
-        } => {
-            // Recursion guard: the parent must be a pouch (storable
-            // container) and pouches set `accepts_storable_containers: false`,
-            // so reject any incoming storable container item.
+            ..
+        } => object_query
+            .iter()
+            .find(|(_, _, _, obj)| obj.object_id == container_object_id)
+            .and_then(|(_, _, _, obj)| definitions.get(&obj.definition_id)),
+        ItemSlotRef::PouchInBackpack { backpack_slot, .. } => {
             let Some(Some(parent)) = inventory_state.backpack_slots.get(backpack_slot) else {
                 return false;
             };
-            let parent_def = match definitions.get(&parent.type_id) {
-                Some(d) => d,
-                None => return false,
-            };
-            if !parent_def.accepts_storable_containers
-                && is_storable_container(&stack.type_id, definitions)
-            {
+            let Some(parent_def) = definitions.get(&parent.type_id) else {
                 return false;
-            }
-            let Some(parent_mut) = inventory_state
-                .backpack_slots
-                .get_mut(backpack_slot)
-                .and_then(|slot| slot.as_mut())
+            };
+            Some(parent_def)
+        }
+        ItemSlotRef::Backpack(_) | ItemSlotRef::Equipment(_) => None,
+    };
+    if let Some(dest) = dest_def {
+        if !dest.accepts_storable_containers && is_storable_container(&stack.type_id, definitions) {
+            return false;
+        }
+    }
+
+    match slot_ref {
+        ItemSlotRef::Equipment(slot) => {
+            place_item_in_equipment_slot(inventory_state, definitions, slot, stack)
+        }
+        _ => {
+            let Some(slot) =
+                stack_slot_mut(inventory_state, container_query, object_query, slot_ref)
             else {
-                return false;
-            };
-            let Some(inner) = parent_mut.contained_slots.as_mut() else {
-                return false;
-            };
-            let Some(slot) = inner.get_mut(sub_slot) else {
                 return false;
             };
             place_stack_in_option_slot(slot, stack, definitions)
@@ -5245,14 +5068,9 @@ fn is_storable_container(type_id: &str, definitions: &OverworldObjectDefinitions
         .is_some_and(|d| d.storable && d.container_capacity.is_some())
 }
 
-fn is_player_destination(slot_ref: ItemSlotRef) -> bool {
-    matches!(
-        slot_ref,
-        ItemSlotRef::Backpack(_) | ItemSlotRef::Equipment(_) | ItemSlotRef::PouchInBackpack { .. }
-    )
-}
-
-fn is_player_source_slot(slot_ref: ItemSlotRef) -> bool {
+/// A slot that lives on the player (backpack/equipment/pouch) rather than in
+/// a world container.
+fn is_player_slot(slot_ref: ItemSlotRef) -> bool {
     matches!(
         slot_ref,
         ItemSlotRef::Backpack(_) | ItemSlotRef::Equipment(_) | ItemSlotRef::PouchInBackpack { .. }
@@ -5276,19 +5094,11 @@ fn would_overload_carry(
 fn restore_stack_to_slot_ref(
     inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     slot_ref: ItemSlotRef,
     stack: InventoryStack,
 ) {
     match slot_ref {
-        ItemSlotRef::Backpack(slot_index) => {
-            if let Some(slot) = inventory_state.backpack_slots.get_mut(slot_index) {
-                *slot = Some(stack);
-            }
-        }
         ItemSlotRef::Equipment(slot) => {
             inventory_state.restore_equipment_item(
                 slot,
@@ -5302,32 +5112,11 @@ fn restore_stack_to_slot_ref(
                 inventory_state.ammo_quantity = stack.quantity.max(1);
             }
         }
-        ItemSlotRef::Container {
-            object_id: container_object_id,
-            slot_index,
-        } => {
-            if let Some(entity) = find_container_entity(container_object_id, object_query) {
-                if let Ok(mut container) = container_query.get_mut(entity) {
-                    if let Some(slot) = container.slots.get_mut(slot_index) {
-                        *slot = Some(stack);
-                    }
-                }
-            }
-        }
-        ItemSlotRef::PouchInBackpack {
-            backpack_slot,
-            sub_slot,
-        } => {
-            if let Some(parent) = inventory_state
-                .backpack_slots
-                .get_mut(backpack_slot)
-                .and_then(|slot| slot.as_mut())
+        _ => {
+            if let Some(slot) =
+                stack_slot_mut(inventory_state, container_query, object_query, slot_ref)
             {
-                if let Some(inner) = parent.contained_slots.as_mut() {
-                    if let Some(slot) = inner.get_mut(sub_slot) {
-                        *slot = Some(stack);
-                    }
-                }
+                *slot = Some(stack);
             }
         }
     }
@@ -5348,10 +5137,7 @@ fn restore_stack_to_slot_ref(
 fn move_or_swap_between_slots(
     inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     src: InventoryStack,
     slot_ref: ItemSlotRef,
     destination_ref: ItemSlotRef,
@@ -5454,24 +5240,10 @@ fn move_or_swap_between_slots(
 fn consume_one_from_slot_ref(
     inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     slot_ref: ItemSlotRef,
 ) {
     match slot_ref {
-        ItemSlotRef::Backpack(slot_index) => {
-            if let Some(slot) = inventory_state.backpack_slots.get_mut(slot_index) {
-                if let Some(stack) = slot {
-                    if stack.quantity > 1 {
-                        stack.quantity -= 1;
-                    } else {
-                        *slot = None;
-                    }
-                }
-            }
-        }
         ItemSlotRef::Equipment(slot) => {
             if slot == EquipmentSlot::Ammo && inventory_state.ammo_quantity > 1 {
                 inventory_state.ammo_quantity -= 1;
@@ -5482,44 +5254,11 @@ fn consume_one_from_slot_ref(
                 }
             }
         }
-        ItemSlotRef::Container {
-            object_id,
-            slot_index,
-        } => {
-            if let Some(entity) = find_container_entity(object_id, object_query) {
-                if let Ok(mut container) = container_query.get_mut(entity) {
-                    if let Some(slot) = container.slots.get_mut(slot_index) {
-                        if let Some(stack) = slot {
-                            if stack.quantity > 1 {
-                                stack.quantity -= 1;
-                            } else {
-                                *slot = None;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        ItemSlotRef::PouchInBackpack {
-            backpack_slot,
-            sub_slot,
-        } => {
-            if let Some(parent) = inventory_state
-                .backpack_slots
-                .get_mut(backpack_slot)
-                .and_then(|slot| slot.as_mut())
+        _ => {
+            if let Some(slot) =
+                stack_slot_mut(inventory_state, container_query, object_query, slot_ref)
             {
-                if let Some(inner) = parent.contained_slots.as_mut() {
-                    if let Some(slot) = inner.get_mut(sub_slot) {
-                        if let Some(stack) = slot {
-                            if stack.quantity > 1 {
-                                stack.quantity -= 1;
-                            } else {
-                                *slot = None;
-                            }
-                        }
-                    }
-                }
+                reduce_option_slot(slot, 1);
             }
         }
     }
@@ -5528,114 +5267,32 @@ fn consume_one_from_slot_ref(
 fn reduce_slot_quantity(
     inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     slot_ref: ItemSlotRef,
     amount: u32,
 ) {
-    match slot_ref {
-        ItemSlotRef::Backpack(slot_index) => {
-            if let Some(slot) = inventory_state.backpack_slots.get_mut(slot_index) {
-                if let Some(stack) = slot {
-                    if stack.quantity <= amount {
-                        *slot = None;
-                    } else {
-                        stack.quantity -= amount;
-                    }
-                }
-            }
-        }
-        ItemSlotRef::Equipment(_) => {}
-        ItemSlotRef::Container {
-            object_id,
-            slot_index,
-        } => {
-            if let Some(entity) = find_container_entity(object_id, object_query) {
-                if let Ok(mut container) = container_query.get_mut(entity) {
-                    if let Some(slot) = container.slots.get_mut(slot_index) {
-                        if let Some(stack) = slot {
-                            if stack.quantity <= amount {
-                                *slot = None;
-                            } else {
-                                stack.quantity -= amount;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        ItemSlotRef::PouchInBackpack {
-            backpack_slot,
-            sub_slot,
-        } => {
-            if let Some(parent) = inventory_state
-                .backpack_slots
-                .get_mut(backpack_slot)
-                .and_then(|slot| slot.as_mut())
-            {
-                if let Some(inner) = parent.contained_slots.as_mut() {
-                    if let Some(slot) = inner.get_mut(sub_slot) {
-                        if let Some(stack) = slot {
-                            if stack.quantity <= amount {
-                                *slot = None;
-                            } else {
-                                stack.quantity -= amount;
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    if matches!(slot_ref, ItemSlotRef::Equipment(_)) {
+        return;
+    }
+    if let Some(slot) = stack_slot_mut(inventory_state, container_query, object_query, slot_ref) {
+        reduce_option_slot(slot, amount);
     }
 }
 
 fn add_to_slot_quantity(
     inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     slot_ref: ItemSlotRef,
     amount: u32,
 ) {
-    match slot_ref {
-        ItemSlotRef::Backpack(slot_index) => {
-            if let Some(Some(stack)) = inventory_state.backpack_slots.get_mut(slot_index) {
-                stack.quantity += amount;
-            }
-        }
-        ItemSlotRef::Equipment(_) => {}
-        ItemSlotRef::Container {
-            object_id,
-            slot_index,
-        } => {
-            if let Some(entity) = find_container_entity(object_id, object_query) {
-                if let Ok(mut container) = container_query.get_mut(entity) {
-                    if let Some(Some(stack)) = container.slots.get_mut(slot_index) {
-                        stack.quantity += amount;
-                    }
-                }
-            }
-        }
-        ItemSlotRef::PouchInBackpack {
-            backpack_slot,
-            sub_slot,
-        } => {
-            if let Some(parent) = inventory_state
-                .backpack_slots
-                .get_mut(backpack_slot)
-                .and_then(|slot| slot.as_mut())
-            {
-                if let Some(inner) = parent.contained_slots.as_mut() {
-                    if let Some(Some(stack)) = inner.get_mut(sub_slot) {
-                        stack.quantity += amount;
-                    }
-                }
-            }
-        }
+    if matches!(slot_ref, ItemSlotRef::Equipment(_)) {
+        return;
+    }
+    if let Some(Some(stack)) =
+        stack_slot_mut(inventory_state, container_query, object_query, slot_ref)
+    {
+        stack.quantity += amount;
     }
 }
 
@@ -5643,10 +5300,7 @@ fn consume_item_reference(
     item_reference: ItemReference,
     inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     commands: &mut Commands,
 ) {
     match item_reference {
@@ -5682,10 +5336,7 @@ fn write_charges_at(
     item_reference: ItemReference,
     inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     object_registry: &mut ObjectRegistry,
     new_charges: u32,
 ) {
@@ -5696,54 +5347,26 @@ fn write_charges_at(
                 props.insert(crate::player::components::CHARGES_KEY.to_string(), value);
             }
         }
-        ItemReference::Slot(slot_ref) => match slot_ref {
-            ItemSlotRef::Backpack(slot_index) => {
-                if let Some(Some(stack)) = inventory_state.backpack_slots.get_mut(slot_index) {
-                    stack.set_charges_remaining(new_charges);
-                }
-            }
-            ItemSlotRef::Equipment(slot) => {
-                for (eq_slot, item) in inventory_state.equipment_slots.iter_mut() {
-                    if *eq_slot == slot {
-                        if let Some(item) = item.as_mut() {
-                            item.properties.insert(
-                                crate::player::components::CHARGES_KEY.to_string(),
-                                value.clone(),
-                            );
-                        }
-                        break;
+        ItemReference::Slot(ItemSlotRef::Equipment(slot)) => {
+            for (eq_slot, item) in inventory_state.equipment_slots.iter_mut() {
+                if *eq_slot == slot {
+                    if let Some(item) = item.as_mut() {
+                        item.properties.insert(
+                            crate::player::components::CHARGES_KEY.to_string(),
+                            value.clone(),
+                        );
                     }
+                    break;
                 }
             }
-            ItemSlotRef::Container {
-                object_id,
-                slot_index,
-            } => {
-                if let Some(entity) = find_container_entity(object_id, object_query) {
-                    if let Ok(mut container) = container_query.get_mut(entity) {
-                        if let Some(Some(stack)) = container.slots.get_mut(slot_index) {
-                            stack.set_charges_remaining(new_charges);
-                        }
-                    }
-                }
+        }
+        ItemReference::Slot(slot_ref) => {
+            if let Some(Some(stack)) =
+                stack_slot_mut(inventory_state, container_query, object_query, slot_ref)
+            {
+                stack.set_charges_remaining(new_charges);
             }
-            ItemSlotRef::PouchInBackpack {
-                backpack_slot,
-                sub_slot,
-            } => {
-                if let Some(parent) = inventory_state
-                    .backpack_slots
-                    .get_mut(backpack_slot)
-                    .and_then(|slot| slot.as_mut())
-                {
-                    if let Some(inner) = parent.contained_slots.as_mut() {
-                        if let Some(Some(stack)) = inner.get_mut(sub_slot) {
-                            stack.set_charges_remaining(new_charges);
-                        }
-                    }
-                }
-            }
-        },
+        }
     }
 }
 
@@ -5761,10 +5384,7 @@ fn consume_or_decrement_charge(
     item_reference: ItemReference,
     inventory_state: &mut InventoryState,
     container_query: &mut Query<&mut Container>,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     commands: &mut Commands,
@@ -5833,18 +5453,6 @@ fn consume_or_decrement_charge(
         commands,
     );
     ChargeOutcome::Consumed
-}
-
-fn find_container_entity(
-    object_id: u64,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
-) -> Option<Entity> {
-    object_query
-        .iter()
-        .find_map(|(entity, _, _, object)| (object.object_id == object_id).then_some(entity))
 }
 
 fn place_item_in_equipment_slot(
@@ -6139,10 +5747,7 @@ fn is_walkable_tile(
     target: TilePosition,
     space_id: crate::world::components::SpaceId,
     collider_positions: &[TilePosition],
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     definitions: &OverworldObjectDefinitions,
     floor_maps: &crate::world::floor_map::FloorMaps,
     floor_defs: &crate::world::floor_definitions::FloorTilesetDefinitions,
@@ -6225,10 +5830,7 @@ fn resolve_step_with_climb(
     current_z: i32,
     space_id: crate::world::components::SpaceId,
     collider_positions: &[TilePosition],
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     definitions: &OverworldObjectDefinitions,
     floor_maps: &crate::world::floor_map::FloorMaps,
     floor_defs: &crate::world::floor_definitions::FloorTilesetDefinitions,
@@ -6375,10 +5977,7 @@ fn resolve_world_drop_tile(
     space_id: crate::world::components::SpaceId,
     player_position: &TilePosition,
     dragged_entity: Entity,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     collider_positions: &[TilePosition],
     definitions: &OverworldObjectDefinitions,
     floor_maps: &crate::world::floor_map::FloorMaps,
@@ -6458,10 +6057,7 @@ fn find_nearest_valid_world_drop_tile(
     space_id: crate::world::components::SpaceId,
     player_position: &TilePosition,
     dragged_entity: Entity,
-    object_query: &Query<
-        (Entity, &SpaceResident, &TilePosition, &OverworldObject),
-        Without<Player>,
-    >,
+    object_query: &WorldObjectQuery,
     collider_positions: &[TilePosition],
     definitions: &OverworldObjectDefinitions,
     floor_maps: &crate::world::floor_map::FloorMaps,
