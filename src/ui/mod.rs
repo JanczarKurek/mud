@@ -7,6 +7,7 @@ pub mod container_panel;
 pub mod debug_menu;
 pub mod dialog;
 pub mod equipment_panel;
+pub(crate) mod hit_test;
 pub mod item_details;
 pub mod log_panel;
 pub mod menu_bar;

@@ -615,18 +615,7 @@ pub fn handle_trade_panel_clicks(
     }
 }
 
-pub(crate) fn point_in_ui_node(
-    point: Vec2,
-    computed: &ComputedNode,
-    transform: &UiGlobalTransform,
-) -> bool {
-    // `point` comes from `Window::cursor_position()` in logical pixels, but
-    // `ComputedNode` / `UiGlobalTransform` are in physical pixels. On HiDPI
-    // displays (scale_factor > 1) we must scale up or the hit-test misses.
-    let inv = computed.inverse_scale_factor();
-    let physical_point = if inv > 0.0 { point / inv } else { point };
-    computed.contains_point(*transform, physical_point)
-}
+pub(crate) use crate::ui::hit_test::point_in_ui_node;
 
 trait ClientTradeViewExt {
     fn both_ready_or_else(&self) -> bool;

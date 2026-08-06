@@ -565,18 +565,7 @@ fn apply_movable_window_focus_z_index(
     }
 }
 
-pub(crate) fn point_in_node(
-    point: Vec2,
-    computed: &ComputedNode,
-    transform: &UiGlobalTransform,
-) -> bool {
-    // `point` is in logical pixels (from `Window::cursor_position()`), while
-    // `ComputedNode` / `UiGlobalTransform` are in physical pixels. Scale up
-    // before hit-testing so this works on HiDPI displays.
-    let inv = computed.inverse_scale_factor();
-    let physical_point = if inv > 0.0 { point / inv } else { point };
-    computed.contains_point(*transform, physical_point)
-}
+pub(crate) use crate::ui::hit_test::point_in_ui_node as point_in_node;
 
 pub(crate) fn val_to_px(val: Val) -> f32 {
     match val {

@@ -1,3 +1,4 @@
+use crate::ui::hit_test::point_in_ui_node;
 use bevy::ecs::query::QueryFilter;
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::log::info;
@@ -4521,24 +4522,6 @@ fn hovered_slot_in_family<F: QueryFilter>(
 
             point_in_ui_node(cursor_position, computed_node, global_transform).then_some(slot.kind)
         })
-}
-
-fn point_in_ui_node(
-    cursor_position: Vec2,
-    computed_node: &ComputedNode,
-    global_transform: &UiGlobalTransform,
-) -> bool {
-    // `Window::cursor_position()` is in logical pixels, but `ComputedNode`
-    // geometry and `UiGlobalTransform` are in physical pixels. They diverge
-    // on HiDPI displays (e.g. macOS Retina, scale_factor = 2.0), so scale
-    // the cursor up before hit-testing or every UI click misses.
-    let inv = computed_node.inverse_scale_factor();
-    let physical_cursor = if inv > 0.0 {
-        cursor_position / inv
-    } else {
-        cursor_position
-    };
-    computed_node.contains_point(*global_transform, physical_cursor)
 }
 
 /// Convert a logical cursor position (from `Window::cursor_position()`) into a

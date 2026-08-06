@@ -8,6 +8,7 @@
 //! persist to a JSON file under the per-role data tree (see
 //! `crate::app::paths::quickbar_path`).
 
+use crate::ui::hit_test::point_in_ui_node;
 use std::fs;
 use std::path::PathBuf;
 
@@ -477,20 +478,6 @@ fn hovered_quickbar_slot_idx<F: QueryFilter>(
             }
             point_in_ui_node(cursor_position, computed_node, global_transform).then_some(slot.0)
         })
-}
-
-fn point_in_ui_node(
-    cursor_position: Vec2,
-    computed_node: &ComputedNode,
-    global_transform: &UiGlobalTransform,
-) -> bool {
-    let inv = computed_node.inverse_scale_factor();
-    let physical_cursor = if inv > 0.0 {
-        cursor_position / inv
-    } else {
-        cursor_position
-    };
-    computed_node.contains_point(*global_transform, physical_cursor)
 }
 
 /// Load slots from disk the first time we observe a fresh `local_player_id`.
