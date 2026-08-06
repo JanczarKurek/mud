@@ -2439,14 +2439,7 @@ fn handle_use_item(
     regen_buffs_query: &mut Query<&mut crate::player::components::RegenBuffs, With<Player>>,
     exertion_query: &mut Query<&mut crate::player::components::Exertion, With<Player>>,
     magic_effects_query: &mut Query<&mut crate::magic::effects::MagicEffects, With<Player>>,
-    player_class_level: &Query<
-        (
-            Option<&crate::player::classes::Class>,
-            Option<&crate::player::progression::Experience>,
-            Option<&crate::player::components::DerivedStats>,
-        ),
-        With<Player>,
-    >,
+    player_class_level: &ClassLevelQuery,
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
@@ -2517,33 +2510,19 @@ fn handle_use_item(
         if spell.targeting == crate::magic::resources::SpellTargeting::Targeted {
             return;
         }
-        // Today everything routed through this branch is a scroll-shaped item
-        // (its definition declares `spell_id`). When a memorized-spell cast
-        // path lands later, `is_scroll` should reflect *that* distinction; for
-        // now mark as scroll so class_access is bypassed but level is checked.
-        let is_scroll = true;
-        let (class, level) = player_class_level
-            .get(player_entity)
-            .map(|(c, e, _derived)| (c.copied(), e.map_or(1, |exp| exp.level)))
-            .unwrap_or((None, 1));
-        if let Err(reason) = check_caster_eligibility(spell, is_scroll, class, level) {
-            chat_log_state.push_narrator(reason);
+        // NOTE: unlike the targeted cast paths, this self-cast branch has
+        // never had a paralysis/sleep gate; preserved as-is.
+        if !caster_eligible(
+            spell,
+            player_entity,
+            player_class_level,
+            &mut chat_log_state,
+        ) || !mana_gate(spell, &mut vital_stats, &mut chat_log_state, true)
+        {
             return;
         }
-        if vital_stats.mana < spell.mana_cost {
-            chat_log_state.push_narrator(format!("Not enough mana to cast {}.", spell.name));
-            return;
-        }
-        vital_stats.mana = (vital_stats.mana - spell.mana_cost).max(0.0);
-        let cast_vfx_id = spell
-            .effects
-            .vfx_on_cast
-            .clone()
-            .unwrap_or_else(|| "cast_flash".to_owned());
-        ui_events.push_broadcast(GameUiEvent::VfxSpawn {
-            definition_id: cast_vfx_id,
-            anchor: VfxAnchor::tile(player_space_id, player_position),
-        });
+        broadcast_cast_vfx(spell, ui_events, player_space_id, player_position);
+        let (_, level) = caster_class_level(player_class_level, player_entity);
         let caster_attrs = caster_attributes(player_class_level, player_entity);
         apply_spell_restore(spell, &mut vital_stats, &caster_attrs, level);
         let rolled_damage = spell.effects.damage.roll(&caster_attrs, level);
@@ -2681,14 +2660,7 @@ fn handle_use_item_on(
     regen_buffs_query: &mut Query<&mut crate::player::components::RegenBuffs, With<Player>>,
     exertion_query: &mut Query<&mut crate::player::components::Exertion, With<Player>>,
     magic_effects_query: &mut Query<&mut crate::magic::effects::MagicEffects, With<Player>>,
-    player_class_level: &Query<
-        (
-            Option<&crate::player::classes::Class>,
-            Option<&crate::player::progression::Experience>,
-            Option<&crate::player::components::DerivedStats>,
-        ),
-        With<Player>,
-    >,
+    player_class_level: &ClassLevelQuery,
     object_query: &WorldObjectQuery,
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
@@ -2981,14 +2953,7 @@ fn handle_cast_spell_at_item(
     object_query: &WorldObjectQuery,
     player_query: &mut PlayerActorQuery,
     player_magic_effects_query: &mut Query<&mut crate::magic::effects::MagicEffects, With<Player>>,
-    player_class_level: &Query<
-        (
-            Option<&crate::player::classes::Class>,
-            Option<&crate::player::progression::Experience>,
-            Option<&crate::player::components::DerivedStats>,
-        ),
-        With<Player>,
-    >,
+    player_class_level: &ClassLevelQuery,
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
@@ -3016,31 +2981,18 @@ fn handle_cast_spell_at_item(
         return;
     };
 
-    // Class + level gating. Same scroll-bypass rule as `handle_cast_spell_at`.
-    let is_scroll = true;
-    let (class, level) = player_class_level
-        .get(player_entity)
-        .map(|(c, e, _derived)| (c.copied(), e.map_or(1, |exp| exp.level)))
-        .unwrap_or((None, 1));
-    if let Err(reason) = check_caster_eligibility(spell, is_scroll, class, level) {
-        chat_log_state.push_narrator(reason);
-        return;
-    }
-
-    if let Ok(effects) = player_magic_effects_query.get(player_entity) {
-        if effects.is_paralyzed() {
-            chat_log_state
-                .push_narrator(format!("You're paralyzed and can't cast {}.", spell.name));
-            return;
-        }
-        if effects.is_asleep() {
-            chat_log_state.push_narrator(format!("You're asleep and can't cast {}.", spell.name));
-            return;
-        }
-    }
-
-    if player_vitals.mana < spell.mana_cost {
-        chat_log_state.push_narrator(format!("Not enough mana to cast {}.", spell.name));
+    if !caster_eligible(
+        spell,
+        player_entity,
+        player_class_level,
+        &mut chat_log_state,
+    ) || !caster_can_act(
+        spell,
+        player_entity,
+        player_magic_effects_query,
+        &mut chat_log_state,
+    ) || !mana_gate(spell, &mut player_vitals, &mut chat_log_state, false)
+    {
         return;
     }
 
@@ -3054,15 +3006,12 @@ fn handle_cast_spell_at_item(
         return;
     }
     player_vitals.mana = (player_vitals.mana - spell.mana_cost).max(0.0);
-    let cast_vfx_id = spell
-        .effects
-        .vfx_on_cast
-        .clone()
-        .unwrap_or_else(|| "cast_flash".to_owned());
-    ui_events.push_broadcast(GameUiEvent::VfxSpawn {
-        definition_id: cast_vfx_id,
-        anchor: VfxAnchor::tile(player_space_resident.space_id, *player_position),
-    });
+    broadcast_cast_vfx(
+        spell,
+        ui_events,
+        player_space_resident.space_id,
+        *player_position,
+    );
     chat_log_state.push_line(format!("[Player]: \"{}\"", spell.incantation));
     consume_or_decrement_charge(
         source,
@@ -3075,21 +3024,114 @@ fn handle_cast_spell_at_item(
     );
 }
 
+/// The `(class, experience, derived-stats)` caster lookup shared by every
+/// spell-cast path.
+type ClassLevelQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Option<&'static crate::player::classes::Class>,
+        Option<&'static crate::player::progression::Experience>,
+        Option<&'static crate::player::components::DerivedStats>,
+    ),
+    With<Player>,
+>;
+
+/// The caster's class and level, defaulting to classless level 1. Today
+/// everything routed through the cast paths is a scroll-shaped item (its
+/// definition declares `spell_id`), so callers pass `is_scroll = true` to
+/// `check_caster_eligibility`; when a memorized-spell path lands later, this
+/// is the single place to source that distinction from.
+fn caster_class_level(
+    query: &ClassLevelQuery,
+    entity: Entity,
+) -> (Option<crate::player::classes::Class>, u32) {
+    query
+        .get(entity)
+        .map(|(c, e, _derived)| (c.copied(), e.map_or(1, |exp| exp.level)))
+        .unwrap_or((None, 1))
+}
+
+/// Class/level eligibility gate. Pushes the refusal line and returns false
+/// when the caster may not cast this spell.
+fn caster_eligible(
+    spell: &SpellDefinition,
+    player_entity: Entity,
+    player_class_level: &ClassLevelQuery,
+    chat_log_state: &mut ChatLogState,
+) -> bool {
+    let is_scroll = true;
+    let (class, level) = caster_class_level(player_class_level, player_entity);
+    if let Err(reason) = check_caster_eligibility(spell, is_scroll, class, level) {
+        chat_log_state.push_narrator(reason);
+        return false;
+    }
+    true
+}
+
+/// Paralysis/sleep gate: a caster who can't form the incantation gets the
+/// refusal line and false.
+fn caster_can_act(
+    spell: &SpellDefinition,
+    player_entity: Entity,
+    effects_query: &Query<&mut crate::magic::effects::MagicEffects, With<Player>>,
+    chat_log_state: &mut ChatLogState,
+) -> bool {
+    if let Ok(effects) = effects_query.get(player_entity) {
+        if effects.is_paralyzed() {
+            chat_log_state
+                .push_narrator(format!("You're paralyzed and can't cast {}.", spell.name));
+            return false;
+        }
+        if effects.is_asleep() {
+            chat_log_state.push_narrator(format!("You're asleep and can't cast {}.", spell.name));
+            return false;
+        }
+    }
+    true
+}
+
+/// Mana gate. Deducts on success when `spend` is set — pass `false` when a
+/// later step may still fail (a failed cast must never burn mana).
+fn mana_gate(
+    spell: &SpellDefinition,
+    vitals: &mut VitalStats,
+    chat_log_state: &mut ChatLogState,
+    spend: bool,
+) -> bool {
+    if vitals.mana < spell.mana_cost {
+        chat_log_state.push_narrator(format!("Not enough mana to cast {}.", spell.name));
+        return false;
+    }
+    if spend {
+        vitals.mana = (vitals.mana - spell.mana_cost).max(0.0);
+    }
+    true
+}
+
+/// Broadcast the on-cast flash at the caster's tile.
+fn broadcast_cast_vfx(
+    spell: &SpellDefinition,
+    ui_events: &mut PendingGameUiEvents,
+    space_id: crate::world::components::SpaceId,
+    tile: TilePosition,
+) {
+    let cast_vfx_id = spell
+        .effects
+        .vfx_on_cast
+        .clone()
+        .unwrap_or_else(|| "cast_flash".to_owned());
+    ui_events.push_broadcast(GameUiEvent::VfxSpawn {
+        definition_id: cast_vfx_id,
+        anchor: VfxAnchor::tile(space_id, tile),
+    });
+}
+
 #[allow(clippy::too_many_arguments)]
 /// The caster's attribute set from the shared `player_class_level` query, used
 /// to roll attribute/level-scaled spell `damage` expressions. Defaults to a
 /// baseline set if the caster somehow lacks `DerivedStats`.
-fn caster_attributes(
-    query: &Query<
-        (
-            Option<&crate::player::classes::Class>,
-            Option<&crate::player::progression::Experience>,
-            Option<&DerivedStats>,
-        ),
-        With<Player>,
-    >,
-    entity: Entity,
-) -> AttributeSet {
+fn caster_attributes(query: &ClassLevelQuery, entity: Entity) -> AttributeSet {
     query
         .get(entity)
         .ok()
@@ -3111,14 +3153,7 @@ fn handle_cast_spell_at(
         &mut crate::magic::effects::MagicEffects,
         (With<Npc>, Without<Player>),
     >,
-    player_class_level: &Query<
-        (
-            Option<&crate::player::classes::Class>,
-            Option<&crate::player::progression::Experience>,
-            Option<&crate::player::components::DerivedStats>,
-        ),
-        With<Player>,
-    >,
+    player_class_level: &ClassLevelQuery,
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
     spell_definitions: &SpellDefinitions,
@@ -3165,49 +3200,25 @@ fn handle_cast_spell_at(
         return;
     }
 
-    // Class + level gating. Same scroll-bypass rule as `handle_use_item`.
-    let is_scroll = true;
-    let (class, level) = player_class_level
-        .get(player_entity)
-        .map(|(c, e, _derived)| (c.copied(), e.map_or(1, |exp| exp.level)))
-        .unwrap_or((None, 1));
-    if let Err(reason) = check_caster_eligibility(spell, is_scroll, class, level) {
-        chat_log_state.push_narrator(reason);
+    if !caster_eligible(
+        spell,
+        player_entity,
+        player_class_level,
+        &mut chat_log_state,
+    ) || !caster_can_act(
+        spell,
+        player_entity,
+        player_magic_effects_query,
+        &mut chat_log_state,
+    ) || !mana_gate(spell, &mut player_vitals, &mut chat_log_state, true)
+    {
         return;
     }
 
-    // Paralyzed or sleeping casters can't form the incantation. Cheaper to
-    // read effects through the dedicated query than to thread a separate
-    // parameter.
-    if let Ok(effects) = player_magic_effects_query.get(player_entity) {
-        if effects.is_paralyzed() {
-            chat_log_state
-                .push_narrator(format!("You're paralyzed and can't cast {}.", spell.name));
-            return;
-        }
-        if effects.is_asleep() {
-            chat_log_state.push_narrator(format!("You're asleep and can't cast {}.", spell.name));
-            return;
-        }
-    }
-
-    if player_vitals.mana < spell.mana_cost {
-        chat_log_state.push_narrator(format!("Not enough mana to cast {}.", spell.name));
-        return;
-    }
-    player_vitals.mana = (player_vitals.mana - spell.mana_cost).max(0.0);
-
+    let (_, level) = caster_class_level(player_class_level, player_entity);
     let caster_space_id = player_space_resident.space_id;
     let caster_tile = *player_position;
-    let cast_vfx_id = spell
-        .effects
-        .vfx_on_cast
-        .clone()
-        .unwrap_or_else(|| "cast_flash".to_owned());
-    ui_events.push_broadcast(GameUiEvent::VfxSpawn {
-        definition_id: cast_vfx_id,
-        anchor: VfxAnchor::tile(caster_space_id, caster_tile),
-    });
+    broadcast_cast_vfx(spell, ui_events, caster_space_id, caster_tile);
 
     // Resolve everything caster-scaled once up front (restore, damage, debuff
     // magnitudes) so the projectile and direct paths use the same numbers and
@@ -3336,14 +3347,7 @@ fn handle_cast_spell_at_tile(
     object_query: &WorldObjectQuery,
     player_query: &mut PlayerActorQuery,
     player_magic_effects_query: &mut Query<&mut crate::magic::effects::MagicEffects, With<Player>>,
-    player_class_level: &Query<
-        (
-            Option<&crate::player::classes::Class>,
-            Option<&crate::player::progression::Experience>,
-            Option<&crate::player::components::DerivedStats>,
-        ),
-        With<Player>,
-    >,
+    player_class_level: &ClassLevelQuery,
     companion_query: &Query<(Entity, &crate::npc::components::Companion), With<Npc>>,
     object_registry: &mut ObjectRegistry,
     definitions: &OverworldObjectDefinitions,
@@ -3379,43 +3383,23 @@ fn handle_cast_spell_at_tile(
         return;
     }
 
-    let is_scroll = true;
-    let (class, level) = player_class_level
-        .get(player_entity)
-        .map(|(c, e, _derived)| (c.copied(), e.map_or(1, |exp| exp.level)))
-        .unwrap_or((None, 1));
-    if let Err(reason) = check_caster_eligibility(spell, is_scroll, class, level) {
-        chat_log_state.push_narrator(reason);
+    if !caster_eligible(
+        spell,
+        player_entity,
+        player_class_level,
+        &mut chat_log_state,
+    ) || !caster_can_act(
+        spell,
+        player_entity,
+        player_magic_effects_query,
+        &mut chat_log_state,
+    ) || !mana_gate(spell, &mut player_vitals, &mut chat_log_state, true)
+    {
         return;
     }
 
-    if let Ok(effects) = player_magic_effects_query.get(player_entity) {
-        if effects.is_paralyzed() {
-            chat_log_state
-                .push_narrator(format!("You're paralyzed and can't cast {}.", spell.name));
-            return;
-        }
-        if effects.is_asleep() {
-            chat_log_state.push_narrator(format!("You're asleep and can't cast {}.", spell.name));
-            return;
-        }
-    }
-
-    if player_vitals.mana < spell.mana_cost {
-        chat_log_state.push_narrator(format!("Not enough mana to cast {}.", spell.name));
-        return;
-    }
-    player_vitals.mana = (player_vitals.mana - spell.mana_cost).max(0.0);
-
-    let cast_vfx_id = spell
-        .effects
-        .vfx_on_cast
-        .clone()
-        .unwrap_or_else(|| "cast_flash".to_owned());
-    ui_events.push_broadcast(GameUiEvent::VfxSpawn {
-        definition_id: cast_vfx_id,
-        anchor: VfxAnchor::tile(caster_space_id, caster_tile),
-    });
+    let (_, level) = caster_class_level(player_class_level, player_entity);
+    broadcast_cast_vfx(spell, ui_events, caster_space_id, caster_tile);
 
     // Missile: fly to the target tile (fixed endpoint — tile-target casts
     // don't home) and offset every AoE impact by the flight time. `0.0` for a
