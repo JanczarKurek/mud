@@ -11,14 +11,35 @@ Mud 2.0 is a Tibia-inspired multiplayer MUD built with **Bevy 0.18** (Rust game 
 ```bash
 cargo run --bin mud2                            # Run game (embedded client+server)
 cargo run --bin server                          # Headless TCP server
-cargo run --bin mud2 -- --connect 127.0.0.1:7000  # Connect to remote server
+cargo run --bin mud2 -- --tcp-client            # TCP client (server picked on the title screen)
 cargo check                                     # Always run after changes before reporting success
+cargo check -p mud2-lib --no-default-features   # Thin-client config — keep this green too
 cargo test                                      # Run tests
 cargo fmt                                       # Format code
 cargo clippy                                    # Lint (fix warnings before merging)
 packaging/build-appimage.sh                     # Linux AppImage (run inside nix-shell)
 packaging/build-windows.sh                      # Windows x86_64 zip via mingw cross-compile (run inside nix-shell)
 ```
+
+### The `server-sim` Feature (thin client)
+
+The authoritative world simulation is gated behind the default-on `server-sim`
+Cargo feature of mud2-lib (mirrored by the root package; the root's `editor`
+feature implies it). Building `--no-default-features` produces the **thin
+client**: TcpClient-only (no embedded single-player, no headless server, no
+editor), and drops rustpython, yarnspinner, sqlite, and argon2 entirely.
+**Packaged builds (AppImage / Windows zip) are thin clients by design** — the
+scripts' `--no-default-features` does this; add `--features editor` for an
+offline-capable build. Rules when touching gated code:
+- Wire-protocol types (`GameCommand`, `GameEvent`, `network/protocol.rs`,
+  `ClientGameState`) must never be feature-gated — thin clients and full
+  servers share one protocol.
+- Never order client systems `.before(some_server_fn)` across the feature
+  boundary; use an ungated `SystemSet` (see `PythonConsoleToggleSet` in
+  `scripting/resources.rs`).
+- `cargo test --no-default-features` is unsupported by design (tests exercise
+  the sim); test with default features, and keep
+  `cargo check -p mud2-lib --no-default-features` compiling.
 
 ## Architecture
 

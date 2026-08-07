@@ -170,7 +170,7 @@ impl Plugin for UiPlugin {
         .add_systems(
             Update,
             (
-                apply_game_ui_events,
+                (systems::route_peer_ui_events_to_local, apply_game_ui_events).chain(),
                 toggle_cursor_mode,
                 manage_open_containers,
                 sync_vital_bars,

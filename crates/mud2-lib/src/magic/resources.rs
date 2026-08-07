@@ -963,3 +963,16 @@ effects:
         );
     }
 }
+
+/// Map a DoT-bearing `EffectKind` to the damage type it deals. Non-DoT kinds
+/// return `None`. Lives here (not `magic::effects`) so shared item-tooltip
+/// code (`combat::modifiers`) can call it in sim-less builds; `effects`
+/// re-exports it for the server-side tick systems.
+pub fn dot_damage_type(kind: EffectKind) -> Option<DamageType> {
+    match kind {
+        EffectKind::Burning => Some(DamageType::Fire),
+        EffectKind::Chill => Some(DamageType::Frost),
+        EffectKind::Poisoned => Some(DamageType::Poison),
+        _ => None,
+    }
+}

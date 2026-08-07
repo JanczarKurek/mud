@@ -1,32 +1,42 @@
 use bevy::prelude::*;
 
-use crate::combat::components::{AttackProfile, CombatLeash};
+use crate::combat::components::AttackProfile;
+#[cfg(feature = "server-sim")]
+use crate::combat::components::CombatLeash;
 use crate::combat::damage_expr::DamageExpr;
+#[cfg(feature = "server-sim")]
 use crate::npc::components::{
     AiMemory, AiState, Barks, Faction, HostileBehavior, Npc, RoamBounds, RoamingBehavior,
     RoamingRandomState, RoamingStepTimer,
 };
+#[cfg(feature = "server-sim")]
 use crate::persistence::WorldSnapshotStatus;
+#[cfg(feature = "server-sim")]
 use crate::player::components::InventoryStack;
-use crate::player::components::{
-    AttributeSet, BaseStats, DefenseStats, DerivedStats, VitalStats, WeaponDamage,
-};
+use crate::player::components::{AttributeSet, BaseStats, WeaponDamage};
+#[cfg(feature = "server-sim")]
+use crate::player::components::{DefenseStats, DerivedStats, VitalStats};
 use crate::world::animation::{build_animated_sprite_components, AnimatedSprite};
 use crate::world::components::{
     ClientProjectedWorldObject, ClientRemotePlayerVisual, CombatHealthBar, DisplayedVitalStats,
-    Facing, HealthBarDisplayPolicy, OverworldObject, SpaceId, SpacePosition, SpaceResident,
-    TilePosition, ViewPosition, WorldVisual,
+    Facing, HealthBarDisplayPolicy, SpacePosition, TilePosition, ViewPosition, WorldVisual,
 };
+#[cfg(feature = "server-sim")]
+use crate::world::components::{OverworldObject, SpaceId, SpaceResident};
 use crate::world::direction::Direction;
+#[cfg(feature = "server-sim")]
 use crate::world::floor_map::FloorMaps;
+use crate::world::map_layout::{MapBehavior, TileRectangle};
+#[cfg(feature = "server-sim")]
 use crate::world::map_layout::{
-    MapBehavior, PortalDefinition, ResolvedObject, SpaceDefinition, SpaceDefinitions,
-    SpacePermanence, TileRectangle,
+    PortalDefinition, ResolvedObject, SpaceDefinition, SpaceDefinitions, SpacePermanence,
 };
 use crate::world::object_definitions::{
     AttackProfileKindDef, OverworldObjectDefinition, OverworldObjectDefinitions, StatModifiers,
 };
+#[cfg(feature = "server-sim")]
 use crate::world::object_registry::ObjectRegistry;
+#[cfg(feature = "server-sim")]
 use crate::world::resources::{PortalInstanceKey, RuntimeSpace, SpaceManager};
 use crate::world::WorldConfig;
 
@@ -35,6 +45,7 @@ pub enum WorldStartupSet {
     InitializeRuntimeSpaces,
 }
 
+#[cfg(feature = "server-sim")]
 pub fn initialize_runtime_spaces(
     mut commands: Commands,
     definitions: Res<SpaceDefinitions>,
@@ -76,6 +87,7 @@ pub fn initialize_runtime_spaces(
     }
 }
 
+#[cfg(feature = "server-sim")]
 pub fn instantiate_space(
     commands: &mut Commands,
     space_manager: &mut SpaceManager,
@@ -130,6 +142,7 @@ pub fn instantiate_space(
     space_id
 }
 
+#[cfg(feature = "server-sim")]
 pub fn resolve_portal_destination_space(
     commands: &mut Commands,
     authored_spaces: &SpaceDefinitions,
@@ -175,6 +188,7 @@ pub fn resolve_portal_destination_space(
 /// `container_capacity` so runtime slot indexing stays valid, mirroring the
 /// top-level padding in `apply_overworld_definition_components!`. An unknown
 /// child type leaves the slot list dense.
+#[cfg(feature = "server-sim")]
 fn resolved_to_stack(
     space: &SpaceDefinition,
     definitions: &OverworldObjectDefinitions,
@@ -211,6 +225,7 @@ fn resolved_to_stack(
     }
 }
 
+#[cfg(feature = "server-sim")]
 pub fn spawn_overworld_object_instance(
     commands: &mut Commands,
     definitions: &OverworldObjectDefinitions,
@@ -363,6 +378,7 @@ pub fn spawn_overworld_object_instance(
 /// chasing `behavior`). Shared by map placement (`spawn_overworld_object_instance`)
 /// and admin/script spawning (`handle_admin_spawn`) so a complete NPC definition
 /// realizes identically however it enters the world.
+#[cfg(feature = "server-sim")]
 pub fn realize_npc(
     commands: &mut Commands,
     entity: Entity,
@@ -553,6 +569,7 @@ pub fn attach_combat_health_bar(
 /// by `colliding_for_state(initial_state)`, so a door declared with
 /// `initial_state: closed` spawns colliding even when the base `colliding`
 /// flag is false.
+#[cfg(feature = "server-sim")]
 #[macro_export]
 macro_rules! apply_overworld_definition_components {
     ($entity:expr, $definition:expr, $container_contents:expr, $quantity:expr) => {{
@@ -625,6 +642,7 @@ macro_rules! apply_overworld_definition_components {
     }};
 }
 
+#[cfg(feature = "server-sim")]
 pub fn spawn_overworld_object(
     commands: &mut Commands,
     definitions: &OverworldObjectDefinitions,

@@ -101,7 +101,7 @@ pub fn sync_ai_debug_overlay(
     world_config: Res<crate::world::WorldConfig>,
     theme: Res<UiThemeAssets>,
     palette: Res<Palette>,
-    conversations: Res<ConversationRegistry>,
+    conversations: Option<Res<ConversationRegistry>>,
     npc_q: Query<
         (
             Entity,
@@ -159,7 +159,9 @@ pub fn sync_ai_debug_overlay(
             target,
             hostile,
             routine,
-            conversations.is_conversing(entity),
+            conversations
+                .as_deref()
+                .is_some_and(|c| c.is_conversing(entity)),
             heard,
             elapsed,
             &label_q,

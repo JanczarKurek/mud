@@ -44,7 +44,10 @@ fi
 
 echo "==> Building $TARGET dist binary"
 # --no-default-features drops `dynamic_linking` (no bevy dylib at runtime)
-# and `viewer-hot-reload`. `--profile dist` carries the packaging-only
+# AND — deliberately — `server-sim`/`editor`: the shipped zip is the thin
+# online-only client (TcpClient mode, title-screen server picker; no embedded
+# single-player, no map editor). For an offline-capable build add
+# `--features editor`. `--profile dist` carries the packaging-only
 # lto/codegen-units/strip settings (see Cargo.toml).
 #
 # No dedicated CARGO_TARGET_DIR (unlike build-appimage.sh): --target already

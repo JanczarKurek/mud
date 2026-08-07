@@ -1,5 +1,12 @@
 use bevy::prelude::*;
 
+/// Set containing `toggle_python_console`. Ungated so client code (e.g.
+/// `ui/settings`) can order against it across the `server-sim` feature
+/// boundary — ordering against an empty set is fine when the console is
+/// compiled out. Never order `.before(fn)` across the boundary directly.
+#[derive(SystemSet, Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct PythonConsoleToggleSet;
+
 /// Tiny presence flag for the Python console. Everything else — output,
 /// input, history, scroll position — lives on the terminal widget's
 /// `Terminal` component now. Read by the player input systems to gate

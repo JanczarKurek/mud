@@ -56,7 +56,7 @@ impl Plugin for SettingsPlugin {
                 )
                     .before(bevy_terminal::terminal_input)
                     .before(crate::ui::chat_input::toggle_chat_focus)
-                    .before(crate::scripting::systems::toggle_python_console),
+                    .before(crate::scripting::resources::PythonConsoleToggleSet),
             )
             .add_systems(
                 Update,

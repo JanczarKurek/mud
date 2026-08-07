@@ -11,10 +11,15 @@
 
 use bevy::prelude::*;
 
+#[cfg(feature = "server-sim")]
 use crate::combat::damage::{DamageEvent, DamageSource, PendingDamageEvents};
+#[cfg(feature = "server-sim")]
 use crate::combat::damage_type::DamageType;
+#[cfg(feature = "server-sim")]
 use crate::player::check::Dc;
+#[cfg(feature = "server-sim")]
 use crate::player::components::{AttributeSet, ChatLog};
+#[cfg(feature = "server-sim")]
 use crate::player::skills::{skill_check, Skill, SkillSheet};
 
 /// Auto-climb height with no skill check. Stepping onto a half-block chest
@@ -186,6 +191,7 @@ pub fn step_back_toward(target: (i32, i32), from: (i32, i32)) -> (i32, i32) {
 /// and push a `DamageEvent` into the pending queue. Mirrors the standard
 /// damage producer pattern — the damage system handles death, VFX, and
 /// replication downstream.
+#[cfg(feature = "server-sim")]
 pub fn apply_fall_damage(
     pending_damage: &mut PendingDamageEvents,
     chat_log: &mut ChatLog,

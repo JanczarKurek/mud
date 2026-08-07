@@ -1,24 +1,35 @@
 pub mod components;
 pub mod debug_overlay;
+#[cfg(feature = "server-sim")]
 pub mod detection;
 pub mod routine;
 pub mod social;
+#[cfg(feature = "server-sim")]
 pub mod spawn_groups;
 pub mod spellcasting;
+#[cfg(feature = "server-sim")]
 pub mod systems;
 
+#[cfg(feature = "server-sim")]
 use bevy::prelude::*;
 
+#[cfg(feature = "server-sim")]
 use crate::app::state::simulation_active;
+#[cfg(feature = "server-sim")]
 use crate::npc::social::{tick_social_chatter, ConversationRegistry};
+#[cfg(feature = "server-sim")]
 use crate::npc::spawn_groups::{
     bootstrap_spawn_groups, tick_spawn_groups, PendingSpawnGroupDumps, SpawnGroupRegistry,
 };
+#[cfg(feature = "server-sim")]
 use crate::npc::systems::{despawn_orphaned_companions, update_roaming_npcs};
+#[cfg(feature = "server-sim")]
 use crate::world::setup::WorldStartupSet;
 
+#[cfg(feature = "server-sim")]
 pub struct NpcPlugin;
 
+#[cfg(feature = "server-sim")]
 impl Plugin for NpcPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<SpawnGroupRegistry>()

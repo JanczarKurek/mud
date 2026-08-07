@@ -19,9 +19,11 @@ use crate::game::CommandIntercept;
 
 /// Registers bevy_yarnspinner and the server-side dialog plumbing.
 ///
-/// Intentionally *not* added to `HeadlessServer` yet: Yarn requires
-/// `AssetPlugin` to compile `.yarn` files, and the headless runtime uses
-/// `MinimalPlugins`. Dialog support for networked play is Phase 3.
+/// Runs on both `EmbeddedClient` and `HeadlessServer`. Yarn requires
+/// `AssetPlugin` to be built *before* this plugin (yarnspinner `expect`s
+/// `AssetServer`); `DefaultPlugins` covers that for the embedded client, and
+/// the headless runtime adds `AssetPlugin` explicitly on top of
+/// `MinimalPlugins`.
 pub struct DialogServerPlugin;
 
 impl Plugin for DialogServerPlugin {

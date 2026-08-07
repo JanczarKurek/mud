@@ -1,4 +1,4 @@
-#[cfg(unix)]
+#[cfg(all(unix, feature = "server-sim"))]
 pub mod admin;
 pub mod asset_sync;
 pub mod protocol;
@@ -6,26 +6,33 @@ pub mod resources;
 pub mod systems;
 pub mod transport;
 
-#[cfg(unix)]
+#[cfg(all(unix, feature = "server-sim"))]
 pub use crate::network::admin::{AdminListenArgs, AdminReplPlugin};
 
+#[cfg(feature = "server-sim")]
 use std::sync::Arc;
 
 use bevy::prelude::*;
+#[cfg(feature = "server-sim")]
 use rustls::ServerConfig;
 
 use crate::app::state::ClientAppState;
 use crate::game::projection::apply_game_events_to_client_state;
+#[cfg(feature = "server-sim")]
 use crate::game::systems::process_game_commands;
 use crate::network::resources::{
-    AssetSyncState, LatencyReportTimer, PingTimer, TcpClientConfig, TcpClientConnection,
-    TcpClientTlsConfig, TcpServerConfig, TcpServerState,
+    AssetSyncState, TcpClientConfig, TcpClientConnection, TcpClientTlsConfig,
 };
+#[cfg(feature = "server-sim")]
+use crate::network::resources::{LatencyReportTimer, PingTimer, TcpServerConfig, TcpServerState};
+#[cfg(feature = "server-sim")]
 use crate::network::systems::{
-    accept_tcp_client_connections, build_and_store_manifest, flush_client_commands_to_server,
-    flush_server_messages, poll_tcp_asset_sync_messages, poll_tcp_client_messages,
+    accept_tcp_client_connections, build_and_store_manifest, flush_server_messages,
     poll_tcp_server_messages, report_peer_latency, send_asset_manifest_to_new_peers,
     send_periodic_pings, start_tcp_server,
+};
+use crate::network::systems::{
+    flush_client_commands_to_server, poll_tcp_asset_sync_messages, poll_tcp_client_messages,
 };
 
 pub struct TcpClientPlugin {
@@ -35,6 +42,7 @@ pub struct TcpClientPlugin {
     pub tls: Option<TcpClientTlsConfig>,
 }
 
+#[cfg(feature = "server-sim")]
 pub struct TcpServerPlugin {
     pub bind_addr: String,
     /// When `Some`, accepted connections are wrapped in TLS.
@@ -67,6 +75,7 @@ impl Plugin for TcpClientPlugin {
     }
 }
 
+#[cfg(feature = "server-sim")]
 impl Plugin for TcpServerPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(TcpServerConfig {
@@ -81,7 +90,18 @@ impl Plugin for TcpServerPlugin {
         .add_systems(Update, send_asset_manifest_to_new_peers)
         .add_systems(
             Update,
-            poll_tcp_server_messages.before(process_game_commands),
+            // Must run before the whole `CommandIntercept` set, not just
+            // `process_game_commands`: intercept systems (dialog, trade, chat,
+            // rotate, …) drain their command variants ahead of the main
+            // dispatcher, and a command ingested between an intercept system
+            // and `process_game_commands` would reach the dispatcher's
+            // catch-all and be dropped ("saw <variant> — check system
+            // ordering"). The set edge also orders us before
+            // `process_game_commands` transitively; the direct `.before` stays
+            // as a belt-and-suspenders for apps without the set configured.
+            poll_tcp_server_messages
+                .before(crate::game::CommandIntercept)
+                .before(process_game_commands),
         )
         .add_systems(
             Update,

@@ -1095,7 +1095,7 @@ fn handle_create_actions(
     mut next_state: ResMut<NextState<ClientAppState>>,
     config: Option<Res<TcpClientConfig>>,
     mut connection: Option<ResMut<TcpClientConnection>>,
-    db: Option<Res<crate::accounts::AccountDbHandle>>,
+    #[cfg(feature = "server-sim")] db: Option<Res<crate::accounts::AccountDbHandle>>,
     action_buttons: Query<
         (&Interaction, &CreateActionButton),
         (Changed<Interaction>, With<Button>),
@@ -1150,6 +1150,9 @@ fn handle_create_actions(
                         info!("sent CreateCharacter for {}", state.name);
                         // `poll_create_result` transitions on the server reply.
                     }
+                    #[cfg(not(feature = "server-sim"))]
+                    AppRuntime::EmbeddedClient => {}
+                    #[cfg(feature = "server-sim")]
                     AppRuntime::EmbeddedClient => {
                         let Some(db) = db.as_deref() else {
                             state.error_message = Some("no local account database".to_owned());

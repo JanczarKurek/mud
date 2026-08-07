@@ -16,36 +16,54 @@
 //! single fold through which all server → client state flows, both in
 //! networked and embedded modes.
 
+#[cfg(feature = "server-sim")]
 use bevy::ecs::query::QuerySingleError;
 use bevy::log::{debug, info};
 use bevy::prelude::*;
 
+#[cfg(feature = "server-sim")]
 use crate::combat::components::{AttackProfile, CombatTarget};
+#[cfg(feature = "server-sim")]
 use crate::dialog::components::DialogNode;
+#[cfg(feature = "server-sim")]
 use crate::game::resources::{
-    ChatLogState, ClientActiveEffect, ClientCarryWeight, ClientCombatStats, ClientExertion,
-    ClientGameState, ClientRemotePlayerState, ClientSpaceState, ClientStateRevisions,
-    ClientVitalStats, ClientWorldObjectState, GameEvent, InventoryState, NpcAwareness,
-    PendingGameEvents, RegenBuffState,
+    ChatLogState, ClientCarryWeight, ClientCombatStats, ClientExertion, ClientSpaceState,
+    ClientVitalStats, ClientWorldObjectState, InventoryState, NpcAwareness, RegenBuffState,
 };
+#[cfg(feature = "server-sim")]
+use crate::game::resources::{ClientActiveEffect, ClientRemotePlayerState};
+use crate::game::resources::{ClientGameState, ClientStateRevisions, GameEvent, PendingGameEvents};
+#[cfg(feature = "server-sim")]
 use crate::game::shop::{Shopkeeper, StockMode, Stockpile};
+#[cfg(feature = "server-sim")]
 use crate::game::trade::{ActiveTrades, TradeParticipants, TradePartnerKind, WareView};
+#[cfg(feature = "server-sim")]
 use crate::magic::effects::MagicEffects;
+#[cfg(feature = "server-sim")]
 use crate::npc::components::Npc;
+#[cfg(feature = "server-sim")]
 use crate::player::classes::Class;
+#[cfg(feature = "server-sim")]
 use crate::player::components::{
     CurrentCarryWeight, DefenseStats, DerivedStats, DiscoveredTiles, Encumbered, MaxCarryWeight,
     Player, PlayerId, PlayerIdentity, RegenBuffs, VitalStats, WeaponDamage,
 };
+#[cfg(feature = "server-sim")]
 use crate::player::progression::{Experience, ExperienceView};
+#[cfg(feature = "server-sim")]
 use crate::player::skills::SkillSheet;
+#[cfg(feature = "server-sim")]
 use crate::world::components::{
     Container, Facing, Movable, ObjectState, OverworldObject, Quantity, Rotatable, SpaceId,
     SpacePosition, SpaceResident, TilePosition,
 };
+#[cfg(feature = "server-sim")]
 use crate::world::floor_map::FloorMaps;
+#[cfg(feature = "server-sim")]
 use crate::world::lighting::{WorldClock, WORLD_TIME_EPSILON, WORLD_TIME_HEARTBEAT_SECS};
+#[cfg(feature = "server-sim")]
 use crate::world::object_definitions::OverworldObjectDefinitions;
+#[cfg(feature = "server-sim")]
 use crate::world::resources::SpaceManager;
 
 /// Euclidean tile radius around the local player within which dynamic entities
@@ -56,6 +74,7 @@ use crate::world::resources::SpaceManager;
 /// what each client receives.
 pub const INTEREST_RADIUS: f32 = 30.0;
 
+#[cfg(feature = "server-sim")]
 fn in_interest_radius(local: TilePosition, other: TilePosition) -> bool {
     let dx = (local.x - other.x) as f32;
     let dy = (local.y - other.y) as f32;
@@ -69,6 +88,7 @@ fn in_interest_radius(local: TilePosition, other: TilePosition) -> bool {
 /// is cloned, copied, or moved is decided by the `$event` expression at the
 /// call site; `Option` baselines are handled by wrapping `$current` in
 /// `Some(..)` at the call site too.
+#[cfg(feature = "server-sim")]
 macro_rules! diff_emit {
     ($events:expr, $previous:expr, $current:expr, $event:expr $(,)?) => {
         if $previous != $current {
@@ -77,6 +97,7 @@ macro_rules! diff_emit {
     };
 }
 
+#[cfg(feature = "server-sim")]
 pub type ProjectionPlayerQuery<'w, 's> = Query<
     'w,
     's,
@@ -120,8 +141,10 @@ pub type ProjectionPlayerQuery<'w, 's> = Query<
     With<Player>,
 >;
 
+#[cfg(feature = "server-sim")]
 pub type ProjectionObjectQuery<'w, 's> = Query<'w, 's, &'static OverworldObject>;
 
+#[cfg(feature = "server-sim")]
 pub type ProjectionWorldObjectQuery<'w, 's> = Query<
     'w,
     's,
@@ -150,6 +173,7 @@ pub type ProjectionWorldObjectQuery<'w, 's> = Query<
     Without<Player>,
 >;
 
+#[cfg(feature = "server-sim")]
 pub type ProjectionContainerQuery<'w, 's> = Query<
     'w,
     's,
@@ -164,6 +188,7 @@ pub type ProjectionContainerQuery<'w, 's> = Query<
 
 /// Query exposing every shopkeeper's stockpile by object id. The projection
 /// uses this to materialize the wares list for `PlayerToShop` trade sessions.
+#[cfg(feature = "server-sim")]
 pub type ProjectionStockpileQuery<'w, 's> = Query<
     'w,
     's,
@@ -178,6 +203,7 @@ pub type ProjectionStockpileQuery<'w, 's> = Query<
 /// in the embedded collect system, a peer field on the TCP flush path. Reset
 /// to `default()` to force a full re-diff.
 #[derive(Clone, Copy, Debug, Default)]
+#[cfg(feature = "server-sim")]
 pub struct FloorDiffCache {
     pub floor_maps_revision: Option<u64>,
     pub tile: Option<TilePosition>,
@@ -187,6 +213,7 @@ pub struct FloorDiffCache {
 /// `Vec<GameEvent>` that, when folded into `previous`, produces the peer's
 /// next `ClientGameState`. Passing `&ClientGameState::default()` as `previous`
 /// yields a full bootstrap sequence for a newly connected client.
+#[cfg(feature = "server-sim")]
 pub fn compute_events_for_peer(
     local_player_id: PlayerId,
     previous: &ClientGameState,
@@ -273,6 +300,7 @@ pub fn compute_events_for_peer(
 /// Facts about the local player captured while iterating the player query in
 /// [`emit_player_events`], consumed by the downstream per-domain emitters
 /// (vicinity filters, awareness gating, trade pricing).
+#[cfg(feature = "server-sim")]
 struct LocalPlayerContext {
     space_id: Option<SpaceId>,
     tile: Option<TilePosition>,
@@ -287,9 +315,11 @@ struct LocalPlayerContext {
 /// A remote player observed during the player loop, deferred so the
 /// same-space + vicinity filter can use the local player's position
 /// regardless of iteration order.
+#[cfg(feature = "server-sim")]
 type RemoteCandidate = (SpaceResident, TilePosition, ClientRemotePlayerState);
 
 /// World-clock domain: emit `WorldTimeChanged` on epsilon move or heartbeat.
+#[cfg(feature = "server-sim")]
 fn emit_world_time_events(
     previous: &ClientGameState,
     world_clock: &WorldClock,
@@ -313,6 +343,7 @@ fn emit_world_time_events(
 /// inventory, chat, position, vitals, buffs/effects, combat, progression,
 /// discovery). Remote players encountered while iterating are deferred and
 /// returned for [`emit_remote_player_events`].
+#[cfg(feature = "server-sim")]
 fn emit_player_events(
     local_player_id: PlayerId,
     previous: &ClientGameState,
@@ -752,6 +783,7 @@ fn emit_player_events(
 /// Remote-player domain: same-space + vicinity filter over the deferred
 /// candidates, upserting changed entries and removing baseline entries that
 /// fell out of view.
+#[cfg(feature = "server-sim")]
 fn emit_remote_player_events(
     previous: &ClientGameState,
     local_space_id: Option<SpaceId>,
@@ -789,6 +821,7 @@ fn emit_remote_player_events(
 /// Floor domain: full-grid `FloorMapReplaced` at bootstrap / on resize, plus
 /// vicinity-filtered per-tile `FloorTileSet` deltas, memoized through
 /// `floor_diff_cache` on quiet frames.
+#[cfg(feature = "server-sim")]
 fn emit_floor_events(
     previous: &ClientGameState,
     floor_diff_cache: &mut FloorDiffCache,
@@ -877,6 +910,7 @@ fn emit_floor_events(
 
 /// Space domain: `CurrentSpaceChanged` when the local player's space (or its
 /// metadata) differs from the baseline.
+#[cfg(feature = "server-sim")]
 fn emit_space_events(
     previous: &ClientGameState,
     space_manager: &SpaceManager,
@@ -905,6 +939,7 @@ fn emit_space_events(
 
 /// Container domain: upserts changed in-range container slot lists and
 /// removes baseline entries that fell out of view.
+#[cfg(feature = "server-sim")]
 fn emit_container_events(
     previous: &ClientGameState,
     container_query: &ProjectionContainerQuery,
@@ -945,6 +980,7 @@ fn emit_container_events(
 /// World-object domain: upserts changed in-range world objects (with the
 /// hidden-object and awareness gating) and removes baseline entries that
 /// fell out of view.
+#[cfg(feature = "server-sim")]
 fn emit_world_object_events(
     local_player_id: PlayerId,
     previous: &ClientGameState,
@@ -1107,6 +1143,7 @@ fn emit_world_object_events(
 /// Trade domain: projects the local player's active trade session (partner
 /// name, shop wares with persuasion-adjusted prices) and diffs it against
 /// the baseline.
+#[cfg(feature = "server-sim")]
 fn emit_trade_events(
     local_player_id: PlayerId,
     previous: &ClientGameState,
@@ -1206,6 +1243,7 @@ fn emit_trade_events(
 /// authoritative player entity and calls [`compute_events_for_peer`] with the
 /// current `ClientGameState` as baseline. Writes the result into
 /// `PendingGameEvents` for `apply_game_events_to_client_state` to fold.
+#[cfg(feature = "server-sim")]
 pub fn collect_game_events_from_authority(
     client_state: Res<ClientGameState>,
     space_manager: Res<SpaceManager>,
@@ -1768,6 +1806,7 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
 /// entries of the same kind are distinguished correctly. Membership,
 /// magnitude (epsilon), remaining-seconds at integer resolution, and the
 /// optional `secondary_magnitude` (for Chill) all count.
+#[cfg(feature = "server-sim")]
 fn effects_diff(prev: &[ClientActiveEffect], current: &[ClientActiveEffect]) -> bool {
     if prev.len() != current.len() {
         return true;

@@ -48,11 +48,7 @@ const ASTAR_EXPANSION_CAP: usize = 400;
 /// flavor punctuation rather than constant chatter.
 const MUTTER_PROBABILITY: f32 = 0.05;
 
-/// Minimum seconds between two bubbles from the same NPC. Caps spam even
-/// when several rolls succeed in a row, and prevents an aggro bark from
-/// being immediately stepped on by a mutter. Shared with `npc::social` so
-/// ambient mutters and social chatter draw on the same per-NPC cooldown.
-pub(crate) const BUBBLE_COOLDOWN_SECONDS: f32 = 8.0;
+pub(crate) use crate::npc::components::BUBBLE_COOLDOWN_SECONDS;
 
 /// How recently the NPC must have taken damage from its current target for the
 /// "can't reach + hurt" flee trigger to fire. Keeps NPCs from fleeing every

@@ -1,17 +1,21 @@
 use std::path::PathBuf;
+#[cfg(feature = "server-sim")]
 use std::sync::{Arc, Mutex};
 
 use bevy::prelude::*;
 
+#[cfg(feature = "server-sim")]
 use crate::accounts::db::AccountDb;
 
 /// Shared handle to the account database. Cloneable across systems; operations
 /// take the `Mutex` briefly on connect/disconnect/autosave — not per frame.
+#[cfg(feature = "server-sim")]
 #[derive(Resource, Clone)]
 pub struct AccountDbHandle {
     inner: Arc<Mutex<AccountDb>>,
 }
 
+#[cfg(feature = "server-sim")]
 impl AccountDbHandle {
     pub fn new(db: AccountDb) -> Self {
         Self {

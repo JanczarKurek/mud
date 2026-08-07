@@ -1,10 +1,13 @@
+#[cfg(feature = "server-sim")]
 pub mod effects;
 pub mod glimmer;
 pub mod resources;
 
 use bevy::prelude::*;
 
+#[cfg(feature = "server-sim")]
 use crate::app::state::simulation_active;
+#[cfg(feature = "server-sim")]
 use crate::magic::effects::{tick_dot_effects, tick_magic_effects};
 use crate::magic::glimmer::sync_player_glimmer_light;
 use crate::magic::resources::SpellDefinitions;
@@ -12,8 +15,10 @@ use crate::magic::resources::SpellDefinitions;
 /// Server-side magic systems: tick effect durations, accumulate DoT damage.
 /// `tick_dot_effects` writes to `PendingDamageEvents`, which is only inserted
 /// by `GameServerPlugin` — so this plugin must NOT be added in TcpClient mode.
+#[cfg(feature = "server-sim")]
 pub struct MagicServerPlugin;
 
+#[cfg(feature = "server-sim")]
 impl Plugin for MagicServerPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(SpellDefinitions::load_from_disk())

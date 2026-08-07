@@ -1,45 +1,64 @@
+#[cfg(feature = "server-sim")]
 pub mod chat;
 pub mod commands;
 pub mod currency;
+#[cfg(feature = "server-sim")]
 pub mod discovery;
 pub mod helpers;
 pub mod projection;
 pub mod resources;
 pub mod shop;
+#[cfg(feature = "server-sim")]
 pub(crate) mod slots;
+#[cfg(feature = "server-sim")]
 pub mod systems;
 pub mod trade;
 pub mod traversal;
 
 use bevy::prelude::*;
 
+#[cfg(feature = "server-sim")]
 use crate::app::plugin::AppRuntime;
+#[cfg(feature = "server-sim")]
 use crate::app::state::simulation_active;
+#[cfg(feature = "server-sim")]
 use crate::combat::damage::PendingDamageEvents;
+#[cfg(feature = "server-sim")]
 use crate::combat::systems::resolve_battle_turn;
+#[cfg(feature = "server-sim")]
 use crate::game::chat::process_say_commands;
+#[cfg(feature = "server-sim")]
 use crate::game::discovery::{
     apply_pending_discovery, discover_around_players, PendingDiscoveryEvents,
 };
-use crate::game::projection::{
-    apply_game_events_to_client_state, collect_game_events_from_authority,
-};
+use crate::game::projection::apply_game_events_to_client_state;
+#[cfg(feature = "server-sim")]
+use crate::game::projection::collect_game_events_from_authority;
 use crate::game::resources::{
-    ClientGameState, ClientStateRevisions, ContainerViewers, PendingGameCommands,
-    PendingGameEvents, PendingGameUiEvents, PlacementSeqCounter,
+    ClientGameState, ClientStateRevisions, PendingGameCommands, PendingGameEvents,
+    PendingGameUiEvents,
 };
+#[cfg(feature = "server-sim")]
+use crate::game::resources::{ContainerViewers, PlacementSeqCounter};
+#[cfg(feature = "server-sim")]
 use crate::game::systems::{
     process_floor_commands, process_game_commands, process_rotate_commands,
     tick_player_movement_cooldowns,
 };
+#[cfg(feature = "server-sim")]
 use crate::game::trade::{cleanup_invalid_trades, process_trade_commands, ActiveTrades};
+#[cfg(feature = "server-sim")]
 use crate::npc::systems::update_roaming_npcs;
+#[cfg(feature = "server-sim")]
 use crate::player::systems::move_player_on_grid;
+#[cfg(feature = "server-sim")]
 use crate::world::hide_action::process_hide_commands;
+#[cfg(feature = "server-sim")]
 use crate::world::interactions::{
     process_interact_commands, sync_container_visual_state, tick_respawn_timers,
 };
 
+#[cfg(feature = "server-sim")]
 pub struct GameServerPlugin;
 
 pub struct GameClientPlugin;
@@ -50,6 +69,7 @@ pub struct GameClientPlugin;
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, SystemSet)]
 pub struct CommandIntercept;
 
+#[cfg(feature = "server-sim")]
 impl Plugin for GameServerPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(PendingGameCommands::default())

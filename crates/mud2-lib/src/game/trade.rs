@@ -15,18 +15,28 @@ use std::collections::HashMap;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::game::commands::{GameCommand, ItemSlotRef};
+#[cfg(feature = "server-sim")]
+use crate::game::commands::GameCommand;
+use crate::game::commands::ItemSlotRef;
+#[cfg(feature = "server-sim")]
 use crate::game::currency::{
     COPPER_PER_GOLD, COPPER_PER_SILVER, COPPER_TYPE_ID, GOLD_TYPE_ID, SILVER_TYPE_ID,
 };
+#[cfg(feature = "server-sim")]
 use crate::game::helpers::PlayerActorQuery;
+#[cfg(feature = "server-sim")]
 use crate::game::resources::{
     GameUiEvent, InventoryState, PendingGameCommands, PendingGameUiEvents,
 };
+#[cfg(feature = "server-sim")]
 use crate::game::shop::{Shopkeeper, StockMode, Stockpile};
-use crate::player::components::{InventoryStack, MaxCarryWeight, Player, PlayerId, PlayerIdentity};
+use crate::player::components::PlayerId;
+#[cfg(feature = "server-sim")]
+use crate::player::components::{InventoryStack, MaxCarryWeight, Player, PlayerIdentity};
+#[cfg(feature = "server-sim")]
 use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
 use crate::world::map_layout::ObjectProperties;
+#[cfg(feature = "server-sim")]
 use crate::world::object_definitions::OverworldObjectDefinitions;
 
 pub type TradeSessionId = u64;
@@ -195,6 +205,7 @@ pub enum Side {
     B,
 }
 
+#[cfg_attr(not(feature = "server-sim"), allow(dead_code))]
 impl ActiveTrades {
     pub fn allocate_session_id(&mut self) -> TradeSessionId {
         self.next_id += 1;
@@ -231,6 +242,7 @@ impl ActiveTrades {
     }
 }
 
+#[cfg_attr(not(feature = "server-sim"), allow(dead_code))]
 impl TradeSession {
     /// Project this session for `viewing_player`'s perspective. Returns `None`
     /// if the player is not in this session.
@@ -371,6 +383,7 @@ impl TradeSession {
 /// apart (or whose partner has despawned) is aborted with a `Closed` UI
 /// event so both sides' panels disappear cleanly. Runs in `CommandIntercept`
 /// after `process_trade_commands` so the abort check sees the latest state.
+#[cfg(feature = "server-sim")]
 pub fn cleanup_invalid_trades(
     mut active_trades: ResMut<ActiveTrades>,
     mut ui_events: ResMut<PendingGameUiEvents>,
@@ -451,6 +464,7 @@ pub fn cleanup_invalid_trades(
 /// applies them to `ActiveTrades` + the involved players' inventories. Mirrors
 /// the `process_dialog_commands` / `process_rotate_commands` pattern: scheduled
 /// in `CommandIntercept` so the variants never reach `process_game_commands`.
+#[cfg(feature = "server-sim")]
 pub fn process_trade_commands(
     mut pending_commands: ResMut<PendingGameCommands>,
     mut active_trades: ResMut<ActiveTrades>,
@@ -583,6 +597,7 @@ pub fn process_trade_commands(
     }
 }
 
+#[cfg(feature = "server-sim")]
 fn handle_initiate_trade(
     acting_player_id: PlayerId,
     target: TradeTarget,
@@ -715,6 +730,7 @@ fn handle_initiate_trade(
     }
 }
 
+#[cfg(feature = "server-sim")]
 fn handle_offer_trade_item(
     acting_player_id: PlayerId,
     session_id: TradeSessionId,
@@ -791,6 +807,7 @@ fn handle_offer_trade_item(
     }
 }
 
+#[cfg(feature = "server-sim")]
 fn handle_withdraw_trade_item(
     acting_player_id: PlayerId,
     session_id: TradeSessionId,
@@ -811,6 +828,7 @@ fn handle_withdraw_trade_item(
     session.reset_locks();
 }
 
+#[cfg(feature = "server-sim")]
 fn handle_toggle_trade_ready(
     acting_player_id: PlayerId,
     session_id: TradeSessionId,
@@ -833,6 +851,7 @@ fn handle_toggle_trade_ready(
     }
 }
 
+#[cfg(feature = "server-sim")]
 fn handle_confirm_trade(
     acting_player_id: PlayerId,
     session_id: TradeSessionId,
@@ -923,6 +942,7 @@ fn handle_confirm_trade(
 /// Append a ware to the shop side (Side::B) of an active trade. The player
 /// is responsible for adding their own coin offers to Side::A — the merchant
 /// only validates the totals at commit time (`commit_player_to_shop_trade`).
+#[cfg(feature = "server-sim")]
 fn handle_browse_shop_buy(
     acting_player_id: PlayerId,
     session_id: TradeSessionId,
@@ -1016,6 +1036,7 @@ fn handle_browse_shop_buy(
 
 /// Render a copper-denominated price as `"3g 5s 4c"` (parts that are zero
 /// are omitted; the all-zero case prints `0c`).
+#[cfg(feature = "server-sim")]
 fn format_copper(copper: u32) -> String {
     let (g, s, c) = crate::game::currency::split(copper);
     let mut out = String::new();
@@ -1031,6 +1052,7 @@ fn format_copper(copper: u32) -> String {
     out.trim_end().to_owned()
 }
 
+#[cfg(feature = "server-sim")]
 fn commit_player_to_shop_trade(
     session: &TradeSession,
     player: PlayerId,
@@ -1146,6 +1168,7 @@ fn commit_player_to_shop_trade(
     true
 }
 
+#[cfg(feature = "server-sim")]
 fn handle_cancel_trade(
     acting_player_id: PlayerId,
     session_id: TradeSessionId,
@@ -1177,6 +1200,7 @@ fn handle_cancel_trade(
     }
 }
 
+#[cfg(feature = "server-sim")]
 fn side_for_session_player(
     active_trades: &ActiveTrades,
     session_id: TradeSessionId,
@@ -1207,6 +1231,7 @@ fn side_for_session_player(
 /// player-personal slot kinds are accepted (Backpack / Equipment /
 /// PouchInBackpack); world-container references are rejected so trades can
 /// never reach into shared chests.
+#[cfg(feature = "server-sim")]
 fn read_player_slot(
     slot: &ItemSlotRef,
     inventory: &InventoryState,
@@ -1241,6 +1266,7 @@ fn read_player_slot(
 /// on success; on validation failure (source no longer resolves, weight cap,
 /// or no inventory space) returns `false` and leaves both inventories
 /// unchanged.
+#[cfg(feature = "server-sim")]
 fn commit_player_to_player_trade(
     session: &TradeSession,
     player_a: PlayerId,
@@ -1317,6 +1343,7 @@ fn commit_player_to_player_trade(
     true
 }
 
+#[cfg(feature = "server-sim")]
 fn validate_offers_against(offers: &[TradeOfferEntry], inventory: &InventoryState) -> bool {
     // Group offers by source slot and ensure the slot still holds enough
     // matching items. Stockpile-sourced offers are validated separately at
@@ -1340,6 +1367,7 @@ fn validate_offers_against(offers: &[TradeOfferEntry], inventory: &InventoryStat
     true
 }
 
+#[cfg(feature = "server-sim")]
 fn remove_offered_from(offers: &[TradeOfferEntry], inventory: &mut InventoryState) -> bool {
     for offer in offers {
         let OfferSource::PlayerSlot(slot) = &offer.source else {
@@ -1354,6 +1382,7 @@ fn remove_offered_from(offers: &[TradeOfferEntry], inventory: &mut InventoryStat
     true
 }
 
+#[cfg(feature = "server-sim")]
 fn decrement_player_slot(slot: &ItemSlotRef, amount: u32, inventory: &mut InventoryState) -> bool {
     match slot {
         ItemSlotRef::Equipment(equipment_slot) => {
@@ -1398,6 +1427,7 @@ fn decrement_player_slot(slot: &ItemSlotRef, amount: u32, inventory: &mut Invent
 /// Insert each offer's items into `inventory`, merging into existing stacks
 /// where possible and respecting weight caps. Returns `false` if any item
 /// can't be placed (no free slot or hard-cap exceeded).
+#[cfg(feature = "server-sim")]
 fn insert_offers_into(
     offers: &[TradeOfferEntry],
     inventory: &mut InventoryState,
@@ -1412,6 +1442,7 @@ fn insert_offers_into(
     true
 }
 
+#[cfg(feature = "server-sim")]
 fn insert_one_offer(
     offer: &TradeOfferEntry,
     inventory: &mut InventoryState,

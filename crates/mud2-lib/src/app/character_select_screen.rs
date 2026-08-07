@@ -6,11 +6,16 @@ use bevy::log::{info, warn};
 use bevy::prelude::*;
 
 use crate::app::plugin::AppRuntime;
-use crate::app::state::{ClientAppState, DebugMode};
+use crate::app::state::ClientAppState;
+#[cfg(feature = "server-sim")]
+use crate::app::state::DebugMode;
 use crate::network::protocol::{CharacterSummary, ClientMessage, ServerMessage};
 use crate::network::resources::{TcpClientConfig, TcpClientConnection};
+#[cfg(feature = "server-sim")]
 use crate::player::components::Inventory;
+#[cfg(feature = "server-sim")]
 use crate::player::debug_presets::DebugCharacterPresets;
+#[cfg(feature = "server-sim")]
 use crate::player::loadout::Loadouts;
 use crate::ui::theme::widgets::{
     idle_colors, spawn_themed_button, ButtonStyle, ThemedButton, ThemedPanel,
@@ -107,13 +112,15 @@ struct CharacterSelectActionButton {
 struct CharacterSelectErrorText;
 
 fn request_character_list(
-    mut state: ResMut<CharacterSelectState>,
+    #[cfg_attr(not(feature = "server-sim"), allow(unused_mut))] mut state: ResMut<
+        CharacterSelectState,
+    >,
     config: Option<Res<TcpClientConfig>>,
     mut connection: Option<ResMut<TcpClientConnection>>,
-    db: Option<Res<crate::accounts::AccountDbHandle>>,
-    debug: Option<Res<DebugMode>>,
-    presets: Option<Res<DebugCharacterPresets>>,
-    loadouts: Option<Res<Loadouts>>,
+    #[cfg(feature = "server-sim")] db: Option<Res<crate::accounts::AccountDbHandle>>,
+    #[cfg(feature = "server-sim")] debug: Option<Res<DebugMode>>,
+    #[cfg(feature = "server-sim")] presets: Option<Res<DebugCharacterPresets>>,
+    #[cfg(feature = "server-sim")] loadouts: Option<Res<Loadouts>>,
 ) {
     match state.runtime {
         AppRuntime::TcpClient => {
@@ -135,6 +142,9 @@ fn request_character_list(
                 connection.read_buffer.clear();
             }
         }
+        #[cfg(not(feature = "server-sim"))]
+        AppRuntime::EmbeddedClient => {}
+        #[cfg(feature = "server-sim")]
         AppRuntime::EmbeddedClient => {
             // Read directly from the in-process DB.
             let Some(db) = db.as_deref() else {
@@ -558,7 +568,7 @@ fn handle_character_select_buttons(
     mut next_state: ResMut<NextState<ClientAppState>>,
     config: Option<Res<TcpClientConfig>>,
     mut connection: Option<ResMut<TcpClientConnection>>,
-    db: Option<Res<crate::accounts::AccountDbHandle>>,
+    #[cfg(feature = "server-sim")] db: Option<Res<crate::accounts::AccountDbHandle>>,
     mut local_selected: Option<ResMut<crate::app::state::LocalSelectedCharacter>>,
     row_buttons: Query<(&Interaction, &CharacterRowButton), (Changed<Interaction>, With<Button>)>,
     delete_buttons: Query<
@@ -592,6 +602,9 @@ fn handle_character_select_buttons(
                     ClientMessage::DeleteCharacter { character_id },
                 );
             }
+            #[cfg(not(feature = "server-sim"))]
+            AppRuntime::EmbeddedClient => {}
+            #[cfg(feature = "server-sim")]
             AppRuntime::EmbeddedClient => {
                 if let Some(db) = db.as_deref() {
                     let _ = db

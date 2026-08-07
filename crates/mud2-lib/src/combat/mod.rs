@@ -1,33 +1,51 @@
 pub mod components;
+#[cfg(feature = "server-sim")]
 pub mod damage;
 pub mod damage_expr;
 pub mod damage_type;
+#[cfg(feature = "server-sim")]
 pub mod formulas;
 pub mod modifiers;
+#[cfg(feature = "server-sim")]
 pub mod npc_casting;
+#[cfg(feature = "server-sim")]
 pub mod resources;
+#[cfg(feature = "server-sim")]
 pub mod scheduled;
+#[cfg(feature = "server-sim")]
 pub mod systems;
 
+#[cfg(feature = "server-sim")]
 use bevy::prelude::*;
 
+#[cfg(feature = "server-sim")]
 use crate::app::state::{simulation_active, ClientAppState};
+#[cfg(feature = "server-sim")]
 use crate::combat::damage::apply_pending_damage;
+#[cfg(feature = "server-sim")]
 use crate::combat::modifiers::{tick_item_modifiers, ItemModifierTickTimer};
+#[cfg(feature = "server-sim")]
 use crate::combat::resources::{
     BattleTurnTimer, PendingModifierConsumption, PendingNpcSummons, PendingRetaliations,
 };
+#[cfg(feature = "server-sim")]
 use crate::combat::scheduled::{tick_scheduled_impacts, ScheduledImpacts};
+#[cfg(feature = "server-sim")]
 use crate::combat::systems::{
     apply_auto_retaliation, apply_pending_modifier_consumption, apply_pending_npc_summons,
     clear_invalid_combat_targets, resolve_battle_turn,
 };
+#[cfg(feature = "server-sim")]
 use crate::game::systems::process_game_commands;
+#[cfg(feature = "server-sim")]
 use crate::magic::effects::tick_dot_effects;
+#[cfg(feature = "server-sim")]
 use crate::npc::systems::update_roaming_npcs;
 
+#[cfg(feature = "server-sim")]
 pub struct CombatPlugin;
 
+#[cfg(feature = "server-sim")]
 impl Plugin for CombatPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(BattleTurnTimer::default())

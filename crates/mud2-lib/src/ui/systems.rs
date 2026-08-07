@@ -40,6 +40,26 @@ use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::WorldConfig;
 
+/// Embedded-mode stand-in for the TCP wire: moves per-player UI events
+/// (`PendingGameUiEvents::peer_events`, filled by server-side systems via
+/// `push`) into the local `events` list that `apply_game_ui_events` and the
+/// client-effects systems consume. On a TCP client `peer_events` is always
+/// empty (per-player events arrive from the server already merged into
+/// `events`), so this is a no-op there; the headless server has no `UiPlugin`
+/// and drains `peer_events` in `flush_server_messages` instead.
+///
+/// Embedded runs a single local player, so every `peer_events` entry belongs
+/// to the local session and can be delivered wholesale.
+pub fn route_peer_ui_events_to_local(mut pending_ui_events: ResMut<PendingGameUiEvents>) {
+    if pending_ui_events.peer_events.is_empty() {
+        return;
+    }
+    let peer_events = std::mem::take(&mut pending_ui_events.peer_events);
+    for (_player, events) in peer_events {
+        pending_ui_events.events.extend(events);
+    }
+}
+
 pub fn apply_game_ui_events(
     mut pending_ui_events: ResMut<PendingGameUiEvents>,
     mut docked_panel_state: ResMut<DockedPanelState>,

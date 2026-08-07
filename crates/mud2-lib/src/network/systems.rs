@@ -1,40 +1,66 @@
 use std::io::{ErrorKind, Read, Write};
-use std::net::{TcpListener, TcpStream, ToSocketAddrs};
+#[cfg(feature = "server-sim")]
+use std::net::TcpListener;
+use std::net::{TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(feature = "server-sim")]
+use std::time::Instant;
 
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
-use bevy::log::{error, info, warn};
+#[cfg(feature = "server-sim")]
+use bevy::log::error;
+use bevy::log::{info, warn};
 use bevy::prelude::*;
 
+#[cfg(feature = "server-sim")]
 use crate::accounts::{AccountDbHandle, AuthError};
 use crate::app::state::ClientAppState;
 use crate::assets::AssetResolver;
-use crate::game::resources::{ClientGameState, PendingGameCommands, PendingGameUiEvents};
-use crate::network::asset_sync::{build_server_manifest, hash_bytes};
+#[cfg(feature = "server-sim")]
+use crate::game::resources::ClientGameState;
+use crate::game::resources::{PendingGameCommands, PendingGameUiEvents};
+#[cfg(feature = "server-sim")]
+use crate::network::asset_sync::build_server_manifest;
+use crate::network::asset_sync::hash_bytes;
 use crate::network::protocol::{ClientMessage, ServerMessage};
+use crate::network::resources::{AssetSyncState, TcpClientConfig, TcpClientConnection};
+#[cfg(feature = "server-sim")]
+use crate::network::resources::{ConnectionId, PendingPlayerSaves};
+#[cfg(feature = "server-sim")]
 use crate::network::resources::{
-    AssetSyncState, ConnectionId, LatencyReportTimer, PeerAuthState, PeerLatencyState,
-    PeerThroughputState, PendingPlayerSaves, PingTimer, ServerAssetManifest, TcpClientConfig,
-    TcpClientConnection, TcpServerConfig, TcpServerPeer, TcpServerState,
+    LatencyReportTimer, PeerAuthState, PeerLatencyState, PeerThroughputState, PingTimer,
+    ServerAssetManifest, TcpServerConfig, TcpServerPeer, TcpServerState,
 };
-use crate::network::transport::{ClientTransport, ServerTransport};
+use crate::network::transport::ClientTransport;
+#[cfg(feature = "server-sim")]
+use crate::network::transport::ServerTransport;
+#[cfg(feature = "server-sim")]
 use crate::player::components::{Inventory, Player, PlayerId};
+#[cfg(feature = "server-sim")]
 use crate::player::loadout::Loadouts;
+#[cfg(feature = "server-sim")]
 use crate::player::setup::{spawn_player_authoritative_in_space, spawn_player_from_dump};
+#[cfg(feature = "server-sim")]
 use crate::world::components::{Collider, SpaceResident, TilePosition};
+#[cfg(feature = "server-sim")]
 use crate::world::map_layout::SpaceDefinitions;
+#[cfg(feature = "server-sim")]
 use crate::world::object_registry::ObjectRegistry;
+#[cfg(feature = "server-sim")]
 use crate::world::resources::SpaceManager;
+#[cfg(feature = "server-sim")]
 use crate::world::WorldConfig;
 
+#[cfg(feature = "server-sim")]
 pub fn build_and_store_manifest(mut commands: Commands) {
     let manifest = build_server_manifest();
     info!("asset manifest built: {} files", manifest.len());
     commands.insert_resource(ServerAssetManifest(manifest));
 }
 
+#[cfg(feature = "server-sim")]
 pub fn send_asset_manifest_to_new_peers(
     manifest: Res<ServerAssetManifest>,
     mut server_state: ResMut<TcpServerState>,
@@ -186,6 +212,7 @@ fn is_asset_current(path: &str, expected_hash: &str, resolver: &AssetResolver) -
     false
 }
 
+#[cfg(feature = "server-sim")]
 pub fn start_tcp_server(config: Res<TcpServerConfig>, mut server_state: ResMut<TcpServerState>) {
     if server_state.listener.is_some() {
         return;
@@ -204,6 +231,7 @@ pub fn start_tcp_server(config: Res<TcpServerConfig>, mut server_state: ResMut<T
     server_state.listener = Some(listener);
 }
 
+#[cfg(feature = "server-sim")]
 pub fn accept_tcp_client_connections(
     mut server_state: ResMut<TcpServerState>,
     server_config: Res<TcpServerConfig>,
@@ -275,6 +303,7 @@ pub fn accept_tcp_client_connections(
     }
 }
 
+#[cfg(feature = "server-sim")]
 pub fn poll_tcp_server_messages(
     mut server_state: ResMut<TcpServerState>,
     mut pending_commands: ResMut<PendingGameCommands>,
@@ -452,6 +481,7 @@ pub fn poll_tcp_server_messages(
 /// peer transitions to `AwaitingCharacter` — no player entity is spawned yet.
 /// The client follows up with `ListCharacters` and then `SelectCharacter` /
 /// `CreateCharacter`.
+#[cfg(feature = "server-sim")]
 fn handle_auth_attempt(
     peer: &mut TcpServerPeer,
     username: &str,
@@ -528,6 +558,7 @@ fn handle_auth_attempt(
 
 /// Responds to `ClientMessage::ListCharacters` with the roster for this
 /// peer's account.
+#[cfg(feature = "server-sim")]
 fn handle_list_characters(
     peer: &mut TcpServerPeer,
     db: Option<&AccountDbHandle>,
@@ -562,6 +593,7 @@ fn handle_list_characters(
 
 /// Creates a new character for this peer's account. On success replies with
 /// `CharacterCreateResult { ok: true }` and an updated `CharacterList`.
+#[cfg(feature = "server-sim")]
 fn handle_create_character(
     peer: &mut TcpServerPeer,
     name: &str,
@@ -636,6 +668,7 @@ fn handle_create_character(
 
 /// Deletes a character owned by this peer's account, then re-broadcasts the
 /// updated character list.
+#[cfg(feature = "server-sim")]
 fn handle_delete_character(
     peer: &mut TcpServerPeer,
     character_id: i64,
@@ -666,6 +699,7 @@ fn handle_delete_character(
 /// Selects a character and spawns the corresponding player entity. The peer
 /// transitions to `Authed`, after which the asset-manifest + gameplay-event
 /// stream begins.
+#[cfg(feature = "server-sim")]
 fn handle_select_character(
     peer: &mut TcpServerPeer,
     character_id: i64,
@@ -815,6 +849,7 @@ fn handle_select_character(
     );
 }
 
+#[cfg(feature = "server-sim")]
 fn send_auth_failure(peer: &mut TcpServerPeer, reason: &str, disconnected: &mut bool) {
     write_message_counted(
         &mut peer.stream,
@@ -827,6 +862,7 @@ fn send_auth_failure(peer: &mut TcpServerPeer, reason: &str, disconnected: &mut 
     );
 }
 
+#[cfg(feature = "server-sim")]
 fn reason_for_auth_error(err: &AuthError) -> String {
     match err {
         AuthError::UsernameInvalid(msg) => format!("username invalid: {msg}"),
@@ -843,6 +879,7 @@ fn reason_for_auth_error(err: &AuthError) -> String {
     }
 }
 
+#[cfg(feature = "server-sim")]
 pub fn flush_server_messages(
     mut pending_ui_events: ResMut<PendingGameUiEvents>,
     mut server_state: ResMut<TcpServerState>,
@@ -1150,6 +1187,7 @@ pub fn ensure_tcp_client_connected(config: &TcpClientConfig, connection: &mut Tc
     connection.stream = Some(transport);
 }
 
+#[cfg(feature = "server-sim")]
 fn record_pong(peer: &mut TcpServerPeer, nonce: u64) {
     // Match against the in-flight nonce; if the client echoed an older one
     // (we already overwrote it with a fresher ping), silently drop. No loss
@@ -1172,6 +1210,7 @@ fn record_pong(peer: &mut TcpServerPeer, nonce: u64) {
 
 /// Periodic Ping emitter. Fires every `PingTimer::interval_seconds` (default
 /// 5s). Skips peers still in pre-auth states — we only ping live sessions.
+#[cfg(feature = "server-sim")]
 pub fn send_periodic_pings(
     time: Res<Time>,
     mut timer: ResMut<PingTimer>,
@@ -1227,6 +1266,7 @@ pub fn send_periodic_pings(
 /// Periodic latency reporter. Fires every `LatencyReportTimer::interval_seconds`
 /// (default 60s). One info line per connected (post-auth) peer with RTT
 /// and TCP throughput (plaintext bytes/sec since last report).
+#[cfg(feature = "server-sim")]
 pub fn report_peer_latency(
     time: Res<Time>,
     mut timer: ResMut<LatencyReportTimer>,
@@ -1279,6 +1319,7 @@ pub fn report_peer_latency(
 }
 
 /// Human-readable bytes-per-second formatter for the per-peer latency log.
+#[cfg(feature = "server-sim")]
 fn fmt_rate(bytes_per_sec: f64) -> String {
     if bytes_per_sec >= 1_048_576.0 {
         format!("{:.1}MB/s", bytes_per_sec / 1_048_576.0)
@@ -1289,6 +1330,7 @@ fn fmt_rate(bytes_per_sec: f64) -> String {
     }
 }
 
+#[cfg(feature = "server-sim")]
 fn disconnect_peer(
     server_state: &mut TcpServerState,
     connection_id: ConnectionId,
@@ -1323,6 +1365,7 @@ fn disconnect_peer(
     }
 }
 
+#[cfg(feature = "server-sim")]
 fn find_spawn_location(
     world_config: &WorldConfig,
     authored_spaces: &SpaceDefinitions,

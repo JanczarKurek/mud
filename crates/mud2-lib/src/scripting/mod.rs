@@ -1,14 +1,23 @@
+#[cfg(feature = "server-sim")]
 pub mod admin_host;
+#[cfg(feature = "server-sim")]
 pub mod python;
 pub mod resources;
+#[cfg(feature = "server-sim")]
 pub mod systems;
 
+#[cfg(feature = "server-sim")]
 use bevy::prelude::*;
+#[cfg(feature = "server-sim")]
 use bevy_terminal::TerminalWidgetPlugin;
 
+#[cfg(feature = "server-sim")]
 use crate::app::state::ClientAppState;
+#[cfg(feature = "server-sim")]
 use crate::scripting::python::PythonConsoleHost;
+#[cfg(feature = "server-sim")]
 use crate::scripting::resources::{PythonConsoleState, PythonHistoryPersist};
+#[cfg(feature = "server-sim")]
 use crate::scripting::systems::{
     handle_python_console_completion, handle_python_console_maximize_button,
     handle_python_console_restart_button, handle_python_console_submissions,
@@ -16,10 +25,15 @@ use crate::scripting::systems::{
     sync_python_console_maximize_label, toggle_python_console,
 };
 
+#[cfg(feature = "server-sim")]
 pub use crate::scripting::admin_host::{AdminExecResult, AdminReplHost, CompileOutcome};
 
+// The Python console only exists where the authoritative world lives in the
+// same App (embedded mode), so the whole plugin is sim-gated.
+#[cfg(feature = "server-sim")]
 pub struct ScriptingPlugin;
 
+#[cfg(feature = "server-sim")]
 impl Plugin for ScriptingPlugin {
     fn build(&self, app: &mut App) {
         if !app.is_plugin_added::<TerminalWidgetPlugin>() {
@@ -35,6 +49,7 @@ impl Plugin for ScriptingPlugin {
             .add_systems(
                 PreUpdate,
                 toggle_python_console
+                    .in_set(crate::scripting::resources::PythonConsoleToggleSet)
                     .before(bevy_terminal::terminal_input)
                     .run_if(in_state(ClientAppState::InGame)),
             )

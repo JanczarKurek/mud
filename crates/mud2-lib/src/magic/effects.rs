@@ -224,16 +224,7 @@ impl MagicEffects {
 /// of damage of their associated type every `DOT_TICK_INTERVAL_SECONDS`.
 const DOT_TICK_INTERVAL_SECONDS: f32 = 1.0;
 
-/// Map a DoT-bearing `EffectKind` to the damage type it deals. Non-DoT kinds
-/// return `None`.
-pub fn dot_damage_type(kind: EffectKind) -> Option<DamageType> {
-    match kind {
-        EffectKind::Burning => Some(DamageType::Fire),
-        EffectKind::Chill => Some(DamageType::Frost),
-        EffectKind::Poisoned => Some(DamageType::Poison),
-        _ => None,
-    }
-}
+pub use crate::magic::resources::dot_damage_type;
 
 /// All DoT kinds the tick system iterates each frame.
 const DOT_KINDS: [EffectKind; 3] = [EffectKind::Burning, EffectKind::Chill, EffectKind::Poisoned];

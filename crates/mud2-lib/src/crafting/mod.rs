@@ -4,9 +4,11 @@
 //! player that other subsystems (recipes, quests, future features) can write
 //! to. Persisted via `PlayerStateDump`.
 
+#[cfg(feature = "server-sim")]
 pub mod learning;
 pub mod recipes;
 pub mod stash;
+#[cfg(feature = "server-sim")]
 pub mod systems;
 
 use bevy::prelude::*;
@@ -14,8 +16,11 @@ use bevy::prelude::*;
 pub use recipes::{AutoLearnSpec, RecipeDefinition, RecipeDefinitions, RecipeIngredient};
 pub use stash::{CharacterStash, LEARNED_RECIPES_KEY};
 
+#[cfg(feature = "server-sim")]
 use crate::app::state::simulation_active;
+#[cfg(feature = "server-sim")]
 use crate::game::CommandIntercept;
+#[cfg(feature = "server-sim")]
 use crate::world::object_definitions::OverworldObjectDefinitions;
 
 /// Shared system set for crafting work. `Process` runs inside
@@ -28,8 +33,10 @@ pub enum CraftingSystemSet {
 
 /// Server-side crafting systems: stash mutation, learn/craft commands, etc.
 /// Registered alongside `MagicPlugin` in all server-running runtime modes.
+#[cfg(feature = "server-sim")]
 pub struct CraftingServerPlugin;
 
+#[cfg(feature = "server-sim")]
 impl Plugin for CraftingServerPlugin {
     fn build(&self, app: &mut App) {
         let recipes = RecipeDefinitions::load_from_disk();
@@ -66,6 +73,7 @@ impl Plugin for CraftingClientPlugin {
 /// Startup cross-check: panic on any recipe that references a missing
 /// object type_id. Runs after `OverworldObjectDefinitions` is inserted so
 /// the registry is populated.
+#[cfg(feature = "server-sim")]
 fn validate_recipes_against_objects(
     recipes: Res<RecipeDefinitions>,
     objects: Res<OverworldObjectDefinitions>,

@@ -15,8 +15,8 @@ use bevy::prelude::*;
 
 use crate::combat::components::CombatTarget;
 use crate::game::resources::{GameUiEvent, PendingGameUiEvents, SpeechBubbleStyle};
+use crate::npc::components::BUBBLE_COOLDOWN_SECONDS;
 use crate::npc::components::{AiMemory, AiState, Npc, RoamingRandomState};
-use crate::npc::systems::BUBBLE_COOLDOWN_SECONDS;
 use crate::player::components::Player;
 use crate::world::components::{
     tile_distance_3d, OverworldObject, SpaceId, SpaceResident, TilePosition,

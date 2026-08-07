@@ -1,17 +1,27 @@
+#[cfg(feature = "server-sim")]
 pub mod autosave;
+#[cfg(feature = "server-sim")]
 pub mod db;
+#[cfg(feature = "server-sim")]
 pub mod hashing;
 pub mod resources;
 
+#[cfg(feature = "server-sim")]
 use std::path::PathBuf;
 
+#[cfg(feature = "server-sim")]
 use bevy::prelude::*;
 
+#[cfg(feature = "server-sim")]
 pub use crate::accounts::autosave::{
     autosave_all_players, persist_disconnected_players, save_all_players_on_app_exit, AutosaveTimer,
 };
+#[cfg(feature = "server-sim")]
 pub use crate::accounts::db::{AccountDb, AuthError, LOCAL_ACCOUNT_ID, LOCAL_ACCOUNT_USERNAME};
-pub use crate::accounts::resources::{AccountDbHandle, AccountDbPath, AutosaveConfig};
+#[cfg(feature = "server-sim")]
+pub use crate::accounts::resources::AccountDbHandle;
+pub use crate::accounts::resources::{AccountDbPath, AutosaveConfig};
+#[cfg(feature = "server-sim")]
 use crate::network::resources::PendingPlayerSaves;
 
 /// Opens the account database at the path supplied by the caller.
@@ -19,10 +29,12 @@ use crate::network::resources::PendingPlayerSaves;
 /// `GameAppPlugin` always supplies a concrete path from `crate::app::paths`
 /// (embedded or server subtree), optionally overridden by `--db-path` /
 /// `MUD2_DB_PATH`.
+#[cfg(feature = "server-sim")]
 pub struct AccountsServerPlugin {
     pub db_path: PathBuf,
 }
 
+#[cfg(feature = "server-sim")]
 impl Plugin for AccountsServerPlugin {
     fn build(&self, app: &mut App) {
         let path = self.db_path.clone();

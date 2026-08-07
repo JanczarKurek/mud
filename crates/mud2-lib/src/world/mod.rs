@@ -6,6 +6,7 @@ pub mod column;
 pub mod components;
 pub mod darkness;
 pub mod direction;
+#[cfg(feature = "server-sim")]
 pub mod dungeon_gen;
 pub mod floor_animation;
 pub mod floor_definitions;
@@ -15,20 +16,26 @@ pub mod floor_render;
 pub mod floors;
 pub mod fog_render;
 pub mod hidden;
+#[cfg(feature = "server-sim")]
 pub mod hide_action;
+#[cfg(feature = "server-sim")]
 pub mod interactions;
 pub mod lerp_anim;
 pub mod lighting;
+#[cfg(feature = "server-sim")]
 pub mod loot;
 pub mod map_layout;
 pub mod noise;
 pub mod object_definitions;
 pub mod object_registry;
+#[cfg(feature = "server-sim")]
 pub mod pressure_plate;
 pub mod resources;
 pub mod setup;
+#[cfg(feature = "server-sim")]
 pub mod spatial;
 pub mod stacks;
+#[cfg(feature = "server-sim")]
 pub mod step_triggers;
 pub mod systems;
 pub mod tile_patterns;
@@ -57,6 +64,7 @@ use crate::world::floor_animation::{
 };
 use crate::world::floor_definitions::FloorTilesetDefinitions;
 use crate::world::floor_flavors::{generate_floor_flavor_atlases, FloorFlavorGeneration};
+#[cfg(feature = "server-sim")]
 use crate::world::floor_map::FloorMaps;
 use crate::world::floor_render::{
     any_added_floor_cells, build_floor_render_cells, consume_floor_render_dirty,
@@ -68,29 +76,38 @@ use crate::world::floors::{
     recompute_indoor_tile_map, recompute_visible_floors, IndoorTileMap, VisibleFloorRange,
 };
 use crate::world::fog_render::{setup_fog_overlay, update_fog_overlay, FogOfWarMaterial};
-use crate::world::lighting::{advance_world_clock, sync_object_light_components, WorldClock};
+use crate::world::lighting::sync_object_light_components;
+#[cfg(feature = "server-sim")]
+use crate::world::lighting::{advance_world_clock, WorldClock};
 use crate::world::map_layout::SpaceDefinitions;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
+#[cfg(feature = "server-sim")]
+use crate::world::resources::SpaceManager;
 use crate::world::resources::{
     ClientRemotePlayerProjectionState, ClientWorldProjectionState, FloorTransitionOffset,
-    SpaceManager, ViewScrollOffset,
+    ViewScrollOffset,
 };
+#[cfg(feature = "server-sim")]
 use crate::world::setup::{initialize_runtime_spaces, WorldStartupSet};
+#[cfg(feature = "server-sim")]
 use crate::world::step_triggers::{
     process_continuous_step_triggers, process_step_triggers, PendingStepEvents,
 };
+#[cfg(feature = "server-sim")]
+use crate::world::systems::cleanup_empty_ephemeral_spaces;
 use crate::world::systems::{
-    cleanup_empty_ephemeral_spaces, sync_authoritative_world_object_position_view,
-    sync_client_world_projection, sync_combat_health_bars, sync_player_z,
-    sync_remote_player_projection, sync_tile_transforms,
+    sync_authoritative_world_object_position_view, sync_client_world_projection,
+    sync_combat_health_bars, sync_player_z, sync_remote_player_projection, sync_tile_transforms,
 };
 use crate::world::vfx::VfxDefinitions;
 
+#[cfg(feature = "server-sim")]
 pub struct WorldServerPlugin;
 
 pub struct WorldClientPlugin;
 
+#[cfg(feature = "server-sim")]
 impl Plugin for WorldServerPlugin {
     fn build(&self, app: &mut App) {
         let mut authored_spaces = SpaceDefinitions::load_from_disk();

@@ -23,6 +23,7 @@ use clap::{Args, Parser};
 
 use crate::app::clean_cache::Command;
 #[cfg(unix)]
+#[cfg(all(unix, feature = "server-sim"))]
 use crate::app::paths::default_admin_socket_path;
 use crate::app::plugin::{AppRuntime, ClientTlsArgs, GameAppPlugin, ServerTlsArgs};
 
@@ -240,8 +241,24 @@ pub struct ServerCli {
 // ---------------------------------------------------------------------------
 
 /// Resolve the `mud2` runtime from the explicit mode flags. An explicit
-/// mode flag always wins; otherwise default to `EmbeddedClient`.
+/// mode flag always wins; otherwise default to `EmbeddedClient` — except in
+/// thin-client builds (no `server-sim` feature), where only TcpClient exists:
+/// the default becomes TcpClient and the sim-requiring flags exit with a
+/// clear message instead of panicking deep inside `GameAppPlugin`.
 fn resolve_mud2_runtime(mode: &ModeArgs) -> AppRuntime {
+    #[cfg(not(feature = "server-sim"))]
+    {
+        if mode.server || mode.client {
+            eprintln!(
+                "error: this build has no local world simulation (built without the \
+                 `server-sim` feature); --server and --client are unavailable. \
+                 Connect to a server instead (TcpClient mode is the default)."
+            );
+            std::process::exit(2);
+        }
+        AppRuntime::TcpClient
+    }
+    #[cfg(feature = "server-sim")]
     if mode.server {
         AppRuntime::HeadlessServer
     } else if mode.tcp_client {
@@ -277,7 +294,7 @@ pub fn mud2_into_plugin(cli: Mud2Cli) -> GameAppPlugin {
             insecure: cli.insecure,
         });
 
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "server-sim"))]
     let admin_socket = {
         let (enabled, explicit_path) = cli.admin.resolved();
         if enabled && matches!(runtime, AppRuntime::HeadlessServer) {
@@ -308,7 +325,7 @@ pub fn mud2_into_plugin(cli: Mud2Cli) -> GameAppPlugin {
         asset_cache_dir: cli.asset_cache,
         server_tls,
         client_tls,
-        #[cfg(unix)]
+        #[cfg(all(unix, feature = "server-sim"))]
         admin_socket,
         embedded_extension: None,
     }
@@ -317,6 +334,7 @@ pub fn mud2_into_plugin(cli: Mud2Cli) -> GameAppPlugin {
 /// Build a [`GameAppPlugin`] from a parsed [`ServerCli`]. Runtime is always
 /// [`AppRuntime::HeadlessServer`]; only the server-side TLS / admin-socket
 /// fields apply.
+#[cfg(feature = "server-sim")]
 pub fn server_into_plugin(cli: ServerCli) -> GameAppPlugin {
     let runtime = AppRuntime::HeadlessServer;
     let server_tls_enabled = cli.tls.tls || cli.tls.generate_cert;
@@ -327,7 +345,7 @@ pub fn server_into_plugin(cli: ServerCli) -> GameAppPlugin {
         generate_if_missing: cli.tls.generate_cert,
     });
 
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "server-sim"))]
     let admin_socket = {
         let (enabled, explicit_path) = cli.admin.resolved();
         if enabled {
@@ -353,7 +371,7 @@ pub fn server_into_plugin(cli: ServerCli) -> GameAppPlugin {
         asset_cache_dir: None,
         server_tls,
         client_tls: None,
-        #[cfg(unix)]
+        #[cfg(all(unix, feature = "server-sim"))]
         admin_socket,
         embedded_extension: None,
     }

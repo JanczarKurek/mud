@@ -1,13 +1,19 @@
+#[cfg(feature = "server-sim")]
 pub mod admin_progression;
 pub mod check;
 pub mod classes;
 pub mod components;
+#[cfg(feature = "server-sim")]
 pub mod debug_presets;
 pub mod exertion;
+#[cfg(feature = "server-sim")]
 pub mod lifecycle;
+#[cfg(feature = "server-sim")]
 pub mod loadout;
 pub mod progression;
+#[cfg(feature = "server-sim")]
 pub mod regen;
+#[cfg(feature = "server-sim")]
 pub mod sense;
 pub mod setup;
 pub mod skills;
@@ -15,35 +21,47 @@ pub mod systems;
 
 use bevy::prelude::*;
 
-use crate::app::state::{simulation_active, ClientAppState};
+#[cfg(feature = "server-sim")]
+use crate::app::state::simulation_active;
+use crate::app::state::ClientAppState;
+#[cfg(feature = "server-sim")]
 use crate::player::admin_progression::{
     process_admin_progression_commands, process_admin_toggle_commands,
 };
+#[cfg(feature = "server-sim")]
 use crate::player::exertion::tick_exertion;
+#[cfg(feature = "server-sim")]
 use crate::player::lifecycle::{
     handle_player_deaths, handle_set_home_commands, process_acknowledge_death_commands,
     PendingPlayerDeaths,
 };
+#[cfg(feature = "server-sim")]
 use crate::player::progression::{apply_xp_grants, PendingXpGrants};
+#[cfg(feature = "server-sim")]
 use crate::player::regen::{tick_regen_buffs, tick_vital_regen};
 use crate::player::setup::{
     apply_player_appearance, propagate_player_animation_to_layers, spawn_player_recolor_layers,
     spawn_player_visual,
 };
+#[cfg(feature = "server-sim")]
 use crate::player::skills::process_allocate_skill_commands;
+#[cfg(feature = "server-sim")]
+use crate::player::systems::refresh_derived_player_stats;
 use crate::player::systems::{
-    move_player_on_grid, refresh_derived_player_stats, rotate_nearby_object_on_shortcut,
-    set_home_on_keypress, sync_authoritative_player_display,
-    sync_authoritative_player_position_view, sync_projected_player_from_client_state,
-    toggle_auto_retaliate_on_keypress, toggle_aware_on_keypress, toggle_sneak_on_keypress,
+    move_player_on_grid, rotate_nearby_object_on_shortcut, set_home_on_keypress,
+    sync_authoritative_player_display, sync_authoritative_player_position_view,
+    sync_projected_player_from_client_state, toggle_auto_retaliate_on_keypress,
+    toggle_aware_on_keypress, toggle_sneak_on_keypress,
 };
 
+#[cfg(feature = "server-sim")]
 pub struct PlayerServerPlugin;
 
 /// Startup cross-check: panic on any loadout that references a missing object
 /// type_id or equips an item into the wrong slot. Runs after
 /// `OverworldObjectDefinitions` is inserted so the registry is populated —
 /// same posture as `validate_recipes_against_objects`.
+#[cfg(feature = "server-sim")]
 fn validate_loadouts_against_objects(
     loadouts: Res<crate::player::loadout::Loadouts>,
     objects: Res<crate::world::object_definitions::OverworldObjectDefinitions>,
@@ -53,6 +71,7 @@ fn validate_loadouts_against_objects(
 
 pub struct PlayerClientPlugin;
 
+#[cfg(feature = "server-sim")]
 impl Plugin for PlayerServerPlugin {
     fn build(&self, app: &mut App) {
         let loadouts = crate::player::loadout::Loadouts::load_from_disk();

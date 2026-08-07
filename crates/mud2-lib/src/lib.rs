@@ -5,6 +5,7 @@ pub mod client_effects;
 pub mod combat;
 pub mod crafting;
 pub mod diagnostics;
+#[cfg(feature = "server-sim")]
 pub mod dialog;
 pub mod game;
 pub mod log;
@@ -13,8 +14,10 @@ pub mod network;
 pub mod npc;
 pub mod persistence;
 pub mod player;
+#[cfg(feature = "server-sim")]
 pub mod quest;
 pub mod scripting;
+#[cfg(feature = "server-sim")]
 pub mod scripting_api;
 #[cfg(test)]
 pub mod test_support;

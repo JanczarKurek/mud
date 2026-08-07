@@ -38,8 +38,11 @@ echo "==> Building release binary inside FHS sandbox (mud2-fhs)"
 # Build runs inside `mud2-fhs` (defined in shell.nix via buildFHSEnv) so the
 # linker emits /lib64/ld-linux-x86-64.so.2 as PT_INTERP. The regular nix-shell
 # would produce a Nix-store-bound binary that can't run on Ubuntu/Fedora/etc.
-# --no-default-features drops the `dynamic_linking` Cargo feature so the
-# binary doesn't need libbevy_dylib.so at runtime.
+# --no-default-features drops `dynamic_linking` (no libbevy_dylib.so at
+# runtime) AND — deliberately — `server-sim`/`editor`: the shipped AppImage is
+# the thin online-only client (TcpClient mode, title-screen server picker; no
+# embedded single-player, no map editor). For an offline-capable build add
+# `--features editor`.
 #
 # Use a dedicated CARGO_TARGET_DIR so the FHS-built artifacts don't churn
 # against the dev `cargo run --bin mud2` cache (different RUSTFLAGS would

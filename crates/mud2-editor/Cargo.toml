@@ -18,7 +18,11 @@ bevy = { version = "0.18", default-features = false, features = [
     "2d_bevy_render",
     "ui_bevy_render",
 ] }
-mud2-lib = { path = "../mud2-lib", default-features = false }
+# The editor edits the live authoritative world, so it hard-requires the
+# simulation. Any build that compiles this crate re-enables `server-sim` in
+# mud2-lib via feature unification — thin-client builds must exclude the
+# `editor` feature of the root package.
+mud2-lib = { path = "../mud2-lib", default-features = false, features = ["server-sim"] }
 # Filesystem watching for asset_viewer hot reload.
 notify-debouncer-full = "0.3"
 serde = { version = "1", features = ["derive"] }

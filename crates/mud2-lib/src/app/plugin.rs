@@ -1,40 +1,70 @@
+#[cfg(feature = "server-sim")]
 use std::time::Duration;
 
+#[cfg(feature = "server-sim")]
 use bevy::app::{ScheduleRunnerPlugin, TerminalCtrlCHandlerPlugin};
 use bevy::prelude::*;
 use bevy::window::Window;
 
 use std::path::PathBuf;
 
+#[cfg(feature = "server-sim")]
 use crate::accounts::AccountsServerPlugin;
 use crate::app::about_screen::AboutScreenPlugin;
 use crate::app::asset_sync_screen::AssetSyncScreenPlugin;
 use crate::app::auth_screen::AuthScreenPlugin;
 use crate::app::character_create_screen::CharacterCreateScreenPlugin;
 use crate::app::character_select_screen::CharacterSelectScreenPlugin;
-use crate::app::paths::{client_paths, embedded_paths, server_paths};
+use crate::app::paths::client_paths;
+#[cfg(feature = "server-sim")]
+use crate::app::paths::{embedded_paths, server_paths};
 use crate::app::setup::setup_camera;
-use crate::app::state::{ClientAppState, LocalSelectedCharacter};
+use crate::app::state::ClientAppState;
+#[cfg(feature = "server-sim")]
+use crate::app::state::LocalSelectedCharacter;
 use crate::app::title_screen::TitleScreenPlugin;
 use crate::client_effects::ClientEffectsPlugin;
+#[cfg(feature = "server-sim")]
 use crate::combat::CombatPlugin;
-use crate::crafting::{CraftingClientPlugin, CraftingServerPlugin};
+use crate::crafting::CraftingClientPlugin;
+#[cfg(feature = "server-sim")]
+use crate::crafting::CraftingServerPlugin;
 use crate::diagnostics::DiagnosticsPlugin;
+#[cfg(feature = "server-sim")]
 use crate::dialog::DialogServerPlugin;
-use crate::game::{GameClientPlugin, GameServerPlugin};
-use crate::log::{LogClientPlugin, LogServerPlugin};
-use crate::magic::{MagicClientPlugin, MagicServerPlugin};
+use crate::game::GameClientPlugin;
+#[cfg(feature = "server-sim")]
+use crate::game::GameServerPlugin;
+use crate::log::LogClientPlugin;
+#[cfg(feature = "server-sim")]
+use crate::log::LogServerPlugin;
+use crate::magic::MagicClientPlugin;
+#[cfg(feature = "server-sim")]
+use crate::magic::MagicServerPlugin;
 use crate::network::resources::TcpClientTlsConfig;
-use crate::network::transport::{build_client_tls_config, load_server_tls_config};
-use crate::network::{TcpClientPlugin, TcpServerPlugin};
+use crate::network::transport::build_client_tls_config;
+#[cfg(feature = "server-sim")]
+use crate::network::transport::load_server_tls_config;
+use crate::network::TcpClientPlugin;
+#[cfg(feature = "server-sim")]
+use crate::network::TcpServerPlugin;
+#[cfg(feature = "server-sim")]
 use crate::npc::NpcPlugin;
+#[cfg(feature = "server-sim")]
 use crate::persistence::PersistenceServerPlugin;
+#[cfg(feature = "server-sim")]
 use crate::player::setup::spawn_embedded_player_authoritative;
-use crate::player::{PlayerClientPlugin, PlayerServerPlugin};
+use crate::player::PlayerClientPlugin;
+#[cfg(feature = "server-sim")]
+use crate::player::PlayerServerPlugin;
+#[cfg(feature = "server-sim")]
 use crate::quest::QuestPlugin;
+#[cfg(feature = "server-sim")]
 use crate::scripting::ScriptingPlugin;
 use crate::ui::UiPlugin;
-use crate::world::{WorldClientPlugin, WorldServerPlugin};
+use crate::world::WorldClientPlugin;
+#[cfg(feature = "server-sim")]
+use crate::world::WorldServerPlugin;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, bevy::ecs::resource::Resource)]
 pub enum AppRuntime {
@@ -63,7 +93,7 @@ pub struct GameAppPlugin {
     pub client_tls: Option<ClientTlsArgs>,
     /// Admin Python REPL listener config. `Some` ⇒ attach `AdminReplPlugin`
     /// in HeadlessServer mode (other modes ignore it). `#[cfg(unix)]` only.
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "server-sim"))]
     pub admin_socket: Option<crate::network::AdminListenArgs>,
     /// Extension hook run at the end of the EmbeddedClient branch — the seam
     /// where the map editor (crates/mud2-editor) plugs in without this crate
@@ -106,6 +136,7 @@ impl Plugin for GameAppPlugin {
 
         // Resolve TLS configs once, here, so failures are loud at startup
         // rather than asynchronously when a peer connects.
+        #[cfg(feature = "server-sim")]
         let server_tls_config = self.server_tls.as_ref().map(|args| {
             #[cfg(feature = "dev-self-signed")]
             if args.generate_if_missing && (!args.cert_path.exists() || !args.key_path.exists()) {
@@ -155,6 +186,15 @@ impl Plugin for GameAppPlugin {
         });
 
         match self.runtime {
+            // Without `server-sim` only TcpClient is buildable; the CLI layer
+            // already rejects the other modes with a friendly message, this
+            // arm is just the backstop for programmatic construction.
+            #[cfg(not(feature = "server-sim"))]
+            AppRuntime::EmbeddedClient | AppRuntime::HeadlessServer => panic!(
+                "this binary was built without the `server-sim` feature; \
+                 only TcpClient mode is available"
+            ),
+            #[cfg(feature = "server-sim")]
             AppRuntime::EmbeddedClient => {
                 let defaults = embedded_paths();
                 let save_path = self.save_path.clone().unwrap_or(defaults.world_snapshot);
@@ -282,6 +322,7 @@ impl Plugin for GameAppPlugin {
                     AboutScreenPlugin,
                 ));
             }
+            #[cfg(feature = "server-sim")]
             AppRuntime::HeadlessServer => {
                 let defaults = server_paths();
                 let save_path = self.save_path.clone().unwrap_or(defaults.world_snapshot);
@@ -297,6 +338,10 @@ impl Plugin for GameAppPlugin {
                     filter: "wgpu=warn,naga=warn".to_owned(),
                     ..default()
                 })
+                // `MinimalPlugins` omits `AssetPlugin`; yarnspinner `expect`s
+                // `AssetServer` at plugin-build time, so this must be added
+                // before `DialogServerPlugin` (misordering panics at startup).
+                .add_plugins(bevy::asset::AssetPlugin::default())
                 .add_plugins((
                     GameServerPlugin,
                     WorldServerPlugin,
@@ -316,16 +361,9 @@ impl Plugin for GameAppPlugin {
                             .unwrap_or_else(|| "127.0.0.1:7000".to_owned()),
                         tls_config: server_tls_config,
                     },
+                    DialogServerPlugin,
                     QuestPlugin::default(),
                 ));
-
-                // Quest systems read/write yarn variable stores even when no
-                // full dialog runtime is attached (HeadlessServer skips
-                // `DialogServerPlugin` because YarnSpinner needs `AssetPlugin`,
-                // which `MinimalPlugins` does not provide). Insert the bare
-                // resource so `drain_quest_events` / `drain_quest_commands`
-                // can run as no-ops.
-                app.insert_resource(crate::dialog::resources::CharacterVarStores::default());
 
                 #[cfg(unix)]
                 if let Some(args) = self.admin_socket.clone() {

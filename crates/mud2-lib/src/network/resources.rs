@@ -1,15 +1,25 @@
+#[cfg(feature = "server-sim")]
 use std::collections::HashMap;
+#[cfg(feature = "server-sim")]
 use std::net::{SocketAddr, TcpListener};
 use std::sync::Arc;
+#[cfg(feature = "server-sim")]
 use std::time::Instant;
 
 use bevy::prelude::*;
-use rustls::{ClientConfig, ServerConfig};
+use rustls::ClientConfig;
+#[cfg(feature = "server-sim")]
+use rustls::ServerConfig;
 
+#[cfg(feature = "server-sim")]
 use crate::game::resources::ClientGameState;
+#[cfg(feature = "server-sim")]
 use crate::network::protocol::AssetEntry;
-use crate::network::transport::{ClientTransport, ServerTransport};
+use crate::network::transport::ClientTransport;
+#[cfg(feature = "server-sim")]
+use crate::network::transport::ServerTransport;
 
+#[cfg(feature = "server-sim")]
 use crate::player::components::PlayerId;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -46,6 +56,7 @@ pub struct TcpClientConnection {
     pub error_message: Option<String>,
 }
 
+#[cfg(feature = "server-sim")]
 #[derive(Resource)]
 pub struct TcpServerConfig {
     pub bind_addr: String,
@@ -53,6 +64,7 @@ pub struct TcpServerConfig {
     pub tls_config: Option<Arc<ServerConfig>>,
 }
 
+#[cfg(feature = "server-sim")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PeerAuthState {
     /// Accepts only `Login` / `Register` messages. No player entity exists yet.
@@ -66,6 +78,7 @@ pub enum PeerAuthState {
     Authed { account_id: i64, character_id: i64 },
 }
 
+#[cfg(feature = "server-sim")]
 pub struct TcpServerPeer {
     pub connection_id: ConnectionId,
     pub auth_state: PeerAuthState,
@@ -95,6 +108,7 @@ pub struct TcpServerPeer {
 
 /// Per-peer RTT tracking, populated by the Ping/Pong cycle. All fields are
 /// `None` until the first pong returns.
+#[cfg(feature = "server-sim")]
 #[derive(Default, Clone, Copy, Debug)]
 pub struct PeerLatencyState {
     /// Nonce of the most recent outstanding ping. A pong carrying a different
@@ -109,6 +123,7 @@ pub struct PeerLatencyState {
 /// Per-peer byte counters covering the plaintext bytes flowing through
 /// `ServerTransport::read` / `write` since the last report. `report_peer_latency`
 /// computes a rate, logs it alongside RTT, and resets the counters.
+#[cfg(feature = "server-sim")]
 #[derive(Default, Clone, Copy, Debug)]
 pub struct PeerThroughputState {
     pub bytes_in: u64,
@@ -118,6 +133,7 @@ pub struct PeerThroughputState {
     pub last_report_at: Option<Instant>,
 }
 
+#[cfg(feature = "server-sim")]
 impl TcpServerPeer {
     pub fn is_authed(&self) -> bool {
         matches!(self.auth_state, PeerAuthState::Authed { .. })
@@ -143,6 +159,7 @@ impl TcpServerPeer {
     }
 }
 
+#[cfg(feature = "server-sim")]
 #[derive(Resource, Default)]
 pub struct TcpServerState {
     pub listener: Option<TcpListener>,
@@ -163,6 +180,7 @@ pub struct PendingPlayerSave {
     pub player_entity: Entity,
 }
 
+#[cfg(feature = "server-sim")]
 #[derive(Resource)]
 pub struct ServerAssetManifest(pub Vec<AssetEntry>);
 
@@ -178,6 +196,7 @@ pub struct AssetSyncState {
 /// Drives `send_periodic_pings`. Cadence: every `interval_seconds`, the server
 /// emits a fresh `ServerMessage::Ping` to each authed peer. Mirrors
 /// `AutosaveTimer` (`src/accounts/autosave.rs`).
+#[cfg(feature = "server-sim")]
 #[derive(Resource)]
 pub struct PingTimer {
     pub elapsed_since_ping: f64,
@@ -186,6 +205,7 @@ pub struct PingTimer {
     pub next_nonce: u64,
 }
 
+#[cfg(feature = "server-sim")]
 impl Default for PingTimer {
     fn default() -> Self {
         Self {
@@ -198,12 +218,14 @@ impl Default for PingTimer {
 
 /// Drives `report_peer_latency`. Cadence: every `interval_seconds`, the server
 /// info-logs one line per connected peer with the last observed RTT + EMA.
+#[cfg(feature = "server-sim")]
 #[derive(Resource)]
 pub struct LatencyReportTimer {
     pub elapsed_since_report: f64,
     pub interval_seconds: f64,
 }
 
+#[cfg(feature = "server-sim")]
 impl Default for LatencyReportTimer {
     fn default() -> Self {
         Self {

@@ -272,8 +272,13 @@ pub struct PendingGameUiEvents {
 }
 
 impl PendingGameUiEvents {
+    /// Queue an event for one player only. Delivered by
+    /// `flush_server_messages` to that player's TCP peer, or by
+    /// `route_peer_ui_events_to_local` to the local UI in embedded mode.
+    /// Must not also land in `events`: that list is broadcast to every peer,
+    /// which would both duplicate the event for its owner and leak it to
+    /// other players.
     pub fn push(&mut self, player_id: PlayerId, event: GameUiEvent) {
-        self.events.push(event.clone());
         self.peer_events.entry(player_id).or_default().push(event);
     }
 

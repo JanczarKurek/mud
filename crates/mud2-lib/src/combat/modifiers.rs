@@ -138,7 +138,7 @@ impl ModifierEffect {
                 // A DoT spec deals `magnitude` damage per 1s tick (see
                 // `magic::effects::DOT_TICK_INTERVAL_SECONDS`), so the total over
                 // its lifetime is ~ magnitude * seconds.
-                if crate::magic::effects::dot_damage_type(spec.kind).is_some() {
+                if crate::magic::resources::dot_damage_type(spec.kind).is_some() {
                     let total = (spec.magnitude * spec.seconds).round() as i32;
                     format!(
                         "{pct}% chance: {kind_name} {}/s for {}s (~{total} dmg)",

@@ -1,27 +1,45 @@
 use bevy::prelude::*;
 
+#[cfg(feature = "server-sim")]
 use crate::combat::components::{AttackProfile, CombatLeash};
+#[cfg(feature = "server-sim")]
 use crate::crafting::CharacterStash;
+#[cfg(feature = "server-sim")]
 use crate::magic::effects::MagicEffects;
+#[cfg(feature = "server-sim")]
 use crate::npc::components::Faction;
-use crate::persistence::{PlayerStateDump, WorldSnapshotStatus};
+#[cfg(feature = "server-sim")]
+use crate::persistence::PlayerStateDump;
+#[cfg(feature = "server-sim")]
+use crate::persistence::WorldSnapshotStatus;
+#[cfg(feature = "server-sim")]
 use crate::player::classes::Class;
 use crate::player::components::{
-    AppearanceRegion, BaseStats, ChatLog, DefenseStats, DerivedStats, DiscoveredTiles, Exertion,
-    Inventory, MovementCooldown, Player, PlayerAppearance, PlayerId, PlayerIdentity, RegenBuffs,
-    RegenTickers, SpriteLayer, VitalStats, WeaponDamage,
+    AppearanceRegion, Player, PlayerAppearance, PlayerIdentity, SpriteLayer, VitalStats,
 };
+#[cfg(feature = "server-sim")]
+use crate::player::components::{
+    BaseStats, ChatLog, DefenseStats, DerivedStats, DiscoveredTiles, Exertion, Inventory,
+    MovementCooldown, PlayerId, RegenBuffs, RegenTickers, WeaponDamage,
+};
+#[cfg(feature = "server-sim")]
 use crate::player::loadout::Loadouts;
+#[cfg(feature = "server-sim")]
 use crate::player::progression::Experience;
+#[cfg(feature = "server-sim")]
 use crate::player::skills::SkillSheet;
+#[cfg(feature = "server-sim")]
+use crate::world::components::{Collider, OverworldObject, SpaceId, SpaceResident};
 use crate::world::components::{
-    Collider, DisplayedVitalStats, Facing, HealthBarDisplayPolicy, OverworldObject, SpaceId,
-    SpaceResident, TilePosition, ViewPosition,
+    DisplayedVitalStats, Facing, HealthBarDisplayPolicy, TilePosition, ViewPosition,
 };
 use crate::world::lighting::LightSource;
+#[cfg(feature = "server-sim")]
 use crate::world::map_layout::SpaceDefinitions;
 use crate::world::object_definitions::OverworldObjectDefinitions;
+#[cfg(feature = "server-sim")]
 use crate::world::object_registry::ObjectRegistry;
+#[cfg(feature = "server-sim")]
 use crate::world::resources::SpaceManager;
 use crate::world::setup::{attach_combat_health_bar, build_object_visual_bundle};
 use crate::world::WorldConfig;
@@ -80,6 +98,7 @@ pub fn despawn_projected_local_player(
 /// `current_space_id` — which tracks whichever space the player last stood in
 /// (`sync_client_world_projection`) and is persisted in the world snapshot, so
 /// it drifts off the bootstrap space and is a last resort, not the default.
+#[cfg(feature = "server-sim")]
 fn resolve_spawn_space(
     space_manager: &SpaceManager,
     bootstrap_space_id: &str,
@@ -95,6 +114,7 @@ fn resolve_spawn_space(
 /// them at their persisted location. An explicit map pick relocates them —
 /// that's the point of picking. Otherwise only a character with no saved space,
 /// or one parked at the origin (never actually placed), gets moved.
+#[cfg(feature = "server-sim")]
 fn needs_spawn_location(
     explicit_pick: Option<SpaceId>,
     saved_space_id: Option<SpaceId>,
@@ -103,6 +123,7 @@ fn needs_spawn_location(
     explicit_pick.is_some() || saved_space_id.is_none() || (saved_tile.x == 0 && saved_tile.y == 0)
 }
 
+#[cfg(feature = "server-sim")]
 pub fn spawn_embedded_player_authoritative(
     mut commands: Commands,
     world_config: Res<WorldConfig>,
@@ -254,6 +275,7 @@ pub fn spawn_embedded_player_authoritative(
     commands.entity(entity).insert(starter);
 }
 
+#[cfg(feature = "server-sim")]
 pub fn spawn_player_authoritative(
     commands: &mut Commands,
     world_config: &WorldConfig,
@@ -275,6 +297,7 @@ pub fn spawn_player_authoritative(
 /// Spawn a player entity from a previously-persisted `PlayerStateDump` (restored
 /// from an account DB row or a world snapshot). Allocates a fresh runtime
 /// `object_id` — runtime ids are opaque and not preserved across loads.
+#[cfg(feature = "server-sim")]
 pub fn spawn_player_from_dump(
     commands: &mut Commands,
     object_registry: &mut ObjectRegistry,
@@ -359,6 +382,7 @@ pub fn spawn_player_from_dump(
     entity
 }
 
+#[cfg(feature = "server-sim")]
 pub fn spawn_player_authoritative_in_space(
     commands: &mut Commands,
     player_id: PlayerId,
