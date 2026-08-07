@@ -864,30 +864,10 @@ pub fn handle_editor_left_click(
         modal_state.active = Some(ModalKind::PortalCreate);
         modal_state.portal_source_tile = Some(tile);
         modal_state.text_fields = vec![
-            ModalTextField {
-                label: "Portal ID".into(),
-                value: String::new(),
-                placeholder: "portal_to_dungeon".into(),
-                numeric_only: false,
-            },
-            ModalTextField {
-                label: "Destination Space ID".into(),
-                value: String::new(),
-                placeholder: "starter_cellar".into(),
-                numeric_only: false,
-            },
-            ModalTextField {
-                label: "Destination Tile X".into(),
-                value: String::new(),
-                placeholder: "7".into(),
-                numeric_only: true,
-            },
-            ModalTextField {
-                label: "Destination Tile Y".into(),
-                value: String::new(),
-                placeholder: "9".into(),
-                numeric_only: true,
-            },
+            ModalTextField::text("Portal ID", "").with_placeholder("portal_to_dungeon"),
+            ModalTextField::text("Destination Space ID", "").with_placeholder("starter_cellar"),
+            ModalTextField::numeric("Destination Tile X", "").with_placeholder("7"),
+            ModalTextField::numeric("Destination Tile Y", "").with_placeholder("9"),
         ];
         modal_state.focused_field = 0;
         modal_state.error_message = None;
@@ -1691,12 +1671,10 @@ pub fn open_file_dialog_impl(editor_context: &EditorContext, modal_state: &mut M
 pub fn open_save_as_impl(editor_context: &EditorContext, modal_state: &mut ModalState) {
     *modal_state = ModalState {
         active: Some(ModalKind::SaveAs),
-        text_fields: vec![ModalTextField {
-            label: "Map ID".into(),
-            value: editor_context.authored_id.clone(),
-            placeholder: "my_map".into(),
-            numeric_only: false,
-        }],
+        text_fields: vec![
+            ModalTextField::text("Map ID", editor_context.authored_id.clone())
+                .with_placeholder("my_map"),
+        ],
         ..default()
     };
 }
@@ -1709,24 +1687,9 @@ pub fn open_new_map_dialog_impl(
     *modal_state = ModalState {
         active: Some(ModalKind::NewMap),
         text_fields: vec![
-            ModalTextField {
-                label: "Map ID".into(),
-                value: String::new(),
-                placeholder: "my_dungeon".into(),
-                numeric_only: false,
-            },
-            ModalTextField {
-                label: "Width".into(),
-                value: String::new(),
-                placeholder: "32".into(),
-                numeric_only: true,
-            },
-            ModalTextField {
-                label: "Height".into(),
-                value: String::new(),
-                placeholder: "24".into(),
-                numeric_only: true,
-            },
+            ModalTextField::text("Map ID", "").with_placeholder("my_dungeon"),
+            ModalTextField::numeric("Width", "").with_placeholder("32"),
+            ModalTextField::numeric("Height", "").with_placeholder("24"),
         ],
         picker_fields: vec![picker],
         ..default()
@@ -1820,54 +1783,14 @@ pub fn open_generate_dungeon_dialog_impl(
     *modal_state = ModalState {
         active: Some(ModalKind::GenerateDungeon),
         text_fields: vec![
-            ModalTextField {
-                label: "Map ID".into(),
-                value: String::new(),
-                placeholder: "my_dungeon".into(),
-                numeric_only: false,
-            },
-            ModalTextField {
-                label: "Width".into(),
-                value: String::new(),
-                placeholder: "64".into(),
-                numeric_only: true,
-            },
-            ModalTextField {
-                label: "Height".into(),
-                value: String::new(),
-                placeholder: "48".into(),
-                numeric_only: true,
-            },
-            ModalTextField {
-                label: "Target Rooms".into(),
-                value: String::new(),
-                placeholder: "8".into(),
-                numeric_only: true,
-            },
-            ModalTextField {
-                label: "Room Padding".into(),
-                value: String::new(),
-                placeholder: "4".into(),
-                numeric_only: true,
-            },
-            ModalTextField {
-                label: "Corridor Wander 0-100".into(),
-                value: String::new(),
-                placeholder: "55".into(),
-                numeric_only: true,
-            },
-            ModalTextField {
-                label: "Branching 0-100".into(),
-                value: String::new(),
-                placeholder: "50".into(),
-                numeric_only: true,
-            },
-            ModalTextField {
-                label: "Seed (blank = random)".into(),
-                value: String::new(),
-                placeholder: "".into(),
-                numeric_only: true,
-            },
+            ModalTextField::text("Map ID", "").with_placeholder("my_dungeon"),
+            ModalTextField::numeric("Width", "").with_placeholder("64"),
+            ModalTextField::numeric("Height", "").with_placeholder("48"),
+            ModalTextField::numeric("Target Rooms", "").with_placeholder("8"),
+            ModalTextField::numeric("Room Padding", "").with_placeholder("4"),
+            ModalTextField::numeric("Corridor Wander 0-100", "").with_placeholder("55"),
+            ModalTextField::numeric("Branching 0-100", "").with_placeholder("50"),
+            ModalTextField::numeric("Seed (blank = random)", ""),
         ],
         picker_fields: vec![wall_picker, chamber_picker, corridor_picker],
         ..default()

@@ -19,6 +19,9 @@ use crate::editor::resources::{
 };
 use crate::editor::ui::palette::EditorPaletteItem;
 use crate::player::components::InventoryStack;
+use crate::ui::theme::text_field::{
+    drive_inline_edit_keyboard, inline_edit_display, InlineEditState,
+};
 use crate::world::components::{Container, OverworldObject};
 use crate::world::map_layout::ObjectProperties;
 use crate::world::object_definitions::OverworldObjectDefinitions;
@@ -206,7 +209,7 @@ fn spawn_item_row(
 ) {
     let editing_qty = buffer.editing == Some(ContentsEditTarget::Quantity { addr });
     let qty_text = if editing_qty {
-        format!("[{}]", buffer.edit_text)
+        inline_edit_display(&buffer.edit_text)
     } else {
         format!("x{}", stack.quantity)
     };
@@ -313,12 +316,12 @@ fn spawn_item_row(
         let editing_value =
             buffer.editing == Some(ContentsEditTarget::PropertyValue { addr, prop_index });
         let shown_key = if editing_key {
-            format!("[{}]", buffer.edit_text)
+            inline_edit_display(&buffer.edit_text)
         } else {
             key
         };
         let shown_value = if editing_value {
-            format!("[{}]", buffer.edit_text)
+            inline_edit_display(&buffer.edit_text)
         } else {
             value
         };
@@ -711,8 +714,29 @@ pub fn handle_contents_palette_pick(
     }
 }
 
-/// Keyboard pipeline for the active contents cell. Mirrors the vendor-stash
-/// handler; only acts when `buffer.editing` is `Some`. Commits on Enter / Tab.
+impl InlineEditState for EditorContentsBuffer {
+    fn is_editing(&self) -> bool {
+        self.editing.is_some()
+    }
+    fn edit_text_mut(&mut self) -> &mut String {
+        &mut self.edit_text
+    }
+    fn cancel_edit(&mut self) {
+        self.editing = None;
+        self.edit_text.clear();
+    }
+    fn has_pending_pick(&self) -> bool {
+        self.pending_item_pick.is_some()
+    }
+    fn clear_pending_pick(&mut self) {
+        self.pending_item_pick = None;
+    }
+}
+
+/// Keyboard pipeline for the active contents cell. Shares the Esc / Enter /
+/// Tab / Backspace / character loop (including Esc canceling an armed pick)
+/// with the vendor-stash panel via `drive_inline_edit_keyboard`; only acts
+/// when `buffer.editing` is `Some`. Commits on Enter / Tab.
 pub fn handle_contents_keyboard_input(
     mut keyboard_events: bevy::ecs::message::MessageReader<bevy::input::keyboard::KeyboardInput>,
     definitions: Res<OverworldObjectDefinitions>,
@@ -720,50 +744,19 @@ pub fn handle_contents_keyboard_input(
     mut editor_state: ResMut<EditorState>,
     mut containers: Query<(&OverworldObject, &mut Container)>,
 ) {
-    use bevy::input::keyboard::Key;
-
-    if buffer.editing.is_none() {
-        // Esc still cancels an armed pick even with no text field focused.
-        if buffer.pending_item_pick.is_some() {
-            for event in keyboard_events.read() {
-                if event.state.is_pressed() && event.key_code == KeyCode::Escape {
-                    buffer.pending_item_pick = None;
-                }
-            }
-        }
+    // With an active edit but no selected object there is nothing to commit
+    // into; leave the events unread (mirrors the pre-refactor early return).
+    let selected = editor_state.selected_object_id;
+    if buffer.editing.is_some() && selected.is_none() {
         return;
     }
-    let Some(selected) = editor_state.selected_object_id else {
-        return;
-    };
-    for event in keyboard_events.read() {
-        if !event.state.is_pressed() {
-            continue;
-        }
-        match event.key_code {
-            KeyCode::Escape => {
-                buffer.editing = None;
-                buffer.edit_text.clear();
-            }
-            KeyCode::Enter | KeyCode::Tab => {
-                commit_contents_edit(&mut buffer, selected, &definitions, &mut containers);
-                editor_state.dirty = true;
-            }
-            KeyCode::Backspace => {
-                buffer.edit_text.pop();
-            }
-            _ => {
-                if event.repeat {
-                    continue;
-                }
-                match &event.logical_key {
-                    Key::Character(ch) => buffer.edit_text.push_str(ch.as_str()),
-                    Key::Space => buffer.edit_text.push(' '),
-                    _ => {}
-                }
-            }
-        }
-    }
+    drive_inline_edit_keyboard(&mut keyboard_events, &mut *buffer, |buffer| {
+        let Some(selected) = selected else {
+            return;
+        };
+        commit_contents_edit(buffer, selected, &definitions, &mut containers);
+        editor_state.dirty = true;
+    });
 }
 
 fn commit_contents_edit(

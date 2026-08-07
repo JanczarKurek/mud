@@ -323,6 +323,32 @@ pub struct ModalTextField {
     pub numeric_only: bool,
 }
 
+impl ModalTextField {
+    /// Free-text field with no placeholder.
+    pub fn text(label: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            value: value.into(),
+            placeholder: String::new(),
+            numeric_only: false,
+        }
+    }
+
+    /// Digits-only field with no placeholder.
+    pub fn numeric(label: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            numeric_only: true,
+            ..Self::text(label, value)
+        }
+    }
+
+    /// Builder-style placeholder (shown while the field is empty and unfocused).
+    pub fn with_placeholder(mut self, placeholder: impl Into<String>) -> Self {
+        self.placeholder = placeholder.into();
+        self
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModalKind {
     FileOpen,

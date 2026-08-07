@@ -8,7 +8,7 @@
 //! `handle_vendor_stash_keyboard_input`, which mirrors the property panel's
 //! commit/cancel flow.
 
-use bevy::input::keyboard::{Key, KeyboardInput};
+use bevy::input::keyboard::KeyboardInput;
 use bevy::prelude::*;
 
 use crate::editor::resources::{
@@ -20,6 +20,9 @@ use crate::editor::ui::style::{
     ACCENT_BUTTON_COLORS, BUTTON_TEXT,
 };
 use crate::game::shop::{StockModeDef, StockWord, WareDef};
+use crate::ui::theme::text_field::{
+    drive_inline_edit_keyboard, inline_edit_display, InlineEditState,
+};
 use crate::world::map_layout::VendorStashDef;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 
@@ -162,7 +165,7 @@ pub fn sync_vendor_stashes_panel(
                 editing,
                 Some(VendorStashEditingField::StashId { stash_index }) if stash_index == index
             ) {
-                format!("[{}]", edit_text)
+                inline_edit_display(&edit_text)
             } else {
                 stash.id.clone()
             };
@@ -411,7 +414,7 @@ fn ware_field_text(
         _ => false,
     };
     if active {
-        format!("[{}]", edit_text)
+        inline_edit_display(edit_text)
     } else {
         default()
     }
@@ -740,61 +743,40 @@ pub fn handle_vendor_stashes_panel_clicks(
     }
 }
 
-/// Keyboard input pipeline for the active vendor-stash edit field. Mirrors
-/// `handle_editor_keyboard_input` so Esc / Enter / Backspace / characters do
-/// the expected thing without clashing with the property panel — `editing`
-/// is held in a different buffer and the two are kept mutually exclusive by
-/// their click handlers.
+impl InlineEditState for EditorVendorStashBuffer {
+    fn is_editing(&self) -> bool {
+        self.editing.is_some()
+    }
+    fn edit_text_mut(&mut self) -> &mut String {
+        &mut self.edit_text
+    }
+    fn cancel_edit(&mut self) {
+        self.editing = None;
+        self.edit_text.clear();
+    }
+    fn has_pending_pick(&self) -> bool {
+        self.pending_ware_pick.is_some()
+    }
+    fn clear_pending_pick(&mut self) {
+        self.pending_ware_pick = None;
+    }
+}
+
+/// Keyboard input pipeline for the active vendor-stash edit field. Shares the
+/// Esc / Enter / Tab / Backspace / character loop (including Esc canceling a
+/// pending palette-pick) with the Contents section via
+/// `drive_inline_edit_keyboard`; `editing` is held in a different buffer than
+/// the property panel's and the two are kept mutually exclusive by their
+/// click handlers.
 pub fn handle_vendor_stash_keyboard_input(
     mut keyboard_events: bevy::ecs::message::MessageReader<KeyboardInput>,
     mut buffer: ResMut<EditorVendorStashBuffer>,
     mut editor_state: ResMut<EditorState>,
 ) {
-    // Esc also cancels a pending palette-pick, even when no text field is
-    // being edited — otherwise the armed pick state could only be cleared by
-    // re-clicking the same cell.
-    if buffer.editing.is_none() {
-        if buffer.pending_ware_pick.is_some() {
-            for event in keyboard_events.read() {
-                if event.state.is_pressed() && event.key_code == KeyCode::Escape {
-                    buffer.pending_ware_pick = None;
-                }
-            }
-        }
-        return;
-    }
-    for event in keyboard_events.read() {
-        if !event.state.is_pressed() {
-            continue;
-        }
-        match event.key_code {
-            KeyCode::Escape => {
-                buffer.editing = None;
-                buffer.edit_text.clear();
-            }
-            KeyCode::Enter | KeyCode::Tab => {
-                commit_active_edit(&mut buffer);
-                editor_state.dirty = true;
-            }
-            KeyCode::Backspace => {
-                buffer.edit_text.pop();
-            }
-            _ => {
-                if event.repeat {
-                    continue;
-                }
-                match &event.logical_key {
-                    Key::Character(ch) => {
-                        buffer.edit_text.push_str(ch.as_str());
-                    }
-                    Key::Space => {
-                        buffer.edit_text.push(' ');
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
+    drive_inline_edit_keyboard(&mut keyboard_events, &mut *buffer, |buffer| {
+        commit_active_edit(buffer);
+        editor_state.dirty = true;
+    });
 }
 
 /// Commit whatever's buffered in `edit_text` to the matching field. No-op

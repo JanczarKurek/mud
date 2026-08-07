@@ -1,5 +1,5 @@
 #![allow(clippy::type_complexity)]
-use bevy::input::keyboard::{Key, KeyboardInput};
+use bevy::input::keyboard::KeyboardInput;
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, UiGlobalTransform};
 use bevy::window::PrimaryWindow;
@@ -13,6 +13,9 @@ use crate::editor::ui::color_picker::{
     HUE_STRIP_WIDTH, SV_PAD_SIZE,
 };
 use crate::editor::ui::style::{ACCENT_BUTTON_COLORS, BUTTON_BORDER, TOP_BAR_BUTTON_COLORS};
+use crate::ui::theme::text_field::{
+    apply_text_edit, spawn_text_field, CharPolicy, TextFieldStyle, TextFieldVisual,
+};
 use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton, ThemedPanel};
 use crate::ui::theme::{Palette, UiThemeAssets};
 
@@ -225,70 +228,23 @@ pub fn spawn_or_rebuild_modal(
                     ));
 
                     // Text fields
+                    let field_style = TextFieldStyle::modal(&palette);
                     for (i, field) in modal_state.text_fields.iter().enumerate() {
-                        let is_focused = modal_state.focused_field == i;
-                        let display_value = if field.value.is_empty() && !is_focused {
-                            None
-                        } else if is_focused {
-                            Some(format!("{}_", field.value))
-                        } else {
-                            Some(field.value.clone())
-                        };
-
-                        card.spawn((Node {
-                            flex_direction: FlexDirection::Column,
-                            row_gap: Val::Px(3.0),
-                            ..default()
-                        },))
-                            .with_children(|field_col| {
-                                field_col.spawn((
-                                    Text::new(field.label.clone()),
-                                    TextFont {
-                                        font_size: 12.0,
-                                        ..default()
-                                    },
-                                    TextColor(palette.text_muted),
-                                ));
-
-                                field_col
-                                    .spawn((
-                                        Button,
-                                        ModalTextField { index: i },
-                                        Node {
-                                            width: Val::Percent(100.0),
-                                            padding: UiRect::axes(Val::Px(8.0), Val::Px(5.0)),
-                                            border: UiRect::all(Val::Px(1.0)),
-                                            ..default()
-                                        },
-                                        BackgroundColor(Color::srgba(0.06, 0.04, 0.04, 0.90)),
-                                        BorderColor::all(if is_focused {
-                                            palette.border_focus
-                                        } else {
-                                            palette.border_idle
-                                        }),
-                                    ))
-                                    .with_children(|input| {
-                                        if let Some(val) = display_value {
-                                            input.spawn((
-                                                Text::new(val),
-                                                TextFont {
-                                                    font_size: 13.0,
-                                                    ..default()
-                                                },
-                                                TextColor(palette.text_value),
-                                            ));
-                                        } else {
-                                            input.spawn((
-                                                Text::new(field.placeholder.clone()),
-                                                TextFont {
-                                                    font_size: 13.0,
-                                                    ..default()
-                                                },
-                                                TextColor(palette.text_placeholder),
-                                            ));
-                                        }
-                                    });
-                            });
+                        spawn_text_field(
+                            card,
+                            &field_style,
+                            TextFieldVisual {
+                                label: &field.label,
+                                value: &field.value,
+                                focused: modal_state.focused_field == i,
+                                show_cursor: true,
+                                placeholder: &field.placeholder,
+                                placeholder_color: palette.text_placeholder,
+                                value_color: palette.text_value,
+                            },
+                            ModalTextField { index: i },
+                            (),
+                        );
                     }
 
                     // Picker fields (e.g. floor / object pickers).
@@ -560,68 +516,36 @@ pub fn handle_modal_keyboard_input(
                     }
                 }
             }
-            KeyCode::Backspace => {
+            // Backspace / typed characters: route to the focused field's
+            // buffer with its char policy via the shared edit core.
+            _ => {
                 if is_spawn_group {
                     if let Some(draft) = modal_state.spawn_group_draft.as_mut() {
                         let f = draft.focused_field;
+                        let policy =
+                            if crate::editor::resources::SpawnGroupDraft::is_field_numeric(f) {
+                                CharPolicy::signed_decimal()
+                            } else {
+                                CharPolicy::Raw
+                            };
                         if let Some(s) = draft.field_mut(f) {
-                            s.pop();
+                            apply_text_edit(s, event, policy);
                         }
                     }
                 } else if is_keyframe {
                     if let Some(draft) = modal_state.lighting_keyframe_draft.as_mut() {
                         let f = draft.focused_field;
-                        draft.field_mut(f).pop();
+                        apply_text_edit(draft.field_mut(f), event, CharPolicy::signed_decimal());
                     }
                 } else {
                     let idx = modal_state.focused_field;
                     if let Some(field) = modal_state.text_fields.get_mut(idx) {
-                        field.value.pop();
-                    }
-                }
-            }
-            _ => {
-                if event.repeat {
-                    continue;
-                }
-                let ch_str = match &event.logical_key {
-                    Key::Character(c) => Some(c.as_str().to_owned()),
-                    Key::Space => Some(" ".to_owned()),
-                    _ => None,
-                };
-                if let Some(ch) = ch_str {
-                    if is_spawn_group {
-                        if let Some(draft) = modal_state.spawn_group_draft.as_mut() {
-                            let f = draft.focused_field;
-                            let numeric =
-                                crate::editor::resources::SpawnGroupDraft::is_field_numeric(f);
-                            let allow = !numeric
-                                || ch
-                                    .chars()
-                                    .all(|c| c.is_ascii_digit() || c == '.' || c == '-');
-                            if allow {
-                                if let Some(s) = draft.field_mut(f) {
-                                    s.push_str(&ch);
-                                }
-                            }
-                        }
-                    } else if is_keyframe {
-                        if let Some(draft) = modal_state.lighting_keyframe_draft.as_mut() {
-                            let f = draft.focused_field;
-                            let allow = ch
-                                .chars()
-                                .all(|c| c.is_ascii_digit() || c == '.' || c == '-');
-                            if allow {
-                                draft.field_mut(f).push_str(&ch);
-                            }
-                        }
-                    } else {
-                        let idx = modal_state.focused_field;
-                        if let Some(field) = modal_state.text_fields.get_mut(idx) {
-                            if !field.numeric_only || ch.chars().all(|c| c.is_ascii_digit()) {
-                                field.value.push_str(&ch);
-                            }
-                        }
+                        let policy = if field.numeric_only {
+                            CharPolicy::digits()
+                        } else {
+                            CharPolicy::Raw
+                        };
+                        apply_text_edit(&mut field.value, event, policy);
                     }
                 }
             }
@@ -994,61 +918,21 @@ fn text_row(
     focused: bool,
     field: SpawnGroupField,
 ) {
-    let display = if value.is_empty() && !focused {
-        "(empty)".to_owned()
-    } else if focused {
-        format!("{value}_")
-    } else {
-        value.to_owned()
-    };
-    let display_color = if value.is_empty() && !focused {
-        palette.text_placeholder
-    } else {
-        palette.text_value
-    };
-    parent
-        .spawn((Node {
-            flex_direction: FlexDirection::Column,
-            row_gap: Val::Px(2.0),
-            width: Val::Percent(100.0),
-            ..default()
-        },))
-        .with_children(|col| {
-            col.spawn((
-                Text::new(label.to_owned()),
-                TextFont {
-                    font_size: 11.0,
-                    ..default()
-                },
-                TextColor(palette.text_muted),
-            ));
-            col.spawn((
-                Button,
-                SpawnGroupFieldButton { field },
-                Node {
-                    width: Val::Percent(100.0),
-                    padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
-                    border: UiRect::all(Val::Px(1.0)),
-                    ..default()
-                },
-                BackgroundColor(Color::srgba(0.06, 0.04, 0.04, 0.90)),
-                BorderColor::all(if focused {
-                    palette.border_focus
-                } else {
-                    palette.border_idle
-                }),
-            ))
-            .with_children(|input| {
-                input.spawn((
-                    Text::new(display),
-                    TextFont {
-                        font_size: 12.0,
-                        ..default()
-                    },
-                    TextColor(display_color),
-                ));
-            });
-        });
+    spawn_text_field(
+        parent,
+        &TextFieldStyle::editor_row(palette),
+        TextFieldVisual {
+            label,
+            value,
+            focused,
+            show_cursor: true,
+            placeholder: "(empty)",
+            placeholder_color: palette.text_placeholder,
+            value_color: palette.text_value,
+        },
+        SpawnGroupFieldButton { field },
+        (),
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1082,61 +966,28 @@ fn rect_row(
             ..default()
         },))
         .with_children(|row| {
+            let cell_style = TextFieldStyle::editor_cell(palette);
             for (val, f, lbl) in [
                 (min_x, f_min_x, "min_x"),
                 (min_y, f_min_y, "min_y"),
                 (max_x, f_max_x, "max_x"),
                 (max_y, f_max_y, "max_y"),
             ] {
-                row.spawn((Node {
-                    flex_direction: FlexDirection::Column,
-                    row_gap: Val::Px(2.0),
-                    flex_grow: 1.0,
-                    ..default()
-                },))
-                    .with_children(|col| {
-                        col.spawn((
-                            Text::new(lbl.to_owned()),
-                            TextFont {
-                                font_size: 9.0,
-                                ..default()
-                            },
-                            TextColor(palette.text_muted),
-                        ));
-                        col.spawn((
-                            Button,
-                            SpawnGroupFieldButton { field: f },
-                            Node {
-                                width: Val::Percent(100.0),
-                                padding: UiRect::axes(Val::Px(6.0), Val::Px(3.0)),
-                                border: UiRect::all(Val::Px(1.0)),
-                                ..default()
-                            },
-                            BackgroundColor(Color::srgba(0.06, 0.04, 0.04, 0.90)),
-                            BorderColor::all(if focused == f {
-                                palette.border_focus
-                            } else {
-                                palette.border_idle
-                            }),
-                        ))
-                        .with_children(|inp| {
-                            let text = if focused == f {
-                                format!("{val}_")
-                            } else if val.is_empty() {
-                                "—".to_owned()
-                            } else {
-                                val.to_owned()
-                            };
-                            inp.spawn((
-                                Text::new(text),
-                                TextFont {
-                                    font_size: 12.0,
-                                    ..default()
-                                },
-                                TextColor(palette.text_value),
-                            ));
-                        });
-                    });
+                spawn_text_field(
+                    row,
+                    &cell_style,
+                    TextFieldVisual {
+                        label: lbl,
+                        value: val,
+                        focused: focused == f,
+                        show_cursor: true,
+                        placeholder: "—",
+                        placeholder_color: palette.text_value,
+                        value_color: palette.text_value,
+                    },
+                    SpawnGroupFieldButton { field: f },
+                    (),
+                );
             }
         });
 }
@@ -1648,6 +1499,7 @@ fn spawn_lighting_keyframe_modal(
                         ..default()
                     },))
                         .with_children(|row| {
+                            let cell_style = TextFieldStyle::editor_cell(&palette);
                             for (val, focused, field, label) in [
                                 (
                                     &draft.r,
@@ -1668,57 +1520,21 @@ fn spawn_lighting_keyframe_modal(
                                     "B",
                                 ),
                             ] {
-                                row.spawn((Node {
-                                    flex_direction: FlexDirection::Column,
-                                    row_gap: Val::Px(2.0),
-                                    flex_grow: 1.0,
-                                    ..default()
-                                },))
-                                    .with_children(|col| {
-                                        col.spawn((
-                                            Text::new(label.to_owned()),
-                                            TextFont {
-                                                font_size: 9.0,
-                                                ..default()
-                                            },
-                                            TextColor(palette.text_muted),
-                                        ));
-                                        col.spawn((
-                                            Button,
-                                            LightingKeyframeFieldButton { field },
-                                            Node {
-                                                width: Val::Percent(100.0),
-                                                padding: UiRect::axes(Val::Px(6.0), Val::Px(3.0)),
-                                                border: UiRect::all(Val::Px(1.0)),
-                                                ..default()
-                                            },
-                                            BackgroundColor(Color::srgba(0.06, 0.04, 0.04, 0.90)),
-                                            BorderColor::all(if focused {
-                                                palette.border_focus
-                                            } else {
-                                                palette.border_idle
-                                            }),
-                                        ))
-                                        .with_children(
-                                            |inp| {
-                                                let text = if focused {
-                                                    format!("{val}_")
-                                                } else if val.is_empty() {
-                                                    "0".to_owned()
-                                                } else {
-                                                    val.to_owned()
-                                                };
-                                                inp.spawn((
-                                                    Text::new(text),
-                                                    TextFont {
-                                                        font_size: 12.0,
-                                                        ..default()
-                                                    },
-                                                    TextColor(palette.text_value),
-                                                ));
-                                            },
-                                        );
-                                    });
+                                spawn_text_field(
+                                    row,
+                                    &cell_style,
+                                    TextFieldVisual {
+                                        label,
+                                        value: val,
+                                        focused,
+                                        show_cursor: true,
+                                        placeholder: "0",
+                                        placeholder_color: palette.text_value,
+                                        value_color: palette.text_value,
+                                    },
+                                    LightingKeyframeFieldButton { field },
+                                    (),
+                                );
                             }
                         });
 
@@ -1769,56 +1585,21 @@ fn keyframe_field_row(
     focused: bool,
     field: LightingKeyframeField,
 ) {
-    parent
-        .spawn((Node {
-            flex_direction: FlexDirection::Column,
-            row_gap: Val::Px(2.0),
-            width: Val::Percent(100.0),
-            ..default()
-        },))
-        .with_children(|col| {
-            col.spawn((
-                Text::new(label.to_owned()),
-                TextFont {
-                    font_size: 11.0,
-                    ..default()
-                },
-                TextColor(palette.text_muted),
-            ));
-            col.spawn((
-                Button,
-                LightingKeyframeFieldButton { field },
-                Node {
-                    width: Val::Percent(100.0),
-                    padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
-                    border: UiRect::all(Val::Px(1.0)),
-                    ..default()
-                },
-                BackgroundColor(Color::srgba(0.06, 0.04, 0.04, 0.90)),
-                BorderColor::all(if focused {
-                    palette.border_focus
-                } else {
-                    palette.border_idle
-                }),
-            ))
-            .with_children(|input| {
-                let text = if focused {
-                    format!("{value}_")
-                } else if value.is_empty() {
-                    "—".to_owned()
-                } else {
-                    value.to_owned()
-                };
-                input.spawn((
-                    Text::new(text),
-                    TextFont {
-                        font_size: 12.0,
-                        ..default()
-                    },
-                    TextColor(palette.text_value),
-                ));
-            });
-        });
+    spawn_text_field(
+        parent,
+        &TextFieldStyle::editor_row(palette),
+        TextFieldVisual {
+            label,
+            value,
+            focused,
+            show_cursor: true,
+            placeholder: "—",
+            placeholder_color: palette.text_value,
+            value_color: palette.text_value,
+        },
+        LightingKeyframeFieldButton { field },
+        (),
+    );
 }
 
 pub fn handle_lighting_keyframe_field_click(

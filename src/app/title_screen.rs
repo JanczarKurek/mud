@@ -1,6 +1,6 @@
 use bevy::app::AppExit;
 use bevy::ecs::message::MessageReader;
-use bevy::input::keyboard::{Key, KeyCode, KeyboardInput};
+use bevy::input::keyboard::KeyboardInput;
 use bevy::prelude::*;
 
 use crate::app::auth_screen::PendingAuthRequest;
@@ -8,6 +8,9 @@ use crate::app::plugin::AppRuntime;
 use crate::app::state::{ClientAppState, DebugMode};
 use crate::network::resources::{TcpClientConfig, TcpClientConnection};
 use crate::ui::settings::{SavedServerList, SelectedStartingMap};
+use crate::ui::theme::text_field::{
+    apply_text_edit, spawn_text_field, CharPolicy, TextEditOutcome, TextFieldStyle, TextFieldVisual,
+};
 use crate::ui::theme::widgets::{
     idle_colors, spawn_themed_button, ButtonStyle, ThemedButton, ThemedPanel,
 };
@@ -28,10 +31,10 @@ impl Plugin for TitleScreenPlugin {
             .add_systems(
                 Update,
                 (
-                    handle_login_field_clicks,
-                    handle_login_field_keyboard,
-                    sync_login_field_text,
-                    sync_login_field_focus_style,
+                    handle_title_field_clicks,
+                    handle_title_field_keyboard,
+                    sync_title_field_text,
+                    sync_title_field_focus_style,
                     sync_auth_error_text,
                     sync_clean_state_label,
                     handle_title_screen_buttons,
@@ -40,10 +43,6 @@ impl Plugin for TitleScreenPlugin {
                     handle_server_picker_buttons,
                     sync_map_picker_modal,
                     handle_map_picker_buttons,
-                    handle_direct_field_clicks,
-                    handle_direct_field_keyboard,
-                    sync_direct_field_text,
-                    sync_direct_field_focus_style,
                 )
                     .run_if(in_state(ClientAppState::TitleScreen)),
             )
@@ -236,17 +235,20 @@ enum PickerAction {
     Cancel,
 }
 
-/// Clickable region focusing a direct-connect field.
-#[derive(Component, Clone, Copy)]
-struct DirectFieldTarget(DirectField);
+/// One title-screen text field — the login form or the direct-connect modal.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TitleField {
+    Login(LoginField),
+    Direct(DirectField),
+}
 
-/// Text node mirroring a direct-connect field.
+/// Click-to-focus box of a title-screen field; also the recolored border.
 #[derive(Component, Clone, Copy)]
-struct DirectFieldText(DirectField);
+struct TitleFieldBox(TitleField);
 
-/// Border of a direct-connect field — recolored when focused.
+/// Text node mirroring a title-screen field's value.
 #[derive(Component, Clone, Copy)]
-struct DirectFieldBorder(DirectField);
+struct TitleFieldText(TitleField);
 
 #[derive(Component, Clone, Copy, Eq, PartialEq)]
 enum TitleAction {
@@ -273,18 +275,6 @@ struct TitleActionButton {
 /// `sync_clean_state_label` to reflect the two-click confirm state.
 #[derive(Component)]
 struct CleanStateLabel;
-
-/// Clickable region that focuses a specific login field.
-#[derive(Component, Clone, Copy)]
-struct LoginFieldTarget(LoginField);
-
-/// Text node whose displayed content mirrors one of the login fields.
-#[derive(Component, Clone, Copy)]
-struct LoginFieldText(LoginField);
-
-/// Border of a login field — recolored based on whether the field is focused.
-#[derive(Component, Clone, Copy)]
-struct LoginFieldBorder(LoginField);
 
 /// Text node that displays the last auth error, if any.
 #[derive(Component)]
@@ -487,19 +477,19 @@ fn spawn_title_screen(
                                             TextColor(palette.text_accent),
                                         ));
 
-                                        spawn_login_field(
+                                        spawn_title_field(
                                             login,
                                             &palette,
-                                            LoginField::Username,
+                                            TitleField::Login(LoginField::Username),
                                             "Username",
                                             &title_state.username,
                                             title_state.focused == LoginField::Username,
                                             false,
                                         );
-                                        spawn_login_field(
+                                        spawn_title_field(
                                             login,
                                             &palette,
-                                            LoginField::Password,
+                                            TitleField::Login(LoginField::Password),
                                             "Password",
                                             &title_state.password,
                                             title_state.focused == LoginField::Password,
@@ -911,117 +901,98 @@ fn field_display(value: &str, is_password: bool) -> String {
     }
 }
 
-fn spawn_login_field(
+/// Shared spawn tree for every title-screen text field (login form and
+/// direct-connect modal); only the marker payload and masking differ.
+fn spawn_title_field(
     parent: &mut ChildSpawnerCommands,
     palette: &Palette,
-    field: LoginField,
+    field: TitleField,
     label: &str,
     value: &str,
     focused: bool,
     is_password: bool,
 ) {
-    let border_color = if focused {
-        palette.border_accent
-    } else {
-        palette.border_idle
-    };
-    parent
-        .spawn((Node {
-            width: percent(100.0),
-            flex_direction: FlexDirection::Column,
-            row_gap: px(2.0),
-            ..default()
-        },))
-        .with_children(|container| {
-            container.spawn((
-                Text::new(label),
-                TextFont {
-                    font_size: 14.0,
-                    ..default()
-                },
-                TextColor(palette.text_muted),
-            ));
-            container
-                .spawn((
-                    Button,
-                    LoginFieldTarget(field),
-                    LoginFieldBorder(field),
-                    Node {
-                        width: percent(100.0),
-                        height: px(28.0),
-                        align_items: AlignItems::Center,
-                        padding: UiRect::axes(px(10.0), px(4.0)),
-                        border: UiRect::all(px(1.0)),
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgba(0.08, 0.08, 0.08, 0.65)),
-                    BorderColor::all(border_color),
-                ))
-                .with_children(|inner| {
-                    inner.spawn((
-                        LoginFieldText(field),
-                        Text::new(field_display(value, is_password)),
-                        TextFont {
-                            font_size: 18.0,
-                            ..default()
-                        },
-                        TextColor(palette.text_primary),
-                    ));
-                });
-        });
+    spawn_text_field(
+        parent,
+        &TextFieldStyle::title_screen(palette),
+        TextFieldVisual {
+            label,
+            value: &field_display(value, is_password),
+            focused,
+            show_cursor: false,
+            placeholder: "",
+            placeholder_color: palette.text_primary,
+            value_color: palette.text_primary,
+        },
+        TitleFieldBox(field),
+        TitleFieldText(field),
+    );
 }
 
-fn handle_login_field_clicks(
+fn handle_title_field_clicks(
     mut title_state: ResMut<TitleScreenState>,
-    targets: Query<(&Interaction, &LoginFieldTarget), Changed<Interaction>>,
+    targets: Query<(&Interaction, &TitleFieldBox), Changed<Interaction>>,
 ) {
     for (interaction, target) in &targets {
         if *interaction == Interaction::Pressed {
-            title_state.focused = target.0;
+            match target.0 {
+                TitleField::Login(field) => title_state.focused = field,
+                TitleField::Direct(field) => title_state.direct_focused = Some(field),
+            }
         }
     }
 }
 
-fn handle_login_field_keyboard(
+/// One keyboard pipeline for both field groups. When the server-picker modal
+/// is open it owns keyboard focus (the direct-connect inputs claim the events
+/// instead of double-typing into both username and host); otherwise the login
+/// form does.
+fn handle_title_field_keyboard(
     mut title_state: ResMut<TitleScreenState>,
     mut keyboard_events: MessageReader<KeyboardInput>,
 ) {
-    // When the server-picker modal is open it owns keyboard focus; let the
-    // direct-connect inputs claim the events instead of double-typing into
-    // both username and host.
-    if !title_state.is_tcp() || title_state.modal_open {
-        return;
-    }
-
-    for event in keyboard_events.read() {
-        if !event.state.is_pressed() {
-            continue;
+    if title_state.modal_open {
+        if title_state.direct_focused.is_none() {
+            // Nothing to type into; drop our cursor forward so we don't replay
+            // backlog the moment a field gets focus.
+            keyboard_events.clear();
+            return;
         }
-
-        match event.key_code {
-            KeyCode::Tab => {
+        for event in keyboard_events.read() {
+            if !event.state.is_pressed() {
+                continue;
+            }
+            let Some(buffer) = direct_field_buffer(&mut title_state) else {
+                continue;
+            };
+            // Filter out control chars; Escape/Enter outcomes are unused here.
+            let outcome = apply_text_edit(buffer, event, CharPolicy::PrintableChars);
+            if outcome == TextEditOutcome::Next {
+                title_state.direct_focused = Some(match title_state.direct_focused {
+                    Some(DirectField::Host) => DirectField::Port,
+                    _ => DirectField::Host,
+                });
+            }
+        }
+    } else {
+        if !title_state.is_tcp() {
+            return;
+        }
+        for event in keyboard_events.read() {
+            if !event.state.is_pressed() {
+                continue;
+            }
+            // Filter out control chars; tolerate spaces in passwords.
+            let outcome = apply_text_edit(
+                active_field_buffer(&mut title_state),
+                event,
+                CharPolicy::PrintableChars,
+            );
+            if outcome == TextEditOutcome::Next {
                 title_state.focused = match title_state.focused {
                     LoginField::Username => LoginField::Password,
                     LoginField::Password => LoginField::Username,
                 };
-            }
-            KeyCode::Backspace => {
-                let target = active_field_buffer(&mut title_state);
-                target.pop();
-            }
-            _ => {
-                if event.repeat {
-                    continue;
-                }
-                if let Key::Character(character) = &event.logical_key {
-                    let target = active_field_buffer(&mut title_state);
-                    // Filter out control chars; tolerate spaces in passwords.
-                    for ch in character.chars() {
-                        if !ch.is_control() {
-                            target.push(ch);
-                        }
-                    }
-                }
             }
         }
     }
@@ -1034,17 +1005,29 @@ fn active_field_buffer(state: &mut TitleScreenState) -> &mut String {
     }
 }
 
-fn sync_login_field_text(
+fn title_field_display(state: &TitleScreenState, field: TitleField) -> String {
+    match field {
+        TitleField::Login(LoginField::Username) => field_display(&state.username, false),
+        TitleField::Login(LoginField::Password) => field_display(&state.password, true),
+        TitleField::Direct(DirectField::Host) => state.direct_host.clone(),
+        TitleField::Direct(DirectField::Port) => state.direct_port.clone(),
+    }
+}
+
+fn title_field_focused(state: &TitleScreenState, field: TitleField) -> bool {
+    match field {
+        TitleField::Login(f) => state.focused == f,
+        TitleField::Direct(f) => state.direct_focused == Some(f),
+    }
+}
+
+fn sync_title_field_text(
     title_state: Res<TitleScreenState>,
-    mut text_query: Query<(&LoginFieldText, &mut Text)>,
-    mut register_text: Query<&mut Text, (With<RegisterToggleText>, Without<LoginFieldText>)>,
+    mut text_query: Query<(&TitleFieldText, &mut Text)>,
+    mut register_text: Query<&mut Text, (With<RegisterToggleText>, Without<TitleFieldText>)>,
 ) {
     for (label, mut text) in &mut text_query {
-        let (value, is_password) = match label.0 {
-            LoginField::Username => (&title_state.username, false),
-            LoginField::Password => (&title_state.password, true),
-        };
-        let desired = field_display(value, is_password);
+        let desired = title_field_display(&title_state, label.0);
         if text.0 != desired {
             text.0 = desired;
         }
@@ -1057,13 +1040,13 @@ fn sync_login_field_text(
     }
 }
 
-fn sync_login_field_focus_style(
+fn sync_title_field_focus_style(
     title_state: Res<TitleScreenState>,
     palette: Res<Palette>,
-    mut borders: Query<(&LoginFieldBorder, &mut BorderColor)>,
+    mut borders: Query<(&TitleFieldBox, &mut BorderColor)>,
 ) {
     for (field, mut border) in &mut borders {
-        let color = if title_state.focused == field.0 {
+        let color = if title_field_focused(&title_state, field.0) {
             palette.border_accent
         } else {
             palette.border_idle
@@ -1285,13 +1268,14 @@ fn spawn_server_picker_modal(
                             ..default()
                         },))
                             .with_children(|host_col| {
-                                spawn_direct_field(
+                                spawn_title_field(
                                     host_col,
                                     palette,
-                                    DirectField::Host,
+                                    TitleField::Direct(DirectField::Host),
                                     "Host",
                                     &title_state.direct_host,
                                     title_state.direct_focused == Some(DirectField::Host),
+                                    false,
                                 );
                             });
                         row.spawn((Node {
@@ -1299,13 +1283,14 @@ fn spawn_server_picker_modal(
                             ..default()
                         },))
                             .with_children(|port_col| {
-                                spawn_direct_field(
+                                spawn_title_field(
                                     port_col,
                                     palette,
-                                    DirectField::Port,
+                                    TitleField::Direct(DirectField::Port),
                                     "Port",
                                     &title_state.direct_port,
                                     title_state.direct_focused == Some(DirectField::Port),
+                                    false,
                                 );
                             });
                     });
@@ -1356,65 +1341,6 @@ fn spawn_picker_button(
         18.0,
         action,
     );
-}
-
-fn spawn_direct_field(
-    parent: &mut ChildSpawnerCommands,
-    palette: &Palette,
-    field: DirectField,
-    label: &str,
-    value: &str,
-    focused: bool,
-) {
-    let border_color = if focused {
-        palette.border_accent
-    } else {
-        palette.border_idle
-    };
-    parent
-        .spawn((Node {
-            width: percent(100.0),
-            flex_direction: FlexDirection::Column,
-            row_gap: px(2.0),
-            ..default()
-        },))
-        .with_children(|container| {
-            container.spawn((
-                Text::new(label),
-                TextFont {
-                    font_size: 14.0,
-                    ..default()
-                },
-                TextColor(palette.text_muted),
-            ));
-            container
-                .spawn((
-                    Button,
-                    DirectFieldTarget(field),
-                    DirectFieldBorder(field),
-                    Node {
-                        width: percent(100.0),
-                        height: px(28.0),
-                        align_items: AlignItems::Center,
-                        padding: UiRect::axes(px(10.0), px(4.0)),
-                        border: UiRect::all(px(1.0)),
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgba(0.08, 0.08, 0.08, 0.65)),
-                    BorderColor::all(border_color),
-                ))
-                .with_children(|inner| {
-                    inner.spawn((
-                        DirectFieldText(field),
-                        Text::new(value.to_owned()),
-                        TextFont {
-                            font_size: 18.0,
-                            ..default()
-                        },
-                        TextColor(palette.text_primary),
-                    ));
-                });
-        });
 }
 
 /// Modal button handler: select a saved entry, build a transient entry from
@@ -1710,96 +1636,9 @@ fn handle_map_picker_buttons(
     }
 }
 
-fn handle_direct_field_clicks(
-    mut title_state: ResMut<TitleScreenState>,
-    targets: Query<(&Interaction, &DirectFieldTarget), Changed<Interaction>>,
-) {
-    for (interaction, target) in &targets {
-        if *interaction == Interaction::Pressed {
-            title_state.direct_focused = Some(target.0);
-        }
-    }
-}
-
-fn handle_direct_field_keyboard(
-    mut title_state: ResMut<TitleScreenState>,
-    mut keyboard_events: MessageReader<KeyboardInput>,
-) {
-    if !title_state.modal_open || title_state.direct_focused.is_none() {
-        // Nothing to type into; drop our cursor forward so we don't replay
-        // backlog the moment a field gets focus.
-        keyboard_events.clear();
-        return;
-    }
-
-    for event in keyboard_events.read() {
-        if !event.state.is_pressed() {
-            continue;
-        }
-
-        match event.key_code {
-            KeyCode::Tab => {
-                title_state.direct_focused = Some(match title_state.direct_focused {
-                    Some(DirectField::Host) => DirectField::Port,
-                    _ => DirectField::Host,
-                });
-            }
-            KeyCode::Backspace => {
-                if let Some(buf) = direct_field_buffer(&mut title_state) {
-                    buf.pop();
-                }
-            }
-            _ => {
-                if event.repeat {
-                    continue;
-                }
-                if let Key::Character(character) = &event.logical_key {
-                    if let Some(buf) = direct_field_buffer(&mut title_state) {
-                        for ch in character.chars() {
-                            if !ch.is_control() {
-                                buf.push(ch);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
 fn direct_field_buffer(state: &mut TitleScreenState) -> Option<&mut String> {
     match state.direct_focused? {
         DirectField::Host => Some(&mut state.direct_host),
         DirectField::Port => Some(&mut state.direct_port),
-    }
-}
-
-fn sync_direct_field_text(
-    title_state: Res<TitleScreenState>,
-    mut text_query: Query<(&DirectFieldText, &mut Text)>,
-) {
-    for (label, mut text) in &mut text_query {
-        let desired = match label.0 {
-            DirectField::Host => &title_state.direct_host,
-            DirectField::Port => &title_state.direct_port,
-        };
-        if text.0 != *desired {
-            text.0 = desired.clone();
-        }
-    }
-}
-
-fn sync_direct_field_focus_style(
-    title_state: Res<TitleScreenState>,
-    palette: Res<Palette>,
-    mut borders: Query<(&DirectFieldBorder, &mut BorderColor)>,
-) {
-    for (field, mut border) in &mut borders {
-        let color = if title_state.direct_focused == Some(field.0) {
-            palette.border_accent
-        } else {
-            palette.border_idle
-        };
-        *border = BorderColor::all(color);
     }
 }

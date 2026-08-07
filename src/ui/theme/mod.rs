@@ -2,6 +2,7 @@ pub mod assets;
 mod font;
 pub mod palette;
 mod procedural_button;
+pub mod text_field;
 pub mod widgets;
 
 use bevy::prelude::*;
