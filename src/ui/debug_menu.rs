@@ -15,8 +15,7 @@ use crate::game::commands::GameCommand;
 use crate::game::resources::{ClientGameState, PendingGameCommands};
 use crate::player::progression::LEVEL_CAP;
 use crate::ui::movable_window::{
-    find_window_by_id, spawn_movable_window, spawn_movable_window_close_button, MovableWindow,
-    MovableWindowId, MOVABLE_WINDOW_DEFAULT_MIN_SIZE,
+    find_window_by_id, spawn_standard_window, MovableWindow, MovableWindowId,
 };
 use crate::ui::resources::HoveredTile;
 use crate::ui::theme::widgets::{spawn_themed_button, ButtonStyle};
@@ -90,7 +89,7 @@ pub fn toggle_gm_panel(
     let (Some(theme), Some(palette)) = (theme, palette) else {
         return;
     };
-    let spawned = spawn_movable_window(
+    spawn_standard_window(
         commands,
         theme,
         palette,
@@ -98,13 +97,9 @@ pub fn toggle_gm_panel(
         "GM Tools",
         PANEL_SIZE,
         PANEL_INITIAL_POS,
-        MOVABLE_WINDOW_DEFAULT_MIN_SIZE,
+        DebugMenuRoot,
+        DebugMenuContent,
     );
-    commands.entity(spawned.root).insert(DebugMenuRoot);
-    commands.entity(spawned.body).insert(DebugMenuContent);
-    commands.entity(spawned.title_bar).with_children(|bar| {
-        spawn_movable_window_close_button(bar, theme, palette, spawned.root);
-    });
 }
 
 #[derive(Clone, Copy, PartialEq)]

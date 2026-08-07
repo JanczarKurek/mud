@@ -16,8 +16,7 @@ use crate::player::components::AttributeSet;
 use crate::player::progression::ExperienceView;
 use crate::ui::components::CharacterSheetButton;
 use crate::ui::movable_window::{
-    find_window_by_id, spawn_movable_window, spawn_movable_window_close_button, MovableWindow,
-    MovableWindowId, MOVABLE_WINDOW_DEFAULT_MIN_SIZE,
+    find_window_by_id, spawn_standard_window, MovableWindow, MovableWindowId,
 };
 use crate::ui::theme::{Palette, UiThemeAssets};
 
@@ -137,7 +136,9 @@ fn toggle_character_sheet(
 }
 
 fn spawn_character_sheet(commands: &mut Commands, theme: &UiThemeAssets, palette: &Palette) {
-    let spawned = spawn_movable_window(
+    // `HudRoot` so `teardown_hud` reaps the window on logout, matching the
+    // log-panel precedent.
+    spawn_standard_window(
         commands,
         theme,
         palette,
@@ -145,17 +146,9 @@ fn spawn_character_sheet(commands: &mut Commands, theme: &UiThemeAssets, palette
         "Character",
         PANEL_SIZE,
         PANEL_INITIAL_POS,
-        MOVABLE_WINDOW_DEFAULT_MIN_SIZE,
+        (CharacterSheetRoot, crate::ui::components::HudRoot),
+        CharacterSheetContent,
     );
-    // `HudRoot` so `teardown_hud` reaps the window on logout, matching the
-    // log-panel precedent.
-    commands
-        .entity(spawned.root)
-        .insert((CharacterSheetRoot, crate::ui::components::HudRoot));
-    commands.entity(spawned.body).insert(CharacterSheetContent);
-    commands.entity(spawned.title_bar).with_children(|bar| {
-        spawn_movable_window_close_button(bar, theme, palette, spawned.root);
-    });
 }
 
 /// Rebuild the sheet body whenever the window appears or the underlying

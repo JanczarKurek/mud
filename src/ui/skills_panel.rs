@@ -15,8 +15,7 @@ use crate::player::classes::Class;
 use crate::player::components::{AttributeKind, AttributeSet};
 use crate::player::skills::{is_class_skill, max_rank, rank_cost, Skill};
 use crate::ui::movable_window::{
-    find_window_by_id, spawn_movable_window, spawn_movable_window_close_button, MovableWindow,
-    MovableWindowId, MOVABLE_WINDOW_DEFAULT_MIN_SIZE,
+    find_window_by_id, spawn_standard_window, MovableWindow, MovableWindowId,
 };
 use crate::ui::theme::{Palette, UiThemeAssets};
 
@@ -145,7 +144,7 @@ fn consume_open_skills_panel_event(
 }
 
 fn spawn_skills_panel(commands: &mut Commands, theme: &UiThemeAssets, palette: &Palette) {
-    let spawned = spawn_movable_window(
+    spawn_standard_window(
         commands,
         theme,
         palette,
@@ -153,13 +152,9 @@ fn spawn_skills_panel(commands: &mut Commands, theme: &UiThemeAssets, palette: &
         "Skills",
         PANEL_SIZE,
         PANEL_INITIAL_POS,
-        MOVABLE_WINDOW_DEFAULT_MIN_SIZE,
+        SkillsPanelRoot,
+        SkillsPanelContent,
     );
-    commands.entity(spawned.root).insert(SkillsPanelRoot);
-    commands.entity(spawned.body).insert(SkillsPanelContent);
-    commands.entity(spawned.title_bar).with_children(|bar| {
-        spawn_movable_window_close_button(bar, theme, palette, spawned.root);
-    });
 }
 
 fn rebuild_skills_panel_contents(

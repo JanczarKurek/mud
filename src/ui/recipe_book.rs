@@ -15,8 +15,7 @@ use crate::game::resources::{
 };
 use crate::player::components::InventoryStack;
 use crate::ui::movable_window::{
-    find_window_by_id, spawn_movable_window, spawn_movable_window_close_button, MovableWindow,
-    MovableWindowId, MOVABLE_WINDOW_DEFAULT_MIN_SIZE,
+    find_window_by_id, spawn_standard_window, MovableWindow, MovableWindowId,
 };
 use crate::ui::theme::{Palette, UiThemeAssets};
 use crate::world::object_definitions::OverworldObjectDefinitions;
@@ -156,7 +155,7 @@ fn spawn_recipe_book(
     palette: &Palette,
     filter_station: Option<String>,
 ) {
-    let spawned = spawn_movable_window(
+    spawn_standard_window(
         commands,
         theme,
         palette,
@@ -164,15 +163,9 @@ fn spawn_recipe_book(
         "Recipes",
         PANEL_SIZE,
         PANEL_INITIAL_POS,
-        MOVABLE_WINDOW_DEFAULT_MIN_SIZE,
+        RecipeBookRoot { filter_station },
+        RecipeBookContent,
     );
-    commands
-        .entity(spawned.root)
-        .insert(RecipeBookRoot { filter_station });
-    commands.entity(spawned.body).insert(RecipeBookContent);
-    commands.entity(spawned.title_bar).with_children(|bar| {
-        spawn_movable_window_close_button(bar, theme, palette, spawned.root);
-    });
 }
 
 /// Rebuilds the recipe-row children whenever the window appears, its

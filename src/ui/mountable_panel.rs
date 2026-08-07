@@ -38,8 +38,8 @@ use crate::app::state::ClientAppState;
 use crate::game::resources::PendingGameCommands;
 use crate::ui::components::DockedPanelTitle;
 use crate::ui::movable_window::{
-    spawn_movable_window, spawn_themed_icon_button, MovableWindowDrag, MovableWindowEntities,
-    MovableWindowId, MOVABLE_WINDOW_DEFAULT_MIN_SIZE,
+    close_window_and_release_drag, spawn_movable_window, spawn_themed_icon_button,
+    MovableWindowDrag, MovableWindowEntities, MovableWindowId, MOVABLE_WINDOW_DEFAULT_MIN_SIZE,
 };
 use crate::ui::resources::{DockedPanel, DockedPanelState};
 use crate::ui::theme::{Palette, UiThemeAssets};
@@ -224,13 +224,7 @@ pub fn sync_panel_floating_lifecycle<P: MountablePanel>(
         let should_float =
             active.contains(&key) && matches!(modes.mode(key), PanelMountMode::Floating { .. });
         if !should_float {
-            commands.entity(entity).despawn();
-            if drag.focused == Some(entity) {
-                drag.focused = None;
-            }
-            if drag.dragging.is_some_and(|(e, _)| e == entity) {
-                drag.dragging = None;
-            }
+            close_window_and_release_drag(&mut commands, &mut drag, entity);
         }
     }
 

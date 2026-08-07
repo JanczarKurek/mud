@@ -18,7 +18,8 @@ use bevy_terminal::{spawn_text_edit_with, TerminalFocus, TextEdit, TextEditRoot,
 use crate::game::commands::{GameCommand, ItemReference};
 use crate::game::resources::PendingGameCommands;
 use crate::ui::movable_window::{
-    spawn_movable_window, spawn_themed_close_button, val_to_px, MovableWindowDrag, MovableWindowId,
+    close_window_and_release_drag, persist_window_geometry, spawn_movable_window,
+    spawn_themed_close_button, MovableWindowDrag, MovableWindowId, WindowGeometryMemory,
     MOVABLE_WINDOW_DEFAULT_MIN_SIZE,
 };
 use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton};
@@ -173,25 +174,25 @@ pub fn sync_book_window_lifecycle(
             render_state.last_revision = state.revision.wrapping_sub(1);
         }
         (false, Some((root, _))) => {
-            commands.entity(root).despawn();
-            if drag.focused == Some(root) {
-                drag.focused = None;
-            }
-            if drag.dragging.is_some_and(|(e, _)| e == root) {
-                drag.dragging = None;
-            }
+            close_window_and_release_drag(&mut commands, &mut drag, root);
         }
         (true, Some((_, node))) => {
-            let pos = Vec2::new(val_to_px(node.left), val_to_px(node.top));
-            let size = Vec2::new(val_to_px(node.width), val_to_px(node.height));
-            if state.last_position != Some(pos) {
-                state.last_position = Some(pos);
-            }
-            if state.last_size != Some(size) {
-                state.last_size = Some(size);
-            }
+            persist_window_geometry(&mut state, node);
         }
         (false, None) => {}
+    }
+}
+
+impl WindowGeometryMemory for BookPanelState {
+    fn last_position(&self) -> Option<Vec2> {
+        self.last_position
+    }
+    fn last_size(&self) -> Option<Vec2> {
+        self.last_size
+    }
+    fn remember_geometry(&mut self, position: Vec2, size: Vec2) {
+        self.last_position = Some(position);
+        self.last_size = Some(size);
     }
 }
 

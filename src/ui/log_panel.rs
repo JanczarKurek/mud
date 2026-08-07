@@ -26,8 +26,7 @@ use crate::game::resources::{ClientGameState, PendingGameCommands};
 use crate::log::{LogEntry, LogOwner, LogState, BODY_DIVIDER, NOTES_SECTION, QUESTS_SECTION};
 use crate::ui::components::HudRoot;
 use crate::ui::movable_window::{
-    find_window_by_id, spawn_movable_window, spawn_movable_window_close_button, MovableWindow,
-    MovableWindowId, MOVABLE_WINDOW_DEFAULT_MIN_SIZE,
+    find_window_by_id, spawn_standard_window, MovableWindow, MovableWindowId,
 };
 use crate::ui::theme::{Palette, UiThemeAssets};
 use crate::ui::{LOG_NOTES_FOCUS_ID, LOG_TITLE_FOCUS_ID};
@@ -246,7 +245,7 @@ pub fn toggle_log_window(
 }
 
 fn spawn_log_panel(commands: &mut Commands, theme: &UiThemeAssets, palette: &Palette) {
-    let spawned = spawn_movable_window(
+    let spawned = spawn_standard_window(
         commands,
         theme,
         palette,
@@ -254,15 +253,9 @@ fn spawn_log_panel(commands: &mut Commands, theme: &UiThemeAssets, palette: &Pal
         "Log",
         PANEL_SIZE,
         PANEL_INITIAL_POS,
-        MOVABLE_WINDOW_DEFAULT_MIN_SIZE,
+        (LogPanelRoot::default(), HudRoot),
+        LogPanelBody,
     );
-    commands
-        .entity(spawned.root)
-        .insert((LogPanelRoot::default(), HudRoot));
-    commands.entity(spawned.body).insert(LogPanelBody);
-    commands.entity(spawned.title_bar).with_children(|bar| {
-        spawn_movable_window_close_button(bar, theme, palette, spawned.root);
-    });
 
     let palette = *palette;
     let scroll_orb = theme.scroll_orb.clone();

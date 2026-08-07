@@ -10,6 +10,8 @@
 //! own marker on the body so a per-frame sync system can rebuild its
 //! contents.
 
+use std::ops::{Deref, DerefMut};
+
 use bevy::input::mouse::MouseButton;
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, UiGlobalTransform};
@@ -309,6 +311,107 @@ pub fn spawn_movable_window(
     }
 }
 
+/// Spawn the standard "toggleable panel" window: a movable window with the
+/// default minimum size, `root_marker` inserted on the root, `content_marker`
+/// inserted on the body, and the stock close-X (despawns the window via
+/// [`handle_movable_window_close`]) in the title bar. This is the idiom
+/// shared by the Skills / Log / Recipes / Character / GM Tools panels;
+/// per-panel extras (additional children, layout tweaks) stay at the call
+/// site using the returned entity handles.
+#[allow(clippy::too_many_arguments)]
+pub fn spawn_standard_window(
+    commands: &mut Commands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+    id: MovableWindowId,
+    title: &str,
+    size: Vec2,
+    initial_pos: Vec2,
+    root_marker: impl Bundle,
+    content_marker: impl Bundle,
+) -> MovableWindowEntities {
+    let spawned = spawn_movable_window(
+        commands,
+        theme,
+        palette,
+        id,
+        title,
+        size,
+        initial_pos,
+        MOVABLE_WINDOW_DEFAULT_MIN_SIZE,
+    );
+    commands.entity(spawned.root).insert(root_marker);
+    commands.entity(spawned.body).insert(content_marker);
+    commands.entity(spawned.title_bar).with_children(|bar| {
+        spawn_movable_window_close_button(bar, theme, palette, spawned.root);
+    });
+    spawned
+}
+
+/// Shared "window is going away" teardown used by every
+/// `sync_*_window_lifecycle` system (and the stock close-X handler):
+/// despawn `root` and clear any focus / in-progress drag that referenced it
+/// so the drag systems don't chase a dead entity.
+pub fn close_window_and_release_drag(
+    commands: &mut Commands,
+    drag: &mut MovableWindowDrag,
+    root: Entity,
+) {
+    commands.entity(root).despawn();
+    if drag.focused == Some(root) {
+        drag.focused = None;
+    }
+    if drag.dragging.is_some_and(|(e, _)| e == root) {
+        drag.dragging = None;
+    }
+}
+
+/// Popup state resource that remembers its floating window's last on-screen
+/// position/size so the next open restores them (dialog, trade, book).
+/// Implementors get [`persist_window_geometry`] and
+/// [`restored_or_centered_geometry`] for free.
+pub trait WindowGeometryMemory {
+    fn last_position(&self) -> Option<Vec2>;
+    fn last_size(&self) -> Option<Vec2>;
+    fn remember_geometry(&mut self, position: Vec2, size: Vec2);
+}
+
+/// Cache the window's current geometry (read off its `Node`, `Val::Px`
+/// space) into `state`. Reads go through `Deref` and the `DerefMut` is only
+/// taken when a value actually differs, so an idle open window doesn't flag
+/// the state resource changed every frame.
+pub fn persist_window_geometry<S, W>(state: &mut W, node: &Node)
+where
+    S: WindowGeometryMemory,
+    W: DerefMut<Target = S>,
+{
+    let pos = Vec2::new(val_to_px(node.left), val_to_px(node.top));
+    let size = Vec2::new(val_to_px(node.width), val_to_px(node.height));
+    if state.deref().last_position() != Some(pos) || state.deref().last_size() != Some(size) {
+        state.deref_mut().remember_geometry(pos, size);
+    }
+}
+
+/// `(position, size)` for (re)opening a geometry-remembering window: the
+/// last cached size (else `default_size`) at the last cached position (else
+/// centered in the primary window, with a 1280x720 fallback when the window
+/// can't be read).
+pub fn restored_or_centered_geometry<S: WindowGeometryMemory>(
+    state: &S,
+    default_size: Vec2,
+    window_query: &Query<&Window, With<PrimaryWindow>>,
+) -> (Vec2, Vec2) {
+    let win = window_query
+        .single()
+        .map(|window| Vec2::new(window.width(), window.height()))
+        .unwrap_or(Vec2::new(1280.0, 720.0));
+    let size = state.last_size().unwrap_or(default_size);
+    let pos = state
+        .last_position()
+        .unwrap_or_else(|| ((win - size) * 0.5).max(Vec2::ZERO));
+    (pos, size)
+}
+
 /// Shared visual for any 18x18 brass-medallion title-bar button (close,
 /// dock-toggle, etc.). `image` is the medallion texture (e.g.
 /// `theme.close_button.clone()`); `marker` distinguishes which click
@@ -535,13 +638,7 @@ fn handle_movable_window_close(
         if window_query.get(close.owner).is_err() {
             continue;
         }
-        commands.entity(close.owner).despawn();
-        if drag.focused == Some(close.owner) {
-            drag.focused = None;
-        }
-        if drag.dragging.is_some_and(|(e, _)| e == close.owner) {
-            drag.dragging = None;
-        }
+        close_window_and_release_drag(&mut commands, &mut drag, close.owner);
     }
 }
 

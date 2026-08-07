@@ -26,8 +26,8 @@ use bevy::prelude::*;
 use crate::game::resources::ClientGameState;
 use crate::ui::menu_bar::MENU_BAR_HEIGHT;
 use crate::ui::movable_window::{
-    spawn_movable_window, spawn_themed_close_button, MovableWindowDrag, MovableWindowId,
-    MOVABLE_WINDOW_DEFAULT_MIN_SIZE,
+    close_window_and_release_drag, spawn_movable_window, spawn_themed_close_button,
+    MovableWindowDrag, MovableWindowId, MOVABLE_WINDOW_DEFAULT_MIN_SIZE,
 };
 use crate::ui::theme::{Palette, UiThemeAssets};
 
@@ -549,13 +549,7 @@ pub fn sync_time_of_day_window_lifecycle(
             drag.focused = Some(root);
         }
         (false, Some(root)) => {
-            commands.entity(root).despawn();
-            if drag.focused == Some(root) {
-                drag.focused = None;
-            }
-            if drag.dragging.is_some_and(|(e, _)| e == root) {
-                drag.dragging = None;
-            }
+            close_window_and_release_drag(&mut commands, &mut drag, root);
         }
         (true, Some(_)) | (false, None) => {}
     }
