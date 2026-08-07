@@ -17,6 +17,12 @@ the project's broad direction lives in `PLAN.md`.
 - TOFU (trust-on-first-use) fingerprint pinning for client TLS; store fingerprints in `~/.local/share/mud2/known_hosts`.
 
 ### Architecture / cleanup
+- 2026-08 audit follow-ups (deferred from the big dedup/split round):
+  - `mud2-protocol` crate: move the serde wire types (GameCommand 62 variants, GameEvent, GameUiEvent, ClientGameState, OverworldObjectDefinition) below the lib so the 443 serde derive expansions leave the hot crate. Large type closure — needs `pub use` shims at the old paths.
+  - `mud2-scripting` crate: rustpython (130 MB rlib + 27 MB proc-macro) is used by 5 files but ui/player/app reach into `scripting::resources` and quest/network into `scripting_api`, so the cut needs PythonConsoleState (state-only) to stay below while the VM moves up.
+  - Remaining small dedups: inventory-slot builders ×3 (ui/setup.rs), settings option-row stacks ×2 + stepper rows ×3, three parallel targeting state machines in ui (UseOn/SpellTargeting/ItemTargeting share prologue/epilogue), 8 bespoke drag implementations, editor row/selection color families.
+  - `handle_minimap_scroll_wheel` hit-tests the logical cursor against physical node bounds (misses on HiDPI) — spotted during the wheel-scroll dedup; it's zoom control so it was left alone, but the hit-test looks wrong.
+  - `handle_move_item` is still a 384-line 2x2 match (pickup/world-to-world/slot-to-slot/slot-to-world) sharing a duplicated pickup and drop-to-world path with `handle_take_from_stack`; splitting it was deferred as higher-risk.
 - Finish migrating remaining presentation systems to consume replicated/view state instead of directly reading authoritative ECS/resources.
 - Decide when to delete the now-obsolete direct-mutation helpers still left in `ui::systems`.
 - Add dedicated ECS query helpers/system params for common same-space access patterns so AI and interaction systems stop hand-filtering residents.
