@@ -337,7 +337,6 @@ fn track_spikes(time: Res<Time<Real>>, mut tracker: ResMut<SpikeTracker>) {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn handle_overlay_input(
     keys: Res<ButtonInput<KeyCode>>,
     mut pending: ResMut<PendingDebugActions>,
@@ -897,7 +896,7 @@ fn log_archetype_histogram(world: &World) {
         })
         .collect();
 
-    entries.sort_by(|a, b| b.0.cmp(&a.0));
+    entries.sort_by_key(|entry| std::cmp::Reverse(entry.0));
 
     let total: usize = entries.iter().map(|(c, _)| c).sum();
     let mut out = String::from("\n===== ARCHETYPE HISTOGRAM =====\n");

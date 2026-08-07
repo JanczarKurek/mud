@@ -145,7 +145,6 @@ pub fn sync_trade_panel_buttons(
 /// to centered on screen, `DEFAULT_SIZE`). On close we read the current
 /// position/size off the entity's `Node` so the next session re-opens in
 /// the same place.
-#[allow(clippy::too_many_arguments)]
 pub fn sync_trade_window_lifecycle(
     mut commands: Commands,
     mut state: ResMut<TradePopupState>,
@@ -565,7 +564,6 @@ fn spawn_trade_row(
         });
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn handle_trade_panel_clicks(
     mouse_input: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,

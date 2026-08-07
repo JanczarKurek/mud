@@ -29,7 +29,6 @@ pub struct SelectDragState {
     anchor: Option<TilePosition>,
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn handle_editor_select_drag(
     mouse: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<PrimaryWindow>>,
@@ -119,7 +118,6 @@ pub fn render_selection(
 /// `PickRect` mode: drag-LMB writes a `TileRectangle` to
 /// `EditorPickRectResult` on release, then restores the tool that was active
 /// before the user entered pick mode (stashed in `EditorState.tool_before_pick`).
-#[allow(clippy::too_many_arguments)]
 pub fn handle_editor_pick_rect_drag(
     mouse: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<PrimaryWindow>>,

@@ -108,13 +108,19 @@ pub fn apply_flooring(data: &[u8], width: u32, height: u32, tile_size_px: u32) -
     let w = width as usize;
     let h = height as usize;
     let t = tile_size_px as usize;
-    if t == 0 || w == 0 || h == 0 || w % t != 0 || h % t != 0 || data.len() < w * h * 4 {
+    if t == 0
+        || w == 0
+        || h == 0
+        || !w.is_multiple_of(t)
+        || !h.is_multiple_of(t)
+        || data.len() < w * h * 4
+    {
         return data.to_vec();
     }
     let cols = w / t;
     let rows = h / t;
     // The authoring layout is a 4-wide grid of 4-row variant blocks.
-    if cols != 4 || rows % 4 != 0 {
+    if cols != 4 || !rows.is_multiple_of(4) {
         return data.to_vec();
     }
     let half = t / 2;

@@ -58,7 +58,6 @@ pub struct BuildingDefsAndMaps<'w> {
 /// during the drag so the existing `render_selection` cyan rect is the live
 /// preview for free. On mouse release, the rectangle is committed via
 /// `stamp_building` and the marquee is cleared.
-#[allow(clippy::too_many_arguments)]
 pub fn handle_editor_building_draw_drag(
     mouse: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<PrimaryWindow>>,
@@ -142,7 +141,6 @@ pub fn handle_editor_building_draw_drag(
     });
 }
 
-#[allow(clippy::too_many_arguments)]
 fn commit_drag(
     editor_state: &mut EditorState,
     editor_context: &EditorContext,
@@ -319,7 +317,6 @@ fn wall_for_position(x: i32, y: i32, width: i32, height: i32, walls: &WallSlots)
 /// Runs before `handle_editor_left_click`
 /// so the click is consumed here and not by the regular brush / select
 /// flow. Auto-disarms after one successful swap so each toggle = one door.
-#[allow(clippy::too_many_arguments)]
 pub fn handle_editor_building_door_swap_click(
     mouse: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<PrimaryWindow>>,

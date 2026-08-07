@@ -1,4 +1,3 @@
-#![allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub mod building_panel;
 pub mod color_picker;
 pub mod contents;

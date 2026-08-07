@@ -228,7 +228,6 @@ fn spawn_action_button<M: Component>(parent: &mut ChildSpawnerCommands, label: &
 }
 
 /// Click handlers: row select, action buttons, add button.
-#[allow(clippy::too_many_arguments)]
 pub fn handle_spawn_groups_panel_clicks(
     rows: Query<(&EditorSpawnGroupRow, &Interaction), (Changed<Interaction>, With<Button>)>,
     edit_btns: Query<

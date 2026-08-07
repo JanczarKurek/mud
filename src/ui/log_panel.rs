@@ -528,7 +528,6 @@ fn compute_signature(log: &LogState, root: &LogPanelRoot) -> RebuildSignature {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn rebuild_log_panel_contents(
     mut commands: Commands,
     client_state: Res<ClientGameState>,

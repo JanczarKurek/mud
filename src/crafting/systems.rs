@@ -79,7 +79,6 @@ type CraftPlayerData<'a> = (
 ///    `ItemCrafted` event, award XP if specified.
 ///
 /// Failure cases push a clear narrator line; nothing is consumed.
-#[allow(clippy::too_many_arguments)]
 pub fn process_craft_commands(
     mut pending_commands: ResMut<PendingGameCommands>,
     mut pending_events: ResMut<PendingGameEvents>,

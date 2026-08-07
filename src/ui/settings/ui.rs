@@ -391,7 +391,6 @@ fn spawn_tab(parent: &mut ChildSpawnerCommands, palette: &Palette, section: Sett
         });
 }
 
-#[allow(clippy::too_many_arguments)]
 fn spawn_option_row(
     parent: &mut ChildSpawnerCommands,
     theme: &UiThemeAssets,
@@ -456,7 +455,6 @@ fn spawn_option_row(
         });
 }
 
-#[allow(clippy::too_many_arguments)]
 fn spawn_gameplay_option_row(
     parent: &mut ChildSpawnerCommands,
     theme: &UiThemeAssets,
@@ -536,7 +534,6 @@ fn spawn_section_header(parent: &mut ChildSpawnerCommands, palette: &Palette, la
     ));
 }
 
-#[allow(clippy::too_many_arguments)]
 fn spawn_row(
     parent: &mut ChildSpawnerCommands,
     theme: &UiThemeAssets,

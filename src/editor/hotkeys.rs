@@ -6,8 +6,6 @@
 //! Bindings come from [`EditorKeybindings`]; the chord-matching it performs
 //! reproduces the explicit modifier guards each system used to write by hand.
 
-#![allow(clippy::too_many_arguments)]
-
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 

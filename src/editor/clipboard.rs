@@ -99,7 +99,6 @@ pub fn fragment_from_selection(
 /// Ctrl+C / Ctrl+X / Ctrl+V keyboard handler. Skips when a modal is open
 /// (caller already gates on `no_modal`) or when the palette filter has
 /// keyboard focus.
-#[allow(clippy::too_many_arguments)]
 pub fn handle_clipboard_shortcuts(
     keyboard: Res<ButtonInput<KeyCode>>,
     editor_keys: Res<EditorKeybindings>,
@@ -302,7 +301,6 @@ pub fn handle_clipboard_shortcuts(
 /// Delete key handler. Priority is single-object selection (mirrors the
 /// right-click delete path), falling back to the marquee region — objects
 /// only, never floors. Both paths push an undo op so Ctrl+Z restores.
-#[allow(clippy::too_many_arguments)]
 pub fn handle_editor_delete_key(
     keyboard: Res<ButtonInput<KeyCode>>,
     editor_keys: Res<EditorKeybindings>,
@@ -454,7 +452,6 @@ pub fn fragment_from_state(
 /// `Composite` undo op to push (caller decides whether to add to the stack
 /// based on whether anything was placed). Out-of-bounds cells are silently
 /// clipped.
-#[allow(clippy::too_many_arguments)]
 pub fn stamp_fragment(
     fragment: &MapFragment,
     cursor_tile: TilePosition,
@@ -685,7 +682,6 @@ pub fn handle_paste_transform_hotkeys(
 /// despawns its previous-frame entities at the top of every run, so the brush
 /// cursor cleanup in `update_editor_cursor_ghost` cannot race-despawn this
 /// system's just-spawned ghosts.
-#[allow(clippy::too_many_arguments)]
 pub fn render_paste_ghost(
     mut commands: Commands,
     mut gizmos: Gizmos,
@@ -845,7 +841,6 @@ pub fn render_paste_ghost(
 /// so the click is consumed by paste and not by the brush placement path.
 /// Lives separately from `handle_editor_left_click` because that fn already
 /// sits at Bevy's system-param-arity ceiling.
-#[allow(clippy::too_many_arguments)]
 pub fn handle_editor_paste_click(
     mouse: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<bevy::window::PrimaryWindow>>,

@@ -58,7 +58,6 @@ pub struct DialogPanelRenderState {
 /// Spawn / despawn the dialog window based on `ActiveDialogState.is_active()`.
 /// While open, caches position/size each frame so the next session re-opens
 /// in the same place. Mirrors `sync_trade_window_lifecycle`.
-#[allow(clippy::too_many_arguments)]
 pub fn sync_dialog_window_lifecycle(
     mut commands: Commands,
     mut state: ResMut<ActiveDialogState>,
@@ -104,7 +103,6 @@ pub fn sync_dialog_window_lifecycle(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn spawn_dialog_window(
     commands: &mut Commands,
     theme: &UiThemeAssets,

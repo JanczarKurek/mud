@@ -270,7 +270,6 @@ pub fn sync_quickbar_visuals(
 /// - the Python console is open (it eats text input),
 /// - a `UseOn` or `SpellTarget` cursor mode is already active,
 /// - the context menu is open.
-#[allow(clippy::too_many_arguments)]
 pub fn handle_quickbar_keybinds(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     keybindings: Res<crate::ui::settings::Keybindings>,
@@ -363,7 +362,6 @@ pub fn handle_quickbar_keybinds(
 /// Both events are consumed via `ButtonInput::clear_just_pressed` so they
 /// don't fall through to `handle_context_menu_opening` (which would otherwise
 /// open a world context menu for whatever tile the bar covers).
-#[allow(clippy::too_many_arguments)]
 pub fn handle_quickbar_clicks(
     mut mouse_input: ResMut<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,

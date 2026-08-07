@@ -493,7 +493,6 @@ fn row_action_button<M: Component>(parent: &mut ChildSpawnerCommands, label: &st
 /// Click + button handlers for the lighting panel. Bundles row select, action
 /// buttons, day/night toggle, and ambient stepper buttons so we stay under
 /// Bevy's per-system parameter cap.
-#[allow(clippy::too_many_arguments)]
 pub fn handle_lighting_panel_clicks(
     rows: Query<(&LightingKeyframeRow, &Interaction), (Changed<Interaction>, With<Button>)>,
     edit_btns: Query<

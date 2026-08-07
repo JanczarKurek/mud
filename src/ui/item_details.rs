@@ -66,7 +66,6 @@ impl Plugin for ItemDetailsPlugin {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn handle_pending_item_details_opens(
     mut commands: Commands,
     mut pending: ResMut<PendingItemDetailsOpens>,
@@ -141,7 +140,6 @@ fn handle_pending_item_details_opens(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn sync_item_details_content(
     mut commands: Commands,
     client_state: Res<ClientGameState>,
@@ -209,7 +207,6 @@ fn ware_for_slot(client_state: &ClientGameState, slot_kind: ItemSlotKind) -> Opt
         .cloned()
 }
 
-#[allow(clippy::too_many_arguments)]
 fn populate_item_details(
     parent: &mut ChildSpawnerCommands,
     palette: &Palette,

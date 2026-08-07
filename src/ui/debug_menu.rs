@@ -110,7 +110,6 @@ struct DebugMenuSnapshot {
     level: u32,
 }
 
-#[allow(clippy::too_many_arguments)]
 fn rebuild_debug_menu_contents(
     mut commands: Commands,
     state: Res<DebugMenuState>,

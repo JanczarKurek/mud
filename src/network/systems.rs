@@ -666,7 +666,6 @@ fn handle_delete_character(
 /// Selects a character and spawns the corresponding player entity. The peer
 /// transitions to `Authed`, after which the asset-manifest + gameplay-event
 /// stream begins.
-#[allow(clippy::too_many_arguments)]
 fn handle_select_character(
     peer: &mut TcpServerPeer,
     character_id: i64,

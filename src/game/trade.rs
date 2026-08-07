@@ -451,7 +451,6 @@ pub fn cleanup_invalid_trades(
 /// applies them to `ActiveTrades` + the involved players' inventories. Mirrors
 /// the `process_dialog_commands` / `process_rotate_commands` pattern: scheduled
 /// in `CommandIntercept` so the variants never reach `process_game_commands`.
-#[allow(clippy::too_many_arguments)]
 pub fn process_trade_commands(
     mut pending_commands: ResMut<PendingGameCommands>,
     mut active_trades: ResMut<ActiveTrades>,
@@ -834,8 +833,6 @@ fn handle_toggle_trade_ready(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-#[allow(clippy::too_many_arguments)]
 fn handle_confirm_trade(
     acting_player_id: PlayerId,
     session_id: TradeSessionId,
@@ -926,7 +923,6 @@ fn handle_confirm_trade(
 /// Append a ware to the shop side (Side::B) of an active trade. The player
 /// is responsible for adding their own coin offers to Side::A — the merchant
 /// only validates the totals at commit time (`commit_player_to_shop_trade`).
-#[allow(clippy::too_many_arguments)]
 fn handle_browse_shop_buy(
     acting_player_id: PlayerId,
     session_id: TradeSessionId,
@@ -1035,7 +1031,6 @@ fn format_copper(copper: u32) -> String {
     out.trim_end().to_owned()
 }
 
-#[allow(clippy::too_many_arguments)]
 fn commit_player_to_shop_trade(
     session: &TradeSession,
     player: PlayerId,

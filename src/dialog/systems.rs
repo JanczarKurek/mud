@@ -31,7 +31,6 @@ use crate::world::object_registry::ObjectRegistry;
 /// does not fill `player_id` on locally queued commands. Falling back to the
 /// single `Player` entity is safe in embedded / single-player contexts — TCP
 /// pathways always set `player_id` explicitly.
-#[allow(clippy::too_many_arguments)]
 pub fn process_dialog_commands(
     mut pending_commands: ResMut<PendingGameCommands>,
     mut ui_events: ResMut<PendingGameUiEvents>,

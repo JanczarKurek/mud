@@ -175,7 +175,6 @@ impl PendingStepEvents {
 /// Drains `PendingStepEvents`, finds matching `OnSteppedTriggers` at each
 /// stepped tile, and applies the declared effects through existing pipelines
 /// (`MagicEffects::apply`, `PendingDamageEvents`, `apply_state_transition`).
-#[allow(clippy::too_many_arguments)]
 pub fn process_step_triggers(
     mut pending_steps: ResMut<PendingStepEvents>,
     mut pending_damage: ResMut<PendingDamageEvents>,
@@ -363,7 +362,6 @@ pub fn process_step_triggers(
 /// (no special "refresh" path); the existing L2 stacking in
 /// `tick_dot_effects` handles aggregation. Triggers with `tick_seconds:
 /// None` are ignored — pure legacy one-shot-on-entry semantics.
-#[allow(clippy::too_many_arguments)]
 pub fn process_continuous_step_triggers(
     time: Res<Time>,
     mut pending_damage: ResMut<PendingDamageEvents>,

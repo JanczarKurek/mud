@@ -178,7 +178,6 @@ pub fn spawn_properties_panel(parent: &mut ChildSpawnerCommands) {
 
 /// Sync the properties panel: show/hide it and rebuild property rows when
 /// the selection or buffer changes.
-#[allow(clippy::too_many_arguments)]
 pub fn sync_properties_panel(
     editor_state: Res<EditorState>,
     prop_buffer: Res<EditorPropertyEditBuffer>,
@@ -998,7 +997,6 @@ pub struct StackSliderDragState {
 /// update **in place** (no registry write, so the panel does not rebuild and
 /// the slider node stays stable). The count is committed to the registry on
 /// release via `PendingStackCountChanges`.
-#[allow(clippy::too_many_arguments)]
 pub fn handle_stack_slider_drag(
     mouse: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<PrimaryWindow>>,
@@ -1116,7 +1114,6 @@ pub fn handle_stack_input_click(
 /// on the live entity, and rebuild its editor sprite to reflect the stack tier.
 /// Matches the existing property-edit convention of no undo entry (only sets
 /// `editor_state.dirty`).
-#[allow(clippy::too_many_arguments)]
 pub fn apply_stack_count_changes(
     mut commands: Commands,
     asset_server: Res<AssetServer>,

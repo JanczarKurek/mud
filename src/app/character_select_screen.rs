@@ -553,7 +553,6 @@ fn rebuild_roster_if_changed(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn handle_character_select_buttons(
     mut state: ResMut<CharacterSelectState>,
     mut next_state: ResMut<NextState<ClientAppState>>,

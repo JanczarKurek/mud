@@ -52,7 +52,6 @@ pub struct EditorFloorRenderState {
 /// rebuilds cells per `(space, z)` when the grid's hash changes. A drained
 /// `FloorRenderDirty` queue drives an incremental corner-only rebuild for
 /// the paint-drag case, exactly like the in-game path.
-#[allow(clippy::too_many_arguments)]
 pub fn editor_build_floor_render_cells(
     mut commands: Commands,
     asset_server: Res<AssetServer>,

@@ -2,8 +2,6 @@
 //! radius, fill mode, current editing floor, selection size, hovered
 //! object type, and unsaved-dirty marker.
 
-#![allow(clippy::too_many_arguments)]
-
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
@@ -52,7 +50,6 @@ pub fn spawn_status_bar(parent: &mut ChildSpawnerCommands) {
 
 /// Update status bar text each frame. Cheap enough to recompute every
 /// frame — single ~120-byte string write.
-#[allow(clippy::too_many_arguments)]
 pub fn sync_status_bar(
     editor_state: Res<EditorState>,
     editor_context: Res<EditorContext>,

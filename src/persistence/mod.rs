@@ -303,7 +303,6 @@ where
 /// Build a `PlayerStateDump` from the components of a single player entity.
 /// Shared between world snapshot writes and per-account DB saves so both paths
 /// serialize the same fields.
-#[allow(clippy::too_many_arguments)]
 pub fn build_player_state_dump(
     identity: &PlayerIdentity,
     space_resident: &SpaceResident,
@@ -427,7 +426,6 @@ pub struct NpcStateDump {
     pub magic_effects: MagicEffects,
 }
 
-#[allow(clippy::too_many_arguments)]
 fn save_world_on_app_exit(
     mut app_exit_reader: MessageReader<AppExit>,
     app_state: Option<Res<State<crate::app::state::ClientAppState>>>,

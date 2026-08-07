@@ -63,7 +63,6 @@ fn pose_owns_animation(
         .is_some_and(|state_def| state_def.animation.is_some())
 }
 
-#[allow(clippy::too_many_arguments)]
 fn apply_clip(
     animated: &mut AnimatedSprite,
     clip_name: &str,

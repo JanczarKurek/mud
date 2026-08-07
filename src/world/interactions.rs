@@ -45,7 +45,6 @@ type PlayerInteractQuery<'a> = (
 /// Server-side handler for `GameCommand::InteractWithObject`. Drains matching
 /// commands from `PendingGameCommands`, applies transitions, and runs any
 /// declared side-effects to depth `MAX_CASCADE_DEPTH`.
-#[allow(clippy::too_many_arguments)]
 pub fn process_interact_commands(
     mut pending_commands: ResMut<PendingGameCommands>,
     mut ui_events: ResMut<PendingGameUiEvents>,
@@ -468,7 +467,6 @@ pub(crate) fn apply_state_transition(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn run_side_effects(
     source_object_id: u64,
     actor: Option<PlayerId>,

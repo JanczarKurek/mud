@@ -16,7 +16,6 @@ use crate::combat::damage_type::DamageType;
 use crate::magic::resources::EffectKind;
 use crate::world::direction::{Direction, WallCorner};
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct OverworldObjectDefinition {
@@ -950,7 +949,6 @@ fn default_regen_multiplier() -> f32 {
     1.0
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Hash, Serialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
@@ -1023,7 +1021,6 @@ pub struct AnimationSheetDef {
     pub clips: HashMap<String, AnimationClipDef>,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct RenderMetadata {

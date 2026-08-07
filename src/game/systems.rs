@@ -976,7 +976,6 @@ fn handle_take_item(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 /// Marker-derived movement state read once in the dispatcher and passed down
 /// as data instead of four positional bools.
 #[derive(Clone, Copy, Debug)]
@@ -1243,7 +1242,6 @@ fn handle_move_player(
 /// scan starts, so gating on it would compare a value against itself on the
 /// first iteration and never fire. Without this a jump across the ground floor
 /// of a roofed room lands the jumper on the roof.
-#[allow(clippy::too_many_arguments)]
 fn resolve_landing_at(
     x: i32,
     y: i32,
@@ -1281,7 +1279,6 @@ fn resolve_landing_at(
     None
 }
 
-#[allow(clippy::too_many_arguments)]
 fn handle_jump_to(
     player_entity: Entity,
     target_tile: TilePosition,
@@ -1499,7 +1496,6 @@ fn handle_jump_to(
 /// stack-to-climb step for the systems that read live object positions.
 /// Server-authoritative; the move replicates through the normal
 /// `WorldObjectUpserted` diff.
-#[allow(clippy::too_many_arguments)]
 fn handle_object_move(
     object_entity: Entity,
     origin: TilePosition,
@@ -2002,7 +1998,6 @@ fn mutate_text_source(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn handle_read_book(
     player_entity: Entity,
     source: ItemReference,
@@ -2094,7 +2089,6 @@ fn handle_read_book(
     );
 }
 
-#[allow(clippy::too_many_arguments)]
 fn handle_write_book(
     player_entity: Entity,
     source: ItemReference,
@@ -2185,7 +2179,6 @@ fn handle_write_book(
     );
 }
 
-#[allow(clippy::too_many_arguments)]
 fn handle_engrave(
     player_entity: Entity,
     source: ItemReference,
@@ -2257,7 +2250,6 @@ fn handle_engrave(
     );
 }
 
-#[allow(clippy::too_many_arguments)]
 fn handle_inspect(
     player_entity: Entity,
     target: InspectTarget,
@@ -2388,8 +2380,6 @@ fn handle_inspect(
 const DEFAULT_INSPECT_RANGE: i32 = 3;
 const FOCUS_TILES_PER_POINT: i32 = 5;
 
-#[allow(clippy::too_many_arguments)]
-#[allow(clippy::too_many_arguments)]
 fn handle_use_item(
     player_entity: Entity,
     source: ItemReference,
@@ -2610,7 +2600,6 @@ fn handle_use_item(
     chat_log_state.push_narrator(use_text(definition, &source_name));
 }
 
-#[allow(clippy::too_many_arguments)]
 fn handle_use_item_on(
     player_entity: Entity,
     source: ItemReference,
@@ -2903,7 +2892,6 @@ fn find_tool_gate_verb_on_target(
 /// caster's own items rather than a world object. Mana is spent and the scroll
 /// consumed only when the enchantment actually takes (so a rejected weaker
 /// enchant wastes nothing).
-#[allow(clippy::too_many_arguments)]
 fn handle_cast_spell_at_item(
     player_entity: Entity,
     source: ItemReference,
@@ -3087,7 +3075,6 @@ fn broadcast_cast_vfx(
     });
 }
 
-#[allow(clippy::too_many_arguments)]
 /// The caster's attribute set from the shared `player_class_level` query, used
 /// to roll attribute/level-scaled spell `damage` expressions. Defaults to a
 /// baseline set if the caster somehow lacks `DerivedStats`.
@@ -3297,7 +3284,6 @@ fn handle_cast_spell_at(
 /// Mirrors `handle_cast_spell_at` on validation, mana, paralyze, and scroll
 /// consumption. The center is a *tile*, not an entity, so range is checked
 /// against the caster's own tile.
-#[allow(clippy::too_many_arguments)]
 fn handle_cast_spell_at_tile(
     player_entity: Entity,
     source: ItemReference,
@@ -3569,7 +3555,6 @@ fn spawn_spell_object(
 /// and given a `Ttl` so it despawns after `lifetime_seconds`. Enforces one
 /// companion per owner: any existing companion of this player is despawned
 /// first, so a recast repositions/refreshes rather than stacking summons.
-#[allow(clippy::too_many_arguments)]
 /// Spawn `summon_spec.count` creatures owned by `owner`.
 ///
 /// `owner_player` is `Some` for a player's summon and `None` for an NPC's — a
@@ -3578,7 +3563,6 @@ fn spawn_spell_object(
 /// `PlayerSide` for player summons, `MonsterSide` for a boss's adds, so
 /// faction-aware targeting (`nearest_visible_enemy`) sends them at the right
 /// enemies.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_summoned_creature(
     commands: &mut Commands,
     definitions: &OverworldObjectDefinitions,
@@ -3695,7 +3679,6 @@ fn apply_buffs_target(
     );
 }
 
-#[allow(clippy::too_many_arguments)]
 fn handle_move_item(
     player_entity: Entity,
     source: ItemReference,
@@ -4055,8 +4038,6 @@ fn handle_move_item(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-#[allow(clippy::too_many_arguments)]
 fn handle_take_from_stack(
     player_entity: Entity,
     source: ItemReference,
@@ -4709,7 +4690,6 @@ fn item_reference_view(
                 |stack| ItemView {
                     type_id: stack.type_id,
                     properties: stack.properties,
-                    quantity: stack.quantity,
                 },
             )
         }
@@ -4720,8 +4700,6 @@ fn item_reference_view(
 struct ItemView {
     type_id: String,
     properties: ObjectProperties,
-    #[allow(dead_code)]
-    quantity: u32,
 }
 
 fn view_for_world_object(
@@ -4739,7 +4717,6 @@ fn view_for_world_object(
     Some(ItemView {
         type_id: definition_id,
         properties,
-        quantity: 1,
     })
 }
 
@@ -5221,7 +5198,6 @@ fn write_charges_at(
 ///
 /// Mana / eligibility checks must happen BEFORE this call so a failed cast
 /// never burns a charge.
-#[allow(clippy::too_many_arguments)]
 fn consume_or_decrement_charge(
     item_reference: ItemReference,
     inventory_state: &mut InventoryState,
@@ -5804,7 +5780,6 @@ fn resolve_step_with_climb(
 ///   * it must be a walkable surface (you can't drop onto a wall);
 ///   * for moves, `dragged_entity` is excluded from the column so an
 ///     object doesn't stack on itself.
-#[allow(clippy::too_many_arguments)]
 fn resolve_world_drop_tile(
     target_tile: TilePosition,
     origin_tile: Option<TilePosition>,
@@ -5873,7 +5848,6 @@ fn resolve_world_drop_tile(
     Some(resolved)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn find_nearest_valid_world_drop_tile(
     target_tile: TilePosition,
     origin_tile: Option<TilePosition>,

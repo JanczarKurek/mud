@@ -100,7 +100,6 @@ pub struct ViewPosition {
 }
 
 #[derive(Component)]
-#[allow(dead_code)]
 pub struct OverworldObject {
     pub object_id: u64,
     pub definition_id: String,

@@ -488,7 +488,6 @@ fn action_button<M: Component>(parent: &mut ChildSpawnerCommands, label: &str, m
 }
 
 /// Click handlers: row select, action buttons, add button, field-edit kick-off.
-#[allow(clippy::too_many_arguments)]
 pub fn handle_vendor_stashes_panel_clicks(
     rows: Query<
         (&EditorVendorStashRow, &Interaction),

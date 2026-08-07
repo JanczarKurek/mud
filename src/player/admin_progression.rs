@@ -28,7 +28,6 @@ use crate::player::progression::{
 };
 use crate::player::skills::{grant_level_up_skill_points, SkillSheet};
 
-#[allow(clippy::too_many_arguments)]
 pub fn process_admin_progression_commands(
     mut pending_commands: ResMut<PendingGameCommands>,
     mut xp_grants: ResMut<PendingXpGrants>,

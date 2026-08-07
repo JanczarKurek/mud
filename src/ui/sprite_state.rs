@@ -18,7 +18,6 @@ use crate::world::WorldConfig;
 /// `AnimatedSprite` to match the new state's overrides or the right
 /// `stack_sprites` tier. Tracks the last-seen `(state, quantity)` per object
 /// in a `Local` map so it only acts on real transitions.
-#[allow(clippy::too_many_arguments)]
 pub fn sync_object_state_visuals(
     asset_server: Res<AssetServer>,
     mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,

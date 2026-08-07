@@ -145,7 +145,6 @@ pub fn setup_darkness_overlay(
 /// Build the indoor mask, ambient values, and light list each frame and
 /// upload to the material uniforms. Runs after the source Transforms are
 /// finalized so light world positions are accurate.
-#[allow(clippy::too_many_arguments)]
 pub fn update_darkness_overlay(
     client_state: Res<ClientGameState>,
     visible_floors: Res<VisibleFloorRange>,

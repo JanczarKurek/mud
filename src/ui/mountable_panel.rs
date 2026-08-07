@@ -46,16 +46,13 @@ use crate::ui::theme::{Palette, UiThemeAssets};
 
 /// Whether a HUD sidebar panel is currently docked in the right sidebar
 /// or floating as a `MovableWindow`.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub enum PanelMountMode {
+    #[default]
     Mounted,
-    Floating { last_position: Vec2 },
-}
-
-impl Default for PanelMountMode {
-    fn default() -> Self {
-        Self::Mounted
-    }
+    Floating {
+        last_position: Vec2,
+    },
 }
 
 /// Marker component on a per-instance UI widget (undock button, dock

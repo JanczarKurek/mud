@@ -137,7 +137,6 @@ pub struct NpcSummonPlan {
 
 /// Build the cast payload for the spell at `spells[spell_idx]`. Returns
 /// `None` when the entry references an unknown spell id.
-#[allow(clippy::too_many_arguments)]
 pub fn build_npc_cast_outcome(
     spell: &SpellDefinition,
     target_kind: NpcSpellTargetKind,

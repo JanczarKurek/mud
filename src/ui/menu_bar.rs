@@ -384,7 +384,6 @@ pub fn sync_menu_dropdowns(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn apply_menu_actions(
     mut commands: Commands,
     mut pending: ResMut<PendingMenuActions>,

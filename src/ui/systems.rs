@@ -289,12 +289,7 @@ pub fn manage_open_containers(
         | DockedPanelKind::Backpack
         | DockedPanelKind::NearbyNpcs => true,
         DockedPanelKind::Container { object_id } => player_position
-            .and_then(|player_position| {
-                client_state
-                    .world_objects
-                    .get(&object_id)
-                    .map(|object| (player_position, object))
-            })
+            .zip(client_state.world_objects.get(&object_id))
             .is_some_and(|(player_position, object)| {
                 object.is_container
                     && FloorGeometry::client(&client_state.floor_maps, &floor_defs).reachable(
@@ -454,7 +449,6 @@ pub fn nearby_npcs_inputs_changed(
 ///     nothing structurally changed.
 ///   - Phase B: every frame, refresh per-row visual state (dot color, HP fill,
 ///     target border) so HP ticks and aggro flips show up without rebuilds.
-#[allow(clippy::too_many_arguments)]
 pub fn sync_nearby_npcs_panel(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -700,7 +694,6 @@ fn spawn_nearby_npc_row(
 /// Runs before `CommandIntercept` *and* before `handle_use_on_targeting` /
 /// `handle_spell_targeting` so those world-targeting systems see the cleared
 /// state and don't double-fire from the same left-click.
-#[allow(clippy::too_many_arguments)]
 pub fn handle_nearby_npc_row_clicks(
     row_query: Query<(&Interaction, &NearbyNpcRow), Changed<Interaction>>,
     docked_panel_state: Res<DockedPanelState>,
@@ -1365,7 +1358,6 @@ pub fn sync_context_menu_entries(
 /// Hidden rows (`Display::None`) can never be `Interaction::Pressed`, so
 /// only currently-enabled actions can fire; the per-arm `can_*` gates from
 /// the old split handlers are kept anyway.
-#[allow(clippy::too_many_arguments)]
 pub fn handle_context_menu_actions(
     static_resources: (
         Res<ObjectRegistry>,
@@ -1851,7 +1843,6 @@ pub fn handle_spell_targeting(
 /// `UseTarget::ItemSlot` (modifier-granting consumable like a poison flask),
 /// depending on whether `item_targeting_state.spell_id` is set. ESC, a
 /// right-click, or a click that misses every slot cancels / is ignored.
-#[allow(clippy::too_many_arguments)]
 pub fn handle_item_targeting(
     mouse_input: Res<ButtonInput<MouseButton>>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
@@ -2041,7 +2032,6 @@ pub fn handle_attack_targeting(
 /// outside that mode. The DC display is computed from `ClientGameState`
 /// (skill ranks + replicated attributes), so embedded and remote clients see
 /// the same numbers the server will roll against.
-#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn sync_jump_targeting_ui(
     mut cursor_state: ResMut<CursorState>,
     client_state: Res<ClientGameState>,
@@ -2317,7 +2307,6 @@ pub fn handle_jump_targeting(
     cursor_state.reset_to_default();
 }
 
-#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn handle_context_menu_opening(
     mouse_input: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
@@ -3208,7 +3197,6 @@ fn find_best_take_destination(
     None
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn handle_movable_dragging(
     mouse_input: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,

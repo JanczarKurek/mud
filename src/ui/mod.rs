@@ -482,7 +482,6 @@ impl Plugin for UiPlugin {
 
 /// Despawn every entity tagged with `HudRoot` and reset HUD-owned UI state
 /// so a future `OnEnter(InGame)` rebuilds the HUD from a clean slate.
-#[allow(clippy::too_many_arguments)]
 fn teardown_hud(
     mut commands: Commands,
     hud_roots: Query<Entity, With<crate::ui::components::HudRoot>>,

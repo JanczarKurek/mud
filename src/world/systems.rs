@@ -21,7 +21,6 @@ use crate::world::resources::{
 use crate::world::setup::{spawn_client_projected_world_object, spawn_client_remote_player};
 use crate::world::WorldConfig;
 
-#[allow(clippy::too_many_arguments)]
 pub fn sync_client_world_projection(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -238,7 +237,6 @@ pub fn sync_client_world_projection(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn sync_remote_player_projection(
     mut commands: Commands,
     asset_server: Res<AssetServer>,

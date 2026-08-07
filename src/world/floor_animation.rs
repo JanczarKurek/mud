@@ -153,7 +153,6 @@ fn ensure_ripple_atlas(
 
 /// Ticks the Poisson scheduler. On each event, picks one random visible tile
 /// of any ripple-bearing floor type and spawns a non-looping overlay sprite.
-#[allow(clippy::too_many_arguments)]
 pub fn tick_floor_ripple_scheduler(
     time: Res<Time>,
     asset_server: Res<AssetServer>,

@@ -101,7 +101,6 @@ type DamageTargetQuery<'w, 's> = Query<
 /// Drains `PendingDamageEvents`, applies the damage, and runs death handling
 /// in one place. Registered after every damage producer and before
 /// `collect_game_events_from_authority`.
-#[allow(clippy::too_many_arguments)]
 pub fn apply_pending_damage(
     time: Res<Time>,
     mut pending: ResMut<PendingDamageEvents>,

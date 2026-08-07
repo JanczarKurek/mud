@@ -94,7 +94,6 @@ pub fn toggle_ai_debug_overlay(
 /// Spawn/update/despawn one box per NPC carrying its live AI state. When the
 /// overlay is off, despawns any remaining boxes. The box tracks the NPC's
 /// rendered position and is sized to its text.
-#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn sync_ai_debug_overlay(
     time: Res<Time>,
     mut overlay: ResMut<AiDebugOverlay>,
@@ -247,7 +246,6 @@ fn box_size(lines: &[String]) -> Vec2 {
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 fn build_overlay_lines(
     definition_id: &str,
     object_id: u64,

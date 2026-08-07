@@ -1161,7 +1161,6 @@ pub fn apply_pending_npc_summons(
 /// chat. Mirrors the player cast handler's effect-application surface but
 /// goes through the NPC-side primitives so player class/level/scroll gates
 /// don't interfere.
-#[allow(clippy::too_many_arguments)]
 fn execute_npc_spell_cast(
     spell: &SpellDefinition,
     target_kind: crate::npc::spellcasting::NpcSpellTargetKind,

@@ -14,7 +14,6 @@ use crate::world::object_registry::ObjectRegistry;
 use crate::world::setup::spawn_overworld_object;
 use crate::world::WorldConfig;
 
-#[allow(clippy::too_many_arguments)]
 pub fn handle_undo_redo(
     input: EditorHotkeyInput,
     modal_state: Res<ModalState>,
@@ -93,7 +92,6 @@ pub fn handle_undo_redo(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn execute_op(
     op: UndoOp,
     portal_buffer: &mut EditorPortalBuffer,

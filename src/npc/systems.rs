@@ -1464,7 +1464,6 @@ fn tick_flee(input: &mut StepAiInput<'_>, from: Entity, expires_at_seconds: f32)
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn nearest_visible_enemy(
     tile_position: TilePosition,
     space_id: SpaceId,
@@ -2027,15 +2026,7 @@ fn pick_wander_direction(
     momentum_bias: f32,
     last_step: Option<IVec2>,
 ) -> IVec2 {
-    let last = last_step.and_then(|delta| {
-        // Only cardinal lasts are meaningful for momentum; ignore diagonals
-        // that might have been left over from a return-to-bounds 8-way step.
-        if (delta.x == 0) ^ (delta.y == 0) {
-            Some(delta)
-        } else {
-            None
-        }
-    });
+    let last = last_step.filter(|&delta| (delta.x == 0) ^ (delta.y == 0));
 
     let Some(last_step) = last else {
         // No momentum hint — uniform random over cardinals.

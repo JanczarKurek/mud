@@ -30,7 +30,6 @@ fn sample(grid: &FloorMap, x: i32, y: i32) -> Option<&FloorTypeId> {
     grid.get(x, y)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn rebuild_render_cells(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -102,7 +101,6 @@ fn spawn_debug_tile(
     ));
 }
 
-#[allow(clippy::too_many_arguments)]
 fn spawn_corner(
     commands: &mut Commands,
     asset_server: &AssetServer,

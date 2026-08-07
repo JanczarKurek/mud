@@ -187,7 +187,6 @@ pub struct FloorDiffCache {
 /// `Vec<GameEvent>` that, when folded into `previous`, produces the peer's
 /// next `ClientGameState`. Passing `&ClientGameState::default()` as `previous`
 /// yields a full bootstrap sequence for a newly connected client.
-#[allow(clippy::too_many_arguments)]
 pub fn compute_events_for_peer(
     local_player_id: PlayerId,
     previous: &ClientGameState,
@@ -946,7 +945,6 @@ fn emit_container_events(
 /// World-object domain: upserts changed in-range world objects (with the
 /// hidden-object and awareness gating) and removes baseline entries that
 /// fell out of view.
-#[allow(clippy::too_many_arguments)]
 fn emit_world_object_events(
     local_player_id: PlayerId,
     previous: &ClientGameState,
@@ -1208,7 +1206,6 @@ fn emit_trade_events(
 /// authoritative player entity and calls [`compute_events_for_peer`] with the
 /// current `ClientGameState` as baseline. Writes the result into
 /// `PendingGameEvents` for `apply_game_events_to_client_state` to fold.
-#[allow(clippy::too_many_arguments)]
 pub fn collect_game_events_from_authority(
     client_state: Res<ClientGameState>,
     space_manager: Res<SpaceManager>,

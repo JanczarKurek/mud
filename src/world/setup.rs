@@ -76,7 +76,6 @@ pub fn initialize_runtime_spaces(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn instantiate_space(
     commands: &mut Commands,
     space_manager: &mut SpaceManager,
@@ -131,7 +130,6 @@ pub fn instantiate_space(
     space_id
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn resolve_portal_destination_space(
     commands: &mut Commands,
     authored_spaces: &SpaceDefinitions,
@@ -370,10 +368,9 @@ pub fn realize_npc(
     entity: Entity,
     definition: Option<&OverworldObjectDefinition>,
     object_id: u64,
-    type_id: &str,
+    _type_id: &str,
     behavior: &MapBehavior,
 ) {
-    let _ = type_id;
     let base_stats = npc_base_stats_from_definition(definition);
     let derived_stats = DerivedStats::from_base(&base_stats);
     let level = definition.and_then(|d| d.level).unwrap_or(1);
@@ -628,7 +625,6 @@ macro_rules! apply_overworld_definition_components {
     }};
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn spawn_overworld_object(
     commands: &mut Commands,
     definitions: &OverworldObjectDefinitions,
@@ -680,7 +676,6 @@ pub fn spawn_overworld_object(
     entity.id()
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn spawn_client_projected_world_object(
     commands: &mut Commands,
     asset_server: &AssetServer,
@@ -739,7 +734,6 @@ pub fn spawn_client_projected_world_object(
     entity
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn spawn_client_remote_player(
     commands: &mut Commands,
     asset_server: &AssetServer,

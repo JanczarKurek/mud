@@ -935,7 +935,6 @@ fn text_row(
     );
 }
 
-#[allow(clippy::too_many_arguments)]
 fn rect_row(
     parent: &mut ChildSpawnerCommands,
     palette: &Palette,

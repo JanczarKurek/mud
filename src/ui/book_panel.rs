@@ -151,7 +151,6 @@ pub struct BookPanelRenderState {
     pub last_revision: u64,
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn sync_book_window_lifecycle(
     mut commands: Commands,
     mut state: ResMut<BookPanelState>,
@@ -279,7 +278,6 @@ fn spawn_panel_button<M: Component>(
 /// Rebuild the movable-window body on revision change. Edit mode swaps
 /// read-only `Text` nodes for `TextEdit` anchors that the install system
 /// promotes on the same frame.
-#[allow(clippy::too_many_arguments)]
 pub fn sync_book_panel_body(
     mut render_state: ResMut<BookPanelRenderState>,
     state: Res<BookPanelState>,
@@ -516,7 +514,6 @@ pub fn install_book_editors(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn handle_book_panel_clicks(
     mut state: ResMut<BookPanelState>,
     mut pending: ResMut<PendingGameCommands>,

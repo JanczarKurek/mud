@@ -748,7 +748,6 @@ fn hue_label(hue: f32) -> String {
     format!("{:03}°", hue.rem_euclid(360.0).round() as i32)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn spawn_appearance_preview(
     parent: &mut ChildSpawnerCommands,
     palette: &Palette,
@@ -989,7 +988,6 @@ fn handle_hue_buttons(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn sync_form_text(
     state: Res<CharacterCreateState>,
     mut name_text: Query<&mut Text, With<NameFieldText>>,
@@ -1092,7 +1090,6 @@ fn sync_form_text(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn handle_create_actions(
     mut state: ResMut<CharacterCreateState>,
     mut next_state: ResMut<NextState<ClientAppState>>,

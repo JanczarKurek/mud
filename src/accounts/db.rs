@@ -306,7 +306,6 @@ impl AccountDb {
     /// points/ability bumps leveling 1 → `level` would have earned) and with
     /// `seed_inventory` instead of an empty one. Used by the debug character
     /// presets; normal creation always goes through `create_character`.
-    #[allow(clippy::too_many_arguments)]
     pub fn create_character_at_level(
         &mut self,
         account_id: i64,

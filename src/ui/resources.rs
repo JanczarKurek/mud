@@ -50,7 +50,6 @@ pub struct ContextMenuState {
 }
 
 impl ContextMenuState {
-    #[allow(clippy::too_many_arguments)]
     pub fn show(
         &mut self,
         position: Vec2,
@@ -784,17 +783,12 @@ impl CursorState {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Default)]
 pub enum MinimapZoom {
     Close,
+    #[default]
     Medium,
     Far,
-}
-
-impl Default for MinimapZoom {
-    fn default() -> Self {
-        Self::Medium
-    }
 }
 
 impl MinimapZoom {

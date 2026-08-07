@@ -200,7 +200,6 @@ pub struct MovableWindowEntities {
 ///
 /// `min_size` is the floor enforced by the shared resize system; pass
 /// [`MOVABLE_WINDOW_DEFAULT_MIN_SIZE`] if no per-window minimum is needed.
-#[allow(clippy::too_many_arguments)]
 pub fn spawn_movable_window(
     commands: &mut Commands,
     theme: &UiThemeAssets,
@@ -318,7 +317,6 @@ pub fn spawn_movable_window(
 /// shared by the Skills / Log / Recipes / Character / GM Tools panels;
 /// per-panel extras (additional children, layout tweaks) stay at the call
 /// site using the returned entity handles.
-#[allow(clippy::too_many_arguments)]
 pub fn spawn_standard_window(
     commands: &mut Commands,
     theme: &UiThemeAssets,
@@ -523,7 +521,6 @@ fn handle_movable_window_resize(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn handle_movable_window_drag(
     mouse_input: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,

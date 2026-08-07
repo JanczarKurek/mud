@@ -3,8 +3,6 @@
 //! land as a single `UndoOp::Composite` so the whole stroke undoes in one
 //! step.
 
-#![allow(clippy::too_many_arguments)]
-
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
@@ -38,7 +36,6 @@ pub struct RectFillDragState {
 
 /// On LMB-press in rect mode, store anchor. On LMB-release, stamp the
 /// rectangle. Works for both object and floor brushes.
-#[allow(clippy::too_many_arguments)]
 pub fn handle_editor_rect_fill(
     mouse: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<PrimaryWindow>>,
@@ -189,7 +186,6 @@ pub fn handle_editor_rect_fill(
 /// Triggered by LMB click while `fill_mode == Flood`. For objects: flood
 /// over empty cells, stamping the selected type. For floors: flood the
 /// contiguous floor-id region with the selected floor.
-#[allow(clippy::too_many_arguments)]
 pub fn handle_editor_flood_fill(
     mouse: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<PrimaryWindow>>,

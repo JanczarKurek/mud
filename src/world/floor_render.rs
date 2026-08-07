@@ -226,7 +226,6 @@ pub fn pick_variant(space_id: SpaceId, rx: i32, ry: i32, weights: &[u32]) -> usi
     weights.len() - 1
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn build_floor_render_cells(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -453,7 +452,6 @@ pub fn build_floor_render_cells(
 /// inserts new ones. Shared between the in-game build path
 /// (`build_floor_render_cells`) and the editor build path
 /// (`crate::editor::floor_render::editor_build_floor_render_cells`).
-#[allow(clippy::too_many_arguments)]
 pub fn rebuild_floor_render_cells_for_grid(
     commands: &mut Commands,
     asset_server: &AssetServer,
@@ -591,7 +589,6 @@ pub fn hard_edge_entries<'a>(
     entries
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_render_cells_at_corner(
     commands: &mut Commands,
     asset_server: &AssetServer,
@@ -699,7 +696,6 @@ pub(crate) fn spawn_render_cells_at_corner(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn spawn_floor_cell(
     commands: &mut Commands,
     asset_server: &AssetServer,
@@ -863,7 +859,6 @@ fn spawn_floor_cell(
 /// full-cell atlas sprite when any contributing quadrant lands on a masked tile,
 /// so floor only draws inside the wall's interior rectangle. Each quadrant draws
 /// the matching sub-region of the atlas tile `idx` via `Sprite::rect`.
-#[allow(clippy::too_many_arguments)]
 fn spawn_masked_floor_quadrants(
     commands: &mut Commands,
     image_handle: &Handle<Image>,
@@ -948,7 +943,6 @@ fn spawn_masked_floor_quadrants(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn spawn_transition_cell(
     commands: &mut Commands,
     asset_server: &AssetServer,

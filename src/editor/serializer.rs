@@ -231,7 +231,6 @@ fn build_object_entries(items: Vec<Item>) -> Vec<ObjectEntryOutput> {
 }
 
 /// Collect objects from ECS, serialize as YAML, write to disk.
-#[allow(clippy::too_many_arguments)]
 pub fn serialize_and_save(
     ctx: &EditorContext,
     portal_buffer: &EditorPortalBuffer,

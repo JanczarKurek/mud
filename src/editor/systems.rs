@@ -41,7 +41,6 @@ use crate::world::WorldConfig;
 
 // ── Visuals helper (public so undo.rs can use it) ────────────────────────────
 
-#[allow(clippy::too_many_arguments)]
 pub fn insert_editor_visuals_pub(
     entity_commands: &mut EntityCommands,
     asset_server: &AssetServer,
@@ -115,7 +114,6 @@ fn insert_editor_visuals(
 /// Called when entering the editor and on file-open so the view reflects the
 /// YAML rather than whatever runtime state happened to be in the world (spawn-
 /// group NPCs, dropped items, gameplay-mutated state).
-#[allow(clippy::too_many_arguments)]
 pub fn reset_space_contents_from_def(
     commands: &mut Commands,
     space_id: SpaceId,
@@ -308,7 +306,6 @@ pub fn init_portal_buffer(
     vendor_stash_buffer.pending_ware_pick = None;
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn attach_editor_visuals(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -553,7 +550,6 @@ pub struct DragPanState {
 /// cursor 1:1 in tile units. Composes with `handle_editor_camera_pan`
 /// (keyboard) — both can run in the same frame. A press that begins over UI
 /// is ignored for the full duration of the hold.
-#[allow(clippy::too_many_arguments)]
 pub fn handle_editor_middle_drag_pan(
     mouse: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<PrimaryWindow>>,
@@ -620,7 +616,6 @@ pub fn handle_editor_middle_drag_pan(
 /// debug-color rect) so the user can see what would be placed before
 /// committing. Despawn-and-respawn each frame keeps it stateless — tool /
 /// selection / camera changes show up immediately on the next frame.
-#[allow(clippy::too_many_arguments)]
 pub fn update_editor_cursor_ghost(
     mut commands: Commands,
     mut gizmos: Gizmos,
@@ -776,7 +771,6 @@ pub fn update_editor_cursor_ghost(
 
 // ── Left / right click ────────────────────────────────────────────────────────
 
-#[allow(clippy::too_many_arguments)]
 pub fn handle_editor_left_click(
     mouse: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<PrimaryWindow>>,
@@ -983,7 +977,6 @@ pub fn handle_editor_left_click(
     editor_state.dirty = true;
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn handle_editor_right_click(
     mouse: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<PrimaryWindow>>,
@@ -1097,7 +1090,6 @@ pub fn handle_editor_right_click(
 /// current one and emit one paint command per cell along the way. The
 /// `last_painted` local resets on mouse-up or tool change so a fresh drag
 /// doesn't draw a line back to wherever the previous drag ended.
-#[allow(clippy::too_many_arguments)]
 /// Accumulates the undo record for one continuous floor-brush stroke so a
 /// single Ctrl+Z reverts the whole drag rather than one tile per frame. Held in
 /// a `Local` on [`handle_editor_floor_brush_drag`]; [`FloorStrokeUndo::flush`]
@@ -1151,7 +1143,6 @@ impl FloorStrokeUndo {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn handle_editor_floor_brush_drag(
     mouse: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<PrimaryWindow>>,
@@ -1558,7 +1549,6 @@ pub fn handle_editor_floor_brush_hotkey(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn handle_editor_save(
     keyboard: Res<ButtonInput<KeyCode>>,
     editor_keys: Res<crate::ui::settings::EditorKeybindings>,
@@ -2427,7 +2417,6 @@ fn parse_rect(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn apply_modal_confirmed(
     mut modal_state: ResMut<ModalState>,
     mut view: EditorViewState,
