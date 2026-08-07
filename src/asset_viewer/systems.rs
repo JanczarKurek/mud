@@ -8,6 +8,9 @@ use crate::asset_viewer::reload::{AssetReloadRequest, ReloadKind};
 use crate::asset_viewer::resources::{
     AssetKind, InspectorBuffer, PreviewState, SelfWriteSuppressor, ViewerState,
 };
+use crate::editor::ui::palette::{
+    filter_box_colors, palette_row_colors, PaletteClickHost, PaletteHost, PaletteRowItem,
+};
 use crate::world::animation::AnimatedSprite;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 
@@ -275,33 +278,50 @@ pub fn handle_viewer_zoom(
 }
 
 // ── Palette ───────────────────────────────────────────────────────────────────
+//
+// The filter box, row clicks, and filter-text rendering are shared with the
+// map editor's palette: `ViewerState` implements the palette-core traits from
+// `crate::editor::ui::palette`, and the plugin registers the generic systems
+// (`handle_palette_item_clicks`, `handle_palette_filter_click_generic`,
+// `sync_palette_filter_text_generic`) over it.
 
-pub fn handle_palette_clicks(
-    mut viewer_state: ResMut<ViewerState>,
-    items: Query<(&ViewerPaletteItem, &Interaction), (Changed<Interaction>, With<Button>)>,
-) {
-    for (item, interaction) in &items {
-        if *interaction == Interaction::Pressed {
-            viewer_state.filter_focused = false;
-            if viewer_state.selected_id.as_deref() == Some(&item.id)
-                && viewer_state.selected_kind == item.kind
-            {
-                viewer_state.selected_id = None;
-            } else {
-                viewer_state.selected_id = Some(item.id.clone());
-                viewer_state.selected_kind = item.kind;
-            }
-        }
+impl PaletteHost for ViewerState {
+    const FILTER_PLACEHOLDER: &'static str = "filter…";
+
+    fn filter(&self) -> &str {
+        &self.filter
+    }
+
+    fn filter_focused(&self) -> bool {
+        self.filter_focused
+    }
+
+    fn set_filter_focused(&mut self, focused: bool) {
+        self.filter_focused = focused;
+    }
+
+    fn unfocused_filter_display(&self) -> String {
+        format!("  {}", self.filter)
     }
 }
 
-pub fn handle_filter_click(
-    filter_btn: Query<&Interaction, (Changed<Interaction>, With<ViewerFilterBox>)>,
-    mut viewer_state: ResMut<ViewerState>,
-) {
-    for interaction in &filter_btn {
-        if *interaction == Interaction::Pressed {
-            viewer_state.filter_focused = true;
+impl PaletteRowItem for ViewerPaletteItem {
+    fn item_id(&self) -> &str {
+        &self.id
+    }
+
+    fn item_display_name(&self) -> &str {
+        &self.display_name
+    }
+}
+
+impl PaletteClickHost<ViewerPaletteItem> for ViewerState {
+    fn palette_item_clicked(&mut self, item: &ViewerPaletteItem) {
+        if self.selected_id.as_deref() == Some(&item.id) && self.selected_kind == item.kind {
+            self.selected_id = None;
+        } else {
+            self.selected_id = Some(item.id.clone());
+            self.selected_kind = item.kind;
         }
     }
 }
@@ -345,9 +365,7 @@ pub fn sync_palette(
             *vis = Visibility::Hidden;
             continue;
         }
-        let matches = filter.is_empty()
-            || item.id.to_lowercase().contains(&filter)
-            || item.display_name.to_lowercase().contains(&filter);
+        let matches = item.matches_filter(&filter);
         *vis = if matches {
             Visibility::Visible
         } else {
@@ -358,76 +376,15 @@ pub fn sync_palette(
         }
 
         let is_selected = viewer_state.selected_id.as_deref() == Some(&item.id);
-        let (bg_color, border_color) = match (*interaction, is_selected) {
-            (Interaction::Pressed, _) => {
-                (Color::srgb(0.50, 0.28, 0.12), Color::srgb(0.98, 0.84, 0.58))
-            }
-            (Interaction::Hovered, true) => {
-                (Color::srgb(0.35, 0.20, 0.10), Color::srgb(0.98, 0.84, 0.58))
-            }
-            (Interaction::Hovered, false) => {
-                (Color::srgb(0.20, 0.13, 0.10), Color::srgb(0.60, 0.45, 0.28))
-            }
-            (Interaction::None, true) => {
-                (Color::srgb(0.28, 0.16, 0.08), Color::srgb(0.90, 0.76, 0.50))
-            }
-            (Interaction::None, false) => (
-                Color::srgba(0.10, 0.07, 0.06, 0.80),
-                Color::srgb(0.20, 0.15, 0.10),
-            ),
-        };
+        let (bg_color, border_color) = palette_row_colors(*interaction, is_selected);
         bg.0 = bg_color;
         *border = BorderColor::all(border_color);
     }
 
     for (interaction, mut bg, mut border) in &mut filter_box {
-        let (b, br) = if viewer_state.filter_focused {
-            (
-                Color::srgba(0.12, 0.08, 0.06, 0.95),
-                Color::srgb(0.90, 0.72, 0.40),
-            )
-        } else {
-            match *interaction {
-                Interaction::Hovered => (
-                    Color::srgba(0.12, 0.08, 0.06, 0.95),
-                    Color::srgb(0.50, 0.38, 0.22),
-                ),
-                _ => (
-                    Color::srgba(0.08, 0.05, 0.05, 0.90),
-                    Color::srgb(0.25, 0.18, 0.12),
-                ),
-            }
-        };
+        let (b, br) = filter_box_colors(*interaction, viewer_state.filter_focused);
         bg.0 = b;
         *border = BorderColor::all(br);
-    }
-}
-
-pub fn sync_filter_text(
-    viewer_state: Res<ViewerState>,
-    filter_box: Query<Entity, With<ViewerFilterBox>>,
-    children: Query<&Children>,
-    mut texts: Query<&mut Text>,
-) {
-    if !viewer_state.is_changed() {
-        return;
-    }
-    let Ok(box_entity) = filter_box.single() else {
-        return;
-    };
-    let Ok(kids) = children.get(box_entity) else {
-        return;
-    };
-    for child in kids.iter() {
-        if let Ok(mut text) = texts.get_mut(child) {
-            text.0 = if viewer_state.filter_focused {
-                format!("{}_", viewer_state.filter)
-            } else if viewer_state.filter.is_empty() {
-                "filter…".into()
-            } else {
-                format!("  {}", viewer_state.filter)
-            };
-        }
     }
 }
 

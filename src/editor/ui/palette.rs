@@ -59,6 +59,361 @@ pub struct EditorPaletteCategoryHeader {
     pub name: Option<String>,
 }
 
+// ─── Shared palette core ─────────────────────────────────────────────────────
+//
+// Everything in this section is host-agnostic: it is parameterized over a
+// `PaletteHost` resource (the editor's `EditorState`, the asset viewer's
+// `ViewerState`) and over marker components, so both palettes share one
+// implementation of the filter box, row spawning, and click plumbing.
+
+/// Background of every palette row button (list rows, recent rows, floor rows).
+pub(crate) const PALETTE_ROW_BG: Color = Color::srgba(0.10, 0.07, 0.06, 0.80);
+/// Border of every palette row button.
+pub(crate) const PALETTE_ROW_BORDER: Color = Color::srgb(0.20, 0.15, 0.10);
+/// Label color of palette rows and toggles.
+pub(crate) const PALETTE_ROW_TEXT: Color = Color::srgb(0.88, 0.84, 0.78);
+
+/// State a palette panel needs from its host resource: the filter text and
+/// its focus flag.
+pub trait PaletteHost: Resource {
+    /// Placeholder shown when the filter is empty and unfocused.
+    const FILTER_PLACEHOLDER: &'static str;
+
+    fn filter(&self) -> &str;
+    fn filter_focused(&self) -> bool;
+    fn set_filter_focused(&mut self, focused: bool);
+
+    /// How a non-empty filter renders while the box is unfocused.
+    fn unfocused_filter_display(&self) -> String {
+        self.filter().to_owned()
+    }
+}
+
+/// A clickable palette row: an id plus a display name, both matched against
+/// the filter text.
+pub trait PaletteRowItem: Component {
+    fn item_id(&self) -> &str;
+    fn item_display_name(&self) -> &str;
+
+    /// `filter` must already be lowercased.
+    fn matches_filter(&self, filter: &str) -> bool {
+        filter.is_empty()
+            || self.item_id().to_lowercase().contains(filter)
+            || self.item_display_name().to_lowercase().contains(filter)
+    }
+}
+
+/// Host-specific reaction to a click on a palette row. The shared plumbing
+/// ([`process_palette_clicks`]) unfocuses the filter first, then delegates.
+pub trait PaletteClickHost<I: PaletteRowItem>: PaletteHost {
+    fn palette_item_clicked(&mut self, item: &I);
+}
+
+impl PaletteHost for EditorState {
+    const FILTER_PLACEHOLDER: &'static str = "filter...";
+
+    fn filter(&self) -> &str {
+        &self.palette_filter
+    }
+
+    fn filter_focused(&self) -> bool {
+        self.palette_filter_focused
+    }
+
+    fn set_filter_focused(&mut self, focused: bool) {
+        self.palette_filter_focused = focused;
+    }
+}
+
+impl PaletteRowItem for EditorPaletteItem {
+    fn item_id(&self) -> &str {
+        &self.type_id
+    }
+
+    fn item_display_name(&self) -> &str {
+        &self.display_name
+    }
+}
+
+impl PaletteClickHost<EditorPaletteItem> for EditorState {
+    fn palette_item_clicked(&mut self, item: &EditorPaletteItem) {
+        // Clicking an object palette item switches back to the object brush,
+        // so selection in this list is always active immediately.
+        self.current_tool = EditorTool::Brush;
+        if self.selected_type_id.as_deref() == Some(&item.type_id) {
+            self.selected_type_id = None;
+        } else {
+            let id = item.type_id.clone();
+            self.selected_type_id = Some(id.clone());
+            self.selected_object_id = None;
+            self.touch_recent_object(&id);
+        }
+    }
+}
+
+/// The `(background, border)` pair for a palette row (or toggle) given its
+/// interaction and selection state.
+pub fn palette_row_colors(interaction: Interaction, selected: bool) -> (Color, Color) {
+    match (interaction, selected) {
+        (Interaction::Pressed, _) => (Color::srgb(0.50, 0.28, 0.12), Color::srgb(0.98, 0.84, 0.58)),
+        (Interaction::Hovered, true) => {
+            (Color::srgb(0.35, 0.20, 0.10), Color::srgb(0.98, 0.84, 0.58))
+        }
+        (Interaction::Hovered, false) => {
+            (Color::srgb(0.20, 0.13, 0.10), Color::srgb(0.60, 0.45, 0.28))
+        }
+        (Interaction::None, true) => (Color::srgb(0.28, 0.16, 0.08), Color::srgb(0.90, 0.76, 0.50)),
+        (Interaction::None, false) => (PALETTE_ROW_BG, PALETTE_ROW_BORDER),
+    }
+}
+
+/// The `(background, border)` pair for the filter box.
+pub fn filter_box_colors(interaction: Interaction, focused: bool) -> (Color, Color) {
+    if focused {
+        (
+            Color::srgba(0.12, 0.08, 0.06, 0.95),
+            Color::srgb(0.90, 0.72, 0.40),
+        )
+    } else {
+        match interaction {
+            Interaction::Hovered => (
+                Color::srgba(0.12, 0.08, 0.06, 0.95),
+                Color::srgb(0.50, 0.38, 0.22),
+            ),
+            _ => (
+                Color::srgba(0.08, 0.05, 0.05, 0.90),
+                Color::srgb(0.25, 0.18, 0.12),
+            ),
+        }
+    }
+}
+
+/// Spawns the clickable filter row: `Button + marker` with a placeholder
+/// label. `flex_shrink` is forwarded so each host keeps its existing layout
+/// behavior (the editor lets the row shrink, the viewer pins it).
+pub fn spawn_filter_row(
+    parent: &mut ChildSpawnerCommands,
+    marker: impl Bundle,
+    placeholder: &str,
+    flex_shrink: f32,
+) {
+    let (bg, border) = filter_box_colors(Interaction::None, false);
+    parent
+        .spawn((
+            marker,
+            Button,
+            Node {
+                width: Val::Percent(100.0),
+                padding: UiRect::axes(Val::Px(8.0), Val::Px(5.0)),
+                border: UiRect::bottom(Val::Px(1.0)),
+                align_items: AlignItems::Center,
+                flex_shrink,
+                ..default()
+            },
+            BackgroundColor(bg),
+            BorderColor::all(border),
+        ))
+        .with_children(|row| {
+            row.spawn((
+                Text::new(placeholder.to_owned()),
+                TextFont {
+                    font_size: 11.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.50, 0.46, 0.42)),
+            ));
+        });
+}
+
+/// Per-host styling knobs for [`spawn_palette_row`].
+#[derive(Clone, Copy)]
+pub struct PaletteRowStyle {
+    pub swatch_px: f32,
+    /// Draw a 1px [`BUTTON_BORDER`] outline around the swatch (floor rows).
+    pub swatch_border: bool,
+    pub row_pad_y: f32,
+    pub label_font_size: f32,
+    pub label_flex_grow: f32,
+}
+
+impl PaletteRowStyle {
+    /// Full-height list rows (editor object/floor lists).
+    pub const fn list(swatch_border: bool) -> Self {
+        Self {
+            swatch_px: 12.0,
+            swatch_border,
+            row_pad_y: 5.0,
+            label_font_size: 11.0,
+            label_flex_grow: 0.0,
+        }
+    }
+
+    /// Compact rows in the editor's "Recent" strips.
+    pub const fn recent(swatch_border: bool) -> Self {
+        Self {
+            swatch_px: 10.0,
+            swatch_border,
+            row_pad_y: 4.0,
+            label_font_size: 11.0,
+            label_flex_grow: 0.0,
+        }
+    }
+}
+
+/// Spawns one palette row: `Button + marker`, a color swatch, and a clipped
+/// text label.
+pub fn spawn_palette_row(
+    parent: &mut ChildSpawnerCommands,
+    marker: impl Bundle,
+    label: &str,
+    swatch_color: Color,
+    style: PaletteRowStyle,
+) {
+    parent
+        .spawn((
+            Button,
+            marker,
+            Node {
+                width: Val::Percent(100.0),
+                padding: UiRect::axes(Val::Px(8.0), Val::Px(style.row_pad_y)),
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(6.0),
+                border: UiRect::bottom(Val::Px(1.0)),
+                ..default()
+            },
+            BackgroundColor(PALETTE_ROW_BG),
+            BorderColor::all(PALETTE_ROW_BORDER),
+        ))
+        .with_children(|btn| {
+            let mut swatch_node = Node {
+                width: Val::Px(style.swatch_px),
+                height: Val::Px(style.swatch_px),
+                flex_shrink: 0.0,
+                ..default()
+            };
+            if style.swatch_border {
+                swatch_node.border = UiRect::all(Val::Px(1.0));
+            }
+            let mut swatch = btn.spawn((swatch_node, BackgroundColor(swatch_color)));
+            if style.swatch_border {
+                swatch.insert(BorderColor::all(BUTTON_BORDER));
+            }
+            btn.spawn((
+                Text::new(label.to_owned()),
+                TextFont {
+                    font_size: style.label_font_size,
+                    ..default()
+                },
+                TextColor(PALETTE_ROW_TEXT),
+                Node {
+                    overflow: Overflow::clip_x(),
+                    flex_grow: style.label_flex_grow,
+                    ..default()
+                },
+            ));
+        });
+}
+
+/// Renders the filter box's text from the host state: `text_` while focused,
+/// the placeholder while empty, otherwise the host's unfocused rendering.
+pub fn sync_palette_filter_text_generic<H: PaletteHost, M: Component>(
+    state: Res<H>,
+    filter_box: Query<Entity, With<M>>,
+    children: Query<&Children>,
+    mut texts: Query<&mut Text>,
+) {
+    if !state.is_changed() {
+        return;
+    }
+    let Ok(box_entity) = filter_box.single() else {
+        return;
+    };
+    let Ok(kids) = children.get(box_entity) else {
+        return;
+    };
+    for child in kids.iter() {
+        if let Ok(mut text) = texts.get_mut(child) {
+            text.0 = if state.filter_focused() {
+                format!("{}_", state.filter())
+            } else if state.filter().is_empty() {
+                H::FILTER_PLACEHOLDER.to_owned()
+            } else {
+                state.unfocused_filter_display()
+            };
+        }
+    }
+}
+
+/// Focuses the filter box when it is clicked.
+pub fn handle_palette_filter_click_generic<H: PaletteHost, M: Component>(
+    filter_btn: Query<&Interaction, (Changed<Interaction>, With<M>)>,
+    mut state: ResMut<H>,
+) {
+    for interaction in &filter_btn {
+        if *interaction == Interaction::Pressed {
+            state.set_filter_focused(true);
+        }
+    }
+}
+
+/// Shared body of the palette-row click handlers: a press unfocuses the
+/// filter, then hands the row to the host. Takes the `ResMut` itself so
+/// change detection only fires on an actual press.
+pub fn process_palette_clicks<'a, H, I>(
+    state: &mut ResMut<H>,
+    items: impl IntoIterator<Item = (&'a I, &'a Interaction)>,
+) where
+    H: PaletteClickHost<I>,
+    I: PaletteRowItem + 'a,
+{
+    for (item, interaction) in items {
+        if *interaction == Interaction::Pressed {
+            let state = &mut **state;
+            state.set_filter_focused(false);
+            state.palette_item_clicked(item);
+        }
+    }
+}
+
+/// Generic palette click system for hosts without extra gating (the editor
+/// gates on pick-modes and wraps [`process_palette_clicks`] itself).
+pub fn handle_palette_item_clicks<H, I>(
+    mut state: ResMut<H>,
+    items: Query<(&I, &Interaction), (Changed<Interaction>, With<Button>)>,
+) where
+    H: PaletteClickHost<I>,
+    I: PaletteRowItem,
+{
+    process_palette_clicks(&mut state, items.iter());
+}
+
+/// Small darker header row used above list sections ("Recent", category
+/// names).
+fn spawn_list_header(parent: &mut ChildSpawnerCommands, marker: impl Bundle, label: &str) {
+    parent
+        .spawn((
+            marker,
+            Node {
+                width: Val::Percent(100.0),
+                padding: UiRect::axes(Val::Px(8.0), Val::Px(3.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.04, 0.03, 0.02, 0.85)),
+        ))
+        .with_children(|h| {
+            h.spawn((
+                Text::new(label.to_owned()),
+                TextFont {
+                    font_size: 10.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.70, 0.55, 0.34)),
+            ));
+        });
+}
+
+// ─── Editor palette panel ────────────────────────────────────────────────────
+
 pub fn spawn_palette_panel(
     parent: &mut ChildSpawnerCommands,
     definitions: &OverworldObjectDefinitions,
@@ -100,31 +455,14 @@ pub fn spawn_palette_panel(
                     ));
                 });
 
-            // Filter row
-            panel
-                .spawn((
-                    EditorPaletteFilterBox,
-                    Button,
-                    Node {
-                        width: Val::Percent(100.0),
-                        padding: UiRect::axes(Val::Px(8.0), Val::Px(5.0)),
-                        border: UiRect::bottom(Val::Px(1.0)),
-                        align_items: AlignItems::Center,
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgba(0.08, 0.05, 0.05, 0.90)),
-                    BorderColor::all(Color::srgb(0.25, 0.18, 0.12)),
-                ))
-                .with_children(|row| {
-                    row.spawn((
-                        Text::new("filter..."),
-                        TextFont {
-                            font_size: 11.0,
-                            ..default()
-                        },
-                        TextColor(Color::srgb(0.50, 0.46, 0.42)),
-                    ));
-                });
+            // Filter row (flex_shrink 1.0 = the row may shrink with the panel,
+            // matching the editor's historical layout).
+            spawn_filter_row(
+                panel,
+                EditorPaletteFilterBox,
+                EditorState::FILTER_PLACEHOLDER,
+                1.0,
+            );
 
             // "Recent" strip — populated/refreshed by `sync_recent_strip`
             // each frame from `EditorState.recent_object_types`.
@@ -184,83 +522,31 @@ pub fn spawn_palette_panel(
 
                     for (category, mut ids) in groups {
                         ids.sort();
-                        // Only render a header if at least one of the named
-                        // groups exists (avoids a lonely "Uncategorized" label
-                        // on legacy maps with no categories authored yet).
                         let header_label = category
                             .clone()
                             .unwrap_or_else(|| "Uncategorized".to_owned());
-                        let any_named = category.is_some() || ids.is_empty();
-                        let _ = any_named;
-                        list.spawn((
+                        spawn_list_header(
+                            list,
                             EditorPaletteCategoryHeader {
                                 name: category.clone(),
                             },
-                            Node {
-                                width: Val::Percent(100.0),
-                                padding: UiRect::axes(Val::Px(8.0), Val::Px(3.0)),
-                                ..default()
-                            },
-                            BackgroundColor(Color::srgba(0.04, 0.03, 0.02, 0.85)),
-                        ))
-                        .with_children(|h| {
-                            h.spawn((
-                                Text::new(header_label),
-                                TextFont {
-                                    font_size: 10.0,
-                                    ..default()
-                                },
-                                TextColor(Color::srgb(0.70, 0.55, 0.34)),
-                            ));
-                        });
+                            &header_label,
+                        );
 
                         for type_id in ids {
                             let Some(def) = definitions.get(type_id) else {
                                 continue;
                             };
-                            let color = def.debug_color();
-                            let display_name = def.name.clone();
-
-                            list.spawn((
-                                Button,
+                            spawn_palette_row(
+                                list,
                                 EditorPaletteItem {
                                     type_id: type_id.to_owned(),
-                                    display_name: display_name.clone(),
+                                    display_name: def.name.clone(),
                                 },
-                                Node {
-                                    width: Val::Percent(100.0),
-                                    padding: UiRect::axes(Val::Px(8.0), Val::Px(5.0)),
-                                    align_items: AlignItems::Center,
-                                    column_gap: Val::Px(6.0),
-                                    border: UiRect::bottom(Val::Px(1.0)),
-                                    ..default()
-                                },
-                                BackgroundColor(Color::srgba(0.10, 0.07, 0.06, 0.80)),
-                                BorderColor::all(Color::srgb(0.20, 0.15, 0.10)),
-                            ))
-                            .with_children(|btn| {
-                                btn.spawn((
-                                    Node {
-                                        width: Val::Px(12.0),
-                                        height: Val::Px(12.0),
-                                        flex_shrink: 0.0,
-                                        ..default()
-                                    },
-                                    BackgroundColor(color),
-                                ));
-                                btn.spawn((
-                                    Text::new(display_name),
-                                    TextFont {
-                                        font_size: 11.0,
-                                        ..default()
-                                    },
-                                    TextColor(Color::srgb(0.88, 0.84, 0.78)),
-                                    Node {
-                                        overflow: Overflow::clip_x(),
-                                        ..default()
-                                    },
-                                ));
-                            });
+                                &def.name,
+                                def.debug_color(),
+                                PaletteRowStyle::list(false),
+                            );
                         }
                     }
                 });
@@ -360,47 +646,13 @@ fn spawn_floor_row(
     label: &str,
     swatch_color: Color,
 ) {
-    list.spawn((
-        Button,
-        EditorFloorPaletteItem {
-            floor_id: floor_id.clone(),
-        },
-        Node {
-            width: Val::Percent(100.0),
-            padding: UiRect::axes(Val::Px(8.0), Val::Px(5.0)),
-            align_items: AlignItems::Center,
-            column_gap: Val::Px(6.0),
-            border: UiRect::bottom(Val::Px(1.0)),
-            ..default()
-        },
-        BackgroundColor(Color::srgba(0.10, 0.07, 0.06, 0.80)),
-        BorderColor::all(Color::srgb(0.20, 0.15, 0.10)),
-    ))
-    .with_children(|btn| {
-        btn.spawn((
-            Node {
-                width: Val::Px(12.0),
-                height: Val::Px(12.0),
-                flex_shrink: 0.0,
-                border: UiRect::all(Val::Px(1.0)),
-                ..default()
-            },
-            BackgroundColor(swatch_color),
-            BorderColor::all(BUTTON_BORDER),
-        ));
-        btn.spawn((
-            Text::new(label.to_owned()),
-            TextFont {
-                font_size: 11.0,
-                ..default()
-            },
-            TextColor(Color::srgb(0.88, 0.84, 0.78)),
-            Node {
-                overflow: Overflow::clip_x(),
-                ..default()
-            },
-        ));
-    });
+    spawn_palette_row(
+        list,
+        EditorFloorPaletteItem { floor_id },
+        label,
+        swatch_color,
+        PaletteRowStyle::list(true),
+    );
 }
 
 /// Spawns one button in the floor-flavor toggle strip. Active state is painted
@@ -414,8 +666,8 @@ fn spawn_flavor_toggle(row: &mut ChildSpawnerCommands, flavor: FloorFlavor) {
             border: UiRect::all(Val::Px(1.0)),
             ..default()
         },
-        BackgroundColor(Color::srgba(0.10, 0.07, 0.06, 0.80)),
-        BorderColor::all(Color::srgb(0.20, 0.15, 0.10)),
+        BackgroundColor(PALETTE_ROW_BG),
+        BorderColor::all(PALETTE_ROW_BORDER),
     ))
     .with_children(|btn| {
         btn.spawn((
@@ -424,7 +676,7 @@ fn spawn_flavor_toggle(row: &mut ChildSpawnerCommands, flavor: FloorFlavor) {
                 font_size: 11.0,
                 ..default()
             },
-            TextColor(Color::srgb(0.88, 0.84, 0.78)),
+            TextColor(PALETTE_ROW_TEXT),
         ));
     });
 }
@@ -457,24 +709,7 @@ pub fn sync_floor_flavor_toggle(
 ) {
     for (item, interaction, mut bg, mut border) in &mut items {
         let selected = item.flavor == editor_state.selected_floor_flavor;
-        let (bg_color, border_color) = match (*interaction, selected) {
-            (Interaction::Pressed, _) => {
-                (Color::srgb(0.50, 0.28, 0.12), Color::srgb(0.98, 0.84, 0.58))
-            }
-            (Interaction::Hovered, true) => {
-                (Color::srgb(0.35, 0.20, 0.10), Color::srgb(0.98, 0.84, 0.58))
-            }
-            (Interaction::Hovered, false) => {
-                (Color::srgb(0.20, 0.13, 0.10), Color::srgb(0.60, 0.45, 0.28))
-            }
-            (Interaction::None, true) => {
-                (Color::srgb(0.28, 0.16, 0.08), Color::srgb(0.90, 0.76, 0.50))
-            }
-            (Interaction::None, false) => (
-                Color::srgba(0.10, 0.07, 0.06, 0.80),
-                Color::srgb(0.20, 0.15, 0.10),
-            ),
-        };
+        let (bg_color, border_color) = palette_row_colors(*interaction, selected);
         bg.0 = bg_color;
         *border = BorderColor::all(border_color);
     }
@@ -503,9 +738,7 @@ pub fn sync_palette_selection(
     for (item, interaction, mut bg, mut border, mut node) in &mut items {
         // Hide non-matching rows from layout (not just from rendering) so the
         // remaining items collapse to the top of the list.
-        let matches = filter.is_empty()
-            || item.type_id.to_lowercase().contains(&filter)
-            || item.display_name.to_lowercase().contains(&filter);
+        let matches = item.matches_filter(&filter);
         let target_display = if matches {
             Display::Flex
         } else {
@@ -523,47 +756,14 @@ pub fn sync_palette_selection(
             .selected_type_id
             .as_deref()
             .is_some_and(|id| id == item.type_id);
-        let (bg_color, border_color) = match (*interaction, is_selected) {
-            (Interaction::Pressed, _) => {
-                (Color::srgb(0.50, 0.28, 0.12), Color::srgb(0.98, 0.84, 0.58))
-            }
-            (Interaction::Hovered, true) => {
-                (Color::srgb(0.35, 0.20, 0.10), Color::srgb(0.98, 0.84, 0.58))
-            }
-            (Interaction::Hovered, false) => {
-                (Color::srgb(0.20, 0.13, 0.10), Color::srgb(0.60, 0.45, 0.28))
-            }
-            (Interaction::None, true) => {
-                (Color::srgb(0.28, 0.16, 0.08), Color::srgb(0.90, 0.76, 0.50))
-            }
-            (Interaction::None, false) => (
-                Color::srgba(0.10, 0.07, 0.06, 0.80),
-                Color::srgb(0.20, 0.15, 0.10),
-            ),
-        };
+        let (bg_color, border_color) = palette_row_colors(*interaction, is_selected);
         bg.0 = bg_color;
         *border = BorderColor::all(border_color);
     }
 
     // Sync filter box appearance
     for (interaction, mut bg, mut border) in &mut filter_box {
-        let (b, br) = if filter_focused {
-            (
-                Color::srgba(0.12, 0.08, 0.06, 0.95),
-                Color::srgb(0.90, 0.72, 0.40),
-            )
-        } else {
-            match *interaction {
-                Interaction::Hovered => (
-                    Color::srgba(0.12, 0.08, 0.06, 0.95),
-                    Color::srgb(0.50, 0.38, 0.22),
-                ),
-                _ => (
-                    Color::srgba(0.08, 0.05, 0.05, 0.90),
-                    Color::srgb(0.25, 0.18, 0.12),
-                ),
-            }
-        };
+        let (b, br) = filter_box_colors(*interaction, filter_focused);
         bg.0 = b;
         *border = BorderColor::all(br);
     }
@@ -573,39 +773,16 @@ pub fn sync_palette_filter_text(
     editor_state: Res<EditorState>,
     filter_box: Query<Entity, With<EditorPaletteFilterBox>>,
     children: Query<&Children>,
-    mut texts: Query<&mut Text>,
+    texts: Query<&mut Text>,
 ) {
-    if !editor_state.is_changed() {
-        return;
-    }
-    let Ok(box_entity) = filter_box.single() else {
-        return;
-    };
-    let Ok(kids) = children.get(box_entity) else {
-        return;
-    };
-    for child in kids.iter() {
-        if let Ok(mut text) = texts.get_mut(child) {
-            text.0 = if editor_state.palette_filter_focused {
-                format!("{}_", editor_state.palette_filter)
-            } else if editor_state.palette_filter.is_empty() {
-                "filter...".into()
-            } else {
-                editor_state.palette_filter.clone()
-            };
-        }
-    }
+    sync_palette_filter_text_generic(editor_state, filter_box, children, texts);
 }
 
 pub fn handle_palette_filter_click(
     filter_btn: Query<&Interaction, (Changed<Interaction>, With<EditorPaletteFilterBox>)>,
-    mut editor_state: ResMut<EditorState>,
+    editor_state: ResMut<EditorState>,
 ) {
-    for interaction in &filter_btn {
-        if *interaction == Interaction::Pressed {
-            editor_state.palette_filter_focused = true;
-        }
-    }
+    handle_palette_filter_click_generic(filter_btn, editor_state);
 }
 
 pub fn handle_palette_clicks(
@@ -623,23 +800,7 @@ pub fn handle_palette_clicks(
     {
         return;
     }
-    for (item, interaction) in &items {
-        if *interaction == Interaction::Pressed {
-            // Clicking an object palette item exits filter mode and switches
-            // back to the object brush, so selection in this list is always
-            // active immediately.
-            editor_state.palette_filter_focused = false;
-            editor_state.current_tool = EditorTool::Brush;
-            if editor_state.selected_type_id.as_deref() == Some(&item.type_id) {
-                editor_state.selected_type_id = None;
-            } else {
-                let id = item.type_id.clone();
-                editor_state.selected_type_id = Some(id.clone());
-                editor_state.selected_object_id = None;
-                editor_state.touch_recent_object(&id);
-            }
-        }
-    }
+    process_palette_clicks(&mut editor_state, items.iter());
 }
 
 pub fn handle_floor_palette_clicks(
@@ -760,145 +921,49 @@ pub fn sync_recent_strip(
 
     if !editor_state.recent_object_types.is_empty() {
         commands.entity(objects_root).with_children(|root| {
-            root.spawn((
-                EditorRecentRow,
-                Node {
-                    width: Val::Percent(100.0),
-                    padding: UiRect::axes(Val::Px(8.0), Val::Px(3.0)),
-                    ..default()
-                },
-                BackgroundColor(Color::srgba(0.04, 0.03, 0.02, 0.85)),
-            ))
-            .with_children(|h| {
-                h.spawn((
-                    Text::new("Recent"),
-                    TextFont {
-                        font_size: 10.0,
-                        ..default()
-                    },
-                    TextColor(Color::srgb(0.70, 0.55, 0.34)),
-                ));
-            });
+            spawn_list_header(root, EditorRecentRow, "Recent");
 
             for type_id in &current_signature.0 {
                 let Some(def) = definitions.get(type_id) else {
                     continue;
                 };
-                let color = def.debug_color();
-                root.spawn((
-                    Button,
-                    EditorRecentRow,
-                    EditorPaletteItem {
-                        type_id: type_id.clone(),
-                        display_name: def.name.clone(),
-                    },
-                    Node {
-                        width: Val::Percent(100.0),
-                        padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
-                        align_items: AlignItems::Center,
-                        column_gap: Val::Px(6.0),
-                        border: UiRect::bottom(Val::Px(1.0)),
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgba(0.10, 0.07, 0.06, 0.80)),
-                    BorderColor::all(Color::srgb(0.20, 0.15, 0.10)),
-                ))
-                .with_children(|btn| {
-                    btn.spawn((
-                        Node {
-                            width: Val::Px(10.0),
-                            height: Val::Px(10.0),
-                            flex_shrink: 0.0,
-                            ..default()
+                spawn_palette_row(
+                    root,
+                    (
+                        EditorRecentRow,
+                        EditorPaletteItem {
+                            type_id: type_id.clone(),
+                            display_name: def.name.clone(),
                         },
-                        BackgroundColor(color),
-                    ));
-                    btn.spawn((
-                        Text::new(def.name.clone()),
-                        TextFont {
-                            font_size: 11.0,
-                            ..default()
-                        },
-                        TextColor(Color::srgb(0.88, 0.84, 0.78)),
-                        Node {
-                            overflow: Overflow::clip_x(),
-                            ..default()
-                        },
-                    ));
-                });
+                    ),
+                    &def.name,
+                    def.debug_color(),
+                    PaletteRowStyle::recent(false),
+                );
             }
         });
     }
 
     if !editor_state.recent_floor_types.is_empty() {
         commands.entity(floors_root).with_children(|root| {
-            root.spawn((
-                EditorRecentRow,
-                Node {
-                    width: Val::Percent(100.0),
-                    padding: UiRect::axes(Val::Px(8.0), Val::Px(3.0)),
-                    ..default()
-                },
-                BackgroundColor(Color::srgba(0.04, 0.03, 0.02, 0.85)),
-            ))
-            .with_children(|h| {
-                h.spawn((
-                    Text::new("Recent"),
-                    TextFont {
-                        font_size: 10.0,
-                        ..default()
-                    },
-                    TextColor(Color::srgb(0.70, 0.55, 0.34)),
-                ));
-            });
+            spawn_list_header(root, EditorRecentRow, "Recent");
+
             for floor_id in &current_signature.1 {
                 let Some(def) = floor_defs.iter().find(|d| d.id == *floor_id) else {
                     continue;
                 };
-                let color = def.debug_color();
-                let name = def.name.clone();
-                root.spawn((
-                    Button,
-                    EditorRecentRow,
-                    EditorFloorPaletteItem {
-                        floor_id: Some(floor_id.clone()),
-                    },
-                    Node {
-                        width: Val::Percent(100.0),
-                        padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
-                        align_items: AlignItems::Center,
-                        column_gap: Val::Px(6.0),
-                        border: UiRect::bottom(Val::Px(1.0)),
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgba(0.10, 0.07, 0.06, 0.80)),
-                    BorderColor::all(Color::srgb(0.20, 0.15, 0.10)),
-                ))
-                .with_children(|btn| {
-                    btn.spawn((
-                        Node {
-                            width: Val::Px(10.0),
-                            height: Val::Px(10.0),
-                            flex_shrink: 0.0,
-                            border: UiRect::all(Val::Px(1.0)),
-                            ..default()
+                spawn_palette_row(
+                    root,
+                    (
+                        EditorRecentRow,
+                        EditorFloorPaletteItem {
+                            floor_id: Some(floor_id.clone()),
                         },
-                        BackgroundColor(color),
-                        BorderColor::all(BUTTON_BORDER),
-                    ));
-                    btn.spawn((
-                        Text::new(name),
-                        TextFont {
-                            font_size: 11.0,
-                            ..default()
-                        },
-                        TextColor(Color::srgb(0.88, 0.84, 0.78)),
-                        Node {
-                            overflow: Overflow::clip_x(),
-                            ..default()
-                        },
-                    ));
-                });
+                    ),
+                    &def.name,
+                    def.debug_color(),
+                    PaletteRowStyle::recent(true),
+                );
             }
         });
     }
@@ -919,24 +984,7 @@ pub fn sync_floor_palette_selection(
     let active_floor_tool = editor_state.current_tool == EditorTool::FloorBrush;
     for (item, interaction, mut bg, mut border) in &mut items {
         let is_selected = active_floor_tool && editor_state.selected_floor_type == item.floor_id;
-        let (bg_color, border_color) = match (*interaction, is_selected) {
-            (Interaction::Pressed, _) => {
-                (Color::srgb(0.50, 0.28, 0.12), Color::srgb(0.98, 0.84, 0.58))
-            }
-            (Interaction::Hovered, true) => {
-                (Color::srgb(0.35, 0.20, 0.10), Color::srgb(0.98, 0.84, 0.58))
-            }
-            (Interaction::Hovered, false) => {
-                (Color::srgb(0.20, 0.13, 0.10), Color::srgb(0.60, 0.45, 0.28))
-            }
-            (Interaction::None, true) => {
-                (Color::srgb(0.28, 0.16, 0.08), Color::srgb(0.90, 0.76, 0.50))
-            }
-            (Interaction::None, false) => (
-                Color::srgba(0.10, 0.07, 0.06, 0.80),
-                Color::srgb(0.20, 0.15, 0.10),
-            ),
-        };
+        let (bg_color, border_color) = palette_row_colors(*interaction, is_selected);
         bg.0 = bg_color;
         *border = BorderColor::all(border_color);
     }

@@ -9,14 +9,18 @@ use crate::asset_viewer::resources::{
 };
 use crate::asset_viewer::systems::{
     apply_clip_change, attach_preview_animation, handle_clip_button_clicks, handle_conflict_keep,
-    handle_conflict_reload, handle_filter_click, handle_inspector_row_click, handle_keyboard,
-    handle_palette_clicks, handle_reload_button, handle_save_button, handle_tab_clicks,
-    handle_viewer_zoom, setup_viewer_camera, sync_clip_button_highlight, sync_clip_buttons,
-    sync_filter_text, sync_inspector_panel, sync_palette, sync_save_button, sync_tab_buttons,
-    sync_top_bar_title, update_preview,
+    handle_conflict_reload, handle_inspector_row_click, handle_keyboard, handle_reload_button,
+    handle_save_button, handle_tab_clicks, handle_viewer_zoom, setup_viewer_camera,
+    sync_clip_button_highlight, sync_clip_buttons, sync_inspector_panel, sync_palette,
+    sync_save_button, sync_tab_buttons, sync_top_bar_title, update_preview, ViewerFilterBox,
+    ViewerPaletteItem,
 };
 use crate::asset_viewer::ui::spawn_viewer_hud;
 use crate::asset_viewer::watcher::setup_asset_watcher;
+use crate::editor::ui::palette::{
+    handle_palette_filter_click_generic, handle_palette_item_clicks,
+    sync_palette_filter_text_generic,
+};
 use crate::magic::resources::SpellDefinitions;
 use crate::world::animation::advance_animation_timers;
 use crate::world::object_definitions::OverworldObjectDefinitions;
@@ -61,12 +65,13 @@ impl Plugin for AssetViewerPlugin {
             .add_systems(
                 Update,
                 (
-                    // Palette
-                    handle_palette_clicks,
-                    handle_filter_click,
+                    // Palette (click/filter systems are the shared generics
+                    // from the editor's palette core, over ViewerState)
+                    handle_palette_item_clicks::<ViewerState, ViewerPaletteItem>,
+                    handle_palette_filter_click_generic::<ViewerState, ViewerFilterBox>,
                     handle_tab_clicks,
                     sync_palette,
-                    sync_filter_text,
+                    sync_palette_filter_text_generic::<ViewerState, ViewerFilterBox>,
                     sync_tab_buttons,
                     // Inspector
                     sync_inspector_panel,
