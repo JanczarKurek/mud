@@ -259,72 +259,60 @@ pub struct ChatTerminal;
 #[derive(Component)]
 pub struct ContextMenuRoot;
 
-#[derive(Component)]
-pub struct ContextMenuInspectButton;
+/// The action a right-click context-menu row triggers. Each row button is
+/// spawned with a [`ContextMenuEntry`] carrying one of these;
+/// `sync_context_menu_entries` drives per-row visibility from
+/// [`crate::ui::resources::ContextMenuState::action_enabled`], and
+/// `handle_context_menu_actions` dispatches on it when a row is clicked.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ContextMenuAction {
+    /// Always shown; opens the inspect/item-details popup for the target.
+    Inspect,
+    Open,
+    Use,
+    UseOn,
+    Attack,
+    TakePartial,
+    Talk,
+    Trade,
+    /// Right-click on an inventory slot while a trade is open — clicking it
+    /// adds the slot's contents to the trade's "us" column. Visibility also
+    /// requires an open trade session (`TradePopupState`), which lives
+    /// outside `ContextMenuState` and is ANDed in by
+    /// `sync_context_menu_entries`.
+    OfferToTrade,
+    /// Single dynamic-label row for stateful-object interactions ("Open" /
+    /// "Close" / "Light" / "Extinguish" / "Pull"). The label is rewritten
+    /// each time the menu opens against the verb chosen for the currently
+    /// hovered object's state (`ContextMenuState::interaction`).
+    Interact,
+    /// Visible when the hovered object has a `pick_lock` interaction
+    /// available from its current state and the actor has at least 1 rank
+    /// of Thievery.
+    PickLock,
+    /// Visible when the hovered object has a `force_lock` interaction
+    /// available from its current state and the actor has at least 1 rank
+    /// of Athletics.
+    ForceLock,
+    /// Visible when the hovered object has a `use_key` interaction available
+    /// from its current state and the actor's inventory contains a matching
+    /// key.
+    UseKey,
+    /// Visible when the hovered object's definition declares `can_hide:`,
+    /// the object is not already hidden, and the actor has at least 1 rank
+    /// of Stealth.
+    Hide,
+    /// Visible when the hovered target carries persistent text (book /
+    /// tombstone) or is `engravable`. Sends `GameCommand::ReadBook` on
+    /// click; the server responds with `OpenBookPanel` which spawns the
+    /// reader-editor window (where the actual write/engrave flow lives).
+    Read,
+}
 
+/// Marker + payload on every context-menu row button: which
+/// [`ContextMenuAction`] the row triggers.
 #[derive(Component)]
-pub struct ContextMenuOpenButton;
-
-#[derive(Component)]
-pub struct ContextMenuUseButton;
-
-#[derive(Component)]
-pub struct ContextMenuUseOnButton;
-
-#[derive(Component)]
-pub struct ContextMenuAttackButton;
-
-#[derive(Component)]
-pub struct ContextMenuTakePartialButton;
-
-#[derive(Component)]
-pub struct ContextMenuTalkButton;
-
-#[derive(Component)]
-pub struct ContextMenuTradeButton;
-
-/// Right-click on an inventory slot while a trade is open shows this button —
-/// clicking it adds the slot's contents to the trade's "us" column.
-#[derive(Component)]
-pub struct ContextMenuOfferToTradeButton;
-
-/// Single dynamic-label button for stateful-object interactions ("Open" /
-/// "Close" / "Light" / "Extinguish" / "Pull"). The label is rewritten each
-/// time the menu opens against the verb chosen for the currently hovered
-/// object's state.
-#[derive(Component)]
-pub struct ContextMenuInteractButton;
-
-/// Pick Lock button — visible when the hovered object has a `pick_lock`
-/// interaction available from its current state and the actor has at least
-/// 1 rank of Thievery.
-#[derive(Component)]
-pub struct ContextMenuPickLockButton;
-
-/// Force Lock button — visible when the hovered object has a `force_lock`
-/// interaction available from its current state and the actor has at least
-/// 1 rank of Athletics.
-#[derive(Component)]
-pub struct ContextMenuForceLockButton;
-
-/// Use Key button — visible when the hovered object has a `use_key`
-/// interaction available from its current state and the actor's inventory
-/// contains a matching key.
-#[derive(Component)]
-pub struct ContextMenuUseKeyButton;
-
-/// Hide button — visible when the hovered object's definition declares
-/// `can_hide:`, the object is not already hidden, and the actor has at
-/// least 1 rank of Stealth.
-#[derive(Component)]
-pub struct ContextMenuHideButton;
-
-/// Read button — visible when the hovered target carries persistent text
-/// (book / tombstone) or is `engravable`. Sends `GameCommand::ReadBook`
-/// on click; the server responds with `OpenBookPanel` which spawns the
-/// reader-editor window (where the actual write/engrave flow lives).
-#[derive(Component)]
-pub struct ContextMenuReadButton;
+pub struct ContextMenuEntry(pub ContextMenuAction);
 
 #[derive(Component)]
 pub struct DialogPanelRoot;

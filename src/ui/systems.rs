@@ -16,17 +16,16 @@ use crate::magic::resources::{SpellDefinitions, SpellTargeting};
 use crate::player::components::InventoryStack;
 use crate::scripting::resources::PythonConsoleState;
 use crate::ui::components::{
-    BackpackSlotRow, ChatTerminal, ContainerSlotButton, ContainerSlotImage,
-    ContextMenuAttackButton, ContextMenuInspectButton, ContextMenuOpenButton, ContextMenuRoot,
-    ContextMenuTakePartialButton, ContextMenuUseButton, ContextMenuUseOnButton, DockedPanelBody,
-    DockedPanelCanvas, DockedPanelCloseButton, DockedPanelDragHandle, DockedPanelResizeHandle,
-    DockedPanelRoot, DockedPanelTitle, DragPreviewImage, DragPreviewLabel, DragPreviewQuantity,
-    DragPreviewRoot, EquipmentSlotButton, EquipmentSlotImage, EquipmentSlotLabel, HealthFill,
-    ItemSlotButton, ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ItemTooltipLabel,
-    ItemTooltipRoot, JumpInfoBoxLabel, JumpInfoBoxRoot, JumpTileHighlight, ManaFill, NearbyNpcDot,
-    NearbyNpcHpFill, NearbyNpcRow, NearbyNpcsList, QuickbarSlotMarker, RightSidebarRoot,
-    TakePartialAmountLabel, TakePartialCancelButton, TakePartialConfirmButton,
-    TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot,
+    BackpackSlotRow, ChatTerminal, ContainerSlotButton, ContainerSlotImage, ContextMenuAction,
+    ContextMenuEntry, ContextMenuRoot, DockedPanelBody, DockedPanelCanvas, DockedPanelCloseButton,
+    DockedPanelDragHandle, DockedPanelResizeHandle, DockedPanelRoot, DockedPanelTitle,
+    DragPreviewImage, DragPreviewLabel, DragPreviewQuantity, DragPreviewRoot, EquipmentSlotButton,
+    EquipmentSlotImage, EquipmentSlotLabel, HealthFill, ItemSlotButton, ItemSlotImage,
+    ItemSlotKind, ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot, JumpInfoBoxLabel,
+    JumpInfoBoxRoot, JumpTileHighlight, ManaFill, NearbyNpcDot, NearbyNpcHpFill, NearbyNpcRow,
+    NearbyNpcsList, QuickbarSlotMarker, RightSidebarRoot, TakePartialAmountLabel,
+    TakePartialCancelButton, TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton,
+    TakePartialPopupRoot,
 };
 use crate::ui::resources::{
     ContextMenuState, ContextMenuTarget, CursorMode, CursorState, DockedPanelDragState,
@@ -1313,221 +1312,61 @@ pub fn sync_context_menu_root(
     root_node.top = px(anchor.y);
 }
 
-pub fn sync_context_menu_open_button(
+/// Single visibility system for every context-menu row. Each row carries a
+/// [`ContextMenuEntry`] naming its [`ContextMenuAction`];
+/// [`ContextMenuState::action_enabled`] maps that action to the state flag
+/// that used to drive a bespoke per-button sync system. `OfferToTrade`
+/// additionally requires an open trade session, which lives in
+/// `TradePopupState` rather than `ContextMenuState`, so it is ANDed in here.
+/// The `Interact` row also rewrites its child label from the verb chosen for
+/// the currently hovered object's state.
+pub fn sync_context_menu_entries(
     context_menu_state: Res<ContextMenuState>,
-    mut open_button_query: Query<&mut Node, With<ContextMenuOpenButton>>,
-) {
-    let Ok(mut node) = open_button_query.single_mut() else {
-        return;
-    };
-
-    node.display = if context_menu_state.can_open {
-        Display::Flex
-    } else {
-        Display::None
-    };
-}
-
-pub fn sync_context_menu_interact_button(
-    context_menu_state: Res<ContextMenuState>,
-    mut button_query: Query<
-        (&mut Node, &Children),
-        With<crate::ui::components::ContextMenuInteractButton>,
-    >,
+    trade_popup_state: Res<crate::ui::resources::TradePopupState>,
+    mut entry_query: Query<(&ContextMenuEntry, &mut Node, Option<&Children>)>,
     mut text_query: Query<&mut Text>,
 ) {
-    let Ok((mut node, children)) = button_query.single_mut() else {
-        return;
-    };
+    let trade_open = trade_popup_state.session_id.is_some();
 
-    if let Some((_, label)) = &context_menu_state.interaction {
-        node.display = Display::Flex;
-        for child in children.iter() {
-            if let Ok(mut text) = text_query.get_mut(child) {
-                **text = label.clone();
+    for (entry, mut node, children) in &mut entry_query {
+        let enabled = context_menu_state.action_enabled(entry.0)
+            && (entry.0 != ContextMenuAction::OfferToTrade || trade_open);
+
+        // Read-then-write: only assign when the value differs so Bevy's
+        // change detection doesn't dirty the layout every run.
+        let display = if enabled {
+            Display::Flex
+        } else {
+            Display::None
+        };
+        if node.display != display {
+            node.display = display;
+        }
+
+        if entry.0 == ContextMenuAction::Interact {
+            if let (Some((_, label)), Some(children)) = (&context_menu_state.interaction, children)
+            {
+                for child in children.iter() {
+                    if let Ok(mut text) = text_query.get_mut(child) {
+                        if text.as_str() != label.as_str() {
+                            **text = label.clone();
+                        }
+                    }
+                }
             }
         }
-    } else {
-        node.display = Display::None;
     }
 }
 
-pub fn sync_context_menu_attack_button(
-    context_menu_state: Res<ContextMenuState>,
-    mut attack_button_query: Query<&mut Node, With<ContextMenuAttackButton>>,
-) {
-    let Ok(mut node) = attack_button_query.single_mut() else {
-        return;
-    };
-
-    node.display = if context_menu_state.can_attack {
-        Display::Flex
-    } else {
-        Display::None
-    };
-}
-
-pub fn sync_context_menu_pick_lock_button(
-    context_menu_state: Res<ContextMenuState>,
-    mut button_query: Query<&mut Node, With<crate::ui::components::ContextMenuPickLockButton>>,
-) {
-    let Ok(mut node) = button_query.single_mut() else {
-        return;
-    };
-    node.display = if context_menu_state.can_pick_lock {
-        Display::Flex
-    } else {
-        Display::None
-    };
-}
-
-pub fn sync_context_menu_force_lock_button(
-    context_menu_state: Res<ContextMenuState>,
-    mut button_query: Query<&mut Node, With<crate::ui::components::ContextMenuForceLockButton>>,
-) {
-    let Ok(mut node) = button_query.single_mut() else {
-        return;
-    };
-    node.display = if context_menu_state.can_force_lock {
-        Display::Flex
-    } else {
-        Display::None
-    };
-}
-
-pub fn sync_context_menu_use_key_button(
-    context_menu_state: Res<ContextMenuState>,
-    mut button_query: Query<&mut Node, With<crate::ui::components::ContextMenuUseKeyButton>>,
-) {
-    let Ok(mut node) = button_query.single_mut() else {
-        return;
-    };
-    node.display = if context_menu_state.can_use_key {
-        Display::Flex
-    } else {
-        Display::None
-    };
-}
-
-pub fn sync_context_menu_hide_button(
-    context_menu_state: Res<ContextMenuState>,
-    mut button_query: Query<&mut Node, With<crate::ui::components::ContextMenuHideButton>>,
-) {
-    let Ok(mut node) = button_query.single_mut() else {
-        return;
-    };
-    node.display = if context_menu_state.can_hide {
-        Display::Flex
-    } else {
-        Display::None
-    };
-}
-
-pub fn sync_context_menu_read_button(
-    context_menu_state: Res<ContextMenuState>,
-    mut button_query: Query<&mut Node, With<crate::ui::components::ContextMenuReadButton>>,
-) {
-    let Ok(mut node) = button_query.single_mut() else {
-        return;
-    };
-    node.display = if context_menu_state.can_read {
-        Display::Flex
-    } else {
-        Display::None
-    };
-}
-
-pub fn sync_context_menu_talk_button(
-    context_menu_state: Res<ContextMenuState>,
-    mut button_query: Query<&mut Node, With<crate::ui::components::ContextMenuTalkButton>>,
-) {
-    let Ok(mut node) = button_query.single_mut() else {
-        return;
-    };
-
-    node.display = if context_menu_state.can_talk {
-        Display::Flex
-    } else {
-        Display::None
-    };
-}
-
-pub fn sync_context_menu_trade_button(
-    context_menu_state: Res<ContextMenuState>,
-    mut button_query: Query<&mut Node, With<crate::ui::components::ContextMenuTradeButton>>,
-) {
-    let Ok(mut node) = button_query.single_mut() else {
-        return;
-    };
-
-    node.display = if context_menu_state.can_trade {
-        Display::Flex
-    } else {
-        Display::None
-    };
-}
-
-/// "Offer to Trade" is shown when the right-clicked target is one of the
-/// player's own backpack/equipment/pouch slots AND a trade panel is open.
-pub fn sync_context_menu_offer_to_trade_button(
-    context_menu_state: Res<ContextMenuState>,
-    trade_popup_state: Res<crate::ui::resources::TradePopupState>,
-    mut button_query: Query<&mut Node, With<crate::ui::components::ContextMenuOfferToTradeButton>>,
-) {
-    let Ok(mut node) = button_query.single_mut() else {
-        return;
-    };
-
-    let target_is_player_slot = matches!(
-        context_menu_state.target,
-        Some(ContextMenuTarget::Slot(
-            ItemSlotKind::Backpack(_)
-                | ItemSlotKind::Equipment(_)
-                | ItemSlotKind::PouchInBackpack { .. }
-        ))
-    );
-    let trade_open = trade_popup_state.session_id.is_some();
-
-    node.display = if target_is_player_slot && trade_open {
-        Display::Flex
-    } else {
-        Display::None
-    };
-}
-
-pub fn sync_context_menu_use_button(
-    context_menu_state: Res<ContextMenuState>,
-    mut use_button_query: Query<&mut Node, With<ContextMenuUseButton>>,
-) {
-    let Ok(mut node) = use_button_query.single_mut() else {
-        return;
-    };
-
-    node.display = if context_menu_state.can_use {
-        Display::Flex
-    } else {
-        Display::None
-    };
-}
-
-pub fn sync_context_menu_use_on_button(
-    context_menu_state: Res<ContextMenuState>,
-    mut use_on_button_query: Query<&mut Node, With<ContextMenuUseOnButton>>,
-) {
-    let Ok(mut node) = use_on_button_query.single_mut() else {
-        return;
-    };
-
-    node.display = if context_menu_state.can_use_on {
-        Display::Flex
-    } else {
-        Display::None
-    };
-}
-
+/// Click dispatch for every context-menu row. A single
+/// `Changed<Interaction>` query over [`ContextMenuEntry`] replaces the old
+/// per-marker `ParamSet` hit-testing (and the lock/read/trade handlers that
+/// were split out solely to stay under Bevy's 8-query `ParamSet` cap).
+/// Hidden rows (`Display::None`) can never be `Interaction::Pressed`, so
+/// only currently-enabled actions can fire; the per-arm `can_*` gates from
+/// the old split handlers are kept anyway.
+#[allow(clippy::too_many_arguments)]
 pub fn handle_context_menu_actions(
-    mouse_input: Res<ButtonInput<MouseButton>>,
-    window_query: Query<&Window, With<PrimaryWindow>>,
     static_resources: (
         Res<ObjectRegistry>,
         Res<OverworldObjectDefinitions>,
@@ -1536,6 +1375,7 @@ pub fn handle_context_menu_actions(
     mut pending_commands: ResMut<PendingGameCommands>,
     mut pending_item_details: ResMut<crate::ui::item_details::PendingItemDetailsOpens>,
     client_state: Res<ClientGameState>,
+    trade_popup_state: Res<crate::ui::resources::TradePopupState>,
     mut take_partial_state: ResMut<TakePartialState>,
     ui_state: (
         ResMut<ContextMenuState>,
@@ -1545,22 +1385,7 @@ pub fn handle_context_menu_actions(
         ResMut<SpellTargetingState>,
         ResMut<ItemTargetingState>,
     ),
-    mut menu_queries: ParamSet<(
-        Query<(&ComputedNode, &UiGlobalTransform), With<ContextMenuAttackButton>>,
-        Query<(&ComputedNode, &UiGlobalTransform), With<ContextMenuInspectButton>>,
-        Query<(&ComputedNode, &UiGlobalTransform), With<ContextMenuOpenButton>>,
-        Query<(&ComputedNode, &UiGlobalTransform), With<ContextMenuUseButton>>,
-        Query<(&ComputedNode, &UiGlobalTransform), With<ContextMenuUseOnButton>>,
-        Query<(&ComputedNode, &UiGlobalTransform), With<ContextMenuTakePartialButton>>,
-        Query<
-            (&ComputedNode, &UiGlobalTransform),
-            With<crate::ui::components::ContextMenuTalkButton>,
-        >,
-        Query<
-            (&ComputedNode, &UiGlobalTransform),
-            With<crate::ui::components::ContextMenuInteractButton>,
-        >,
-    )>,
+    entry_query: Query<(&Interaction, &ContextMenuEntry), Changed<Interaction>>,
 ) {
     let (object_registry, definitions, spell_definitions) = static_resources;
     let (
@@ -1571,197 +1396,180 @@ pub fn handle_context_menu_actions(
         mut spell_targeting_state,
         mut item_targeting_state,
     ) = ui_state;
-    let Ok(window) = window_query.single() else {
+
+    if !context_menu_state.is_visible() {
+        return;
+    }
+
+    let Some(action) = entry_query
+        .iter()
+        .find_map(|(interaction, entry)| (*interaction == Interaction::Pressed).then_some(entry.0))
+    else {
         return;
     };
-    let Some(cursor_position) = window.cursor_position() else {
-        return;
-    };
 
-    if !mouse_input.just_pressed(MouseButton::Left) || !context_menu_state.is_visible() {
-        return;
-    }
-
-    if is_cursor_over_button(cursor_position, &menu_queries.p6()) {
-        if let Some(ContextMenuTarget::World(object_id)) = context_menu_state.target {
-            pending_commands.push(GameCommand::TalkToNpc {
-                npc_object_id: object_id,
-            });
+    match action {
+        ContextMenuAction::Talk => {
+            if let Some(ContextMenuTarget::World(object_id)) = context_menu_state.target {
+                pending_commands.push(GameCommand::TalkToNpc {
+                    npc_object_id: object_id,
+                });
+            }
         }
-        context_menu_state.hide();
-        return;
-    }
-
-    if is_cursor_over_button(cursor_position, &menu_queries.p0()) {
-        if let Some(ContextMenuTarget::World(object_id)) = context_menu_state.target {
-            pending_commands.push(GameCommand::SetCombatTarget {
-                target_object_id: Some(object_id),
-            });
+        ContextMenuAction::Attack => {
+            if let Some(ContextMenuTarget::World(object_id)) = context_menu_state.target {
+                pending_commands.push(GameCommand::SetCombatTarget {
+                    target_object_id: Some(object_id),
+                });
+            }
         }
-        context_menu_state.hide();
-        return;
-    }
-
-    if is_cursor_over_button(cursor_position, &menu_queries.p1()) {
-        if let Some(target) = context_menu_state.target {
-            match target {
-                ContextMenuTarget::Slot(kind) => {
-                    if let Some(slot_ref) = item_slot_kind_to_ref(kind, &docked_panel_state) {
+        ContextMenuAction::Inspect => {
+            if let Some(target) = context_menu_state.target {
+                match target {
+                    ContextMenuTarget::Slot(kind) => {
+                        if let Some(slot_ref) = item_slot_kind_to_ref(kind, &docked_panel_state) {
+                            pending_commands.push(GameCommand::Inspect {
+                                target: InspectTarget::SlotItem(slot_ref),
+                            });
+                        }
+                        // Trade-side slots have no `ItemSlotRef`, but the popup
+                        // still works because the renderer reads from
+                        // `current_trade` directly.
+                        pending_item_details.slots.push(kind);
+                    }
+                    ContextMenuTarget::World(object_id) => {
                         pending_commands.push(GameCommand::Inspect {
-                            target: InspectTarget::SlotItem(slot_ref),
+                            target: InspectTarget::Object(object_id),
                         });
                     }
-                    // Trade-side slots have no `ItemSlotRef`, but the popup
-                    // still works because the renderer reads from
-                    // `current_trade` directly.
-                    pending_item_details.slots.push(kind);
-                }
-                ContextMenuTarget::World(object_id) => {
-                    pending_commands.push(GameCommand::Inspect {
-                        target: InspectTarget::Object(object_id),
-                    });
                 }
             }
         }
-        context_menu_state.hide();
-        return;
-    }
-
-    if is_cursor_over_button(cursor_position, &menu_queries.p3()) {
-        if let Some(target) = context_menu_state.target {
-            let spell_lookup = match target {
-                ContextMenuTarget::World(object_id) => {
-                    object_registry.resolved_spell_id(object_id, &definitions, &spell_definitions)
-                }
-                ContextMenuTarget::Slot(slot_kind) => {
-                    stack_in_slot_kind(&client_state, &docked_panel_state, slot_kind).and_then(
-                        |stack| {
-                            ObjectRegistry::resolved_spell_id_for_type(
-                                &stack.type_id,
-                                Some(&stack.properties),
-                                &definitions,
-                                &spell_definitions,
-                            )
-                        },
-                    )
-                }
-            };
-            if let Some(spell_id) = spell_lookup {
-                if let Some(spell) = spell_definitions.get(&spell_id) {
-                    match spell.targeting {
-                        SpellTargeting::Targeted => {
-                            spell_targeting_state.source = Some(target);
-                            spell_targeting_state.spell_id = Some(spell_id);
-                            cursor_state.mode = CursorMode::SpellTarget;
-                            context_menu_state.hide();
-                            return;
+        ContextMenuAction::Use => {
+            if let Some(target) = context_menu_state.target {
+                let spell_lookup = match target {
+                    ContextMenuTarget::World(object_id) => object_registry.resolved_spell_id(
+                        object_id,
+                        &definitions,
+                        &spell_definitions,
+                    ),
+                    ContextMenuTarget::Slot(slot_kind) => {
+                        stack_in_slot_kind(&client_state, &docked_panel_state, slot_kind).and_then(
+                            |stack| {
+                                ObjectRegistry::resolved_spell_id_for_type(
+                                    &stack.type_id,
+                                    Some(&stack.properties),
+                                    &definitions,
+                                    &spell_definitions,
+                                )
+                            },
+                        )
+                    }
+                };
+                if let Some(spell_id) = spell_lookup {
+                    if let Some(spell) = spell_definitions.get(&spell_id) {
+                        match spell.targeting {
+                            SpellTargeting::Targeted => {
+                                spell_targeting_state.source = Some(target);
+                                spell_targeting_state.spell_id = Some(spell_id);
+                                cursor_state.mode = CursorMode::SpellTarget;
+                                context_menu_state.hide();
+                                return;
+                            }
+                            SpellTargeting::TargetedTile => {
+                                spell_targeting_state.source = Some(target);
+                                spell_targeting_state.spell_id = Some(spell_id);
+                                cursor_state.mode = CursorMode::SpellTargetTile;
+                                context_menu_state.hide();
+                                return;
+                            }
+                            SpellTargeting::TargetedItem => {
+                                item_targeting_state.source = Some(target);
+                                item_targeting_state.spell_id = Some(spell_id);
+                                cursor_state.mode = CursorMode::ItemTarget;
+                                context_menu_state.hide();
+                                return;
+                            }
+                            SpellTargeting::Untargeted => {}
                         }
-                        SpellTargeting::TargetedTile => {
-                            spell_targeting_state.source = Some(target);
-                            spell_targeting_state.spell_id = Some(spell_id);
-                            cursor_state.mode = CursorMode::SpellTargetTile;
-                            context_menu_state.hide();
-                            return;
-                        }
-                        SpellTargeting::TargetedItem => {
-                            item_targeting_state.source = Some(target);
-                            item_targeting_state.spell_id = Some(spell_id);
-                            cursor_state.mode = CursorMode::ItemTarget;
-                            context_menu_state.hide();
-                            return;
-                        }
-                        SpellTargeting::Untargeted => {}
                     }
                 }
-            }
 
-            // Modifier-granting consumable (e.g. poison flask): like an
-            // item-target spell, the player picks the item to enchant. We
-            // enter the same targeting mode but with `spell_id = None`, so the
-            // click dispatches `UseItemOn { target: ItemSlot }` instead.
-            if target_grants_item_modifier(
-                target,
-                &client_state,
-                &docked_panel_state,
-                &object_registry,
-                &definitions,
+                // Modifier-granting consumable (e.g. poison flask): like an
+                // item-target spell, the player picks the item to enchant. We
+                // enter the same targeting mode but with `spell_id = None`, so the
+                // click dispatches `UseItemOn { target: ItemSlot }` instead.
+                if target_grants_item_modifier(
+                    target,
+                    &client_state,
+                    &docked_panel_state,
+                    &object_registry,
+                    &definitions,
+                ) {
+                    item_targeting_state.source = Some(target);
+                    item_targeting_state.spell_id = None;
+                    cursor_state.mode = CursorMode::ItemTarget;
+                    context_menu_state.hide();
+                    return;
+                }
+
+                if let Some(source) = context_target_to_item_reference(target, &docked_panel_state)
+                {
+                    pending_commands.push(GameCommand::UseItem { source });
+                }
+            }
+        }
+        ContextMenuAction::UseOn => {
+            if let Some(target) = context_menu_state.target {
+                let usable_and_type_id: Option<String> = match target {
+                    ContextMenuTarget::World(object_id) => {
+                        if object_is_usable(object_id, &object_registry, &definitions) {
+                            object_registry.type_id(object_id).map(str::to_owned)
+                        } else {
+                            None
+                        }
+                    }
+                    ContextMenuTarget::Slot(slot_kind) => {
+                        stack_in_slot_kind(&client_state, &docked_panel_state, slot_kind).and_then(
+                            |stack| {
+                                definitions
+                                    .get(&stack.type_id)
+                                    .filter(|d| d.is_usable())
+                                    .map(|_| stack.type_id.clone())
+                            },
+                        )
+                    }
+                };
+                if let Some(type_id) = usable_and_type_id {
+                    use_on_state.source = Some(target);
+                    cursor_state.mode = CursorMode::UseOn;
+                    cursor_state.use_on_sprite = resolve_use_on_sprite(&type_id, &definitions);
+                }
+            }
+        }
+        ContextMenuAction::Open => {
+            match context_menu_state.target {
+                Some(ContextMenuTarget::World(object_id)) => {
+                    pending_commands.push(GameCommand::OpenContainer { object_id });
+                }
+                Some(ContextMenuTarget::Slot(ItemSlotKind::Backpack(backpack_slot))) => {
+                    // Inventory pouch: no server roundtrip needed — slots come
+                    // straight off `client_state.inventory` and the panel reads
+                    // through `pouch_backpack_slot_for_panel`.
+                    docked_panel_state.open_pouch(backpack_slot);
+                }
+                _ => {}
+            }
+        }
+        ContextMenuAction::Interact => {
+            if let (Some(ContextMenuTarget::World(object_id)), Some((verb, _label))) = (
+                context_menu_state.target,
+                context_menu_state.interaction.clone(),
             ) {
-                item_targeting_state.source = Some(target);
-                item_targeting_state.spell_id = None;
-                cursor_state.mode = CursorMode::ItemTarget;
-                context_menu_state.hide();
-                return;
-            }
-
-            if let Some(source) = context_target_to_item_reference(target, &docked_panel_state) {
-                pending_commands.push(GameCommand::UseItem { source });
+                pending_commands.push(GameCommand::InteractWithObject { object_id, verb });
             }
         }
-        context_menu_state.hide();
-        return;
-    }
-
-    if is_cursor_over_button(cursor_position, &menu_queries.p4()) {
-        if let Some(target) = context_menu_state.target {
-            let usable_and_type_id: Option<String> = match target {
-                ContextMenuTarget::World(object_id) => {
-                    if object_is_usable(object_id, &object_registry, &definitions) {
-                        object_registry.type_id(object_id).map(str::to_owned)
-                    } else {
-                        None
-                    }
-                }
-                ContextMenuTarget::Slot(slot_kind) => {
-                    stack_in_slot_kind(&client_state, &docked_panel_state, slot_kind).and_then(
-                        |stack| {
-                            definitions
-                                .get(&stack.type_id)
-                                .filter(|d| d.is_usable())
-                                .map(|_| stack.type_id.clone())
-                        },
-                    )
-                }
-            };
-            if let Some(type_id) = usable_and_type_id {
-                use_on_state.source = Some(target);
-                cursor_state.mode = CursorMode::UseOn;
-                cursor_state.use_on_sprite = resolve_use_on_sprite(&type_id, &definitions);
-            }
-        }
-        context_menu_state.hide();
-        return;
-    }
-
-    if is_cursor_over_button(cursor_position, &menu_queries.p2()) {
-        match context_menu_state.target {
-            Some(ContextMenuTarget::World(object_id)) => {
-                pending_commands.push(GameCommand::OpenContainer { object_id });
-            }
-            Some(ContextMenuTarget::Slot(ItemSlotKind::Backpack(backpack_slot))) => {
-                // Inventory pouch: no server roundtrip needed — slots come
-                // straight off `client_state.inventory` and the panel reads
-                // through `pouch_backpack_slot_for_panel`.
-                docked_panel_state.open_pouch(backpack_slot);
-            }
-            _ => {}
-        }
-        context_menu_state.hide();
-        return;
-    }
-
-    if is_cursor_over_button(cursor_position, &menu_queries.p7()) {
-        if let (Some(ContextMenuTarget::World(object_id)), Some((verb, _label))) = (
-            context_menu_state.target,
-            context_menu_state.interaction.clone(),
-        ) {
-            pending_commands.push(GameCommand::InteractWithObject { object_id, verb });
-        }
-        context_menu_state.hide();
-        return;
-    }
-
-    if is_cursor_over_button(cursor_position, &menu_queries.p5()) {
-        match context_menu_state.target {
+        ContextMenuAction::TakePartial => match context_menu_state.target {
             Some(ContextMenuTarget::Slot(slot_kind)) => {
                 if let Some(slot_ref) = item_slot_kind_to_ref(slot_kind, &docked_panel_state) {
                     if let Some(stack) =
@@ -1781,16 +1589,90 @@ pub fn handle_context_menu_actions(
                 }
             }
             None => {}
+        },
+        ContextMenuAction::Trade => {
+            if let Some(ContextMenuTarget::World(object_id)) = context_menu_state.target {
+                // Resolve the right-click target to either a remote player or a
+                // shopkeeper world object. The client knows because the projected
+                // `ClientWorldObjectState.is_shopkeeper` flag is set on
+                // shopkeeper NPCs.
+                let target = if client_state
+                    .remote_players
+                    .values()
+                    .any(|p| p.object_id == object_id)
+                {
+                    crate::game::trade::TradeTarget::Player { object_id }
+                } else if client_state
+                    .world_objects
+                    .get(&object_id)
+                    .is_some_and(|obj| obj.is_shopkeeper)
+                {
+                    crate::game::trade::TradeTarget::Shopkeeper { object_id }
+                } else {
+                    context_menu_state.hide();
+                    return;
+                };
+                pending_commands.push(GameCommand::InitiateTrade { target });
+            }
         }
-        context_menu_state.hide();
+        ContextMenuAction::OfferToTrade => {
+            if let (Some(session_id), Some(ContextMenuTarget::Slot(slot_kind))) =
+                (trade_popup_state.session_id, context_menu_state.target)
+            {
+                if let Some(slot_ref) = item_slot_kind_to_ref(slot_kind, &docked_panel_state) {
+                    if let Some(stack) =
+                        stack_in_slot_kind(&client_state, &docked_panel_state, slot_kind)
+                    {
+                        pending_commands.push(GameCommand::OfferTradeItem {
+                            session_id,
+                            source: slot_ref,
+                            quantity: stack.quantity.max(1),
+                        });
+                    }
+                }
+            }
+        }
+        ContextMenuAction::PickLock | ContextMenuAction::ForceLock | ContextMenuAction::UseKey => {
+            let (allowed, verb) = match action {
+                ContextMenuAction::PickLock => (context_menu_state.can_pick_lock, "pick_lock"),
+                ContextMenuAction::ForceLock => (context_menu_state.can_force_lock, "force_lock"),
+                _ => (context_menu_state.can_use_key, "use_key"),
+            };
+            if let Some(ContextMenuTarget::World(object_id)) =
+                context_menu_state.target.filter(|_| allowed)
+            {
+                pending_commands.push(GameCommand::InteractWithObject {
+                    object_id,
+                    verb: verb.to_owned(),
+                });
+            }
+        }
+        ContextMenuAction::Hide => {
+            if let Some(ContextMenuTarget::World(object_id)) = context_menu_state
+                .target
+                .filter(|_| context_menu_state.can_hide)
+            {
+                pending_commands.push(GameCommand::HideObject { object_id });
+            }
+        }
+        ContextMenuAction::Read => {
+            if let Some(source) = context_menu_state
+                .target
+                .filter(|_| context_menu_state.can_read)
+                .and_then(|target| context_target_to_item_reference(target, &docked_panel_state))
+            {
+                pending_commands.push(GameCommand::ReadBook { source });
+            }
+        }
     }
+
+    context_menu_state.hide();
 }
 
-/// Fallback dismiss: any LMB click that survives the button handlers above
-/// closes the context menu. Scheduled `.after` the button handlers and the
-/// trade/lock variants so a click on an actual menu button still runs its
-/// action first (those handlers hide the menu themselves, after which this
-/// is a no-op).
+/// Fallback dismiss: any LMB click that survives the button handler above
+/// closes the context menu. Scheduled `.after` `handle_context_menu_actions`
+/// so a click on an actual menu button still runs its action first (the
+/// handler hides the menu itself, after which this is a no-op).
 pub fn close_context_menu_on_lmb(
     mouse_input: Res<ButtonInput<MouseButton>>,
     mut context_menu_state: ResMut<ContextMenuState>,
@@ -1799,195 +1681,6 @@ pub fn close_context_menu_on_lmb(
         return;
     }
     context_menu_state.hide();
-}
-
-/// Handler split out from `handle_context_menu_actions` so the lock-related
-/// verb buttons don't push the parent ParamSet over Bevy's 8-query cap.
-pub fn handle_context_menu_lock_actions(
-    mouse_input: Res<ButtonInput<MouseButton>>,
-    window_query: Query<&Window, With<PrimaryWindow>>,
-    mut context_menu_state: ResMut<ContextMenuState>,
-    mut pending_commands: ResMut<PendingGameCommands>,
-    mut menu_queries: ParamSet<(
-        Query<
-            (&ComputedNode, &UiGlobalTransform),
-            With<crate::ui::components::ContextMenuPickLockButton>,
-        >,
-        Query<
-            (&ComputedNode, &UiGlobalTransform),
-            With<crate::ui::components::ContextMenuForceLockButton>,
-        >,
-        Query<
-            (&ComputedNode, &UiGlobalTransform),
-            With<crate::ui::components::ContextMenuUseKeyButton>,
-        >,
-        Query<
-            (&ComputedNode, &UiGlobalTransform),
-            With<crate::ui::components::ContextMenuHideButton>,
-        >,
-    )>,
-) {
-    if !mouse_input.just_pressed(MouseButton::Left) || !context_menu_state.is_visible() {
-        return;
-    }
-    let Ok(window) = window_query.single() else {
-        return;
-    };
-    let Some(cursor_position) = window.cursor_position() else {
-        return;
-    };
-
-    let Some(ContextMenuTarget::World(object_id)) = context_menu_state.target else {
-        return;
-    };
-
-    let verb = if context_menu_state.can_pick_lock
-        && is_cursor_over_button(cursor_position, &menu_queries.p0())
-    {
-        Some("pick_lock")
-    } else if context_menu_state.can_force_lock
-        && is_cursor_over_button(cursor_position, &menu_queries.p1())
-    {
-        Some("force_lock")
-    } else if context_menu_state.can_use_key
-        && is_cursor_over_button(cursor_position, &menu_queries.p2())
-    {
-        Some("use_key")
-    } else {
-        None
-    };
-
-    if let Some(verb) = verb {
-        pending_commands.push(GameCommand::InteractWithObject {
-            object_id,
-            verb: verb.to_owned(),
-        });
-        context_menu_state.hide();
-        return;
-    }
-
-    if context_menu_state.can_hide && is_cursor_over_button(cursor_position, &menu_queries.p3()) {
-        pending_commands.push(GameCommand::HideObject { object_id });
-        context_menu_state.hide();
-    }
-}
-
-/// Read-button handler. Split out from the main context-menu actions so we
-/// can resolve `ItemReference` from both World and Slot targets without
-/// pushing the parent ParamSet over Bevy's query cap.
-pub fn handle_context_menu_read_action(
-    mouse_input: Res<ButtonInput<MouseButton>>,
-    window_query: Query<&Window, With<PrimaryWindow>>,
-    docked_panel_state: Res<DockedPanelState>,
-    mut context_menu_state: ResMut<ContextMenuState>,
-    mut pending_commands: ResMut<PendingGameCommands>,
-    button_query: Query<
-        (&ComputedNode, &UiGlobalTransform),
-        With<crate::ui::components::ContextMenuReadButton>,
-    >,
-) {
-    if !mouse_input.just_pressed(MouseButton::Left) || !context_menu_state.is_visible() {
-        return;
-    }
-    if !context_menu_state.can_read {
-        return;
-    }
-    let Ok(window) = window_query.single() else {
-        return;
-    };
-    let Some(cursor_position) = window.cursor_position() else {
-        return;
-    };
-    if !is_cursor_over_button(cursor_position, &button_query) {
-        return;
-    }
-    let Some(target) = context_menu_state.target else {
-        return;
-    };
-    let Some(source) = context_target_to_item_reference(target, &docked_panel_state) else {
-        return;
-    };
-    pending_commands.push(GameCommand::ReadBook { source });
-    context_menu_state.hide();
-}
-
-/// Trade-related context-menu buttons (Trade / Offer to Trade) live in a
-/// separate system so the main context-menu handler stays under Bevy's
-/// 8-arm `ParamSet` limit.
-#[allow(clippy::too_many_arguments)]
-pub fn handle_trade_context_menu_actions(
-    mouse_input: Res<ButtonInput<MouseButton>>,
-    window_query: Query<&Window, With<PrimaryWindow>>,
-    client_state: Res<ClientGameState>,
-    docked_panel_state: Res<DockedPanelState>,
-    trade_popup_state: Res<crate::ui::resources::TradePopupState>,
-    mut context_menu_state: ResMut<ContextMenuState>,
-    mut pending_commands: ResMut<PendingGameCommands>,
-    trade_button_query: Query<
-        (&ComputedNode, &UiGlobalTransform),
-        With<crate::ui::components::ContextMenuTradeButton>,
-    >,
-    offer_button_query: Query<
-        (&ComputedNode, &UiGlobalTransform),
-        With<crate::ui::components::ContextMenuOfferToTradeButton>,
-    >,
-) {
-    if !mouse_input.just_pressed(MouseButton::Left) || !context_menu_state.is_visible() {
-        return;
-    }
-    let Ok(window) = window_query.single() else {
-        return;
-    };
-    let Some(cursor_position) = window.cursor_position() else {
-        return;
-    };
-
-    if is_cursor_over_button(cursor_position, &trade_button_query) {
-        if let Some(ContextMenuTarget::World(object_id)) = context_menu_state.target {
-            // Resolve the right-click target to either a remote player or a
-            // shopkeeper world object. The client knows because the projected
-            // `ClientWorldObjectState.is_shopkeeper` flag is set on
-            // shopkeeper NPCs.
-            let target = if client_state
-                .remote_players
-                .values()
-                .any(|p| p.object_id == object_id)
-            {
-                crate::game::trade::TradeTarget::Player { object_id }
-            } else if client_state
-                .world_objects
-                .get(&object_id)
-                .is_some_and(|obj| obj.is_shopkeeper)
-            {
-                crate::game::trade::TradeTarget::Shopkeeper { object_id }
-            } else {
-                context_menu_state.hide();
-                return;
-            };
-            pending_commands.push(GameCommand::InitiateTrade { target });
-        }
-        context_menu_state.hide();
-        return;
-    }
-
-    if is_cursor_over_button(cursor_position, &offer_button_query) {
-        if let (Some(session_id), Some(ContextMenuTarget::Slot(slot_kind))) =
-            (trade_popup_state.session_id, context_menu_state.target)
-        {
-            if let Some(slot_ref) = item_slot_kind_to_ref(slot_kind, &docked_panel_state) {
-                if let Some(stack) =
-                    stack_in_slot_kind(&client_state, &docked_panel_state, slot_kind)
-                {
-                    pending_commands.push(GameCommand::OfferTradeItem {
-                        session_id,
-                        source: slot_ref,
-                        quantity: stack.quantity.max(1),
-                    });
-                }
-            }
-        }
-        context_menu_state.hide();
-    }
 }
 
 pub fn handle_use_on_targeting(
@@ -3396,20 +3089,6 @@ pub fn sync_equipment_slot_images(
             }
         }
     }
-}
-
-pub fn sync_context_menu_take_partial_button(
-    context_menu_state: Res<ContextMenuState>,
-    mut button_query: Query<&mut Node, With<ContextMenuTakePartialButton>>,
-) {
-    let Ok(mut node) = button_query.single_mut() else {
-        return;
-    };
-    node.display = if context_menu_state.can_take_partial {
-        Display::Flex
-    } else {
-        Display::None
-    };
 }
 
 pub fn update_take_partial_popup_visibility(

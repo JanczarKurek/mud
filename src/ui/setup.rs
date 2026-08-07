@@ -6,22 +6,17 @@ use crate::ui::components::{
     BackpackPanelContent, BackpackPanelUndockButton, BackpackSlotRow, BottomHudColumn,
     BottomPanelHideButton, CarryWeightLabel, ChatAreaContainer, ChatPanel, ChatTerminal,
     ContainerPanelContent, ContainerPanelUndockButton, ContainerSlotButton, ContainerSlotImage,
-    ContextMenuAttackButton, ContextMenuForceLockButton, ContextMenuHideButton,
-    ContextMenuInspectButton, ContextMenuInteractButton, ContextMenuOfferToTradeButton,
-    ContextMenuOpenButton, ContextMenuPickLockButton, ContextMenuRoot,
-    ContextMenuTakePartialButton, ContextMenuTalkButton, ContextMenuTradeButton,
-    ContextMenuUseButton, ContextMenuUseKeyButton, ContextMenuUseOnButton, DockedPanelBody,
-    DockedPanelCanvas, DockedPanelCloseButton, DockedPanelDragHandle, DockedPanelResizeHandle,
-    DockedPanelRoot, DockedPanelTitle, DragPreviewImage, DragPreviewLabel, DragPreviewQuantity,
-    DragPreviewRoot, EquipmentPanelContent, EquipmentPanelUndockButton, EquipmentSlotButton,
-    EquipmentSlotImage, EquipmentSlotLabel, ExertionFill, ExertionLabel, ExperienceFill,
-    ExperienceLabel, FloatingMinimapZoomInButton, FloatingMinimapZoomLabel,
-    FloatingMinimapZoomOutButton, HealthFill, HealthLabel, HudMinimapZoomInButton,
-    HudMinimapZoomLabel, HudMinimapZoomOutButton, HudRoot, ItemSlotButton, ItemSlotImage,
-    ItemSlotKind, ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot, JumpInfoBoxLabel,
-    JumpInfoBoxRoot, JumpTileHighlight, MagicEffectsLabel, ManaFill, ManaLabel, MinimapCanvas,
-    MinimapMode, MinimapPanelUndockButton, MinimapView, NearbyNpcsList,
-    NearbyNpcsPanelUndockButton, PythonConsoleMaximizeButton, PythonConsolePanel,
+    ContextMenuAction, ContextMenuEntry, ContextMenuRoot, DockedPanelBody, DockedPanelCanvas,
+    DockedPanelCloseButton, DockedPanelDragHandle, DockedPanelResizeHandle, DockedPanelRoot,
+    DockedPanelTitle, DragPreviewImage, DragPreviewLabel, DragPreviewQuantity, DragPreviewRoot,
+    EquipmentPanelContent, EquipmentPanelUndockButton, EquipmentSlotButton, EquipmentSlotImage,
+    EquipmentSlotLabel, ExertionFill, ExertionLabel, ExperienceFill, ExperienceLabel,
+    FloatingMinimapZoomInButton, FloatingMinimapZoomLabel, FloatingMinimapZoomOutButton,
+    HealthFill, HealthLabel, HudMinimapZoomInButton, HudMinimapZoomLabel, HudMinimapZoomOutButton,
+    HudRoot, ItemSlotButton, ItemSlotImage, ItemSlotKind, ItemSlotQuantityLabel, ItemTooltipLabel,
+    ItemTooltipRoot, JumpInfoBoxLabel, JumpInfoBoxRoot, JumpTileHighlight, MagicEffectsLabel,
+    ManaFill, ManaLabel, MinimapCanvas, MinimapMode, MinimapPanelUndockButton, MinimapView,
+    NearbyNpcsList, NearbyNpcsPanelUndockButton, PythonConsoleMaximizeButton, PythonConsolePanel,
     PythonConsoleRestartButton, PythonConsoleTerminal, RegenBuffLabel, RightSidebarRoot,
     SneakingLabel, StatusPanelContent, StatusPanelUndockButton, TakePartialAmountLabel,
     TakePartialCancelButton, TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton,
@@ -478,57 +473,57 @@ pub fn spawn_hud(
             BorderColor::all(palette.border_accent),
         ))
         .with_children(|menu| {
-            spawn_context_button(menu, &theme, &palette, "Talk", ContextMenuTalkButton);
-            spawn_context_button(menu, &theme, &palette, "Trade", ContextMenuTradeButton);
+            spawn_context_button(menu, &theme, &palette, "Talk", ContextMenuAction::Talk);
+            spawn_context_button(menu, &theme, &palette, "Trade", ContextMenuAction::Trade);
             spawn_context_button(
                 menu,
                 &theme,
                 &palette,
                 "Offer to Trade",
-                ContextMenuOfferToTradeButton,
+                ContextMenuAction::OfferToTrade,
             );
-            spawn_context_button(menu, &theme, &palette, "Attack", ContextMenuAttackButton);
-            spawn_context_button(menu, &theme, &palette, "Use", ContextMenuUseButton);
-            spawn_context_button(menu, &theme, &palette, "Use On", ContextMenuUseOnButton);
+            spawn_context_button(menu, &theme, &palette, "Attack", ContextMenuAction::Attack);
+            spawn_context_button(menu, &theme, &palette, "Use", ContextMenuAction::Use);
+            spawn_context_button(menu, &theme, &palette, "Use On", ContextMenuAction::UseOn);
             spawn_context_button(
                 menu,
                 &theme,
                 &palette,
                 "Take...",
-                ContextMenuTakePartialButton,
+                ContextMenuAction::TakePartial,
             );
-            spawn_context_button(menu, &theme, &palette, "Inspect", ContextMenuInspectButton);
-            spawn_context_button(menu, &theme, &palette, "Open", ContextMenuOpenButton);
+            spawn_context_button(
+                menu,
+                &theme,
+                &palette,
+                "Inspect",
+                ContextMenuAction::Inspect,
+            );
+            spawn_context_button(menu, &theme, &palette, "Open", ContextMenuAction::Open);
             spawn_context_button(
                 menu,
                 &theme,
                 &palette,
                 "Interact",
-                ContextMenuInteractButton,
+                ContextMenuAction::Interact,
             );
             spawn_context_button(
                 menu,
                 &theme,
                 &palette,
                 "Pick Lock",
-                ContextMenuPickLockButton,
+                ContextMenuAction::PickLock,
             );
             spawn_context_button(
                 menu,
                 &theme,
                 &palette,
                 "Force Lock",
-                ContextMenuForceLockButton,
+                ContextMenuAction::ForceLock,
             );
-            spawn_context_button(menu, &theme, &palette, "Use Key", ContextMenuUseKeyButton);
-            spawn_context_button(menu, &theme, &palette, "Hide", ContextMenuHideButton);
-            spawn_context_button(
-                menu,
-                &theme,
-                &palette,
-                "Read",
-                crate::ui::components::ContextMenuReadButton,
-            );
+            spawn_context_button(menu, &theme, &palette, "Use Key", ContextMenuAction::UseKey);
+            spawn_context_button(menu, &theme, &palette, "Hide", ContextMenuAction::Hide);
+            spawn_context_button(menu, &theme, &palette, "Read", ContextMenuAction::Read);
         });
 
     spawn_take_partial_popup(&mut commands, &theme, &palette);
@@ -1629,12 +1624,12 @@ fn spawn_open_container_slot(
         });
 }
 
-fn spawn_context_button<T: Component>(
+fn spawn_context_button(
     parent: &mut ChildSpawnerCommands,
     theme: &UiThemeAssets,
     palette: &Palette,
     label: &str,
-    marker: T,
+    action: ContextMenuAction,
 ) {
     spawn_themed_button(
         parent,
@@ -1651,7 +1646,7 @@ fn spawn_context_button<T: Component>(
         },
         label,
         16.0,
-        marker,
+        ContextMenuEntry(action),
     );
 }
 

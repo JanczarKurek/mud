@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use bevy::prelude::*;
 
 use crate::game::commands::ItemReference;
-use crate::ui::components::ItemSlotKind;
+use crate::ui::components::{ContextMenuAction, ItemSlotKind};
 use crate::ui::mountable_panel::{ModeStore, PanelMountMode};
 use crate::world::components::TilePosition;
 
@@ -124,6 +124,41 @@ impl ContextMenuState {
 
     pub fn is_visible(&self) -> bool {
         self.target.is_some()
+    }
+
+    /// Whether `action`'s context-menu row should currently be visible.
+    /// Pure function of this resource — the one exception is
+    /// [`ContextMenuAction::OfferToTrade`], which additionally requires an
+    /// open trade session; `sync_context_menu_entries` ANDs that in from
+    /// `TradePopupState`.
+    pub fn action_enabled(&self, action: ContextMenuAction) -> bool {
+        match action {
+            ContextMenuAction::Inspect => true,
+            ContextMenuAction::Open => self.can_open,
+            ContextMenuAction::Use => self.can_use,
+            ContextMenuAction::UseOn => self.can_use_on,
+            ContextMenuAction::Attack => self.can_attack,
+            ContextMenuAction::TakePartial => self.can_take_partial,
+            ContextMenuAction::Talk => self.can_talk,
+            ContextMenuAction::Trade => self.can_trade,
+            // The trade-session half of the condition lives outside this
+            // resource; this half is "the target is one of the player's own
+            // backpack/equipment/pouch slots".
+            ContextMenuAction::OfferToTrade => matches!(
+                self.target,
+                Some(ContextMenuTarget::Slot(
+                    ItemSlotKind::Backpack(_)
+                        | ItemSlotKind::Equipment(_)
+                        | ItemSlotKind::PouchInBackpack { .. }
+                ))
+            ),
+            ContextMenuAction::Interact => self.interaction.is_some(),
+            ContextMenuAction::PickLock => self.can_pick_lock,
+            ContextMenuAction::ForceLock => self.can_force_lock,
+            ContextMenuAction::UseKey => self.can_use_key,
+            ContextMenuAction::Hide => self.can_hide,
+            ContextMenuAction::Read => self.can_read,
+        }
     }
 }
 
