@@ -50,6 +50,7 @@ fn build_app(socket_path: PathBuf) -> App {
             socket_path,
             mode: 0o600,
         }),
+        embedded_extension: None,
     });
     app.update();
     app

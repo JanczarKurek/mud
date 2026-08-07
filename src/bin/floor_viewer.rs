@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use mud2::floor_viewer::plugin::FloorViewerPlugin;
+use mud2_editor::floor_viewer::plugin::FloorViewerPlugin;
 
 fn main() {
     App::new()

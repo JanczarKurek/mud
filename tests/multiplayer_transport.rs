@@ -200,6 +200,7 @@ fn two_clients_receive_snapshots_and_see_each_other_move() {
         server_tls: None,
         client_tls: None,
         admin_socket: None,
+        embedded_extension: None,
     });
     app.update();
 
@@ -276,6 +277,7 @@ fn reconnecting_same_account_restores_character_position() {
         server_tls: None,
         client_tls: None,
         admin_socket: None,
+        embedded_extension: None,
     });
     app.update();
 
@@ -355,6 +357,7 @@ fn login_with_wrong_password_is_rejected() {
         server_tls: None,
         client_tls: None,
         admin_socket: None,
+        embedded_extension: None,
     });
     app.update();
 
@@ -409,6 +412,7 @@ fn disconnecting_client_removes_its_player_from_the_server() {
         server_tls: None,
         client_tls: None,
         admin_socket: None,
+        embedded_extension: None,
     });
     app.update();
 

@@ -1,109 +1,63 @@
 [workspace]
-members = [".", "crates/bevy_terminal"]
+members = [
+    ".",
+    "crates/bevy_terminal",
+    "crates/mud2-lib",
+    "crates/mud2-editor",
+]
 resolver = "2"
 
+# The root package holds only the binaries (mud2, server, asset_viewer,
+# floor_viewer, gen_schemas). The game library lives in crates/mud2-lib (lib
+# target still named `mud2`), and the map editor + viewers in
+# crates/mud2-editor — so editing editor code no longer rebuilds the game lib,
+# the headless server never compiles editor code, and `cargo run --bin mud2`
+# keeps working from the repo root.
 [package]
-name = "mud2"
+name = "mud2-bins"
 version = "0.2.0"
 edition = "2021"
 
-# These two clippy lints are unavoidable in idiomatic Bevy ECS code and account
-# for the vast majority of clippy noise: `type_complexity` fires on every
-# multi-filter `Query<...>`, and `too_many_arguments` fires on systems that take
-# the usual handful of queries + resources + commands. Allowed crate-wide (the
-# Bevy book recommends the same).
 [lints.clippy]
 type_complexity = "allow"
 too_many_arguments = "allow"
 
 [dependencies]
-# Curated feature set: bevy's default is ["2d", "3d", "ui"], but the 2d/3d/ui
-# umbrellas each also pull `scene`, `audio` and `picking`, and this game uses
-# none of them (nor anything from 3d: pbr/gltf/light/anti-alias — ~250 MB of
-# rlibs, zero call sites; UI buttons run on `ui_focus_system`, which is not
-# picking-gated). The four sub-features below are bevy's own curated combos —
-# "2d + ui minus scene/audio/picking/3d" — so transitive feature requirements
-# stay consistent. If a new bevy API fails to resolve, look up which feature
-# gates it in bevy's Cargo.toml and add that feature here.
 bevy = { version = "0.18", default-features = false, features = [
-    "default_app",       # asset, log, state, window, input focus, custom cursor
-    "default_platform",  # winit, x11+wayland, multi_threaded, default font, std
-    "2d_bevy_render",    # sprites + gizmos + core pipeline + render
-    "ui_bevy_render",    # bevy_ui + its render backend
+    "default_app",
+    "default_platform",
+    "2d_bevy_render",
+    "ui_bevy_render",
 ] }
-bevy_terminal = { path = "crates/bevy_terminal" }
-bevy_yarnspinner = "0.8"
-# Only needed for `VariableStorageError`, which bevy_yarnspinner re-exports
-# as `pub(crate)`. The actual trait lives in `yarnspinner::runtime`.
-yarnspinner = "0.8"
-rustpython = "0.4"
-rustpython-vm = "0.4"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-serde_yaml = "0.9"
-schemars = { version = "0.8", optional = true }
-sha2 = "0.10"
-dirs = "5"
-base64 = "0.22"
-libc = "0.2"
-# CLI parsing for `mud2` and `server` binaries. `derive` for the parser
-# attribute macros, `env` so `#[arg(env = "...")]` can read fallback values
-# from the environment (preserves the pre-clap MUD2_* fallback behavior).
 clap = { version = "4.5", features = ["derive", "env"] }
-
-# Account persistence — version matched to rustpython-stdlib's libsqlite3-sys
-# (links="sqlite3" can only appear once in the dep graph).
-rusqlite = "0.31"
-# Pulled in transitively by rusqlite *and* rustpython-stdlib; declared here so we
-# can flip on `bundled` for the whole graph, statically linking sqlite into the
-# binary instead of relying on a system libsqlite3. Version must match what
-# rusqlite/rustpython resolve to (see Cargo.lock).
-libsqlite3-sys = { version = "0.28", features = ["bundled"] }
-argon2 = "0.5"
-rand_core = { version = "0.6", features = ["std"] }
-
-# Filesystem watching for asset_viewer hot reload. Pulls in `notify` and
-# batches/coalesces filesystem events out of the box.
-notify-debouncer-full = "0.3"
-
-# TLS
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
-rustls-pemfile = "2"
-webpki-roots = "0.26"
-rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"], optional = true }
+libc = "0.2"
+mud2-lib = { path = "crates/mud2-lib", default-features = false }
+mud2-editor = { path = "crates/mud2-editor" }
+schemars = { version = "0.8", optional = true }
 
 [features]
+# Dev default: bevy dynamic linking for fast `cargo run` iteration. Packaging
+# scripts build `--no-default-features` to drop it (see packaging/*.sh).
 default = ["dynamic_linking"]
-# Bevy's hot-reload-friendly dynamic linking. Great for `cargo run` iteration
-# (cuts incremental link times from seconds to ~0); must be OFF for release
-# builds, otherwise the binary needs `libbevy_dylib.so` next to it at runtime.
-# Drop with `cargo build --release --no-default-features`.
-dynamic_linking = ["bevy/dynamic_linking"]
-# Enables Bevy's `file_watcher` for the asset_viewer binary so spritesheet PNGs
-# hot-reload when edited externally. Off by default so the game/server builds
-# skip the watcher; run the viewer with
-# `cargo run --bin asset_viewer --features viewer-hot-reload`.
-viewer-hot-reload = ["bevy/file_watcher"]
-gen-schemas = ["schemars"]
-dev-self-signed = ["rcgen"]
-# Build with `--features profiling` to capture a per-system Chrome trace at
-# runtime. On exit, Bevy writes `trace-{timestamp}.json` to CWD; open in
-# https://ui.perfetto.dev/ or chrome://tracing. Off by default — the chrome
-# layer adds nontrivial per-span overhead.
-profiling = ["bevy/trace_chrome"]
-# Build with `--features tracy` to expose Bevy's tracing spans to a Tracy
-# client. Run `tracy` (GUI) or `tracy-capture -o file.tracy` before launching
-# the game. Bevy 0.18.1 pulls tracing-tracy 0.11.x; the capture client
-# version must match. Mutually exclusive with `profiling` — different
-# subscribers, only one tracing layer at a time. See
-# docs/movement_perf_investigation.md "Round 2 — Tracy" for usage.
-tracy = ["bevy/trace_tracy"]
-debug = ["bevy/debug"]
+dynamic_linking = ["mud2-lib/dynamic_linking"]
+gen-schemas = ["mud2-lib/gen-schemas", "schemars"]
+dev-self-signed = ["mud2-lib/dev-self-signed"]
+profiling = ["mud2-lib/profiling"]
+tracy = ["mud2-lib/tracy"]
+debug = ["mud2-lib/debug"]
+# Spritesheet hot-reload for the asset_viewer binary.
+viewer-hot-reload = ["mud2-editor/viewer-hot-reload"]
+
+[dev-dependencies]
+serde_json = "1"
 
 [[bin]]
-name = "gen_schemas"
-path = "src/bin/gen_schemas.rs"
-required-features = ["gen-schemas"]
+name = "mud2"
+path = "src/main.rs"
+
+[[bin]]
+name = "server"
+path = "src/bin/server.rs"
 
 [[bin]]
 name = "asset_viewer"
@@ -112,6 +66,11 @@ path = "src/bin/asset_viewer.rs"
 [[bin]]
 name = "floor_viewer"
 path = "src/bin/floor_viewer.rs"
+
+[[bin]]
+name = "gen_schemas"
+path = "src/bin/gen_schemas.rs"
+required-features = ["gen-schemas"]
 
 [profile.dev]
 debug = "line-tables-only"

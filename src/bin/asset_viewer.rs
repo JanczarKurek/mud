@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use mud2::asset_viewer::plugin::AssetViewerPlugin;
+use mud2_editor::asset_viewer::plugin::AssetViewerPlugin;
 
 fn main() {
     App::new()

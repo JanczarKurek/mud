@@ -22,14 +22,21 @@ packaging/build-windows.sh                      # Windows x86_64 zip via mingw c
 
 ## Architecture
 
-### Three Runtime Modes (configured in `src/app/plugin.rs`)
+### Workspace Layout
+- **`crates/mud2-lib`** — the game library. Its lib *target* is still named `mud2`, so all `mud2::...` imports (bins, tests, editor) work unchanged. All source paths below live under `crates/mud2-lib/src/`.
+- **`crates/mud2-editor`** — the in-game map editor plus the asset/floor viewer modules. Depends on mud2-lib; the lib never depends on it. The `mud2` binary plugs `EditorPlugin` in via `GameAppPlugin::embedded_extension`.
+- **root package `mud2-bins`** — only the binaries (`mud2`, `server`, `asset_viewer`, `floor_viewer`, `gen_schemas`), so `cargo run --bin <x>` keeps working from the repo root. The headless server never compiles editor code.
+- **`crates/bevy_terminal`** — leaf terminal-widget crate.
+- `crates/mud2-lib/assets` and `crates/mud2-editor/assets` are symlinks to the repo-root `assets/` so unit tests (which run with the crate dir as CWD) can use the same relative asset paths as the game.
+
+### Three Runtime Modes (configured in `app/plugin.rs`)
 - **EmbeddedClient**: Single binary, shared memory client+server (default, for dev)
 - **TcpClient**: Connects to remote server over TCP
 - **HeadlessServer**: No graphics, listens for TCP connections
 
 ### Server-Authoritative Flow
 1. Client sends **commands** via `PendingGameCommands` (move, cast, etc.)
-2. Server validates and processes commands (`src/game/systems.rs`)
+2. Server validates and processes commands (`crates/mud2-lib/src/game/systems.rs`)
 3. Server produces **game events** via `PendingGameEvents`
 4. Client applies events to local state via `ClientGameState`
 
@@ -37,11 +44,11 @@ packaging/build-windows.sh                      # Windows x86_64 zip via mingw c
 EmbeddedClient mode = HeadlessServer + TcpClient running in the same `App`. The wire protocol is *bypassed* but the data flow must be identical, otherwise offline play will drift from networked play. Keep these rules when adding systems:
 - **Server-side systems** must emit changes through `PendingGameEvents`. Never mutate `ClientGameState` directly.
 - **Client-side (presentation) systems** must read from `ClientGameState` or from view-only components (`DisplayedVitalStats`, `ViewPosition`). Never query authoritative components (`VitalStats`, `SpaceResident`, `TilePosition`) from presentation code. Projected entities (`ClientProjectedWorldObject`, `ClientRemotePlayerVisual`, the projected local player in TcpClient mode) carry *only* `ViewPosition`, never the authoritative pair.
-- `apply_game_events_to_client_state` is the single fold function that turns events into client state. Both `GameServerPlugin` and `GameClientPlugin` register it so system-graph ordering is identical in all three runtime modes (`src/game/mod.rs`).
+- `apply_game_events_to_client_state` is the single fold function that turns events into client state. Both `GameServerPlugin` and `GameClientPlugin` register it so system-graph ordering is identical in all three runtime modes (`crates/mud2-lib/src/game/mod.rs`).
 - **Two event channels, two roles.** `GameEvent` (via `ServerMessage::Events`) is state replication — every field of `ClientGameState` is reachable through a `GameEvent` variant, and `compute_events_for_peer` is the sole serializer. `GameUiEvent` (via `ServerMessage::UiEvents`) is a one-shot signal bus orthogonal to state (e.g. "open this container now"); do not use it to replicate state.
 - Before adding a new code path, ask: "would this still work if the server were on another machine?" If no, it belongs on the presentation side.
 
-### Module Layout (`src/`)
+### Module Layout (`crates/mud2-lib/src/`)
 - **accounts/**: sqlite-backed account database (Argon2 hashed passwords), per-character save/load, autosave system
 - **app/**: Bevy app setup, plugins, state machine, title screen, auth screen
 - **game/**: Core command/event loop (commands.rs, resources.rs, systems.rs)
@@ -55,11 +62,13 @@ EmbeddedClient mode = HeadlessServer + TcpClient running in the same `App`. The 
 - **ui/**: HUD, docked panels, context menus, cursor management
 - **scripting/**: Embedded RustPython console
 
+(Editor and viewers live in `crates/mud2-editor/src/`.)
+
 ### Auth & Persistence
 
-- Every TCP connection must `Login` / `Register` before the server will send the asset manifest or any gameplay events. The peer state machine is `AwaitingAuth → Authed { account_id }` (`src/network/resources.rs`).
-- `PlayerId(account_id as u64)` — the auth path sets a player's identity from their DB row, and embedded mode uses the reserved `LOCAL_ACCOUNT_ID = 0` (`src/accounts/db.rs`).
-- On-disk layout is per-role (see `src/app/paths.rs` — the single source of truth):
+- Every TCP connection must `Login` / `Register` before the server will send the asset manifest or any gameplay events. The peer state machine is `AwaitingAuth → Authed { account_id }` (`crates/mud2-lib/src/network/resources.rs`).
+- `PlayerId(account_id as u64)` — the auth path sets a player's identity from their DB row, and embedded mode uses the reserved `LOCAL_ACCOUNT_ID = 0` (`crates/mud2-lib/src/accounts/db.rs`).
+- On-disk layout is per-role (see `crates/mud2-lib/src/app/paths.rs` — the single source of truth):
 
   | Role | Accounts DB | World snapshot | Asset cache |
   |---|---|---|---|
@@ -73,7 +82,7 @@ EmbeddedClient mode = HeadlessServer + TcpClient running in the same `App`. The 
 
 ### TLS
 
-- `ServerTransport` / `ClientTransport` (`src/network/transport.rs`) wrap the raw `TcpStream` with optional TLS via `rustls::StreamOwned`. Sync nonblocking throughout — no tokio.
+- `ServerTransport` / `ClientTransport` (`crates/mud2-lib/src/network/transport.rs`) wrap the raw `TcpStream` with optional TLS via `rustls::StreamOwned`. Sync nonblocking throughout — no tokio.
 - Server: `--tls --tls-cert PATH --tls-key PATH`, plus `--generate-cert` (requires `dev-self-signed` Cargo feature) to emit a self-signed pair.
 - Client: `--tls` uses `webpki-roots` trust anchors; `--insecure` skips verification (dev only). `--connect tls://host:port` is shorthand for both.
 
@@ -81,8 +90,8 @@ EmbeddedClient mode = HeadlessServer + TcpClient running in the same `App`. The 
 
 - HeadlessServer only. Pass `--admin-socket [PATH]` to bind a UNIX-domain socket; default path is `~/.local/share/mud2/server/admin.sock`. Auth is by filesystem permissions (default mode `0600`, override with `--admin-socket-mode 660`). Connect with `nc -U <path>` or `socat - UNIX-CONNECT:<path>`.
 - One persistent Python scope is shared across all admin connections — admins can collaborate on globals. Live-bind a session to act-as a player with `world.attach_player(player_id)` (`world.attach_player(None)` detaches).
-- `AdminReplHost` (`src/scripting/admin_host.rs`) compiles input as `Mode::Single` and pipes `sys.stdout` / `sys.stderr` / `sys.displayhook` through `world.log`, so bare expressions print their `repr` like CPython's REPL. Multi-line input is buffered until a blank line force-flushes (mirrors CPython).
-- The listener (`src/network/admin.rs`, `#[cfg(unix)]`) reuses the existing sync-nonblocking pattern from `src/network/systems.rs`. All Python execution happens on the Bevy main thread; no background threads. Stale sockets from a prior crash are auto-reclaimed at startup if no live listener answers on them.
+- `AdminReplHost` (`crates/mud2-lib/src/scripting/admin_host.rs`) compiles input as `Mode::Single` and pipes `sys.stdout` / `sys.stderr` / `sys.displayhook` through `world.log`, so bare expressions print their `repr` like CPython's REPL. Multi-line input is buffered until a blank line force-flushes (mirrors CPython).
+- The listener (`crates/mud2-lib/src/network/admin.rs`, `#[cfg(unix)]`) reuses the existing sync-nonblocking pattern from `crates/mud2-lib/src/network/systems.rs`. All Python execution happens on the Bevy main thread; no background threads. Stale sockets from a prior crash are auto-reclaimed at startup if no live listener answers on them.
 
 ### Data-Driven Design
 - Map layouts: `assets/maps/*.yaml`

@@ -4318,7 +4318,31 @@ dependencies = [
 ]
 
 [[package]]
-name = "mud2"
+name = "mud2-bins"
+version = "0.2.0"
+dependencies = [
+ "bevy",
+ "clap 4.6.1",
+ "libc",
+ "mud2-editor",
+ "mud2-lib",
+ "schemars",
+ "serde_json",
+]
+
+[[package]]
+name = "mud2-editor"
+version = "0.2.0"
+dependencies = [
+ "bevy",
+ "mud2-lib",
+ "notify-debouncer-full 0.3.2",
+ "serde",
+ "serde_yaml",
+]
+
+[[package]]
+name = "mud2-lib"
 version = "0.2.0"
 dependencies = [
  "argon2",
@@ -4330,7 +4354,6 @@ dependencies = [
  "dirs",
  "libc",
  "libsqlite3-sys",
- "notify-debouncer-full 0.3.2",
  "rand_core 0.6.4",
  "rcgen",
  "rusqlite",

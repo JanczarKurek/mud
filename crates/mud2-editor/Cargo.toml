@@ -1,0 +1,31 @@
+[package]
+name = "mud2-editor"
+version = "0.2.0"
+edition = "2021"
+
+# Same crate-wide clippy posture as the root package (see its Cargo.toml).
+[lints.clippy]
+type_complexity = "allow"
+too_many_arguments = "allow"
+
+[dependencies]
+# Feature set is unified with the root package's curated list; see the note
+# there. `default-features = false` on mud2 so release builds (`-p mud2-client
+# --no-default-features`) don't re-enable dynamic_linking through this edge.
+bevy = { version = "0.18", default-features = false, features = [
+    "default_app",
+    "default_platform",
+    "2d_bevy_render",
+    "ui_bevy_render",
+] }
+mud2-lib = { path = "../mud2-lib", default-features = false }
+# Filesystem watching for asset_viewer hot reload.
+notify-debouncer-full = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+
+[features]
+# Spritesheet hot-reload for the asset_viewer binary:
+# `cargo run --bin asset_viewer --features viewer-hot-reload`.
+viewer-hot-reload = ["bevy/file_watcher"]
+
