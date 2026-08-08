@@ -5,7 +5,7 @@ use crate::combat::components::AttackProfile;
 use crate::combat::damage_expr::DamageExpr;
 use crate::combat::modifiers::ModifierEffect;
 use crate::game::commands::{GameCommand, MoveDelta, RotationDirection};
-use crate::game::resources::{ClientGameState, InventoryState, PendingGameCommands};
+use crate::game::resources::{ClientGameState, ClientPendingCommands, InventoryState};
 use crate::player::classes::Class;
 use crate::player::components::{
     AttributeSet, BaseStats, CurrentCarryWeight, DefenseStats, DerivedStats, Encumbered, Exertion,
@@ -15,9 +15,7 @@ use crate::player::exertion::exertion_max;
 use crate::player::progression::Experience;
 use crate::scripting::resources::PythonConsoleState;
 use crate::ui::settings::model::{Action, Keybindings, MovementBindings, MovementDir};
-use crate::world::components::{
-    DisplayedVitalStats, Facing, SpaceResident, TilePosition, ViewPosition,
-};
+use crate::world::components::{DisplayedVitalStats, Facing, TilePosition, ViewPosition};
 use crate::world::object_definitions::{
     AttackProfileKindDef, EquipmentSlot, OverworldObjectDefinitions,
 };
@@ -242,7 +240,7 @@ pub fn move_player_on_grid(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     keybindings: Res<Keybindings>,
     console_state: Option<Res<PythonConsoleState>>,
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
 ) {
     if console_state.as_ref().is_some_and(|state| state.is_open) {
         return;
@@ -265,7 +263,7 @@ pub fn set_home_on_keypress(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     keybindings: Res<Keybindings>,
     console_state: Option<Res<PythonConsoleState>>,
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
 ) {
     if console_state.as_ref().is_some_and(|state| state.is_open) {
         return;
@@ -287,7 +285,7 @@ pub fn toggle_sneak_on_keypress(
     keybindings: Res<Keybindings>,
     console_state: Option<Res<PythonConsoleState>>,
     client_state: Res<ClientGameState>,
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
 ) {
     if console_state.as_ref().is_some_and(|state| state.is_open) {
         return;
@@ -307,7 +305,7 @@ pub fn toggle_aware_on_keypress(
     keybindings: Res<Keybindings>,
     console_state: Option<Res<PythonConsoleState>>,
     client_state: Res<ClientGameState>,
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
 ) {
     if console_state.as_ref().is_some_and(|state| state.is_open) {
         return;
@@ -328,7 +326,7 @@ pub fn toggle_auto_retaliate_on_keypress(
     keybindings: Res<Keybindings>,
     console_state: Option<Res<PythonConsoleState>>,
     client_state: Res<ClientGameState>,
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
 ) {
     if console_state.as_ref().is_some_and(|state| state.is_open) {
         return;
@@ -349,7 +347,7 @@ pub fn rotate_nearby_object_on_shortcut(
     keybindings: Res<Keybindings>,
     console_state: Option<Res<PythonConsoleState>>,
     client_state: Res<ClientGameState>,
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
 ) {
     if console_state.as_ref().is_some_and(|state| state.is_open) {
         return;
@@ -394,40 +392,6 @@ pub fn rotate_nearby_object_on_shortcut(
         object_id: target.object_id,
         rotation,
     });
-}
-
-/// View-sync for the locally-simulated (authoritative) player. Copies authoritative
-/// `VitalStats` into the presentation-only `DisplayedVitalStats` component. Runs in
-/// EmbeddedClient mode where a `PlayerIdentity` is present on the single Player entity.
-pub fn sync_authoritative_player_display(
-    mut player_query: Query<
-        (&VitalStats, &mut DisplayedVitalStats),
-        (With<Player>, With<PlayerIdentity>),
-    >,
-) {
-    let Ok((vital_stats, mut displayed_vitals)) = player_query.single_mut() else {
-        return;
-    };
-    displayed_vitals.health = vital_stats.health;
-    displayed_vitals.max_health = vital_stats.max_health;
-    displayed_vitals.mana = vital_stats.mana;
-    displayed_vitals.max_mana = vital_stats.max_mana;
-}
-
-/// Mirrors the authoritative `SpaceResident` + `TilePosition` onto the presentation-only
-/// `ViewPosition` for the locally-simulated player in EmbeddedClient mode. In TcpClient
-/// mode the projected player has no `PlayerIdentity`, so this system is a no-op and
-/// `sync_projected_player_from_client_state` drives the view instead.
-pub fn sync_authoritative_player_position_view(
-    mut query: Query<
-        (&SpaceResident, &TilePosition, &mut ViewPosition),
-        (With<Player>, With<PlayerIdentity>),
-    >,
-) {
-    for (space_resident, tile_position, mut view) in &mut query {
-        view.space_id = space_resident.space_id;
-        view.tile = *tile_position;
-    }
 }
 
 /// View-sync for the projected (remote-authoritative) player in TcpClient mode.
@@ -558,8 +522,12 @@ render:
 
     use crate::test_support::test_world_config;
 
+    /// An authoritative player entity (has `PlayerIdentity`, e.g. the
+    /// server-side entity in a unified embedded App) must be ignored by the
+    /// projected-player view sync — its view is never driven from
+    /// `ClientGameState`.
     #[test]
-    fn authoritative_embedded_player_mirrors_position_and_vitals() {
+    fn authoritative_player_is_ignored_by_projected_view_sync() {
         let mut app = App::new();
         app.insert_resource(test_world_config());
         app.insert_resource(ClientGameState {
@@ -577,14 +545,10 @@ render:
             .spawn((
                 Player,
                 PlayerIdentity::new(crate::player::components::PlayerId(0)),
-                SpaceResident {
+                crate::world::components::SpaceResident {
                     space_id: SpaceId(1),
                 },
                 TilePosition::ground(2, 3),
-                ViewPosition {
-                    space_id: SpaceId(0),
-                    tile: TilePosition::ground(0, 0),
-                },
                 VitalStats {
                     health: 14.0,
                     max_health: 35.0,
@@ -595,28 +559,14 @@ render:
             ))
             .id();
 
-        app.add_systems(
-            Update,
-            (
-                sync_authoritative_player_display,
-                sync_authoritative_player_position_view,
-                sync_projected_player_from_client_state,
-            ),
-        );
+        app.add_systems(Update, sync_projected_player_from_client_state);
         app.update();
 
         let entity_ref = app.world().entity(entity);
-        let view = entity_ref.get::<ViewPosition>().unwrap();
-        let vital_stats = entity_ref.get::<VitalStats>().unwrap();
         let displayed_vitals = entity_ref.get::<DisplayedVitalStats>().unwrap();
-
-        // View mirrors authoritative position — ClientGameState is ignored for this entity.
-        assert_eq!(view.space_id, SpaceId(1));
-        assert_eq!(view.tile, TilePosition::ground(2, 3));
-        assert_eq!(vital_stats.health, 14.0);
-        assert_eq!(vital_stats.max_health, 35.0);
-        assert_eq!(displayed_vitals.health, 14.0);
-        assert_eq!(displayed_vitals.max_health, 35.0);
+        // Untouched: the sync filters `Without<PlayerIdentity>`.
+        assert_eq!(displayed_vitals.health, 0.0);
+        assert_eq!(displayed_vitals.max_health, 0.0);
     }
 
     #[test]
@@ -646,14 +596,7 @@ render:
             ))
             .id();
 
-        app.add_systems(
-            Update,
-            (
-                sync_authoritative_player_display,
-                sync_authoritative_player_position_view,
-                sync_projected_player_from_client_state,
-            ),
-        );
+        app.add_systems(Update, sync_projected_player_from_client_state);
         app.update();
 
         let entity_ref = app.world().entity(entity);

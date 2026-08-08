@@ -9,9 +9,7 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::game::commands::GameCommand;
-use crate::game::resources::{
-    GameEvent, GameUiEvent, PendingGameCommands, PendingGameEvents, PendingGameUiEvents,
-};
+use crate::game::resources::{GameUiEvent, PendingGameCommands, PendingGameUiEvents};
 use crate::player::classes::{ability_mod, class_data, Class};
 use crate::player::components::{
     AttributeKind, AttributeSet, BaseStats, ChatLog, Player, PlayerIdentity,
@@ -305,8 +303,9 @@ pub fn allocate_skill_ranks(
 
 /// Server system: drains `GameCommand::AllocateSkillPoint` from
 /// `PendingGameCommands` in the `CommandIntercept` set (before the main
-/// `process_game_commands`). Emits `SkillRanksChanged` on success, or a chat
-/// line on rejection so admin REPL/scripted callers see feedback.
+/// `process_game_commands`). The new ranks replicate via the projection's
+/// `SkillSheetChanged` drift detection; rejections get a chat line so admin
+/// REPL/scripted callers see feedback.
 pub fn process_allocate_skill_commands(
     mut pending_commands: ResMut<PendingGameCommands>,
     mut player_query: Query<
@@ -319,7 +318,6 @@ pub fn process_allocate_skill_commands(
         ),
         With<Player>,
     >,
-    mut events: ResMut<PendingGameEvents>,
 ) {
     for (player_id, (skill, ranks)) in pending_commands.drain_matching(|command| match command {
         GameCommand::AllocateSkillPoint { skill, ranks } => Ok((skill, ranks)),
@@ -337,15 +335,7 @@ pub fn process_allocate_skill_commands(
             let outcome =
                 allocate_skill_ranks(&mut sheet, *class, experience.level, skill, ranks.max(1));
             match outcome {
-                AllocationOutcome::Applied {
-                    new_rank,
-                    remaining_points,
-                } => {
-                    events.events.push(GameEvent::SkillRanksChanged {
-                        skill,
-                        new_rank,
-                        remaining_points,
-                    });
+                AllocationOutcome::Applied { .. } => {
                     applied_for_local = true;
                 }
                 AllocationOutcome::AtMaxRank => {
@@ -416,20 +406,19 @@ pub fn process_allocate_ability_bump_commands(
     }
 }
 
-/// Hook into the level-up loop: award `skill_points_for_level_up` points,
-/// surface a HUD toast, and emit `SkillPointsGranted` for replication. Called
-/// from `apply_xp_grants` for each level crossed.
+/// Hook into the level-up loop: award `skill_points_for_level_up` points and
+/// surface a HUD toast. The new balance replicates via the projection's
+/// `SkillSheetChanged` drift detection. Called from `apply_xp_grants` for each
+/// level crossed.
 pub fn grant_level_up_skill_points(
     sheet: &mut SkillSheet,
     class: Class,
     base_stats: &BaseStats,
     identity: &PlayerIdentity,
-    events: &mut PendingGameEvents,
     ui_events: &mut PendingGameUiEvents,
 ) {
     let amount = skill_points_for_level_up(class, &base_stats.attributes);
     sheet.available_points = sheet.available_points.saturating_add(amount);
-    events.events.push(GameEvent::SkillPointsGranted { amount });
     ui_events.push(identity.id, GameUiEvent::SkillPointsToast { amount });
 }
 

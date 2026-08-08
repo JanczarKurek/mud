@@ -15,7 +15,7 @@ use bevy::ui::{ComputedNode, UiGlobalTransform};
 use bevy::window::PrimaryWindow;
 
 use crate::game::commands::GameCommand;
-use crate::game::resources::{ClientGameState, PendingGameCommands};
+use crate::game::resources::{ClientGameState, ClientPendingCommands};
 use crate::game::trade::{ClientTradeView, TradeOfferEntry, TradeSessionId, WareView};
 use crate::ui::components::{
     ItemSlotButton, ItemSlotKind, TradeButtonLabel, TradeCancelButton, TradeColumn,
@@ -310,7 +310,7 @@ pub fn handle_trade_popup_close_click(
     mouse_input: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     state: Res<TradePopupState>,
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
     button_query: Query<(&ComputedNode, &UiGlobalTransform), With<TradePopupCloseButton>>,
 ) {
     if !mouse_input.just_pressed(MouseButton::Left) {
@@ -569,7 +569,7 @@ pub fn handle_trade_panel_clicks(
     window_query: Query<&Window, With<PrimaryWindow>>,
     client_state: Res<ClientGameState>,
     state: Res<TradePopupState>,
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
     ready_query: Query<(&ComputedNode, &UiGlobalTransform), With<TradeReadyButton>>,
     confirm_query: Query<(&ComputedNode, &UiGlobalTransform), With<TradeConfirmButton>>,
     cancel_query: Query<(&ComputedNode, &UiGlobalTransform), With<TradeCancelButton>>,

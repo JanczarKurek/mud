@@ -22,7 +22,7 @@ use bevy_terminal::{
 
 use crate::app::state::{simulation_active, ClientAppState};
 use crate::game::commands::GameCommand;
-use crate::game::resources::{ClientGameState, PendingGameCommands};
+use crate::game::resources::{ClientGameState, ClientPendingCommands};
 use crate::log::{LogEntry, LogOwner, LogState, BODY_DIVIDER, NOTES_SECTION, QUESTS_SECTION};
 use crate::ui::components::HudRoot;
 use crate::ui::movable_window::{
@@ -1326,7 +1326,7 @@ fn handle_title_click(
 /// the player can edit immediately.
 fn handle_new_note_click(
     interactions: Query<&Interaction, (Changed<Interaction>, With<LogPanelNewNoteButton>)>,
-    mut pending: ResMut<PendingGameCommands>,
+    mut pending: ResMut<ClientPendingCommands>,
     client_state: Res<ClientGameState>,
     mut roots: Query<&mut LogPanelRoot>,
 ) {
@@ -1371,7 +1371,7 @@ fn next_note_id(log: &LogState) -> u32 {
 
 fn handle_save_click(
     interactions: Query<&Interaction, (Changed<Interaction>, With<LogPanelSaveButton>)>,
-    mut pending: ResMut<PendingGameCommands>,
+    mut pending: ResMut<ClientPendingCommands>,
     client_state: Res<ClientGameState>,
     mut roots: Query<&mut LogPanelRoot>,
     text_edits: Query<(&TextEditRoot, &TextEdit)>,
@@ -1392,7 +1392,7 @@ fn handle_save_click(
 /// editor or plain Enter on the (single-line) title editor.
 fn consume_text_edit_submits(
     mut submits: bevy::ecs::message::MessageReader<TextEditSubmit>,
-    mut pending: ResMut<PendingGameCommands>,
+    mut pending: ResMut<ClientPendingCommands>,
     client_state: Res<ClientGameState>,
     mut roots: Query<&mut LogPanelRoot>,
     text_edits: Query<(&TextEditRoot, &TextEdit)>,
@@ -1415,7 +1415,7 @@ fn consume_text_edit_submits(
 }
 
 fn submit_pending_save(
-    pending: &mut PendingGameCommands,
+    pending: &mut ClientPendingCommands,
     client_state: &ClientGameState,
     root: &mut LogPanelRoot,
     text_edits: &Query<(&TextEditRoot, &TextEdit)>,
@@ -1467,7 +1467,7 @@ fn submit_pending_save(
 
 fn handle_delete_click(
     interactions: Query<&Interaction, (Changed<Interaction>, With<LogPanelDeleteButton>)>,
-    mut pending: ResMut<PendingGameCommands>,
+    mut pending: ResMut<ClientPendingCommands>,
     client_state: Res<ClientGameState>,
     mut roots: Query<&mut LogPanelRoot>,
 ) {

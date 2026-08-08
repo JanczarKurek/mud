@@ -8,7 +8,8 @@ use bevy::window::PrimaryWindow;
 use bevy_terminal::{Terminal, TerminalFocus, TerminalSubmit};
 
 use crate::game::commands::GameCommand;
-use crate::game::resources::PendingGameCommands;
+use crate::game::resources::ClientPendingCommands;
+#[cfg(test)]
 use crate::player::components::{Player, PlayerIdentity};
 use crate::ui::components::{ChatPanel, ChatTerminal, PythonConsolePanel};
 use crate::ui::trade::point_in_ui_node;
@@ -53,21 +54,17 @@ pub fn toggle_chat_focus(
 pub fn handle_chat_submissions(
     mut submissions: MessageReader<TerminalSubmit>,
     chat_terminal: Query<Entity, With<ChatTerminal>>,
-    local_player: Query<&PlayerIdentity, With<Player>>,
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
 ) {
     let chat_entity = chat_terminal.single().ok();
     for submission in submissions.read() {
         if Some(submission.terminal) != chat_entity {
             continue;
         }
-        let text = submission.text.clone();
-        let caller = local_player.iter().next().map(|identity| identity.id);
-        let command = GameCommand::Say { text };
-        match caller {
-            Some(id) => pending_commands.push_for_player(id, command),
-            None => pending_commands.push(command),
-        }
+        // Untargeted: the server attributes the message to the sending peer.
+        pending_commands.push(GameCommand::Say {
+            text: submission.text.clone(),
+        });
     }
 }
 
@@ -132,7 +129,7 @@ mod tests {
         app.add_plugins(MinimalPlugins);
         app.init_resource::<TerminalFocus>();
         app.add_message::<TerminalSubmit>();
-        app.insert_resource(PendingGameCommands::default());
+        app.insert_resource(ClientPendingCommands::default());
         app.add_systems(Update, handle_chat_submissions);
         app
     }
@@ -160,11 +157,9 @@ mod tests {
 
         app.update();
 
-        let pending = app.world().resource::<PendingGameCommands>();
+        let pending = app.world().resource::<ClientPendingCommands>();
         assert_eq!(pending.commands.len(), 1, "exactly one Say queued");
-        let queued = &pending.commands[0];
-        assert_eq!(queued.player_id, Some(PlayerId(7)));
-        match &queued.command {
+        match &pending.commands[0] {
             GameCommand::Say { text } => assert_eq!(text, "hello"),
             other => panic!("expected Say, got {other:?}"),
         }
@@ -187,7 +182,7 @@ mod tests {
 
         assert!(app
             .world()
-            .resource::<PendingGameCommands>()
+            .resource::<ClientPendingCommands>()
             .commands
             .is_empty());
     }

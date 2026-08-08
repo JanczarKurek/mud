@@ -8,7 +8,7 @@
 use bevy::prelude::*;
 
 use crate::game::commands::GameCommand;
-use crate::game::resources::PendingGameCommands;
+use crate::game::resources::ClientPendingCommands;
 use crate::ui::components::{
     ContainerFloatingCloseButton, ContainerFloatingRoot, ContainerPanelDockButton,
     ContainerPanelUndockButton,
@@ -63,7 +63,7 @@ impl MountablePanel for ContainerPanel {
     fn handle_floating_close(
         panel_id: usize,
         panel_state: &mut DockedPanelState,
-        pending: &mut PendingGameCommands,
+        pending: &mut ClientPendingCommands,
     ) {
         if let Some(object_id) = panel_state.container_object_id_for_panel(panel_id) {
             pending.push(GameCommand::CloseContainer { object_id });

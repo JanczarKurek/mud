@@ -164,7 +164,7 @@ impl Plugin for WorldServerPlugin {
             // re-stacked positions get replicated to clients in the same frame.
             crate::world::stacks::settle_pending_stacks
                 .after(crate::game::systems::process_game_commands)
-                .before(crate::game::projection::collect_game_events_from_authority)
+                .before(crate::network::sets::NetServerSend)
                 .run_if(crate::app::state::simulation_active),
         )
         .add_systems(
@@ -176,7 +176,7 @@ impl Plugin for WorldServerPlugin {
             // spawned at world-load (before sim starts) are also stamped.
             crate::world::stacks::stamp_placement_seq_on_spawn
                 .after(crate::game::systems::process_game_commands)
-                .before(crate::game::projection::collect_game_events_from_authority),
+                .before(crate::network::sets::NetServerSend),
         )
         .add_systems(
             Update,
@@ -205,7 +205,7 @@ impl Plugin for WorldServerPlugin {
             // client in the same tick.
             crate::world::hidden::passive_perception_tick
                 .after(process_continuous_step_triggers)
-                .before(crate::game::projection::collect_game_events_from_authority)
+                .before(crate::network::sets::NetServerSend)
                 .run_if(crate::app::state::simulation_active),
         )
         .add_systems(
@@ -217,7 +217,7 @@ impl Plugin for WorldServerPlugin {
             crate::world::pressure_plate::update_pressure_plates
                 .after(crate::game::systems::process_game_commands)
                 .after(crate::npc::systems::update_roaming_npcs)
-                .before(crate::game::projection::collect_game_events_from_authority)
+                .before(crate::network::sets::NetServerSend)
                 .run_if(crate::app::state::simulation_active),
         )
         .add_systems(Update, cleanup_empty_ephemeral_spaces)

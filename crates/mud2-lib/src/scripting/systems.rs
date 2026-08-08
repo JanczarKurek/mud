@@ -5,17 +5,13 @@ use std::path::Path;
 use bevy::ecs::message::MessageReader;
 use bevy::input::keyboard::{KeyCode, KeyboardInput};
 use bevy::prelude::*;
-use bevy_terminal::{
-    LineStyle, Terminal, TerminalCompletionRequest, TerminalFocus, TerminalSubmit,
-};
+use bevy_terminal::{LineStyle, Terminal, TerminalFocus, TerminalSubmit};
 
 use crate::app::paths::python_history_path;
 use crate::app::plugin::AppRuntime;
-use crate::game::resources::PendingGameCommands;
-use crate::player::components::{Player, PlayerIdentity};
-use crate::scripting::python::PythonConsoleHost;
+use crate::game::commands::GameCommand;
+use crate::game::resources::ClientPendingCommands;
 use crate::scripting::resources::{PythonConsoleState, PythonHistoryPersist};
-use crate::scripting_api::build::WorldSnapshotParams;
 use crate::ui::components::{
     PythonConsoleMaximizeButton, PythonConsolePanel, PythonConsoleRestartButton,
     PythonConsoleTerminal,
@@ -72,17 +68,14 @@ pub fn toggle_python_console(
     }
 }
 
-/// Take `TerminalSubmit` events from the console terminal, run them through
-/// `PythonConsoleHost`, and push the resulting output lines back into the
-/// `Terminal` component. Queued `GameCommand`s are dispatched through
-/// `PendingGameCommands` using the same caller routing the old handler used.
+/// Take `TerminalSubmit` events from the console terminal and ship each line
+/// to the server-side REPL as `GameCommand::AdminExec`. The reply arrives as
+/// `GameUiEvent::ReplOutput` and is rendered by `apply_game_ui_events`;
+/// execution is gated server-side on the account's admin flag.
 pub fn handle_python_console_submissions(
     mut submissions: MessageReader<TerminalSubmit>,
-    mut host: NonSendMut<PythonConsoleHost>,
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut outbox: ResMut<ClientPendingCommands>,
     mut terminals: Query<&mut Terminal, With<PythonConsoleTerminal>>,
-    snapshot_params: WorldSnapshotParams,
-    local_player_query: Query<&PlayerIdentity, With<Player>>,
 ) {
     for submission in submissions.read() {
         let Ok(mut terminal) = terminals.get_mut(submission.terminal) else {
@@ -96,22 +89,7 @@ pub fn handle_python_console_submissions(
         let code =
             expand_help_shortcut(&submission.text).unwrap_or_else(|| submission.text.clone());
 
-        let caller = local_player_query.iter().next().map(|identity| identity.id);
-        let snapshot = snapshot_params.build_for_player(caller);
-        let output = host.execute(&code, snapshot);
-
-        for (line, style) in output.lines {
-            terminal.push(line, style);
-        }
-        for cmd in output.commands {
-            match caller {
-                Some(id) => pending_commands.push_for_player(id, cmd),
-                None => pending_commands.push(cmd),
-            }
-        }
-        for (target, cmd) in output.targeted_commands {
-            pending_commands.push_for_player(target, cmd);
-        }
+        outbox.push(GameCommand::AdminExec { code });
     }
 }
 
@@ -216,72 +194,12 @@ fn rewrite_history_file(path: &Path, lines: &[String]) {
     }
 }
 
-/// Resolve a Tab completion request against the persistent scope. A unique
-/// match auto-fills the input via `Terminal::replace_input_token`; multiple
-/// candidates list themselves as a system-styled output line.
-pub fn handle_python_console_completion(
-    mut requests: MessageReader<TerminalCompletionRequest>,
-    host: NonSend<PythonConsoleHost>,
-    mut terminals: Query<&mut Terminal, With<PythonConsoleTerminal>>,
-    snapshot_params: WorldSnapshotParams,
-    local_player_query: Query<&PlayerIdentity, With<Player>>,
-) {
-    for request in requests.read() {
-        let Ok(mut terminal) = terminals.get_mut(request.terminal) else {
-            continue;
-        };
-        // `complete_at` sees the full prefix so it can resolve dotted access
-        // (`world.sp` → `spawn`); `token` is just the trailing identifier we
-        // replace, so the `world.` part is left intact. A snapshot is built so
-        // snapshot-backed completions like `world.types.<id>` resolve.
-        let token = trailing_identifier(&request.text_before_cursor);
-        let caller = local_player_query.iter().next().map(|identity| identity.id);
-        let snapshot = snapshot_params.build_for_player(caller);
-        let mut matches = host.complete_at(&request.text_before_cursor, snapshot);
-        matches.retain(|m| !m.starts_with('_'));
-        match matches.as_slice() {
-            [] => {}
-            [single] => {
-                let single = single.clone();
-                terminal.replace_input_token(token.chars().count(), &single);
-            }
-            many => {
-                terminal.push(
-                    format!("[completions] {}", summarize(many)),
-                    LineStyle::System,
-                );
-                if let Some(prefix) = common_prefix(many) {
-                    if prefix.len() > token.len() {
-                        terminal.replace_input_token(token.chars().count(), &prefix);
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// Render a candidate list for the `[completions]` line, capping long lists
-/// (e.g. bare `world.` lists every member) so the terminal stays readable.
-fn summarize(candidates: &[String]) -> String {
-    const MAX: usize = 30;
-    if candidates.len() <= MAX {
-        candidates.join(" ")
-    } else {
-        format!(
-            "{} … (+{} more)",
-            candidates[..MAX].join(" "),
-            candidates.len() - MAX
-        )
-    }
-}
-
-/// Restart-button click handler. Rebuilds the embedded interpreter scope
-/// from scratch (same effect as running `world.reset()` from inside the
-/// REPL) and prints a one-line confirmation into the terminal buffer.
+/// Restart-button click handler. Asks the server-side REPL to rebuild its
+/// interpreter scope (`AdminReplReset`); the confirmation line arrives as a
+/// `ReplOutput` UI event.
 pub fn handle_python_console_restart_button(
     interactions: Query<&Interaction, (With<PythonConsoleRestartButton>, Changed<Interaction>)>,
-    mut host: NonSendMut<PythonConsoleHost>,
-    mut terminals: Query<&mut Terminal, With<PythonConsoleTerminal>>,
+    mut outbox: ResMut<ClientPendingCommands>,
 ) {
     let pressed = interactions
         .iter()
@@ -289,10 +207,7 @@ pub fn handle_python_console_restart_button(
     if !pressed {
         return;
     }
-    host.reset_scope();
-    for mut terminal in &mut terminals {
-        terminal.push("[System] interpreter restarted.", LineStyle::System);
-    }
+    outbox.push(GameCommand::AdminReplReset);
 }
 
 /// Maximize/Restore-button click handler. Flips `PythonConsoleState::maximized`;
@@ -336,21 +251,6 @@ pub fn sync_python_console_maximize_label(
     }
 }
 
-/// Pull the last identifier-ish token off the buffer. Stops at the first
-/// non-identifier char scanning right-to-left so `world.gi` returns `gi`.
-fn trailing_identifier(input: &str) -> &str {
-    let bytes = input.as_bytes();
-    let mut split = bytes.len();
-    for (i, b) in bytes.iter().enumerate().rev() {
-        if b.is_ascii_alphanumeric() || *b == b'_' {
-            split = i;
-        } else {
-            break;
-        }
-    }
-    &input[split..]
-}
-
 /// IPython-style `?` help shortcut. `world.spawn?` → `help(world.spawn)`,
 /// `?world.spawn` → the same, and a bare `?` → `help()`. Only triggers when
 /// the `?` bracket the statement (leading and/or trailing) so a `?` buried in
@@ -373,36 +273,9 @@ fn expand_help_shortcut(text: &str) -> Option<String> {
     }
 }
 
-fn common_prefix(strings: &[String]) -> Option<String> {
-    let first = strings.first()?;
-    let mut prefix_len = first.len();
-    for s in &strings[1..] {
-        prefix_len = prefix_len.min(s.len());
-        for (i, (a, b)) in first.bytes().zip(s.bytes()).enumerate() {
-            if i >= prefix_len {
-                break;
-            }
-            if a != b {
-                prefix_len = i;
-                break;
-            }
-        }
-    }
-    Some(first[..prefix_len].to_owned())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn trailing_identifier_finds_last_token() {
-        assert_eq!(trailing_identifier("wor"), "wor");
-        assert_eq!(trailing_identifier("world.gi"), "gi");
-        assert_eq!(trailing_identifier("a + b.c"), "c");
-        assert_eq!(trailing_identifier(""), "");
-        assert_eq!(trailing_identifier("  "), "");
-    }
 
     #[test]
     fn help_shortcut_rewrites_trailing_and_leading_question() {
@@ -428,13 +301,5 @@ mod tests {
         assert_eq!(expand_help_shortcut("  "), None);
         // `?` inside a string/expression is not a help marker.
         assert_eq!(expand_help_shortcut("print(\"a?b\")"), None);
-    }
-
-    #[test]
-    fn common_prefix_handles_empty_and_full_match() {
-        let strings = vec!["world".into(), "worker".into(), "won".into()];
-        assert_eq!(common_prefix(&strings).as_deref(), Some("wo"));
-        let single = vec!["only".into()];
-        assert_eq!(common_prefix(&single).as_deref(), Some("only"));
     }
 }

@@ -360,7 +360,7 @@ pub enum GameCommand {
     /// knows the recipe, has all inputs in their backpack, and (when
     /// `station` is set) is adjacent to a matching world object. On success
     /// the inputs are consumed and outputs granted; the player's chat log
-    /// gets a narrator line and a `GameEvent::ItemCrafted` is emitted.
+    /// gets a narrator line (replicated via `ChatLogChanged`).
     CraftItem {
         recipe_id: String,
     },
@@ -480,5 +480,26 @@ pub enum GameCommand {
     Engrave {
         source: ItemReference,
         inscription: String,
+    },
+    /// Admin-only: submit one line of input to the server-side Python REPL.
+    /// The server buffers per-player sessions (multi-line blocks work like a
+    /// terminal REPL) and replies with `GameUiEvent::ReplOutput`. Rejected
+    /// with an error output when the issuing account lacks the admin flag.
+    AdminExec {
+        code: String,
+    },
+    /// Admin-only: rebuild the server-side Python REPL scope from scratch
+    /// (same effect as `world.reset()`); also clears the issuer's pending
+    /// multi-line buffer. NOTE: the interpreter scope is shared between all
+    /// admin sessions (in-game and the UNIX-socket REPL), so this resets it
+    /// for everyone.
+    AdminReplReset,
+    /// Admin-only: set or clear the admin flag on the account owning
+    /// `username`. Issued from the Python REPL via `world.grant_admin` /
+    /// `world.revoke_admin`; dropped at the wire boundary for non-admin
+    /// peers.
+    AdminSetAccountAdmin {
+        username: String,
+        admin: bool,
     },
 }

@@ -59,7 +59,9 @@ pub struct TcpClientConnection {
 #[cfg(feature = "server-sim")]
 #[derive(Resource)]
 pub struct TcpServerConfig {
-    pub bind_addr: String,
+    /// `Some(addr)` binds a real listener at startup; `None` means loopback
+    /// peers only (EmbeddedClient) — `start_tcp_server` skips binding.
+    pub bind_addr: Option<String>,
     /// When `Some`, accepted connections are wrapped in TLS during accept.
     pub tls_config: Option<Arc<ServerConfig>>,
 }
@@ -89,6 +91,10 @@ pub struct TcpServerPeer {
     pub player_id: Option<PlayerId>,
     /// Some(_) iff `auth_state == Authed`.
     pub player_entity: Option<Entity>,
+    /// Whether the owning account carries the admin flag (gates the in-game
+    /// Python REPL and admin-grant commands). Loaded from the accounts DB at
+    /// character select; always `true` for the embedded loopback peer.
+    pub is_admin: bool,
     pub stream: ServerTransport,
     pub read_buffer: Vec<u8>,
     /// Per-peer projection baseline used to emit delta events. Starts `None`;

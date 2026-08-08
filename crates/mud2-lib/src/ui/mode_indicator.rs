@@ -11,7 +11,7 @@ use bevy::prelude::*;
 
 use crate::app::state::ClientAppState;
 use crate::game::commands::GameCommand;
-use crate::game::resources::{ClientGameState, PendingGameCommands};
+use crate::game::resources::{ClientGameState, ClientPendingCommands};
 use crate::ui::components::HudRoot;
 use crate::ui::menu_bar::MENU_BAR_HEIGHT;
 use crate::ui::theme::palette::Palette;
@@ -256,7 +256,7 @@ fn sync_mode_indicators(
 fn handle_mode_toggle_clicks(
     interactions: Query<(&Interaction, &ModeToggleButton), Changed<Interaction>>,
     client_state: Res<ClientGameState>,
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
 ) {
     for (interaction, button) in &interactions {
         if matches!(interaction, Interaction::Pressed) {

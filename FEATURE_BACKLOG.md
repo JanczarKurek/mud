@@ -122,7 +122,7 @@ Additional progression-adjacent items not in scope of that doc:
 - Gamepad support.
 - Colorblind-friendly damage colors, UI font scaling.
 - CI config (`.github/workflows/`) — none exists.
-- Real test coverage — unit tests in modules plus `tests/multiplayer_transport.rs` and `tests/admin_repl.rs`. Networked-flow coverage is still thin.
+- Real test coverage — unit tests in modules plus the `tests/` e2e suites (multiplayer transport, dialog, pickup, loopback pipeline, protocol roundtrip, admin REPL). Networked-flow coverage keeps expanding.
 
 ---
 

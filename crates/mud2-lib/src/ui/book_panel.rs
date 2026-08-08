@@ -16,7 +16,7 @@ use bevy::prelude::*;
 use bevy_terminal::{spawn_text_edit_with, TerminalFocus, TextEdit, TextEditRoot, TextEditSubmit};
 
 use crate::game::commands::{GameCommand, ItemReference};
-use crate::game::resources::PendingGameCommands;
+use crate::game::resources::ClientPendingCommands;
 use crate::ui::movable_window::{
     close_window_and_release_drag, persist_window_geometry, spawn_movable_window,
     spawn_themed_close_button, MovableWindowDrag, MovableWindowId, WindowGeometryMemory,
@@ -516,7 +516,7 @@ pub fn install_book_editors(
 
 pub fn handle_book_panel_clicks(
     mut state: ResMut<BookPanelState>,
-    mut pending: ResMut<PendingGameCommands>,
+    mut pending: ResMut<ClientPendingCommands>,
     edit_q: Query<&Interaction, (Changed<Interaction>, With<BookPanelEditButton>)>,
     save_q: Query<&Interaction, (Changed<Interaction>, With<BookPanelSaveButton>)>,
     cancel_q: Query<&Interaction, (Changed<Interaction>, With<BookPanelCancelButton>)>,
@@ -552,7 +552,7 @@ pub fn handle_book_panel_clicks(
 /// server rejected).
 fn submit_save(
     state: &mut BookPanelState,
-    pending: &mut PendingGameCommands,
+    pending: &mut ClientPendingCommands,
     text_edits: &Query<(&TextEditRoot, &TextEdit)>,
 ) {
     let Some(source) = state.source else {
@@ -609,7 +609,7 @@ fn truncate_chars(s: &str, max_chars: usize) -> String {
 pub fn consume_book_text_edit_submits(
     mut submits: bevy::ecs::message::MessageReader<TextEditSubmit>,
     mut state: ResMut<BookPanelState>,
-    mut pending: ResMut<PendingGameCommands>,
+    mut pending: ResMut<ClientPendingCommands>,
     text_edits: Query<(&TextEditRoot, &TextEdit)>,
 ) {
     let mut had_book_submit = false;

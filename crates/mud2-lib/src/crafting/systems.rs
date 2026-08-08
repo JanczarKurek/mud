@@ -7,9 +7,7 @@ use bevy::prelude::*;
 use crate::crafting::recipes::RecipeDefinitions;
 use crate::crafting::stash::CharacterStash;
 use crate::game::commands::GameCommand;
-use crate::game::resources::{
-    ChatLogState, GameEvent, InventoryState, PendingGameCommands, PendingGameEvents,
-};
+use crate::game::resources::{ChatLogState, InventoryState, PendingGameCommands};
 use crate::player::components::{Player, PlayerId, PlayerIdentity};
 use crate::player::progression::{PendingXpGrant, PendingXpGrants};
 use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
@@ -75,13 +73,12 @@ type CraftPlayerData<'a> = (
 /// 2. Validate they have all input quantities in their backpack.
 /// 3. If the recipe declares a station, validate an adjacent matching
 ///    object exists in the same space.
-/// 4. Consume inputs, queue `GiveItem` for each output, push narrator +
-///    `ItemCrafted` event, award XP if specified.
+/// 4. Consume inputs, queue `GiveItem` for each output, push a narrator
+///    line, award XP if specified.
 ///
 /// Failure cases push a clear narrator line; nothing is consumed.
 pub fn process_craft_commands(
     mut pending_commands: ResMut<PendingGameCommands>,
-    mut pending_events: ResMut<PendingGameEvents>,
     mut xp_grants: ResMut<PendingXpGrants>,
     recipe_defs: Res<RecipeDefinitions>,
     object_defs: Res<crate::world::object_definitions::OverworldObjectDefinitions>,
@@ -183,9 +180,6 @@ pub fn process_craft_commands(
             }
 
             chat_log.lines.push(format!("You craft a {}.", recipe.name));
-            pending_events.events.push(GameEvent::ItemCrafted {
-                recipe_id: recipe_id.clone(),
-            });
 
             if recipe.xp_award > 0 {
                 xp_grants.grants.push(PendingXpGrant {
@@ -274,7 +268,7 @@ mod tests {
     #[test]
     fn craft_command_consumes_inputs_and_queues_outputs() {
         use crate::crafting::recipes::RecipeDefinitions;
-        use crate::game::resources::{PendingGameEvents, QueuedGameCommand};
+        use crate::game::resources::QueuedGameCommand;
         use crate::player::components::{ChatLog, Inventory, InventoryStack};
         use crate::player::progression::PendingXpGrants;
         use crate::world::components::TilePosition;
@@ -283,7 +277,6 @@ mod tests {
 
         let mut app = App::new();
         app.insert_resource(PendingGameCommands::default());
-        app.insert_resource(PendingGameEvents::default());
         app.insert_resource(PendingXpGrants::default());
         app.insert_resource(RecipeDefinitions::load_from_disk());
         app.insert_resource(OverworldObjectDefinitions::load_from_disk());
@@ -343,11 +336,9 @@ mod tests {
             })
             .count();
         assert_eq!(give_count, 1, "exactly one bolt grant queued");
-        // ItemCrafted event emitted.
-        let events = &app.world().resource::<PendingGameEvents>().events;
-        assert!(events.iter().any(
-            |e| matches!(e, GameEvent::ItemCrafted { recipe_id } if recipe_id == "bolt_from_arrows")
-        ));
+        // Narrator line pushed.
+        let chat = app.world().entity(entity).get::<ChatLog>().unwrap();
+        assert!(chat.lines.iter().any(|line| line.contains("You craft")));
         // XP grant queued.
         let xp = app.world().resource::<PendingXpGrants>();
         assert_eq!(xp.grants.len(), 1);
@@ -357,7 +348,6 @@ mod tests {
     #[test]
     fn craft_command_rejects_when_inputs_missing() {
         use crate::crafting::recipes::RecipeDefinitions;
-        use crate::game::resources::PendingGameEvents;
         use crate::player::components::{ChatLog, Inventory};
         use crate::player::progression::PendingXpGrants;
         use crate::world::components::TilePosition;
@@ -365,7 +355,6 @@ mod tests {
 
         let mut app = App::new();
         app.insert_resource(PendingGameCommands::default());
-        app.insert_resource(PendingGameEvents::default());
         app.insert_resource(PendingXpGrants::default());
         app.insert_resource(RecipeDefinitions::load_from_disk());
         app.insert_resource(OverworldObjectDefinitions::load_from_disk());
@@ -408,13 +397,9 @@ mod tests {
             .resource::<PendingGameCommands>()
             .commands
             .is_empty());
-        assert!(app
-            .world()
-            .resource::<PendingGameEvents>()
-            .events
-            .is_empty());
         let chat = app.world().entity(entity).get::<ChatLog>().unwrap();
         assert!(chat.lines.iter().any(|line| line.contains("more Arrow")));
+        assert!(!chat.lines.iter().any(|line| line.contains("You craft")));
     }
 
     #[test]

@@ -170,7 +170,7 @@ impl Plugin for UiPlugin {
         .add_systems(
             Update,
             (
-                (systems::route_peer_ui_events_to_local, apply_game_ui_events).chain(),
+                apply_game_ui_events.after(crate::network::sets::NetClientReceive),
                 toggle_cursor_mode,
                 manage_open_containers,
                 sync_vital_bars,
@@ -208,13 +208,9 @@ impl Plugin for UiPlugin {
             Update,
             consume_death_summary_events.run_if(in_state(ClientAppState::InGame)),
         )
-        // Pushes AcknowledgeDeath, so it must run before CommandIntercept or the
-        // command is dropped (project convention for UI command-push systems).
         .add_systems(
             Update,
-            handle_death_summary_dismiss
-                .before(crate::game::CommandIntercept)
-                .run_if(in_state(ClientAppState::InGame)),
+            handle_death_summary_dismiss.run_if(in_state(ClientAppState::InGame)),
         )
         .add_systems(
             Update,
@@ -248,14 +244,11 @@ impl Plugin for UiPlugin {
         )
         .add_systems(
             Update,
-            handle_context_menu_actions
-                .before(crate::game::CommandIntercept)
-                .run_if(in_state(ClientAppState::InGame)),
+            handle_context_menu_actions.run_if(in_state(ClientAppState::InGame)),
         )
         .add_systems(
             Update,
             handle_nearby_npc_row_clicks
-                .before(crate::game::CommandIntercept)
                 .before(handle_use_on_targeting)
                 .before(handle_spell_targeting)
                 .run_if(in_state(ClientAppState::InGame)),
@@ -296,9 +289,7 @@ impl Plugin for UiPlugin {
         )
         .add_systems(
             Update,
-            handle_item_targeting
-                .before(crate::game::CommandIntercept)
-                .run_if(in_state(ClientAppState::InGame)),
+            handle_item_targeting.run_if(in_state(ClientAppState::InGame)),
         )
         .add_systems(
             Update,
@@ -383,16 +374,14 @@ impl Plugin for UiPlugin {
                 handle_dialog_transcript_scrolling.after(sync_dialog_panel_transcript),
                 handle_dialog_panel_clicks
                     .after(sync_dialog_panel_options)
-                    .after(apply_game_ui_events)
-                    .before(crate::game::CommandIntercept),
+                    .after(apply_game_ui_events),
             )
                 .run_if(in_state(ClientAppState::InGame)),
         )
         .add_systems(
             Update,
             (
-                crate::ui::book_panel::handle_book_panel_clicks
-                    .before(crate::game::CommandIntercept),
+                crate::ui::book_panel::handle_book_panel_clicks,
                 crate::ui::book_panel::sync_book_window_lifecycle
                     .after(crate::ui::book_panel::handle_book_panel_clicks),
                 crate::ui::book_panel::sync_book_panel_body
@@ -403,8 +392,7 @@ impl Plugin for UiPlugin {
                 crate::ui::book_panel::handle_book_editor_focus_click,
                 crate::ui::book_panel::release_book_focus_when_idle
                     .after(crate::ui::book_panel::sync_book_panel_body),
-                crate::ui::book_panel::consume_book_text_edit_submits
-                    .before(crate::game::CommandIntercept),
+                crate::ui::book_panel::consume_book_text_edit_submits,
             )
                 .run_if(in_state(ClientAppState::InGame)),
         )
@@ -443,9 +431,7 @@ impl Plugin for UiPlugin {
                 load_quickbar_on_login,
                 load_ui_state_on_login,
                 sync_quickbar_visuals,
-                handle_quickbar_keybinds
-                    .before(crate::game::CommandIntercept)
-                    .run_if(bevy_terminal::terminal_not_focused),
+                handle_quickbar_keybinds.run_if(bevy_terminal::terminal_not_focused),
                 handle_quickbar_clicks.before(handle_context_menu_opening),
                 persist_quickbar,
                 persist_ui_state.after(load_ui_state_on_login),
@@ -469,9 +455,7 @@ impl Plugin for UiPlugin {
         )
         .add_systems(
             Update,
-            handle_chat_submissions
-                .before(crate::game::CommandIntercept)
-                .run_if(in_state(ClientAppState::InGame)),
+            handle_chat_submissions.run_if(in_state(ClientAppState::InGame)),
         );
 
         crate::ui::character_sheet::register(app);

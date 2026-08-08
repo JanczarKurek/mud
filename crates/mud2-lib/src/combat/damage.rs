@@ -16,7 +16,7 @@
 //!
 //! Server-authoritative. None of these types cross the wire; clients observe
 //! deaths only through the resulting `GameEvent::PlayerVitalsChanged`,
-//! `GameEvent::ExperienceGained`, and existing UI events.
+//! `GameEvent::PlayerExperienceChanged`, and existing UI events.
 
 use bevy::prelude::*;
 
@@ -99,8 +99,8 @@ type DamageTargetQuery<'w, 's> = Query<
 >;
 
 /// Drains `PendingDamageEvents`, applies the damage, and runs death handling
-/// in one place. Registered after every damage producer and before
-/// `collect_game_events_from_authority`.
+/// in one place. Registered after every damage producer and before the
+/// projection flush (`NetServerSend`).
 pub fn apply_pending_damage(
     time: Res<Time>,
     mut pending: ResMut<PendingDamageEvents>,

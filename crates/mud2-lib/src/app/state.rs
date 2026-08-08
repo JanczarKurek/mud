@@ -23,15 +23,6 @@ pub enum ClientAppState {
     MapEditor,
 }
 
-/// EmbeddedClient-only: the `character_id` the user picked on the Character
-/// Select screen. Read by `spawn_embedded_player_authoritative` on transition
-/// to `InGame`. `None` means "pick the most recently played" (e.g. for the
-/// very first frame before the user has interacted with the select screen).
-#[derive(Resource, Default, Debug, Clone, Copy)]
-pub struct LocalSelectedCharacter {
-    pub character_id: Option<i64>,
-}
-
 /// Runtime switch toggled by the diagnostics overlay (F8) so we can compare
 /// frame-time spikes with simulation systems disabled vs. enabled. Lives in
 /// `app::state` rather than `diagnostics` so server-side plugins can read it

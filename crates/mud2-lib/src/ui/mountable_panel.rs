@@ -35,7 +35,7 @@ use std::marker::PhantomData;
 use bevy::prelude::*;
 
 use crate::app::state::ClientAppState;
-use crate::game::resources::PendingGameCommands;
+use crate::game::resources::ClientPendingCommands;
 use crate::ui::components::DockedPanelTitle;
 use crate::ui::movable_window::{
     close_window_and_release_drag, spawn_movable_window, spawn_themed_icon_button,
@@ -119,7 +119,7 @@ pub trait MountablePanel: Send + Sync + 'static {
     fn handle_floating_close(
         key: Self::Key,
         panel_state: &mut DockedPanelState,
-        _pending: &mut PendingGameCommands,
+        _pending: &mut ClientPendingCommands,
     ) {
         panel_state.close_panel(Self::panel_id_for(key));
     }
@@ -178,7 +178,7 @@ pub fn handle_panel_dock_click<P: MountablePanel>(
 pub fn handle_panel_floating_close_click<P: MountablePanel>(
     interactions: Query<(&Interaction, &P::FloatingCloseButton), Changed<Interaction>>,
     mut panel_state: ResMut<DockedPanelState>,
-    mut pending: ResMut<PendingGameCommands>,
+    mut pending: ResMut<ClientPendingCommands>,
     mut modes: ResMut<P::Modes>,
 ) {
     for (interaction, button) in &interactions {

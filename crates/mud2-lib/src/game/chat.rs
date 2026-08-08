@@ -239,7 +239,7 @@ mod tests {
             );
         app.update();
 
-        let events = &app.world().resource::<PendingGameUiEvents>().events;
+        let events = &app.world().resource::<PendingGameUiEvents>().broadcast;
         let bubble = events
             .iter()
             .find_map(|ev| match ev {

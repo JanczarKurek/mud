@@ -11,7 +11,7 @@ use bevy::ui::{ComputedNode, ScrollPosition, UiGlobalTransform};
 use bevy::window::PrimaryWindow;
 
 use crate::game::commands::GameCommand;
-use crate::game::resources::PendingGameCommands;
+use crate::game::resources::ClientPendingCommands;
 use crate::ui::components::{
     DialogPanelCloseButton, DialogPanelContinueButton, DialogPanelOptionButton,
     DialogPanelOptionsContainer, DialogPanelRoot, DialogPanelTranscriptContainer,
@@ -483,7 +483,7 @@ pub fn handle_dialog_transcript_scrolling(
 /// reimplementing any of it.
 pub fn handle_dialog_panel_clicks(
     mut dialog_state: ResMut<ActiveDialogState>,
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
     continue_query: Query<&Interaction, (Changed<Interaction>, With<DialogPanelContinueButton>)>,
     close_query: Query<&Interaction, (Changed<Interaction>, With<DialogPanelCloseButton>)>,
     option_query: Query<(&Interaction, &DialogPanelOptionButton), Changed<Interaction>>,

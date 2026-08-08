@@ -100,20 +100,20 @@ impl Plugin for CombatPlugin {
                 Update,
                 apply_auto_retaliation
                     .after(resolve_battle_turn)
-                    .before(crate::game::projection::collect_game_events_from_authority)
+                    .before(crate::network::sets::NetServerSend)
                     .run_if(simulation_active),
             )
             .add_systems(
                 Update,
                 apply_pending_modifier_consumption
                     .after(resolve_battle_turn)
-                    .before(crate::game::projection::collect_game_events_from_authority)
+                    .before(crate::network::sets::NetServerSend)
                     .run_if(simulation_active),
             )
             .add_systems(
                 Update,
                 tick_item_modifiers
-                    .before(crate::game::projection::collect_game_events_from_authority)
+                    .before(crate::network::sets::NetServerSend)
                     .run_if(simulation_active),
             )
             .add_systems(
@@ -124,7 +124,7 @@ impl Plugin for CombatPlugin {
                     .after(update_roaming_npcs)
                     .after(tick_dot_effects)
                     .after(tick_scheduled_impacts)
-                    .before(crate::game::projection::collect_game_events_from_authority)
+                    .before(crate::network::sets::NetServerSend)
                     .run_if(simulation_active),
             );
     }

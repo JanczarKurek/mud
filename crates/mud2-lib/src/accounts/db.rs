@@ -152,6 +152,20 @@ impl AccountDb {
             )?;
         }
 
+        // Additive column migration: admin privilege flag (gates the in-game
+        // Python REPL). `CREATE TABLE IF NOT EXISTS` never alters an existing
+        // table, so probe and ALTER explicitly.
+        let has_is_admin = self
+            .conn
+            .prepare("SELECT 1 FROM pragma_table_info('accounts') WHERE name = 'is_admin'")?
+            .exists([])?;
+        if !has_is_admin {
+            self.conn.execute(
+                "ALTER TABLE accounts ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
+
         self.conn.execute(
             "INSERT INTO meta (key, value) VALUES ('schema_version', ?1)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -168,6 +182,42 @@ impl AccountDb {
              VALUES (?1, ?2, NULL, ?3, ?3)",
             params![LOCAL_ACCOUNT_ID, LOCAL_ACCOUNT_USERNAME, now],
         )?;
+        // The reserved local account is always an admin — embedded mode's
+        // in-game Python console rides on this.
+        self.conn.execute(
+            "UPDATE accounts SET is_admin = 1 WHERE account_id = ?1",
+            params![LOCAL_ACCOUNT_ID],
+        )?;
+        Ok(())
+    }
+
+    /// Whether `account_id` carries the admin flag (gates the in-game Python
+    /// REPL). Unknown accounts are not admins.
+    pub fn is_account_admin(&self, account_id: i64) -> rusqlite::Result<bool> {
+        let flag: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT is_admin FROM accounts WHERE account_id = ?1",
+                params![account_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(flag.unwrap_or(0) != 0)
+    }
+
+    /// Set or clear the admin flag on the account owning `username`.
+    pub fn set_account_admin(&mut self, username: &str, admin: bool) -> Result<(), AuthError> {
+        let changed = self
+            .conn
+            .execute(
+                "UPDATE accounts SET is_admin = ?2, updated_at = ?3
+                 WHERE username = ?1 COLLATE NOCASE",
+                params![username, admin as i64, now_seconds()],
+            )
+            .map_err(AuthError::Database)?;
+        if changed == 0 {
+            return Err(AuthError::UnknownUser);
+        }
         Ok(())
     }
 

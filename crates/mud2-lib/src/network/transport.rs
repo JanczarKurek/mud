@@ -19,6 +19,9 @@ use rustls::{
 pub enum ServerTransport {
     Plain(TcpStream),
     Tls(Box<StreamOwned<ServerConnection, TcpStream>>),
+    /// In-process byte pipe — the server half of an EmbeddedClient loopback
+    /// connection. Same nonblocking semantics as a socket.
+    Loopback(crate::network::loopback::LoopbackEndpoint),
 }
 
 impl ServerTransport {
@@ -29,6 +32,7 @@ impl ServerTransport {
         match self {
             ServerTransport::Plain(_) => false,
             ServerTransport::Tls(stream) => stream.conn.is_handshaking(),
+            ServerTransport::Loopback(_) => false,
         }
     }
 }
@@ -37,6 +41,7 @@ impl Read for ServerTransport {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             ServerTransport::Plain(stream) => stream.read(buf),
+            ServerTransport::Loopback(pipe) => pipe.read(buf),
             ServerTransport::Tls(stream) => {
                 let result = stream.read(buf);
                 // rustls can return Ok(0) in two distinct situations: real EOF
@@ -63,6 +68,7 @@ impl Write for ServerTransport {
         match self {
             ServerTransport::Plain(stream) => stream.write(buf),
             ServerTransport::Tls(stream) => stream.write(buf),
+            ServerTransport::Loopback(pipe) => pipe.write(buf),
         }
     }
 
@@ -70,6 +76,7 @@ impl Write for ServerTransport {
         match self {
             ServerTransport::Plain(stream) => stream.flush(),
             ServerTransport::Tls(stream) => stream.flush(),
+            ServerTransport::Loopback(pipe) => pipe.flush(),
         }
     }
 }
@@ -78,6 +85,9 @@ impl Write for ServerTransport {
 pub enum ClientTransport {
     Plain(TcpStream),
     Tls(Box<StreamOwned<ClientConnection, TcpStream>>),
+    /// In-process byte pipe — the client half of an EmbeddedClient loopback
+    /// connection.
+    Loopback(crate::network::loopback::LoopbackEndpoint),
 }
 
 impl ClientTransport {
@@ -85,6 +95,7 @@ impl ClientTransport {
         match self {
             ClientTransport::Plain(_) => false,
             ClientTransport::Tls(stream) => stream.conn.is_handshaking(),
+            ClientTransport::Loopback(_) => false,
         }
     }
 }
@@ -93,6 +104,7 @@ impl Read for ClientTransport {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             ClientTransport::Plain(stream) => stream.read(buf),
+            ClientTransport::Loopback(pipe) => pipe.read(buf),
             ClientTransport::Tls(stream) => {
                 let result = stream.read(buf);
                 if matches!(result, Ok(0)) && stream.conn.is_handshaking() {
@@ -112,6 +124,7 @@ impl Write for ClientTransport {
         match self {
             ClientTransport::Plain(stream) => stream.write(buf),
             ClientTransport::Tls(stream) => stream.write(buf),
+            ClientTransport::Loopback(pipe) => pipe.write(buf),
         }
     }
 
@@ -119,6 +132,7 @@ impl Write for ClientTransport {
         match self {
             ClientTransport::Plain(stream) => stream.flush(),
             ClientTransport::Tls(stream) => stream.flush(),
+            ClientTransport::Loopback(pipe) => pipe.flush(),
         }
     }
 }

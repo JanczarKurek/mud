@@ -12,8 +12,7 @@
 //!   position, sweeps a Euclidean disc of radius [`DISCOVERY_RADIUS`] around
 //!   them and pushes any newly-seen tiles into the queue.
 //! - [`apply_pending_discovery`] — sole drainer; mutates `DiscoveredTiles` and
-//!   nothing else. Runs before
-//!   [`crate::game::projection::collect_game_events_from_authority`] so the
+//!   nothing else. Runs before the projection flush (`NetServerSend`) so the
 //!   replication tick on the same frame picks up the new entries.
 //!
 //! The queue+drainer shape is overkill for a single publisher today but

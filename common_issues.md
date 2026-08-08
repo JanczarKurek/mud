@@ -163,3 +163,15 @@
 **Root cause**: Remote players spawn with `ClientRemotePlayerVisual` (no `Player`, no `ClientProjectedWorldObject`), but the clip-selection systems in `src/world/animation.rs` (`trigger_movement_animation`, `return_to_idle_animation`) only queried the other two markers. The spawn-time `AnimatedSprite` defaults to clip `"idle"`, which does not exist in the player sheet (only directional `idle_*`/`walk_*`), so `frame_count` fell back to 1 — permanently frame 0 of row 0. The local player escapes only because `return_to_idle_animation` resolves `"idle"` → `idle_<facing>` on frame 1.
 
 **Fix**: Both systems' player branches widened to `Or<(With<Player>, With<ClientRemotePlayerVisual>)>` (both resolve clips from the `player` definition; `sync_remote_player_projection` already supplied `JustMoved`/`Facing`/`VisualOffset`). Note for new spawn paths: a sheet with only directional clips means the initial `"idle"` clip is invalid until some system resolves a directional one — make sure every animated entity is covered by one of the clip-selection systems.
+
+---
+
+## Client command silently "worked offline" but never crossed the wire (pre-unification bypass class)
+
+**Symptom class**: A UI button or input handler works in embedded mode but does nothing (or behaves differently) in TCP mode — or vice versa.
+
+**Root cause**: Before the 2026-08 loopback unification, EmbeddedClient bypassed the wire protocol entirely, so embedded-only code paths could drift from the networked ones. Since the unification, EmbeddedClient runs the real client/server message pipeline over an in-process loopback pipe (`network/loopback.rs`), and the same class of bug has exactly one remaining cause: pushing client intent into the wrong queue.
+
+**The rule**: client intent (input, UI clicks, console submissions) goes into `ClientPendingCommands` — it is drained only by `flush_client_commands_to_server` and always crosses the wire, coming back attributed to the sending peer. `PendingGameCommands` is server-side (network ingest, admin REPL, quest/scripting producers, map editor); its untargeted entries resolve to "first player" and are trusted as server-internal. Pushing client intent into `PendingGameCommands` in the unified embedded App gets it consumed *locally* by a server drainer — a silent wire bypass that works offline and breaks (or double-fires) online.
+
+**Also gone with the unification** (don't reference these in new code): `collect_game_events_from_authority`, `route_peer_ui_events_to_local`, `spawn_embedded_player_authoritative`, `sync_authoritative_player_display`, `sync_authoritative_player_position_view`, the character screens' direct-sqlite arms, and `LocalSelectedCharacter`. Frame ordering across the client/server halves is declared via the ungated `network::sets` SystemSets.

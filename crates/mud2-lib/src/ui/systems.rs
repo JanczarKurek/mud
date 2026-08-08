@@ -10,7 +10,7 @@ use crate::game::commands::{
     GameCommand, InspectTarget, ItemDestination, ItemReference, ItemSlotRef, UseTarget,
 };
 use crate::game::resources::{
-    ClientGameState, GameUiEvent, InventoryState, PendingGameCommands, PendingGameUiEvents,
+    ClientGameState, ClientPendingCommands, GameUiEvent, InventoryState, PendingGameUiEvents,
 };
 use crate::magic::resources::{SpellDefinitions, SpellTargeting};
 use crate::player::components::InventoryStack;
@@ -40,32 +40,16 @@ use crate::world::object_definitions::OverworldObjectDefinitions;
 use crate::world::object_registry::ObjectRegistry;
 use crate::world::WorldConfig;
 
-/// Embedded-mode stand-in for the TCP wire: moves per-player UI events
-/// (`PendingGameUiEvents::peer_events`, filled by server-side systems via
-/// `push`) into the local `events` list that `apply_game_ui_events` and the
-/// client-effects systems consume. On a TCP client `peer_events` is always
-/// empty (per-player events arrive from the server already merged into
-/// `events`), so this is a no-op there; the headless server has no `UiPlugin`
-/// and drains `peer_events` in `flush_server_messages` instead.
-///
-/// Embedded runs a single local player, so every `peer_events` entry belongs
-/// to the local session and can be delivered wholesale.
-pub fn route_peer_ui_events_to_local(mut pending_ui_events: ResMut<PendingGameUiEvents>) {
-    if pending_ui_events.peer_events.is_empty() {
-        return;
-    }
-    let peer_events = std::mem::take(&mut pending_ui_events.peer_events);
-    for (_player, events) in peer_events {
-        pending_ui_events.events.extend(events);
-    }
-}
-
 pub fn apply_game_ui_events(
     mut pending_ui_events: ResMut<PendingGameUiEvents>,
     mut docked_panel_state: ResMut<DockedPanelState>,
     mut trade_popup_state: ResMut<crate::ui::resources::TradePopupState>,
     mut dialog_state: ResMut<crate::ui::resources::ActiveDialogState>,
     mut book_panel_state: ResMut<crate::ui::book_panel::BookPanelState>,
+    mut console_terminals: Query<
+        &mut bevy_terminal::Terminal,
+        With<crate::ui::components::PythonConsoleTerminal>,
+    >,
 ) {
     let events = std::mem::take(&mut pending_ui_events.events);
 
@@ -154,6 +138,26 @@ pub fn apply_game_ui_events(
                 can_edit,
             } => {
                 book_panel_state.open(source, kind, title, text, author_name, can_edit);
+            }
+            // Server-side Python REPL replies — rendered into the console
+            // terminal (the console UI is a thin client; see
+            // `scripting::game_repl`).
+            GameUiEvent::ReplOutput {
+                lines,
+                error,
+                incomplete,
+            } => {
+                for mut terminal in &mut console_terminals {
+                    for line in &lines {
+                        terminal.push(line.clone(), bevy_terminal::LineStyle::Stdout);
+                    }
+                    if let Some(error) = &error {
+                        terminal.push(error.clone(), bevy_terminal::LineStyle::Traceback);
+                    }
+                    if incomplete {
+                        terminal.push("...", bevy_terminal::LineStyle::Prompt);
+                    }
+                }
             }
         }
     }
@@ -289,7 +293,7 @@ pub fn manage_open_containers(
     client_state: Res<ClientGameState>,
     floor_defs: Res<crate::world::floor_definitions::FloorTilesetDefinitions>,
     mut docked_panel_state: ResMut<DockedPanelState>,
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
 ) {
     let player_position = client_state.player_tile_position;
 
@@ -347,7 +351,7 @@ pub fn handle_docked_panel_close_buttons(
     mouse_input: Res<ButtonInput<MouseButton>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     mut docked_panel_state: ResMut<DockedPanelState>,
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
     button_query: Query<
         (
             &DockedPanelCloseButton,
@@ -711,13 +715,13 @@ fn spawn_nearby_npc_row(
 /// that mode against this NPC and clears the targeting state. Otherwise the
 /// click sets the NPC as the player's combat target.
 ///
-/// Runs before `CommandIntercept` *and* before `handle_use_on_targeting` /
-/// `handle_spell_targeting` so those world-targeting systems see the cleared
-/// state and don't double-fire from the same left-click.
+/// Runs before `handle_use_on_targeting` / `handle_spell_targeting` so those
+/// world-targeting systems see the cleared state and don't double-fire from
+/// the same left-click.
 pub fn handle_nearby_npc_row_clicks(
     row_query: Query<(&Interaction, &NearbyNpcRow), Changed<Interaction>>,
     docked_panel_state: Res<DockedPanelState>,
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
     mut use_on_state: ResMut<UseOnState>,
     mut spell_targeting_state: ResMut<SpellTargetingState>,
     mut cursor_state: ResMut<CursorState>,
@@ -1063,12 +1067,11 @@ fn spawn_death_summary_overlay(
 }
 
 /// Click handler for the death-summary dismiss button. Sends
-/// `AcknowledgeDeath` (the server respawns the player: heal + teleport home),
-/// then despawns the overlay. Must run `.before(CommandIntercept)` or the
-/// pushed command is dropped (project convention for UI command-push systems).
+/// `AcknowledgeDeath` through the client outbox (the server respawns the
+/// player: heal + teleport home), then despawns the overlay.
 pub fn handle_death_summary_dismiss(
     mut commands: Commands,
-    mut pending_commands: ResMut<crate::game::resources::PendingGameCommands>,
+    mut pending_commands: ResMut<crate::game::resources::ClientPendingCommands>,
     interactions: Query<
         &Interaction,
         (
@@ -1384,7 +1387,7 @@ pub fn handle_context_menu_actions(
         Res<OverworldObjectDefinitions>,
         Res<SpellDefinitions>,
     ),
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
     mut pending_item_details: ResMut<crate::ui::item_details::PendingItemDetailsOpens>,
     client_state: Res<ClientGameState>,
     trade_popup_state: Res<crate::ui::resources::TradePopupState>,
@@ -1704,7 +1707,7 @@ pub fn handle_use_on_targeting(
     client_state: Res<ClientGameState>,
     visible_floors: Res<VisibleFloorRange>,
     floor_defs: Res<crate::world::floor_definitions::FloorTilesetDefinitions>,
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
     mut cursor_state: ResMut<CursorState>,
     mut use_on_state: ResMut<UseOnState>,
 ) {
@@ -1781,7 +1784,7 @@ pub fn handle_spell_targeting(
     static_resources: (Res<ContextMenuState>, Res<DockedPanelState>),
     client_state: Res<ClientGameState>,
     visible_floors: Res<VisibleFloorRange>,
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
     mut cursor_state: ResMut<CursorState>,
     mut spell_targeting_state: ResMut<SpellTargetingState>,
 ) {
@@ -1868,7 +1871,7 @@ pub fn handle_item_targeting(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     state_resources: (Res<ContextMenuState>, Res<DockedPanelState>),
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
     mut cursor_state: ResMut<CursorState>,
     mut item_targeting_state: ResMut<ItemTargetingState>,
     mut slot_queries: ParamSet<(
@@ -1989,7 +1992,7 @@ pub fn handle_attack_targeting(
     context_menu_state: Res<ContextMenuState>,
     client_state: Res<ClientGameState>,
     visible_floors: Res<VisibleFloorRange>,
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
     mut cursor_state: ResMut<CursorState>,
 ) {
     if cursor_state.mode != CursorMode::AttackTarget {
@@ -2275,7 +2278,7 @@ pub fn handle_jump_targeting(
     world_config: Res<WorldConfig>,
     context_menu_state: Res<ContextMenuState>,
     client_state: Res<ClientGameState>,
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
     mut cursor_state: ResMut<CursorState>,
 ) {
     use crate::game::traversal::{jump_cost, JUMP_MAX_RANGE, JUMP_MIN_RANGE};
@@ -3138,7 +3141,7 @@ pub fn handle_take_partial_buttons(
     client_state: Res<ClientGameState>,
     docked_panel_state: Res<DockedPanelState>,
     mut take_partial_state: ResMut<TakePartialState>,
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
     dec_query: Query<(&ComputedNode, &UiGlobalTransform), With<TakePartialDecButton>>,
     inc_query: Query<(&ComputedNode, &UiGlobalTransform), With<TakePartialIncButton>>,
     confirm_query: Query<(&ComputedNode, &UiGlobalTransform), With<TakePartialConfirmButton>>,
@@ -3232,7 +3235,7 @@ pub fn handle_movable_dragging(
     docked_panel_state: Res<DockedPanelState>,
     trade_popup_state: Res<crate::ui::resources::TradePopupState>,
     mut drag_state: ResMut<DragState>,
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
     mut quickbar: ResMut<Quickbar>,
     quickbar_slot_query: Query<
         (

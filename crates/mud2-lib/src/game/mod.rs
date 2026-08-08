@@ -18,8 +18,6 @@ pub mod traversal;
 use bevy::prelude::*;
 
 #[cfg(feature = "server-sim")]
-use crate::app::plugin::AppRuntime;
-#[cfg(feature = "server-sim")]
 use crate::app::state::simulation_active;
 #[cfg(feature = "server-sim")]
 use crate::combat::damage::PendingDamageEvents;
@@ -32,8 +30,6 @@ use crate::game::discovery::{
     apply_pending_discovery, discover_around_players, PendingDiscoveryEvents,
 };
 use crate::game::projection::apply_game_events_to_client_state;
-#[cfg(feature = "server-sim")]
-use crate::game::projection::collect_game_events_from_authority;
 use crate::game::resources::{
     ClientGameState, ClientStateRevisions, PendingGameCommands, PendingGameEvents,
     PendingGameUiEvents,
@@ -73,6 +69,7 @@ pub struct CommandIntercept;
 impl Plugin for GameServerPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(PendingGameCommands::default())
+            .insert_resource(crate::game::resources::ClientPendingCommands::default())
             .insert_resource(PendingGameEvents::default())
             .insert_resource(PendingGameUiEvents::default())
             .insert_resource(PendingDamageEvents::default())
@@ -93,6 +90,21 @@ impl Plugin for GameServerPlugin {
                 CommandIntercept
                     .after(tick_player_movement_cooldowns)
                     .before(process_game_commands),
+            )
+            // Anchor the server's per-peer flush (`NetServerSend`, see
+            // `network::sets`) after everything that mutates projected state
+            // this frame. References to systems registered by other plugins
+            // (npc, combat) are fine: they resolve when those plugins are
+            // present and are inert no-ops in test apps that omit them.
+            .configure_sets(
+                Update,
+                crate::network::sets::NetServerSend
+                    .after(process_game_commands)
+                    .after(sync_container_visual_state)
+                    .after(tick_respawn_timers)
+                    .after(update_roaming_npcs)
+                    .after(resolve_battle_turn)
+                    .after(apply_pending_discovery),
             )
             .add_systems(
                 Update,
@@ -178,7 +190,7 @@ impl Plugin for GameServerPlugin {
                 Update,
                 crate::player::sense::tick_player_sense
                     .after(update_roaming_npcs)
-                    .before(collect_game_events_from_authority)
+                    .before(crate::network::sets::NetServerSend)
                     .run_if(simulation_active),
             )
             // Map discovery: publisher sweeps positions, single drainer
@@ -193,38 +205,18 @@ impl Plugin for GameServerPlugin {
                         .run_if(simulation_active),
                     apply_pending_discovery
                         .after(discover_around_players)
-                        .before(collect_game_events_from_authority)
+                        .before(crate::network::sets::NetServerSend)
                         .run_if(simulation_active),
                 ),
             )
-            .add_systems(
-                Update,
-                collect_game_events_from_authority
-                    .after(process_game_commands)
-                    .after(sync_container_visual_state)
-                    .after(update_roaming_npcs)
-                    .after(resolve_battle_turn)
-                    .after(apply_pending_discovery)
-                    .run_if(simulation_active)
-                    // Embedded-only: in HeadlessServer mode there is no single
-                    // local Player entity (0..N peers); per-peer replication is
-                    // driven by `flush_server_messages` calling
-                    // `compute_events_for_peer` directly. Running this system
-                    // there warns "no Player entity found" every frame.
-                    // `Option<Res<_>>` so tests that build `GameServerPlugin`
-                    // without inserting `AppRuntime` still pass — they default
-                    // to running the system (the legacy behavior).
-                    .run_if(|runtime: Option<Res<AppRuntime>>| match runtime {
-                        Some(r) => matches!(*r, AppRuntime::EmbeddedClient),
-                        None => true,
-                    }),
-            )
             // Unconditional — mirrors GameClientPlugin so that WorldClientPlugin's
             // .after(apply_game_events_to_client_state) ordering resolves identically
-            // in EmbeddedClient mode and TcpClient mode.
+            // in EmbeddedClient mode and TcpClient mode. The `NetClientReceive`
+            // edge places the fold after the client-side transport poll so
+            // loopback traffic lands in `ClientGameState` within the frame.
             .add_systems(
                 Update,
-                apply_game_events_to_client_state.after(collect_game_events_from_authority),
+                apply_game_events_to_client_state.after(crate::network::sets::NetClientReceive),
             );
     }
 }
@@ -232,10 +224,14 @@ impl Plugin for GameServerPlugin {
 impl Plugin for GameClientPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(PendingGameCommands::default())
+            .insert_resource(crate::game::resources::ClientPendingCommands::default())
             .insert_resource(PendingGameEvents::default())
             .insert_resource(PendingGameUiEvents::default())
             .insert_resource(ClientGameState::default())
             .insert_resource(ClientStateRevisions::default())
-            .add_systems(Update, apply_game_events_to_client_state);
+            .add_systems(
+                Update,
+                apply_game_events_to_client_state.after(crate::network::sets::NetClientReceive),
+            );
     }
 }

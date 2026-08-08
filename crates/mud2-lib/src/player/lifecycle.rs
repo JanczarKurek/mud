@@ -10,8 +10,7 @@ use bevy::prelude::*;
 use crate::accounts::AccountDbHandle;
 use crate::game::commands::GameCommand;
 use crate::game::resources::{
-    GameEvent, GameUiEvent, InventoryStackSummary, PendingGameCommands, PendingGameEvents,
-    PendingGameUiEvents,
+    GameUiEvent, InventoryStackSummary, PendingGameCommands, PendingGameUiEvents,
 };
 use crate::magic::effects::MagicEffects;
 use crate::player::components::{
@@ -98,7 +97,6 @@ pub fn handle_player_deaths(
     mut object_registry: ResMut<ObjectRegistry>,
     definitions: Res<OverworldObjectDefinitions>,
     mut player_query: DeathHandlerPlayerQuery,
-    mut pending_events: ResMut<PendingGameEvents>,
     mut pending_ui_events: ResMut<PendingGameUiEvents>,
 ) {
     let deaths = std::mem::take(&mut pending.deaths);
@@ -159,11 +157,6 @@ pub fn handle_player_deaths(
             let baseline = xp_for_level(experience.level);
             let lost = experience.current_xp.saturating_sub(baseline);
             experience.current_xp = baseline;
-            if lost > 0 {
-                pending_events
-                    .events
-                    .push(GameEvent::ExperienceLost { amount: lost });
-            }
             lost
         } else {
             0

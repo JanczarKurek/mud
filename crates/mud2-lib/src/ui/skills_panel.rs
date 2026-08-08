@@ -9,7 +9,7 @@ use bevy::prelude::*;
 use crate::app::state::{simulation_active, ClientAppState};
 use crate::game::commands::GameCommand;
 use crate::game::resources::{
-    ClientGameState, GameUiEvent, PendingGameCommands, PendingGameUiEvents,
+    ClientGameState, ClientPendingCommands, GameUiEvent, PendingGameUiEvents,
 };
 use crate::player::classes::Class;
 use crate::player::components::{AttributeKind, AttributeSet};
@@ -394,7 +394,7 @@ fn rebuild_skills_panel_contents(
 }
 
 fn handle_allocate_skill_button_clicks(
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
     client_state: Res<ClientGameState>,
     interactions: Query<(&Interaction, &AllocateSkillButton), Changed<Interaction>>,
 ) {
@@ -424,7 +424,7 @@ fn handle_allocate_skill_button_clicks(
 }
 
 fn handle_allocate_ability_button_clicks(
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
     client_state: Res<ClientGameState>,
     interactions: Query<(&Interaction, &AllocateAbilityButton), Changed<Interaction>>,
 ) {

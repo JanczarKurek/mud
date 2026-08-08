@@ -11,7 +11,7 @@ use crate::app::state::{simulation_active, ClientAppState};
 use crate::crafting::recipes::RecipeDefinitions;
 use crate::game::commands::GameCommand;
 use crate::game::resources::{
-    ClientGameState, GameUiEvent, PendingGameCommands, PendingGameUiEvents,
+    ClientGameState, ClientPendingCommands, GameUiEvent, PendingGameUiEvents,
 };
 use crate::player::components::InventoryStack;
 use crate::ui::movable_window::{
@@ -346,7 +346,7 @@ fn rebuild_recipe_book_contents(
 
 /// Sends `GameCommand::CraftItem` when a Craft button is pressed.
 fn handle_craft_button_clicks(
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
     interactions: Query<(&Interaction, &CraftButton), Changed<Interaction>>,
 ) {
     for (interaction, button) in &interactions {

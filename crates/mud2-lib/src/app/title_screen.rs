@@ -745,6 +745,9 @@ fn handle_title_screen_buttons(
     mut next_state: ResMut<NextState<ClientAppState>>,
     mut tcp_config: Option<ResMut<TcpClientConfig>>,
     mut tcp_connection: Option<ResMut<TcpClientConnection>>,
+    #[cfg(feature = "server-sim")] mut server_state: Option<
+        ResMut<crate::network::resources::TcpServerState>,
+    >,
     mut pending_auth: Option<ResMut<PendingAuthRequest>>,
     mut exit_messages: MessageWriter<AppExit>,
     mut settings_ui: ResMut<crate::ui::settings::SettingsUiState>,
@@ -764,15 +767,19 @@ fn handle_title_screen_buttons(
 
         match button.action {
             TitleAction::Connect => {
-                if let Some(tcp_config) = tcp_config.as_mut() {
-                    if let Some(server_addr) = title_state
-                        .current
-                        .as_ref()
-                        .and_then(|entry| entry.server_addr.clone())
-                    {
-                        tcp_config.server_addr = server_addr;
+                // Both client runtimes now own a `TcpClientConfig`, so the
+                // branch is on the runtime, not on resource presence.
+                if title_state.is_tcp() {
+                    if let Some(tcp_config) = tcp_config.as_mut() {
+                        if let Some(server_addr) = title_state
+                            .current
+                            .as_ref()
+                            .and_then(|entry| entry.server_addr.clone())
+                        {
+                            tcp_config.server_addr = server_addr;
+                        }
+                        tcp_config.active = true;
                     }
-                    tcp_config.active = true;
 
                     // Allow `ensure_tcp_client_connected` to attempt the dial
                     // again; without this it sticks at the previous failure.
@@ -804,6 +811,17 @@ fn handle_title_screen_buttons(
                         next_state.set(ClientAppState::AssetSync);
                     }
                 } else {
+                    // EmbeddedClient: wire the in-process loopback pipe into
+                    // the co-resident server, then head to character select —
+                    // everything from `ListCharacters` on is real wire traffic
+                    // (Login/Register are skipped: the pipe is the trust
+                    // model, see `connect_loopback`).
+                    #[cfg(feature = "server-sim")]
+                    if let (Some(server_state), Some(connection)) =
+                        (server_state.as_mut(), tcp_connection.as_mut())
+                    {
+                        crate::network::loopback::connect_loopback(server_state, connection);
+                    }
                     next_state.set(ClientAppState::CharacterSelect);
                 }
             }

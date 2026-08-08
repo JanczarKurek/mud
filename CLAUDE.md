@@ -14,7 +14,7 @@ cargo run --bin server                          # Headless TCP server
 cargo run --bin mud2 -- --tcp-client            # TCP client (server picked on the title screen)
 cargo check                                     # Always run after changes before reporting success
 cargo check -p mud2-lib --no-default-features   # Thin-client config — keep this green too
-cargo test                                      # Run tests
+cargo test                                      # Run tests (e2e suites in tests/ want -- --test-threads=1)
 cargo fmt                                       # Format code
 cargo clippy                                    # Lint (fix warnings before merging)
 packaging/build-appimage.sh                     # Linux AppImage (run inside nix-shell)
@@ -56,18 +56,22 @@ offline-capable build. Rules when touching gated code:
 - **HeadlessServer**: No graphics, listens for TCP connections
 
 ### Server-Authoritative Flow
-1. Client sends **commands** via `PendingGameCommands` (move, cast, etc.)
-2. Server validates and processes commands (`crates/mud2-lib/src/game/systems.rs`)
-3. Server produces **game events** via `PendingGameEvents`
-4. Client applies events to local state via `ClientGameState`
+1. Client input/UI push **commands** into `ClientPendingCommands` (the client outbox)
+2. `flush_client_commands_to_server` serializes them over the transport; the server ingests them into `PendingGameCommands`, tagged with the sending peer's `PlayerId`
+3. Server validates and processes commands (`crates/mud2-lib/src/game/systems.rs`)
+4. `flush_server_messages` diffs per-peer state via `compute_events_for_peer` and sends **game events**
+5. Client folds events into `ClientGameState` via `apply_game_events_to_client_state`
 
-### The EmbeddedClient Invariant
-EmbeddedClient mode = HeadlessServer + TcpClient running in the same `App`. The wire protocol is *bypassed* but the data flow must be identical, otherwise offline play will drift from networked play. Keep these rules when adding systems:
-- **Server-side systems** must emit changes through `PendingGameEvents`. Never mutate `ClientGameState` directly.
-- **Client-side (presentation) systems** must read from `ClientGameState` or from view-only components (`DisplayedVitalStats`, `ViewPosition`). Never query authoritative components (`VitalStats`, `SpaceResident`, `TilePosition`) from presentation code. Projected entities (`ClientProjectedWorldObject`, `ClientRemotePlayerVisual`, the projected local player in TcpClient mode) carry *only* `ViewPosition`, never the authoritative pair.
-- `apply_game_events_to_client_state` is the single fold function that turns events into client state. Both `GameServerPlugin` and `GameClientPlugin` register it so system-graph ordering is identical in all three runtime modes (`crates/mud2-lib/src/game/mod.rs`).
-- **Two event channels, two roles.** `GameEvent` (via `ServerMessage::Events`) is state replication — every field of `ClientGameState` is reachable through a `GameEvent` variant, and `compute_events_for_peer` is the sole serializer. `GameUiEvent` (via `ServerMessage::UiEvents`) is a one-shot signal bus orthogonal to state (e.g. "open this container now"); do not use it to replicate state.
-- Before adding a new code path, ask: "would this still work if the server were on another machine?" If no, it belongs on the presentation side.
+### The EmbeddedClient Pipeline (one wire, all modes)
+EmbeddedClient mode = HeadlessServer + TcpClient running in the same `App`, connected by an **in-process loopback byte pipe** (`crates/mud2-lib/src/network/loopback.rs`) instead of a socket. There is no bypass: embedded runs the exact TCP pipeline — newline-framed serde_json included — so offline play cannot drift from networked play. Rules when adding systems:
+- **Frame ordering** is declared through the ungated `network::sets` SystemSets: input → `NetClientSend` (client outbox → pipe) → `NetServerReceive` (pipe → `PendingGameCommands`, before `CommandIntercept`) → simulation → `NetServerSend` (per-peer diff → pipe) → `NetClientReceive` (pipe → event queues) → `apply_game_events_to_client_state` → presentation. In embedded mode this whole chain completes within one `Update`, so input still lands on screen the same frame.
+- **Two command queues, two roles.** `ClientPendingCommands` is client intent and is drained *only* by the flush — it always crosses the wire and comes back peer-attributed. `PendingGameCommands` is the server-side queue (network ingest, admin REPL, scripts, editor); untargeted entries there are trusted as server-internal. Never push client intent into `PendingGameCommands` — in the unified embedded App it would be consumed locally and bypass the wire.
+- **Server-side systems** must emit changes by mutating authoritative components/resources; `compute_events_for_peer` (in the `NetServerSend` flush) diffs them per peer. Systems that mutate replicated state late in the frame need a `.before(crate::network::sets::NetServerSend)` edge. Never mutate `ClientGameState` directly, and never push `GameEvent`s into `PendingGameEvents` from server systems — that queue is the client-side inbox.
+- **Client-side (presentation) systems** must read from `ClientGameState` or from view-only components (`DisplayedVitalStats`, `ViewPosition`). Never query authoritative components (`VitalStats`, `SpaceResident`, `TilePosition`) from presentation code. The local player entity is a projected stub (`Without<PlayerIdentity>`) in *every* client mode; the authoritative player entity (with `PlayerIdentity`) coexists in the same World in embedded mode and carries no visuals — filter presentation queries accordingly.
+- `apply_game_events_to_client_state` is the single fold function that turns events into client state; `GameServerPlugin` and `GameClientPlugin` both register it so ordering is identical in all three runtime modes (`crates/mud2-lib/src/game/mod.rs`).
+- **Two event channels, two roles.** `GameEvent` (via `ServerMessage::Events`) is state replication — every field of `ClientGameState` is reachable through a `GameEvent` variant, and `compute_events_for_peer` is the sole serializer. `GameUiEvent` (via `ServerMessage::UiEvents`) is a one-shot signal bus orthogonal to state; per-player events go through `PendingGameUiEvents::push`, broadcasts through `push_broadcast` — the `.events` field is the client inbox, never written server-side.
+- Embedded auth: the title screen's Play calls `connect_loopback`, which registers a peer born `AwaitingCharacter` on `LOCAL_ACCOUNT_ID` (the in-process pipe is the trust model; Login/Register are skipped). Everything from `ListCharacters` on — character CRUD, asset sync, gameplay — is real wire traffic.
+- Never order client systems `.before(some_server_fn)` across the feature boundary; use the ungated sets in `network/sets.rs` (or `PythonConsoleToggleSet`).
 
 ### Module Layout (`crates/mud2-lib/src/`)
 - **accounts/**: sqlite-backed account database (Argon2 hashed passwords), per-character save/load, autosave system
@@ -78,17 +82,17 @@ EmbeddedClient mode = HeadlessServer + TcpClient running in the same `App`. The 
 - **combat/**: Battle system, damage resolution, attack profiles
 - **magic/**: Spell definitions loaded from YAML
 - **npc/**: NPC AI (roaming, hostile chase behavior)
-- **network/**: TCP protocol, connection management, message ser/de, TLS transport wrapper
+- **network/**: TCP protocol, connection management, message ser/de, TLS transport wrapper, loopback pipe, `sets.rs` pipeline ordering
 - **persistence/**: World snapshot save/load (JSON format; players live in `accounts.db`, not this snapshot)
 - **ui/**: HUD, docked panels, context menus, cursor management
-- **scripting/**: Embedded RustPython console
+- **scripting/**: Python console UI (thin client, ungated) + server-side RustPython REPL host (`admin_host.rs`, `game_repl.rs`, gated)
 
 (Editor and viewers live in `crates/mud2-editor/src/`.)
 
 ### Auth & Persistence
 
-- Every TCP connection must `Login` / `Register` before the server will send the asset manifest or any gameplay events. The peer state machine is `AwaitingAuth → Authed { account_id }` (`crates/mud2-lib/src/network/resources.rs`).
-- `PlayerId(account_id as u64)` — the auth path sets a player's identity from their DB row, and embedded mode uses the reserved `LOCAL_ACCOUNT_ID = 0` (`crates/mud2-lib/src/accounts/db.rs`).
+- Every TCP connection must `Login` / `Register` before the server will send the asset manifest or any gameplay events. The peer state machine is `AwaitingAuth → AwaitingCharacter { account_id } → Authed { account_id, character_id }` (`crates/mud2-lib/src/network/resources.rs`). The embedded loopback peer skips credentials and is born `AwaitingCharacter` on the reserved `LOCAL_ACCOUNT_ID = 0` (`connect_loopback`).
+- `PlayerId(character_id as u64)` — set at character select from the DB row, identically for TCP and loopback peers (`crates/mud2-lib/src/accounts/db.rs`).
 - On-disk layout is per-role (see `crates/mud2-lib/src/app/paths.rs` — the single source of truth):
 
   | Role | Accounts DB | World snapshot | Asset cache |
@@ -109,10 +113,11 @@ EmbeddedClient mode = HeadlessServer + TcpClient running in the same `App`. The 
 
 ### Admin Python REPL
 
-- HeadlessServer only. Pass `--admin-socket [PATH]` to bind a UNIX-domain socket; default path is `~/.local/share/mud2/server/admin.sock`. Auth is by filesystem permissions (default mode `0600`, override with `--admin-socket-mode 660`). Connect with `nc -U <path>` or `socat - UNIX-CONNECT:<path>`.
-- One persistent Python scope is shared across all admin connections — admins can collaborate on globals. Live-bind a session to act-as a player with `world.attach_player(player_id)` (`world.attach_player(None)` detaches).
-- `AdminReplHost` (`crates/mud2-lib/src/scripting/admin_host.rs`) compiles input as `Mode::Single` and pipes `sys.stdout` / `sys.stderr` / `sys.displayhook` through `world.log`, so bare expressions print their `repr` like CPython's REPL. Multi-line input is buffered until a blank line force-flushes (mirrors CPython).
-- The listener (`crates/mud2-lib/src/network/admin.rs`, `#[cfg(unix)]`) reuses the existing sync-nonblocking pattern from `crates/mud2-lib/src/network/systems.rs`. All Python execution happens on the Bevy main thread; no background threads. Stale sockets from a prior crash are auto-reclaimed at startup if no live listener answers on them.
+Two front ends share one server-side `AdminReplHost` interpreter (`crates/mud2-lib/src/scripting/admin_host.rs`) — one persistent Python scope, so admins can collaborate on globals regardless of how they connected. Live-bind a session to act-as a player with `world.attach_player(player_id)` (`world.attach_player(None)` detaches).
+
+- **In-game console** (backtick, any client mode): the console UI is a thin client — each line travels as `GameCommand::AdminExec` and output returns as `GameUiEvent::ReplOutput`. Execution happens server-side in `crates/mud2-lib/src/scripting/game_repl.rs`, gated on the account's `is_admin` flag in the accounts DB (the embedded local account is always admin; grant others with `world.grant_admin("username")` / revoke with `world.revoke_admin`, effective on their next login). Thin clients ship the console UI but no interpreter.
+- **UNIX socket** (HeadlessServer): pass `--admin-socket [PATH]`; default path is `~/.local/share/mud2/server/admin.sock`. Auth is by filesystem permissions (default mode `0600`, override with `--admin-socket-mode 660`). Connect with `nc -U <path>` or `socat - UNIX-CONNECT:<path>`. The listener (`crates/mud2-lib/src/network/admin.rs`, `#[cfg(unix)]`) reuses the sync-nonblocking pattern from `crates/mud2-lib/src/network/systems.rs`; stale sockets from a prior crash are auto-reclaimed at startup if no live listener answers on them.
+- `AdminReplHost` compiles input as `Mode::Single` and pipes `sys.stdout` / `sys.stderr` / `sys.displayhook` through `world.log`, so bare expressions print their `repr` like CPython's REPL. Multi-line input is buffered per session until a blank line force-flushes (mirrors CPython). All Python execution happens on the Bevy main thread; no background threads.
 
 ### Data-Driven Design
 - Map layouts: `assets/maps/*.yaml`

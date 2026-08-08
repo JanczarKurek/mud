@@ -160,7 +160,8 @@ impl PendingStackSettleEvents {
 ///      ground instead of floating.
 ///
 /// Both passes mutate `TilePosition` directly; the state-diff pipeline
-/// (`collect_game_events_from_authority`) replicates the changes to clients.
+/// (`compute_events_for_peer` in the `NetServerSend` flush) replicates the
+/// changes to clients.
 pub fn settle_pending_stacks(
     mut pending: ResMut<PendingStackSettleEvents>,
     mut object_query: Query<(Entity, &SpaceResident, &mut TilePosition, &OverworldObject)>,

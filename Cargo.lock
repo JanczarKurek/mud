@@ -4327,6 +4327,7 @@ dependencies = [
  "mud2-editor",
  "mud2-lib",
  "schemars",
+ "serde",
  "serde_json",
 ]
 

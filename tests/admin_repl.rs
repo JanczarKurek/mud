@@ -4,9 +4,9 @@
 //! connects as a client, exercises the REPL: simple expression evaluation,
 //! multi-line `def`, `world.spawn`, and `world.attach_player`.
 //!
-//! Gated `#[ignore]` like `multiplayer_transport.rs` because it does real
-//! socket I/O against the running app. Run with `cargo test --test
-//! admin_repl -- --ignored`.
+//! Gated `#[ignore]` because it binds a UNIX socket in the filesystem, which
+//! some sandboxes disallow. Run with `cargo test --test admin_repl --
+//! --ignored`.
 
 #![cfg(unix)]
 

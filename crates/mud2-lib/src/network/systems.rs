@@ -20,7 +20,9 @@ use crate::app::state::ClientAppState;
 use crate::assets::AssetResolver;
 #[cfg(feature = "server-sim")]
 use crate::game::resources::ClientGameState;
-use crate::game::resources::{PendingGameCommands, PendingGameUiEvents};
+#[cfg(feature = "server-sim")]
+use crate::game::resources::PendingGameCommands;
+use crate::game::resources::PendingGameUiEvents;
 #[cfg(feature = "server-sim")]
 use crate::network::asset_sync::build_server_manifest;
 use crate::network::asset_sync::hash_bytes;
@@ -217,9 +219,14 @@ pub fn start_tcp_server(config: Res<TcpServerConfig>, mut server_state: ResMut<T
     if server_state.listener.is_some() {
         return;
     }
+    // No bind address: loopback-only server (EmbeddedClient) — peers arrive
+    // via `network::loopback::connect_loopback`, never a socket.
+    let Some(bind_addr) = config.bind_addr.as_deref() else {
+        return;
+    };
 
-    let Ok(listener) = TcpListener::bind(&config.bind_addr) else {
-        error!("failed to bind TCP server on {}", config.bind_addr);
+    let Ok(listener) = TcpListener::bind(bind_addr) else {
+        error!("failed to bind TCP server on {bind_addr}");
         return;
     };
     if let Err(error) = listener.set_nonblocking(true) {
@@ -227,7 +234,7 @@ pub fn start_tcp_server(config: Res<TcpServerConfig>, mut server_state: ResMut<T
         return;
     }
 
-    info!("TCP server listening on {}", config.bind_addr);
+    info!("TCP server listening on {bind_addr}");
     server_state.listener = Some(listener);
 }
 
@@ -280,6 +287,7 @@ pub fn accept_tcp_client_connections(
                         remote_addr: Some(address),
                         player_id: None,
                         player_entity: None,
+                        is_admin: false,
                         stream: transport,
                         read_buffer: Vec::new(),
                         last_projection: None,
@@ -317,6 +325,8 @@ pub fn poll_tcp_server_messages(
     player_position_query: Query<(&SpaceResident, &TilePosition), With<Player>>,
     mut object_registry: ResMut<ObjectRegistry>,
     loadouts: Res<Loadouts>,
+    debug: Option<Res<crate::app::state::DebugMode>>,
+    debug_presets: Res<crate::player::debug_presets::DebugCharacterPresets>,
     mut commands: Commands,
 ) {
     let connection_ids = server_state.peers.keys().copied().collect::<Vec<_>>();
@@ -369,7 +379,11 @@ pub fn poll_tcp_server_messages(
                     );
                 }
                 Ok(ClientMessage::ListCharacters) => {
-                    handle_list_characters(peer, db.as_deref(), &mut disconnected);
+                    let debug_seed = debug
+                        .as_deref()
+                        .is_some_and(|d| d.0)
+                        .then_some((&*debug_presets, &*loadouts));
+                    handle_list_characters(peer, db.as_deref(), debug_seed, &mut disconnected);
                 }
                 Ok(ClientMessage::CreateCharacter {
                     name,
@@ -387,10 +401,14 @@ pub fn poll_tcp_server_messages(
                         &mut disconnected,
                     );
                 }
-                Ok(ClientMessage::SelectCharacter { character_id }) => {
+                Ok(ClientMessage::SelectCharacter {
+                    character_id,
+                    start_map,
+                }) => {
                     handle_select_character(
                         peer,
                         character_id,
+                        start_map,
                         db.as_deref(),
                         var_stores.as_deref_mut(),
                         &mut commands,
@@ -557,11 +575,16 @@ fn handle_auth_attempt(
 }
 
 /// Responds to `ClientMessage::ListCharacters` with the roster for this
-/// peer's account.
+/// peer's account. In debug mode, the reserved local account's roster is
+/// first seeded with every debug character preset (EmbeddedClient dev flow).
 #[cfg(feature = "server-sim")]
 fn handle_list_characters(
     peer: &mut TcpServerPeer,
     db: Option<&AccountDbHandle>,
+    debug_seed: Option<(
+        &crate::player::debug_presets::DebugCharacterPresets,
+        &Loadouts,
+    )>,
     disconnected: &mut bool,
 ) {
     let Some(account_id) = peer.account_id() else {
@@ -571,7 +594,14 @@ fn handle_list_characters(
         return;
     };
     let summaries = {
-        let guard = db.lock();
+        let mut guard = db.lock();
+        if account_id == crate::accounts::LOCAL_ACCOUNT_ID {
+            if let Some((presets, loadouts)) = debug_seed {
+                crate::player::debug_presets::ensure_debug_preset_characters(
+                    &mut guard, account_id, presets, loadouts,
+                );
+            }
+        }
         guard.list_characters(account_id).unwrap_or_default()
     };
     let list: Vec<crate::network::protocol::CharacterSummary> = summaries
@@ -644,7 +674,7 @@ fn handle_create_character(
                 disconnected,
                 Some(&mut peer.throughput.bytes_out),
             );
-            handle_list_characters(peer, Some(db), disconnected);
+            handle_list_characters(peer, Some(db), None, disconnected);
         }
         Err(err) => {
             let reason = reason_for_auth_error(&err);
@@ -693,16 +723,18 @@ fn handle_delete_character(
             );
         }
     }
-    handle_list_characters(peer, Some(db), disconnected);
+    handle_list_characters(peer, Some(db), None, disconnected);
 }
 
 /// Selects a character and spawns the corresponding player entity. The peer
 /// transitions to `Authed`, after which the asset-manifest + gameplay-event
 /// stream begins.
 #[cfg(feature = "server-sim")]
+#[allow(clippy::too_many_arguments)]
 fn handle_select_character(
     peer: &mut TcpServerPeer,
     character_id: i64,
+    start_map: Option<String>,
     db: Option<&AccountDbHandle>,
     var_stores: Option<&mut crate::dialog::resources::CharacterVarStores>,
     commands: &mut Commands,
@@ -752,21 +784,48 @@ fn handle_select_character(
 
     let player_id = PlayerId(character_id as u64);
 
+    // Title-screen map picker: only the reserved local account may override
+    // its saved position with an explicit starting map (EmbeddedClient dev
+    // flow). Relocating is the point of picking, so it wins over the dump.
+    let explicit_pick = if account_id == crate::accounts::LOCAL_ACCOUNT_ID {
+        let pick = start_map
+            .as_deref()
+            .and_then(|id| space_manager.persistent_space_id(id));
+        if let Some(map_id) = start_map.as_deref() {
+            if pick.is_none() {
+                warn!("starting map '{map_id}' is not a live persistent space; ignoring pick");
+            }
+        }
+        pick
+    } else {
+        None
+    };
+
     let entity = if let Some(mut dump) = existing_dump {
         // Force the dump's player_id to the canonical character_id (legacy
         // dumps may have any value here).
         dump.player_id = player_id;
-        // Fresh characters (no space/position yet) and characters whose saved
+        // Fresh characters (no space/position yet), characters whose saved
         // space is gone — e.g. saved inside an ephemeral dungeon instance that
-        // died with a previous session — get a spawn tile now.
+        // died with a previous session — and explicit map picks get a spawn
+        // tile now.
         let needs_spawn_location = crate::player::setup::needs_spawn_location(
-            None,
+            explicit_pick,
             dump.space_id,
             dump.tile_position,
             space_manager,
         );
         if needs_spawn_location {
-            if let Some((space_id, tile)) = find_spawn_location(
+            if let Some(space_id) = explicit_pick {
+                // Mirror the historical embedded map-pick behavior: land at
+                // the picked space's center.
+                let (width, height) = space_manager
+                    .get(space_id)
+                    .map(|space| (space.width, space.height))
+                    .unwrap_or((world_config.map_width, world_config.map_height));
+                dump.space_id = Some(space_id);
+                dump.tile_position = TilePosition::ground(width / 2, height / 2);
+            } else if let Some((space_id, tile)) = find_spawn_location(
                 world_config,
                 authored_spaces,
                 space_manager,
@@ -842,6 +901,12 @@ fn handle_select_character(
     };
     peer.player_id = Some(player_id);
     peer.player_entity = Some(entity);
+    // Loopback peers are born admin (see `connect_loopback`); everyone else
+    // gets the flag from their account row.
+    peer.is_admin = peer.is_admin || {
+        let guard = db.lock();
+        guard.is_account_admin(account_id).unwrap_or(false)
+    };
     info!(
         "peer {} selected character {character_id} (account {account_id})",
         peer.connection_id.0
@@ -902,7 +967,7 @@ pub fn flush_server_messages(
     mut commands: Commands,
 ) {
     let peer_ui_events = std::mem::take(&mut pending_ui_events.peer_events);
-    let broadcast_ui_events = std::mem::take(&mut pending_ui_events.events);
+    let broadcast_ui_events = std::mem::take(&mut pending_ui_events.broadcast);
 
     let connection_ids = server_state.peers.keys().copied().collect::<Vec<_>>();
     let mut disconnected_peers = Vec::new();
@@ -1017,23 +1082,32 @@ pub fn flush_server_messages(
 pub fn flush_client_commands_to_server(
     config: Res<TcpClientConfig>,
     mut connection: ResMut<TcpClientConnection>,
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut outbox: ResMut<crate::game::resources::ClientPendingCommands>,
 ) {
     ensure_tcp_client_connected(&config, &mut connection);
 
     let Some(stream) = &mut connection.stream else {
-        pending_commands.commands.clear();
+        // No connection: keep commands queued (capped) so a brief drop doesn't
+        // silently eat player input; they flush on reconnect.
+        const MAX_QUEUED_WHILE_DISCONNECTED: usize = 256;
+        if outbox.commands.len() > MAX_QUEUED_WHILE_DISCONNECTED {
+            warn!(
+                "dropping {} queued commands while disconnected (cap {})",
+                outbox.commands.len() - MAX_QUEUED_WHILE_DISCONNECTED,
+                MAX_QUEUED_WHILE_DISCONNECTED
+            );
+            outbox.commands.truncate(MAX_QUEUED_WHILE_DISCONNECTED);
+        }
         return;
     };
 
-    let commands = std::mem::take(&mut pending_commands.commands);
+    // The outbox holds only client intent — the server re-attributes each
+    // command to the sending peer on ingest. Server-side producers use the
+    // separate `PendingGameCommands` queue and never cross this path.
+    let commands = std::mem::take(&mut outbox.commands);
     let mut disconnected = false;
     for command in commands {
-        if !write_message(
-            stream,
-            &ClientMessage::Command(command.command),
-            &mut disconnected,
-        ) {
+        if !write_message(stream, &ClientMessage::Command(command), &mut disconnected) {
             break;
         }
     }
@@ -1480,8 +1554,14 @@ pub fn write_message_counted<S: Write>(
     disconnected: &mut bool,
     mut bytes_out: Option<&mut u64>,
 ) -> bool {
-    let Ok(mut bytes) = serde_json::to_vec(message) else {
-        return false;
+    let mut bytes = match serde_json::to_vec(message) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            // A non-serializable protocol value is a programming error — the
+            // message is silently lost otherwise, so make it loud.
+            error!("failed to serialize outgoing message (dropped): {error}");
+            return false;
+        }
     };
     bytes.push(b'\n');
 

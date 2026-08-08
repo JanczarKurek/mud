@@ -11,8 +11,6 @@ use crate::npc::components::Faction;
 #[cfg(feature = "server-sim")]
 use crate::persistence::PlayerStateDump;
 #[cfg(feature = "server-sim")]
-use crate::persistence::WorldSnapshotStatus;
-#[cfg(feature = "server-sim")]
 use crate::player::classes::Class;
 use crate::player::components::{
     AppearanceRegion, Player, PlayerAppearance, PlayerIdentity, SpriteLayer, VitalStats,
@@ -23,8 +21,6 @@ use crate::player::components::{
     MovementCooldown, PlayerId, RegenBuffs, RegenTickers, WeaponDamage,
 };
 #[cfg(feature = "server-sim")]
-use crate::player::loadout::Loadouts;
-#[cfg(feature = "server-sim")]
 use crate::player::progression::Experience;
 #[cfg(feature = "server-sim")]
 use crate::player::skills::SkillSheet;
@@ -34,8 +30,6 @@ use crate::world::components::{
     DisplayedVitalStats, Facing, HealthBarDisplayPolicy, TilePosition, ViewPosition,
 };
 use crate::world::lighting::LightSource;
-#[cfg(feature = "server-sim")]
-use crate::world::map_layout::SpaceDefinitions;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 #[cfg(feature = "server-sim")]
 use crate::world::object_registry::ObjectRegistry;
@@ -44,27 +38,30 @@ use crate::world::resources::SpaceManager;
 use crate::world::setup::{attach_combat_health_bar, build_object_visual_bundle};
 use crate::world::WorldConfig;
 
-/// Spawn the **projected** local-player entity for TcpClient mode. The
-/// authoritative player lives on the server; the client only carries a
-/// view-side stand-in so `spawn_player_visual` has a `Player` entity to attach
+/// Spawn the **projected** local-player entity — the client-side stand-in in
+/// every client runtime (TcpClient and, since the loopback unification,
+/// EmbeddedClient too). The authoritative player lives on the server side;
+/// this stub exists so `spawn_player_visual` has a `Player` entity to attach
 /// the sprite/health bar/light to, and `sync_projected_player_from_client_state`
 /// has a target to write `ViewPosition` / `DisplayedVitalStats` / `Facing` into
 /// from `ClientGameState`.
 ///
-/// No `PlayerIdentity` (that's the marker `sync_authoritative_player_display`
-/// uses to identify embedded-mode entities and skip the projected branch).
-/// No `SpaceResident` / `TilePosition` either — those are server-authoritative
+/// No `PlayerIdentity` — that marks the *authoritative* player entity, which
+/// coexists in the same `World` in embedded mode; presentation systems filter
+/// `Without<PlayerIdentity>` to address the stub unambiguously. No
+/// `SpaceResident` / `TilePosition` either — those are server-authoritative
 /// per the EmbeddedClient Invariant in `CLAUDE.md`. The inert `VitalStats` is
-/// only here because a few server-side queries elsewhere filter on it; the
-/// values are never read on the client.
+/// only here because a few client-side queries elsewhere filter on it; the
+/// values are never read.
 pub fn spawn_projected_local_player(
     mut commands: Commands,
     world_config: Res<WorldConfig>,
-    existing: Query<Entity, With<Player>>,
+    existing: Query<Entity, (With<Player>, Without<PlayerIdentity>)>,
 ) {
     if existing.iter().next().is_some() {
         // Either we re-entered InGame without despawning, or another system
-        // already spawned the entity. Either way, don't duplicate.
+        // already spawned the entity. Either way, don't duplicate. (The
+        // filter ignores the authoritative player an embedded App carries.)
         return;
     }
     commands.spawn((
@@ -93,23 +90,6 @@ pub fn despawn_projected_local_player(
     }
 }
 
-/// Where a character enters the world, given an already-resolved title-screen
-/// pick. Falls back to the authored bootstrap space, and only then to
-/// `current_space_id` — which tracks whichever space the player last stood in
-/// (`sync_client_world_projection`) and is persisted in the world snapshot, so
-/// it drifts off the bootstrap space and is a last resort, not the default.
-#[cfg(feature = "server-sim")]
-fn resolve_spawn_space(
-    space_manager: &SpaceManager,
-    bootstrap_space_id: &str,
-    explicit_pick: Option<SpaceId>,
-    current_space_id: SpaceId,
-) -> SpaceId {
-    explicit_pick
-        .or_else(|| space_manager.persistent_space_id(bootstrap_space_id))
-        .unwrap_or(current_space_id)
-}
-
 /// Whether to place a loaded character at the spawn point rather than resume
 /// them at their persisted location. An explicit map pick relocates them —
 /// that's the point of picking. Otherwise a character with no saved space, one
@@ -128,162 +108,6 @@ pub(crate) fn needs_spawn_location(
 ) -> bool {
     let saved_space_is_live = saved_space_id.is_some_and(|id| space_manager.get(id).is_some());
     explicit_pick.is_some() || !saved_space_is_live || (saved_tile.x == 0 && saved_tile.y == 0)
-}
-
-#[cfg(feature = "server-sim")]
-pub fn spawn_embedded_player_authoritative(
-    mut commands: Commands,
-    world_config: Res<WorldConfig>,
-    space_manager: Res<SpaceManager>,
-    mut object_registry: ResMut<ObjectRegistry>,
-    snapshot_status: Option<Res<WorldSnapshotStatus>>,
-    player_query: Query<Option<&PlayerIdentity>, With<Player>>,
-    db: Option<Res<crate::accounts::AccountDbHandle>>,
-    mut var_stores: Option<ResMut<crate::dialog::resources::CharacterVarStores>>,
-    selected: Option<Res<crate::app::state::LocalSelectedCharacter>>,
-    mut selected_map: Option<ResMut<crate::ui::settings::SelectedStartingMap>>,
-    space_definitions: Res<SpaceDefinitions>,
-    loadouts: Res<Loadouts>,
-) {
-    if snapshot_status
-        .as_ref()
-        .is_some_and(|s| s.loaded && s.players_restored)
-    {
-        return;
-    }
-
-    // Resolve the map this character spawns in.
-    //
-    // An explicit title-screen pick (`SelectedStartingMap::map_id`) overrides a
-    // returning character's saved position — relocating is the whole point of
-    // picking. The pick is *consumed* here, so the next launch resumes the
-    // character wherever they left off instead of yanking them back.
-    //
-    // With no pick, a returning character resumes at their saved position and a
-    // new one starts in the authored bootstrap space. Note the fallback resolves
-    // `bootstrap_space_id` through `SpaceManager` rather than reading
-    // `world_config.current_space_id`: the latter tracks whichever space the
-    // player last stood in (`sync_client_world_projection`) and is persisted in
-    // the world snapshot, so it drifts off the bootstrap space over time.
-    let explicit_map_id = selected_map.as_ref().and_then(|s| s.map_id.clone());
-    let explicit_pick = explicit_map_id
-        .as_deref()
-        .and_then(|id| space_manager.persistent_space_id(id));
-    if let Some(map_id) = &explicit_map_id {
-        if explicit_pick.is_none() {
-            warn!(
-                "starting map '{map_id}' is not a live persistent space; falling back to bootstrap space '{}'",
-                space_definitions.bootstrap_space_id
-            );
-        }
-        if let Some(selected_map) = selected_map.as_mut() {
-            selected_map.map_id = None;
-            selected_map.dirty = true;
-        }
-    }
-    let spawn_space_id = resolve_spawn_space(
-        &space_manager,
-        &space_definitions.bootstrap_space_id,
-        explicit_pick,
-        world_config.current_space_id,
-    );
-    let (spawn_width, spawn_height) = space_manager
-        .get(spawn_space_id)
-        .map(|space| (space.width, space.height))
-        .unwrap_or((world_config.map_width, world_config.map_height));
-
-    if player_query.iter().next().is_some() {
-        warn!(
-            "spawn_embedded_player_authoritative: existing Player entity present on InGame entry — cleanup leak?"
-        );
-        return;
-    }
-
-    let Some(db) = db.as_deref() else {
-        return;
-    };
-
-    // Prefer the character explicitly chosen on the CharacterSelect screen.
-    // Fall back to "most recently played" if nothing's been chosen yet.
-    let target_character_id = selected.as_ref().and_then(|s| s.character_id);
-
-    let (character_id, dump, display_name) = {
-        let guard = db.lock();
-        let summary = match target_character_id {
-            Some(id) => guard
-                .list_characters(crate::accounts::LOCAL_ACCOUNT_ID)
-                .unwrap_or_default()
-                .into_iter()
-                .find(|c| c.character_id == id),
-            None => guard
-                .list_characters(crate::accounts::LOCAL_ACCOUNT_ID)
-                .unwrap_or_default()
-                .into_iter()
-                .next(),
-        };
-        let Some(summary) = summary else {
-            return;
-        };
-        let dump = guard.load_character(summary.character_id).ok().flatten();
-        (summary.character_id, dump, summary.name)
-    };
-
-    let player_id = PlayerId(character_id as u64);
-    if let Some(mut dump) = dump {
-        dump.player_id = player_id;
-        let needs_spawn_location = needs_spawn_location(
-            explicit_pick,
-            dump.space_id,
-            dump.tile_position,
-            &space_manager,
-        );
-        if needs_spawn_location {
-            dump.space_id = Some(spawn_space_id);
-            dump.tile_position = TilePosition::ground(spawn_width / 2, spawn_height / 2);
-        }
-        let yarn_vars = dump.yarn_vars.clone();
-        let needs_starter_seed = dump
-            .inventory
-            .backpack_slots
-            .iter()
-            .all(|slot| slot.is_none())
-            && dump
-                .inventory
-                .equipment_slots
-                .iter()
-                .all(|(_, item)| item.is_none());
-        let fallback_space_id = spawn_space_id;
-        let entity = spawn_player_from_dump(
-            &mut commands,
-            &mut object_registry,
-            dump,
-            fallback_space_id,
-            display_name,
-        );
-        if needs_starter_seed {
-            let mut starter = Inventory::default();
-            loadouts.starter().apply_to(&mut starter);
-            commands.entity(entity).insert(starter);
-        }
-        if let Some(stores) = var_stores.as_deref_mut() {
-            stores.restore(player_id.0, yarn_vars);
-        }
-        return;
-    }
-
-    let spawn_tile = TilePosition::ground(spawn_width / 2, spawn_height / 2);
-    let object_id = object_registry.allocate_runtime_id("player");
-    let entity = spawn_player_authoritative_in_space(
-        &mut commands,
-        player_id,
-        object_id,
-        spawn_space_id,
-        spawn_tile,
-        display_name,
-    );
-    let mut starter = Inventory::default();
-    loadouts.starter().apply_to(&mut starter);
-    commands.entity(entity).insert(starter);
 }
 
 #[cfg(feature = "server-sim")]
@@ -376,11 +200,9 @@ pub fn spawn_player_from_dump(
             },
             SpaceResident { space_id },
             dump.tile_position,
+            // No `ViewPosition`: presentation lives on the projected stub in
+            // every client mode; the authoritative entity is simulation-only.
             (
-                ViewPosition {
-                    space_id,
-                    tile: dump.tile_position,
-                },
                 Facing(dump.facing),
                 dump.experience,
                 dump.class,
@@ -445,11 +267,8 @@ pub fn spawn_player_authoritative_in_space(
             },
             SpaceResident { space_id },
             tile_position,
+            // No `ViewPosition` — see `spawn_player_from_dump`.
             (
-                ViewPosition {
-                    space_id,
-                    tile: tile_position,
-                },
                 Facing::default(),
                 Experience::default(),
                 Class::default(),
@@ -467,7 +286,9 @@ pub fn spawn_player_visual(
     mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
     definitions: Res<OverworldObjectDefinitions>,
     world_config: Res<WorldConfig>,
-    player_query: Query<Entity, (With<Player>, Without<Sprite>)>,
+    // `Without<PlayerIdentity>`: the visual goes on the projected stub, never
+    // on the authoritative player entity a unified embedded App also holds.
+    player_query: Query<Entity, (With<Player>, Without<Sprite>, Without<PlayerIdentity>)>,
 ) {
     let entity = match player_query.single() {
         Ok(entity) => entity,
@@ -713,35 +534,6 @@ mod tests {
             });
         }
         manager
-    }
-
-    #[test]
-    fn spawn_space_prefers_explicit_pick() {
-        let manager = space_manager_with(&[(1, "overworld"), (3, "island")]);
-        let picked = resolve_spawn_space(&manager, "overworld", Some(SpaceId(3)), SpaceId(3));
-        assert_eq!(picked, SpaceId(3));
-    }
-
-    /// Regression: `current_space_id` follows the player between spaces and is
-    /// written into the world snapshot, so a snapshot saved while standing on
-    /// `island` must not become the spawn point for pick-less characters.
-    #[test]
-    fn spawn_space_falls_back_to_bootstrap_not_drifted_current_space() {
-        let manager = space_manager_with(&[(1, "overworld"), (3, "island")]);
-        let drifted = SpaceId(3);
-        assert_eq!(
-            resolve_spawn_space(&manager, "overworld", None, drifted),
-            SpaceId(1)
-        );
-    }
-
-    #[test]
-    fn spawn_space_falls_back_to_current_space_when_bootstrap_is_absent() {
-        let manager = space_manager_with(&[(3, "island")]);
-        assert_eq!(
-            resolve_spawn_space(&manager, "overworld", None, SpaceId(3)),
-            SpaceId(3)
-        );
     }
 
     #[test]

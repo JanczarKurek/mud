@@ -2,11 +2,10 @@ use bevy::app::AppExit;
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, UiGlobalTransform};
 
-use crate::app::state::{ClientAppState, DiagnosticPause, LocalSelectedCharacter};
+use crate::app::state::{ClientAppState, DiagnosticPause};
 use crate::diagnostics::{DebugAction, PendingDebugActions, PerfOverlayState};
 use crate::game::resources::ClientGameState;
-use crate::network::resources::{PendingPlayerSave, PendingPlayerSaves, TcpClientConnection};
-use crate::player::components::{Player, PlayerIdentity};
+use crate::network::resources::TcpClientConnection;
 use crate::ui::components::{
     CoordinateReadout, HudRoot, MenuBarItemButton, MenuBarRoot, MenuDropdownEntryButton,
     MenuDropdownRoot, ToggleSource,
@@ -392,8 +391,6 @@ pub fn apply_menu_actions(
     mut app_exit: MessageWriter<AppExit>,
     mut next_state: ResMut<NextState<ClientAppState>>,
     mut connection: Option<ResMut<TcpClientConnection>>,
-    mut pending_saves: Option<ResMut<PendingPlayerSaves>>,
-    local_players: Query<(Entity, &PlayerIdentity), With<Player>>,
     theme: Option<Res<UiThemeAssets>>,
     palette: Option<Res<Palette>>,
     movable_windows: Query<(Entity, &crate::ui::movable_window::MovableWindow)>,
@@ -450,13 +447,7 @@ pub fn apply_menu_actions(
                 settings_ui.toggle();
             }
             MenuAction::Logout => {
-                do_logout(
-                    &mut commands,
-                    &mut next_state,
-                    connection.as_deref_mut(),
-                    pending_saves.as_deref_mut(),
-                    &local_players,
-                );
+                do_logout(&mut commands, &mut next_state, connection.as_deref_mut());
             }
             MenuAction::Quit => {
                 app_exit.write(AppExit::Success);
@@ -579,31 +570,20 @@ pub fn update_coordinate_readout(
 
 /// Tear down the active session and return to the title screen.
 ///
-/// TcpClient mode: drops the socket; the server's `disconnect_peer` flushes
-/// the player save. EmbeddedClient mode: queues a save via
-/// `PendingPlayerSaves` (drained by `persist_disconnected_players` in the
-/// `Last` schedule) — the same path used when a TCP peer disconnects.
+/// Dropping the connection stream is the whole teardown in every client
+/// runtime: over TCP the server notices the closed socket, and in embedded
+/// mode the dropped loopback endpoint EOFs the pipe — either way the server's
+/// `disconnect_peer` flushes the player save and despawns the entity.
 fn do_logout(
     commands: &mut Commands,
     next_state: &mut NextState<ClientAppState>,
     connection: Option<&mut TcpClientConnection>,
-    pending_saves: Option<&mut PendingPlayerSaves>,
-    local_players: &Query<(Entity, &PlayerIdentity), With<Player>>,
 ) {
     if let Some(connection) = connection {
         connection.stream = None;
         connection.read_buffer.clear();
     }
-    if let Some(pending_saves) = pending_saves {
-        for (entity, identity) in local_players.iter() {
-            pending_saves.entries.push(PendingPlayerSave {
-                character_id: identity.id.0 as i64,
-                player_entity: entity,
-            });
-        }
-    }
     commands.insert_resource(ClientGameState::default());
-    commands.insert_resource(LocalSelectedCharacter::default());
     next_state.set(ClientAppState::TitleScreen);
 }
 

@@ -45,6 +45,12 @@ pub enum ClientMessage {
     /// the asset-manifest + gameplay-event stream.
     SelectCharacter {
         character_id: i64,
+        /// Authored id of the map to (re)spawn in, overriding the character's
+        /// saved position. Honored only for the reserved local account
+        /// (EmbeddedClient's title-screen map picker); other peers get their
+        /// saved position regardless.
+        #[serde(default)]
+        start_map: Option<String>,
     },
     /// Post-auth, pre-character: delete a character. Server replies with an
     /// updated `CharacterList`.

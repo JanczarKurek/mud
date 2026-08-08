@@ -1,7 +1,7 @@
-//! Admin Python REPL host — used by `network/admin.rs` to evaluate Python
-//! input arriving over the admin UNIX socket. Sibling to
-//! [`crate::scripting::python::PythonConsoleHost`], but with `sys.stdout` and
-//! `sys.displayhook` redirected so that REPL-style expression evaluation
+//! Admin Python REPL host — the single interpreter behind both admin REPL
+//! front ends: the UNIX-socket listener (`network/admin.rs`) and the in-game
+//! console pipeline (`scripting/game_repl.rs`). `sys.stdout` and
+//! `sys.displayhook` are redirected so REPL-style expression evaluation
 //! (`>>> 1+1` → `2`) prints results without an explicit `print(...)` call.
 //!
 //! Compilation is split from execution so the polling system can detect
@@ -256,6 +256,19 @@ impl AdminReplHost {
             attach,
         }
     }
+
+    /// Drop the persistent scope and rebuild a fresh one — the "Restart"
+    /// button / `AdminReplReset` path. Note the scope is shared between every
+    /// admin session (in-game consoles and the UNIX-socket REPL alike).
+    pub fn reset_scope(&mut self) {
+        let new_scope = Self::build_scope(&self.interpreter);
+        // ManuallyDrop bookkeeping: drop the old scope before overwriting the
+        // slot so we don't leak. Safe — nothing else holds a reference to it.
+        unsafe {
+            ManuallyDrop::drop(&mut self.scope);
+            self.scope = ManuallyDrop::new(new_scope);
+        }
+    }
 }
 
 impl Default for AdminReplHost {
@@ -266,9 +279,9 @@ impl Default for AdminReplHost {
 
 impl Drop for AdminReplHost {
     fn drop(&mut self) {
-        // RustPython teardown is unreliable on exit (see the matching note on
-        // `PythonConsoleHost::drop`). Intentionally leak — process is
-        // exiting; OS reclaims the memory.
+        // RustPython teardown is unreliable on exit (hangs/crashes were
+        // observed with the old in-process console host). Intentionally leak —
+        // process is exiting; OS reclaims the memory.
     }
 }
 

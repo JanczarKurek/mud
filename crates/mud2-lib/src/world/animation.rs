@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use crate::game::resources::ClientGameState;
-use crate::player::components::Player;
+use crate::player::components::{Player, PlayerIdentity};
 use crate::world::components::{
     ClientProjectedWorldObject, ClientRemotePlayerVisual, Facing, TilePosition,
 };
@@ -415,7 +415,7 @@ pub fn return_to_idle_animation(
 pub fn cleanup_just_moved(
     mut commands: Commands,
     view_scroll: Res<ViewScrollOffset>,
-    player_query: Query<Entity, (With<Player>, With<JustMoved>)>,
+    player_query: Query<Entity, (With<Player>, Without<PlayerIdentity>, With<JustMoved>)>,
     other_query: Query<(Entity, Option<&VisualOffset>), (With<JustMoved>, Without<Player>)>,
 ) {
     if !view_scroll.lerp.is_active() {
@@ -473,7 +473,9 @@ pub fn detect_player_movement(
     mut view_scroll: ResMut<ViewScrollOffset>,
     mut floor_transition: ResMut<FloorTransitionOffset>,
     mut commands: Commands,
-    player_query: Query<Entity, With<Player>>,
+    // `Without<PlayerIdentity>`: in embedded mode the authoritative player
+    // entity shares this World; only the projected stub gets `JustMoved`.
+    player_query: Query<Entity, (With<Player>, Without<PlayerIdentity>)>,
     mut last_tile: Local<Option<TilePosition>>,
 ) {
     let Some(new_tile) = client_state.player_tile_position else {
@@ -506,4 +508,44 @@ pub fn detect_player_movement(
     }
 
     *last_tile = Some(new_tile);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::player::components::PlayerId;
+    use crate::test_support::test_world_config;
+
+    /// In the unified embedded App the authoritative player entity (with
+    /// `PlayerIdentity`) coexists with the projected stub. `JustMoved` must
+    /// land on the stub — and only the stub — or the walk animation never
+    /// triggers (the pre-fix `single()` errored out on the duplicate).
+    #[test]
+    fn just_moved_lands_on_projected_stub_despite_authoritative_twin() {
+        let mut app = App::new();
+        app.insert_resource(test_world_config());
+        app.insert_resource(ViewScrollOffset::default());
+        app.insert_resource(FloorTransitionOffset::default());
+        app.insert_resource(ClientGameState {
+            player_tile_position: Some(TilePosition::ground(5, 5)),
+            ..Default::default()
+        });
+        let stub = app.world_mut().spawn(Player).id();
+        let authoritative = app
+            .world_mut()
+            .spawn((Player, PlayerIdentity::new(PlayerId(1))))
+            .id();
+
+        app.add_systems(Update, detect_player_movement);
+        // First run only records the starting tile.
+        app.update();
+        app.world_mut()
+            .resource_mut::<ClientGameState>()
+            .player_tile_position = Some(TilePosition::ground(6, 5));
+        app.update();
+
+        let just_moved = app.world().entity(stub).get::<JustMoved>();
+        assert!(matches!(just_moved, Some(JustMoved { dx: 1, dy: 0 })));
+        assert!(app.world().entity(authoritative).get::<JustMoved>().is_none());
+    }
 }

@@ -157,6 +157,16 @@ pub enum GameUiEvent {
         text: String,
         style: SpeechBubbleStyle,
     },
+    /// Server-side Python REPL response to `GameCommand::AdminExec` /
+    /// `AdminReplReset`. `lines` is captured stdout; `error` a rendered
+    /// traceback or rejection reason; `incomplete` means the input opened a
+    /// multi-line block — the console shows a `...` continuation prompt and
+    /// keeps buffering server-side.
+    ReplOutput {
+        lines: Vec<String>,
+        error: Option<String>,
+        incomplete: bool,
+    },
 }
 
 /// Visual treatment for a floating speech bubble. Drives backdrop color and
@@ -221,6 +231,26 @@ pub struct QueuedGameCommand {
     pub command: GameCommand,
 }
 
+/// Client-side command outbox: player intent (input, UI clicks) waiting to
+/// cross the wire. Drained exclusively by `flush_client_commands_to_server`
+/// (`NetClientSend`); the server re-attributes each command to the sending
+/// peer on ingest.
+///
+/// Deliberately separate from [`PendingGameCommands`]: in a unified embedded
+/// App both queues exist, and routing client intent through its own resource
+/// guarantees it always crosses the loopback wire instead of being consumed
+/// locally by a server-side drainer's "no player_id → first player" fallback.
+#[derive(Resource, Default)]
+pub struct ClientPendingCommands {
+    pub commands: Vec<GameCommand>,
+}
+
+impl ClientPendingCommands {
+    pub fn push(&mut self, command: GameCommand) {
+        self.commands.push(command);
+    }
+}
+
 #[derive(Resource, Default)]
 pub struct PendingGameCommands {
     pub commands: Vec<QueuedGameCommand>,
@@ -267,23 +297,32 @@ impl PendingGameCommands {
 
 #[derive(Resource, Default)]
 pub struct PendingGameUiEvents {
+    /// Client-side inbox: consumed by `apply_game_ui_events` (and refilled by
+    /// the client-effects re-queue). Filled by `poll_tcp_client_messages`.
+    /// Server code must never write here directly — in a unified App the
+    /// server flush would steal client-requeued events and echo them back
+    /// over the loopback pipe.
     pub events: Vec<GameUiEvent>,
+    /// Server-side per-player outbox, drained by `flush_server_messages`.
     pub peer_events: HashMap<PlayerId, Vec<GameUiEvent>>,
+    /// Server-side broadcast outbox (sent to every synced peer), drained by
+    /// `flush_server_messages`.
+    pub broadcast: Vec<GameUiEvent>,
 }
 
 impl PendingGameUiEvents {
     /// Queue an event for one player only. Delivered by
-    /// `flush_server_messages` to that player's TCP peer, or by
-    /// `route_peer_ui_events_to_local` to the local UI in embedded mode.
-    /// Must not also land in `events`: that list is broadcast to every peer,
+    /// `flush_server_messages` to that player's peer (TCP or loopback).
+    /// Must not also land in `broadcast`: that list goes to every peer,
     /// which would both duplicate the event for its owner and leak it to
     /// other players.
     pub fn push(&mut self, player_id: PlayerId, event: GameUiEvent) {
         self.peer_events.entry(player_id).or_default().push(event);
     }
 
+    /// Queue an event for every synced peer.
     pub fn push_broadcast(&mut self, event: GameUiEvent) {
-        self.events.push(event);
+        self.broadcast.push(event);
     }
 }
 
@@ -565,26 +604,12 @@ pub enum GameEvent {
     WorldTimeChanged {
         time_of_day: f32,
     },
-    /// Baseline / corrective replication of the local player's
-    /// `Experience`. Emitted on first projection and whenever the projected
-    /// view diverges from the peer's last-seen baseline (e.g. after death's
-    /// XP-zero rule fires). `ExperienceGained` / `LevelUp` /
-    /// `ExperienceLost` carry the deltas; this variant carries truth.
+    /// Replication of the local player's `Experience`. Emitted on first
+    /// projection and whenever the projected view diverges from the peer's
+    /// last-seen baseline (XP grants, level-ups, death's XP-zero rule).
+    /// One-shot feedback (level-up toast) rides `GameUiEvent` instead.
     PlayerExperienceChanged {
         experience: ExperienceView,
-    },
-    /// Delta event: amount of XP added by the most recent grant. Useful for
-    /// chat-log and floating-text feedback.
-    ExperienceGained {
-        amount: u64,
-    },
-    /// Delta event: the local player crossed into `new_level`.
-    LevelUp {
-        new_level: u32,
-    },
-    /// Delta event: amount of XP removed by the death penalty.
-    ExperienceLost {
-        amount: u64,
     },
     /// Replicated when the local player's selected class changes (or is first
     /// projected). Driven by the bootstrap diff after a character is loaded.
@@ -614,19 +639,11 @@ pub enum GameEvent {
     /// Baseline / corrective replication of the local player's learned
     /// recipe set. Same pattern as `PlayerExperienceChanged` — emitted on
     /// bootstrap and whenever the projection detects drift between the
-    /// last-projected set and the player's `CharacterStash`.
+    /// last-projected set and the player's `CharacterStash`. One-shot
+    /// feedback (recipe-learned toast) rides `GameUiEvent`; craft/learn
+    /// narration rides `ChatLogChanged`.
     LearnedRecipesChanged {
         recipes: std::collections::BTreeSet<String>,
-    },
-    /// Delta event: the local player just learned `recipe_id`. Drives the
-    /// recipe-learned toast and chat narrator line.
-    RecipeLearned {
-        recipe_id: String,
-    },
-    /// Delta event: a craft completed. Drives the chat narrator line for
-    /// the local player.
-    ItemCrafted {
-        recipe_id: String,
     },
     /// Baseline / corrective replication of the local player's `LogState`
     /// (quests + notes). Same pattern as `LearnedRecipesChanged`: emitted
@@ -647,20 +664,6 @@ pub enum GameEvent {
         /// `PlayerAttributesChanged`.
         #[serde(default)]
         available_ability_bumps: u32,
-    },
-    /// Delta event: the local player just gained `amount` skill points
-    /// (from a level-up). The fold adds it to `ClientGameState`.
-    SkillPointsGranted {
-        amount: u32,
-    },
-    /// Delta event: the local player's rank in `skill` changed (typically
-    /// after spending points). Carries the new authoritative rank and the
-    /// remaining unspent-points balance so the panel can stay in sync
-    /// without round-tripping a full sheet.
-    SkillRanksChanged {
-        skill: crate::player::skills::Skill,
-        new_rank: u8,
-        remaining_points: u32,
     },
     /// Baseline replication of the local player's full `DiscoveredTiles`
     /// state. Sent on first projection / when the projection detects drift.
@@ -844,9 +847,8 @@ pub struct ClientGameState {
     #[serde(default)]
     pub current_trade: Option<crate::game::trade::ClientTradeView>,
     /// Recipes the local player has learned. Drives the recipe-book UI.
-    /// Folded from `GameEvent::LearnedRecipesChanged` (baseline) and
-    /// `GameEvent::RecipeLearned` (delta). `BTreeSet` for deterministic
-    /// iteration in the UI.
+    /// Folded from `GameEvent::LearnedRecipesChanged`. `BTreeSet` for
+    /// deterministic iteration in the UI.
     #[serde(default)]
     pub learned_recipes: std::collections::BTreeSet<String>,
     /// Local player's per-character log (Quests + Notes + future sections).
@@ -854,12 +856,11 @@ pub struct ClientGameState {
     #[serde(default)]
     pub log_state: crate::log::LogState,
     /// Local player's skill ranks (indexed by `Skill::index()`). Folded from
-    /// `GameEvent::SkillSheetChanged` (baseline) and `SkillRanksChanged`
-    /// (delta).
+    /// `GameEvent::SkillSheetChanged`.
     #[serde(default)]
     pub skill_ranks: [u8; 10],
     /// Unspent skill points the local player can allocate. Folded from
-    /// `SkillPointsGranted` (delta) and `SkillSheetChanged` (baseline).
+    /// `SkillSheetChanged`.
     #[serde(default)]
     pub available_skill_points: u32,
     /// Unspent ability bumps (earned at L4/8/12/16/20). Folded from

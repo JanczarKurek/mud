@@ -884,6 +884,35 @@ pub mod world_api {
         }
     }
 
+    /// `grant_admin(username)` — set the admin flag on `username`'s account
+    /// (unlocking the in-game Python console for it). Queues
+    /// `AdminSetAccountAdmin`; the server drains it next frame and only
+    /// honors it when the issuing session is itself admin.
+    #[pyfunction]
+    fn grant_admin(username: String, vm: &VirtualMachine) -> PyResult<()> {
+        set_admin_flag(username, true, vm)
+    }
+
+    /// `revoke_admin(username)` — clear the admin flag on `username`'s account.
+    #[pyfunction]
+    fn revoke_admin(username: String, vm: &VirtualMachine) -> PyResult<()> {
+        set_admin_flag(username, false, vm)
+    }
+
+    fn set_admin_flag(username: String, admin: bool, vm: &VirtualMachine) -> PyResult<()> {
+        let verb = if admin { "grant_admin" } else { "revoke_admin" };
+        match with_ctx(|ctx| {
+            ctx.queue_command(crate::game::commands::GameCommand::AdminSetAccountAdmin {
+                username: username.clone(),
+                admin,
+            })
+        }) {
+            Some(Ok(())) => Ok(()),
+            Some(Err(err)) => Err(vm.new_runtime_error(err.as_string())),
+            None => Err(vm.new_runtime_error(format!("{verb}: no API context installed"))),
+        }
+    }
+
     // --- legacy compatibility shims for the original mud_api surface ------
 
     /// Legacy: pretty-printed `list[str]` of all world objects, formatted

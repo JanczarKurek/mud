@@ -8,7 +8,7 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::game::resources::{GameUiEvent, PendingGameEvents, PendingGameUiEvents};
+use crate::game::resources::{GameUiEvent, PendingGameUiEvents};
 use crate::player::classes::Class;
 use crate::player::components::{BaseStats, Player, PlayerId, PlayerIdentity};
 use crate::player::skills::{grant_level_up_skill_points, SkillSheet};
@@ -134,9 +134,9 @@ pub struct PendingXpGrants {
     pub grants: Vec<PendingXpGrant>,
 }
 
-/// Apply queued XP grants. Mutates `Experience`, emits `ExperienceGained` /
-/// `LevelUp` GameEvents, and a `LevelUpToast` GameUiEvent for each level
-/// crossed.
+/// Apply queued XP grants. Mutates `Experience` (the projection replicates the
+/// new totals via `PlayerExperienceChanged` / `SkillSheetChanged` drift
+/// detection) and emits a `LevelUpToast` GameUiEvent for each level crossed.
 pub fn apply_xp_grants(
     mut grants: ResMut<PendingXpGrants>,
     mut player_query: Query<
@@ -149,7 +149,6 @@ pub fn apply_xp_grants(
         ),
         With<Player>,
     >,
-    mut events: ResMut<PendingGameEvents>,
     mut ui_events: ResMut<PendingGameUiEvents>,
 ) {
     if grants.grants.is_empty() {
@@ -166,21 +165,11 @@ pub fn apply_xp_grants(
         };
 
         experience.current_xp = experience.current_xp.saturating_add(grant.amount);
-        events
-            .events
-            .push(crate::game::resources::GameEvent::ExperienceGained {
-                amount: grant.amount,
-            });
 
         while experience.level < LEVEL_CAP
             && experience.current_xp >= xp_for_level(experience.level + 1)
         {
             experience.level += 1;
-            events
-                .events
-                .push(crate::game::resources::GameEvent::LevelUp {
-                    new_level: experience.level,
-                });
             ui_events.push(
                 identity.id,
                 GameUiEvent::LevelUpToast {
@@ -192,7 +181,6 @@ pub fn apply_xp_grants(
                 *class,
                 base_stats,
                 identity,
-                &mut events,
                 &mut ui_events,
             );
             // Ability bump every 4 levels (4/8/12/16/20) — progression.md §4.3

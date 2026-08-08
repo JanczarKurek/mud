@@ -20,8 +20,6 @@ use crate::app::paths::client_paths;
 use crate::app::paths::{embedded_paths, server_paths};
 use crate::app::setup::setup_camera;
 use crate::app::state::ClientAppState;
-#[cfg(feature = "server-sim")]
-use crate::app::state::LocalSelectedCharacter;
 use crate::app::title_screen::TitleScreenPlugin;
 use crate::client_effects::ClientEffectsPlugin;
 #[cfg(feature = "server-sim")]
@@ -52,14 +50,11 @@ use crate::network::TcpServerPlugin;
 use crate::npc::NpcPlugin;
 #[cfg(feature = "server-sim")]
 use crate::persistence::PersistenceServerPlugin;
-#[cfg(feature = "server-sim")]
-use crate::player::setup::spawn_embedded_player_authoritative;
 use crate::player::PlayerClientPlugin;
 #[cfg(feature = "server-sim")]
 use crate::player::PlayerServerPlugin;
 #[cfg(feature = "server-sim")]
 use crate::quest::QuestPlugin;
-#[cfg(feature = "server-sim")]
 use crate::scripting::ScriptingPlugin;
 use crate::ui::UiPlugin;
 use crate::world::WorldClientPlugin;
@@ -211,6 +206,18 @@ impl Plugin for GameAppPlugin {
                     LogServerPlugin,
                     PersistenceServerPlugin { save_path },
                     AccountsServerPlugin { db_path },
+                    // Loopback-only server: no TCP listener; the single peer
+                    // arrives via `connect_loopback` when the title screen's
+                    // Play button wires up the in-process pipe. From there the
+                    // embedded client runs the *same* message pipeline as a
+                    // remote TcpClient — serde framing included.
+                    TcpServerPlugin {
+                        bind_addr: None,
+                        tls_config: None,
+                    },
+                    // Server side of the in-game Python console (AdminExec →
+                    // shared AdminReplHost → ReplOutput).
+                    crate::scripting::GameReplPlugin,
                 ));
                 app.add_plugins(
                     DefaultPlugins
@@ -228,12 +235,19 @@ impl Plugin for GameAppPlugin {
                         }),
                 )
                 .init_state::<ClientAppState>()
-                .insert_resource(LocalSelectedCharacter::default())
                 .add_systems(Startup, setup_camera)
+                // The local player entity on the client side is the same
+                // projected stub TcpClient uses; the authoritative player is
+                // spawned server-side by `handle_select_character` when the
+                // loopback peer's SelectCharacter arrives.
                 .add_systems(
                     OnEnter(ClientAppState::InGame),
-                    spawn_embedded_player_authoritative
+                    crate::player::setup::spawn_projected_local_player
                         .before(crate::player::setup::spawn_player_visual),
+                )
+                .add_systems(
+                    OnExit(ClientAppState::InGame),
+                    crate::player::setup::despawn_projected_local_player,
                 )
                 .add_plugins((
                     WorldClientPlugin,
@@ -248,9 +262,18 @@ impl Plugin for GameAppPlugin {
                     // AssetServer for `.yarn` compilation.
                     DialogServerPlugin,
                     QuestPlugin::default(),
+                ))
+                .add_plugins((
+                    TcpClientPlugin {
+                        // Never dialed: `TcpClientConfig.active` stays false;
+                        // the stream is installed by `connect_loopback`.
+                        server_addr: String::new(),
+                        tls: None,
+                    },
                     TitleScreenPlugin {
                         runtime: self.runtime,
                     },
+                    AssetSyncScreenPlugin,
                     AboutScreenPlugin,
                     CharacterSelectScreenPlugin {
                         runtime: self.runtime,
@@ -293,11 +316,9 @@ impl Plugin for GameAppPlugin {
                     LogClientPlugin,
                     UiPlugin,
                     ClientEffectsPlugin,
-                    // `ScriptingPlugin` (the in-process Python console) needs
-                    // authoritative world resources (`SpaceManager`, `FloorMaps`,
-                    // `WorldClock`) that only `WorldServerPlugin` inserts, so it
-                    // can't run in TcpClient mode. Admins can use the server's
-                    // `--admin-socket` REPL instead.
+                    // The Python console UI is a thin client (AdminExec over
+                    // the wire); the server rejects non-admin accounts.
+                    ScriptingPlugin,
                     DiagnosticsPlugin,
                     TcpClientPlugin {
                         server_addr: self
@@ -355,14 +376,19 @@ impl Plugin for GameAppPlugin {
                     PersistenceServerPlugin { save_path },
                     AccountsServerPlugin { db_path },
                     TcpServerPlugin {
-                        bind_addr: self
-                            .bind_addr
-                            .clone()
-                            .unwrap_or_else(|| "127.0.0.1:7000".to_owned()),
+                        bind_addr: Some(
+                            self.bind_addr
+                                .clone()
+                                .unwrap_or_else(|| "127.0.0.1:7000".to_owned()),
+                        ),
                         tls_config: server_tls_config,
                     },
                     DialogServerPlugin,
                     QuestPlugin::default(),
+                    // In-game Python console backend for admin-flagged
+                    // accounts (shares its interpreter with `AdminReplPlugin`
+                    // when the UNIX socket is also enabled).
+                    crate::scripting::GameReplPlugin,
                 ));
 
                 #[cfg(unix)]

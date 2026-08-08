@@ -1095,7 +1095,6 @@ fn handle_create_actions(
     mut next_state: ResMut<NextState<ClientAppState>>,
     config: Option<Res<TcpClientConfig>>,
     mut connection: Option<ResMut<TcpClientConnection>>,
-    #[cfg(feature = "server-sim")] db: Option<Res<crate::accounts::AccountDbHandle>>,
     action_buttons: Query<
         (&Interaction, &CreateActionButton),
         (Changed<Interaction>, With<Button>),
@@ -1118,68 +1117,31 @@ fn handle_create_actions(
                 }
                 state.error_message = None;
 
-                match state.runtime {
-                    AppRuntime::TcpClient => {
-                        let msg = ClientMessage::CreateCharacter {
-                            name: state.name.trim().to_owned(),
-                            class: state.class,
-                            attributes: state.attributes,
-                            appearance: state.appearance,
-                        };
-                        if let (Some(config), Some(connection)) =
-                            (config.as_deref(), connection.as_deref_mut())
-                        {
-                            crate::network::systems::ensure_tcp_client_connected(
-                                config, connection,
-                            );
-                            if let Some(stream) = connection.stream.as_mut() {
-                                let mut disconnected = false;
-                                crate::network::systems::write_message(
-                                    stream,
-                                    &msg,
-                                    &mut disconnected,
-                                );
-                                if disconnected {
-                                    connection.stream = None;
-                                    connection.read_buffer.clear();
-                                    state.error_message = Some("connection lost".to_owned());
-                                    continue;
-                                }
-                            }
-                        }
-                        info!("sent CreateCharacter for {}", state.name);
-                        // `poll_create_result` transitions on the server reply.
-                    }
-                    #[cfg(not(feature = "server-sim"))]
-                    AppRuntime::EmbeddedClient => {}
-                    #[cfg(feature = "server-sim")]
-                    AppRuntime::EmbeddedClient => {
-                        let Some(db) = db.as_deref() else {
-                            state.error_message = Some("no local account database".to_owned());
+                // All client runtimes go over the wire — EmbeddedClient's
+                // connection is the loopback pipe.
+                let msg = ClientMessage::CreateCharacter {
+                    name: state.name.trim().to_owned(),
+                    class: state.class,
+                    attributes: state.attributes,
+                    appearance: state.appearance,
+                };
+                if let (Some(config), Some(connection)) =
+                    (config.as_deref(), connection.as_deref_mut())
+                {
+                    crate::network::systems::ensure_tcp_client_connected(config, connection);
+                    if let Some(stream) = connection.stream.as_mut() {
+                        let mut disconnected = false;
+                        crate::network::systems::write_message(stream, &msg, &mut disconnected);
+                        if disconnected {
+                            connection.stream = None;
+                            connection.read_buffer.clear();
+                            state.error_message = Some("connection lost".to_owned());
                             continue;
-                        };
-                        let result = {
-                            let mut guard = db.lock();
-                            guard.create_character(
-                                crate::accounts::LOCAL_ACCOUNT_ID,
-                                state.name.trim(),
-                                state.class,
-                                state.attributes,
-                                state.appearance,
-                            )
-                        };
-                        match result {
-                            Ok(character_id) => {
-                                info!("embedded: created character {character_id}");
-                                next_state.set(ClientAppState::CharacterSelect);
-                            }
-                            Err(err) => {
-                                state.error_message = Some(err.to_string());
-                            }
                         }
                     }
-                    AppRuntime::HeadlessServer => {}
                 }
+                info!("sent CreateCharacter for {}", state.name);
+                // `poll_create_result` transitions on the server reply.
             }
             CreateAction::Cancel => {
                 next_state.set(ClientAppState::CharacterSelect);

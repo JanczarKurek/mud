@@ -17,7 +17,6 @@
 //! networked and embedded modes.
 
 #[cfg(feature = "server-sim")]
-use bevy::ecs::query::QuerySingleError;
 use bevy::log::{debug, info};
 use bevy::prelude::*;
 
@@ -1239,70 +1238,6 @@ fn emit_trade_events(
     );
 }
 
-/// Embedded-mode wrapper: picks the local player's id from the single
-/// authoritative player entity and calls [`compute_events_for_peer`] with the
-/// current `ClientGameState` as baseline. Writes the result into
-/// `PendingGameEvents` for `apply_game_events_to_client_state` to fold.
-#[cfg(feature = "server-sim")]
-pub fn collect_game_events_from_authority(
-    client_state: Res<ClientGameState>,
-    space_manager: Res<SpaceManager>,
-    floor_maps: Res<FloorMaps>,
-    mut world_clock: ResMut<WorldClock>,
-    player_query: ProjectionPlayerQuery,
-    object_query: ProjectionObjectQuery,
-    world_object_query: ProjectionWorldObjectQuery,
-    container_query: ProjectionContainerQuery,
-    stockpile_query: ProjectionStockpileQuery,
-    active_trades: Res<ActiveTrades>,
-    object_definitions: Res<OverworldObjectDefinitions>,
-    mut pending_game_events: ResMut<PendingGameEvents>,
-    mut floor_diff_cache: Local<FloorDiffCache>,
-) {
-    pending_game_events.events.clear();
-
-    let local_player_id = match player_query.single() {
-        Ok(((_entity, identity), ..)) => identity.id,
-        Err(QuerySingleError::NoEntities(_)) => {
-            bevy::log::warn!("collect_game_events: no Player entity found");
-            return;
-        }
-        Err(QuerySingleError::MultipleEntities(_)) => {
-            let count = player_query.iter().count();
-            bevy::log::warn!(
-                "collect_game_events: {} Player entities found (expected 1 for embedded mode)",
-                count
-            );
-            return;
-        }
-    };
-
-    let events = compute_events_for_peer(
-        local_player_id,
-        &client_state,
-        &mut floor_diff_cache,
-        &player_query,
-        &object_query,
-        &world_object_query,
-        &container_query,
-        &stockpile_query,
-        &space_manager,
-        &floor_maps,
-        &world_clock,
-        &active_trades,
-        &object_definitions,
-    );
-
-    if events
-        .iter()
-        .any(|event| matches!(event, GameEvent::WorldTimeChanged { .. }))
-    {
-        world_clock.seconds_since_emit = 0.0;
-    }
-
-    pending_game_events.events.extend(events);
-}
-
 pub fn apply_game_events_to_client_state(
     mut client_state: ResMut<ClientGameState>,
     mut pending_game_events: ResMut<PendingGameEvents>,
@@ -1454,38 +1389,6 @@ pub fn apply_event_to_state(state: &mut ClientGameState, event: GameEvent) {
         GameEvent::PlayerExperienceChanged { experience } => {
             state.experience = Some(experience);
         }
-        GameEvent::ExperienceGained { amount } => {
-            if let Some(view) = state.experience.as_mut() {
-                view.current_xp = view.current_xp.saturating_add(amount);
-                view.xp_into_level = view
-                    .current_xp
-                    .saturating_sub(crate::player::progression::xp_for_level(view.level));
-            }
-        }
-        GameEvent::LevelUp { new_level } => {
-            if let Some(view) = state.experience.as_mut() {
-                view.level = new_level;
-                view.xp_into_level = view
-                    .current_xp
-                    .saturating_sub(crate::player::progression::xp_for_level(new_level));
-                view.xp_for_next = if new_level >= crate::player::progression::LEVEL_CAP {
-                    None
-                } else {
-                    Some(
-                        crate::player::progression::xp_for_level(new_level + 1)
-                            - crate::player::progression::xp_for_level(new_level),
-                    )
-                };
-            }
-        }
-        GameEvent::ExperienceLost { amount } => {
-            if let Some(view) = state.experience.as_mut() {
-                view.current_xp = view.current_xp.saturating_sub(amount);
-                view.xp_into_level = view
-                    .current_xp
-                    .saturating_sub(crate::player::progression::xp_for_level(view.level));
-            }
-        }
         GameEvent::PlayerClassChanged { class } => {
             state.class = Some(class);
         }
@@ -1501,13 +1404,6 @@ pub fn apply_event_to_state(state: &mut ClientGameState, event: GameEvent) {
         GameEvent::LearnedRecipesChanged { recipes } => {
             state.learned_recipes = recipes;
         }
-        GameEvent::RecipeLearned { recipe_id } => {
-            state.learned_recipes.insert(recipe_id);
-        }
-        GameEvent::ItemCrafted { .. } => {
-            // Pure narration event — chat-log changes arrive via
-            // `ChatLogChanged`; nothing to fold into client state here.
-        }
         GameEvent::LogStateChanged { state: log_state } => {
             state.log_state = log_state;
         }
@@ -1519,17 +1415,6 @@ pub fn apply_event_to_state(state: &mut ClientGameState, event: GameEvent) {
             state.skill_ranks = ranks;
             state.available_skill_points = available_points;
             state.available_ability_bumps = available_ability_bumps;
-        }
-        GameEvent::SkillPointsGranted { amount } => {
-            state.available_skill_points = state.available_skill_points.saturating_add(amount);
-        }
-        GameEvent::SkillRanksChanged {
-            skill,
-            new_rank,
-            remaining_points,
-        } => {
-            state.skill_ranks[skill.index()] = new_rank;
-            state.available_skill_points = remaining_points;
         }
         GameEvent::DiscoveredTilesReplaced { tiles } => {
             state.discovered_tiles.clear();
@@ -1700,9 +1585,6 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
             "client player experience updated: lvl {} xp {}",
             experience.level, experience.current_xp
         ),
-        GameEvent::ExperienceGained { amount } => info!("client gained {} xp", amount),
-        GameEvent::LevelUp { new_level } => info!("client level up: {}", new_level),
-        GameEvent::ExperienceLost { amount } => info!("client lost {} xp", amount),
         GameEvent::PlayerClassChanged { class } => {
             info!("client player class set: {:?}", class)
         }
@@ -1751,12 +1633,6 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
             client_state.learned_recipes.len(),
             recipes.len()
         ),
-        GameEvent::RecipeLearned { recipe_id } => {
-            info!("client learned recipe {recipe_id}")
-        }
-        GameEvent::ItemCrafted { recipe_id } => {
-            info!("client crafted via recipe {recipe_id}")
-        }
         GameEvent::LogStateChanged { state } => debug!(
             "client log state replaced: {} sections, {} subentries",
             state.sections.len(),
@@ -1769,19 +1645,6 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
         } => debug!(
             "client skill sheet replaced: ranks {:?} points {} bumps {}",
             ranks, available_points, available_ability_bumps
-        ),
-        GameEvent::SkillPointsGranted { amount } => {
-            info!("client gained {amount} skill points")
-        }
-        GameEvent::SkillRanksChanged {
-            skill,
-            new_rank,
-            remaining_points,
-        } => info!(
-            "client skill rank changed: {} -> {} ({} points left)",
-            skill.label(),
-            new_rank,
-            remaining_points
         ),
         GameEvent::DiscoveredTilesReplaced { tiles } => {
             let total: usize = tiles.values().map(|v| v.len()).sum();

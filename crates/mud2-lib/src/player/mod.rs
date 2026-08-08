@@ -49,7 +49,6 @@ use crate::player::skills::process_allocate_skill_commands;
 use crate::player::systems::refresh_derived_player_stats;
 use crate::player::systems::{
     move_player_on_grid, rotate_nearby_object_on_shortcut, set_home_on_keypress,
-    sync_authoritative_player_display, sync_authoritative_player_position_view,
     sync_projected_player_from_client_state, toggle_auto_retaliate_on_keypress,
     toggle_aware_on_keypress, toggle_sneak_on_keypress,
 };
@@ -162,12 +161,7 @@ impl Plugin for PlayerClientPlugin {
         app.add_systems(OnEnter(ClientAppState::InGame), spawn_player_visual)
             .add_systems(
                 Update,
-                (
-                    sync_authoritative_player_display,
-                    sync_authoritative_player_position_view,
-                    sync_projected_player_from_client_state,
-                )
-                    .run_if(in_state(ClientAppState::InGame)),
+                sync_projected_player_from_client_state.run_if(in_state(ClientAppState::InGame)),
             )
             // Player visual sync runs in both InGame and MapEditor so the
             // player's recolor layers stay in sync with the shared animation
@@ -197,6 +191,9 @@ impl Plugin for PlayerClientPlugin {
                     toggle_aware_on_keypress,
                     toggle_auto_retaliate_on_keypress,
                 )
+                    // Before the client outbox flush so a keypress crosses the
+                    // wire (and, on loopback, lands on screen) the same frame.
+                    .before(crate::network::sets::NetClientSend)
                     .run_if(in_state(ClientAppState::InGame))
                     .run_if(bevy_terminal::terminal_not_focused),
             );

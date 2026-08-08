@@ -1,8 +1,10 @@
 #[cfg(all(unix, feature = "server-sim"))]
 pub mod admin;
 pub mod asset_sync;
+pub mod loopback;
 pub mod protocol;
 pub mod resources;
+pub mod sets;
 pub mod systems;
 pub mod transport;
 
@@ -44,7 +46,10 @@ pub struct TcpClientPlugin {
 
 #[cfg(feature = "server-sim")]
 pub struct TcpServerPlugin {
-    pub bind_addr: String,
+    /// `Some(addr)` binds a real TCP listener; `None` runs the server systems
+    /// with no listener — peers arrive only via `loopback::connect_loopback`
+    /// (the EmbeddedClient configuration).
+    pub bind_addr: Option<String>,
     /// When `Some`, accepted connections are wrapped in TLS.
     pub tls_config: Option<Arc<ServerConfig>>,
 }
@@ -58,17 +63,33 @@ impl Plugin for TcpClientPlugin {
         })
         .insert_resource(TcpClientConnection::default())
         .insert_resource(AssetSyncState::default())
+        // The ungated pipeline chain (see `network::sets`). The server-side
+        // sets are configured here — not in the gated server plugins — so the
+        // edges exist in every mode; empty sets are no-ops.
+        .configure_sets(
+            Update,
+            (
+                sets::NetClientSend,
+                sets::NetServerReceive,
+                sets::NetServerSend,
+                sets::NetClientReceive,
+            )
+                .chain(),
+        )
         .add_systems(
             Update,
             poll_tcp_asset_sync_messages.run_if(in_state(ClientAppState::AssetSync)),
         )
         .add_systems(
             Update,
-            flush_client_commands_to_server.run_if(in_state(ClientAppState::InGame)),
+            flush_client_commands_to_server
+                .in_set(sets::NetClientSend)
+                .run_if(in_state(ClientAppState::InGame)),
         )
         .add_systems(
             Update,
             poll_tcp_client_messages
+                .in_set(sets::NetClientReceive)
                 .before(apply_game_events_to_client_state)
                 .run_if(in_state(ClientAppState::InGame)),
         );
@@ -100,12 +121,19 @@ impl Plugin for TcpServerPlugin {
             // `process_game_commands` transitively; the direct `.before` stays
             // as a belt-and-suspenders for apps without the set configured.
             poll_tcp_server_messages
+                .in_set(sets::NetServerReceive)
                 .before(crate::game::CommandIntercept)
                 .before(process_game_commands),
         )
         .add_systems(
             Update,
-            flush_server_messages.after(apply_game_events_to_client_state),
+            // Ordering: after the frame's simulation (anchored by
+            // `GameServerPlugin`'s `NetServerSend` config) and before the
+            // client-side receive+fold (the `network::sets` chain). The old
+            // `.after(apply_game_events_to_client_state)` edge is gone — in a
+            // unified App the client fold must run *after* the server flush so
+            // events cross the loopback within the same frame.
+            flush_server_messages.in_set(sets::NetServerSend),
         )
         .add_systems(Update, (send_periodic_pings, report_peer_latency));
     }

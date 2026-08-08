@@ -70,12 +70,21 @@ pub struct AdminReplPlugin {
 
 impl Plugin for AdminReplPlugin {
     fn build(&self, app: &mut App) {
+        // Share one interpreter scope with the in-game REPL pipeline
+        // (`GameReplPlugin`) when both are present — admins collaborate on
+        // globals regardless of how they connected.
+        if app
+            .world()
+            .get_non_send_resource::<AdminReplHost>()
+            .is_none()
+        {
+            app.insert_non_send_resource(AdminReplHost::new());
+        }
         app.insert_resource(AdminListenerConfig {
             socket_path: self.args.socket_path.clone(),
             mode: self.args.mode,
         })
         .insert_resource(AdminListenerState::default())
-        .insert_non_send_resource(AdminReplHost::new())
         .add_systems(Startup, start_admin_listener)
         .add_systems(
             Update,

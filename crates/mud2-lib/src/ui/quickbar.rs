@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::app::plugin::AppRuntime;
 use crate::game::commands::{GameCommand, ItemReference, ItemSlotRef};
-use crate::game::resources::{ClientGameState, PendingGameCommands};
+use crate::game::resources::{ClientGameState, ClientPendingCommands};
 use crate::magic::resources::{SpellDefinitions, SpellTargeting};
 use crate::player::components::{InventoryStack, PlayerId};
 use crate::scripting::resources::PythonConsoleState;
@@ -279,7 +279,7 @@ pub fn handle_quickbar_keybinds(
     spell_definitions: Res<SpellDefinitions>,
     quickbar: Res<Quickbar>,
     client_state: Res<ClientGameState>,
-    mut pending_commands: ResMut<PendingGameCommands>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
     mut cursor_state: ResMut<CursorState>,
     mut use_on_state: ResMut<UseOnState>,
     mut spell_targeting_state: ResMut<SpellTargetingState>,

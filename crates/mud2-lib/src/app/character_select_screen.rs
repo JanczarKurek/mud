@@ -7,16 +7,8 @@ use bevy::prelude::*;
 
 use crate::app::plugin::AppRuntime;
 use crate::app::state::ClientAppState;
-#[cfg(feature = "server-sim")]
-use crate::app::state::DebugMode;
 use crate::network::protocol::{CharacterSummary, ClientMessage, ServerMessage};
 use crate::network::resources::{TcpClientConfig, TcpClientConnection};
-#[cfg(feature = "server-sim")]
-use crate::player::components::Inventory;
-#[cfg(feature = "server-sim")]
-use crate::player::debug_presets::DebugCharacterPresets;
-#[cfg(feature = "server-sim")]
-use crate::player::loadout::Loadouts;
 use crate::ui::theme::widgets::{
     idle_colors, spawn_themed_button, ButtonStyle, ThemedButton, ThemedPanel,
 };
@@ -111,113 +103,30 @@ struct CharacterSelectActionButton {
 #[derive(Component)]
 struct CharacterSelectErrorText;
 
+/// Ask the server for this account's roster. All client runtimes go over the
+/// wire — EmbeddedClient's connection is the loopback pipe installed by the
+/// title screen, and the server side handles debug-preset seeding for the
+/// local account (`handle_list_characters`).
 fn request_character_list(
-    #[cfg_attr(not(feature = "server-sim"), allow(unused_mut))] mut state: ResMut<
-        CharacterSelectState,
-    >,
     config: Option<Res<TcpClientConfig>>,
     mut connection: Option<ResMut<TcpClientConnection>>,
-    #[cfg(feature = "server-sim")] db: Option<Res<crate::accounts::AccountDbHandle>>,
-    #[cfg(feature = "server-sim")] debug: Option<Res<DebugMode>>,
-    #[cfg(feature = "server-sim")] presets: Option<Res<DebugCharacterPresets>>,
-    #[cfg(feature = "server-sim")] loadouts: Option<Res<Loadouts>>,
 ) {
-    match state.runtime {
-        AppRuntime::TcpClient => {
-            let (Some(config), Some(connection)) = (config, connection.as_deref_mut()) else {
-                return;
-            };
-            crate::network::systems::ensure_tcp_client_connected(&config, connection);
-            let Some(stream) = connection.stream.as_mut() else {
-                return;
-            };
-            let mut disconnected = false;
-            crate::network::systems::write_message(
-                stream,
-                &ClientMessage::ListCharacters,
-                &mut disconnected,
-            );
-            if disconnected {
-                connection.stream = None;
-                connection.read_buffer.clear();
-            }
-        }
-        #[cfg(not(feature = "server-sim"))]
-        AppRuntime::EmbeddedClient => {}
-        #[cfg(feature = "server-sim")]
-        AppRuntime::EmbeddedClient => {
-            // Read directly from the in-process DB.
-            let Some(db) = db.as_deref() else {
-                return;
-            };
-            let debug = debug.is_some_and(|m| m.0);
-            let list = {
-                let mut guard = db.lock();
-                let mut list = guard
-                    .list_characters(crate::accounts::LOCAL_ACCOUNT_ID)
-                    .unwrap_or_default();
-                // Debug mode auto-creates every YAML preset from
-                // `assets/debug_characters/` that isn't already in the roster
-                // (matched by name), so there are always ready-made characters
-                // at various levels without walking the Character Create form.
-                // Note this also means deleting a preset character recreates
-                // it on the next visit while debug mode is on.
-                if debug {
-                    if let (Some(presets), Some(loadouts)) =
-                        (presets.as_deref(), loadouts.as_deref())
-                    {
-                        let mut created_any = false;
-                        for (preset_id, preset) in presets.iter() {
-                            if list.iter().any(|c| c.name == preset.name) {
-                                continue;
-                            }
-                            let mut inventory = Inventory::default();
-                            loadouts
-                                .get(&preset.loadout)
-                                .expect("preset loadout ids are validated at startup")
-                                .apply_to(&mut inventory);
-                            match guard.create_character_at_level(
-                                crate::accounts::LOCAL_ACCOUNT_ID,
-                                &preset.name,
-                                preset.class,
-                                preset.attributes,
-                                preset.appearance,
-                                preset.level,
-                                inventory,
-                            ) {
-                                Ok(id) => {
-                                    info!("debug: auto-created preset '{preset_id}' as character {id}");
-                                    created_any = true;
-                                }
-                                Err(err) => {
-                                    warn!("debug: failed to create preset '{preset_id}': {err}")
-                                }
-                            }
-                        }
-                        if created_any {
-                            list = guard
-                                .list_characters(crate::accounts::LOCAL_ACCOUNT_ID)
-                                .unwrap_or_default();
-                        }
-                    }
-                }
-                list
-            };
-            let summaries: Vec<CharacterSummary> = list
-                .into_iter()
-                .map(|s| CharacterSummary {
-                    character_id: s.character_id,
-                    name: s.name,
-                    class: s.class,
-                    level: s.level,
-                })
-                .collect();
-            // If empty, jump to CharacterCreate immediately so the embedded
-            // user isn't stuck on an empty roster.
-            state.set_characters(summaries);
-            state.error_message = None;
-        }
-        AppRuntime::HeadlessServer => {}
+    let (Some(config), Some(connection)) = (config, connection.as_deref_mut()) else {
+        return;
+    };
+    crate::network::systems::ensure_tcp_client_connected(&config, connection);
+    let Some(stream) = connection.stream.as_mut() else {
+        return;
+    };
+    let mut disconnected = false;
+    crate::network::systems::write_message(
+        stream,
+        &ClientMessage::ListCharacters,
+        &mut disconnected,
+    );
+    if disconnected {
+        connection.stream = None;
+        connection.read_buffer.clear();
     }
 }
 
@@ -480,9 +389,6 @@ fn poll_character_messages(
     mut connection: Option<ResMut<TcpClientConnection>>,
     mut state: ResMut<CharacterSelectState>,
 ) {
-    if !matches!(state.runtime, AppRuntime::TcpClient) {
-        return;
-    }
     let (Some(config), Some(connection)) = (config, connection.as_deref_mut()) else {
         return;
     };
@@ -568,8 +474,7 @@ fn handle_character_select_buttons(
     mut next_state: ResMut<NextState<ClientAppState>>,
     config: Option<Res<TcpClientConfig>>,
     mut connection: Option<ResMut<TcpClientConnection>>,
-    #[cfg(feature = "server-sim")] db: Option<Res<crate::accounts::AccountDbHandle>>,
-    mut local_selected: Option<ResMut<crate::app::state::LocalSelectedCharacter>>,
+    mut selected_map: Option<ResMut<crate::ui::settings::SelectedStartingMap>>,
     row_buttons: Query<(&Interaction, &CharacterRowButton), (Changed<Interaction>, With<Button>)>,
     delete_buttons: Query<
         (&Interaction, &CharacterDeleteButton),
@@ -594,40 +499,11 @@ fn handle_character_select_buttons(
         }
     }
     if let Some(character_id) = delete_target {
-        match state.runtime {
-            AppRuntime::TcpClient => {
-                send_message(
-                    config.as_deref(),
-                    connection.as_deref_mut(),
-                    ClientMessage::DeleteCharacter { character_id },
-                );
-            }
-            #[cfg(not(feature = "server-sim"))]
-            AppRuntime::EmbeddedClient => {}
-            #[cfg(feature = "server-sim")]
-            AppRuntime::EmbeddedClient => {
-                if let Some(db) = db.as_deref() {
-                    let _ = db
-                        .lock()
-                        .delete_character(crate::accounts::LOCAL_ACCOUNT_ID, character_id);
-                    let list = db
-                        .lock()
-                        .list_characters(crate::accounts::LOCAL_ACCOUNT_ID)
-                        .unwrap_or_default();
-                    let summaries: Vec<CharacterSummary> = list
-                        .into_iter()
-                        .map(|s| CharacterSummary {
-                            character_id: s.character_id,
-                            name: s.name,
-                            class: s.class,
-                            level: s.level,
-                        })
-                        .collect();
-                    state.set_characters(summaries);
-                }
-            }
-            AppRuntime::HeadlessServer => {}
-        }
+        send_message(
+            config.as_deref(),
+            connection.as_deref_mut(),
+            ClientMessage::DeleteCharacter { character_id },
+        );
         if state.selected_character_id == Some(character_id) {
             state.selected_character_id = None;
         }
@@ -643,25 +519,30 @@ fn handle_character_select_buttons(
                     state.error_message = Some("select a character first".to_owned());
                     continue;
                 };
-                match state.runtime {
-                    AppRuntime::TcpClient => {
-                        send_message(
-                            config.as_deref(),
-                            connection.as_deref_mut(),
-                            ClientMessage::SelectCharacter { character_id },
-                        );
-                        info!("requested SelectCharacter {character_id}");
-                        next_state.set(ClientAppState::AssetSync);
-                    }
-                    AppRuntime::EmbeddedClient => {
-                        if let Some(local) = local_selected.as_deref_mut() {
-                            local.character_id = Some(character_id);
+                // Embedded-only map picker: consume the title-screen pick so
+                // the *next* Play resumes the character where they left off.
+                // (The server honors `start_map` only for the local account.)
+                let start_map = if matches!(state.runtime, AppRuntime::EmbeddedClient) {
+                    selected_map.as_deref_mut().and_then(|selected| {
+                        let pick = selected.map_id.take();
+                        if pick.is_some() {
+                            selected.dirty = true;
                         }
-                        info!("embedded selected character {character_id}");
-                        next_state.set(ClientAppState::InGame);
-                    }
-                    AppRuntime::HeadlessServer => {}
-                }
+                        pick
+                    })
+                } else {
+                    None
+                };
+                send_message(
+                    config.as_deref(),
+                    connection.as_deref_mut(),
+                    ClientMessage::SelectCharacter {
+                        character_id,
+                        start_map,
+                    },
+                );
+                info!("requested SelectCharacter {character_id}");
+                next_state.set(ClientAppState::AssetSync);
             }
             CharacterSelectAction::CreateNew => {
                 state.error_message = None;
@@ -707,57 +588,5 @@ fn cleanup_character_select_screen(
 ) {
     for entity in &root_query {
         commands.entity(entity).despawn();
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The debug auto-create hook, run as the real Bevy system against an
-    /// in-memory DB and the bundled preset/loadout assets: every preset is
-    /// created with its authored level on first entry, and re-entering the
-    /// screen creates no duplicates.
-    #[test]
-    fn debug_mode_auto_creates_presets_idempotently() {
-        use crate::accounts::{db::AccountDb, AccountDbHandle};
-
-        let mut app = App::new();
-        app.insert_resource(CharacterSelectState::new(AppRuntime::EmbeddedClient))
-            .insert_resource(AccountDbHandle::new(AccountDb::open_in_memory().unwrap()))
-            .insert_resource(DebugMode(true))
-            .insert_resource(DebugCharacterPresets::load_from_disk())
-            .insert_resource(Loadouts::load_from_disk())
-            .add_systems(Update, request_character_list);
-
-        app.update();
-        let roster: Vec<(String, u32)> = app
-            .world()
-            .resource::<CharacterSelectState>()
-            .characters
-            .iter()
-            .map(|c| (c.name.clone(), c.level))
-            .collect();
-        for expected in [
-            ("Debug", 1),
-            ("Debug Wizard", 6),
-            ("Debug Cleric", 12),
-            ("Debug Vagabond", 20),
-        ] {
-            assert!(
-                roster.iter().any(|(n, l)| (n.as_str(), *l) == expected),
-                "missing preset {expected:?} in roster {roster:?}"
-            );
-        }
-
-        app.update();
-        assert_eq!(
-            app.world()
-                .resource::<CharacterSelectState>()
-                .characters
-                .len(),
-            roster.len(),
-            "re-entering character select must not duplicate presets"
-        );
     }
 }

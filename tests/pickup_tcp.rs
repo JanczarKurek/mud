@@ -6,160 +6,21 @@
 //! repeats; finally disconnects inside the instance and reconnects, which must
 //! not resume the character into a dead ephemeral space id.
 
-use std::io::{BufRead, BufReader, Write};
-use std::net::TcpStream;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+mod common;
+
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use bevy::prelude::*;
-use mud2::app::plugin::{AppRuntime, GameAppPlugin};
-use mud2::game::commands::{GameCommand, ItemDestination, ItemReference, ItemSlotRef, MoveDelta};
-use mud2::network::protocol::{ClientMessage, ServerMessage};
-use mud2::network::resources::TcpServerState;
-use mud2::player::classes::Class;
-use mud2::player::components::{AttributeSet, Inventory, Player, PlayerAppearance};
+use common::{
+    boot_server, login_and_enter_world, player_position, pump, register_and_enter_world,
+    server_addr, step, unique_test_path, walk, TestClient,
+};
+use mud2::game::commands::{GameCommand, ItemDestination, ItemReference, ItemSlotRef};
+use mud2::network::protocol::ClientMessage;
+use mud2::player::components::{Inventory, Player};
 use mud2::world::components::{OverworldObject, SpaceId, SpaceResident, TilePosition};
 use mud2::world::resources::SpaceManager;
-
-static NEXT_DB_ID: AtomicU64 = AtomicU64::new(0);
-
-fn unique_test_path(suffix: &str) -> PathBuf {
-    let id = NEXT_DB_ID.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!(
-        "mud2-pickup-{}-{}-{suffix}",
-        std::process::id(),
-        id
-    ))
-}
-
-struct TestClient {
-    writer: TcpStream,
-    reader: BufReader<TcpStream>,
-}
-
-impl TestClient {
-    fn connect(addr: std::net::SocketAddr) -> Self {
-        let writer = TcpStream::connect(addr).unwrap();
-        writer
-            .set_read_timeout(Some(Duration::from_millis(20)))
-            .unwrap();
-        writer
-            .set_write_timeout(Some(Duration::from_millis(20)))
-            .unwrap();
-        let reader = BufReader::new(writer.try_clone().unwrap());
-        Self { writer, reader }
-    }
-
-    fn send(&mut self, message: ClientMessage) {
-        let mut payload = serde_json::to_vec(&message).unwrap();
-        payload.push(b'\n');
-        self.writer.write_all(&payload).unwrap();
-        self.writer.flush().unwrap();
-    }
-
-    fn read_messages(&mut self) -> Vec<ServerMessage> {
-        let mut messages = Vec::new();
-        loop {
-            let mut line = String::new();
-            match self.reader.read_line(&mut line) {
-                Ok(0) => break,
-                Ok(_) => {
-                    let trimmed = line.trim_end();
-                    if trimmed.is_empty() {
-                        continue;
-                    }
-                    messages.push(serde_json::from_str(trimmed).unwrap());
-                }
-                Err(error)
-                    if matches!(
-                        error.kind(),
-                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-                    ) =>
-                {
-                    break;
-                }
-                Err(error) => panic!("failed to read server message: {error}"),
-            }
-        }
-        messages
-    }
-
-    fn wait_for<T>(
-        &mut self,
-        app: &mut App,
-        what: &str,
-        mut pick: impl FnMut(&ServerMessage) -> Option<T>,
-    ) -> T {
-        let deadline = Instant::now() + Duration::from_secs(10);
-        while Instant::now() < deadline {
-            app.update();
-            thread::sleep(Duration::from_millis(5));
-            for message in self.read_messages() {
-                if let Some(value) = pick(&message) {
-                    return value;
-                }
-            }
-        }
-        panic!("timed out waiting for {what}");
-    }
-}
-
-fn pump(app: &mut App, client: &mut TestClient, ticks: usize) {
-    for _ in 0..ticks {
-        app.update();
-        thread::sleep(Duration::from_millis(5));
-        client.read_messages();
-    }
-}
-
-fn player_position(app: &mut App) -> (TilePosition, SpaceId) {
-    let mut players = app
-        .world_mut()
-        .query_filtered::<(&TilePosition, &SpaceResident), With<Player>>();
-    let (tile, resident) = players
-        .single(app.world())
-        .expect("exactly one connected player");
-    (*tile, resident.space_id)
-}
-
-/// Drive the player one tile via a real wire command, resending while the
-/// movement cooldown swallows attempts. Panics if the step never lands.
-fn step(app: &mut App, client: &mut TestClient, dx: i32, dy: i32) {
-    let (from, from_space) = player_position(app);
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while Instant::now() < deadline {
-        client.send(ClientMessage::Command(GameCommand::MovePlayer {
-            delta: MoveDelta { x: dx, y: dy },
-            climb: false,
-        }));
-        pump(app, client, 4);
-        let (now, now_space) = player_position(app);
-        if now_space != from_space {
-            // Stepping onto a portal teleports; the caller asserts the result.
-            return;
-        }
-        if now.x != from.x || now.y != from.y {
-            assert_eq!(
-                (now.x, now.y),
-                (from.x + dx, from.y + dy),
-                "step landed on an unexpected tile"
-            );
-            return;
-        }
-    }
-    panic!("step ({dx},{dy}) from ({},{}) never landed", from.x, from.y);
-}
-
-/// Walk an axis-aligned path expressed as (dx, dy) runs.
-fn walk(app: &mut App, client: &mut TestClient, runs: &[(i32, i32, usize)]) {
-    for &(dx, dy, count) in runs {
-        for _ in 0..count {
-            step(app, client, dx, dy);
-        }
-    }
-}
 
 fn find_object_in_space(
     app: &mut App,
@@ -213,102 +74,6 @@ fn walk_arrival_to_potion(app: &mut App, client: &mut TestClient) {
             (1, 0, 4),  // -> (17,2), the potion tile
         ],
     );
-}
-
-fn boot_server(save: PathBuf, db: PathBuf) -> App {
-    let mut app = App::new();
-    app.add_plugins(GameAppPlugin {
-        runtime: AppRuntime::HeadlessServer,
-        debug: false,
-        server_addr: None,
-        bind_addr: Some("127.0.0.1:0".to_owned()),
-        save_path: Some(save),
-        db_path: Some(db),
-        asset_cache_dir: None,
-        server_tls: None,
-        client_tls: None,
-        admin_socket: None,
-        embedded_extension: None,
-    });
-    app.update();
-    app
-}
-
-fn server_addr(app: &App) -> std::net::SocketAddr {
-    app.world()
-        .resource::<TcpServerState>()
-        .listener
-        .as_ref()
-        .unwrap()
-        .local_addr()
-        .unwrap()
-}
-
-fn auth_and_enter(
-    app: &mut App,
-    client: &mut TestClient,
-    register: bool,
-    character_id: Option<i64>,
-) -> i64 {
-    if register {
-        client.send(ClientMessage::Register {
-            username: "pickup_bot".to_owned(),
-            password: "secret123".to_owned(),
-        });
-    } else {
-        client.send(ClientMessage::Login {
-            username: "pickup_bot".to_owned(),
-            password: "secret123".to_owned(),
-        });
-    }
-    client.wait_for(app, "AuthResult", |m| match m {
-        ServerMessage::AuthResult { ok, reason } => {
-            assert!(*ok, "auth rejected: {reason:?}");
-            Some(())
-        }
-        _ => None,
-    });
-    let character_id = match character_id {
-        Some(id) => id,
-        None => {
-            client.send(ClientMessage::CreateCharacter {
-                name: "Grabby".to_owned(),
-                class: Class::Fighter,
-                attributes: AttributeSet {
-                    strength: 12,
-                    agility: 12,
-                    constitution: 12,
-                    willpower: 12,
-                    charisma: 12,
-                    focus: 12,
-                },
-                appearance: PlayerAppearance::default(),
-            });
-            client.wait_for(app, "CharacterCreateResult", |m| match m {
-                ServerMessage::CharacterCreateResult {
-                    ok,
-                    character_id,
-                    reason,
-                } => {
-                    assert!(*ok, "character create rejected: {reason:?}");
-                    Some(character_id.unwrap())
-                }
-                _ => None,
-            })
-        }
-    };
-    client.send(ClientMessage::SelectCharacter { character_id });
-    client.wait_for(app, "CharacterSelected", |m| match m {
-        ServerMessage::CharacterSelected { .. } => Some(()),
-        _ => None,
-    });
-    client.wait_for(app, "AssetManifest", |m| match m {
-        ServerMessage::AssetManifest(_) => Some(()),
-        _ => None,
-    });
-    client.send(ClientMessage::SyncComplete);
-    pump(app, client, 10);
-    character_id
 }
 
 /// Teleport the player (server-side setup only) to the tile just west of the
@@ -379,7 +144,7 @@ fn proving_grounds_pickup_first_visit() {
         unique_test_path("accounts.db"),
     );
     let mut client = TestClient::connect(server_addr(&app));
-    auth_and_enter(&mut app, &mut client, true, None);
+    register_and_enter_world(&mut app, &mut client, "pickup_bot", "Grabby");
 
     let space = enter_proving_grounds(&mut app, &mut client);
     pick_up_potion(&mut app, &mut client, space);
@@ -394,7 +159,7 @@ fn proving_grounds_pickup_after_reentry() {
         unique_test_path("accounts.db"),
     );
     let mut client = TestClient::connect(server_addr(&app));
-    auth_and_enter(&mut app, &mut client, true, None);
+    register_and_enter_world(&mut app, &mut client, "pickup_bot", "Grabby");
 
     let first_space = enter_proving_grounds(&mut app, &mut client);
     // Step off the arrival arch and back onto it to ride pg_exit out.
@@ -423,7 +188,7 @@ fn reconnect_inside_ephemeral_space_resumes_in_live_space() {
         unique_test_path("accounts.db"),
     );
     let mut client = TestClient::connect(server_addr(&app));
-    let character_id = auth_and_enter(&mut app, &mut client, true, None);
+    let character_id = register_and_enter_world(&mut app, &mut client, "pickup_bot", "Grabby");
 
     enter_proving_grounds(&mut app, &mut client);
     walk_arrival_to_potion(&mut app, &mut client);
@@ -437,7 +202,7 @@ fn reconnect_inside_ephemeral_space_resumes_in_live_space() {
     }
 
     let mut client = TestClient::connect(server_addr(&app));
-    auth_and_enter(&mut app, &mut client, false, Some(character_id));
+    login_and_enter_world(&mut app, &mut client, "pickup_bot", character_id);
 
     let (_, space) = player_position(&mut app);
     let live = app.world().resource::<SpaceManager>().get(space).is_some();

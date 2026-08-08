@@ -10,22 +10,18 @@ use bevy::prelude::*;
 use crate::crafting::recipes::RecipeDefinitions;
 use crate::crafting::stash::CharacterStash;
 use crate::game::commands::GameCommand;
-use crate::game::resources::{
-    ChatLogState, GameEvent, GameUiEvent, PendingGameCommands, PendingGameEvents,
-    PendingGameUiEvents,
-};
+use crate::game::resources::{ChatLogState, GameUiEvent, PendingGameCommands, PendingGameUiEvents};
 use crate::player::classes::Class;
 use crate::player::components::{Player, PlayerId, PlayerIdentity};
 use crate::player::progression::Experience;
 
 /// Drains `GameCommand::LearnRecipe`. Idempotent — re-granting a known
 /// recipe emits no events. On first-time grants, pushes
-/// `GameEvent::RecipeLearned` (replicated to the player's client),
-/// `GameUiEvent::RecipeLearnedToast` (drives the popup), and a narrator
-/// line on the player's chat log.
+/// `GameUiEvent::RecipeLearnedToast` (drives the popup) and a narrator
+/// line on the player's chat log; the learned set itself replicates via the
+/// projection's `LearnedRecipesChanged` drift detection.
 pub fn process_learn_recipe_commands(
     mut pending_commands: ResMut<PendingGameCommands>,
-    mut pending_events: ResMut<PendingGameEvents>,
     mut pending_ui_events: ResMut<PendingGameUiEvents>,
     recipe_defs: Res<RecipeDefinitions>,
     mut players: Query<(&PlayerIdentity, &mut CharacterStash, &mut ChatLogState), With<Player>>,
@@ -60,9 +56,6 @@ pub fn process_learn_recipe_commands(
             chat_log
                 .lines
                 .push(format!("You learn the recipe for {}.", recipe.name));
-            pending_events.events.push(GameEvent::RecipeLearned {
-                recipe_id: recipe_id.clone(),
-            });
             pending_ui_events.push(
                 identity.id,
                 GameUiEvent::RecipeLearnedToast {
@@ -118,7 +111,6 @@ mod tests {
         let mut app = App::new();
         app.insert_resource(RecipeDefinitions::load_from_disk());
         app.insert_resource(PendingGameCommands::default());
-        app.insert_resource(PendingGameEvents::default());
         app.insert_resource(PendingGameUiEvents::default());
         app.add_systems(Update, process_learn_recipe_commands);
         let entity = app
@@ -134,7 +126,7 @@ mod tests {
     }
 
     #[test]
-    fn learn_recipe_emits_event_first_time_only() {
+    fn learn_recipe_emits_toast_first_time_only() {
         let (mut app, entity) = build_test_app();
 
         app.world_mut()
@@ -149,12 +141,18 @@ mod tests {
 
         let stash = app.world().entity(entity).get::<CharacterStash>().unwrap();
         assert!(stash.learned_recipes().contains("mushroom_brew"));
-        let events = &app.world().resource::<PendingGameEvents>().events;
-        assert_eq!(events.len(), 1, "first learn emits one delta event");
+        let toasts = app
+            .world()
+            .resource::<PendingGameUiEvents>()
+            .peer_events
+            .get(&PlayerId(1))
+            .map(Vec::len)
+            .unwrap_or(0);
+        assert_eq!(toasts, 1, "first learn emits one toast");
 
         app.world_mut()
-            .resource_mut::<PendingGameEvents>()
-            .events
+            .resource_mut::<PendingGameUiEvents>()
+            .peer_events
             .clear();
         app.world_mut()
             .resource_mut::<PendingGameCommands>()
@@ -167,8 +165,8 @@ mod tests {
         app.update();
         assert!(
             app.world()
-                .resource::<PendingGameEvents>()
-                .events
+                .resource::<PendingGameUiEvents>()
+                .peer_events
                 .is_empty(),
             "second learn is idempotent"
         );

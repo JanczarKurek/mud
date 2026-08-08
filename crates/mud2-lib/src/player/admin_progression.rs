@@ -9,16 +9,14 @@
 //!
 //! Upward XP grants are routed through `PendingXpGrants` so the canonical
 //! `apply_xp_grants` pipeline runs (level-ups, skill-point grants, UI
-//! toasts). All other variants mutate the matching player directly and emit
-//! the corresponding `GameEvent` deltas; the projection layer picks up
-//! baseline drift automatically (`SkillSheetChanged`, `PlayerExperienceChanged`).
+//! toasts). All other variants mutate the matching player directly; the
+//! projection layer picks up baseline drift automatically
+//! (`SkillSheetChanged`, `PlayerExperienceChanged`, `PlayerClassChanged`).
 
 use bevy::prelude::*;
 
 use crate::game::commands::GameCommand;
-use crate::game::resources::{
-    GameEvent, GameUiEvent, PendingGameCommands, PendingGameEvents, PendingGameUiEvents,
-};
+use crate::game::resources::{GameUiEvent, PendingGameCommands, PendingGameUiEvents};
 use crate::player::classes::Class;
 use crate::player::components::{
     BaseStats, ChatLog, GodMode, Noclip, Player, PlayerIdentity, VitalStats,
@@ -43,7 +41,6 @@ pub fn process_admin_progression_commands(
         ),
         With<Player>,
     >,
-    mut events: ResMut<PendingGameEvents>,
     mut ui_events: ResMut<PendingGameUiEvents>,
 ) {
     // UI-driven admin commands (the GM tools panel) push with `player_id: None`;
@@ -85,25 +82,11 @@ pub fn process_admin_progression_commands(
                         continue;
                     }
                     let old_level = exp.level;
-                    let old_xp = exp.current_xp;
-                    let new_xp = xp_for_level(target_level);
                     exp.level = target_level;
-                    exp.current_xp = new_xp;
+                    exp.current_xp = xp_for_level(target_level);
 
-                    if new_xp > old_xp {
-                        events.events.push(GameEvent::ExperienceGained {
-                            amount: new_xp - old_xp,
-                        });
-                    } else if new_xp < old_xp {
-                        events.events.push(GameEvent::ExperienceLost {
-                            amount: old_xp - new_xp,
-                        });
-                    }
                     if target_level > old_level {
                         for crossed in (old_level + 1)..=target_level {
-                            events
-                                .events
-                                .push(GameEvent::LevelUp { new_level: crossed });
                             ui_events.push(
                                 identity.id,
                                 GameUiEvent::LevelUpToast { new_level: crossed },
@@ -113,7 +96,6 @@ pub fn process_admin_progression_commands(
                                 *class,
                                 &base_stats,
                                 identity,
-                                &mut events,
                                 &mut ui_events,
                             );
                             if crossed % 4 == 0 {
@@ -140,7 +122,6 @@ pub fn process_admin_progression_commands(
                         continue;
                     }
                     sheet.available_points = sheet.available_points.saturating_add(amount);
-                    events.events.push(GameEvent::SkillPointsGranted { amount });
                     ui_events.push(identity.id, GameUiEvent::SkillPointsToast { amount });
                     chat.push_narrator(format!("[Admin] Granted {amount} skill points."));
                     break;
@@ -157,11 +138,6 @@ pub fn process_admin_progression_commands(
                         continue;
                     }
                     sheet.set_rank(skill, rank);
-                    events.events.push(GameEvent::SkillRanksChanged {
-                        skill,
-                        new_rank: rank,
-                        remaining_points: sheet.available_points,
-                    });
                     chat.push_narrator(format!("[Admin] {} rank set to {rank}.", skill.label()));
                     break;
                 }
@@ -192,9 +168,6 @@ pub fn process_admin_progression_commands(
                         continue;
                     }
                     *class = new_class;
-                    events
-                        .events
-                        .push(GameEvent::PlayerClassChanged { class: new_class });
                     chat.push_narrator(format!("[Admin] Class set to {}.", new_class.label()));
                     break;
                 }

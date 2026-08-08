@@ -90,6 +90,22 @@ impl TestServerApp {
             app.init_resource::<crate::dialog::resources::CharacterVarStores>();
         }
         app.add_plugins((GameServerPlugin, WorldServerPlugin));
+        // Test-only stand-in for the per-peer projection flush: diffs the
+        // single test player's view against `ClientGameState` and feeds the
+        // events to `apply_game_events_to_client_state`, so tests can assert
+        // on replicated client state without a wire peer. Runs in
+        // `NetServerSend`, exactly where `flush_server_messages` would.
+        app.add_systems(
+            Update,
+            project_first_player_to_client_state.in_set(crate::network::sets::NetServerSend),
+        );
+        // The send→receive chain normally comes from `TcpClientPlugin`; test
+        // apps don't register it, so declare the one edge that puts the
+        // projection pump before the client fold within the same frame.
+        app.configure_sets(
+            Update,
+            crate::network::sets::NetServerSend.before(crate::network::sets::NetClientReceive),
+        );
         if self.npc_plugin {
             app.add_plugins(NpcPlugin);
         }
@@ -107,6 +123,55 @@ impl TestServerApp {
         app.update();
         app
     }
+}
+
+/// Test-only projection pump (see registration in [`TestServerApp::build`]):
+/// the first `Player` entity's view is diffed against the app's own
+/// `ClientGameState` via the real `compute_events_for_peer`, and the events
+/// are queued for the unconditional `apply_game_events_to_client_state` fold.
+#[allow(clippy::too_many_arguments)]
+fn project_first_player_to_client_state(
+    client_state: Res<crate::game::resources::ClientGameState>,
+    space_manager: Res<crate::world::resources::SpaceManager>,
+    floor_maps: Res<crate::world::floor_map::FloorMaps>,
+    mut world_clock: ResMut<crate::world::lighting::WorldClock>,
+    player_query: crate::game::projection::ProjectionPlayerQuery,
+    object_query: crate::game::projection::ProjectionObjectQuery,
+    world_object_query: crate::game::projection::ProjectionWorldObjectQuery,
+    container_query: crate::game::projection::ProjectionContainerQuery,
+    stockpile_query: crate::game::projection::ProjectionStockpileQuery,
+    active_trades: Res<crate::game::trade::ActiveTrades>,
+    object_definitions: Res<crate::world::object_definitions::OverworldObjectDefinitions>,
+    mut pending_game_events: ResMut<PendingGameEvents>,
+    mut floor_diff_cache: Local<crate::game::projection::FloorDiffCache>,
+) {
+    let Some(((_entity, identity), ..)) = player_query.iter().next() else {
+        return;
+    };
+    let events = crate::game::projection::compute_events_for_peer(
+        identity.id,
+        &client_state,
+        &mut floor_diff_cache,
+        &player_query,
+        &object_query,
+        &world_object_query,
+        &container_query,
+        &stockpile_query,
+        &space_manager,
+        &floor_maps,
+        &world_clock,
+        &active_trades,
+        &object_definitions,
+    );
+    if events.iter().any(|event| {
+        matches!(
+            event,
+            crate::game::resources::GameEvent::WorldTimeChanged { .. }
+        )
+    }) {
+        world_clock.seconds_since_emit = 0.0;
+    }
+    pending_game_events.events.extend(events);
 }
 
 /// Bare `App` with the pending command/event queues that server systems drain,

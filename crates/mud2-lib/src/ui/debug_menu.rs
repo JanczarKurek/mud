@@ -3,7 +3,7 @@
 //! menu's "GM Tools" entry, which only appears when the game is launched with
 //! `--debug` (see `menu_bar.rs`).
 //!
-//! Each button pushes an `Admin*` `GameCommand` through `PendingGameCommands`
+//! Each button pushes an `Admin*` `GameCommand` through `ClientPendingCommands`
 //! (resolved server-side to the local player). God-mode / noclip state is
 //! tracked optimistically client-side in [`DebugMenuState`] for the toggle
 //! labels — the server narrates the authoritative effect to chat.
@@ -12,7 +12,7 @@ use bevy::prelude::*;
 
 use crate::app::state::{simulation_active, ClientAppState};
 use crate::game::commands::GameCommand;
-use crate::game::resources::{ClientGameState, PendingGameCommands};
+use crate::game::resources::{ClientGameState, ClientPendingCommands};
 use crate::player::progression::LEVEL_CAP;
 use crate::ui::movable_window::{
     find_window_by_id, spawn_standard_window, MovableWindow, MovableWindowId,
@@ -62,13 +62,9 @@ pub fn register(app: &mut App) {
                 .run_if(in_state(ClientAppState::InGame))
                 .run_if(simulation_active),
         )
-        // Must run `.before(CommandIntercept)` so the `Admin*` commands it pushes
-        // are drained by the intercept handlers the same frame. Without this the
-        // commands reach `process_game_commands`, which discards admin commands.
         .add_systems(
             Update,
             (handle_debug_menu_clicks, handle_teleport_arming)
-                .before(crate::game::CommandIntercept)
                 .run_if(in_state(ClientAppState::InGame))
                 .run_if(simulation_active),
         );
@@ -289,7 +285,7 @@ fn spawn_step_button(
 }
 
 fn handle_debug_menu_clicks(
-    mut pending: ResMut<PendingGameCommands>,
+    mut pending: ResMut<ClientPendingCommands>,
     mut state: ResMut<DebugMenuState>,
     client_state: Res<ClientGameState>,
     interactions: Query<(&Interaction, &DebugMenuButton), Changed<Interaction>>,
@@ -345,7 +341,7 @@ fn handle_teleport_arming(
     mut state: ResMut<DebugMenuState>,
     mouse: Res<ButtonInput<MouseButton>>,
     hovered: Res<HoveredTile>,
-    mut pending: ResMut<PendingGameCommands>,
+    mut pending: ResMut<ClientPendingCommands>,
 ) {
     if !state.arming_teleport {
         return;
