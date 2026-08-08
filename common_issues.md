@@ -138,3 +138,28 @@
 **All of a door's state PNGs must share one canvas.** `build_object_visual_bundle` sizes every state's sprite from the *base* `render.sprite_width/height_tiles`; `sync_object_state_visuals` swaps only the `Sprite` on state change. `gen_door_set.py` guarantees this by computing the canvas from the same arm as the matching wall — closed.png, open.png, and the wall sprite are all the same size by construction.
 
 **Legacy `wooden_door` is still a valid object** — freestanding doors (proving-grounds gates, the starter-cellar sandbox door, one overworld door) intentionally keep the flat sprite; only doors set into a wall run use the directional slabs (`scripts/migrate_doors_in_map.py` infers the side from adjacent walls — objects *and* `tiles:` glyph-grid walls — and leaves ambiguous doors alone). The building tool picks the side variant via `BuildingPreset::doors` (`DoorSlots`), falling back to `default_door` for presets without side variants; corners take no door once `doors` is configured.
+
+---
+
+## Character resumed into a dead ephemeral space id ("empty dungeon" / stranded on login)
+
+**Symptom**: After disconnecting inside an ephemeral dungeon (proving grounds / starter cellar), the character logs back into a bare void or an inconsistent dungeon; in the 2026-08 playtest this surfaced as unexplained "That item is out of reach." refusals. World saves also accumulated orphan `floor_maps` entries (keys `(7,0)`, `(8,0)`, `(9,0)` with `spaces` only listing 0–6).
+
+**Root causes** (three cooperating defects in the ephemeral-space lifecycle):
+1. Character saves persist the *runtime* space id (`space_id: 9`) even for ephemeral instances. On the next login the resume path trusted any non-origin saved position, so the character was placed into a space id that no longer exists — and which a later `allocate_space_id` (reset to `max persisted id + 1` on snapshot load) can hand to a *different* future instance.
+2. `cleanup_empty_ephemeral_spaces` despawned the entities and removed the space, but never removed the space's `FloorMaps` grids — leaked grids then persisted into the world snapshot as orphans keyed by reusable ids.
+3. Ephemeral re-instantiation reuses *authored* object ids (`spawn_overworld_object_instance`), which is fine while ids are unique among live entities — but any lifecycle leak above turns that into cross-instance aliasing.
+
+**Fix**: `needs_spawn_location` (shared by the embedded and TCP select-character paths) now also respawns when the saved space id is not live in `SpaceManager`; `cleanup_empty_ephemeral_spaces` calls `FloorMaps::remove_space`; the snapshot writer skips floor maps whose space no longer exists. Reach refusals in `MoveItem/pickup` and `TakeFromStack` now log both positions + space id so any surviving desync is diagnosable from the server log. E2E coverage: `tests/pickup_tcp.rs` (portal entry → walk → pickup; teardown/re-entry; disconnect-inside → reconnect).
+
+**Related silent-failure UX fixed alongside**: dragging a movable-but-not-storable object (barrels…) onto the inventory, or onto a full/incompatible slot, was rejected with no message (`place_stack_in_slot_ref` returns false) — both now push a narrator line; drag-release slot hit-testing now also checks the `ItemSlotImage` families like the context-menu path, so drops on the slot art no longer fall through to a world-tile shove.
+
+---
+
+## Remote players frozen on one animation frame
+
+**Symptom**: In TCP multiplayer, other players are visible but never play walk/idle animations and never change facing.
+
+**Root cause**: Remote players spawn with `ClientRemotePlayerVisual` (no `Player`, no `ClientProjectedWorldObject`), but the clip-selection systems in `src/world/animation.rs` (`trigger_movement_animation`, `return_to_idle_animation`) only queried the other two markers. The spawn-time `AnimatedSprite` defaults to clip `"idle"`, which does not exist in the player sheet (only directional `idle_*`/`walk_*`), so `frame_count` fell back to 1 — permanently frame 0 of row 0. The local player escapes only because `return_to_idle_animation` resolves `"idle"` → `idle_<facing>` on frame 1.
+
+**Fix**: Both systems' player branches widened to `Or<(With<Player>, With<ClientRemotePlayerVisual>)>` (both resolve clips from the `player` definition; `sync_remote_player_projection` already supplied `JustMoved`/`Facing`/`VisualOffset`). Note for new spawn paths: a sheet with only directional clips means the initial `"idle"` clip is invalid until some system resolves a directional one — make sure every animated entity is covered by one of the clip-selection systems.

@@ -495,8 +495,12 @@ fn save_world_on_app_exit(
         .collect::<Vec<_>>();
     spaces.sort_by_key(|space| space.id.0);
 
+    // Only persist floor maps whose space still exists — pre-fix saves (and
+    // any future leak) may hold grids for torn-down ephemeral instances, and
+    // an orphan grid keyed by a reusable space id haunts the next session.
     let mut floor_map_dumps: Vec<FloorMapDump> = floor_maps
         .iter()
+        .filter(|(space_id, _, _)| space_manager.get(*space_id).is_some())
         .map(|(space_id, z, map)| FloorMapDump {
             space_id,
             z,

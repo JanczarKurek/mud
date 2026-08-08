@@ -745,6 +745,7 @@ pub fn sync_combat_health_bars(
 pub fn cleanup_empty_ephemeral_spaces(
     mut commands: Commands,
     mut space_manager: ResMut<SpaceManager>,
+    mut floor_maps: ResMut<crate::world::floor_map::FloorMaps>,
     player_query: Query<&SpaceResident, With<Player>>,
     resident_query: Query<(Entity, &SpaceResident), Without<Player>>,
 ) {
@@ -768,6 +769,9 @@ pub fn cleanup_empty_ephemeral_spaces(
             }
         }
         let _ = space_manager.remove_space(space_id);
+        // Drop the floor grids with the space, or they leak into the world
+        // snapshot as orphan entries keyed by an id a future instance reuses.
+        floor_maps.remove_space(space_id);
     }
 }
 

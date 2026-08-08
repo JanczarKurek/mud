@@ -179,6 +179,10 @@ def xp_grant_for_kill(victim_level: int) -> int:
 
 # --- regen (regen.rs:19-31) -----------------------------------------------
 def hp_regen_seconds_per_point(attrs: AttributeSet, multiplier: float = 1.0) -> float:
+    # Base formula only. regen.rs additionally scales HP by combat state
+    # (x1.5 in combat / x3.0 out of combat) on top of `multiplier`; the duel
+    # model ignores mid-fight regen either way, so the anchors below stay on
+    # the multiplier=1 base curve.
     per_minute = max(0.001, (2.0 + max(0, attrs.constitution) / 5.0) * multiplier)
     return 60.0 / per_minute
 

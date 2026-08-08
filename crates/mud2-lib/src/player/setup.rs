@@ -112,15 +112,22 @@ fn resolve_spawn_space(
 
 /// Whether to place a loaded character at the spawn point rather than resume
 /// them at their persisted location. An explicit map pick relocates them —
-/// that's the point of picking. Otherwise only a character with no saved space,
-/// or one parked at the origin (never actually placed), gets moved.
+/// that's the point of picking. Otherwise a character with no saved space, one
+/// parked at the origin (never actually placed), or one saved inside a space
+/// that no longer exists gets moved. The last case is how characters saved
+/// inside an *ephemeral* dungeon instance come back: the instance (and its
+/// runtime space id) died with the session, and a later session may hand that
+/// id to a completely different instance — resuming there would strand the
+/// player in a void or teleport them into someone else's dungeon.
 #[cfg(feature = "server-sim")]
-fn needs_spawn_location(
+pub(crate) fn needs_spawn_location(
     explicit_pick: Option<SpaceId>,
     saved_space_id: Option<SpaceId>,
     saved_tile: TilePosition,
+    space_manager: &SpaceManager,
 ) -> bool {
-    explicit_pick.is_some() || saved_space_id.is_none() || (saved_tile.x == 0 && saved_tile.y == 0)
+    let saved_space_is_live = saved_space_id.is_some_and(|id| space_manager.get(id).is_some());
+    explicit_pick.is_some() || !saved_space_is_live || (saved_tile.x == 0 && saved_tile.y == 0)
 }
 
 #[cfg(feature = "server-sim")]
@@ -224,8 +231,12 @@ pub fn spawn_embedded_player_authoritative(
     let player_id = PlayerId(character_id as u64);
     if let Some(mut dump) = dump {
         dump.player_id = player_id;
-        let needs_spawn_location =
-            needs_spawn_location(explicit_pick, dump.space_id, dump.tile_position);
+        let needs_spawn_location = needs_spawn_location(
+            explicit_pick,
+            dump.space_id,
+            dump.tile_position,
+            &space_manager,
+        );
         if needs_spawn_location {
             dump.space_id = Some(spawn_space_id);
             dump.tile_position = TilePosition::ground(spawn_width / 2, spawn_height / 2);
@@ -735,33 +746,54 @@ mod tests {
 
     #[test]
     fn explicit_pick_relocates_a_character_with_a_saved_position() {
+        let manager = space_manager_with(&[(3, "island")]);
         assert!(needs_spawn_location(
             Some(SpaceId(1)),
             Some(SpaceId(3)),
             TilePosition::ground(37, 3),
+            &manager,
         ));
     }
 
     #[test]
     fn no_pick_resumes_a_character_with_a_saved_position() {
+        let manager = space_manager_with(&[(3, "island")]);
         assert!(!needs_spawn_location(
             None,
             Some(SpaceId(3)),
             TilePosition::ground(37, 3),
+            &manager,
         ));
     }
 
     #[test]
     fn no_pick_still_places_unplaced_characters() {
+        let manager = space_manager_with(&[(3, "island")]);
         assert!(needs_spawn_location(
             None,
             None,
-            TilePosition::ground(37, 3)
+            TilePosition::ground(37, 3),
+            &manager
         ));
         assert!(needs_spawn_location(
             None,
             Some(SpaceId(3)),
-            TilePosition::ground(0, 0)
+            TilePosition::ground(0, 0),
+            &manager
+        ));
+    }
+
+    #[test]
+    fn saved_position_in_a_dead_space_respawns() {
+        // A character saved inside an ephemeral instance whose space id no
+        // longer exists (or now belongs to a future instance) must not resume
+        // there.
+        let manager = space_manager_with(&[(3, "island")]);
+        assert!(needs_spawn_location(
+            None,
+            Some(SpaceId(7)),
+            TilePosition::ground(35, 24),
+            &manager,
         ));
     }
 }

@@ -3741,7 +3741,20 @@ fn handle_move_item(
                 &tile_position,
                 space_resident.space_id,
             ) {
-                refuse(local_player_id, "MoveItem/pickup", "out of reach");
+                refuse(
+                    local_player_id,
+                    "MoveItem/pickup",
+                    &format!(
+                        "out of reach: player=({}, {}, {}) object {object_id}=({}, {}, {}) space={:?}",
+                        player_position.x,
+                        player_position.y,
+                        player_position.z,
+                        tile_position.x,
+                        tile_position.y,
+                        tile_position.z,
+                        space_resident.space_id,
+                    ),
+                );
                 chat_log_state.push_narrator("That item is out of reach.");
                 return;
             }
@@ -3764,6 +3777,13 @@ fn handle_move_item(
                 chat_log_state.push_narrator("Too heavy — you can't lift that.");
                 return;
             }
+            // A movable-but-not-storable object (furniture, barrels) is
+            // draggable, so players *will* try to pocket one — refuse with
+            // words, not silence. Same for a full/incompatible slot.
+            if !type_is_storable(&stack.type_id, definitions) {
+                chat_log_state.push_narrator("You can't carry that.");
+                return;
+            }
             if !place_stack_in_slot_ref(
                 &mut inventory_state,
                 container_query,
@@ -3772,6 +3792,7 @@ fn handle_move_item(
                 slot_ref,
                 definitions,
             ) {
+                chat_log_state.push_narrator("There's no room for that there.");
                 return;
             }
             commands.entity(entity).despawn();
@@ -4246,7 +4267,21 @@ fn handle_take_from_stack(
                 &tile_position,
                 space_resident.space_id,
             ) {
-                refuse(local_player_id, "TakeFromStack", "out of reach");
+                refuse(
+                    local_player_id,
+                    "TakeFromStack",
+                    &format!(
+                        "out of reach: player=({}, {}, {}) object {object_id}=({}, {}, {}) space={:?}",
+                        player_position.x,
+                        player_position.y,
+                        player_position.z,
+                        tile_position.x,
+                        tile_position.y,
+                        tile_position.z,
+                        space_resident.space_id,
+                    ),
+                );
+                chat_log_state.push_narrator("That item is out of reach.");
                 return;
             }
             let world_qty = quantity_query.get(entity).map(|q| q.0).unwrap_or(1);
@@ -4267,6 +4302,10 @@ fn handle_take_from_stack(
                 chat_log_state.push_narrator("Too heavy — you can't lift that.");
                 return;
             }
+            if !type_is_storable(&new_stack.type_id, definitions) {
+                chat_log_state.push_narrator("You can't carry that.");
+                return;
+            }
             if !place_stack_in_slot_ref(
                 &mut inventory_state,
                 container_query,
@@ -4275,6 +4314,7 @@ fn handle_take_from_stack(
                 destination_slot,
                 definitions,
             ) {
+                chat_log_state.push_narrator("There's no room for that there.");
                 return;
             }
 

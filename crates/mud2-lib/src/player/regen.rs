@@ -12,6 +12,8 @@
 
 use bevy::prelude::*;
 
+use crate::combat::components::CombatTarget;
+use crate::npc::components::LastDamagedAt;
 use crate::player::components::{
     DerivedStats, Exertion, Player, RegenBuffs, RegenTickers, VitalStats,
 };
@@ -21,6 +23,35 @@ use crate::player::skills::{Skill, SkillSheet};
 /// Per-rank regen speed-up from Endurance (`utility_systems.md` §6.1). Rank 0 →
 /// ×1.0; each rank adds 4%, so a maxed Endurance (~13 ranks at L10) → ~×1.52.
 const ENDURANCE_REGEN_PER_RANK: f32 = 0.04;
+
+/// HP-regen rate multiplier while the player counts as in combat. `[tunable]`
+/// — CON 10 goes from the 15 s/HP base to 10 s/HP.
+const IN_COMBAT_HP_REGEN_MULTIPLIER: f32 = 1.5;
+
+/// HP-regen rate multiplier while out of combat. `[tunable]` — CON 10 → 5 s/HP
+/// (12 HP/min), so downtime between fights stays short without touching the
+/// balance model's stand-and-trade duels (which ignore mid-fight regen; see
+/// `tools/balance/README.md`).
+const OUT_OF_COMBAT_HP_REGEN_MULTIPLIER: f32 = 3.0;
+
+/// How long after the last hit taken a player still counts as in combat.
+const COMBAT_RECENCY_WINDOW_SECONDS: f32 = 8.0;
+
+/// Combat-state HP multiplier: a player is in combat while they hold an attack
+/// lock (`CombatTarget`) or took a hit within the recency window. Applies to
+/// health only — mana regen is tuned for sustained casting and unaffected.
+fn combat_hp_regen_multiplier(
+    has_combat_target: bool,
+    last_damaged_at: Option<&LastDamagedAt>,
+    now: f32,
+) -> f32 {
+    let hurt_recently = last_damaged_at.is_some_and(|t| now - t.0 <= COMBAT_RECENCY_WINDOW_SECONDS);
+    if has_combat_target || hurt_recently {
+        IN_COMBAT_HP_REGEN_MULTIPLIER
+    } else {
+        OUT_OF_COMBAT_HP_REGEN_MULTIPLIER
+    }
+}
 
 /// Regen-rate multiplier from the player's Endurance rank.
 fn endurance_regen_multiplier(sheet: Option<&SkillSheet>) -> f32 {
@@ -85,6 +116,8 @@ pub fn tick_vital_regen(
             Option<&RegenBuffs>,
             Option<&SkillSheet>,
             Option<&Exertion>,
+            Has<CombatTarget>,
+            Option<&LastDamagedAt>,
         ),
         With<Player>,
     >,
@@ -93,8 +126,11 @@ pub fn tick_vital_regen(
     if dt <= 0.0 {
         return;
     }
+    let now = time.elapsed_secs();
 
-    for (mut vitals, mut tickers, derived, buffs, sheet, exertion) in query.iter_mut() {
+    for (mut vitals, mut tickers, derived, buffs, sheet, exertion, in_combat, last_damaged) in
+        query.iter_mut()
+    {
         if vitals.health <= 0.0 {
             continue;
         }
@@ -106,20 +142,23 @@ pub fn tick_vital_regen(
         let endurance = endurance_regen_multiplier(sheet);
         let fatigue = exertion_regen_multiplier(exertion);
         let multiplier = (food * endurance * fatigue).max(0.05);
+        // Health additionally scales with combat state; mana keeps the base
+        // composed multiplier so sustained-casting tuning is untouched.
+        let hp_multiplier = multiplier * combat_hp_regen_multiplier(in_combat, last_damaged, now);
 
         if vitals.health < vitals.max_health {
             tickers.health_remaining -= dt;
             while tickers.health_remaining <= 0.0 {
                 vitals.health = (vitals.health + 1.0).min(vitals.max_health);
-                tickers.health_remaining += health_interval_seconds(derived, multiplier);
+                tickers.health_remaining += health_interval_seconds(derived, hp_multiplier);
                 if vitals.health >= vitals.max_health {
-                    tickers.health_remaining = health_interval_seconds(derived, multiplier);
+                    tickers.health_remaining = health_interval_seconds(derived, hp_multiplier);
                     break;
                 }
             }
         } else {
             // Reset accumulator so the first tick after damage isn't instant.
-            tickers.health_remaining = health_interval_seconds(derived, multiplier);
+            tickers.health_remaining = health_interval_seconds(derived, hp_multiplier);
         }
 
         if vitals.max_mana > 0.0 && vitals.mana < vitals.max_mana {
@@ -231,6 +270,47 @@ mod tests {
         // A higher multiplier shortens the regen interval (faster regen).
         let derived = derived_with(10, 10);
         assert!(health_interval_seconds(&derived, m10) < health_interval_seconds(&derived, 1.0));
+    }
+
+    #[test]
+    fn combat_state_selects_hp_multiplier() {
+        // Out of combat: no target, never damaged.
+        assert_eq!(
+            combat_hp_regen_multiplier(false, None, 100.0),
+            OUT_OF_COMBAT_HP_REGEN_MULTIPLIER
+        );
+        // Holding an attack lock counts as in combat regardless of damage.
+        assert_eq!(
+            combat_hp_regen_multiplier(true, None, 100.0),
+            IN_COMBAT_HP_REGEN_MULTIPLIER
+        );
+        // Hit inside the recency window: in combat.
+        let recent = LastDamagedAt(95.0);
+        assert_eq!(
+            combat_hp_regen_multiplier(false, Some(&recent), 100.0),
+            IN_COMBAT_HP_REGEN_MULTIPLIER
+        );
+        // Stale hit: back to the out-of-combat rate.
+        let stale = LastDamagedAt(100.0 - COMBAT_RECENCY_WINDOW_SECONDS - 0.1);
+        assert_eq!(
+            combat_hp_regen_multiplier(false, Some(&stale), 100.0),
+            OUT_OF_COMBAT_HP_REGEN_MULTIPLIER
+        );
+    }
+
+    #[test]
+    fn combat_multipliers_shorten_the_base_interval() {
+        let derived = derived_with(10, 10);
+        let base = health_interval_seconds(&derived, 1.0);
+        let in_combat = health_interval_seconds(&derived, IN_COMBAT_HP_REGEN_MULTIPLIER);
+        let out_of_combat = health_interval_seconds(&derived, OUT_OF_COMBAT_HP_REGEN_MULTIPLIER);
+        // CON 10 anchors: 15 s/HP base → 10 s in combat, 5 s out of combat.
+        assert!((base - 15.0).abs() < 0.01, "base was {base}");
+        assert!((in_combat - 10.0).abs() < 0.01, "in_combat was {in_combat}");
+        assert!(
+            (out_of_combat - 5.0).abs() < 0.01,
+            "out_of_combat was {out_of_combat}"
+        );
     }
 
     #[test]

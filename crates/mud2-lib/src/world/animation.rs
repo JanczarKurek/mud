@@ -2,7 +2,9 @@ use bevy::prelude::*;
 
 use crate::game::resources::ClientGameState;
 use crate::player::components::Player;
-use crate::world::components::{ClientProjectedWorldObject, Facing, TilePosition};
+use crate::world::components::{
+    ClientProjectedWorldObject, ClientRemotePlayerVisual, Facing, TilePosition,
+};
 use crate::world::direction::Direction;
 use crate::world::lerp_anim::LinearLerp;
 use crate::world::object_definitions::{
@@ -249,9 +251,16 @@ pub fn trigger_movement_animation(
         &JustMoved,
         Option<&Facing>,
     )>,
+    // Local player *and* remote-player visuals: both render the "player" sheet
+    // and both get `JustMoved` from their respective movement drivers. Remote
+    // visuals carry `ClientRemotePlayerVisual`, not `Player` — without this arm
+    // they'd never leave their spawn clip (see `spawn_client_remote_player`).
     mut player_query: Query<
         (&mut AnimatedSprite, &JustMoved, Option<&Facing>),
-        (With<Player>, Without<ClientProjectedWorldObject>),
+        (
+            Or<(With<Player>, With<ClientRemotePlayerVisual>)>,
+            Without<ClientProjectedWorldObject>,
+        ),
     >,
 ) {
     let try_walk = |animated: &mut AnimatedSprite,
@@ -331,10 +340,11 @@ pub fn return_to_idle_animation(
         ),
         Without<JustMoved>,
     >,
+    // Same local + remote-player split as `trigger_movement_animation`.
     mut player_query: Query<
         (&mut AnimatedSprite, Option<&Facing>),
         (
-            With<Player>,
+            Or<(With<Player>, With<ClientRemotePlayerVisual>)>,
             Without<JustMoved>,
             Without<ClientProjectedWorldObject>,
         ),

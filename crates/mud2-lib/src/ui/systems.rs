@@ -3272,6 +3272,24 @@ pub fn handle_movable_dragging(
             ),
             (With<Button>, With<crate::ui::components::TradeSlotButton>),
         >,
+        Query<
+            (
+                &ItemSlotImage,
+                &ComputedNode,
+                &UiGlobalTransform,
+                Option<&Visibility>,
+            ),
+            With<EquipmentSlotImage>,
+        >,
+        Query<
+            (
+                &ItemSlotImage,
+                &ComputedNode,
+                &UiGlobalTransform,
+                Option<&Visibility>,
+            ),
+            With<ContainerSlotImage>,
+        >,
     )>,
 ) {
     let (context_menu_state, use_on_state, item_targeting_state) = interaction_state;
@@ -3288,13 +3306,21 @@ pub fn handle_movable_dragging(
     // inventory sidebar — so a Them drop-zone can sit on top of a backpack
     // slot. Check the trade family first in that case; otherwise keep the
     // existing equipment-then-container priority.
+    // Button rects first, then the slot *images* — a drop on the visible item
+    // art must resolve to the slot even where the image outgrows the button
+    // rect, or the release falls through to "shove it along the ground"
+    // (mirrors `hovered_slot_kind_from_ui`, which the context menu uses).
     let hovered_slot = if trade_popup_state.session_id.is_some() {
         hovered_slot_in_family(cursor_position, &slot_queries.p2())
             .or_else(|| hovered_slot_in_family(cursor_position, &slot_queries.p0()))
             .or_else(|| hovered_slot_in_family(cursor_position, &slot_queries.p1()))
+            .or_else(|| hovered_slot_image_in_family(cursor_position, &slot_queries.p3()))
+            .or_else(|| hovered_slot_image_in_family(cursor_position, &slot_queries.p4()))
     } else {
         hovered_slot_in_family(cursor_position, &slot_queries.p0())
             .or_else(|| hovered_slot_in_family(cursor_position, &slot_queries.p1()))
+            .or_else(|| hovered_slot_image_in_family(cursor_position, &slot_queries.p3()))
+            .or_else(|| hovered_slot_image_in_family(cursor_position, &slot_queries.p4()))
     };
 
     if context_menu_state.is_visible() {

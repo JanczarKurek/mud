@@ -756,10 +756,15 @@ fn handle_select_character(
         // Force the dump's player_id to the canonical character_id (legacy
         // dumps may have any value here).
         dump.player_id = player_id;
-        // If the dump has no space/position set yet (fresh character), pick a
-        // spawn tile now.
-        let needs_spawn_location =
-            dump.space_id.is_none() || (dump.tile_position.x == 0 && dump.tile_position.y == 0);
+        // Fresh characters (no space/position yet) and characters whose saved
+        // space is gone — e.g. saved inside an ephemeral dungeon instance that
+        // died with a previous session — get a spawn tile now.
+        let needs_spawn_location = crate::player::setup::needs_spawn_location(
+            None,
+            dump.space_id,
+            dump.tile_position,
+            space_manager,
+        );
         if needs_spawn_location {
             if let Some((space_id, tile)) = find_spawn_location(
                 world_config,
