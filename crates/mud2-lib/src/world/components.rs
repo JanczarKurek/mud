@@ -182,6 +182,16 @@ pub struct ClientRemotePlayerVisual {
     pub object_id: u64,
 }
 
+/// The overworld-object definition id whose visuals (sprite sheet, recolor
+/// layers, animation clips) are currently applied to this player entity —
+/// `"player"` or a per-class `"player_<class>"` variant. Lives on both the
+/// projected local-player stub and `ClientRemotePlayerVisual` entities; the
+/// class-swap systems compare it against the class-derived id and rebuild the
+/// visual on mismatch, and the animation/layer systems resolve clips and layer
+/// sheets through it instead of hardcoding `"player"`.
+#[derive(Component, Clone, Debug, Eq, PartialEq)]
+pub struct AppliedVisualDefinition(pub String);
+
 /// Renderer-only mirror of `OverworldObject::placement_seq` (authoritative
 /// entities in EmbeddedClient mode) or `ClientWorldObjectState::placement_seq`
 /// (projected entities in TcpClient mode). `y_sort_z` adds a tiny term from

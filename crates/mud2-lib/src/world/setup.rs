@@ -752,19 +752,60 @@ pub fn spawn_client_projected_world_object(
     entity
 }
 
+/// Translucent blue-white tint distinguishing other players' avatars from the
+/// local player's. Applied to the base sprite at spawn and modulated into the
+/// recolor layers' appearance tints so the whole stack reads as one ghost.
+pub const REMOTE_GHOST_TINT: Color = Color::srgba(0.82, 0.92, 1.0, 0.8);
+
+/// Component-wise sRGB multiply of two colors (including alpha). Used to
+/// compose a recolor layer's appearance tint with `REMOTE_GHOST_TINT`.
+pub fn modulate_colors(a: Color, b: Color) -> Color {
+    let a = a.to_srgba();
+    let b = b.to_srgba();
+    Color::srgba(
+        a.red * b.red,
+        a.green * b.green,
+        a.blue * b.blue,
+        a.alpha * b.alpha,
+    )
+}
+
+/// Resolve the visual definition for a player of `class`: the per-class
+/// `player_<class>` definition when it exists, else the base `"player"`
+/// definition (pre-class bootstrap, or a missing/unsynced class asset).
+/// Returns the id actually used so callers can record it in
+/// `AppliedVisualDefinition`.
+pub fn player_definition_for(
+    definitions: &OverworldObjectDefinitions,
+    class: Option<crate::player::classes::Class>,
+) -> (&str, &OverworldObjectDefinition) {
+    if let Some(class) = class {
+        let id = class.definition_id();
+        if let Some(definition) = definitions.get(id) {
+            return (id, definition);
+        }
+        // `warn_once`: the class-swap system calls this every frame, so a
+        // genuinely missing class definition would otherwise spam the log
+        // forever rather than reporting the problem once.
+        bevy::log::warn_once!(
+            "missing overworld object definition '{id}' — falling back to 'player'"
+        );
+    }
+    let definition = definitions
+        .get("player")
+        .unwrap_or_else(|| panic!("Missing overworld object definition for id 'player'"));
+    ("player", definition)
+}
+
 pub fn spawn_client_remote_player(
     commands: &mut Commands,
     asset_server: &AssetServer,
     texture_atlas_layouts: &mut Assets<TextureAtlasLayout>,
     definitions: &OverworldObjectDefinitions,
     world_config: &WorldConfig,
-    player_id: crate::player::components::PlayerId,
-    object_id: u64,
-    position: SpacePosition,
+    remote: &crate::game::resources::ClientRemotePlayerState,
 ) -> Entity {
-    let definition = definitions
-        .get("player")
-        .unwrap_or_else(|| panic!("Missing overworld object definition for id 'player'"));
+    let (definition_id, definition) = player_definition_for(definitions, Some(remote.class));
     let mut bundle = build_object_visual_bundle(
         asset_server,
         texture_atlas_layouts,
@@ -775,17 +816,19 @@ pub fn spawn_client_remote_player(
     );
     // Remote-player ghost tint so the local player can distinguish their own
     // entity from other connected players visually.
-    bundle.sprite.color = Color::srgba(0.82, 0.92, 1.0, 0.8);
+    bundle.sprite.color = REMOTE_GHOST_TINT;
     let hud_anchor_height = bundle.hud_anchor_height;
 
     let mut entity_commands = commands.spawn((
         ClientRemotePlayerVisual {
-            player_id,
-            object_id,
+            player_id: remote.player_id,
+            object_id: remote.object_id,
         },
+        crate::world::components::AppliedVisualDefinition(definition_id.to_owned()),
+        remote.appearance,
         ViewPosition {
-            space_id: position.space_id,
-            tile: position.tile_position,
+            space_id: remote.position.space_id,
+            tile: remote.position.tile_position,
         },
         bundle.world_visual,
         DisplayedVitalStats::default(),

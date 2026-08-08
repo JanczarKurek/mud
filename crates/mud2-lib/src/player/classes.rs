@@ -90,6 +90,19 @@ impl Class {
         Class::Vagabond,
     ];
 
+    /// The overworld-object definition id carrying this class's sprite sheet
+    /// and recolor layers (`assets/overworld_objects/<id>/`). The base
+    /// `"player"` definition remains the fallback used before the client
+    /// learns its class (or when a class definition is missing).
+    pub const fn definition_id(self) -> &'static str {
+        match self {
+            Class::Fighter => "player_fighter",
+            Class::Wizard => "player_wizard",
+            Class::Cleric => "player_cleric",
+            Class::Vagabond => "player_vagabond",
+        }
+    }
+
     /// Parse a `Class` from its `label()` form, case-insensitive. Used by the
     /// admin REPL (`Player.set_class("Vagabond")`).
     pub fn from_label(s: &str) -> Option<Class> {
@@ -192,6 +205,113 @@ pub fn ability_mod(score: i32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `definition_id()` names a real overworld-object directory for every
+    /// class — a typo (or a class added without art) would otherwise only
+    /// surface as a runtime `warn!` and a silent fallback to the base sprite.
+    /// Unit tests run with the crate dir as CWD; `crates/mud2-lib/assets` is a
+    /// symlink to the repo-root `assets/`.
+    #[test]
+    fn every_class_has_a_sprite_definition() {
+        for class in Class::ALL {
+            let id = class.definition_id();
+            for relative in [
+                format!("assets/overworld_objects/{id}/metadata.yaml"),
+                format!("assets/overworld_objects/{id}/sheet.png"),
+                format!("assets/overworld_objects/{id}/layers/hair.png"),
+                format!("assets/overworld_objects/{id}/layers/torso.png"),
+                format!("assets/overworld_objects/{id}/layers/trousers.png"),
+            ] {
+                assert!(
+                    std::path::Path::new(&relative).exists(),
+                    "{:?}: missing {relative} (run scripts/gen_player_sheet.py)",
+                    class
+                );
+            }
+        }
+    }
+
+    /// The shared-grid invariant, enforced against the *resolved* definitions
+    /// (i.e. after `extends: player` deep-merges). Every class sheet must use
+    /// the base player's frame grid and clip table, because the recolor-layer
+    /// children reuse the base sprite's `TextureAtlasLayout` handle and the
+    /// character-create preview swaps sheet images without rebuilding its
+    /// atlas. This also pins the deep-merge behaviour the per-class metadata
+    /// relies on — the class YAML omits `clips`, so a shallow merge would
+    /// silently leave these definitions clipless.
+    #[test]
+    fn class_definitions_share_the_base_player_sheet_grid() {
+        use crate::world::object_definitions::OverworldObjectDefinitions;
+
+        let definitions = OverworldObjectDefinitions::load_from_disk();
+        let base = definitions
+            .get("player")
+            .expect("base player definition")
+            .render
+            .animation
+            .as_ref()
+            .expect("base player is animated");
+
+        for class in Class::ALL {
+            let id = class.definition_id();
+            let definition = definitions
+                .get(id)
+                .unwrap_or_else(|| panic!("{id}: definition missing from assets"));
+            let animation = definition
+                .render
+                .animation
+                .as_ref()
+                .unwrap_or_else(|| panic!("{id}: no animation block after extends"));
+
+            assert_eq!(
+                (
+                    animation.frame_width,
+                    animation.frame_height,
+                    animation.sheet_columns,
+                    animation.sheet_rows
+                ),
+                (
+                    base.frame_width,
+                    base.frame_height,
+                    base.sheet_columns,
+                    base.sheet_rows
+                ),
+                "{id}: frame grid must match the base player sheet"
+            );
+
+            let mut clips: Vec<&str> = animation.clips.keys().map(String::as_str).collect();
+            let mut base_clips: Vec<&str> = base.clips.keys().map(String::as_str).collect();
+            clips.sort_unstable();
+            base_clips.sort_unstable();
+            assert_eq!(clips, base_clips, "{id}: clip table must match the base");
+
+            assert!(
+                animation.sheet_path.contains(id),
+                "{id}: animation sheet still points at {}",
+                animation.sheet_path
+            );
+
+            let layers: Vec<&str> = definition
+                .render
+                .recolor_layers
+                .iter()
+                .map(|layer| layer.key.as_str())
+                .collect();
+            assert_eq!(
+                layers,
+                vec!["hair", "torso", "trousers"],
+                "{id}: recolor layers"
+            );
+            for layer in &definition.render.recolor_layers {
+                assert!(
+                    layer.sheet_path.contains(id),
+                    "{id}: recolor layer '{}' still points at {}",
+                    layer.key,
+                    layer.sheet_path
+                );
+            }
+        }
+    }
 
     #[test]
     fn ability_mod_anchors() {

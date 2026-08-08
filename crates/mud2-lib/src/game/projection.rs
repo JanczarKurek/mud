@@ -45,7 +45,7 @@ use crate::player::classes::Class;
 #[cfg(feature = "server-sim")]
 use crate::player::components::{
     CurrentCarryWeight, DefenseStats, DerivedStats, DiscoveredTiles, Encumbered, MaxCarryWeight,
-    Player, PlayerId, PlayerIdentity, RegenBuffs, VitalStats, WeaponDamage,
+    Player, PlayerAppearance, PlayerId, PlayerIdentity, RegenBuffs, VitalStats, WeaponDamage,
 };
 #[cfg(feature = "server-sim")]
 use crate::player::progression::{Experience, ExperienceView};
@@ -123,6 +123,7 @@ pub type ProjectionPlayerQuery<'w, 's> = Query<
             Option<&'static Class>,
             Option<&'static crate::crafting::CharacterStash>,
             Option<&'static SkillSheet>,
+            Option<&'static PlayerAppearance>,
         ),
         (
             Option<&'static MagicEffects>,
@@ -376,7 +377,7 @@ fn emit_player_events(
         regen_buffs,
         (max_carry, current_carry, is_encumbered),
         experience,
-        (class, stash, skill_sheet),
+        (class, stash, skill_sheet, appearance),
         (
             magic_effects,
             defense_stats,
@@ -609,6 +610,13 @@ fn emit_player_events(
                 }
             }
 
+            let projected_appearance = appearance.copied();
+            if previous.appearance != projected_appearance {
+                if let Some(a) = projected_appearance {
+                    events.push(GameEvent::PlayerAppearanceChanged { appearance: a });
+                }
+            }
+
             let projected_attributes = derived_stats.attributes;
             diff_emit!(
                 events,
@@ -762,6 +770,8 @@ fn emit_player_events(
                     tile_position: *tile_position,
                     vitals: projected_vitals,
                     facing: projected_facing,
+                    class: class.copied().unwrap_or_default(),
+                    appearance: appearance.copied().unwrap_or_default(),
                 },
             ));
         }
@@ -1392,6 +1402,9 @@ pub fn apply_event_to_state(state: &mut ClientGameState, event: GameEvent) {
         GameEvent::PlayerClassChanged { class } => {
             state.class = Some(class);
         }
+        GameEvent::PlayerAppearanceChanged { appearance } => {
+            state.appearance = Some(appearance);
+        }
         GameEvent::PlayerAttributesChanged { attributes } => {
             state.attributes = Some(attributes);
         }
@@ -1587,6 +1600,9 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
         ),
         GameEvent::PlayerClassChanged { class } => {
             info!("client player class set: {:?}", class)
+        }
+        GameEvent::PlayerAppearanceChanged { .. } => {
+            debug!("client player appearance updated")
         }
         GameEvent::PlayerAttributesChanged { attributes } => {
             debug!(

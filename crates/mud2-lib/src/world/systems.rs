@@ -250,6 +250,8 @@ pub fn sync_remote_player_projection(
     mut projected_query: Query<(
         Entity,
         &ClientRemotePlayerVisual,
+        &crate::world::components::AppliedVisualDefinition,
+        &mut crate::player::components::PlayerAppearance,
         &mut DisplayedVitalStats,
         &mut ViewPosition,
         &mut WorldVisual,
@@ -265,9 +267,7 @@ pub fn sync_remote_player_projection(
                 &mut texture_atlas_layouts,
                 &definitions,
                 &world_config,
-                remote_player.player_id,
-                remote_player.object_id,
-                remote_player.position,
+                remote_player,
             );
             projection_state
                 .entities
@@ -278,6 +278,8 @@ pub fn sync_remote_player_projection(
         let Ok((
             query_entity,
             projected_player,
+            applied_definition,
+            mut appearance,
             mut displayed_vitals,
             mut view,
             mut world_visual,
@@ -291,9 +293,7 @@ pub fn sync_remote_player_projection(
                 &mut texture_atlas_layouts,
                 &definitions,
                 &world_config,
-                remote_player.player_id,
-                remote_player.object_id,
-                remote_player.position,
+                remote_player,
             );
             projection_state
                 .entities
@@ -301,7 +301,16 @@ pub fn sync_remote_player_projection(
             continue;
         };
 
-        if projected_player.object_id != remote_player.object_id {
+        // Respawn the visual when the backing object changed OR the remote
+        // player's class no longer matches the definition their sprite was
+        // built from (admin `set_class`, older-server Fighter fallback
+        // upgrading once the class arrives). Despawn is recursive, so the
+        // recolor-layer children and health bar go with it.
+        let expected_definition_id =
+            crate::world::setup::player_definition_for(&definitions, Some(remote_player.class)).0;
+        if projected_player.object_id != remote_player.object_id
+            || applied_definition.0 != expected_definition_id
+        {
             commands.entity(query_entity).despawn();
             let replacement = spawn_client_remote_player(
                 &mut commands,
@@ -309,14 +318,18 @@ pub fn sync_remote_player_projection(
                 &mut texture_atlas_layouts,
                 &definitions,
                 &world_config,
-                remote_player.player_id,
-                remote_player.object_id,
-                remote_player.position,
+                remote_player,
             );
             projection_state
                 .entities
                 .insert(remote_player.player_id, replacement);
             continue;
+        }
+
+        // Diff-write so `apply_player_appearance`'s `Changed` filter retints
+        // the recolor layers only when the colors actually changed.
+        if *appearance != remote_player.appearance {
+            *appearance = remote_player.appearance;
         }
 
         view.space_id = remote_player.position.space_id;
@@ -361,7 +374,7 @@ pub fn sync_remote_player_projection(
         displayed_vitals.max_health = remote_player.vitals.max_health;
         displayed_vitals.mana = remote_player.vitals.mana;
         displayed_vitals.max_mana = remote_player.vitals.max_mana;
-        if let Some(definition) = definitions.get("player") {
+        if let Some(definition) = definitions.get(&applied_definition.0) {
             world_visual.z_index = definition.render.z_index;
         }
         if facing.0 != remote_player.facing {

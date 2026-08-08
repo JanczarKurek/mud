@@ -41,6 +41,9 @@ impl Plugin for CharacterCreateScreenPlugin {
                     handle_hue_buttons,
                     handle_create_actions,
                     sync_form_text,
+                    // After the class buttons so a click updates the preview
+                    // silhouette in the same frame it recolors the button.
+                    sync_preview_class_sheets.after(handle_class_buttons),
                     animate_preview_layers,
                     poll_create_result,
                 )
@@ -215,11 +218,14 @@ struct PreviewAnimation {
     base_index: u32,
 }
 
-const PREVIEW_FRAME_W: u32 = 96;
+const PREVIEW_FRAME_W: u32 = 128;
 const PREVIEW_FRAME_H: u32 = 96;
 const PREVIEW_SHEET_COLS: u32 = 4;
 const PREVIEW_SHEET_ROWS: u32 = 8;
-const PREVIEW_SCALE: f32 = 2.0;
+/// Sized so the preview node stays 192 px wide, exactly as it was when frames
+/// were 96 px square. The preview sits in a flex row with `flex_shrink: 0`
+/// next to the hue controls, so letting it grow would squeeze those instead.
+const PREVIEW_SCALE: f32 = 1.5;
 const PREVIEW_FPS: f32 = 3.0;
 const PREVIEW_IDLE_FRAMES: u32 = 4;
 
@@ -280,9 +286,11 @@ fn spawn_character_create_screen(
     let theme = theme.clone();
     let palette = *palette;
 
-    // Player sheet atlas: must match `assets/overworld_objects/player/metadata.yaml`
-    // (96×96 frames, 4 cols × 8 rows). Shared across the base sheet + every
-    // tintable layer ImageNode so they index the same frame each tick.
+    // Player sheet atlas: every player_* sheet shares the same 96×96 frames /
+    // 4 cols × 8 rows grid (see assets/overworld_objects/player_fighter/
+    // metadata.yaml), so one layout serves whichever class sheet is shown.
+    // Shared across the base sheet + every tintable layer ImageNode so they
+    // index the same frame each tick.
     let preview_layout = TextureAtlasLayout::from_grid(
         UVec2::new(PREVIEW_FRAME_W, PREVIEW_FRAME_H),
         PREVIEW_SHEET_COLS,
@@ -291,13 +299,20 @@ fn spawn_character_create_screen(
         None,
     );
     let preview_layout_handle = texture_atlas_layouts.add(preview_layout);
-    let preview_base_image: Handle<Image> = asset_server.load("overworld_objects/player/sheet.png");
-    let preview_hair_image: Handle<Image> =
-        asset_server.load("overworld_objects/player/layers/hair.png");
-    let preview_torso_image: Handle<Image> =
-        asset_server.load("overworld_objects/player/layers/torso.png");
-    let preview_trousers_image: Handle<Image> =
-        asset_server.load("overworld_objects/player/layers/trousers.png");
+    let preview_base_image: Handle<Image> =
+        asset_server.load(preview_sheet_path(state.class, None));
+    let preview_hair_image: Handle<Image> = asset_server.load(preview_sheet_path(
+        state.class,
+        Some(AppearanceRegion::Hair),
+    ));
+    let preview_torso_image: Handle<Image> = asset_server.load(preview_sheet_path(
+        state.class,
+        Some(AppearanceRegion::Torso),
+    ));
+    let preview_trousers_image: Handle<Image> = asset_server.load(preview_sheet_path(
+        state.class,
+        Some(AppearanceRegion::Trousers),
+    ));
 
     commands
         .spawn((
@@ -950,6 +965,48 @@ fn handle_attr_buttons(
             }
         }
         set_attr_value(&mut state.attributes, button.attribute, target);
+    }
+}
+
+/// Asset path of one preview layer's sheet for the given class — the class
+/// definition's sheet.png (base) or a layers/*.png (tintable overlay).
+fn preview_sheet_path(class: Class, layer: Option<AppearanceRegion>) -> String {
+    let dir = class.definition_id();
+    match layer {
+        None => format!("overworld_objects/{dir}/sheet.png"),
+        Some(AppearanceRegion::Hair) => format!("overworld_objects/{dir}/layers/hair.png"),
+        Some(AppearanceRegion::Torso) => format!("overworld_objects/{dir}/layers/torso.png"),
+        Some(AppearanceRegion::Trousers) => {
+            format!("overworld_objects/{dir}/layers/trousers.png")
+        }
+        Some(AppearanceRegion::Skin) => format!("overworld_objects/{dir}/sheet.png"),
+    }
+}
+
+/// Swaps the preview stack's images to the selected class's sheets when the
+/// class choice changes, so the silhouette matches the class buttons. The
+/// texture-atlas layout is untouched — the shared-grid invariant guarantees
+/// frame indices stay valid across class sheets.
+fn sync_preview_class_sheets(
+    state: Res<CharacterCreateState>,
+    asset_server: Res<AssetServer>,
+    mut applied: Local<Option<Class>>,
+    mut preview_layers: Query<(&PreviewLayer, &mut ImageNode)>,
+) {
+    if preview_layers.is_empty() {
+        // Screen not built yet (or torn down): forget the memo so re-entering
+        // the screen re-applies whatever the fresh build loaded.
+        *applied = None;
+        return;
+    }
+    // The build loads `state.class`'s sheets, so a `None` memo means in-sync.
+    if applied.unwrap_or(state.class) == state.class {
+        *applied = Some(state.class);
+        return;
+    }
+    *applied = Some(state.class);
+    for (marker, mut image_node) in &mut preview_layers {
+        image_node.image = asset_server.load(preview_sheet_path(state.class, marker.0));
     }
 }
 

@@ -1,0 +1,17 @@
+# Vagabond class sprite. Extends the base `player` definition (deep-merge) —
+# see player_fighter/metadata.yaml for the shared-grid invariant.
+# Regenerate art with scripts/gen_player_sheet.py.
+extends: player
+name: Vagabond
+description: Slim hooded vagabond; the cloak and hood tint as torso.
+render:
+  sprite_path: overworld_objects/player_vagabond/sprite_large.png
+  animation:
+    sheet_path: overworld_objects/player_vagabond/sheet.png
+  recolor_layers:
+    - key: hair
+      sheet_path: overworld_objects/player_vagabond/layers/hair.png
+    - key: torso
+      sheet_path: overworld_objects/player_vagabond/layers/torso.png
+    - key: trousers
+      sheet_path: overworld_objects/player_vagabond/layers/trousers.png

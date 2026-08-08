@@ -1,0 +1,20 @@
+# Fighter class sprite. Extends the base `player` definition (deep-merge), so
+# the animation clip table, frame grid, z_index and HUD anchoring are shared —
+# all player_* sheets MUST keep the identical 96×96 / 4-col × 8-row grid: the
+# runtime recolor layers share the base sprite's TextureAtlasLayout, and the
+# character-create preview swaps sheet images without touching the atlas.
+# Regenerate art with scripts/gen_player_sheet.py.
+extends: player
+name: Fighter
+description: Broad-shouldered fighter in a steel breastplate and pauldrons.
+render:
+  sprite_path: overworld_objects/player_fighter/sprite_large.png
+  animation:
+    sheet_path: overworld_objects/player_fighter/sheet.png
+  recolor_layers:
+    - key: hair
+      sheet_path: overworld_objects/player_fighter/layers/hair.png
+    - key: torso
+      sheet_path: overworld_objects/player_fighter/layers/torso.png
+    - key: trousers
+      sheet_path: overworld_objects/player_fighter/layers/trousers.png

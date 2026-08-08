@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::game::commands::GameCommand;
 use crate::player::classes::Class;
-use crate::player::components::{AttributeSet, ChatLog, Inventory, InventoryStack, PlayerId};
+use crate::player::components::{
+    AttributeSet, ChatLog, Inventory, InventoryStack, PlayerAppearance, PlayerId,
+};
 use crate::player::progression::ExperienceView;
 use crate::world::components::{SpaceId, SpacePosition, TilePosition};
 use crate::world::direction::Direction;
@@ -477,6 +479,15 @@ pub struct ClientRemotePlayerState {
     pub vitals: ClientVitalStats,
     #[serde(default)]
     pub facing: Direction,
+    /// The remote player's class — selects their class sprite sheet
+    /// (`player_<class>` definition). `#[serde(default)]` (→ Fighter) keeps
+    /// older peers deserializable; cosmetic-only fallback.
+    #[serde(default)]
+    pub class: Class,
+    /// The remote player's chosen appearance colors, tinting their recolor
+    /// layers (modulated by the remote ghost tint client-side).
+    #[serde(default)]
+    pub appearance: PlayerAppearance,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -615,6 +626,13 @@ pub enum GameEvent {
     /// projected). Driven by the bootstrap diff after a character is loaded.
     PlayerClassChanged {
         class: Class,
+    },
+    /// Replicated when the local player's appearance colors change (or are
+    /// first projected). Folded into `ClientGameState.appearance`, which the
+    /// client copies onto the projected stub so the recolor sprite layers can
+    /// spawn/tint.
+    PlayerAppearanceChanged {
+        appearance: PlayerAppearance,
     },
     /// Replicates the *effective* attribute set (base + equipment bonuses)
     /// for the local player. Drives the Character sheet's attributes grid;
@@ -833,6 +851,10 @@ pub struct ClientGameState {
     /// `PlayerClassChanged` event lands.
     #[serde(default)]
     pub class: Option<Class>,
+    /// Replicated appearance colors for the local player. `None` until the
+    /// first `PlayerAppearanceChanged` event lands.
+    #[serde(default)]
+    pub appearance: Option<PlayerAppearance>,
     /// Replicated effective attribute set (base + equipment) for the local
     /// player. `None` until the first `PlayerAttributesChanged` event lands.
     #[serde(default)]

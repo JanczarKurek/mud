@@ -1201,10 +1201,12 @@ Notes:
 ### `recolor_layers` (optional)
 
 Per-region sprite layers stacked on top of the base sprite, each receiving an
-independent per-character tint. Currently used by the player definition for
-hair / torso / trousers customization at character creation. Each layer PNG
-must share the same dimensions and frame grid as the parent's `animation`
-sheet so frame indices stay locked together.
+independent per-character tint. Used by the `player` definition and its
+per-class variants (`player_fighter`, `player_wizard`, `player_cleric`,
+`player_vagabond`, selected by `Class::definition_id()`) for hair / torso /
+trousers customization at character creation. Each layer PNG must share the
+same dimensions and frame grid as the parent's `animation` sheet so frame
+indices stay locked together.
 
 ```yaml
 render:
@@ -1235,10 +1237,14 @@ Notes:
 - Layers are stacked in declaration order with small Z offsets above the base
   sprite, so layer pixels overwrite the underlying base pixels in their
   region. Layer pixels must cover the exact same coordinates as the base sheet's
-  region pixels — otherwise the original colors leak through the gaps.
-- Only the player definition currently has consumer code wired up. Other
-  objects may declare `recolor_layers` for forward-compat; nothing will spawn
-  them until a system opts in.
+  region pixels — no more, no less. Too few and the base colors leak through;
+  too many and the layer paints over whatever occludes the region (a tunic
+  layer drawn without occlusion covers the head). See "Recolor layers &
+  occlusion" in `docs/sprite_style.md` for how the generator guarantees this.
+- Consumers are the local player's projected stub and remote-player visuals
+  (`spawn_player_recolor_layers`); remote tints are additionally modulated by
+  `REMOTE_GHOST_TINT`. Other objects may declare `recolor_layers` for
+  forward-compat; nothing will spawn them until a system opts in.
 
 Example:
 

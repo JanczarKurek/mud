@@ -1,534 +1,497 @@
 """
-Generates assets/overworld_objects/player/sheet.png plus three recolor-layer
-sheets under assets/overworld_objects/player/layers/, using the same oblique
-3D projection as the wall set (see `scripts/wall_perspective.py`). The character
-is composed of stacked 3D boxes whose top caps slant at the same angle as a
-wall's lit cap band, so the player visually belongs to the same iso world.
+Generates the player sprite sets — the base `player` definition plus the four
+per-class variants (`player_fighter`, `player_wizard`, `player_cleric`,
+`player_vagabond`) — on the shared `char_rig` renderer (same oblique
+projection as the wall set; see docs/sprite_style.md).
 
-Frame size is **96×96 px** (NOT the originally-discussed 64×96). The reason:
-at the synced floor shift (`FLOOR_SHIFT_X_TILES = -0.75`), an iso-projected
-character with a footprint centred on the tile and a head ~1.0 floor up needs
-a canvas wide enough to absorb the head's up-LEFT lean (36 px / floor). 96 wide
-just barely fits. Body footprints are designed symmetric about the tile centre
-`(0.5, 0.5)` so 90° rotations leave the character standing on the same spot.
+Every set shares the SAME sheet contract (the runtime layer-atlas sharing and
+the character-create preview depend on it):
 
-Sheet layout: 4 columns × 8 rows = 384 × 768 px.
-  Row 0: idle_s  (south-facing idle)
-  Row 1: walk_s  (south-facing walk)
-  Row 2: idle_n
-  Row 3: walk_n
-  Row 4: idle_e
-  Row 5: walk_e
-  Row 6: idle_w
-  Row 7: walk_w
+  frame 128×96 px, 4 columns × 8 rows = 512 × 768 px
+  Row 0: idle_s   Row 1: walk_s   Row 2: idle_n   Row 3: walk_n
+  Row 4: idle_e   Row 5: walk_e   Row 6: idle_w   Row 7: walk_w
 
-Outputs:
-  sheet.png            full-color base sheet (skin + tunic + pants + hair)
+Outputs per definition, under assets/overworld_objects/<def_id>/:
+  sheet.png            full-color base sheet
   layers/hair.png      hair-region pixels, white-tone palette (tintable)
-  layers/torso.png     tunic-region pixels, white-tone palette (tintable)
-  layers/trousers.png  pants-region pixels, white-tone palette (tintable)
-  sprite_large.png     single south-facing idle frame (no animation), for
-                       inventory icons / static fallback.
+  layers/torso.png     torso-region pixels, white-tone palette (tintable)
+  layers/trousers.png  trousers-region pixels, white-tone palette (tintable)
+  sprite_large.png     single south-facing idle frame (static fallback)
 
-The four layer sheets share the base sheet's frame grid exactly — they are
-multiplicatively tinted by `Sprite::color` at runtime, with the chosen
-per-character RGB defining the visible hue.
+Occlusion correctness: char_rig paints ALL boxes in one globally depth-sorted
+painter pass, and layer sheets render the same pass with non-region boxes
+painted as fully-transparent ERASERS — so a layer only keeps pixels that are
+actually visible in the base render (the old per-region painter drew the
+tunic's top cap over the head; `verify()` below guards against regressions).
+
+Class silhouettes (all keep the recolorable hair/torso/trousers regions):
+  fighter   broad torso, steel breastplate band + pauldrons
+  wizard    floor-length robe + a tall pointed hat on the *hair* slot
+  cleric    floor-length robe on the trousers slot + a tabard on the *torso*
+            slot (they must differ, or the tabard vanishes into the gown)
+  vagabond  slim build, hooded cloak (hood/cape = torso region), hair rim
+
+Robed classes draw no boots: the hem runs to the ground, both because a full
+robe hides the feet and because a boot box cannot sort behind the skirt here
+(see `_robe_parts`).
 """
 
 import os
 
 from PIL import Image
 
-from wall_perspective import (
-    TILE_PX,
-    BG,
-    project,
-    fill_polygon,
-    _line,
+from wall_perspective import TILE_PX, BG, project
+from char_rig import (
+    anchor_for,
+    assemble,
+    render_frame,
+    save,
+    standard_rows,
+    IDLE_FRAMES,
+    WALK_FRAMES,
 )
 
-# ── Frame & sheet geometry ────────────────────────────────────────────────────
-FRAME_W = 96
+# ── Frame & sheet geometry (shared-grid invariant — do not change per class) ──
+#
+# 128 WIDE, 96 tall. Height in this projection travels up-*left* at 36 px per
+# floor, so canvas width — not height — is what limits how tall a hat or helm
+# can be: at 96 wide the anchor sits at x=24 and nothing above fz≈1.25 fits,
+# which is not enough for a pointed wizard hat. 128 moves the anchor to x=40
+# and buys ~0.4 more floors of headroom. The character art is unchanged in tile
+# space; the extra width is transparent margin, and `project(0.5, 0, 0)` still
+# lands on the frame's bottom-center as `Anchor::BOTTOM_CENTER` requires.
+FRAME_W = 128
 FRAME_H = 96
 COLS = 4
 ROWS = 8
 
-OUT_BASE = "assets/overworld_objects/player/sheet.png"
-OUT_LARGE = "assets/overworld_objects/player/sprite_large.png"
-OUT_LAYER_DIR = "assets/overworld_objects/player/layers"
-
-# Per-frame anchor: bottom-center of the frame pins to the tile's south edge,
-# matching `Anchor::BOTTOM_CENTER` + `anchor_y_offset = -tile_size * 0.5` in
-# `src/world/systems.rs::sync_tile_transforms`. So `project(0.5, 0, 0)` must
-# land at (FRAME_W/2, FRAME_H-1).
-ANCHOR = (FRAME_W // 2 - TILE_PX // 2, FRAME_H - 1)
+OUT_ROOT = "assets/overworld_objects"
 
 
 # ── Palette ───────────────────────────────────────────────────────────────────
-# Each region uses three tones — front (base), side (shadow on east face),
-# top (highlight on the lit cap), matching the wall stone palette pattern.
+# (front, east-side shadow, lit top cap) triples, matching the wall set's
+# 3-tone treatment. Base-sheet colors only; the recolor layers are rendered
+# in char_rig.LAYER_TRIPLE white tones and tinted at runtime.
 
-SKIN_BASE = (220, 170, 120, 255)
-SKIN_SIDE = (180, 130,  85, 255)
-SKIN_TOP  = (240, 195, 150, 255)
+SKIN = ((220, 170, 120, 255), (180, 130, 85, 255), (240, 195, 150, 255))
+HAIR = ((220, 180, 35, 255), (170, 130, 20, 255), (250, 215, 80, 255))
+TUNIC = ((145, 55, 165, 255), (100, 30, 120, 255), (175, 90, 200, 255))
+PANTS = ((55, 70, 105, 255), (35, 48, 75, 255), (80, 98, 140, 255))
+BOOT = ((72, 44, 18, 255), (45, 28, 10, 255), (95, 62, 28, 255))
+BELT = ((130, 85, 25, 255), (90, 55, 15, 255), (170, 120, 45, 255))
 
-HAIR_BASE = (220, 180,  35, 255)
-HAIR_SIDE = (170, 130,  20, 255)
-HAIR_TOP  = (250, 215,  80, 255)
+STEEL = ((150, 155, 170, 255), (105, 110, 125, 255), (195, 200, 215, 255))
+GOLD = ((205, 165, 60, 255), (150, 115, 35, 255), (240, 205, 105, 255))
 
-TUNIC_BASE = (145,  55, 165, 255)
-TUNIC_SIDE = (100,  30, 120, 255)
-TUNIC_TOP  = (175,  90, 200, 255)
-
-PANTS_BASE = ( 55,  70, 105, 255)
-PANTS_SIDE = ( 35,  48,  75, 255)
-PANTS_TOP  = ( 80,  98, 140, 255)
-
-BOOT_BASE = ( 72,  44,  18, 255)
-BOOT_SIDE = ( 45,  28,  10, 255)
-BOOT_TOP  = ( 95,  62,  28, 255)
-
-BELT_BASE = (130,  85,  25, 255)
-BELT_SIDE = ( 90,  55,  15, 255)
-BELT_TOP  = (170, 120,  45, 255)
+# The wizard hat is a stack of shrinking boxes, and this projection shows every
+# box's top cap — with the usual wide tonal spread those caps read as bright
+# concentric rings rather than one cone. Both the base sheet and (via
+# `layer_colors`) the tintable layer use a compressed spread so the hat reads
+# as a single felt silhouette that still has some form.
+HAT_FELT = ((208, 172, 40, 255), (188, 154, 32, 255), (222, 188, 58, 255))
+HAT_LAYER = ((220, 220, 220, 255), (198, 198, 198, 255), (233, 233, 233, 255))
 
 EYE_WHITE = (240, 240, 240, 255)
-EYE_PUPIL = ( 20,  20,  30, 255)
-MOUTH     = (110,  60,  45, 255)
-
-# White-tone palette used by tintable layer sheets. Brightness ratios match
-# the original tonal spread so the tinted result reads close to the base art.
-LAYER_BASE = (220, 220, 220, 255)  # primary face
-LAYER_SIDE = (160, 160, 160, 255)  # shadowed face
-LAYER_TOP  = (255, 255, 255, 255)  # lit cap
+EYE_PUPIL = (20, 20, 30, 255)
+MOUTH = (110, 60, 45, 255)
 
 
-# ── 3D box drawing ────────────────────────────────────────────────────────────
-def draw_box(img, fx0, fx1, fy0, fy1, fz0, fz1, c_front, c_side, c_top):
-    """Draw a 3D box: south face (front), east face (side), top face (cap).
+# ── Body geometry (canonical SOUTH facing, symmetric about (0.5, 0.5)) ────────
+# Stacked fz bands (floors). Head lean is 36 px/floor up-LEFT; the 96-wide
+# canvas absorbs it up to fz ≈ (24 + fx0*48) / 36 for a box's west edge fx0 —
+# verify() bounds-checks every frame, hat included.
+BOOT_TOP = 0.08
+PANTS_TOP = 0.46
+BELT_TOP = 0.52
+TORSO_TOP = 0.86
+NECK_TOP = 0.91
+HEAD_TOP = 1.08
+HAIR_TOP = 1.10
+ARM_BOTTOM = 0.52
+SLEEVE_BOTTOM = 0.70
 
-    Edge strokes match the wall convention so character outlines read the same
-    way as wall outlines: bottom seams shadowed, left vertical lit, right
-    verticals shadowed.
+LEFT_LEG = (0.34, 0.45, 0.40, 0.60)
+RIGHT_LEG = (0.55, 0.66, 0.40, 0.60)
+TORSO_FP = (0.32, 0.68, 0.38, 0.62)
+NECK_FP = (0.46, 0.54, 0.43, 0.57)
+HEAD_FP = (0.36, 0.64, 0.36, 0.64)
+LEFT_ARM = (0.28, 0.34, 0.42, 0.58)
+RIGHT_ARM = (0.66, 0.72, 0.42, 0.58)
+
+
+def _slim(fp, k):
+    """Scale a footprint's fx extent about the tile centre 0.5."""
+    fx0, fx1, fy0, fy1 = fp
+    return (0.5 + (fx0 - 0.5) * k, 0.5 + (fx1 - 0.5) * k, fy0, fy1)
+
+
+def _widen(fp, pad):
+    fx0, fx1, fy0, fy1 = fp
+    return (fx0 - pad, fx1 + pad, fy0, fy1)
+
+
+# ── Shared part groups ────────────────────────────────────────────────────────
+
+def _boots(slim=1.0):
+    return [
+        dict(fp=_slim(LEFT_LEG, slim), fz=(0.0, BOOT_TOP), colors=BOOT,
+             swing_key="l_foot_swing", dz_key="l_foot_dz"),
+        dict(fp=_slim(RIGHT_LEG, slim), fz=(0.0, BOOT_TOP), colors=BOOT,
+             swing_key="r_foot_swing", dz_key="r_foot_dz"),
+    ]
+
+
+def _pant_legs(slim=1.0):
+    return [
+        dict(fp=_slim(LEFT_LEG, slim), fz=(BOOT_TOP, PANTS_TOP), colors=PANTS,
+             swing_key="l_foot_swing", dz_key="l_foot_dz", region="trousers"),
+        dict(fp=_slim(RIGHT_LEG, slim), fz=(BOOT_TOP, PANTS_TOP), colors=PANTS,
+             swing_key="r_foot_swing", dz_key="r_foot_dz", region="trousers"),
+    ]
+
+
+def _arms(sleeve_bottom=SLEEVE_BOTTOM, sleeve_top=TORSO_TOP, slim=1.0,
+          sleeve_region="torso"):
+    """Forearm (skin) below, sleeve above. `sleeve_region` picks which slider
+    tints the sleeve — robed classes point it at the robe's own region so the
+    sleeves match the gown rather than a separate shirt."""
+    la, ra = _slim(LEFT_ARM, slim), _slim(RIGHT_ARM, slim)
+    sleeve_colors = TUNIC if sleeve_region == "torso" else PANTS
+    return [
+        dict(fp=la, fz=(ARM_BOTTOM, sleeve_bottom), colors=SKIN,
+             swing_key="l_arm_swing", dz_key="body_dz"),
+        dict(fp=ra, fz=(ARM_BOTTOM, sleeve_bottom), colors=SKIN,
+             swing_key="r_arm_swing", dz_key="body_dz"),
+        dict(fp=la, fz=(sleeve_bottom, sleeve_top), colors=sleeve_colors,
+             swing_key="l_arm_swing", dz_key="body_dz", region=sleeve_region),
+        dict(fp=ra, fz=(sleeve_bottom, sleeve_top), colors=sleeve_colors,
+             swing_key="r_arm_swing", dz_key="body_dz", region=sleeve_region),
+    ]
+
+
+def _neck_head(slim=1.0):
+    head_fp = _slim(HEAD_FP, slim)
+    parts = [
+        dict(fp=_slim(NECK_FP, slim), fz=(TORSO_TOP, NECK_TOP), colors=SKIN,
+             dz_key="body_dz"),
+        dict(fp=head_fp, fz=(NECK_TOP, HEAD_TOP), colors=SKIN,
+             dz_key="body_dz", face_part=True),
+    ]
+    face = dict(fp=head_fp, fz=(NECK_TOP, HEAD_TOP), dz_key="body_dz",
+                style="human", skin=SKIN[0], eye_white=EYE_WHITE,
+                eye_pupil=EYE_PUPIL, mouth=MOUTH)
+    return parts, face
+
+
+def _hair_cap(slim=1.0, fz=(HEAD_TOP, HAIR_TOP)):
+    return dict(fp=_slim(HEAD_FP, slim), fz=fz, colors=HAIR,
+                dz_key="body_dz", fy_shift_key="hair_dy", region="hair")
+
+
+def _belt(fp=TORSO_FP, fz=(PANTS_TOP, BELT_TOP)):
+    return dict(fp=fp, fz=fz, colors=BELT, dz_key="body_dz")
+
+
+# ── Class silhouettes ─────────────────────────────────────────────────────────
+
+def style_base():
+    """The original all-purpose villager silhouette (fallback definition)."""
+    parts = _boots() + _pant_legs()
+    parts.append(_belt())
+    parts.append(dict(fp=TORSO_FP, fz=(BELT_TOP, TORSO_TOP), colors=TUNIC,
+                      dz_key="body_dz", region="torso"))
+    parts += _arms()
+    neck_head, face = _neck_head()
+    parts += neck_head
+    parts.append(_hair_cap())
+    return parts, face
+
+
+def style_fighter():
+    """Broad torso; steel breastplate band + pauldrons over the tunic."""
+    torso = _widen(TORSO_FP, 0.03)
+    parts = _boots() + _pant_legs()
+    parts.append(_belt(fp=torso))
+    # Torso split into disjoint fz bands: tunic / breastplate / tunic, so the
+    # steel band needs no overlapping-box tricks.
+    parts.append(dict(fp=torso, fz=(BELT_TOP, 0.56), colors=TUNIC,
+                      dz_key="body_dz", region="torso"))
+    parts.append(dict(fp=torso, fz=(0.56, 0.70), colors=STEEL,
+                      dz_key="body_dz"))
+    parts.append(dict(fp=torso, fz=(0.70, TORSO_TOP), colors=TUNIC,
+                      dz_key="body_dz", region="torso"))
+    # Shorter sleeves leave room for the pauldrons capping each arm.
+    parts += _arms(sleeve_bottom=SLEEVE_BOTTOM, sleeve_top=0.80)
+    for arm_fp, swing in ((LEFT_ARM, "l_arm_swing"), (RIGHT_ARM, "r_arm_swing")):
+        parts.append(dict(fp=_widen(arm_fp, 0.01), fz=(0.80, 0.90),
+                          colors=STEEL, swing_key=swing, dz_key="body_dz"))
+    neck_head, face = _neck_head()
+    parts += neck_head
+    parts.append(_hair_cap())
+    return parts, face
+
+
+def _robe_parts(sleeve_bottom, *, body_region="torso", skirt_region="trousers"):
+    """Shared wizard/cleric robe: floor-length skirt, sash, robe body, sleeves.
+
+    **No boots.** The hem runs to the ground because a full robe hides the
+    feet — and because boot boxes genuinely cannot sort behind the skirt here:
+    the painter key falls through to the fx bucket, where the right boot
+    (fx≈0.605 → bucket 6) lands after the skirt (0.50 → bucket 5), so its top
+    cap punched through the gown.
+
+    `body_region` / `skirt_region` pick which appearance slider tints each
+    half. The cleric points both at one slot so its tabard can own a
+    *different* slot — a tabard tinted the same as the robe under it would be
+    invisible, which defeats the garment.
     """
-    # 8 corners in (PIL pixel) space.
-    bsw = project(fx0, fy0, fz0, ANCHOR)
-    bse = project(fx1, fy0, fz0, ANCHOR)
-    bne = project(fx1, fy1, fz0, ANCHOR)
-    bnw = project(fx0, fy1, fz0, ANCHOR)
-    tsw = project(fx0, fy0, fz1, ANCHOR)
-    tse = project(fx1, fy0, fz1, ANCHOR)
-    tne = project(fx1, fy1, fz1, ANCHOR)
-    tnw = project(fx0, fy1, fz1, ANCHOR)
-
-    # Front face (fy = fy0) — camera-side.
-    fill_polygon(img, [bsw, bse, tse, tsw], c_front)
-    # East face (fx = fx1) — shadow side.
-    fill_polygon(img, [bse, bne, tne, tse], c_side)
-    # Top face (fz = fz1) — lit cap, same tilt as wall caps.
-    fill_polygon(img, [tsw, tse, tne, tnw], c_top)
-
-    # Edge strokes. Use a derived dark tone from the front color so each region
-    # has its own coherent outline rather than a hard black.
-    dark = _scale(c_front, 0.55)
-    light = _scale(c_front, 1.18)
-    # Bottom seam (south edge), shadowed.
-    _line(img, bsw[0], bsw[1], bse[0], bse[1], dark)
-    # Right-bottom edge (east at fz0), shadowed.
-    _line(img, bse[0], bse[1], bne[0], bne[1], dark)
-    # Left vertical (lit edge facing the light source).
-    _line(img, bsw[0], bsw[1], tsw[0], tsw[1], light)
-    # Right verticals (shadowed).
-    _line(img, bse[0], bse[1], tse[0], tse[1], dark)
-    _line(img, bne[0], bne[1], tne[0], tne[1], dark)
+    body_colors = TUNIC if body_region == "torso" else PANTS
+    skirt_colors = TUNIC if skirt_region == "torso" else PANTS
+    parts = [
+        dict(fp=(0.33, 0.67, 0.37, 0.63), fz=(0.0, BELT_TOP),
+             colors=skirt_colors, dz_key="body_dz", region=skirt_region),
+        _belt(fz=(BELT_TOP, 0.58)),
+        dict(fp=TORSO_FP, fz=(0.58, TORSO_TOP), colors=body_colors,
+             dz_key="body_dz", region=body_region),
+    ]
+    parts += _arms(sleeve_bottom=sleeve_bottom, sleeve_region=body_region)
+    return parts
 
 
-def _scale(rgba, k):
-    r, g, b, a = rgba
-    return (
-        max(0, min(255, int(r * k))),
-        max(0, min(255, int(g * k))),
-        max(0, min(255, int(b * k))),
-        a,
+def style_wizard():
+    """Floor-length robe + a tall pointed hat that the hair slider tints.
+
+    The hat takes the `hair` region and replaces the hair cap outright: it is
+    the wizard's head item, so the head slider colors the hat instead of hair
+    nobody can see under it.
+    """
+    parts = _robe_parts(sleeve_bottom=0.60)
+    neck_head, face = _neck_head()
+    parts += neck_head
+    # Flared brim + a long tapering spire. The brim starts below HEAD_TOP so
+    # the hat sits down over the skull (no hair cap needed) while clearing the
+    # eye row at fz ≈ 1.00.
+    #
+    # Canvas budget: the head leans up-left 36 px per floor from the anchor at
+    # x = FRAME_W//2 - 24, so every box must satisfy
+    # `(min_edge - 0.01) * 48 + (FRAME_W//2 - 24) >= 36 * (fz_top + 0.025) + 1`,
+    # where min_edge is the smallest of fx0 / 1-fx1 / fy0 / 1-fy1 (facing
+    # rotations swap the axes), 0.01 covers the `hair_dy` sway and 0.025 the
+    # walk-frame body bob. verify() enforces it.
+    #
+    # Only three boxes: every box shows its lit top cap in this top-down-ish
+    # projection, so a finely-stepped cone renders as concentric rings ("a
+    # maze, not a hat"). A big taper across few steps reads as brim → spire →
+    # point instead.
+    # The brim is wider than the head, so it must sit *above* HEAD_TOP (1.08):
+    # a flared brim any lower overhangs the head's front face, and that face is
+    # only ~4 px tall in this projection — the brim's shadowed bottom seam
+    # lands straight on the eye row. verify() catches exactly that.
+    for fp, fz in (
+        ((0.35, 0.65, 0.35, 0.65), (1.09, 1.13)),
+        ((0.42, 0.58, 0.42, 0.58), (1.13, 1.34)),
+        ((0.47, 0.53, 0.47, 0.53), (1.34, 1.58)),
+    ):
+        parts.append(dict(fp=fp, fz=fz, colors=HAT_FELT, dz_key="body_dz",
+                          fy_shift_key="hair_dy", region="hair",
+                          layer_colors=HAT_LAYER))
+    return parts, face
+
+
+def style_cleric():
+    """Robe + a tabard the torso slider tints + gold circlet.
+
+    The robe (body, skirt and sleeves) collapses onto the `trousers` slot so
+    the tabard can own `torso` — tinting both from one slider would paint the
+    tabard the same color as the gown behind it and erase the garment.
+    """
+    parts = _robe_parts(
+        sleeve_bottom=SLEEVE_BOTTOM,
+        body_region="trousers",
+        skirt_region="trousers",
     )
+    # Tabard: thin slab hanging in front of the robe (the rig's apron pattern),
+    # from the chest to below the sash. Its fy sits south of the robe, so the
+    # painter's pass puts it in front without any z fudging.
+    parts.append(dict(fp=(0.41, 0.59, 0.348, 0.378), fz=(0.14, 0.80),
+                      colors=TUNIC, dz_key="body_dz", region="torso"))
+    neck_head, face = _neck_head()
+    parts += neck_head
+    # Circlet: thin gold band slightly proud of the head at the hair base.
+    # (The projected face front is only ~4 px tall, so any band below fz≈1.05
+    # lands straight on the eye row.)
+    parts.append(dict(fp=_widen(HEAD_FP, 0.015), fz=(1.06, 1.085),
+                      colors=GOLD, dz_key="body_dz"))
+    parts.append(_hair_cap())
+    return parts, face
 
 
-# ── Body model ────────────────────────────────────────────────────────────────
-# Footprint coords are in tile units (fx east, fy north). Canonical pose is
-# SOUTH-facing.
-#
-# EVERY footprint here is symmetric about the tile centre (0.5, 0.5). That
-# matters for two reasons:
-#   1) Rotation about (0.5, 0.5) leaves the body centred on the tile — the
-#      character doesn't drift toward an edge as it turns.
-#   2) The east-facing case in particular needs its head not to lean off the
-#      left of the canvas; a centred footprint stays well inside the frame.
-#
-# fz_max is kept at ~1.1: at FLOOR_SHIFT_X_TILES = -0.75 the head leans 36 px
-# per floor. With fx_min = 0.36 (head's west edge) and anchor_x = 24, the head
-# top corner is at px = 24 + 0.36*48 - fz*36 = 41.3 - 36*fz. For fz ≤ 1.1
-# this stays positive — i.e. the head fits in the 96-wide canvas.
-
-# Stacked fz bands.
-BOOT_TOP_FZ      = 0.08
-PANTS_TOP_FZ     = 0.46
-BELT_TOP_FZ      = 0.52
-TORSO_TOP_FZ     = 0.86
-NECK_TOP_FZ      = 0.91
-HEAD_TOP_FZ      = 1.08
-HAIR_TOP_FZ      = 1.10
-# Arm spans roughly the upper torso: forearm (skin) below, sleeve (tunic) above.
-ARM_BOTTOM_FZ    = 0.52
-SLEEVE_BOTTOM_FZ = 0.70
-
-# Canonical xy footprints (fx0, fx1, fy0, fy1). All symmetric about (0.5, 0.5).
-# Legs sit side-by-side along fx (perpendicular to the south-facing direction);
-# 90° rotation flips that to north-south spread for east/west facings.
-LEFT_LEG   = (0.34, 0.45, 0.40, 0.60)
-RIGHT_LEG  = (0.55, 0.66, 0.40, 0.60)
-TORSO_FP   = (0.32, 0.68, 0.38, 0.62)
-NECK_FP    = (0.46, 0.54, 0.43, 0.57)
-HEAD_FP    = (0.36, 0.64, 0.36, 0.64)
-LEFT_ARM   = (0.28, 0.34, 0.42, 0.58)
-RIGHT_ARM  = (0.66, 0.72, 0.42, 0.58)
-
-
-def rotate_xy(box, facing):
-    """Rotate an xy footprint (fx0, fx1, fy0, fy1) about (0.5, 0.5) for facing."""
-    fx0, fx1, fy0, fy1 = box
-    if facing == "s":
-        return (fx0, fx1, fy0, fy1)
-    if facing == "n":
-        return (1.0 - fx1, 1.0 - fx0, 1.0 - fy1, 1.0 - fy0)
-    if facing == "e":
-        # 90° CCW about (0.5, 0.5): (x, y) → (y, 1 - x)
-        return (fy0, fy1, 1.0 - fx1, 1.0 - fx0)
-    if facing == "w":
-        # 90° CW about (0.5, 0.5): (x, y) → (1 - y, x)
-        return (1.0 - fy1, 1.0 - fy0, fx0, fx1)
-    raise ValueError(f"bad facing: {facing}")
+def style_vagabond():
+    """Slim build under a hooded cloak; hair reads as a front fringe."""
+    slim = 0.88
+    parts = _boots(slim) + _pant_legs(slim)
+    torso = _slim(TORSO_FP, slim)
+    parts.append(_belt(fp=torso))
+    parts.append(dict(fp=torso, fz=(BELT_TOP, 0.80), colors=TUNIC,
+                      dz_key="body_dz", region="torso"))
+    # Sleeves stop where the shoulder cape starts (disjoint fz bands).
+    parts += _arms(sleeve_bottom=SLEEVE_BOTTOM, sleeve_top=0.80, slim=slim)
+    # Shoulder cape: wider than the torso, covers arms + torso top.
+    parts.append(dict(fp=_widen(torso, 0.04), fz=(0.80, TORSO_TOP),
+                      colors=TUNIC, dz_key="body_dz", region="torso"))
+    neck_head, face = _neck_head(slim)
+    parts += neck_head
+    # Hood: cowl panels hugging the head's back and sides up to temple height,
+    # plus a dome over the crown. The face stays open to the south; east/west
+    # facings legitimately show hood panel instead of profile. Canvas-bounds
+    # constraint (36 px/floor up-left lean, worst rotation uses the smallest
+    # of fx0 / 1-fx1 / fy0 / 1-fy1): min_edge*48 + 24 >= 36*(fz1+0.025) + 1.
+    head = _slim(HEAD_FP, slim)
+    hx0, hx1, hy0, hy1 = head
+    hood = TUNIC
+    parts.append(dict(fp=(hx0 - 0.02, hx1 + 0.02, hy1 - 0.03, hy1 + 0.03),
+                      fz=(TORSO_TOP, 1.06), colors=hood, dz_key="body_dz",
+                      region="torso"))  # back panel
+    parts.append(dict(fp=(hx0 - 0.03, hx0 + 0.02, hy0, hy1 + 0.03),
+                      fz=(TORSO_TOP, 1.06), colors=hood, dz_key="body_dz",
+                      region="torso"))  # west panel
+    parts.append(dict(fp=(hx1 - 0.02, hx1 + 0.03, hy0, hy1 + 0.03),
+                      fz=(TORSO_TOP, 1.06), colors=hood, dz_key="body_dz",
+                      region="torso"))  # east panel
+    # Hair: a rim peeking out between the cowl top (1.06) and the crown dome,
+    # visible from every facing. (A front fringe over the face doesn't work —
+    # the head's front face is only ~4 px tall in this projection, so bangs
+    # would paint straight over the eyes.)
+    parts.append(dict(fp=head, fz=(1.06, HEAD_TOP), colors=HAIR,
+                      dz_key="body_dz", region="hair"))
+    parts.append(dict(fp=(0.40, 0.60, 0.40, 0.62), fz=(HEAD_TOP, 1.12),
+                      colors=hood, dz_key="body_dz",
+                      fy_shift_key="hair_dy", region="torso"))  # crown dome
+    return parts, face
 
 
-def swing_xy(box, facing, swing):
-    """Slide an xy footprint by `swing` (tile units) along the facing direction.
+CLASS_STYLES = {
+    "player": style_base,
+    "player_fighter": style_fighter,
+    "player_wizard": style_wizard,
+    "player_cleric": style_cleric,
+    "player_vagabond": style_vagabond,
+}
 
-    Forward direction is the direction the character is *facing*: south-facing
-    walks toward -fy, north toward +fy, east toward +fx, west toward -fx.
+LAYER_KEYS = ("hair", "torso", "trousers")
+
+
+def build_cfg(style_fn):
+    parts, face = style_fn()
+    return dict(frame_w=FRAME_W, frame_h=FRAME_H, parts=parts, face=face)
+
+
+# ── Verification ──────────────────────────────────────────────────────────────
+
+def _frames_of(rows):
+    for facing, frames in rows:
+        for frame in frames:
+            yield facing, frame
+
+
+def _sample_head_front(cfg, facing, frame, def_id):
+    """Screen-sample points strictly inside the head's camera-visible face
+    (south face for facing 's', east face for facing 'e' — mirroring
+    char_rig.paint_face)."""
+    head = next(p for p in cfg["parts"] if p.get("face_part"))
+    from char_rig import rotate_xy
+
+    rx0, rx1, ry0, ry1 = rotate_xy(head["fp"], facing)
+    dz = frame.get("body_dz", 0.0)
+    fz0, fz1 = head["fz"][0] + dz, head["fz"][1] + dz
+    anchor = anchor_for(FRAME_W, FRAME_H)
+    pts = []
+    steps = 10
+    for i in range(2, steps - 1):
+        for j in range(2, steps - 1):
+            # Inset from the box edges so edge strokes don't false-positive.
+            fz = fz0 + (fz1 - fz0) * j / steps
+            if facing == "s":
+                fx = rx0 + (rx1 - rx0) * i / steps
+                pts.append(project(fx, ry0, fz, anchor))
+            else:
+                fy = ry0 + (ry1 - ry0) * i / steps
+                pts.append(project(rx1, fy, fz, anchor))
+    return pts
+
+
+def verify():
+    """Regression guards:
+    1. every frame of every class stays inside the 96×96 canvas (no opaque
+       pixel on the frame border — catches wizard-hat overflow);
+    2. the torso layer never covers the head's front face on classes whose
+       face is uncovered (the original tunic-over-head bug);
+    3. the face is actually visible (skin pixels on the head front) there.
     """
-    fx0, fx1, fy0, fy1 = box
-    if facing == "s":
-        return (fx0, fx1, fy0 - swing, fy1 - swing)
-    if facing == "n":
-        return (fx0, fx1, fy0 + swing, fy1 + swing)
-    if facing == "e":
-        return (fx0 + swing, fx1 + swing, fy0, fy1)
-    if facing == "w":
-        return (fx0 - swing, fx1 - swing, fy0, fy1)
-    raise ValueError(f"bad facing: {facing}")
+    rows = standard_rows(IDLE_FRAMES, WALK_FRAMES)
+    failures = []
+    for def_id, style_fn in CLASS_STYLES.items():
+        cfg = build_cfg(style_fn)
+        for facing, frame in _frames_of(rows):
+            img = render_frame(cfg, facing, frame)
+            for x in range(FRAME_W):
+                if img.getpixel((x, 0))[3] or img.getpixel((x, FRAME_H - 1))[3]:
+                    failures.append(f"{def_id}/{facing}: opaque pixel on top/bottom border")
+                    break
+            for y in range(FRAME_H):
+                if img.getpixel((0, y))[3] or img.getpixel((FRAME_W - 1, y))[3]:
+                    failures.append(f"{def_id}/{facing}: opaque pixel on left/right border")
+                    break
+
+        if def_id == "player_vagabond":
+            continue  # hood legitimately covers the head on some facings
+        for facing in ("s", "e"):
+            frame = IDLE_FRAMES[0]
+            pts = _sample_head_front(cfg, facing, frame, def_id)
+            torso = render_frame(cfg, facing, frame, layer_region="torso")
+            base = render_frame(cfg, facing, frame)
+            covered = sum(1 for p in pts if torso.getpixel(p)[3] != 0)
+            if covered:
+                failures.append(
+                    f"{def_id}/{facing}: torso layer covers {covered} head-front samples"
+                )
+            # Face visibility: the eye whites must survive whatever accessories
+            # (circlet, hat brim…) the class stacks around the head.
+            xs = [p[0] for p in pts]
+            ys = [p[1] for p in pts]
+            eye_px = sum(
+                1
+                for x in range(min(xs) - 2, max(xs) + 3)
+                for y in range(min(ys) - 2, max(ys) + 3)
+                if 0 <= x < FRAME_W and 0 <= y < FRAME_H
+                and base.getpixel((x, y)) == EYE_WHITE
+            )
+            if eye_px < 4:
+                failures.append(
+                    f"{def_id}/{facing}: eyes not visible on head front "
+                    f"({eye_px} eye-white px)"
+                )
+    if failures:
+        raise SystemExit("verify() FAILED:\n  " + "\n  ".join(failures))
+    print(f"verify() OK — {len(CLASS_STYLES)} classes, {ROWS * COLS} frames each")
 
 
-def _depth_key(fy_avg, fz_min):
-    """Painter's-algorithm key. Bigger fy → farther from camera (drawn first).
-    Bigger fz_min → higher (drawn later) so heads sit on top of torsos."""
-    return (-fy_avg, fz_min)
-
-
-# ── Region painters ───────────────────────────────────────────────────────────
-# Each painter draws ONE region's boxes into `img`, parametrised by the colour
-# triple so the base sheet and the white-tone layer sheets share geometry.
-# Mirrors the per-region split from the original generator.
-
-def paint_pants(img, *, facing, frame, c_base, c_side, c_top):
-    """Pant legs (fz BOOT_TOP..PANTS_TOP) — RECOLORED region."""
-    legs = [
-        (LEFT_LEG, frame["l_foot_swing"], frame["l_foot_dz"]),
-        (RIGHT_LEG, frame["r_foot_swing"], frame["r_foot_dz"]),
-    ]
-    # Back leg first (painter's algorithm — but they only overlap at swing
-    # extremes; sort by depth post-rotation+swing).
-    rendered = []
-    for box, swing, dz in legs:
-        xy = swing_xy(rotate_xy(box, facing), facing, swing)
-        rendered.append((xy, dz))
-    rendered.sort(key=lambda r: _depth_key((r[0][2] + r[0][3]) / 2, BOOT_TOP_FZ + r[1]))
-    for xy, dz in rendered:
-        fx0, fx1, fy0, fy1 = xy
-        draw_box(
-            img, fx0, fx1, fy0, fy1,
-            BOOT_TOP_FZ + dz, PANTS_TOP_FZ + dz,
-            c_base, c_side, c_top,
-        )
-
-
-def paint_tunic(img, *, facing, frame, c_base, c_side, c_top):
-    """Torso, belt-position riser, and upper-arm sleeves — RECOLORED region."""
-    dz = frame["body_dz"]
-    fx0, fx1, fy0, fy1 = rotate_xy(TORSO_FP, facing)
-    # Torso main box.
-    draw_box(img, fx0, fx1, fy0, fy1,
-             BELT_TOP_FZ + dz, TORSO_TOP_FZ + dz,
-             c_base, c_side, c_top)
-    # Sleeves: top portion of arm boxes (lower portion = forearm = skin).
-    arms = [
-        (LEFT_ARM, frame["l_arm_swing"]),
-        (RIGHT_ARM, frame["r_arm_swing"]),
-    ]
-    rendered = []
-    for box, swing in arms:
-        xy = swing_xy(rotate_xy(box, facing), facing, swing)
-        rendered.append(xy)
-    rendered.sort(key=lambda xy: _depth_key((xy[2] + xy[3]) / 2, SLEEVE_BOTTOM_FZ))
-    for fx0, fx1, fy0, fy1 in rendered:
-        draw_box(img, fx0, fx1, fy0, fy1,
-                 SLEEVE_BOTTOM_FZ + dz, TORSO_TOP_FZ + dz,
-                 c_base, c_side, c_top)
-
-
-def paint_hair(img, *, facing, frame, c_base, c_side, c_top):
-    """Hair cap on top of head — RECOLORED region."""
-    dz = frame["body_dz"]
-    fx0, fx1, fy0, fy1 = rotate_xy(HEAD_FP, facing)
-    # Slight northward sway: shift hair cap by a few tenths of a pixel in fy
-    # via `hair_dy`. Subtle, only the top cap reads it.
-    fy_shift = frame.get("hair_dy", 0.0)
-    fy0 += fy_shift
-    fy1 += fy_shift
-    draw_box(img, fx0, fx1, fy0, fy1,
-             HEAD_TOP_FZ + dz, HAIR_TOP_FZ + dz,
-             c_base, c_side, c_top)
-
-
-def paint_skin_and_accessories(img, *, facing, frame):
-    """Boots, belt, forearms, neck, head, face features. NOT recolored."""
-    dz = frame["body_dz"]
-
-    # ── Boots ────────────────────────────────────────────────────────────────
-    boots = [
-        (LEFT_LEG, frame["l_foot_swing"], frame["l_foot_dz"]),
-        (RIGHT_LEG, frame["r_foot_swing"], frame["r_foot_dz"]),
-    ]
-    rendered = []
-    for box, swing, leg_dz in boots:
-        xy = swing_xy(rotate_xy(box, facing), facing, swing)
-        rendered.append((xy, leg_dz))
-    rendered.sort(key=lambda r: _depth_key((r[0][2] + r[0][3]) / 2, 0.0 + r[1]))
-    for xy, leg_dz in rendered:
-        fx0, fx1, fy0, fy1 = xy
-        draw_box(img, fx0, fx1, fy0, fy1,
-                 0.0 + leg_dz, BOOT_TOP_FZ + leg_dz,
-                 BOOT_BASE, BOOT_SIDE, BOOT_TOP)
-
-    # ── Belt band ────────────────────────────────────────────────────────────
-    fx0, fx1, fy0, fy1 = rotate_xy(TORSO_FP, facing)
-    draw_box(img, fx0, fx1, fy0, fy1,
-             PANTS_TOP_FZ + dz, BELT_TOP_FZ + dz,
-             BELT_BASE, BELT_SIDE, BELT_TOP)
-
-    # ── Forearms (lower part of arm boxes) ───────────────────────────────────
-    arms = [
-        (LEFT_ARM, frame["l_arm_swing"]),
-        (RIGHT_ARM, frame["r_arm_swing"]),
-    ]
-    rendered = []
-    for box, swing in arms:
-        xy = swing_xy(rotate_xy(box, facing), facing, swing)
-        rendered.append(xy)
-    rendered.sort(key=lambda xy: _depth_key((xy[2] + xy[3]) / 2, ARM_BOTTOM_FZ))
-    for fx0, fx1, fy0, fy1 in rendered:
-        draw_box(img, fx0, fx1, fy0, fy1,
-                 ARM_BOTTOM_FZ + dz, SLEEVE_BOTTOM_FZ + dz,
-                 SKIN_BASE, SKIN_SIDE, SKIN_TOP)
-
-    # ── Neck ─────────────────────────────────────────────────────────────────
-    fx0, fx1, fy0, fy1 = rotate_xy(NECK_FP, facing)
-    draw_box(img, fx0, fx1, fy0, fy1,
-             TORSO_TOP_FZ + dz, NECK_TOP_FZ + dz,
-             SKIN_BASE, SKIN_SIDE, SKIN_TOP)
-
-    # ── Head ─────────────────────────────────────────────────────────────────
-    fx0, fx1, fy0, fy1 = rotate_xy(HEAD_FP, facing)
-    draw_box(img, fx0, fx1, fy0, fy1,
-             NECK_TOP_FZ + dz, HEAD_TOP_FZ + dz,
-             SKIN_BASE, SKIN_SIDE, SKIN_TOP)
-
-    # ── Face features ────────────────────────────────────────────────────────
-    paint_face_features(img, facing=facing, head_xy=(fx0, fx1, fy0, fy1),
-                        head_fz=(NECK_TOP_FZ + dz, HEAD_TOP_FZ + dz),
-                        blink=frame["blink"])
-
-
-def paint_face_features(img, *, facing, head_xy, head_fz, blink):
-    """Eyes and mouth, painted onto the camera-facing head face.
-
-    For south-facing the face features go on the head's south face (fy=fy0);
-    for east-facing they go on the east face (fx=fx1). North/west show the
-    back of the head — no features drawn.
-    """
-    if facing not in ("s", "e"):
-        return
-
-    fx0, fx1, fy0, fy1 = head_xy
-    fz0, fz1 = head_fz
-    head_h = fz1 - fz0
-    eye_fz = fz0 + 0.55 * head_h
-    mouth_fz = fz0 + 0.25 * head_h
-
-    if facing == "s":
-        face_fy = fy0
-        left_fx = fx0 + 0.28 * (fx1 - fx0)
-        right_fx = fx0 + 0.72 * (fx1 - fx0)
-        eye_left  = project(left_fx,  face_fy, eye_fz, ANCHOR)
-        eye_right = project(right_fx, face_fy, eye_fz, ANCHOR)
-        mouth_l   = project(left_fx,  face_fy, mouth_fz, ANCHOR)
-        mouth_r   = project(right_fx, face_fy, mouth_fz, ANCHOR)
-    else:  # "e"
-        face_fx = fx1
-        # Two eyes on the east face — pick fy values that span the face.
-        back_fy  = fy0 + 0.30 * (fy1 - fy0)
-        front_fy = fy0 + 0.70 * (fy1 - fy0)
-        eye_left  = project(face_fx, back_fy,  eye_fz, ANCHOR)
-        eye_right = project(face_fx, front_fy, eye_fz, ANCHOR)
-        mouth_l   = project(face_fx, back_fy,  mouth_fz, ANCHOR)
-        mouth_r   = project(face_fx, front_fy, mouth_fz, ANCHOR)
-
-    _draw_eye(img, eye_left, blink)
-    _draw_eye(img, eye_right, blink)
-    _line(img, mouth_l[0], mouth_l[1], mouth_r[0], mouth_r[1], MOUTH)
-
-
-def _draw_eye(img, p, blink):
-    x, y = p
-    if blink:
-        for dx in (-1, 0, 1):
-            _px(img, x + dx, y, _scale(SKIN_BASE, 0.6))
-        return
-    # 2×2 white pupil region with a 1-px dark pupil dot.
-    for dy in (-1, 0):
-        for dx in (-1, 0):
-            _px(img, x + dx, y + dy, EYE_WHITE)
-    _px(img, x - 1, y, EYE_PUPIL)
-
-
-def _px(img, x, y, color):
-    if 0 <= x < img.width and 0 <= y < img.height:
-        img.putpixel((x, y), color)
-
-
-# ── Frame builders ────────────────────────────────────────────────────────────
-
-FRAME_DEFAULTS = dict(
-    body_dz=0.0,
-    l_foot_dz=0.0, r_foot_dz=0.0,
-    l_foot_swing=0.0, r_foot_swing=0.0,
-    l_arm_swing=0.0, r_arm_swing=0.0,
-    hair_dy=0.0,
-    blink=False,
-)
-
-
-def _frame(**overrides):
-    out = dict(FRAME_DEFAULTS)
-    out.update(overrides)
-    return out
-
-
-# Idle: subtle breathing + hair sway + blink on frame 3.
-IDLE_FRAMES = [
-    _frame(body_dz=0.0,    hair_dy=0.0,  blink=False),
-    _frame(body_dz=-0.018, hair_dy=0.0,  blink=False),
-    _frame(body_dz=-0.018, hair_dy=0.01, blink=False),
-    _frame(body_dz=0.0,    hair_dy=0.0,  blink=True),
-]
-
-# Walk: 4-frame stride. Frames 1/3 are neutral with body lift; frames 0/2 are
-# opposite swings.
-WALK_FRAMES = [
-    _frame(body_dz=-0.01,
-           l_foot_swing= 0.045, r_foot_swing=-0.045,
-           l_foot_dz=    0.020, r_foot_dz=    0.000,
-           l_arm_swing= -0.040, r_arm_swing= 0.040),
-    _frame(body_dz=0.025),
-    _frame(body_dz=-0.01,
-           l_foot_swing=-0.045, r_foot_swing= 0.045,
-           l_foot_dz=    0.000, r_foot_dz=    0.020,
-           l_arm_swing= 0.040,  r_arm_swing=-0.040),
-    _frame(body_dz=0.025),
-]
-
-
-def make_base_frame(*, facing, frame):
-    img = Image.new("RGBA", (FRAME_W, FRAME_H), BG)
-    # Painter order: skin/accessories first (boots, neck, head, etc.), then
-    # pants legs above boots, tunic above belt, hair on top. Each region's
-    # boxes occupy disjoint fz bands so the order is well-defined.
-    paint_skin_and_accessories(img, facing=facing, frame=frame)
-    paint_pants(img, facing=facing, frame=frame,
-                c_base=PANTS_BASE, c_side=PANTS_SIDE, c_top=PANTS_TOP)
-    paint_tunic(img, facing=facing, frame=frame,
-                c_base=TUNIC_BASE, c_side=TUNIC_SIDE, c_top=TUNIC_TOP)
-    paint_hair(img, facing=facing, frame=frame,
-               c_base=HAIR_BASE, c_side=HAIR_SIDE, c_top=HAIR_TOP)
-    return img
-
-
-def make_hair_layer_frame(*, facing, frame):
-    img = Image.new("RGBA", (FRAME_W, FRAME_H), BG)
-    paint_hair(img, facing=facing, frame=frame,
-               c_base=LAYER_BASE, c_side=LAYER_SIDE, c_top=LAYER_TOP)
-    return img
-
-
-def make_torso_layer_frame(*, facing, frame):
-    img = Image.new("RGBA", (FRAME_W, FRAME_H), BG)
-    paint_tunic(img, facing=facing, frame=frame,
-                c_base=LAYER_BASE, c_side=LAYER_SIDE, c_top=LAYER_TOP)
-    return img
-
-
-def make_trousers_layer_frame(*, facing, frame):
-    img = Image.new("RGBA", (FRAME_W, FRAME_H), BG)
-    paint_pants(img, facing=facing, frame=frame,
-                c_base=LAYER_BASE, c_side=LAYER_SIDE, c_top=LAYER_TOP)
-    return img
-
-
-# ── Sheet assembly ────────────────────────────────────────────────────────────
-
-# Row → (facing, frames) pairs, in the order that the metadata declares them.
-SHEET_ROWS = [
-    ("s", IDLE_FRAMES),
-    ("s", WALK_FRAMES),
-    ("n", IDLE_FRAMES),
-    ("n", WALK_FRAMES),
-    ("e", IDLE_FRAMES),
-    ("e", WALK_FRAMES),
-    ("w", IDLE_FRAMES),
-    ("w", WALK_FRAMES),
-]
-
-
-def assemble(make_fn):
-    sheet = Image.new("RGBA", (FRAME_W * COLS, FRAME_H * ROWS), BG)
-    for row_idx, (facing, frames) in enumerate(SHEET_ROWS):
-        for col_idx, frame in enumerate(frames):
-            img = make_fn(facing=facing, frame=frame)
-            sheet.paste(img, (col_idx * FRAME_W, row_idx * FRAME_H))
-    return sheet
-
-
-def save(image, path):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    image.save(path)
-    print(f"Saved {path}  ({image.width}×{image.height})")
-
+# ── Output ────────────────────────────────────────────────────────────────────
 
 def main():
-    save(assemble(make_base_frame), OUT_BASE)
-    save(assemble(make_hair_layer_frame),     os.path.join(OUT_LAYER_DIR, "hair.png"))
-    save(assemble(make_torso_layer_frame),    os.path.join(OUT_LAYER_DIR, "torso.png"))
-    save(assemble(make_trousers_layer_frame), os.path.join(OUT_LAYER_DIR, "trousers.png"))
-    # Static fallback / inventory icon: single south-facing idle frame.
-    save(make_base_frame(facing="s", frame=IDLE_FRAMES[0]), OUT_LARGE)
+    rows = standard_rows(IDLE_FRAMES, WALK_FRAMES)
+    for def_id, style_fn in CLASS_STYLES.items():
+        cfg = build_cfg(style_fn)
+        out_dir = os.path.join(OUT_ROOT, def_id)
+        sheet = assemble(cfg, rows=rows, cols=COLS)
+        assert sheet.size == (FRAME_W * COLS, FRAME_H * ROWS), sheet.size
+        save(sheet, os.path.join(out_dir, "sheet.png"))
+        for key in LAYER_KEYS:
+            save(assemble(cfg, rows=rows, cols=COLS, layer_region=key),
+                 os.path.join(out_dir, "layers", f"{key}.png"))
+        save(render_frame(cfg, "s", IDLE_FRAMES[0]),
+             os.path.join(out_dir, "sprite_large.png"))
+    verify()
 
 
 if __name__ == "__main__":

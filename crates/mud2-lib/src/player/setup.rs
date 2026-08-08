@@ -24,11 +24,12 @@ use crate::player::components::{
 use crate::player::progression::Experience;
 #[cfg(feature = "server-sim")]
 use crate::player::skills::SkillSheet;
+use crate::world::components::{
+    AppliedVisualDefinition, ClientRemotePlayerVisual, DisplayedVitalStats, Facing,
+    HealthBarDisplayPolicy, TilePosition, ViewPosition,
+};
 #[cfg(feature = "server-sim")]
 use crate::world::components::{Collider, OverworldObject, SpaceId, SpaceResident};
-use crate::world::components::{
-    DisplayedVitalStats, Facing, HealthBarDisplayPolicy, TilePosition, ViewPosition,
-};
 use crate::world::lighting::LightSource;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 #[cfg(feature = "server-sim")]
@@ -286,6 +287,7 @@ pub fn spawn_player_visual(
     mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
     definitions: Res<OverworldObjectDefinitions>,
     world_config: Res<WorldConfig>,
+    client_state: Res<crate::game::resources::ClientGameState>,
     // `Without<PlayerIdentity>`: the visual goes on the projected stub, never
     // on the authoritative player entity a unified embedded App also holds.
     player_query: Query<Entity, (With<Player>, Without<Sprite>, Without<PlayerIdentity>)>,
@@ -298,9 +300,11 @@ pub fn spawn_player_visual(
         }
     };
 
-    let definition = definitions
-        .get("player")
-        .unwrap_or_else(|| panic!("Missing overworld object definition for id 'player'"));
+    // Class may not have folded yet at OnEnter(InGame) — the fallback
+    // `"player"` definition is used until `swap_player_visual_on_class_change`
+    // rebuilds the visual once `ClientGameState.class` lands.
+    let (definition_id, definition) =
+        crate::world::setup::player_definition_for(&definitions, client_state.class);
 
     let bundle = build_object_visual_bundle(
         &asset_server,
@@ -315,6 +319,7 @@ pub fn spawn_player_visual(
 
     commands.entity(entity).insert((
         bundle.world_visual,
+        AppliedVisualDefinition(definition_id.to_owned()),
         DisplayedVitalStats::default(),
         HealthBarDisplayPolicy {
             always_visible: true,
@@ -356,11 +361,111 @@ pub fn spawn_player_visual(
 #[derive(Component)]
 pub struct PlayerLayersInitialized;
 
-/// Spawns one child entity per `recolor_layers` entry on the player definition
-/// after the player's animated sprite + atlas have been set up by
-/// `attach_animated_sprite`. Each child shares the parent's `TextureAtlasLayout`
-/// handle so frame indices line up automatically; the per-region tint is
-/// applied separately by `apply_player_appearance`.
+/// Rebuilds the local player's visual when the replicated class stops matching
+/// the definition the sprite was built from — either because the class event
+/// folded *after* `spawn_player_visual` ran (bootstrap race), or because the
+/// class changed at runtime (admin `set_class`). Remote players get the same
+/// treatment via the despawn-and-respawn path in
+/// `sync_remote_player_projection`.
+pub fn swap_player_visual_on_class_change(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
+    definitions: Res<OverworldObjectDefinitions>,
+    world_config: Res<WorldConfig>,
+    client_state: Res<crate::game::resources::ClientGameState>,
+    player_query: Query<
+        (
+            Entity,
+            &AppliedVisualDefinition,
+            Option<&Children>,
+            Option<&crate::world::components::CombatHealthBar>,
+        ),
+        (With<Player>, Without<PlayerIdentity>),
+    >,
+    layer_query: Query<(), With<SpriteLayer>>,
+) {
+    let Ok((entity, applied, children, health_bar)) = player_query.single() else {
+        return;
+    };
+    let (definition_id, definition) =
+        crate::world::setup::player_definition_for(&definitions, client_state.class);
+    if applied.0 == definition_id {
+        return;
+    }
+
+    let bundle = build_object_visual_bundle(
+        &asset_server,
+        &mut texture_atlas_layouts,
+        definition,
+        &world_config,
+        None,
+        1,
+    );
+    let hud_anchor_height = bundle.hud_anchor_height;
+    let uses_y_sort = bundle.world_visual.y_sort;
+
+    // Tear down the visuals derived from the old definition: recolor layers
+    // (rebuilt next frame by `spawn_player_recolor_layers`) and the health bar
+    // (its anchor height depends on the definition's `logical_height_tiles`).
+    if let Some(children) = children {
+        for child in children.iter() {
+            let is_layer = layer_query.get(child).is_ok();
+            let is_bar_root = health_bar.is_some_and(|bar| bar.root_entity == child);
+            if is_layer || is_bar_root {
+                commands.entity(child).despawn();
+            }
+        }
+    }
+    commands.entity(entity).remove::<PlayerLayersInitialized>();
+
+    commands.entity(entity).insert((
+        bundle.world_visual,
+        AppliedVisualDefinition(definition_id.to_owned()),
+        bundle.sprite,
+        Transform::from_xyz(
+            0.0,
+            if uses_y_sort {
+                -world_config.tile_size * 0.5
+            } else {
+                0.0
+            },
+            definition.render.z_index,
+        ),
+    ));
+    match bundle.animated {
+        Some(animated) => {
+            commands.entity(entity).insert(animated);
+        }
+        // Swapping to a definition with no `animation:` block must drop the
+        // old clip state — `attach_animated_sprite` only fills in entities
+        // that lack `AnimatedSprite`, so a leftover component would keep
+        // driving frame indices into a sheet that is no longer atlased.
+        None => {
+            commands
+                .entity(entity)
+                .remove::<crate::world::animation::AnimatedSprite>();
+        }
+    }
+    if let Some(anchor) = bundle.anchor {
+        commands.entity(entity).insert(anchor);
+    }
+    attach_combat_health_bar(
+        &mut commands,
+        entity,
+        world_config.tile_size,
+        hud_anchor_height,
+    );
+}
+
+/// Spawns one child entity per `recolor_layers` entry on the player-visual
+/// definition after the entity's animated sprite + atlas have been set up by
+/// `attach_animated_sprite`. Runs for both the projected local player and
+/// remote-player visuals (`ClientRemotePlayerVisual`) — the local stub gets
+/// its `PlayerAppearance` from `sync_player_appearance_from_client_state`,
+/// remotes from `spawn_client_remote_player`. Each child shares the parent's
+/// `TextureAtlasLayout` handle so frame indices line up automatically; the
+/// per-region tint is applied separately by `apply_player_appearance`.
 pub fn spawn_player_recolor_layers(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -371,17 +476,46 @@ pub fn spawn_player_recolor_layers(
             &Sprite,
             &crate::world::animation::AnimatedSprite,
             &PlayerAppearance,
+            &AppliedVisualDefinition,
+            Has<ClientRemotePlayerVisual>,
         ),
-        (With<Player>, Without<PlayerLayersInitialized>),
+        (
+            Or<(With<Player>, With<ClientRemotePlayerVisual>)>,
+            Without<PlayerLayersInitialized>,
+        ),
     >,
 ) {
-    let Ok((entity, sprite, animated, appearance)) = player_query.single() else {
-        return;
-    };
+    for (entity, sprite, animated, appearance, applied, is_remote) in &player_query {
+        spawn_recolor_layers_for(
+            &mut commands,
+            &asset_server,
+            &definitions,
+            entity,
+            sprite,
+            animated,
+            appearance,
+            applied,
+            is_remote,
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn spawn_recolor_layers_for(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    definitions: &OverworldObjectDefinitions,
+    entity: Entity,
+    sprite: &Sprite,
+    animated: &crate::world::animation::AnimatedSprite,
+    appearance: &PlayerAppearance,
+    applied: &AppliedVisualDefinition,
+    is_remote: bool,
+) {
     let Some(atlas) = sprite.texture_atlas.as_ref() else {
         return;
     };
-    let Some(definition) = definitions.get("player") else {
+    let Some(definition) = definitions.get(&applied.0) else {
         return;
     };
     if definition.render.recolor_layers.is_empty() {
@@ -426,10 +560,7 @@ pub fn spawn_player_recolor_layers(
             }
         };
 
-        let layer_color = match appearance.color_for(region) {
-            Some(rgb) => rgb.to_bevy(),
-            None => Color::WHITE,
-        };
+        let layer_color = layer_tint(appearance, region, is_remote);
 
         let layer_sprite = Sprite {
             image: asset_server.load(&layer.sheet_path),
@@ -469,20 +600,41 @@ pub fn spawn_player_recolor_layers(
     commands.entity(entity).insert(PlayerLayersInitialized);
 }
 
+/// Tint for one recolor layer: the appearance's region color (white for the
+/// untinted skin layer), modulated by `REMOTE_GHOST_TINT` for remote-player
+/// visuals so the layer stack keeps the same translucent-ghost read as the
+/// base sprite.
+fn layer_tint(appearance: &PlayerAppearance, region: AppearanceRegion, is_remote: bool) -> Color {
+    let base = match appearance.color_for(region) {
+        Some(rgb) => rgb.to_bevy(),
+        None => Color::WHITE,
+    };
+    if is_remote {
+        crate::world::setup::modulate_colors(base, crate::world::setup::REMOTE_GHOST_TINT)
+    } else {
+        base
+    }
+}
+
 /// Copies the parent player's `AnimatedSprite` clip state onto each child
 /// recolor layer so the layers stay frame-locked with the base sprite when
-/// the player switches between `idle` and `walk` clips.
+/// the player switches between `idle` and `walk` clips. Covers the local
+/// stub and remote-player visuals alike.
 pub fn propagate_player_animation_to_layers(
     player_q: Query<
         (&Children, &crate::world::animation::AnimatedSprite),
         (
-            With<Player>,
+            Or<(With<Player>, With<ClientRemotePlayerVisual>)>,
             Changed<crate::world::animation::AnimatedSprite>,
         ),
     >,
     mut layer_q: Query<
         &mut crate::world::animation::AnimatedSprite,
-        (With<SpriteLayer>, Without<Player>),
+        (
+            With<SpriteLayer>,
+            Without<Player>,
+            Without<ClientRemotePlayerVisual>,
+        ),
     >,
 ) {
     for (children, parent_anim) in &player_q {
@@ -494,20 +646,20 @@ pub fn propagate_player_animation_to_layers(
     }
 }
 
-/// Applies the player's `PlayerAppearance` colors to each child recolor
+/// Applies the entity's `PlayerAppearance` colors to each child recolor
 /// layer's `Sprite::color`. Fires on initial appearance insert + any future
-/// mutation (e.g. a barber NPC in a follow-up).
+/// mutation (remote color updates, or e.g. a barber NPC in a follow-up).
 pub fn apply_player_appearance(
-    player_q: Query<(&Children, &PlayerAppearance), Changed<PlayerAppearance>>,
+    player_q: Query<
+        (&Children, &PlayerAppearance, Has<ClientRemotePlayerVisual>),
+        Changed<PlayerAppearance>,
+    >,
     mut layer_q: Query<(&SpriteLayer, &mut Sprite)>,
 ) {
-    for (children, appearance) in &player_q {
+    for (children, appearance, is_remote) in &player_q {
         for child in children.iter() {
             if let Ok((layer, mut sprite)) = layer_q.get_mut(child) {
-                sprite.color = match appearance.color_for(layer.region) {
-                    Some(rgb) => rgb.to_bevy(),
-                    None => Color::WHITE,
-                };
+                sprite.color = layer_tint(appearance, layer.region, is_remote);
             }
         }
     }

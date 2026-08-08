@@ -437,6 +437,42 @@ pub fn sync_projected_player_from_client_state(
     }
 }
 
+/// Copies the replicated appearance (`ClientGameState.appearance`, folded from
+/// `GameEvent::PlayerAppearanceChanged`) onto the projected local-player stub
+/// as a `PlayerAppearance` component. The recolor-layer systems key off that
+/// component (`spawn_player_recolor_layers` requires it; `apply_player_appearance`
+/// reacts to `Changed`), and the authoritative entity's copy never leaves the
+/// server side — without this bridge the layers would never spawn in-game.
+pub fn sync_player_appearance_from_client_state(
+    mut commands: Commands,
+    client_state: Res<ClientGameState>,
+    mut player_query: Query<
+        (
+            Entity,
+            Option<&mut crate::player::components::PlayerAppearance>,
+        ),
+        (With<Player>, Without<PlayerIdentity>),
+    >,
+) {
+    let Some(replicated) = client_state.appearance else {
+        return;
+    };
+    let Ok((entity, appearance)) = player_query.single_mut() else {
+        return;
+    };
+    match appearance {
+        Some(mut appearance) => {
+            // Diff-write so `Changed<PlayerAppearance>` only fires on real updates.
+            if *appearance != replicated {
+                *appearance = replicated;
+            }
+        }
+        None => {
+            commands.entity(entity).insert(replicated);
+        }
+    }
+}
+
 fn movement_direction(
     keyboard_input: &ButtonInput<KeyCode>,
     movement: &MovementBindings,
@@ -567,6 +603,89 @@ render:
         // Untouched: the sync filters `Without<PlayerIdentity>`.
         assert_eq!(displayed_vitals.health, 0.0);
         assert_eq!(displayed_vitals.max_health, 0.0);
+    }
+
+    /// The bridge that makes recolor layers work at all: `PlayerAppearance`
+    /// lives on the *authoritative* entity, which never carries a `Sprite`, so
+    /// the projected stub has to receive the replicated copy or
+    /// `spawn_player_recolor_layers` never matches anything.
+    #[test]
+    fn replicated_appearance_lands_on_the_projected_stub() {
+        use crate::player::components::{PlayerAppearance, RgbColor};
+
+        /// Counts how often `Changed<PlayerAppearance>` fires, mirroring what
+        /// `apply_player_appearance` (the layer retint) would react to.
+        #[derive(Resource, Default)]
+        struct RetintCount(usize);
+
+        fn count_retints(mut count: ResMut<RetintCount>, q: Query<(), Changed<PlayerAppearance>>) {
+            count.0 += q.iter().count();
+        }
+
+        let mut app = App::new();
+        app.init_resource::<ClientGameState>();
+        app.init_resource::<RetintCount>();
+        app.add_systems(
+            Update,
+            (sync_player_appearance_from_client_state, count_retints).chain(),
+        );
+        let stub = app.world_mut().spawn(Player).id();
+
+        // Nothing replicated yet → no component (and no default-color flash).
+        app.update();
+        assert!(app.world().entity(stub).get::<PlayerAppearance>().is_none());
+        assert_eq!(app.world().resource::<RetintCount>().0, 0);
+
+        let replicated = PlayerAppearance {
+            hair: RgbColor::new(10, 20, 30),
+            torso: RgbColor::new(40, 50, 60),
+            trousers: RgbColor::new(70, 80, 90),
+        };
+        app.world_mut().resource_mut::<ClientGameState>().appearance = Some(replicated);
+        app.update();
+        assert_eq!(
+            app.world().entity(stub).get::<PlayerAppearance>().copied(),
+            Some(replicated)
+        );
+        assert_eq!(app.world().resource::<RetintCount>().0, 1);
+
+        // Steady state must not re-fire `Changed<PlayerAppearance>`, or
+        // `apply_player_appearance` would retint every layer every frame.
+        app.update();
+        app.update();
+        assert_eq!(
+            app.world().resource::<RetintCount>().0,
+            1,
+            "unchanged appearance must not dirty the component"
+        );
+    }
+
+    /// An authoritative player entity must not be given the replicated
+    /// appearance — it already owns the source of truth, and a write here
+    /// would look like a server-side mutation to the projection diff.
+    #[test]
+    fn replicated_appearance_skips_the_authoritative_player() {
+        use crate::player::components::PlayerAppearance;
+
+        let mut app = App::new();
+        app.insert_resource(ClientGameState {
+            appearance: Some(PlayerAppearance::default()),
+            ..default()
+        });
+        app.add_systems(Update, sync_player_appearance_from_client_state);
+        let authoritative = app
+            .world_mut()
+            .spawn((
+                Player,
+                PlayerIdentity::new(crate::player::components::PlayerId(0)),
+            ))
+            .id();
+        app.update();
+        assert!(app
+            .world()
+            .entity(authoritative)
+            .get::<PlayerAppearance>()
+            .is_none());
     }
 
     #[test]

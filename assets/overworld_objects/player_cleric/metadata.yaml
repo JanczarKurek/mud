@@ -1,0 +1,17 @@
+# Cleric class sprite. Extends the base `player` definition (deep-merge) —
+# see player_fighter/metadata.yaml for the shared-grid invariant.
+# Regenerate art with scripts/gen_player_sheet.py.
+extends: player
+name: Cleric
+description: Robed cleric with an ivory tabard and a gold circlet.
+render:
+  sprite_path: overworld_objects/player_cleric/sprite_large.png
+  animation:
+    sheet_path: overworld_objects/player_cleric/sheet.png
+  recolor_layers:
+    - key: hair
+      sheet_path: overworld_objects/player_cleric/layers/hair.png
+    - key: torso
+      sheet_path: overworld_objects/player_cleric/layers/torso.png
+    - key: trousers
+      sheet_path: overworld_objects/player_cleric/layers/trousers.png

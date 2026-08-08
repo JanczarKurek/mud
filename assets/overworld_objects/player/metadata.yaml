@@ -7,14 +7,18 @@ render:
   debug_size: 0.95
   sprite_path: overworld_objects/player/sprite_large.png
   y_sort: true
-  # Frame is 96×96 px but the iso-projected character only occupies ~1.2 tiles
+  # Frame is 128×96 px but the iso-projected character only occupies ~1.2 tiles
   # of vertical screen space above the tile-south anchor. Tell HUD anchoring
   # (health bar, status icons) to use that logical height instead of the raw
   # frame, so the bar sits just above the head rather than ~1 tile too high.
+  # (The frame is wider than it is tall because height projects up-*left* at
+  # 36 px per floor — see the header of scripts/gen_player_sheet.py. Every
+  # player_* sheet shares this grid; the recolor layers reuse the base
+  # sprite's atlas layout and the character-create preview depends on it.)
   logical_height_tiles: 1.2
   animation:
     sheet_path: overworld_objects/player/sheet.png
-    frame_width: 96
+    frame_width: 128
     frame_height: 96
     sheet_columns: 4
     sheet_rows: 8

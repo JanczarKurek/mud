@@ -30,7 +30,7 @@ use mud2::magic::resources::EffectKind;
 use mud2::network::protocol::{AssetEntry, CharacterSummary, ClientMessage, ServerMessage};
 use mud2::player::classes::Class;
 use mud2::player::components::{
-    AttributeKind, AttributeSet, Inventory, InventoryStack, PlayerAppearance, PlayerId,
+    AttributeKind, AttributeSet, Inventory, InventoryStack, PlayerAppearance, PlayerId, RgbColor,
 };
 use mud2::player::progression::ExperienceView;
 use mud2::player::skills::Skill;
@@ -546,6 +546,12 @@ fn game_event_samples() -> Vec<GameEvent> {
                     max_mana: 0.0,
                 },
                 facing: Direction::West,
+                class: Class::Wizard,
+                appearance: PlayerAppearance {
+                    hair: RgbColor::new(10, 20, 30),
+                    torso: RgbColor::new(40, 50, 60),
+                    trousers: RgbColor::new(70, 80, 90),
+                },
             },
         },
         GameEvent::RemotePlayerRemoved {
@@ -576,6 +582,13 @@ fn game_event_samples() -> Vec<GameEvent> {
         },
         GameEvent::PlayerClassChanged {
             class: Class::Cleric,
+        },
+        GameEvent::PlayerAppearanceChanged {
+            appearance: PlayerAppearance {
+                hair: RgbColor::new(115, 75, 40),
+                torso: RgbColor::new(70, 110, 180),
+                trousers: RgbColor::new(95, 95, 110),
+            },
         },
         GameEvent::PlayerAttributesChanged {
             attributes: attributes(),
@@ -645,6 +658,7 @@ fn game_event_coverage(event: &GameEvent) {
         | GameEvent::WorldTimeChanged { .. }
         | GameEvent::PlayerExperienceChanged { .. }
         | GameEvent::PlayerClassChanged { .. }
+        | GameEvent::PlayerAppearanceChanged { .. }
         | GameEvent::PlayerAttributesChanged { .. }
         | GameEvent::PlayerCombatStatsChanged { .. }
         | GameEvent::TradeStateChanged { .. }

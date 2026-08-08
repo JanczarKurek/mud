@@ -1,0 +1,22 @@
+# Wizard class sprite. Extends the base `player` definition (deep-merge) —
+# see player_fighter/metadata.yaml for the shared-grid invariant.
+# Regenerate art with scripts/gen_player_sheet.py.
+extends: player
+name: Wizard
+description: Robed wizard with a pointed hat; the hem tints as trousers.
+render:
+  sprite_path: overworld_objects/player_wizard/sprite_large.png
+  # The pointed hat reaches fz 1.58 vs the bare head's 1.08, so the HUD anchor
+  # (health bar, status icons) has to clear a good deal more than the base 1.2.
+  # The tip lands ~1.29 tiles above the anchor row; 1.4 leaves the bar a few
+  # pixels of clearance without floating it.
+  logical_height_tiles: 1.4
+  animation:
+    sheet_path: overworld_objects/player_wizard/sheet.png
+  recolor_layers:
+    - key: hair
+      sheet_path: overworld_objects/player_wizard/layers/hair.png
+    - key: torso
+      sheet_path: overworld_objects/player_wizard/layers/torso.png
+    - key: trousers
+      sheet_path: overworld_objects/player_wizard/layers/trousers.png

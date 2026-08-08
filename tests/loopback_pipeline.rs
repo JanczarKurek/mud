@@ -22,7 +22,7 @@ use mud2::network::protocol::{ClientMessage, ServerMessage};
 use mud2::network::resources::{TcpClientConnection, TcpServerState};
 use mud2::network::systems::{read_next_line, write_message};
 use mud2::player::classes::Class;
-use mud2::player::components::{Player, PlayerAppearance};
+use mud2::player::components::{Player, PlayerAppearance, RgbColor};
 use mud2::world::components::TilePosition;
 
 fn build_loopback_app() -> App {
@@ -207,6 +207,84 @@ fn loopback_pipeline_full_flow_same_frame() {
         Some(after),
         "ClientGameState reflects the move within the same App::update"
     );
+}
+
+/// Class and appearance must reach the client as replicated state: the sprite
+/// layers key off `ClientGameState.appearance` (the authoritative
+/// `PlayerAppearance` lives on the server-side entity, which carries no
+/// sprite), and the per-class sheet is chosen from `ClientGameState.class`.
+#[test]
+fn loopback_replicates_class_and_appearance() {
+    let mut app = build_loopback_app();
+
+    app.world_mut()
+        .resource_scope(|world, mut server_state: Mut<TcpServerState>| {
+            let mut connection = world.resource_mut::<TcpClientConnection>();
+            connect_loopback(&mut server_state, &mut connection);
+        });
+
+    let chosen = PlayerAppearance {
+        hair: RgbColor::new(200, 30, 40),
+        torso: RgbColor::new(20, 180, 90),
+        trousers: RgbColor::new(60, 70, 210),
+    };
+    client_send(
+        &mut app,
+        &ClientMessage::CreateCharacter {
+            name: "Prism".to_owned(),
+            class: Class::Wizard,
+            attributes: common::budget_attributes(),
+            appearance: chosen,
+        },
+    );
+    let character_id = wait_for(&mut app, "CharacterCreateResult", |m| match m {
+        ServerMessage::CharacterCreateResult {
+            ok,
+            character_id,
+            reason,
+        } => {
+            assert!(*ok, "create rejected: {reason:?}");
+            Some(character_id.unwrap())
+        }
+        _ => None,
+    });
+    client_send(
+        &mut app,
+        &ClientMessage::SelectCharacter {
+            character_id,
+            start_map: None,
+        },
+    );
+    wait_for(&mut app, "CharacterSelected", |m| match m {
+        ServerMessage::CharacterSelected { .. } => Some(()),
+        _ => None,
+    });
+    client_send(&mut app, &ClientMessage::SyncComplete);
+
+    app.world_mut()
+        .resource_mut::<NextState<ClientAppState>>()
+        .set(ClientAppState::InGame);
+    app.update();
+    app.update();
+
+    let state = app.world().resource::<ClientGameState>();
+    assert_eq!(
+        state.class,
+        Some(Class::Wizard),
+        "class crossed the wire into ClientGameState"
+    );
+    assert_eq!(
+        state.appearance,
+        Some(chosen),
+        "the character's chosen colors crossed the wire into ClientGameState"
+    );
+
+    // The diff is a diff: a steady frame re-emits neither event.
+    let before = app.world().resource::<ClientGameState>().clone();
+    app.update();
+    let after = app.world().resource::<ClientGameState>();
+    assert_eq!(before.appearance, after.appearance);
+    assert_eq!(before.class, after.class);
 }
 
 /// Drain every `ReplOutput` UI event the loopback client has received. The

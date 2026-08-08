@@ -3,7 +3,8 @@ use bevy::prelude::*;
 use crate::game::resources::ClientGameState;
 use crate::player::components::{Player, PlayerIdentity};
 use crate::world::components::{
-    ClientProjectedWorldObject, ClientRemotePlayerVisual, Facing, TilePosition,
+    AppliedVisualDefinition, ClientProjectedWorldObject, ClientRemotePlayerVisual, Facing,
+    TilePosition,
 };
 use crate::world::direction::Direction;
 use crate::world::lerp_anim::LinearLerp;
@@ -176,7 +177,10 @@ pub fn attach_animated_sprite(
     // World objects without AnimatedSprite yet
     world_objects: Query<(Entity, &ClientProjectedWorldObject), Without<AnimatedSprite>>,
     // Local player without AnimatedSprite yet
-    player_query: Query<(Entity, &Sprite), (With<Player>, Without<AnimatedSprite>)>,
+    player_query: Query<
+        (Entity, &Sprite, Option<&AppliedVisualDefinition>),
+        (With<Player>, Without<AnimatedSprite>),
+    >,
 ) {
     let mut try_attach = |entity: Entity, definition_id: &str| {
         let Some(def) = definitions.get(definition_id) else {
@@ -195,8 +199,8 @@ pub fn attach_animated_sprite(
         try_attach(entity, &world_obj.definition_id);
     }
 
-    for (entity, _sprite) in &player_query {
-        try_attach(entity, "player");
+    for (entity, _sprite, applied) in &player_query {
+        try_attach(entity, applied.map(|a| a.0.as_str()).unwrap_or("player"));
     }
 }
 
@@ -256,7 +260,12 @@ pub fn trigger_movement_animation(
     // visuals carry `ClientRemotePlayerVisual`, not `Player` — without this arm
     // they'd never leave their spawn clip (see `spawn_client_remote_player`).
     mut player_query: Query<
-        (&mut AnimatedSprite, &JustMoved, Option<&Facing>),
+        (
+            &mut AnimatedSprite,
+            &JustMoved,
+            Option<&Facing>,
+            Option<&AppliedVisualDefinition>,
+        ),
         (
             Or<(With<Player>, With<ClientRemotePlayerVisual>)>,
             Without<ClientProjectedWorldObject>,
@@ -312,8 +321,9 @@ pub fn trigger_movement_animation(
         );
     }
 
-    for (mut animated, _just_moved, facing) in &mut player_query {
-        let Some(def) = definitions.get("player") else {
+    for (mut animated, _just_moved, facing, applied) in &mut player_query {
+        let definition_id = applied.map(|a| a.0.as_str()).unwrap_or("player");
+        let Some(def) = definitions.get(definition_id) else {
             continue;
         };
         let Some(sheet) = &def.render.animation else {
@@ -342,7 +352,11 @@ pub fn return_to_idle_animation(
     >,
     // Same local + remote-player split as `trigger_movement_animation`.
     mut player_query: Query<
-        (&mut AnimatedSprite, Option<&Facing>),
+        (
+            &mut AnimatedSprite,
+            Option<&Facing>,
+            Option<&AppliedVisualDefinition>,
+        ),
         (
             Or<(With<Player>, With<ClientRemotePlayerVisual>)>,
             Without<JustMoved>,
@@ -390,8 +404,9 @@ pub fn return_to_idle_animation(
         try_idle(&mut animated, &sheet.clips, cols, facing.map(|f| f.0));
     }
 
-    for (mut animated, facing) in &mut player_query {
-        let Some(def) = definitions.get("player") else {
+    for (mut animated, facing, applied) in &mut player_query {
+        let definition_id = applied.map(|a| a.0.as_str()).unwrap_or("player");
+        let Some(def) = definitions.get(definition_id) else {
             continue;
         };
         let Some(sheet) = &def.render.animation else {
@@ -546,6 +561,10 @@ mod tests {
 
         let just_moved = app.world().entity(stub).get::<JustMoved>();
         assert!(matches!(just_moved, Some(JustMoved { dx: 1, dy: 0 })));
-        assert!(app.world().entity(authoritative).get::<JustMoved>().is_none());
+        assert!(app
+            .world()
+            .entity(authoritative)
+            .get::<JustMoved>()
+            .is_none());
     }
 }

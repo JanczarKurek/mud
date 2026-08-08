@@ -41,7 +41,7 @@ use crate::player::progression::{apply_xp_grants, PendingXpGrants};
 use crate::player::regen::{tick_regen_buffs, tick_vital_regen};
 use crate::player::setup::{
     apply_player_appearance, propagate_player_animation_to_layers, spawn_player_recolor_layers,
-    spawn_player_visual,
+    spawn_player_visual, swap_player_visual_on_class_change,
 };
 #[cfg(feature = "server-sim")]
 use crate::player::skills::process_allocate_skill_commands;
@@ -49,8 +49,8 @@ use crate::player::skills::process_allocate_skill_commands;
 use crate::player::systems::refresh_derived_player_stats;
 use crate::player::systems::{
     move_player_on_grid, rotate_nearby_object_on_shortcut, set_home_on_keypress,
-    sync_projected_player_from_client_state, toggle_auto_retaliate_on_keypress,
-    toggle_aware_on_keypress, toggle_sneak_on_keypress,
+    sync_player_appearance_from_client_state, sync_projected_player_from_client_state,
+    toggle_auto_retaliate_on_keypress, toggle_aware_on_keypress, toggle_sneak_on_keypress,
 };
 
 #[cfg(feature = "server-sim")]
@@ -172,6 +172,11 @@ impl Plugin for PlayerClientPlugin {
             .add_systems(
                 Update,
                 (
+                    // Appearance lands on the stub before the layer spawner
+                    // looks for it; the class swap replaces the base sprite
+                    // before layers attach to a stale atlas.
+                    sync_player_appearance_from_client_state.before(spawn_player_recolor_layers),
+                    swap_player_visual_on_class_change.before(spawn_player_recolor_layers),
                     spawn_player_recolor_layers
                         .after(crate::world::animation::attach_animated_sprite),
                     propagate_player_animation_to_layers

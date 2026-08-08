@@ -43,6 +43,17 @@ def anchor_for(frame_w, frame_h):
     return (frame_w // 2 - TILE_PX // 2, frame_h - 1)
 
 
+# White-tone triple for tintable recolor-layer sheets (multiplied by
+# `Sprite::color` at runtime). Brightness ratios match the 3-tone spread so
+# the tinted result reads like the base art.
+LAYER_TRIPLE = ((220, 220, 220, 255), (160, 160, 160, 255), (255, 255, 255, 255))
+# Fully transparent triple: painting a box with it ERASES already-painted
+# pixels (fill_polygon/_line overwrite via putpixel, no blending), which is
+# how layer renders get trimmed by nearer occluders — see render_frame's
+# `layer_region` mode. Edge strokes scale to (0,0,0,0) too, so they erase.
+ERASE_TRIPLE = ((0, 0, 0, 0), (0, 0, 0, 0), (0, 0, 0, 0))
+
+
 def scale_color(rgba, k):
     r, g, b, a = rgba
     return (
@@ -118,14 +129,27 @@ def swing_xy(box, facing, swing):
 
 # ── Frame rendering ──────────────────────────────────────────────────────────
 
-def render_frame(cfg, facing, frame):
+def render_frame(cfg, facing, frame, layer_region=None):
     """Render one frame of `cfg` at `facing` with animation params `frame`.
 
     cfg keys:
       frame_w, frame_h    canvas size
-      parts               list of part dicts (see module docstring)
+      parts               list of part dicts (see module docstring); a part
+                          may carry `region: "<name>"` (recolor-layer tag),
+                          `layer_colors` (override the white-tone triple used
+                          when rendering that region's layer) and, on the head,
+                          `face_part: True` (paint the face at the head's depth
+                          instead of after all boxes, so hoods/hat brims can
+                          occlude it)
       face                optional face spec (see paint_face)
       post_paint          optional fn(img, facing, frame, anchor) for props
+
+    `layer_region=None` renders the normal full-color frame. With a region
+    name, the SAME globally-sorted painter pass runs, but parts tagged with
+    that region paint the white-tone LAYER_TRIPLE while every other part
+    paints ERASE_TRIPLE — overwriting (erasing) any layer pixels a nearer
+    occluder covers. The result is a tintable layer sheet exactly trimmed to
+    the region's visible pixels. Face and post_paint are skipped in layer mode.
     """
     img = Image.new("RGBA", (cfg["frame_w"], cfg["frame_h"]), BG)
     anchor = anchor_for(cfg["frame_w"], cfg["frame_h"])
@@ -141,7 +165,7 @@ def render_frame(cfg, facing, frame):
         if shift:
             xy = (xy[0], xy[1], xy[2] + shift, xy[3] + shift)
         fz0, fz1 = part["fz"]
-        placed.append((xy, fz0 + dz, fz1 + dz, part["colors"]))
+        placed.append((xy, fz0 + dz, fz1 + dz, part))
 
     # Painter's algorithm: north-most first, then west-most, then lowest.
     # Depth is quantized to 0.1-tile buckets so sub-pixel animation shifts
@@ -154,13 +178,28 @@ def render_frame(cfg, facing, frame):
     placed.sort(key=lambda p: (-_bucket((p[0][2] + p[0][3]) / 2),
                                _bucket((p[0][0] + p[0][1]) / 2),
                                p[1]))
-    for (fx0, fx1, fy0, fy1), fz0, fz1, colors in placed:
+    face_painted = False
+    for (fx0, fx1, fy0, fy1), fz0, fz1, part in placed:
+        if layer_region is None:
+            colors = part["colors"]
+        elif part.get("region") == layer_region:
+            # `layer_colors` lets a part flatten its own tonal spread. A stack
+            # of shrinking boxes (a hat cone) otherwise shows every lit top cap
+            # as a bright ring, so the tinted result reads as concentric
+            # squares instead of one silhouette.
+            colors = part.get("layer_colors", LAYER_TRIPLE)
+        else:
+            colors = ERASE_TRIPLE
         draw_box(img, anchor, fx0, fx1, fy0, fy1, fz0, fz1, colors)
+        if layer_region is None and part.get("face_part") and cfg.get("face"):
+            paint_face(img, anchor, cfg["face"], facing, frame)
+            face_painted = True
 
-    if cfg.get("face"):
-        paint_face(img, anchor, cfg["face"], facing, frame)
-    if cfg.get("post_paint"):
-        cfg["post_paint"](img, facing, frame, anchor)
+    if layer_region is None:
+        if cfg.get("face") and not face_painted:
+            paint_face(img, anchor, cfg["face"], facing, frame)
+        if cfg.get("post_paint"):
+            cfg["post_paint"](img, facing, frame, anchor)
     return img
 
 
@@ -313,7 +352,15 @@ def humanoid_parts(*, skin, hair, top, pants, boots, belt=None, apron=None,
     0.7 ≈ goblin, 1.0 ≈ human, 1.5+ ≈ boss (use a larger frame). `slim`
     scales every footprint's width about the centre (0.8 ≈ skeletal).
     Returns (parts, face_spec); face colours must be filled by the caller
-    via face_spec (skin base is already set)."""
+    via face_spec (skin base is already set).
+
+    Parts carry `region` tags (trousers / torso / hair) so callers can render
+    recolor-layer sheets via `render_frame(..., layer_region=...)`; the tags
+    are inert for normal full-colour renders. The head is deliberately NOT
+    tagged `face_part`: several callers use the `hair` slot as a hood
+    (goblin_mage, dire_wight), and painting the face at head depth would let
+    that hood cover it. Set `face_part=True` yourself when a character has real
+    face-occluding headgear — see gen_player_sheet.py."""
     s = scale
     boot_top, pants_top, belt_top = 0.08 * s, 0.46 * s, 0.52 * s
     torso_top, neck_top = 0.86 * s, 0.91 * s
@@ -335,29 +382,31 @@ def humanoid_parts(*, skin, hair, top, pants, boots, belt=None, apron=None,
         dict(fp=RIGHT_LEG, fz=(0.0, boot_top), colors=boots,
              swing_key="r_foot_swing", dz_key="r_foot_dz"),
         dict(fp=LEFT_LEG, fz=(boot_top, pants_top), colors=pants,
-             swing_key="l_foot_swing", dz_key="l_foot_dz"),
+             swing_key="l_foot_swing", dz_key="l_foot_dz", region="trousers"),
         dict(fp=RIGHT_LEG, fz=(boot_top, pants_top), colors=pants,
-             swing_key="r_foot_swing", dz_key="r_foot_dz"),
+             swing_key="r_foot_swing", dz_key="r_foot_dz", region="trousers"),
         # belt band + torso
         dict(fp=TORSO, fz=(pants_top, belt_top),
              colors=belt or pants, dz_key="body_dz"),
-        dict(fp=TORSO, fz=(belt_top, torso_top), colors=top, dz_key="body_dz"),
+        dict(fp=TORSO, fz=(belt_top, torso_top), colors=top, dz_key="body_dz",
+             region="torso"),
         # arms: forearm (skin) below, sleeve (top colour) above
         dict(fp=LEFT_ARM, fz=(arm_bottom, sleeve_bottom), colors=skin,
              swing_key="l_arm_swing", dz_key="body_dz"),
         dict(fp=RIGHT_ARM, fz=(arm_bottom, sleeve_bottom), colors=skin,
              swing_key="r_arm_swing", dz_key="body_dz"),
         dict(fp=LEFT_ARM, fz=(sleeve_bottom, torso_top), colors=top,
-             swing_key="l_arm_swing", dz_key="body_dz"),
+             swing_key="l_arm_swing", dz_key="body_dz", region="torso"),
         dict(fp=RIGHT_ARM, fz=(sleeve_bottom, torso_top), colors=top,
-             swing_key="r_arm_swing", dz_key="body_dz"),
+             swing_key="r_arm_swing", dz_key="body_dz", region="torso"),
         # neck, head, hair cap
         dict(fp=NECK, fz=(torso_top, neck_top), colors=skin, dz_key="body_dz"),
         dict(fp=HEAD, fz=(neck_top, head_top), colors=skin, dz_key="body_dz"),
     ]
     if hair:
         parts.append(dict(fp=HEAD, fz=(head_top, hair_top), colors=hair,
-                          dz_key="body_dz", fy_shift_key="hair_dy"))
+                          dz_key="body_dz", fy_shift_key="hair_dy",
+                          region="hair"))
     if apron:
         # Thin slab proud of the torso front, hanging from chest to shin.
         parts.append(dict(fp=_slim_fp((0.35, 0.65, 0.345, 0.385), slim),
@@ -426,16 +475,17 @@ def quadruped_parts(*, fur, fur_dark, belly=None, scale=1.0, ears=True,
 
 # ── Sheet assembly ───────────────────────────────────────────────────────────
 
-def assemble(cfg, rows=None, cols=4):
+def assemble(cfg, rows=None, cols=4, layer_region=None):
     """Render a sheet: `rows` is a list of (facing, frames) — default the
-    standard 8-row 4-facing layout."""
+    standard 8-row 4-facing layout. `layer_region` renders a recolor-layer
+    sheet instead of the full-color one (see render_frame)."""
     rows = rows or standard_rows()
     sheet = Image.new("RGBA", (cfg["frame_w"] * cols,
                                cfg["frame_h"] * len(rows)), BG)
     for row_idx, (facing, frames) in enumerate(rows):
         for col_idx in range(cols):
             frame = frames[col_idx % len(frames)]
-            img = render_frame(cfg, facing, frame)
+            img = render_frame(cfg, facing, frame, layer_region=layer_region)
             sheet.paste(img, (col_idx * cfg["frame_w"],
                               row_idx * cfg["frame_h"]))
     return sheet
