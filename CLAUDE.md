@@ -12,6 +12,8 @@ Mud 2.0 is a Tibia-inspired multiplayer MUD built with **Bevy 0.18** (Rust game 
 cargo run --bin mud2                            # Run game (embedded client+server)
 cargo run --bin server                          # Headless TCP server
 cargo run --bin mud2 -- --tcp-client            # TCP client (server picked on the title screen)
+cargo run --bin mud2 -- --connect HOST:PORT --auto-login NAME   # TCP client, skips title/auth/char-select (registers + creates char on first use; see app/autopilot.rs)
+scripts/multiplayer_test.sh N                   # tmux: headless server + N auto-logged-in clients on scratch data
 cargo check                                     # Always run after changes before reporting success
 cargo check -p mud2-lib --no-default-features   # Thin-client config — keep this green too
 cargo test                                      # Run tests (e2e suites in tests/ want -- --test-threads=1)
@@ -101,7 +103,7 @@ EmbeddedClient mode = HeadlessServer + TcpClient running in the same `App`, conn
   | HeadlessServer | `~/.local/share/mud2/server/accounts.db` | `~/.local/share/mud2/server/saves/world-state.json` | — |
   | TcpClient | — | — | `~/.cache/mud2/client/assets/` |
 
-  Overrides: `--db-path` / `MUD2_DB_PATH`, `--save-path` / `MUD2_SAVE_PATH`, `--asset-cache` / `MUD2_ASSET_CACHE`. Run `mud2 paths` to print resolved locations; `mud2 clean-cache` wipes the client cache (`--all --yes` also wipes data).
+  Overrides: `--db-path` / `MUD2_DB_PATH`, `--save-path` / `MUD2_SAVE_PATH`, `--asset-cache` / `MUD2_ASSET_CACHE`. Run `mud2 paths` to print resolved locations; `mud2 clean-cache` wipes the client cache (`--all --yes` also wipes data). Client settings (keybindings, display, saved servers) + Python console history live in the role-independent `~/.local/share/mud2/config/`, shared by embedded play and every TcpClient.
 - Per-character saves happen on disconnect (`PendingPlayerSaves` queue drained by `persist_disconnected_players` in the `Last` schedule), every 60s via `autosave_all_players`, and on `AppExit`.
 - `WorldStateDump` **does not carry player data** (as of `format_version = 5`). If you need to save anything about a player, route it through the accounts DB.
 

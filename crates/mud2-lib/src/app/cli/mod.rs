@@ -8,8 +8,9 @@
 //! resolution, the admin-socket warning when the wrong runtime is selected)
 //! into a [`GameAppPlugin`]. Keeping that logic in one place — instead of in
 //! `main()` — means both binaries are near-empty and the special-case rules
-//! have one home. The TCP destination is now picked from the title-screen
-//! server picker, not from a CLI flag.
+//! have one home. The TCP destination is normally picked from the
+//! title-screen server picker; `--connect` (plus the `--auto-*` autopilot
+//! flags, see `app::autopilot`) overrides it for scripted test scenarios.
 //!
 //! See `/Users/jhorecki/.claude/plans/purrfect-painting-parrot.md` for the
 //! design rationale; see `clean_cache.rs` for the `Paths` / `CleanCache`
@@ -21,11 +22,13 @@ use std::path::PathBuf;
 
 use clap::{Args, Parser};
 
+use crate::app::autopilot::AutopilotConfig;
 use crate::app::clean_cache::Command;
 #[cfg(unix)]
 #[cfg(all(unix, feature = "server-sim"))]
 use crate::app::paths::default_admin_socket_path;
 use crate::app::plugin::{AppRuntime, ClientTlsArgs, GameAppPlugin, ServerTlsArgs};
+use crate::player::classes::Class;
 
 /// Sentinel written by clap into `admin_socket_raw` when `--admin-socket`
 /// appears with no value. Picked to be impossible as a real path component
@@ -201,6 +204,42 @@ pub struct Mud2Cli {
     #[arg(long)]
     pub insecure: bool,
 
+    /// Connect to this server (`host:port`, or `tls://host:port` to imply
+    /// `--tls`) instead of picking one on the title screen. Implies
+    /// `--tcp-client`.
+    #[arg(long, value_name = "ADDR", env = "MUD2_CONNECT")]
+    pub connect: Option<String>,
+
+    /// Skip the title screen: log in as this account (auto-registering it on
+    /// first use) and continue to character select. TCP-client mode only; for
+    /// test scenarios — see scripts/multiplayer_test.sh.
+    #[arg(long, value_name = "USERNAME")]
+    pub auto_login: Option<String>,
+
+    /// Password used by `--auto-login`. Dev/testing convenience only.
+    #[arg(
+        long,
+        value_name = "PASSWORD",
+        env = "MUD2_AUTO_PASSWORD",
+        default_value = "testpass"
+    )]
+    pub auto_password: String,
+
+    /// Auto-select this character once logged in, creating it if missing.
+    /// Defaults to the `--auto-login` username. In embedded mode this flag
+    /// alone skips the title screen and plays the named character.
+    #[arg(long, value_name = "NAME")]
+    pub auto_character: Option<String>,
+
+    /// Class used when `--auto-character` has to create the character.
+    #[arg(
+        long,
+        value_name = "CLASS",
+        default_value = "fighter",
+        value_parser = parse_class
+    )]
+    pub auto_class: Class,
+
     /// Enable debug/dev tooling: the main-menu "Clean game state" button,
     /// auto-creation of a default character, and the in-game GM tools panel.
     /// Off by default.
@@ -240,14 +279,30 @@ pub struct ServerCli {
 // CLI → GameAppPlugin
 // ---------------------------------------------------------------------------
 
+/// Case-insensitive `Class` parser for `--auto-class`.
+fn parse_class(value: &str) -> Result<Class, String> {
+    Class::ALL
+        .into_iter()
+        .find(|class| class.label().eq_ignore_ascii_case(value))
+        .ok_or_else(|| {
+            let labels: Vec<&str> = Class::ALL.iter().map(|c| c.label()).collect();
+            format!(
+                "unknown class `{value}` (expected one of: {})",
+                labels.join(", ")
+            )
+        })
+}
+
 /// Resolve the `mud2` runtime from the explicit mode flags. An explicit
-/// mode flag always wins; otherwise default to `EmbeddedClient` — except in
-/// thin-client builds (no `server-sim` feature), where only TcpClient exists:
-/// the default becomes TcpClient and the sim-requiring flags exit with a
-/// clear message instead of panicking deep inside `GameAppPlugin`.
-fn resolve_mud2_runtime(mode: &ModeArgs) -> AppRuntime {
+/// mode flag always wins; otherwise `--connect` implies TcpClient and the
+/// default is `EmbeddedClient` — except in thin-client builds (no
+/// `server-sim` feature), where only TcpClient exists: the default becomes
+/// TcpClient and the sim-requiring flags exit with a clear message instead
+/// of panicking deep inside `GameAppPlugin`.
+fn resolve_mud2_runtime(mode: &ModeArgs, has_connect: bool) -> AppRuntime {
     #[cfg(not(feature = "server-sim"))]
     {
+        let _ = has_connect;
         if mode.server || mode.client {
             eprintln!(
                 "error: this build has no local world simulation (built without the \
@@ -261,7 +316,7 @@ fn resolve_mud2_runtime(mode: &ModeArgs) -> AppRuntime {
     #[cfg(feature = "server-sim")]
     if mode.server {
         AppRuntime::HeadlessServer
-    } else if mode.tcp_client {
+    } else if mode.tcp_client || (has_connect && !mode.client) {
         AppRuntime::TcpClient
     } else {
         // `--client` is explicit-but-default; no mode flag lands here too.
@@ -272,13 +327,26 @@ fn resolve_mud2_runtime(mode: &ModeArgs) -> AppRuntime {
 /// Build a [`GameAppPlugin`] from a parsed [`Mud2Cli`], folding in the
 /// mode-coalesce / role-gate rules.
 pub fn mud2_into_plugin(cli: Mud2Cli) -> GameAppPlugin {
-    let runtime = resolve_mud2_runtime(&cli.mode);
+    let runtime = resolve_mud2_runtime(&cli.mode, cli.connect.is_some());
 
-    // `--generate-cert` implies server `--tls`; `--insecure` implies client
-    // `--tls`. Compute the booleans here rather than via clap `requires` so
-    // a plain `--tls` (no extras) keeps working.
+    // `tls://host:port` is shorthand for `--connect host:port --tls`.
+    let (connect_addr, connect_implies_tls) = match cli.connect.as_deref() {
+        Some(addr) => match addr.strip_prefix("tls://") {
+            Some(rest) => (Some(rest.to_owned()), true),
+            None => (Some(addr.to_owned()), false),
+        },
+        None => (None, false),
+    };
+    if connect_addr.is_some() && !matches!(runtime, AppRuntime::TcpClient) {
+        eprintln!("error: --connect requires TCP-client mode (drop --server / --client)");
+        std::process::exit(2);
+    }
+
+    // `--generate-cert` implies server `--tls`; `--insecure` and a `tls://`
+    // connect address imply client `--tls`. Compute the booleans here rather
+    // than via clap `requires` so a plain `--tls` (no extras) keeps working.
     let server_tls_enabled = cli.tls.tls || cli.tls.generate_cert;
-    let client_tls_enabled = cli.tls.tls || cli.insecure;
+    let client_tls_enabled = cli.tls.tls || cli.insecure || connect_implies_tls;
 
     let server_tls =
         (server_tls_enabled && matches!(runtime, AppRuntime::HeadlessServer)).then(|| {
@@ -315,10 +383,43 @@ pub fn mud2_into_plugin(cli: Mud2Cli) -> GameAppPlugin {
         }
     };
 
+    // Fold the `--auto-*` flags into an autopilot config. In TCP mode the
+    // trigger is `--auto-login` (character defaults to the username); in
+    // embedded mode there are no credentials, so `--auto-character` alone
+    // (or `--auto-login`, as a convenient alias for the character name)
+    // triggers it.
+    let autopilot = match runtime {
+        AppRuntime::TcpClient => cli.auto_login.as_ref().map(|username| AutopilotConfig {
+            username: Some(username.clone()),
+            password: cli.auto_password.clone(),
+            character: cli
+                .auto_character
+                .clone()
+                .unwrap_or_else(|| username.clone()),
+            class: cli.auto_class,
+        }),
+        AppRuntime::EmbeddedClient => cli
+            .auto_character
+            .clone()
+            .or_else(|| cli.auto_login.clone())
+            .map(|character| AutopilotConfig {
+                username: None,
+                password: cli.auto_password.clone(),
+                character,
+                class: cli.auto_class,
+            }),
+        AppRuntime::HeadlessServer => {
+            if cli.auto_login.is_some() || cli.auto_character.is_some() {
+                eprintln!("warning: --auto-login / --auto-character are client-only; ignoring");
+            }
+            None
+        }
+    };
+
     GameAppPlugin {
         runtime,
         debug: cli.debug,
-        server_addr: None,
+        server_addr: connect_addr,
         bind_addr: None,
         save_path: cli.data.save_path,
         db_path: cli.data.db_path,
@@ -328,6 +429,7 @@ pub fn mud2_into_plugin(cli: Mud2Cli) -> GameAppPlugin {
         #[cfg(all(unix, feature = "server-sim"))]
         admin_socket,
         embedded_extension: None,
+        autopilot,
     }
 }
 
@@ -374,6 +476,7 @@ pub fn server_into_plugin(cli: ServerCli) -> GameAppPlugin {
         #[cfg(all(unix, feature = "server-sim"))]
         admin_socket,
         embedded_extension: None,
+        autopilot: None,
     }
 }
 
@@ -523,9 +626,73 @@ mod tests {
     }
 
     #[test]
-    fn connect_flag_is_rejected() {
-        // --connect was removed when the title-screen server picker took over.
-        let result = Mud2Cli::try_parse_from(["mud2", "--connect", "10.0.0.1:7000"]);
+    fn connect_implies_tcp_client() {
+        let cli = Mud2Cli::try_parse_from(["mud2", "--connect", "10.0.0.1:7000"]).unwrap();
+        let plugin = mud2_into_plugin(cli);
+        assert!(matches!(plugin.runtime, AppRuntime::TcpClient));
+        assert_eq!(plugin.server_addr.as_deref(), Some("10.0.0.1:7000"));
+        assert!(plugin.client_tls.is_none());
+    }
+
+    #[test]
+    fn connect_tls_scheme_implies_client_tls() {
+        let cli =
+            Mud2Cli::try_parse_from(["mud2", "--connect", "tls://mud.example.org:7000"]).unwrap();
+        let plugin = mud2_into_plugin(cli);
+        assert_eq!(plugin.server_addr.as_deref(), Some("mud.example.org:7000"));
+        assert!(plugin.client_tls.is_some());
+    }
+
+    #[test]
+    fn auto_login_builds_autopilot_with_defaults() {
+        let cli = Mud2Cli::try_parse_from([
+            "mud2",
+            "--connect",
+            "127.0.0.1:7777",
+            "--auto-login",
+            "alice",
+        ])
+        .unwrap();
+        let plugin = mud2_into_plugin(cli);
+        let auto = plugin.autopilot.expect("autopilot Some");
+        assert_eq!(auto.username.as_deref(), Some("alice"));
+        assert_eq!(auto.password, "testpass");
+        assert_eq!(auto.character, "alice");
+        assert_eq!(auto.class, crate::player::classes::Class::Fighter);
+    }
+
+    #[test]
+    fn auto_character_and_class_override() {
+        let cli = Mud2Cli::try_parse_from([
+            "mud2",
+            "--tcp-client",
+            "--auto-login",
+            "bob",
+            "--auto-character",
+            "Zapp",
+            "--auto-class",
+            "wizard",
+        ])
+        .unwrap();
+        let plugin = mud2_into_plugin(cli);
+        let auto = plugin.autopilot.expect("autopilot Some");
+        assert_eq!(auto.character, "Zapp");
+        assert_eq!(auto.class, crate::player::classes::Class::Wizard);
+    }
+
+    #[test]
+    fn embedded_auto_character_triggers_autopilot_without_credentials() {
+        let cli = Mud2Cli::try_parse_from(["mud2", "--auto-character", "Dev"]).unwrap();
+        let plugin = mud2_into_plugin(cli);
+        assert!(matches!(plugin.runtime, AppRuntime::EmbeddedClient));
+        let auto = plugin.autopilot.expect("autopilot Some");
+        assert!(auto.username.is_none());
+        assert_eq!(auto.character, "Dev");
+    }
+
+    #[test]
+    fn unknown_auto_class_is_a_parse_error() {
+        let result = Mud2Cli::try_parse_from(["mud2", "--auto-class", "necromancer"]);
         assert!(result.is_err());
     }
 }

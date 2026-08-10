@@ -6,6 +6,8 @@
 //!
 //! ```text
 //! ~/.local/share/mud2/        (dirs::data_dir — DATA, preserve)
+//!     config/                 (client settings + console history, shared by
+//!                              ALL client roles — see `shared_config_dir`)
 //!     embedded/
 //!         accounts.db
 //!         saves/world-state.json
@@ -145,11 +147,33 @@ pub fn ui_state_path(runtime: AppRuntime, player_id: u64) -> Option<PathBuf> {
     Some(base.join(format!("{player_id}.json")))
 }
 
+/// The shared (role-independent) client config directory. Settings and the
+/// Python console history are pure presentation-side preferences, so unlike
+/// the per-role data trees they are one file for the whole install — embedded
+/// play and every TcpClient (e.g. the N test clients from
+/// `scripts/multiplayer_test.sh`) see the same keybindings, display settings,
+/// and saved-server list.
+fn shared_config_dir() -> PathBuf {
+    data_root().join(CONFIG_SUBDIR)
+}
+
 /// Global client-side settings (keybindings, …). Unlike the quickbar this
-/// is **not** per-character: it's a single client-wide JSON file. The server
-/// never sees it, so it lives next to the role's other client data.
-/// `HeadlessServer` has no UI and returns `None`.
+/// is **not** per-character: it's a single JSON file shared by all client
+/// roles (see [`shared_config_dir`]). `HeadlessServer` has no UI and returns
+/// `None`.
 pub fn client_settings_path(runtime: AppRuntime) -> Option<PathBuf> {
+    match runtime {
+        AppRuntime::EmbeddedClient | AppRuntime::TcpClient => {
+            Some(shared_config_dir().join(SETTINGS_FILE))
+        }
+        AppRuntime::HeadlessServer => None,
+    }
+}
+
+/// Pre-unification per-role settings location (`embedded/config/…` or
+/// `client/config/…`). Read once as a migration fallback when the shared
+/// file does not exist yet; never written anymore.
+pub fn legacy_client_settings_path(runtime: AppRuntime) -> Option<PathBuf> {
     let base = match runtime {
         AppRuntime::EmbeddedClient => data_root().join(EMBEDDED_SUBDIR).join(CONFIG_SUBDIR),
         AppRuntime::TcpClient => data_root().join(CLIENT_SUBDIR).join(CONFIG_SUBDIR),
@@ -159,15 +183,16 @@ pub fn client_settings_path(runtime: AppRuntime) -> Option<PathBuf> {
 }
 
 /// Global client-side Python console command history. Client-wide (not
-/// per-character) like the settings file; the server never sees it.
-/// `HeadlessServer` uses the admin REPL instead and returns `None`.
+/// per-character) and role-independent like the settings file; the server
+/// never sees it. `HeadlessServer` uses the admin REPL instead and returns
+/// `None`.
 pub fn python_history_path(runtime: AppRuntime) -> Option<PathBuf> {
-    let base = match runtime {
-        AppRuntime::EmbeddedClient => data_root().join(EMBEDDED_SUBDIR).join(CONFIG_SUBDIR),
-        AppRuntime::TcpClient => data_root().join(CLIENT_SUBDIR).join(CONFIG_SUBDIR),
-        AppRuntime::HeadlessServer => return None,
-    };
-    Some(base.join(PYTHON_HISTORY_FILE))
+    match runtime {
+        AppRuntime::EmbeddedClient | AppRuntime::TcpClient => {
+            Some(shared_config_dir().join(PYTHON_HISTORY_FILE))
+        }
+        AppRuntime::HeadlessServer => None,
+    }
 }
 
 #[cfg(test)]
@@ -192,15 +217,28 @@ mod tests {
     }
 
     #[test]
-    fn client_settings_path_is_client_only_and_disjoint() {
+    fn client_settings_path_is_client_only_and_shared_across_roles() {
         assert!(client_settings_path(AppRuntime::HeadlessServer).is_none());
         let e = client_settings_path(AppRuntime::EmbeddedClient).unwrap();
         let c = client_settings_path(AppRuntime::TcpClient).unwrap();
-        assert_ne!(e, c);
+        // One global file: embedded play and every TcpClient agree on
+        // keybindings/display/saved servers.
+        assert_eq!(e, c);
         assert!(e.ends_with("config/settings.json"));
-        assert!(c.ends_with("config/settings.json"));
+        assert!(!e.to_string_lossy().contains(EMBEDDED_SUBDIR));
+        assert!(!e.to_string_lossy().contains(CLIENT_SUBDIR));
+    }
+
+    #[test]
+    fn legacy_client_settings_paths_stay_per_role() {
+        assert!(legacy_client_settings_path(AppRuntime::HeadlessServer).is_none());
+        let e = legacy_client_settings_path(AppRuntime::EmbeddedClient).unwrap();
+        let c = legacy_client_settings_path(AppRuntime::TcpClient).unwrap();
+        assert_ne!(e, c);
         assert!(e.to_string_lossy().contains(EMBEDDED_SUBDIR));
         assert!(c.to_string_lossy().contains(CLIENT_SUBDIR));
+        // The migration fallback must never collide with the shared path.
+        assert_ne!(e, client_settings_path(AppRuntime::EmbeddedClient).unwrap());
     }
 
     #[test]
@@ -216,15 +254,12 @@ mod tests {
     }
 
     #[test]
-    fn python_history_path_is_client_only_and_disjoint() {
+    fn python_history_path_is_client_only_and_shared_across_roles() {
         assert!(python_history_path(AppRuntime::HeadlessServer).is_none());
         let e = python_history_path(AppRuntime::EmbeddedClient).unwrap();
         let c = python_history_path(AppRuntime::TcpClient).unwrap();
-        assert_ne!(e, c);
+        assert_eq!(e, c);
         assert!(e.ends_with("config/python_history.txt"));
-        assert!(c.ends_with("config/python_history.txt"));
-        assert!(e.to_string_lossy().contains(EMBEDDED_SUBDIR));
-        assert!(c.to_string_lossy().contains(CLIENT_SUBDIR));
     }
 
     #[test]

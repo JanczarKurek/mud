@@ -94,6 +94,9 @@ pub struct GameAppPlugin {
     /// where the map editor (crates/mud2-editor) plugs in without this crate
     /// depending on it. `None` in TcpClient/HeadlessServer and in tests.
     pub embedded_extension: Option<fn(&mut App)>,
+    /// `--auto-login` / `--auto-character` autopilot (see `app::autopilot`).
+    /// Client modes only; ignored by the headless server.
+    pub autopilot: Option<crate::app::autopilot::AutopilotConfig>,
 }
 
 /// CLI-supplied TLS configuration for the server side.
@@ -282,6 +285,9 @@ impl Plugin for GameAppPlugin {
                         runtime: self.runtime,
                     },
                 ));
+                if let Some(config) = self.autopilot.clone() {
+                    app.add_plugins(crate::app::autopilot::AutopilotPlugin { config });
+                }
                 if let Some(extend) = self.embedded_extension {
                     extend(app);
                 }
@@ -342,6 +348,9 @@ impl Plugin for GameAppPlugin {
                     },
                     AboutScreenPlugin,
                 ));
+                if let Some(config) = self.autopilot.clone() {
+                    app.add_plugins(crate::app::autopilot::AutopilotPlugin { config });
+                }
             }
             #[cfg(feature = "server-sim")]
             AppRuntime::HeadlessServer => {

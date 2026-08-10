@@ -46,6 +46,9 @@ pub struct CharacterSelectState {
     pub runtime: AppRuntime,
     pub characters: Vec<CharacterSummary>,
     pub list_dirty: bool,
+    /// True once a `CharacterList` reply has arrived for the current visit —
+    /// lets the autopilot tell an empty roster apart from a pending one.
+    pub roster_loaded: bool,
     pub error_message: Option<String>,
     pub selected_character_id: Option<i64>,
 }
@@ -56,6 +59,7 @@ impl CharacterSelectState {
             runtime,
             characters: Vec::new(),
             list_dirty: true,
+            roster_loaded: false,
             error_message: None,
             selected_character_id: None,
         }
@@ -64,6 +68,7 @@ impl CharacterSelectState {
     pub fn set_characters(&mut self, characters: Vec<CharacterSummary>) {
         self.characters = characters;
         self.list_dirty = true;
+        self.roster_loaded = true;
         if let Some(selected) = self.selected_character_id {
             if !self.characters.iter().any(|c| c.character_id == selected) {
                 self.selected_character_id = None;
@@ -108,9 +113,12 @@ struct CharacterSelectErrorText;
 /// title screen, and the server side handles debug-preset seeding for the
 /// local account (`handle_list_characters`).
 fn request_character_list(
+    mut state: ResMut<CharacterSelectState>,
     config: Option<Res<TcpClientConfig>>,
     mut connection: Option<ResMut<TcpClientConnection>>,
 ) {
+    // The roster shown below is stale until the reply to this request lands.
+    state.roster_loaded = false;
     let (Some(config), Some(connection)) = (config, connection.as_deref_mut()) else {
         return;
     };

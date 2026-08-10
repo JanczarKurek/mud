@@ -42,6 +42,7 @@ fn build_loopback_app() -> App {
         client_tls: None,
         admin_socket: None,
         embedded_extension: None,
+        autopilot: None,
     });
     // The client half. `MinimalPlugins` has no `StatesPlugin`, and the client
     // systems gate on `ClientAppState`.

@@ -117,6 +117,7 @@ in
       python313Packages.pillow
       python313Packages.numpy
       ripgrep
+      tmux # scripts/multiplayer_test.sh — server + N clients in one session
       pkgs.alsa-lib.dev
       pkgs.systemd.dev
       pkgs.wayland.dev

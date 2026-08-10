@@ -1,6 +1,7 @@
 pub mod about_screen;
 pub mod asset_sync_screen;
 pub mod auth_screen;
+pub mod autopilot;
 pub mod character_create_screen;
 pub mod character_select_screen;
 pub mod clean_cache;

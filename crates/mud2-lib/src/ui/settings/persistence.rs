@@ -9,7 +9,7 @@ use std::fs;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::app::paths::client_settings_path;
+use crate::app::paths::{client_settings_path, legacy_client_settings_path};
 use crate::app::plugin::AppRuntime;
 
 use super::display::{DisplaySettings, WindowModeSetting};
@@ -222,8 +222,25 @@ pub fn load_settings(
     let Some(path) = client_settings_path(*runtime) else {
         return;
     };
-    let Ok(raw) = fs::read_to_string(&path) else {
-        return;
+    // Migration: settings used to live per-role (`embedded/config/…` /
+    // `client/config/…`). If the shared file doesn't exist yet, read the old
+    // role file once; the next dirty flush writes to the shared path.
+    let raw = match fs::read_to_string(&path) {
+        Ok(raw) => raw,
+        Err(_) => {
+            let Some(legacy) = legacy_client_settings_path(*runtime) else {
+                return;
+            };
+            let Ok(raw) = fs::read_to_string(&legacy) else {
+                return;
+            };
+            info!(
+                "settings: migrating legacy per-role file {} -> {}",
+                legacy.display(),
+                path.display()
+            );
+            raw
+        }
     };
     let Ok(file) = serde_json::from_str::<SettingsFile>(&raw) else {
         warn!(

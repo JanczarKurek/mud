@@ -61,6 +61,7 @@ pub fn boot_server(save: PathBuf, db: PathBuf) -> App {
         client_tls: None,
         admin_socket: None,
         embedded_extension: None,
+        autopilot: None,
     });
     app.update();
     app
