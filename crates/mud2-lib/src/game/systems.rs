@@ -3069,10 +3069,14 @@ fn broadcast_cast_vfx(
         .vfx_on_cast
         .clone()
         .unwrap_or_else(|| "cast_flash".to_owned());
-    ui_events.push_broadcast(GameUiEvent::VfxSpawn {
-        definition_id: cast_vfx_id,
-        anchor: VfxAnchor::tile(space_id, tile),
-    });
+    ui_events.push_broadcast_near(
+        space_id,
+        tile,
+        GameUiEvent::VfxSpawn {
+            definition_id: cast_vfx_id,
+            anchor: VfxAnchor::tile(space_id, tile),
+        },
+    );
 }
 
 /// The caster's attribute set from the shared `player_class_level` query, used
@@ -3193,13 +3197,17 @@ fn handle_cast_spell_at(
         // frame) and defer damage + debuffs until the missile lands.
         let distance = chebyshev_distance_tiles(caster_tile, target_position);
         let travel = projectile_travel_seconds(distance, projectile.speed_tiles_per_second);
-        ui_events.push_broadcast(GameUiEvent::ProjectileFired {
-            from_tile: caster_tile,
-            to_tile: target_position,
-            sprite_definition_id: projectile.sprite.clone(),
-            duration_seconds: travel,
-            target_object_id: Some(target_object_id),
-        });
+        ui_events.push_broadcast_near(
+            caster_space_id,
+            caster_tile,
+            GameUiEvent::ProjectileFired {
+                from_tile: caster_tile,
+                to_tile: target_position,
+                sprite_definition_id: projectile.sprite.clone(),
+                duration_seconds: travel,
+                target_object_id: Some(target_object_id),
+            },
+        );
         scheduled.push(ScheduledImpact {
             remaining_seconds: travel,
             space_id: caster_space_id,
@@ -3353,13 +3361,17 @@ fn handle_cast_spell_at_tile(
     let base_travel = if let Some(projectile) = spell.effects.projectile.as_ref() {
         let distance = chebyshev_distance_tiles(caster_tile, target_tile);
         let travel = projectile_travel_seconds(distance, projectile.speed_tiles_per_second);
-        ui_events.push_broadcast(GameUiEvent::ProjectileFired {
-            from_tile: caster_tile,
-            to_tile: target_tile,
-            sprite_definition_id: projectile.sprite.clone(),
-            duration_seconds: travel,
-            target_object_id: None,
-        });
+        ui_events.push_broadcast_near(
+            caster_space_id,
+            caster_tile,
+            GameUiEvent::ProjectileFired {
+                from_tile: caster_tile,
+                to_tile: target_tile,
+                sprite_definition_id: projectile.sprite.clone(),
+                duration_seconds: travel,
+                target_object_id: None,
+            },
+        );
         travel
     } else {
         0.0

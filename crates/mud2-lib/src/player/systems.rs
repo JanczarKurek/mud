@@ -437,6 +437,37 @@ pub fn sync_projected_player_from_client_state(
     }
 }
 
+/// Hides the local player's sprite while dead (HP 0, death overlay up) and
+/// restores it on respawn. Presentation-only and driven purely by replicated
+/// vitals, so it works identically in thin-client and embedded modes. Remote
+/// peers stop seeing a dead player through the projection's own HP gate
+/// (`emit_remote_player_events`); this covers the one sprite that gate can't
+/// reach — your own. Visibility propagates to the recolor layers and health
+/// bar children. Respawn heals and teleports in the same event batch, so the
+/// sprite reappears already at the respawn tile — no flicker at the death
+/// spot.
+pub fn sync_player_death_visibility(
+    client_state: Res<ClientGameState>,
+    mut player_query: Query<&mut Visibility, (With<Player>, Without<PlayerIdentity>)>,
+) {
+    let Ok(mut visibility) = player_query.single_mut() else {
+        return;
+    };
+    let dead = client_state
+        .player_vitals
+        .is_some_and(|vitals| vitals.health <= 0.0);
+    let desired = if dead {
+        Visibility::Hidden
+    } else {
+        Visibility::Inherited
+    };
+    // Read-then-write: unconditional assignment would dirty the visibility
+    // propagation tree every frame.
+    if *visibility != desired {
+        *visibility = desired;
+    }
+}
+
 /// Copies the replicated appearance (`ClientGameState.appearance`, folded from
 /// `GameEvent::PlayerAppearanceChanged`) onto the projected local-player stub
 /// as a `PlayerAppearance` component. The recolor-layer systems key off that

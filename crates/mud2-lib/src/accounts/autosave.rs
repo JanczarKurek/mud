@@ -35,8 +35,10 @@ pub struct AutosaveTimer {
 type PlayerStateQueryData<'a> = (
     Entity,
     &'a PlayerIdentity,
-    &'a SpaceResident,
-    &'a TilePosition,
+    // Optional: dead players are de-spatialized until the respawn click, but
+    // must remain saveable (disconnect / autosave / app exit while dead).
+    Option<&'a SpaceResident>,
+    Option<&'a TilePosition>,
     &'a Inventory,
     &'a ChatLog,
     &'a BaseStats,
@@ -95,10 +97,31 @@ fn save_entity(
     let empty_discovered = DiscoveredTiles::default();
     let discovered_ref = discovered_tiles.unwrap_or(&empty_discovered);
 
+    // Dead players carry no spatial components; persist them at their respawn
+    // point (the awaiting-respawn branch below rewrites the position again for
+    // the resource-bearing case — this covers `save_entity` callers in test
+    // contexts without SpaceManager/WorldConfig). A (0,0) fallback is repaired
+    // into a fresh spawn on load by `needs_spawn_location`.
+    let (resolved_space, resolved_tile) = match (space_resident, tile_position) {
+        (Some(resident), Some(tile)) => (resident.space_id, *tile),
+        _ => match (space_manager, world_config) {
+            (Some(space_manager), Some(world_config)) => {
+                resolve_respawn_destination(identity.home_position, space_manager, world_config)
+            }
+            _ => identity.home_position.unwrap_or((
+                crate::world::components::SpaceId(0),
+                TilePosition::ground(0, 0),
+            )),
+        },
+    };
+    let resolved_resident = SpaceResident {
+        space_id: resolved_space,
+    };
+
     let mut dump = build_player_state_dump(
         identity,
-        space_resident,
-        tile_position,
+        &resolved_resident,
+        &resolved_tile,
         inventory,
         chat_log,
         base_stats,

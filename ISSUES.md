@@ -122,7 +122,7 @@ fall through it — no such tileset exists, and `walkable_surface` defaults to
 ## Risks
 
 - Persistence-heavy gameplay will require durable IDs to keep working as item/container counts grow (mostly addressed by the format-v7 multi-space dump, but new persistent systems must not regress this).
-- AoI / interest management is not implemented — `compute_events_for_peer` broadcasts everything. Player count above ~5 will saturate bandwidth. Track in `FEATURE_BACKLOG.md`.
+- AoI / interest management is partial: `compute_events_for_peer` filters dynamic entities by same-space + `INTEREST_RADIUS` (XY only, z ignored), combat chat lines are scoped via `push_chat_line_near`, and broadcast UI events carry an optional space+tile scope applied at the flush (`push_broadcast_near`). New localized effects/messages must use the scoped paths; remaining gaps (z-aware entity pruning, bandwidth at high player counts) tracked in `FEATURE_BACKLOG.md`.
 
 ## Completed
 
@@ -170,6 +170,7 @@ fall through it — no such tileset exists, and `walkable_surface` defaults to
 - **Progression Phase A — XP + Level**: `Experience` component + `xp_for_level` (`src/player/progression.rs`); `ExperienceGained` / `LevelUp` / `ExperienceLost` GameEvents; XP bar (`sync_xp_bar`); `LevelUpToast` GameUiEvent + transient overlay.
 - **Progression Phase B — Classes**: `Class` enum + per-class data (`src/player/classes.rs`); `ChooseClass` command + class-picker UI; class-aware `DerivedStats::from_base_with_class`.
 - **Progression Phase D — Death penalty**: `drain_inventory_with_drop_chance` (backpack always drops, per-slot equipment roll), XP-zero rule, `GameUiEvent::DeathSummary` + dedicated overlay (`src/ui/systems.rs`).
+- **Dead players de-spatialized**: death removes `SpaceResident`/`TilePosition` (respawn click re-inserts them at home), so NPC aggro, detection, AoE, and remote projection drop the body by construction instead of per-system HP checks; `AwaitingRespawn { death_space }` keeps ephemeral dungeons alive meanwhile. Invariant documented in `common_issues.md`; e2e `tests/death_respawn.rs`.
 - **HP / mana regen + food buffs**: `tick_regen_buffs` and `RegenBuffs` (`src/player/regen.rs`); food / drink items grant a temporary regen-rate multiplier.
 - **Diagnostics overlay (F3–F12)**: `src/diagnostics/mod.rs` with FPS readout, frame-time min/avg/p99/max, present-mode cycling, archetype histogram, `DiagnosticPause` simulation toggle, render-bisection toggles, and per-frame spike attribution dumps.
 - **Camera-based scrolling refactor**: sprites at absolute world coords, `Camera2d` follows the player (`src/world/camera.rs`), conditional Transform writes throughout; `Changed<Transform>` dropped from ~5,500/frame to 1–6/frame.

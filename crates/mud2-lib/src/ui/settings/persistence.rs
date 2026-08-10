@@ -67,7 +67,8 @@ impl Default for GameplayFile {
 
 /// Client-side server picker state on disk. The `saved` list is read-only at
 /// runtime (hand-edit the file to add entries); `selected_addr` remembers the
-/// last picked entry so the next launch defaults to it.
+/// last used address — a saved entry's or a direct-connect one — so the next
+/// launch defaults to it (a direct address renders as a "Direct: …" card).
 #[derive(Serialize, Deserialize)]
 struct ServersFile {
     #[serde(default = "default_saved_servers")]

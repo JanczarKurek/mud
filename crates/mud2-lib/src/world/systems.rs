@@ -760,11 +760,19 @@ pub fn cleanup_empty_ephemeral_spaces(
     mut space_manager: ResMut<SpaceManager>,
     mut floor_maps: ResMut<crate::world::floor_map::FloorMaps>,
     player_query: Query<&SpaceResident, With<Player>>,
+    // Dead players are de-spatialized (no SpaceResident) but must keep their
+    // death space — and the corpse in it — alive until the respawn click.
+    awaiting_respawn_query: Query<&crate::player::components::AwaitingRespawn, With<Player>>,
     resident_query: Query<(Entity, &SpaceResident), Without<Player>>,
 ) {
     let occupied_spaces = player_query
         .iter()
         .map(|resident| resident.space_id)
+        .chain(
+            awaiting_respawn_query
+                .iter()
+                .map(|awaiting| awaiting.death_space),
+        )
         .collect::<std::collections::HashSet<_>>();
 
     let stale_spaces = space_manager

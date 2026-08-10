@@ -18,7 +18,7 @@ use crate::player::components::{
     RegenBuffs, RegenTickers, VitalStats,
 };
 use crate::player::progression::{xp_for_level, Experience};
-use crate::world::components::{Facing, SpaceId, SpaceResident, TilePosition, ViewPosition};
+use crate::world::components::{Facing, SpaceId, SpaceResident, TilePosition};
 use crate::world::loot::spawn_corpse_for_player;
 use crate::world::map_layout::ObjectProperties;
 use crate::world::object_definitions::{EquipmentSlot, OverworldObjectDefinitions};
@@ -87,10 +87,12 @@ pub fn resolve_respawn_destination(
 
 /// Drain `PendingPlayerDeaths` and resolve each one's *immediate* consequences:
 /// spawn a corpse with the player's gear, apply the XP penalty, clear active
-/// buffs and magic effects, and mark the player `AwaitingRespawn`. The player
-/// stays dead (HP 0) at the spot where they fell — the heal + teleport-home is
-/// deferred to `process_acknowledge_death_commands`, which runs when the player
-/// clicks "Continue" on the death overlay.
+/// buffs and magic effects, mark the player `AwaitingRespawn`, and
+/// **de-spatialize** them (remove `SpaceResident` + `TilePosition`) so the
+/// world stops seeing the body. The player stays dead (HP 0) with the death
+/// overlay up — the heal + re-spatialize at home is deferred to
+/// `process_acknowledge_death_commands`, which runs when the player clicks
+/// "Continue" on the death overlay.
 pub fn handle_player_deaths(
     mut pending: ResMut<PendingPlayerDeaths>,
     mut commands: Commands,
@@ -186,23 +188,34 @@ pub fn handle_player_deaths(
             effects.kind_tick_accumulators.clear();
         }
 
-        // Mark the player as awaiting respawn: they stay dead (HP 0) on the
-        // death tile until they click "Continue" (see
-        // `process_acknowledge_death_commands`, which heals + teleports home).
-        // Drop the combat target so the killer doesn't keep auto-attacking
-        // (only relevant if the killer is a player).
+        // Mark the player as awaiting respawn and de-spatialize them: with
+        // `SpaceResident`/`TilePosition` gone, NPC detection, combat, AoE, and
+        // the remote-player projection all miss the body by construction — no
+        // per-system dead checks needed. The session components (vitals, chat,
+        // inventory, XP) stay so the death overlay keeps replicating.
+        // `process_acknowledge_death_commands` re-inserts the spatial pair at
+        // the respawn point when the player clicks "Continue". Dropping the
+        // combat target keeps a player killer from auto-attacking the corpse.
         commands
             .entity(death.entity)
-            .insert(AwaitingRespawn)
-            .remove::<crate::combat::components::CombatTarget>();
+            .insert(AwaitingRespawn {
+                death_space: death.space_id,
+            })
+            .remove::<(
+                crate::combat::components::CombatTarget,
+                SpaceResident,
+                TilePosition,
+            )>();
 
         chat_log.push_narrator(format!("{} fell in battle.", death.name));
     }
 }
 
 /// Drain `GameCommand::AcknowledgeDeath` from the pending command queue and
-/// finalize respawn for the acking player: heal HP/MP to full and teleport to
-/// their home tile (or map center as fallback), then remove `AwaitingRespawn`.
+/// finalize respawn for the acking player: heal HP/MP to full and re-insert
+/// the spatial components (`SpaceResident` + `TilePosition`, removed at death)
+/// at their home tile (or map center as fallback), then remove
+/// `AwaitingRespawn`.
 ///
 /// Runs in `CommandIntercept` (before `process_game_commands`) so a dead
 /// player's *other* commands are still blocked when the main processor runs.
@@ -217,11 +230,8 @@ pub fn process_acknowledge_death_commands(
             Entity,
             &PlayerIdentity,
             &mut VitalStats,
-            &mut SpaceResident,
-            &mut TilePosition,
             &mut MovementCooldown,
             &mut ChatLog,
-            Option<&mut ViewPosition>,
             Option<&mut Facing>,
         ),
         (With<Player>, With<AwaitingRespawn>),
@@ -234,17 +244,8 @@ pub fn process_acknowledge_death_commands(
         GameCommand::AcknowledgeDeath => Ok(()),
         other => Err(other),
     }) {
-        for (
-            entity,
-            identity,
-            mut vitals,
-            mut space_resident,
-            mut tile_position,
-            mut movement,
-            mut chat_log,
-            view_position,
-            facing,
-        ) in player_query.iter_mut()
+        for (entity, identity, mut vitals, mut movement, mut chat_log, facing) in
+            player_query.iter_mut()
         {
             let matches = match player_id {
                 Some(id) => identity.id == id,
@@ -261,21 +262,25 @@ pub fn process_acknowledge_death_commands(
             let (target_space, target_tile) =
                 resolve_respawn_destination(identity.home_position, &space_manager, &world_config);
 
-            space_resident.space_id = target_space;
-            *tile_position = target_tile;
             movement.remaining_seconds = 0.0;
 
-            if let Some(mut view) = view_position {
-                view.space_id = target_space;
-                view.tile = target_tile;
-            }
             if let Some(mut facing) = facing {
                 facing.0 = crate::world::direction::Direction::default();
             }
 
             chat_log.push_narrator("You are taken to safer ground.");
 
-            commands.entity(entity).remove::<AwaitingRespawn>();
+            // Re-spatialize at the respawn point; the projection streams the
+            // new area to the client the same way a portal teleport would.
+            commands
+                .entity(entity)
+                .insert((
+                    SpaceResident {
+                        space_id: target_space,
+                    },
+                    target_tile,
+                ))
+                .remove::<AwaitingRespawn>();
             break;
         }
     }
@@ -444,4 +449,111 @@ fn persist_home(
     dump.home_position = Some((space_id, tile));
     guard.save_character(account_id, &dump)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::player::components::{PlayerId, VitalStats};
+
+    fn death_test_app() -> App {
+        let mut app = App::new();
+        app.init_resource::<PendingPlayerDeaths>()
+            .init_resource::<PendingGameCommands>()
+            .init_resource::<PendingGameUiEvents>()
+            .init_resource::<ObjectRegistry>()
+            // Real definitions from disk: the corpse + tombstone spawn in
+            // handle_player_deaths looks up 'generic_corpse'/'tombstone'.
+            .insert_resource(OverworldObjectDefinitions::load_from_disk())
+            .init_resource::<SpaceManager>()
+            .insert_resource(WorldConfig {
+                current_space_id: SpaceId(1),
+                map_width: 32,
+                map_height: 24,
+                tile_size: 48.0,
+                fill_floor_type: "grass".to_owned(),
+            });
+        app.add_systems(
+            Update,
+            (process_acknowledge_death_commands, handle_player_deaths).chain(),
+        );
+        app
+    }
+
+    fn spawn_player(app: &mut App, id: u64, space: SpaceId, tile: TilePosition) -> Entity {
+        app.world_mut()
+            .spawn((
+                Player,
+                PlayerIdentity::new(PlayerId(id)),
+                VitalStats::full(20.0, 10.0),
+                Inventory::default(),
+                crate::player::components::RegenBuffs::default(),
+                crate::player::components::RegenTickers::default(),
+                ChatLog::default(),
+                MovementCooldown::default(),
+                SpaceResident { space_id: space },
+                tile,
+            ))
+            .id()
+    }
+
+    #[test]
+    fn death_despatializes_and_ack_respatializes_at_respawn_point() {
+        let mut app = death_test_app();
+        let death_space = SpaceId(7);
+        let death_tile = TilePosition::ground(5, 5);
+        let player = spawn_player(&mut app, 1, death_space, death_tile);
+        app.world_mut()
+            .get_mut::<VitalStats>(player)
+            .unwrap()
+            .health = 0.0;
+
+        app.world_mut()
+            .resource_mut::<PendingPlayerDeaths>()
+            .deaths
+            .push(PendingPlayerDeath {
+                entity: player,
+                space_id: death_space,
+                tile_position: death_tile,
+                name: "Tester".to_owned(),
+            });
+        app.update();
+
+        // Dead: de-spatialized, marked, still at HP 0.
+        assert!(
+            app.world().get::<SpaceResident>(player).is_none(),
+            "death must remove SpaceResident"
+        );
+        assert!(
+            app.world().get::<TilePosition>(player).is_none(),
+            "death must remove TilePosition"
+        );
+        let awaiting = app
+            .world()
+            .get::<AwaitingRespawn>(player)
+            .expect("death must mark AwaitingRespawn");
+        assert_eq!(awaiting.death_space, death_space);
+        assert_eq!(app.world().get::<VitalStats>(player).unwrap().health, 0.0);
+
+        // Ack: healed, re-spatialized at the respawn point (no home set →
+        // map center of the configured overworld), marker gone.
+        app.world_mut()
+            .resource_mut::<PendingGameCommands>()
+            .push_for_player(PlayerId(1), GameCommand::AcknowledgeDeath);
+        app.update();
+
+        let vitals = app.world().get::<VitalStats>(player).unwrap();
+        assert_eq!(vitals.health, vitals.max_health);
+        assert!(app.world().get::<AwaitingRespawn>(player).is_none());
+        assert_eq!(
+            app.world().get::<SpaceResident>(player).map(|r| r.space_id),
+            Some(SpaceId(1)),
+            "respawn must re-insert SpaceResident at the fallback space"
+        );
+        assert_eq!(
+            app.world().get::<TilePosition>(player).copied(),
+            Some(TilePosition::ground(16, 12)),
+            "respawn must re-insert TilePosition at map center"
+        );
+    }
 }

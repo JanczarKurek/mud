@@ -949,6 +949,27 @@ fn reason_for_auth_error(err: &AuthError) -> String {
     }
 }
 
+/// Whether a queued broadcast reaches the peer at `peer_position`. Unscoped
+/// broadcasts reach everyone; scoped ones only peers in the same space within
+/// the replication interest radius (z-aware, so other floors far away are
+/// pruned). A peer with no known position (e.g. between character select and
+/// spawn) receives only unscoped broadcasts.
+#[cfg(feature = "server-sim")]
+fn broadcast_visible_from(
+    scope: Option<(crate::world::components::SpaceId, TilePosition)>,
+    peer_position: Option<(crate::world::components::SpaceId, TilePosition)>,
+) -> bool {
+    let Some((scope_space, origin)) = scope else {
+        return true;
+    };
+    let Some((peer_space, peer_tile)) = peer_position else {
+        return false;
+    };
+    scope_space == peer_space
+        && crate::world::components::tile_distance_3d(origin, peer_tile)
+            <= crate::game::projection::INTEREST_RADIUS as i32
+}
+
 #[cfg(feature = "server-sim")]
 pub fn flush_server_messages(
     mut pending_ui_events: ResMut<PendingGameUiEvents>,
@@ -968,6 +989,21 @@ pub fn flush_server_messages(
 ) {
     let peer_ui_events = std::mem::take(&mut pending_ui_events.peer_events);
     let broadcast_ui_events = std::mem::take(&mut pending_ui_events.broadcast);
+
+    // Authoritative positions, used to decide which peers a spatially scoped
+    // broadcast reaches. Built once per flush from the same query the
+    // projection uses.
+    let player_positions: std::collections::HashMap<
+        crate::player::components::PlayerId,
+        (crate::world::components::SpaceId, TilePosition),
+    > = player_query
+        .iter()
+        .filter_map(|((_, identity), _, _, resident, tile, ..)| {
+            // Dead (de-spatialized) players have no position: scoped
+            // broadcasts skip them; targeted pushes (DeathSummary) still land.
+            Some((identity.id, (resident?.space_id, *tile?)))
+        })
+        .collect();
 
     let connection_ids = server_state.peers.keys().copied().collect::<Vec<_>>();
     let mut disconnected_peers = Vec::new();
@@ -1051,7 +1087,13 @@ pub fn flush_server_messages(
 
             let mut outgoing_ui_events =
                 peer_ui_events.get(&player_id).cloned().unwrap_or_default();
-            outgoing_ui_events.extend(broadcast_ui_events.iter().cloned());
+            let peer_position = player_positions.get(&player_id).copied();
+            outgoing_ui_events.extend(
+                broadcast_ui_events
+                    .iter()
+                    .filter(|scoped| broadcast_visible_from(scoped.scope, peer_position))
+                    .map(|scoped| scoped.event.clone()),
+            );
             if !outgoing_ui_events.is_empty()
                 && !write_message_counted(
                     &mut peer.stream,
@@ -1616,6 +1658,52 @@ mod tests {
     use crate::world::object_registry::ObjectRegistry;
     use crate::world::WorldConfig;
 
+    #[test]
+    fn broadcast_scope_filters_by_space_and_distance() {
+        use crate::world::components::{SpaceId, TilePosition};
+        let origin = (SpaceId(0), TilePosition::ground(10, 10));
+
+        // Unscoped broadcasts reach everyone, even peers with no position yet.
+        assert!(broadcast_visible_from(None, Some(origin)));
+        assert!(broadcast_visible_from(None, None));
+
+        // Scoped: same space and within the interest radius passes.
+        assert!(broadcast_visible_from(
+            Some(origin),
+            Some((SpaceId(0), TilePosition::ground(15, 12)))
+        ));
+        // Exactly at the radius edge still passes.
+        assert!(broadcast_visible_from(
+            Some(origin),
+            Some((SpaceId(0), TilePosition::ground(40, 10)))
+        ));
+        // Beyond the radius fails.
+        assert!(!broadcast_visible_from(
+            Some(origin),
+            Some((SpaceId(0), TilePosition::ground(41, 10)))
+        ));
+        // Another space fails regardless of coordinates.
+        assert!(!broadcast_visible_from(
+            Some(origin),
+            Some((SpaceId(1), TilePosition::ground(10, 10)))
+        ));
+        // Distant z (many floors away in the same space) fails: the metric
+        // is 3D Chebyshev.
+        assert!(!broadcast_visible_from(
+            Some(origin),
+            Some((
+                SpaceId(0),
+                TilePosition {
+                    x: 10,
+                    y: 10,
+                    z: 40
+                }
+            ))
+        ));
+        // A peer without a known position gets no scoped broadcasts.
+        assert!(!broadcast_visible_from(Some(origin), None));
+    }
+
     // This file's harness historically registered `NpcPlugin` (the game copy
     // did not) and spawned the player *without* `MagicEffects` — both preserved.
     fn setup_server_app() -> App {
@@ -2065,6 +2153,107 @@ mod tests {
         assert_eq!(
             upsert_count, 1,
             "expected one RemotePlayerUpserted for re-entering remote, got events: {diff:?}"
+        );
+    }
+
+    #[test]
+    fn peer_projection_freezes_dead_players_view_and_hides_them_from_others() {
+        // Death de-spatializes the player (handle_player_deaths removes
+        // SpaceResident + TilePosition). The dead peer must keep receiving
+        // non-spatial state (vitals for the death overlay) while their world
+        // view freezes — no position change, no remote-player teardown, no
+        // floor/space removal. Other peers must see the body disappear.
+        use crate::game::resources::GameEvent;
+        use crate::player::components::VitalStats;
+        use crate::world::components::{SpaceResident, TilePosition};
+
+        let mut app = setup_server_app();
+        let victim = spawn_player(&mut app, 1, 10, 10);
+        spawn_player(&mut app, 2, 12, 10);
+
+        let mut victim_baseline = ClientGameState::default();
+        fold_into(
+            &mut victim_baseline,
+            project_for(&mut app, 1, &ClientGameState::default()),
+        );
+        let mut witness_baseline = ClientGameState::default();
+        fold_into(
+            &mut witness_baseline,
+            project_for(&mut app, 2, &ClientGameState::default()),
+        );
+        assert!(victim_baseline.remote_players.contains_key(&PlayerId(2)));
+        assert!(witness_baseline.remote_players.contains_key(&PlayerId(1)));
+        let frozen_position = victim_baseline.player_position;
+
+        // Kill + de-spatialize (what handle_player_deaths does).
+        app.world_mut()
+            .get_mut::<VitalStats>(victim)
+            .unwrap()
+            .health = 0.0;
+        app.world_mut()
+            .entity_mut(victim)
+            .remove::<(SpaceResident, TilePosition)>();
+
+        let victim_diff = project_for(&mut app, 1, &victim_baseline);
+        assert!(
+            victim_diff.iter().any(|event| matches!(
+                event,
+                GameEvent::PlayerVitalsChanged { vitals } if vitals.health <= 0.0
+            )),
+            "dead peer must still receive their HP-0 vitals, got: {victim_diff:?}"
+        );
+        assert!(
+            !victim_diff.iter().any(|event| matches!(
+                event,
+                GameEvent::PlayerPositionChanged { .. }
+                    | GameEvent::RemotePlayerRemoved { .. }
+                    | GameEvent::CurrentSpaceChanged { .. }
+            )),
+            "dead peer's world view must freeze, got: {victim_diff:?}"
+        );
+        fold_into(&mut victim_baseline, victim_diff);
+
+        let witness_diff = project_for(&mut app, 2, &witness_baseline);
+        assert!(
+            witness_diff.iter().any(|event| matches!(
+                event,
+                GameEvent::RemotePlayerRemoved { player_id } if *player_id == PlayerId(1)
+            )),
+            "witness must see the dead player removed, got: {witness_diff:?}"
+        );
+        fold_into(&mut witness_baseline, witness_diff);
+
+        // Respawn: heal + re-insert at a new tile (what
+        // process_acknowledge_death_commands does). Position streaming resumes
+        // for the victim and the witness re-sees them.
+        let space_id = app.world().resource::<WorldConfig>().current_space_id;
+        app.world_mut()
+            .get_mut::<VitalStats>(victim)
+            .unwrap()
+            .health = 20.0;
+        app.world_mut()
+            .entity_mut(victim)
+            .insert((SpaceResident { space_id }, TilePosition::ground(14, 10)));
+
+        let respawn_diff = project_for(&mut app, 1, &victim_baseline);
+        assert!(
+            respawn_diff.iter().any(|event| matches!(
+                event,
+                GameEvent::PlayerPositionChanged { tile_position, .. }
+                    if *tile_position == TilePosition::ground(14, 10)
+            )),
+            "respawn must resume position streaming, got: {respawn_diff:?}"
+        );
+        fold_into(&mut victim_baseline, respawn_diff);
+        assert_ne!(victim_baseline.player_position, frozen_position);
+
+        let witness_respawn_diff = project_for(&mut app, 2, &witness_baseline);
+        assert!(
+            witness_respawn_diff.iter().any(|event| matches!(
+                event,
+                GameEvent::RemotePlayerUpserted { player } if player.player_id == PlayerId(1)
+            )),
+            "witness must re-see the respawned player, got: {witness_respawn_diff:?}"
         );
     }
 

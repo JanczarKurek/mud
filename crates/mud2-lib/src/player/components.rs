@@ -74,13 +74,23 @@ pub struct Aware;
 pub struct AutoRetaliate;
 
 /// Present on a player who has died and is waiting to click "Continue" on the
-/// death overlay. While present they stay at HP 0 (regen is gated off below 1)
+/// death overlay. Dead players are **de-spatialized**: `handle_player_deaths`
+/// removes their `SpaceResident` and `TilePosition`, so every spatial system
+/// (NPC detection, combat, projection, AoE, chat scoping) misses them by
+/// construction. While present they stay at HP 0 (regen is gated off below 1)
 /// and `process_game_commands` drops their other commands, so they can't move,
-/// cast, or attack. Removed by `process_acknowledge_death_commands` once the
-/// respawn (heal + teleport home) completes. Session-only — never persisted; a
-/// load-side health clamp (`spawn_player_from_dump`) guards the reload case.
-#[derive(Component, Clone, Copy, Debug, Default)]
-pub struct AwaitingRespawn;
+/// cast, or attack. Removed by `process_acknowledge_death_commands`, which
+/// heals them and re-inserts the spatial components at their respawn point.
+/// Session-only — never persisted; a load-side health clamp
+/// (`spawn_player_from_dump`) guards the reload case.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct AwaitingRespawn {
+    /// The space the player died in. Keeps ephemeral dungeons (and the corpse
+    /// in them) alive until the respawn click even though the dead player no
+    /// longer counts as a `SpaceResident` there — see
+    /// `cleanup_empty_ephemeral_spaces`.
+    pub death_space: crate::world::components::SpaceId,
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct PlayerId(pub u64);

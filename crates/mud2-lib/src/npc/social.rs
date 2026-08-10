@@ -180,12 +180,18 @@ pub fn tick_social_chatter(
         } else {
             conv.b
         };
-        if let Some(object_id) = info.get(&speaker).and_then(|i| i.object_id) {
-            ui_events.push_broadcast(GameUiEvent::SpeechBubble {
-                speaker_object_id: object_id,
-                text: conv.script[conv.next_line].clone(),
-                style: SpeechBubbleStyle::Say,
-            });
+        if let Some(speaker_info) = info.get(&speaker) {
+            if let Some(object_id) = speaker_info.object_id {
+                ui_events.push_broadcast_near(
+                    speaker_info.space,
+                    speaker_info.tile,
+                    GameUiEvent::SpeechBubble {
+                        speaker_object_id: object_id,
+                        text: conv.script[conv.next_line].clone(),
+                        style: SpeechBubbleStyle::Say,
+                    },
+                );
+            }
         }
         if let Ok((.., mut memory, _, _, _)) = npc_query.get_mut(speaker) {
             memory.last_bark_seconds = elapsed;

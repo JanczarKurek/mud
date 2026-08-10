@@ -82,7 +82,9 @@ struct TitleScreenState {
     modal_open: bool,
     /// Whether the starting-map picker modal is on screen (embedded only).
     map_picker_open: bool,
-    /// Direct-connect inputs (transient — never written to disk).
+    /// Direct-connect inputs. The joined `host:port` is persisted via
+    /// `SavedServerList.selected_addr` on "Use this address"; the fields are
+    /// re-seeded from it on the next title-screen entry.
     direct_host: String,
     direct_port: String,
     direct_focused: Option<DirectField>,
@@ -135,6 +137,17 @@ fn embedded_entry() -> TitleServerEntry {
     }
 }
 
+/// Card entry for an address typed into the direct-connect fields (not in the
+/// saved list). Shared by the picker's "Use this address" button and the
+/// restore path in `refresh_current_server` so both render identically.
+fn direct_entry(addr: &str) -> TitleServerEntry {
+    TitleServerEntry {
+        label: format!("Direct: {addr}"),
+        description: format!("Connect to {addr}."),
+        server_addr: Some(addr.to_owned()),
+    }
+}
+
 fn saved_entry_to_title(name: &str, addr: &str) -> TitleServerEntry {
     TitleServerEntry {
         label: name.to_owned(),
@@ -152,37 +165,60 @@ fn build_picker_entries(saved: &SavedServerList) -> Vec<TitleServerEntry> {
         .collect()
 }
 
+/// Resolve which server card to show from the persisted `SavedServerList`.
+/// `selected_addr` (the last used address, saved or direct) wins: a matching
+/// saved entry keeps its name, any other address is rebuilt as a direct
+/// entry. With no persisted selection, fall back to the first saved entry
+/// (usually "Local").
+fn resolve_current_entry(saved: &SavedServerList) -> Option<TitleServerEntry> {
+    let entries = build_picker_entries(saved);
+    if let Some(addr) = saved.selected_addr.as_deref() {
+        if let Some(entry) = entries
+            .iter()
+            .find(|e| e.server_addr.as_deref() == Some(addr))
+        {
+            return Some(entry.clone());
+        }
+        return Some(direct_entry(addr));
+    }
+    entries.into_iter().next()
+}
+
 /// `OnEnter(TitleScreen)`: ensure `current` is populated for TCP mode using
-/// the loaded `SavedServerList`. Honours `selected_addr` (the last picked
-/// saved entry, persisted across launches); falls back to the first entry.
+/// the loaded `SavedServerList`. Honours `selected_addr` (the last used
+/// address — saved or direct — persisted across launches), so bouncing back
+/// here after a failed login keeps the chosen server instead of resetting to
+/// the default.
 fn refresh_current_server(mut title_state: ResMut<TitleScreenState>, saved: Res<SavedServerList>) {
     if !matches!(title_state.runtime, AppRuntime::TcpClient) {
         return;
     }
-
-    let entries = build_picker_entries(&saved);
 
     let still_valid = title_state
         .current
         .as_ref()
         .and_then(|cur| cur.server_addr.as_deref())
         .map(|addr| {
-            entries
-                .iter()
-                .any(|e| e.server_addr.as_deref() == Some(addr))
+            saved.saved.iter().any(|e| e.addr == addr)
+                || saved.selected_addr.as_deref() == Some(addr)
         })
         .unwrap_or(false);
 
     if !still_valid {
-        // First try the persisted last-picked addr; fall back to the first
-        // saved entry (usually "Local").
-        let remembered = saved.selected_addr.as_deref().and_then(|addr| {
-            entries
-                .iter()
-                .find(|e| e.server_addr.as_deref() == Some(addr))
-                .cloned()
-        });
-        title_state.current = remembered.or_else(|| entries.into_iter().next());
+        title_state.current = resolve_current_entry(&saved);
+    }
+
+    // Seed empty direct-connect fields from the persisted address so the
+    // modal reopens with the last-used host/port after a relaunch.
+    if title_state.direct_host.is_empty() && title_state.direct_port.is_empty() {
+        if let Some((host, port)) = saved
+            .selected_addr
+            .as_deref()
+            .and_then(|addr| addr.rsplit_once(':'))
+        {
+            title_state.direct_host = host.to_owned();
+            title_state.direct_port = port.to_owned();
+        }
     }
 }
 
@@ -1361,10 +1397,10 @@ fn spawn_picker_button(
     );
 }
 
-/// Modal button handler: select a saved entry, build a transient entry from
-/// the direct-connect inputs, or cancel out. Picking a saved entry also
-/// updates `SavedServerList.selected_addr` so it's restored next launch;
-/// direct-connect picks are transient and leave the persisted addr alone.
+/// Modal button handler: select a saved entry, build an entry from the
+/// direct-connect inputs, or cancel out. Both kinds of pick update
+/// `SavedServerList.selected_addr`, so the last used address — saved or
+/// direct — is restored after a failed login and on the next launch.
 fn handle_server_picker_buttons(
     mut title_state: ResMut<TitleScreenState>,
     mut saved: ResMut<SavedServerList>,
@@ -1400,14 +1436,68 @@ fn handle_server_picker_buttons(
                     continue;
                 }
                 let addr = format!("{host}:{port}");
-                title_state.current = Some(TitleServerEntry {
-                    label: format!("Direct: {addr}"),
-                    description: format!("Connect to {addr} (session only)."),
-                    server_addr: Some(addr),
-                });
+                if saved.selected_addr.as_deref() != Some(addr.as_str()) {
+                    saved.selected_addr = Some(addr.clone());
+                    saved.dirty = true;
+                }
+                title_state.current = Some(direct_entry(&addr));
                 title_state.modal_open = false;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::settings::SavedServerEntry;
+
+    fn saved_list(entries: &[(&str, &str)], selected_addr: Option<&str>) -> SavedServerList {
+        SavedServerList {
+            saved: entries
+                .iter()
+                .map(|(name, addr)| SavedServerEntry {
+                    name: (*name).to_owned(),
+                    addr: (*addr).to_owned(),
+                })
+                .collect(),
+            selected_addr: selected_addr.map(str::to_owned),
+            dirty: false,
+        }
+    }
+
+    #[test]
+    fn selected_addr_matching_saved_entry_keeps_its_name() {
+        let saved = saved_list(
+            &[
+                ("Local", "127.0.0.1:7000"),
+                ("Prod", "mud.example.org:7000"),
+            ],
+            Some("mud.example.org:7000"),
+        );
+        let entry = resolve_current_entry(&saved).expect("entry");
+        assert_eq!(entry.label, "Prod");
+        assert_eq!(entry.server_addr.as_deref(), Some("mud.example.org:7000"));
+    }
+
+    #[test]
+    fn selected_addr_not_in_saved_list_becomes_direct_entry() {
+        let saved = saved_list(&[("Local", "127.0.0.1:7000")], Some("192.168.1.5:7000"));
+        let entry = resolve_current_entry(&saved).expect("entry");
+        assert_eq!(entry.label, "Direct: 192.168.1.5:7000");
+        assert_eq!(entry.server_addr.as_deref(), Some("192.168.1.5:7000"));
+    }
+
+    #[test]
+    fn no_selected_addr_falls_back_to_first_saved_entry() {
+        let saved = saved_list(&[("Local", "127.0.0.1:7000")], None);
+        let entry = resolve_current_entry(&saved).expect("entry");
+        assert_eq!(entry.label, "Local");
+    }
+
+    #[test]
+    fn empty_list_without_selection_yields_none() {
+        assert!(resolve_current_entry(&saved_list(&[], None)).is_none());
     }
 }
 

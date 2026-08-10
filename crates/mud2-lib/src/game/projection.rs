@@ -65,12 +65,13 @@ use crate::world::object_definitions::OverworldObjectDefinitions;
 #[cfg(feature = "server-sim")]
 use crate::world::resources::SpaceManager;
 
-/// Euclidean tile radius around the local player within which dynamic entities
-/// (remote players, containers, world objects) and per-tile floor edits are
-/// replicated. Same-floor only — entities on a different `z` are pruned. Larger
-/// than [`crate::game::discovery::DISCOVERY_RADIUS`] so entities exist on the
-/// client before they enter the visible fog disc; tweak here to widen/narrow
-/// what each client receives.
+/// Chebyshev (XY-square) tile radius around the local player within which
+/// dynamic entities (remote players, containers, world objects) and per-tile
+/// floor edits are replicated. `z` is deliberately ignored: entities on other
+/// floors of the same space still replicate, so stairs/balcony sightlines
+/// don't pop. Larger than [`crate::game::discovery::DISCOVERY_RADIUS`] so
+/// entities exist on the client before they enter the visible fog disc; tweak
+/// here to widen/narrow what each client receives.
 pub const INTEREST_RADIUS: f32 = 30.0;
 
 #[cfg(feature = "server-sim")]
@@ -105,8 +106,11 @@ pub type ProjectionPlayerQuery<'w, 's> = Query<
         (Entity, &'static PlayerIdentity),
         &'static InventoryState,
         &'static ChatLogState,
-        &'static SpaceResident,
-        &'static TilePosition,
+        // Optional: dead players are de-spatialized (components removed until
+        // the respawn click) but must keep replicating their non-spatial state
+        // (vitals, chat, inventory) so the death overlay works.
+        Option<&'static SpaceResident>,
+        Option<&'static TilePosition>,
         &'static VitalStats,
         &'static DerivedStats,
         Option<&'static CombatTarget>,
@@ -402,8 +406,13 @@ fn emit_player_events(
 
         if identity.id == local_player_id {
             local_player_entity = Some(player_entity);
-            local_space_id = Some(space_resident.space_id);
-            local_tile_position = Some(*tile_position);
+            // Dead (de-spatialized) players have no position: leave the
+            // context `None`, which freezes the client's floor/space/remote
+            // view behind the death overlay (see `compute_events_for_peer`).
+            if let (Some(space_resident), Some(tile_position)) = (space_resident, tile_position) {
+                local_space_id = Some(space_resident.space_id);
+                local_tile_position = Some(*tile_position);
+            }
             if let Some(reveals) = sense_reveals {
                 local_revealed = reveals.revealed.keys().copied().collect();
             }
@@ -435,16 +444,18 @@ fn emit_player_events(
                 },
             );
 
-            let current_player_position =
-                SpacePosition::new(space_resident.space_id, *tile_position);
-            if previous.player_position != Some(current_player_position)
-                || previous.player_facing != Some(projected_facing)
-            {
-                events.push(GameEvent::PlayerPositionChanged {
-                    position: current_player_position,
-                    tile_position: *tile_position,
-                    facing: projected_facing,
-                });
+            if let (Some(space_resident), Some(tile_position)) = (space_resident, tile_position) {
+                let current_player_position =
+                    SpacePosition::new(space_resident.space_id, *tile_position);
+                if previous.player_position != Some(current_player_position)
+                    || previous.player_facing != Some(projected_facing)
+                {
+                    events.push(GameEvent::PlayerPositionChanged {
+                        position: current_player_position,
+                        tile_position: *tile_position,
+                        facing: projected_facing,
+                    });
+                }
             }
 
             diff_emit!(
@@ -756,6 +767,15 @@ fn emit_player_events(
                 }
             }
         } else {
+            // Dead (de-spatialized) remote players have no position and are
+            // never candidates; the removal loop in
+            // `emit_remote_player_events` then drops them from this peer's
+            // view. They reappear automatically once respawn re-inserts the
+            // spatial components.
+            let (Some(space_resident), Some(tile_position)) = (space_resident, tile_position)
+            else {
+                continue;
+            };
             // Defer projection until after the player loop so we know
             // local_space_id / local_tile_position before applying the
             // same-space + vicinity filter, regardless of iteration order.
@@ -803,19 +823,25 @@ fn emit_remote_player_events(
     let mut seen_remote_player_ids: std::collections::HashSet<PlayerId> =
         std::collections::HashSet::new();
 
-    if let (Some(local_space), Some(local_tile)) = (local_space_id, local_tile_position) {
-        for (resident, tile, projected) in deferred_remote_candidates.drain(..) {
-            if resident.space_id != local_space || !in_interest_radius(local_tile, tile) {
-                continue;
-            }
-            seen_remote_player_ids.insert(projected.player_id);
-            diff_emit!(
-                events,
-                previous.remote_players.get(&projected.player_id),
-                Some(&projected),
-                GameEvent::RemotePlayerUpserted { player: projected },
-            );
+    let (Some(local_space), Some(local_tile)) = (local_space_id, local_tile_position) else {
+        // The local player has no position — either pre-spawn bootstrap
+        // (baseline is empty, nothing to remove) or dead behind the death
+        // overlay. Emitting removals here would strip every remote sprite
+        // from the frozen scene, so hold the view instead.
+        return;
+    };
+
+    for (resident, tile, projected) in deferred_remote_candidates.drain(..) {
+        if resident.space_id != local_space || !in_interest_radius(local_tile, tile) {
+            continue;
         }
+        seen_remote_player_ids.insert(projected.player_id);
+        diff_emit!(
+            events,
+            previous.remote_players.get(&projected.player_id),
+            Some(&projected),
+            GameEvent::RemotePlayerUpserted { player: projected },
+        );
     }
 
     for previous_id in previous.remote_players.keys() {

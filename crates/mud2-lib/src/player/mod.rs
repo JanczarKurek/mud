@@ -49,8 +49,9 @@ use crate::player::skills::process_allocate_skill_commands;
 use crate::player::systems::refresh_derived_player_stats;
 use crate::player::systems::{
     move_player_on_grid, rotate_nearby_object_on_shortcut, set_home_on_keypress,
-    sync_player_appearance_from_client_state, sync_projected_player_from_client_state,
-    toggle_auto_retaliate_on_keypress, toggle_aware_on_keypress, toggle_sneak_on_keypress,
+    sync_player_appearance_from_client_state, sync_player_death_visibility,
+    sync_projected_player_from_client_state, toggle_auto_retaliate_on_keypress,
+    toggle_aware_on_keypress, toggle_sneak_on_keypress,
 };
 
 #[cfg(feature = "server-sim")]
@@ -144,12 +145,18 @@ impl Plugin for PlayerServerPlugin {
                     .in_set(crate::game::CommandIntercept)
                     .run_if(simulation_active),
             )
-            // Handle deaths after combat resolution. resolve_battle_turn fills
-            // PendingPlayerDeaths; this drains it.
+            // Handle deaths after damage resolution. apply_pending_damage
+            // fills PendingPlayerDeaths; this drains it. The .before edge on
+            // the network flush guarantees the de-spatialization Commands are
+            // applied before the same frame's projection, so the death frame
+            // replicates HP-0 vitals + drained inventory + the death chat line
+            // in one batch and the body vanishes from other peers immediately.
             .add_systems(
                 Update,
                 handle_player_deaths
                     .after(crate::combat::systems::resolve_battle_turn)
+                    .after(crate::combat::damage::apply_pending_damage)
+                    .before(crate::network::sets::NetServerSend)
                     .run_if(simulation_active),
             );
     }
@@ -161,7 +168,11 @@ impl Plugin for PlayerClientPlugin {
         app.add_systems(OnEnter(ClientAppState::InGame), spawn_player_visual)
             .add_systems(
                 Update,
-                sync_projected_player_from_client_state.run_if(in_state(ClientAppState::InGame)),
+                (
+                    sync_projected_player_from_client_state,
+                    sync_player_death_visibility,
+                )
+                    .run_if(in_state(ClientAppState::InGame)),
             )
             // Player visual sync runs in both InGame and MapEditor so the
             // player's recolor layers stay in sync with the shared animation

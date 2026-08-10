@@ -235,6 +235,11 @@ pub fn update_roaming_npcs(
     // which is what lets an NPC pursue another NPC (companion ↔ monster).
     // Faction-less peaceful NPCs (shopkeepers, quest-givers) are omitted, so
     // they stay non-combatants and the list stays small.
+    // Dead players never appear here: death removes their
+    // `SpaceResident`/`TilePosition` (see `handle_player_deaths`), so this
+    // spatial query misses them by construction — every NPC's target
+    // resolution fails (Engage/Pursue falls back to Wander) and the detector
+    // can't re-acquire the body.
     let mut combatants: Vec<CombatantDetectInfo> = player_query
         .iter()
         .map(
@@ -659,11 +664,15 @@ pub fn update_roaming_npcs(
             if let (Some(ui_events), Some(overworld_object)) =
                 (ui_events.as_deref_mut(), overworld_object)
             {
-                ui_events.push_broadcast(GameUiEvent::SpeechBubble {
-                    speaker_object_id: overworld_object.object_id,
-                    text: bark.text,
-                    style: bark.style,
-                });
+                ui_events.push_broadcast_near(
+                    resident.space_id,
+                    *tile_position,
+                    GameUiEvent::SpeechBubble {
+                        speaker_object_id: overworld_object.object_id,
+                        text: bark.text,
+                        style: bark.style,
+                    },
+                );
                 ai_memory.last_bark_seconds = elapsed;
             }
         }
@@ -2769,6 +2778,57 @@ mod tests {
         assert!(
             matches!(app.world().get::<AiState>(npc), Some(AiState::Alert { .. })),
             "crossing a floor should drop to Alert (follow), not instantly to Wander"
+        );
+    }
+
+    #[test]
+    fn npc_drops_aggro_when_player_dies() {
+        // Death de-spatializes the player (`handle_player_deaths` removes
+        // `SpaceResident` + `TilePosition`), so the engaged NPC's target
+        // resolution fails: it drops its CombatTarget and goes back to Wander
+        // instead of crowding the grave, and detection must not re-acquire
+        // the body on later ticks.
+        let mut app = npc_test_app();
+
+        let player = spawn_player(&mut app, 1, TilePosition::ground(5, 6));
+        let npc = spawn_melee(&mut app, TilePosition::ground(5, 5));
+
+        app.add_systems(Update, update_roaming_npcs);
+        app.update();
+        assert_eq!(
+            app.world().get::<CombatTarget>(npc).map(|t| t.entity),
+            Some(player),
+            "NPC should engage the adjacent player first"
+        );
+
+        app.world_mut()
+            .entity_mut(player)
+            .remove::<(SpaceResident, TilePosition)>();
+        app.world_mut()
+            .get_mut::<RoamingStepTimer>(npc)
+            .unwrap()
+            .remaining_seconds = 0.0;
+        app.update();
+
+        assert!(
+            app.world().get::<CombatTarget>(npc).is_none(),
+            "a dead player must not hold NPC aggro"
+        );
+        assert!(
+            matches!(app.world().get::<AiState>(npc), Some(AiState::Wander)),
+            "NPC should return to Wander over the body, got {:?}",
+            app.world().get::<AiState>(npc)
+        );
+
+        // Another tick: the body must stay undetectable.
+        app.world_mut()
+            .get_mut::<RoamingStepTimer>(npc)
+            .unwrap()
+            .remaining_seconds = 0.0;
+        app.update();
+        assert!(
+            app.world().get::<CombatTarget>(npc).is_none(),
+            "detection must not re-acquire a dead player"
         );
     }
 

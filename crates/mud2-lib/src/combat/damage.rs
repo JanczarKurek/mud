@@ -25,7 +25,7 @@ use crate::game::resources::{GameUiEvent, PendingGameUiEvents, VfxAnchor};
 use crate::magic::effects::MagicEffects;
 use crate::magic::resources::{EffectKind, SpellDefinitions};
 use crate::npc::components::{LastDamagedAt, Npc};
-use crate::player::components::{ChatLog, GodMode, Player, PlayerId, PlayerIdentity, VitalStats};
+use crate::player::components::{GodMode, Player, PlayerId, PlayerIdentity, VitalStats};
 use crate::player::lifecycle::{PendingPlayerDeath, PendingPlayerDeaths};
 use crate::player::progression::{xp_grant_for_kill, Experience, PendingXpGrant, PendingXpGrants};
 use crate::quest::events::{PendingQuestEvents, QuestEvent};
@@ -112,7 +112,7 @@ pub fn apply_pending_damage(
     mut quest_events: ResMut<PendingQuestEvents>,
     mut pending_player_deaths: ResMut<PendingPlayerDeaths>,
     mut pending_xp_grants: ResMut<PendingXpGrants>,
-    mut chat_log_query: Query<&mut ChatLog, With<Player>>,
+    mut chat_log_query: crate::combat::systems::ScopedChatLogQuery,
     player_identity_query: Query<&PlayerIdentity, With<Player>>,
     mut commands: Commands,
 ) {
@@ -172,10 +172,14 @@ pub fn apply_pending_damage(
                 .vfx_override
                 .clone()
                 .unwrap_or_else(|| event.damage_type.default_hit_vfx_id().to_owned());
-            ui_events.push_broadcast(GameUiEvent::VfxSpawn {
-                definition_id: vfx_id,
-                anchor: VfxAnchor::follow(target_object.object_id),
-            });
+            ui_events.push_broadcast_near(
+                target_space.space_id,
+                *target_position,
+                GameUiEvent::VfxSpawn {
+                    definition_id: vfx_id,
+                    anchor: VfxAnchor::follow(target_object.object_id),
+                },
+            );
             continue;
         }
 
@@ -220,19 +224,45 @@ pub fn apply_pending_damage(
                     .find(|identity| identity.id == player_id)
                     .map(|identity| identity.display_name.clone())
                     .unwrap_or_else(|| format!("Player#{}", player_id.0));
-                broadcast_chat_line(
+                crate::combat::systems::push_chat_line_near(
                     &mut chat_log_query,
-                    format!("[{killer_name} gained {amount} XP]"),
+                    space_id,
+                    position,
+                    &format!("[{killer_name} gained {amount} XP]"),
                 );
             }
-            ui_events.push_broadcast(GameUiEvent::VfxSpawn {
-                definition_id: "death_poof".to_owned(),
-                anchor: VfxAnchor::tile(space_id, position),
-            });
+            ui_events.push_broadcast_near(
+                space_id,
+                position,
+                GameUiEvent::VfxSpawn {
+                    definition_id: "death_poof".to_owned(),
+                    anchor: VfxAnchor::tile(space_id, position),
+                },
+            );
             commands.entity(event.target).despawn();
-            broadcast_chat_line(&mut chat_log_query, format!("[{target_name} dies]"));
+            crate::combat::systems::push_chat_line_near(
+                &mut chat_log_query,
+                space_id,
+                position,
+                &format!("[{target_name} dies]"),
+            );
         } else if is_player_target {
-            broadcast_chat_line(&mut chat_log_query, format!("[{target_name} is defeated]"));
+            // Same death VFX as NPCs: the projection stops replicating the
+            // dead player this tick, so the poof covers the sprite vanishing.
+            ui_events.push_broadcast_near(
+                space_id,
+                position,
+                GameUiEvent::VfxSpawn {
+                    definition_id: "death_poof".to_owned(),
+                    anchor: VfxAnchor::tile(space_id, position),
+                },
+            );
+            crate::combat::systems::push_chat_line_near(
+                &mut chat_log_query,
+                space_id,
+                position,
+                &format!("[{target_name} is defeated]"),
+            );
             pending_player_deaths.deaths.push(PendingPlayerDeath {
                 entity: event.target,
                 space_id,
@@ -240,12 +270,6 @@ pub fn apply_pending_damage(
                 name: target_name,
             });
         }
-    }
-}
-
-fn broadcast_chat_line(chat_log_query: &mut Query<&mut ChatLog, With<Player>>, message: String) {
-    for mut chat_log in chat_log_query.iter_mut() {
-        chat_log.push_line(message.clone());
     }
 }
 

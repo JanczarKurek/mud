@@ -71,11 +71,15 @@ pub fn process_say_commands(
         // chars (the chat log itself keeps the original text).
         let bubble_text = sanitize_for_bubble(trimmed);
         if !bubble_text.is_empty() {
-            ui_events.push_broadcast(GameUiEvent::SpeechBubble {
-                speaker_object_id,
-                text: bubble_text,
-                style: SpeechBubbleStyle::Say,
-            });
+            ui_events.push_broadcast_near(
+                speaker_space_id,
+                speaker_tile,
+                GameUiEvent::SpeechBubble {
+                    speaker_object_id,
+                    text: bubble_text,
+                    style: SpeechBubbleStyle::Say,
+                },
+            );
         }
     }
 }
@@ -242,18 +246,21 @@ mod tests {
         let events = &app.world().resource::<PendingGameUiEvents>().broadcast;
         let bubble = events
             .iter()
-            .find_map(|ev| match ev {
+            .find_map(|scoped| match &scoped.event {
                 GameUiEvent::SpeechBubble {
                     speaker_object_id,
                     text,
                     style,
-                } => Some((*speaker_object_id, text.clone(), *style)),
+                } => Some((*speaker_object_id, text.clone(), *style, scoped.scope)),
                 _ => None,
             })
             .expect("expected a SpeechBubble event for the Say command");
         assert_eq!(bubble.0, 1001);
         assert_eq!(bubble.1, "hi there");
         assert_eq!(bubble.2, SpeechBubbleStyle::Say);
+        // Scoped to the speaker's tile so the bubble never leaks to peers in
+        // other spaces or distant floors.
+        assert_eq!(bubble.3, Some((SpaceId(0), TilePosition::ground(0, 0))));
     }
 
     #[test]

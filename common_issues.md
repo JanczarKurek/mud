@@ -175,3 +175,20 @@
 **The rule**: client intent (input, UI clicks, console submissions) goes into `ClientPendingCommands` — it is drained only by `flush_client_commands_to_server` and always crosses the wire, coming back attributed to the sending peer. `PendingGameCommands` is server-side (network ingest, admin REPL, quest/scripting producers, map editor); its untargeted entries resolve to "first player" and are trusted as server-internal. Pushing client intent into `PendingGameCommands` in the unified embedded App gets it consumed *locally* by a server drainer — a silent wire bypass that works offline and breaks (or double-fires) online.
 
 **Also gone with the unification** (don't reference these in new code): `collect_game_events_from_authority`, `route_peer_ui_events_to_local`, `spawn_embedded_player_authoritative`, `sync_authoritative_player_display`, `sync_authoritative_player_position_view`, the character screens' direct-sqlite arms, and `LocalSelectedCharacter`. Frame ordering across the client/server halves is declared via the ungated `network::sets` SystemSets.
+
+---
+
+## NPCs crowding a dead player's grave (dead body still "in the world")
+
+**Symptom**: A player dies; the mobs that killed them stand around the tombstone (or keep swinging) until the player clicks "Continue" on the death overlay — only the respawn teleport finally broke aggro.
+
+**Root cause**: The dead player's authoritative entity stayed a full world resident (`SpaceResident` + `TilePosition` at the death tile, HP 0) until the respawn click. Nothing in the NPC pipeline treated HP 0 as "gone": the body stayed in the per-tick combatant snapshot, `nearest_visible_enemy` could re-acquire it, and the in-attack-reach early return in `tick_pursue_or_engage` re-affirmed the `CombatTarget` forever. A first fix attempt scattered `health <= 0.0` checks across NPC/combat systems — working, but every present and future spatial system had to individually remember dead players.
+
+**Fix (structural — the current invariant)**: **Dead players are de-spatialized.** `handle_player_deaths` removes `SpaceResident` + `TilePosition` (keeping the session components: vitals at 0, chat log, inventory, XP, `AwaitingRespawn { death_space }`), and `process_acknowledge_death_commands` re-inserts them at the respawn point. Every spatial query — NPC detection, combat validation, AoE, chat scoping, remote-player projection — misses dead players *by construction*. Consequences for new code:
+
+- **Never assume a `Player` entity has `SpaceResident`/`TilePosition`.** Queries that must still see dead players (saves, projection of their own non-spatial state) take `Option<>` and fall back to `resolve_respawn_destination`; queries that should skip dead players just require the components.
+- The dead peer's own client keeps receiving non-spatial diffs (HP-0 vitals for the overlay, chat) but its world view freezes: `emit_remote_player_events` early-returns when the local player has no position, so the scene behind the overlay is not torn down.
+- `cleanup_empty_ephemeral_spaces` counts `AwaitingRespawn::death_space` as occupancy so a dungeon (and the corpse in it) survives until the respawn click.
+- The HP≤0 guards kept in `apply_pending_damage` and `clear_invalid_combat_targets` cover only the sub-frame window on the death frame itself (component removal via `Commands` applies at the next sync point) — they are defense-in-depth, not the mechanism.
+
+**Tests**: `player::lifecycle::tests::death_despatializes_and_ack_respatializes_at_respawn_point`, `npc::systems::tests::npc_drops_aggro_when_player_dies`, `network::systems::tests::peer_projection_freezes_dead_players_view_and_hides_them_from_others`, e2e `tests/death_respawn.rs`, `tests/combat_scoping.rs`.

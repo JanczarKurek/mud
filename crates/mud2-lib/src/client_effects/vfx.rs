@@ -118,8 +118,11 @@ fn resolve_anchor(
             object_id,
             offset_pixels,
         } => {
-            let initial = lookup_object_view(*object_id, client_state)
-                .or_else(|| client_player_view(client_state))?;
+            // Unknown object: the effect targets something this client
+            // doesn't replicate (out of range, another space) — skip it
+            // rather than falling back to the local player, which would
+            // render someone else's hit VFX on our own character.
+            let initial = lookup_object_view(*object_id, client_state)?;
             Some((
                 initial,
                 Some(AttachedToObject {

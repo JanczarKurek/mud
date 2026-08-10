@@ -154,7 +154,7 @@ pub fn clear_invalid_combat_targets(
         &TilePosition,
         Option<&CombatLeash>,
     )>,
-    entity_query: Query<(&SpaceResident, &TilePosition)>,
+    entity_query: Query<(&SpaceResident, &TilePosition, Option<&VitalStats>)>,
 ) {
     for (entity, combat_target, attacker_space, attacker_position, leash) in &target_query {
         if combat_target.entity == entity {
@@ -162,10 +162,20 @@ pub fn clear_invalid_combat_targets(
             continue;
         }
 
-        let Ok((target_space, target_position)) = entity_query.get(combat_target.entity) else {
+        let Ok((target_space, target_position, target_vitals)) =
+            entity_query.get(combat_target.entity)
+        else {
             commands.entity(entity).remove::<CombatTarget>();
             continue;
         };
+
+        // Dead targets are as gone as despawned ones. Matters for players,
+        // whose body entity stays in place at HP 0 until the respawn click —
+        // without this, mobs keep swinging at (and crowding around) the grave.
+        if target_vitals.is_some_and(|v| v.health <= 0.0) {
+            commands.entity(entity).remove::<CombatTarget>();
+            continue;
+        }
 
         if attacker_space.space_id != target_space.space_id {
             commands.entity(entity).remove::<CombatTarget>();
@@ -235,7 +245,7 @@ pub fn resolve_battle_turn(
     >,
     floor_maps: Option<Res<crate::world::floor_map::FloorMaps>>,
     floor_defs: Option<Res<crate::world::floor_definitions::FloorTilesetDefinitions>>,
-    mut chat_log_query: Query<&mut ChatLog, With<Player>>,
+    mut chat_log_query: ScopedChatLogQuery,
     mut ui_events: ResMut<PendingGameUiEvents>,
     // Tupled for the same reason as `aux_reads`: this system is at Bevy's
     // 16-system-param cap, and NPC summons need their own deferred queue.
@@ -518,9 +528,11 @@ pub fn resolve_battle_turn(
             )
         {
             if attacker.is_player {
-                broadcast_chat_line(
+                push_chat_line_near(
                     &mut chat_log_query,
-                    format!("[{} has no clear shot]", attacker.name),
+                    attacker.space_id,
+                    attacker.position,
+                    &format!("[{} has no clear shot]", attacker.name),
                 );
             }
             continue;
@@ -533,9 +545,11 @@ pub fn resolve_battle_turn(
             };
             match inventory.consume_one_ammo() {
                 AmmoConsumption::None => {
-                    broadcast_chat_line(
+                    push_chat_line_near(
                         &mut chat_log_query,
-                        format!("[{} is out of ammo]", attacker.name),
+                        attacker.space_id,
+                        attacker.position,
+                        &format!("[{} is out of ammo]", attacker.name),
                     );
                     continue;
                 }
@@ -548,15 +562,21 @@ pub fn resolve_battle_turn(
                 .ranged_projectile_sprite
                 .clone()
                 .unwrap_or_else(|| "arrow".to_owned());
-            ui_events.push_broadcast(GameUiEvent::ProjectileFired {
-                from_tile: attacker.position,
-                to_tile: target.position,
-                sprite_definition_id: sprite_id,
-                // Ranged physical attacks keep the original fixed flight feel;
-                // their damage already resolved this turn (cosmetic only).
-                duration_seconds: crate::client_effects::projectile::PROJECTILE_DURATION_SECONDS,
-                target_object_id: None,
-            });
+            ui_events.push_broadcast_near(
+                attacker.space_id,
+                attacker.position,
+                GameUiEvent::ProjectileFired {
+                    from_tile: attacker.position,
+                    to_tile: target.position,
+                    sprite_definition_id: sprite_id,
+                    // Ranged physical attacks keep the original fixed flight
+                    // feel; their damage already resolved this turn (cosmetic
+                    // only).
+                    duration_seconds:
+                        crate::client_effects::projectile::PROJECTILE_DURATION_SECONDS,
+                    target_object_id: None,
+                },
+            );
         }
 
         // A committed attack (range, LoS, and ammo all cleared) is loud — even
@@ -670,13 +690,19 @@ pub fn resolve_battle_turn(
         // spell, DoT, environment — wakes the target uniformly. NPCs keep
         // their CombatTarget so they re-engage immediately after waking.
         if crit {
-            ui_events.push_broadcast(GameUiEvent::AttackCrit {
-                attacker_object_id: attacker.object_id,
-                target_object_id: target.object_id,
-            });
-            broadcast_chat_line(
+            ui_events.push_broadcast_near(
+                attacker.space_id,
+                attacker.position,
+                GameUiEvent::AttackCrit {
+                    attacker_object_id: attacker.object_id,
+                    target_object_id: target.object_id,
+                },
+            );
+            push_chat_line_near(
                 &mut chat_log_query,
-                format!(
+                attacker.space_id,
+                attacker.position,
+                &format!(
                     "[{} CRITS {} for {damage} {} damage!]",
                     attacker.name,
                     target.name,
@@ -684,9 +710,11 @@ pub fn resolve_battle_turn(
                 ),
             );
         } else {
-            broadcast_chat_line(
+            push_chat_line_near(
                 &mut chat_log_query,
-                format!(
+                attacker.space_id,
+                attacker.position,
+                &format!(
                     "[{} hit {} for {damage} {} damage]",
                     attacker.name,
                     target.name,
@@ -733,19 +761,25 @@ fn roll_to_hit(
     attacker: &CombatantSnapshot,
     target: &CombatantSnapshot,
     ui_events: &mut PendingGameUiEvents,
-    chat_log_query: &mut Query<&mut ChatLog, With<Player>>,
+    chat_log_query: &mut ScopedChatLogQuery,
 ) -> Option<i32> {
     let (d20, attack_total) = attack_roll_total(attacker, target, attacker.object_id);
     let dc = dodge_dc(target);
     let hit = d20 == 20 || (d20 != 1 && attack_total >= dc);
     if !hit {
-        ui_events.push_broadcast(GameUiEvent::AttackDodged {
-            attacker_object_id: attacker.object_id,
-            target_object_id: target.object_id,
-        });
-        broadcast_chat_line(
+        ui_events.push_broadcast_near(
+            attacker.space_id,
+            attacker.position,
+            GameUiEvent::AttackDodged {
+                attacker_object_id: attacker.object_id,
+                target_object_id: target.object_id,
+            },
+        );
+        push_chat_line_near(
             chat_log_query,
-            format!("[{} dodges {}'s attack]", target.name, attacker.name),
+            attacker.space_id,
+            attacker.position,
+            &format!("[{} dodges {}'s attack]", target.name, attacker.name),
         );
         return None;
     }
@@ -792,7 +826,7 @@ fn apply_backstab(
     attacker: &CombatantSnapshot,
     target: &CombatantSnapshot,
     ai_state_query: &Query<&crate::npc::components::AiState, With<crate::npc::components::Npc>>,
-    chat_log_query: &mut Query<&mut ChatLog, With<Player>>,
+    chat_log_query: &mut ScopedChatLogQuery,
 ) -> i32 {
     let backstab = attacker.is_player
         && attacker.sneaking
@@ -819,9 +853,11 @@ fn apply_backstab(
         }
         _ => crate::combat::formulas::BACKSTAB_FLAT_BONUS,
     };
-    broadcast_chat_line(
+    push_chat_line_near(
         chat_log_query,
-        format!(
+        attacker.space_id,
+        attacker.position,
+        &format!(
             "[{} strikes {} from the shadows: +{bonus} backstab damage]",
             attacker.name, target.name
         ),
@@ -843,7 +879,7 @@ fn roll_block(
     target: &CombatantSnapshot,
     damage: i32,
     ui_events: &mut PendingGameUiEvents,
-    chat_log_query: &mut Query<&mut ChatLog, With<Player>>,
+    chat_log_query: &mut ScopedChatLogQuery,
 ) -> i32 {
     if !target.has_shield {
         return damage;
@@ -859,14 +895,20 @@ fn roll_block(
         return damage;
     }
     let block_amount = target.block.max(0);
-    ui_events.push_broadcast(GameUiEvent::AttackBlocked {
-        attacker_object_id: attacker.object_id,
-        target_object_id: target.object_id,
-        amount: block_amount,
-    });
-    broadcast_chat_line(
+    ui_events.push_broadcast_near(
+        target.space_id,
+        target.position,
+        GameUiEvent::AttackBlocked {
+            attacker_object_id: attacker.object_id,
+            target_object_id: target.object_id,
+            amount: block_amount,
+        },
+    );
+    push_chat_line_near(
         chat_log_query,
-        format!("[{} blocks {block_amount} damage]", target.name),
+        target.space_id,
+        target.position,
+        &format!("[{} blocks {block_amount} damage]", target.name),
     );
     (damage - block_amount).max(1)
 }
@@ -888,7 +930,7 @@ fn apply_bonus_damage(
     target: &CombatantSnapshot,
     damage_source: DamageSource,
     pending_damage: &mut PendingDamageEvents,
-    chat_log_query: &mut Query<&mut ChatLog, With<Player>>,
+    chat_log_query: &mut ScopedChatLogQuery,
     pending_modifier_consumption: &mut PendingModifierConsumption,
 ) {
     for (i, m) in attacker.weapon_modifiers.iter().enumerate() {
@@ -912,9 +954,11 @@ fn apply_bonus_damage(
             damage_type: *damage_type,
             vfx_override: None,
         });
-        broadcast_chat_line(
+        push_chat_line_near(
             chat_log_query,
-            format!(
+            attacker.space_id,
+            attacker.position,
+            &format!(
                 "[{}'s {} sears {} for {extra} {} damage]",
                 attacker.name,
                 enchantment_label(m),
@@ -939,7 +983,7 @@ fn apply_on_hit_effects(
     attacker: &CombatantSnapshot,
     target: &CombatantSnapshot,
     definitions: &OverworldObjectDefinitions,
-    chat_log_query: &mut Query<&mut ChatLog, With<Player>>,
+    chat_log_query: &mut ScopedChatLogQuery,
     pending_modifier_consumption: &mut PendingModifierConsumption,
     target_magic: Option<&mut crate::magic::effects::MagicEffects>,
     commands: &mut Commands,
@@ -970,9 +1014,11 @@ fn apply_on_hit_effects(
                 seconds: on_hit.seconds,
                 secondary_magnitude: on_hit.secondary_magnitude,
             });
-            broadcast_chat_line(
+            push_chat_line_near(
                 chat_log_query,
-                format!(
+                target.space_id,
+                target.position,
+                &format!(
                     "[{} is afflicted by {}]",
                     target.name,
                     effect_kind_display_name(on_hit.kind)
@@ -993,9 +1039,11 @@ fn apply_on_hit_effects(
             continue;
         }
         rolled_specs.push(*spec);
-        broadcast_chat_line(
+        push_chat_line_near(
             chat_log_query,
-            format!(
+            target.space_id,
+            target.position,
+            &format!(
                 "[{} is afflicted by {}]",
                 target.name,
                 effect_kind_display_name(spec.kind)
@@ -1195,7 +1243,7 @@ fn execute_npc_spell_cast(
     ui_events: &mut PendingGameUiEvents,
     pending_damage: &mut PendingDamageEvents,
     pending_summons: &mut crate::combat::resources::PendingNpcSummons,
-    chat_log_query: &mut Query<&mut ChatLog, With<Player>>,
+    chat_log_query: &mut ScopedChatLogQuery,
     commands: &mut Commands,
 ) {
     use crate::npc::spellcasting::NpcSpellTargetKind;
@@ -1215,13 +1263,13 @@ fn execute_npc_spell_cast(
     );
 
     for vfx in &outcome.vfx {
-        ui_events.push_broadcast(vfx.clone());
+        ui_events.push_broadcast_near(attacker.space_id, attacker.position, vfx.clone());
     }
     for damage in &outcome.damage_events {
         pending_damage.push(damage.clone());
     }
     for msg in &outcome.chat_messages {
-        broadcast_chat_line(chat_log_query, msg.clone());
+        push_chat_line_near(chat_log_query, attacker.space_id, attacker.position, msg);
     }
 
     // Resolve a tile-AoE splash against everyone standing in the blast. The
@@ -1346,9 +1394,41 @@ fn effect_kind_display_name(kind: crate::magic::resources::EffectKind) -> &'stat
     }
 }
 
-fn broadcast_chat_line(chat_log_query: &mut Query<&mut ChatLog, With<Player>>, message: String) {
-    for mut chat_log in chat_log_query.iter_mut() {
-        chat_log.push_line(message.clone());
+/// Player chat-log query widened with position so combat lines can be scoped
+/// to bystanders who can actually see the fight.
+pub(crate) type ScopedChatLogQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static SpaceResident,
+        &'static TilePosition,
+        &'static mut ChatLog,
+    ),
+    With<Player>,
+>;
+
+/// Combat log lines reach the same audience as replicated entities: if you
+/// can see the fight, you get the text. Matches the projection's
+/// `INTEREST_RADIUS`, not the tighter `say` chat radius.
+pub(crate) const COMBAT_LOG_RADIUS_TILES: i32 = crate::game::projection::INTEREST_RADIUS as i32;
+
+/// Push a combat line into the chat log of every player in `space_id` within
+/// [`COMBAT_LOG_RADIUS_TILES`] of `origin` (z-aware, so fights on distant
+/// floors of the same space stay quiet too).
+pub(crate) fn push_chat_line_near(
+    chat_log_query: &mut ScopedChatLogQuery,
+    space_id: crate::world::components::SpaceId,
+    origin: TilePosition,
+    message: &str,
+) {
+    for (resident, tile, mut chat_log) in chat_log_query.iter_mut() {
+        if resident.space_id != space_id {
+            continue;
+        }
+        if tile_distance_3d(origin, *tile) > COMBAT_LOG_RADIUS_TILES {
+            continue;
+        }
+        chat_log.push_line(message.to_owned());
     }
 }
 
@@ -1455,6 +1535,143 @@ mod tests {
             active_effect_kinds: HashSet::new(),
             weapon_modifiers: Vec::new(),
         }
+    }
+
+    #[test]
+    fn clear_invalid_combat_targets_drops_dead_targets() {
+        use crate::world::components::SpaceId;
+
+        let mut app = App::new();
+        app.add_systems(Update, clear_invalid_combat_targets);
+        let space = SpaceId(0);
+
+        let dead = app
+            .world_mut()
+            .spawn((
+                SpaceResident { space_id: space },
+                TilePosition::ground(5, 5),
+                VitalStats::full(10.0, 0.0),
+            ))
+            .id();
+        app.world_mut().get_mut::<VitalStats>(dead).unwrap().health = 0.0;
+        let alive = app
+            .world_mut()
+            .spawn((
+                SpaceResident { space_id: space },
+                TilePosition::ground(6, 5),
+                VitalStats::full(10.0, 0.0),
+            ))
+            .id();
+
+        let attacker_on_dead = app
+            .world_mut()
+            .spawn((
+                SpaceResident { space_id: space },
+                TilePosition::ground(5, 6),
+                CombatTarget { entity: dead },
+            ))
+            .id();
+        let attacker_on_alive = app
+            .world_mut()
+            .spawn((
+                SpaceResident { space_id: space },
+                TilePosition::ground(6, 6),
+                CombatTarget { entity: alive },
+            ))
+            .id();
+        // A de-spatialized target (dead player past the death frame, spatial
+        // components removed by handle_player_deaths).
+        let despatialized = app.world_mut().spawn(VitalStats::full(10.0, 0.0)).id();
+        let attacker_on_despatialized = app
+            .world_mut()
+            .spawn((
+                SpaceResident { space_id: space },
+                TilePosition::ground(4, 6),
+                CombatTarget {
+                    entity: despatialized,
+                },
+            ))
+            .id();
+
+        app.update();
+
+        assert!(
+            app.world().get::<CombatTarget>(attacker_on_dead).is_none(),
+            "a target at 0 HP must be dropped"
+        );
+        assert!(
+            app.world().get::<CombatTarget>(attacker_on_alive).is_some(),
+            "a live same-space target must be kept"
+        );
+        assert!(
+            app.world()
+                .get::<CombatTarget>(attacker_on_despatialized)
+                .is_none(),
+            "a de-spatialized target must be dropped"
+        );
+    }
+
+    #[test]
+    fn combat_chat_lines_reach_only_nearby_same_space_players() {
+        use crate::player::components::ChatLog;
+        use crate::world::components::SpaceId;
+
+        let mut app = App::new();
+        app.add_systems(Update, |mut query: ScopedChatLogQuery| {
+            push_chat_line_near(
+                &mut query,
+                SpaceId(0),
+                TilePosition::ground(10, 10),
+                "[test combat line]",
+            );
+        });
+
+        let spawn = |app: &mut App, space: SpaceId, tile: TilePosition| {
+            app.world_mut()
+                .spawn((
+                    crate::player::components::Player,
+                    ChatLog::default(),
+                    SpaceResident { space_id: space },
+                    tile,
+                ))
+                .id()
+        };
+        let near = spawn(&mut app, SpaceId(0), TilePosition::ground(15, 12));
+        let one_floor_up = spawn(&mut app, SpaceId(0), TilePosition { x: 10, y: 10, z: 2 });
+        let far = spawn(&mut app, SpaceId(0), TilePosition::ground(80, 10));
+        let far_z = spawn(
+            &mut app,
+            SpaceId(0),
+            TilePosition {
+                x: 10,
+                y: 10,
+                z: 40,
+            },
+        );
+        let other_space = spawn(&mut app, SpaceId(1), TilePosition::ground(10, 10));
+
+        app.update();
+
+        let lines = |app: &App, entity: Entity| {
+            app.world()
+                .entity(entity)
+                .get::<ChatLog>()
+                .unwrap()
+                .lines
+                .clone()
+        };
+        let has_line = |app: &App, entity: Entity| {
+            lines(app, entity)
+                .iter()
+                .any(|line| line == "[test combat line]")
+        };
+        assert!(has_line(&app, near));
+        // One floor up is within the radius: nearby vertical neighbors still
+        // hear the fight (only distant floors are pruned).
+        assert!(has_line(&app, one_floor_up));
+        assert!(!has_line(&app, far));
+        assert!(!has_line(&app, far_z));
+        assert!(!has_line(&app, other_space));
     }
 
     #[test]

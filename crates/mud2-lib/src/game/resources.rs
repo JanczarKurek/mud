@@ -307,9 +307,20 @@ pub struct PendingGameUiEvents {
     pub events: Vec<GameUiEvent>,
     /// Server-side per-player outbox, drained by `flush_server_messages`.
     pub peer_events: HashMap<PlayerId, Vec<GameUiEvent>>,
-    /// Server-side broadcast outbox (sent to every synced peer), drained by
-    /// `flush_server_messages`.
-    pub broadcast: Vec<GameUiEvent>,
+    /// Server-side broadcast outbox, drained by `flush_server_messages`.
+    /// Each entry carries an optional spatial scope that the flush uses to
+    /// decide which peers receive it; the scope never crosses the wire.
+    pub broadcast: Vec<ScopedUiBroadcast>,
+}
+
+/// A server-side broadcast queued for delivery. Not a wire type: the flush
+/// strips the scope and sends the bare `GameUiEvent`.
+#[derive(Clone, Debug)]
+pub struct ScopedUiBroadcast {
+    pub event: GameUiEvent,
+    /// `None` = every synced peer; `Some` = only peers in this space within
+    /// the interest radius of the origin tile (z-aware).
+    pub scope: Option<(SpaceId, TilePosition)>,
 }
 
 impl PendingGameUiEvents {
@@ -322,9 +333,25 @@ impl PendingGameUiEvents {
         self.peer_events.entry(player_id).or_default().push(event);
     }
 
-    /// Queue an event for every synced peer.
+    /// Queue an event for every synced peer, regardless of location.
     pub fn push_broadcast(&mut self, event: GameUiEvent) {
-        self.broadcast.push(event);
+        self.broadcast
+            .push(ScopedUiBroadcast { event, scope: None });
+    }
+
+    /// Queue an event for peers near `origin` in `space_id` (within the
+    /// replication interest radius, z-aware). Use for localized effects —
+    /// combat VFX, speech bubbles — so they don't leak across spaces/floors.
+    pub fn push_broadcast_near(
+        &mut self,
+        space_id: SpaceId,
+        origin: TilePosition,
+        event: GameUiEvent,
+    ) {
+        self.broadcast.push(ScopedUiBroadcast {
+            event,
+            scope: Some((space_id, origin)),
+        });
     }
 }
 

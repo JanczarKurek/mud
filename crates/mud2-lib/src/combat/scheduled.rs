@@ -160,6 +160,13 @@ fn resolve_impact(
             hit_vfx,
             buffs,
         } => {
+            // A despawned or de-spatialized target (dead player awaiting
+            // respawn) absorbs nothing: the damage would be dropped downstream
+            // anyway, but `apply_buffs` writes by entity handle and would
+            // re-add effects to a corpse whose MagicEffects were just cleared.
+            if residents.get(target).is_err() {
+                return;
+            }
             if damage > 0.0 {
                 pending_damage.push(DamageEvent {
                     target,
@@ -180,10 +187,14 @@ fn resolve_impact(
             buffs,
         } => {
             if let Some(vfx) = vfx_on_tile {
-                ui_events.push_broadcast(GameUiEvent::VfxSpawn {
-                    definition_id: vfx,
-                    anchor: VfxAnchor::tile(space_id, tile),
-                });
+                ui_events.push_broadcast_near(
+                    space_id,
+                    tile,
+                    GameUiEvent::VfxSpawn {
+                        definition_id: vfx,
+                        anchor: VfxAnchor::tile(space_id, tile),
+                    },
+                );
             }
             // Exact-tile match — one query, each resident hit at most once.
             // Friendly fire stays on (the caster's tile is fair game), matching
