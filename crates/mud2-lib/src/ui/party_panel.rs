@@ -14,8 +14,9 @@ use crate::ui::components::{
 use crate::ui::mountable_panel::MountablePanel;
 use crate::ui::movable_window::MovableWindowId;
 use crate::ui::resources::{DockedPanel, DockedPanelKind, DockedPanelState, PartyPanelMode};
+use crate::ui::retro_bar::{spawn_retro_bar, RetroBarStyle};
 use crate::ui::systems::hp_fill_color;
-use crate::ui::theme::{Palette, UiThemeAssets};
+use crate::ui::theme::{spawn_themed_button, ButtonStyle, Palette, UiThemeAssets};
 
 pub struct PartyPanel;
 
@@ -142,6 +143,7 @@ pub fn auto_open_party_panel(
 pub fn sync_party_panel(
     mut commands: Commands,
     client_state: Res<ClientGameState>,
+    theme: Res<UiThemeAssets>,
     palette: Res<Palette>,
     list_query: Query<Entity, With<PartyRosterList>>,
     mut last: Local<Option<(Option<ClientPartyView>, usize)>>,
@@ -199,51 +201,58 @@ pub fn sync_party_panel(
                     },
                     TextColor(palette.text_value),
                 ));
-                spawn_small_button(header, &palette, "Leave", PartyLeaveButton);
+                spawn_party_button(
+                    header,
+                    &theme,
+                    &palette,
+                    ButtonStyle::Secondary,
+                    "Leave",
+                    PartyLeaveButton,
+                );
             });
 
             for member in &party.members {
-                spawn_party_member_row(list, &palette, member, local_id, is_leader);
+                spawn_party_member_row(list, &theme, &palette, member, local_id, is_leader);
             }
         });
     }
 }
 
-fn spawn_small_button<T: Component>(
+/// Compact themed button sized for the tight roster rows — same gold frame +
+/// hover/press feedback as [`spawn_themed_button`], smaller footprint than
+/// `setup::spawn_small_button`.
+fn spawn_party_button<T: Component>(
     parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
     palette: &Palette,
+    style: ButtonStyle,
     label: &str,
     marker: T,
 ) {
-    parent
-        .spawn((
-            Button,
-            marker,
-            Node {
-                padding: UiRect::axes(px(6.0), px(1.0)),
-                border: UiRect::all(px(1.0)),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                flex_shrink: 0.0,
-                ..default()
-            },
-            BackgroundColor(palette.surface_raised),
-            BorderColor::all(palette.border_slot),
-        ))
-        .with_children(|button| {
-            button.spawn((
-                Text::new(label.to_owned()),
-                TextFont {
-                    font_size: 11.0,
-                    ..default()
-                },
-                TextColor(palette.text_primary),
-            ));
-        });
+    spawn_themed_button(
+        parent,
+        theme,
+        palette,
+        style,
+        Node {
+            min_width: px(44.0),
+            min_height: px(20.0),
+            padding: UiRect::axes(px(6.0), px(2.0)),
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
+            border: UiRect::all(px(1.0)),
+            flex_shrink: 0.0,
+            ..default()
+        },
+        label,
+        12.0,
+        marker,
+    );
 }
 
 fn spawn_party_member_row(
     parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
     palette: &Palette,
     member: &crate::game::party::PartyMemberView,
     local_id: Option<crate::player::components::PlayerId>,
@@ -334,59 +343,52 @@ fn spawn_party_member_row(
                         TextColor(palette.text_muted),
                     ));
                 });
-                spawn_member_bar(left, palette, hp_ratio, hp_fill_color(hp_ratio), 5.0);
-                spawn_member_bar(left, palette, mp_ratio, Color::srgb(0.30, 0.45, 0.85), 3.0);
+                // Same retro pill as the status-panel vitals, scaled down.
+                // No fill markers: rows are rebuilt wholesale on any roster
+                // change, so the fills never need live width updates.
+                spawn_retro_bar(
+                    left,
+                    palette,
+                    RetroBarStyle::default()
+                        .with_fill(hp_fill_color(hp_ratio))
+                        .with_height(6.0)
+                        .with_initial_ratio(hp_ratio),
+                    (),
+                );
+                spawn_retro_bar(
+                    left,
+                    palette,
+                    RetroBarStyle::default()
+                        .with_fill(palette.vital_mana_fill)
+                        .with_height(4.0)
+                        .with_initial_ratio(mp_ratio),
+                    (),
+                );
             });
 
             let is_self = local_id == Some(member.player_id);
             if viewer_is_leader && !is_self {
-                spawn_small_button(
+                spawn_party_button(
                     row,
+                    theme,
                     palette,
+                    ButtonStyle::Danger,
                     "Kick",
                     PartyKickButton {
                         player_id: member.player_id,
                     },
                 );
-                spawn_small_button(
+                spawn_party_button(
                     row,
+                    theme,
                     palette,
+                    ButtonStyle::Secondary,
                     "Lead",
                     PartyPromoteButton {
                         player_id: member.player_id,
                     },
                 );
             }
-        });
-}
-
-fn spawn_member_bar(
-    parent: &mut ChildSpawnerCommands,
-    palette: &Palette,
-    ratio: f32,
-    fill: Color,
-    height: f32,
-) {
-    parent
-        .spawn((
-            Node {
-                width: percent(100.0),
-                height: px(height),
-                border: UiRect::all(px(1.0)),
-                ..default()
-            },
-            BackgroundColor(palette.surface_vital_bg),
-            BorderColor::all(palette.border_slot),
-        ))
-        .with_children(|bar| {
-            bar.spawn((
-                Node {
-                    width: percent(ratio * 100.0),
-                    height: percent(100.0),
-                    ..default()
-                },
-                BackgroundColor(fill),
-            ));
         });
 }
 

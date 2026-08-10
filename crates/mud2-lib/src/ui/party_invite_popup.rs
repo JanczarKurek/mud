@@ -14,11 +14,12 @@ use crate::game::resources::ClientPendingCommands;
 use crate::ui::hit_test::point_in_ui_node;
 use crate::ui::movable_window::{
     close_window_and_release_drag, persist_window_geometry, restored_or_centered_geometry,
-    spawn_movable_window, spawn_themed_close_button, MovableWindowDrag, MovableWindowId,
+    spawn_movable_dialog, spawn_themed_close_button, MovableWindowDrag, MovableWindowId,
     WindowGeometryMemory,
 };
 use crate::ui::resources::PartyInvitePopupState;
-use crate::ui::theme::{Palette, UiThemeAssets};
+use crate::ui::setup::spawn_small_button;
+use crate::ui::theme::{ButtonStyle, Palette, UiThemeAssets};
 
 /// Marker on the invite window root.
 #[derive(Component)]
@@ -64,12 +65,14 @@ pub fn sync_party_invite_window_lifecycle(
 
     match (want_open, existing_root) {
         (true, None) => {
-            let (pos, size) = restored_or_centered_geometry(
+            // DEFAULT_SIZE is only a centering estimate — the dialog itself
+            // is auto-height at DEFAULT_SIZE.x wide.
+            let (pos, _size) = restored_or_centered_geometry(
                 &*state,
                 PartyInvitePopupState::DEFAULT_SIZE,
                 &window_query,
             );
-            let root = spawn_invite_window(&mut commands, &theme, &palette, &state, pos, size);
+            let root = spawn_invite_window(&mut commands, &theme, &palette, &state, pos);
             drag.focused = Some(root);
         }
         (false, Some((root, _))) => {
@@ -88,20 +91,18 @@ fn spawn_invite_window(
     palette: &Palette,
     state: &PartyInvitePopupState,
     position: Vec2,
-    size: Vec2,
 ) -> Entity {
     let Some(invite) = state.invite.as_ref() else {
         unreachable!("spawn_invite_window called with no pending invite");
     };
-    let spawned = spawn_movable_window(
+    let spawned = spawn_movable_dialog(
         commands,
         theme,
         palette,
         MovableWindowId::PartyInvite,
         "Party Invitation",
-        size,
+        PartyInvitePopupState::DEFAULT_SIZE.x,
         position,
-        PartyInvitePopupState::DEFAULT_SIZE,
     );
 
     commands
@@ -142,44 +143,26 @@ fn spawn_invite_window(
             BackgroundColor(Color::NONE),
         ))
         .with_children(|buttons| {
-            spawn_answer_button(buttons, palette, "Accept", PartyInviteAcceptButton);
-            spawn_answer_button(buttons, palette, "Decline", PartyInviteDeclineButton);
+            spawn_small_button(
+                buttons,
+                theme,
+                palette,
+                ButtonStyle::Primary,
+                "Accept",
+                PartyInviteAcceptButton,
+            );
+            spawn_small_button(
+                buttons,
+                theme,
+                palette,
+                ButtonStyle::Secondary,
+                "Decline",
+                PartyInviteDeclineButton,
+            );
         });
     });
 
     spawned.root
-}
-
-fn spawn_answer_button<T: Component>(
-    parent: &mut ChildSpawnerCommands,
-    palette: &Palette,
-    label: &str,
-    marker: T,
-) {
-    parent
-        .spawn((
-            Button,
-            marker,
-            Node {
-                padding: UiRect::axes(px(12.0), px(4.0)),
-                border: UiRect::all(px(1.0)),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                ..default()
-            },
-            BackgroundColor(palette.surface_raised),
-            BorderColor::all(palette.border_accent),
-        ))
-        .with_children(|button| {
-            button.spawn((
-                Text::new(label.to_owned()),
-                TextFont {
-                    font_size: 13.0,
-                    ..default()
-                },
-                TextColor(palette.text_primary),
-            ));
-        });
 }
 
 /// Accept / Decline button clicks. The local popup closes when the server

@@ -56,6 +56,43 @@ pub fn spawn_retro_bar(
     style: RetroBarStyle,
     fill_marker: impl Bundle,
 ) -> Entity {
+    spawn_retro_bar_impl(
+        parent,
+        palette,
+        style,
+        fill_marker,
+        None::<((), String, f32)>,
+    )
+}
+
+/// [`spawn_retro_bar`] plus a text overlay centered on the bar (the classic
+/// "46/60"-on-the-health-bar readout). `label_marker` lands on the `Text`
+/// entity so a sync system can rewrite the string via a marker query.
+pub fn spawn_retro_bar_with_label<L: Bundle>(
+    parent: &mut ChildSpawnerCommands,
+    palette: &Palette,
+    style: RetroBarStyle,
+    fill_marker: impl Bundle,
+    label_marker: L,
+    initial_text: &str,
+    font_size: f32,
+) -> Entity {
+    spawn_retro_bar_impl(
+        parent,
+        palette,
+        style,
+        fill_marker,
+        Some((label_marker, initial_text.to_owned(), font_size)),
+    )
+}
+
+fn spawn_retro_bar_impl<L: Bundle>(
+    parent: &mut ChildSpawnerCommands,
+    palette: &Palette,
+    style: RetroBarStyle,
+    fill_marker: impl Bundle,
+    label: Option<(L, String, f32)>,
+) -> Entity {
     let h = style.height_px;
     let radius = h * 0.5;
     let bg = style.background.unwrap_or(palette.surface_vital_bg);
@@ -126,6 +163,36 @@ pub fn spawn_retro_bar(
                     BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.28)),
                 ));
             });
+
+        // The overlay sits after the fill so it renders above it, and spans
+        // the whole track so the text stays centered regardless of fill.
+        if let Some((label_marker, text, font_size)) = label {
+            bg_node
+                .spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(0.0),
+                        right: Val::Px(0.0),
+                        top: Val::Px(0.0),
+                        bottom: Val::Px(0.0),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::NONE),
+                ))
+                .with_children(|wrap| {
+                    wrap.spawn((
+                        Text::new(text),
+                        label_marker,
+                        TextFont {
+                            font_size,
+                            ..default()
+                        },
+                        TextColor(palette.text_primary),
+                    ));
+                });
+        }
     });
 
     root.id()

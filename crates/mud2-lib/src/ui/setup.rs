@@ -26,7 +26,7 @@ use crate::ui::menu_bar::{spawn_menu_bar, MENU_BAR_HEIGHT};
 use crate::ui::minimap::{make_minimap_image, FULL_MAP_BODY_SIZE, HUD_MINIMAP_SIZE};
 use crate::ui::movable_window::{spawn_themed_close_button, spawn_themed_icon_button};
 use crate::ui::resources::{DockedPanelState, HudMinimapSettings};
-use crate::ui::retro_bar::{spawn_retro_bar, RetroBarStyle};
+use crate::ui::retro_bar::{spawn_retro_bar_with_label, RetroBarStyle};
 use crate::ui::theme::widgets::{
     idle_colors, spawn_themed_button, ButtonStyle, ThemedButton, ThemedPanel,
 };
@@ -1409,7 +1409,7 @@ fn spawn_vital_bar<T: Bundle>(
         .spawn((
             Node {
                 width: percent(100.0),
-                min_height: px(18.0),
+                min_height: px(14.0),
                 flex_direction: FlexDirection::Row,
                 align_items: AlignItems::Center,
                 column_gap: px(6.0),
@@ -1418,9 +1418,11 @@ fn spawn_vital_bar<T: Bundle>(
             BackgroundColor(Color::NONE),
         ))
         .with_children(|bar_group| {
+            // Static prefix in a fixed column; the numeric readout lives on
+            // the bar itself (`value_marker` on the overlay text) so long
+            // values can never wrap under the bars.
             bar_group.spawn((
                 Text::new(format!("{label}:")),
-                value_marker,
                 TextFont {
                     font_size: 13.0,
                     ..default()
@@ -1432,13 +1434,16 @@ fn spawn_vital_bar<T: Bundle>(
                 },
             ));
 
-            spawn_retro_bar(
+            spawn_retro_bar_with_label(
                 bar_group,
                 palette,
                 RetroBarStyle::default()
                     .with_fill(fill_color)
-                    .with_height(14.0),
+                    .with_height(10.0),
                 marker,
+                value_marker,
+                "",
+                10.0,
             );
         });
 }

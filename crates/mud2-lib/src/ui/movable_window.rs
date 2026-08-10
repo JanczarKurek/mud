@@ -124,9 +124,10 @@ pub struct MovableWindowContent {
 }
 
 /// Marker on the small bottom-right grab patch that resizes the window.
-/// Auto-spawned by [`spawn_movable_window`] so every popup gets resize for
-/// free; `owner` points at the window root so the resize system can update
-/// its `Node` size without walking the hierarchy.
+/// Auto-spawned by [`spawn_movable_window`] so every resizable popup gets
+/// resize for free ([`spawn_movable_dialog`] windows deliberately omit it);
+/// `owner` points at the window root so the resize system can update its
+/// `Node` size without walking the hierarchy.
 #[derive(Component)]
 pub struct MovableWindowResizeHandle {
     pub owner: Entity,
@@ -217,6 +218,62 @@ pub fn spawn_movable_window(
     min_size: Vec2,
 ) -> MovableWindowEntities {
     let clamped_size = size.max(min_size);
+    spawn_window_frame(
+        commands,
+        theme,
+        palette,
+        id,
+        title,
+        initial_pos,
+        min_size,
+        px(clamped_size.x.max(1.0)),
+        px(clamped_size.y.max(1.0)),
+        true,
+    )
+}
+
+/// Spawn a fixed-content dialog window: fixed `width`, `Val::Auto` height (the
+/// window hugs whatever the consumer puts in the body), and **no resize
+/// handle**. Use for prompts whose content never changes size at runtime
+/// (confirmations, invitations). Dialogs must not persist their size — an
+/// auto height reads back as `0.0` through [`persist_window_geometry`] — so a
+/// dialog's [`WindowGeometryMemory::last_size`] should return `None`.
+pub fn spawn_movable_dialog(
+    commands: &mut Commands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+    id: MovableWindowId,
+    title: &str,
+    width: f32,
+    initial_pos: Vec2,
+) -> MovableWindowEntities {
+    spawn_window_frame(
+        commands,
+        theme,
+        palette,
+        id,
+        title,
+        initial_pos,
+        Vec2::new(width, 0.0),
+        px(width.max(1.0)),
+        Val::Auto,
+        false,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn spawn_window_frame(
+    commands: &mut Commands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+    id: MovableWindowId,
+    title: &str,
+    initial_pos: Vec2,
+    min_size: Vec2,
+    width: Val,
+    height: Val,
+    resizable: bool,
+) -> MovableWindowEntities {
     let root = commands
         .spawn((
             MovableWindow { id, min_size },
@@ -224,8 +281,8 @@ pub fn spawn_movable_window(
                 position_type: PositionType::Absolute,
                 left: px(initial_pos.x),
                 top: px(initial_pos.y),
-                width: px(clamped_size.x.max(1.0)),
-                height: px(clamped_size.y.max(1.0)),
+                width,
+                height,
                 flex_direction: FlexDirection::Column,
                 border: UiRect::all(px(1.0)),
                 ..default()
@@ -289,24 +346,25 @@ pub fn spawn_movable_window(
         ))
         .id();
 
-    let resize_handle = commands
-        .spawn((
-            MovableWindowResizeHandle { owner: root },
-            Node {
-                position_type: PositionType::Absolute,
-                right: px(0.0),
-                bottom: px(0.0),
-                width: px(MOVABLE_WINDOW_RESIZE_HANDLE_PX),
-                height: px(MOVABLE_WINDOW_RESIZE_HANDLE_PX),
-                ..default()
-            },
-            ImageNode::new(theme.resize_corner.clone()),
-        ))
-        .id();
+    commands.entity(root).add_children(&[title_bar, body]);
 
-    commands
-        .entity(root)
-        .add_children(&[title_bar, body, resize_handle]);
+    if resizable {
+        let resize_handle = commands
+            .spawn((
+                MovableWindowResizeHandle { owner: root },
+                Node {
+                    position_type: PositionType::Absolute,
+                    right: px(0.0),
+                    bottom: px(0.0),
+                    width: px(MOVABLE_WINDOW_RESIZE_HANDLE_PX),
+                    height: px(MOVABLE_WINDOW_RESIZE_HANDLE_PX),
+                    ..default()
+                },
+                ImageNode::new(theme.resize_corner.clone()),
+            ))
+            .id();
+        commands.entity(root).add_child(resize_handle);
+    }
 
     MovableWindowEntities {
         root,

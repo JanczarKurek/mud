@@ -789,6 +789,14 @@ pub fn sync_vital_bars(
     client_state: Res<ClientGameState>,
     mut health_query: Query<&mut Node, With<HealthFill>>,
     mut mana_query: Query<&mut Node, (With<ManaFill>, Without<HealthFill>)>,
+    mut health_label_query: Query<&mut Text, With<crate::ui::components::HealthLabel>>,
+    mut mana_label_query: Query<
+        &mut Text,
+        (
+            With<crate::ui::components::ManaLabel>,
+            Without<crate::ui::components::HealthLabel>,
+        ),
+    >,
 ) {
     let Some(vital_stats) = client_state.player_vitals else {
         return;
@@ -810,6 +818,20 @@ pub fn sync_vital_bars(
     for mut node in &mut mana_query {
         if node.width != mana_width {
             node.width = mana_width;
+        }
+    }
+
+    // Numeric readouts overlaid on the bars.
+    let health_text = format!("{:.0}/{:.0}", vital_stats.health, vital_stats.max_health);
+    for mut text in &mut health_label_query {
+        if text.0 != health_text {
+            text.0 = health_text.clone();
+        }
+    }
+    let mana_text = format!("{:.0}/{:.0}", vital_stats.mana, vital_stats.max_mana);
+    for mut text in &mut mana_label_query {
+        if text.0 != mana_text {
+            text.0 = mana_text.clone();
         }
     }
 }
