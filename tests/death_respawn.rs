@@ -137,6 +137,7 @@ fn death_despatializes_player_and_npc_reaggros_after_respawn() {
             source: DamageSource::Environment,
             damage_type: DamageType::Blunt,
             vfx_override: None,
+            attacker: None,
         });
     wait_for_snapshot(&mut app, &mut victim, |s| {
         s.player_vitals.is_some_and(|v| v.health <= 0.0)

@@ -1772,10 +1772,65 @@ flees_from: [predator]            # prey: runs from these tags on sight
   predators do). Guards set `faction: player_side` explicitly so monsters
   proactively fight them and player summons leave them alone.
 - The client's red "hostile" highlight is per-viewer: it shows only for NPCs
-  hostile *toward the player side*, so guards render as peaceful.
+  hostile *toward the player side* (or holding a `Wanted`-level grudge against
+  the viewer — see `factions` below), so guards render as peaceful to the
+  innocent.
 
 Reference templates: `town_guard` (guard vs monsters), `wolf` + `sheep`
 (predator/prey pair) in `assets/overworld_objects/`.
+
+### `factions` (NPC templates) — the guilt system
+
+A **third**, orthogonal axis, distinct from both of the above: `tags` are what a
+creature *is*, `faction` is which side it *fights on*, and `factions` is who it
+*answers to*. Harming a faction member propagates guilt to every living NPC
+sharing one of its factions.
+
+```yaml
+factions: [emberbrook_watch, emberbrook_town]   # may belong to several
+```
+
+- Free-form strings interned into their **own** 64-bit mask, so allegiances
+  never consume the identity-tag budget.
+- Guilt is stored **per NPC**, keyed by player (`npc::guilt::KnownGuilty`), and
+  is persisted in the world snapshot. Consequences: killing every witness
+  really does bury the evidence, and an NPC that respawns after your crime is
+  genuinely unaware of it.
+- **Earning guilt** (uniform for now): `+10` per attack on a faction member —
+  debounced to once per 3s per victim, so a damage-over-time tick or a flurry
+  of swings counts as one offense — and `+70` for a kill.
+- **Effects are tiered** even though the number is uncapped:
+
+  | Points | Effect |
+  |---|---|
+  | 0–30 | nothing |
+  | 31–60 | refuses to talk or trade (says so out loud) |
+  | 61+ | attacks on sight, if it has combat AI at all |
+
+- **Clearing guilt**: being killed by a member of that faction settles your debt
+  with it (and only it), or pay a `judge:` NPC (below).
+- A peaceful NPC with no combat AI never turns hostile no matter how high the
+  number climbs — it simply refuses to deal with you.
+
+### `judge` (NPC templates)
+
+Marks an NPC as a magistrate who will clear a player's guilt for coin. Adds a
+"Pay Fine" right-click verb (talk range, same 3 tiles as Talk).
+
+```yaml
+judge:
+  clears_factions: [emberbrook_watch, emberbrook_town]
+  copper_per_guilt_point: 4
+```
+
+The fee is `copper_per_guilt_point` × the **worst** outstanding grudge any live
+member of `clears_factions` holds against the player — with per-NPC ledgers
+there is no single "faction opinion", so the deepest grudge is what has to be
+bought off. Payment uses the standard coin tiers and makes change; a player who
+can't afford it is told the price and charged nothing.
+
+Reference templates: `town_guard` + `villager` / `townsfolk` + `sheep` (the
+Emberbrook town and Watch), and `judge` (the magistrate on the plaza).
 
 ### `barks` (NPC templates only)
 

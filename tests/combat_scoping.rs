@@ -99,6 +99,7 @@ fn player_death_is_scoped_and_hides_the_body_until_respawn() {
             source: DamageSource::Environment,
             damage_type: DamageType::Blunt,
             vfx_override: None,
+            attacker: None,
         });
 
     // Witness: the victim's projection drops without any respawn click.

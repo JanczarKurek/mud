@@ -419,6 +419,14 @@ pub struct NpcStateDump {
     /// their faction and dropped out of the NPC-vs-NPC combatant list.
     #[serde(default)]
     pub faction: Option<crate::npc::components::Faction>,
+    /// Which players this NPC personally holds a grudge against. Unlike
+    /// `FactionMembership` — template data re-derived from the definition at
+    /// spawn — guilt is earned at runtime and would silently reset on every
+    /// world reload if it weren't written here. `#[serde(default)]`, additive,
+    /// no format_version bump. Safe to key by `PlayerId` because that is the
+    /// character id; object ids are reallocated on load and never appear here.
+    #[serde(default)]
+    pub known_guilty: Option<crate::npc::guilt::KnownGuilty>,
 }
 
 fn save_world_on_app_exit(
@@ -464,7 +472,12 @@ fn save_world_on_app_exit(
             Option<&RoamingRandomState>,
             Option<&SpawnGroupMember>,
             Option<&MagicEffects>,
-            Option<&crate::npc::components::Faction>,
+            // Grouped: `Default` (used by the `unwrap_or_default` below) is
+            // only implemented for tuples up to 12 wide.
+            (
+                Option<&crate::npc::components::Faction>,
+                Option<&crate::npc::guilt::KnownGuilty>,
+            ),
         ),
         With<Npc>,
     >,
@@ -576,7 +589,7 @@ fn save_world_on_app_exit(
                         roaming_random_state,
                         spawn_group_member,
                         magic_effects,
-                        faction,
+                        (faction, known_guilty),
                     ) = npc_query.get(entity).unwrap_or_default();
 
                     NpcStateDump {
@@ -594,6 +607,9 @@ fn save_world_on_app_exit(
                         spawn_group: spawn_group_member.cloned(),
                         magic_effects: magic_effects.cloned().unwrap_or_default(),
                         faction: faction.copied(),
+                        // Skipped when nobody has wronged this NPC, keeping the
+                        // field absent from the overwhelming majority of rows.
+                        known_guilty: known_guilty.filter(|g| !g.is_empty()).cloned(),
                     }
                 }),
             },
@@ -1014,6 +1030,15 @@ fn load_world_from_snapshot(
                     entity.insert(crate::npc::components::Faction::MonsterSide);
                 }
                 None => {}
+            }
+            // Grudges, on the other hand, *are* runtime state: an NPC that
+            // remembered a murder before the save must still remember it after.
+            // (Its `FactionMembership` comes back off the definition, same as
+            // the tag components above.)
+            if let Some(known_guilty) = npc.known_guilty {
+                if !known_guilty.is_empty() {
+                    entity.insert(known_guilty);
+                }
             }
             if let Some(profile) = object_definitions
                 .get(&definition_id_for_lookup)
@@ -1736,6 +1761,14 @@ mod tests {
                     spawn_group: None,
                     magic_effects: Default::default(),
                     faction: None,
+                    // Runtime-earned state: must survive the round trip, or
+                    // every world reload would amnesty the whole server.
+                    known_guilty: Some(crate::npc::guilt::KnownGuilty {
+                        entries: vec![crate::npc::guilt::GuiltEntry {
+                            player: PlayerId(42),
+                            points: crate::npc::guilt::KILL_GUILT,
+                        }],
+                    }),
                 }),
                 quantity: None,
                 remaining_ttl: None,
@@ -1759,9 +1792,10 @@ mod tests {
             Option<&AiState>,
             Option<&AiMemory>,
             Option<&crate::npc::components::Faction>,
+            Option<&crate::npc::guilt::KnownGuilty>,
         ), With<Npc>>();
         let mut saw_snapshot_goblin = false;
-        for (object, tile, ai_state, ai_memory, faction) in npc_query.iter(world) {
+        for (object, tile, ai_state, ai_memory, faction, known_guilty) in npc_query.iter(world) {
             assert!(
                 ai_state.is_some(),
                 "loaded NPC {} at {tile:?} is missing AiState — update_roaming_npcs requires it",
@@ -1781,6 +1815,13 @@ mod tests {
                     faction.copied(),
                     Some(crate::npc::components::Faction::MonsterSide),
                     "hostile NPC restored from a legacy dump must infer MonsterSide",
+                );
+                // Guilt is earned at runtime, so it is persisted rather than
+                // re-derived: the restored goblin must still remember player 42.
+                assert_eq!(
+                    known_guilty.map(|g| g.points(PlayerId(42))),
+                    Some(crate::npc::guilt::KILL_GUILT),
+                    "a restored NPC must remember who wronged it",
                 );
             }
         }

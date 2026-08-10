@@ -17,7 +17,7 @@ use crate::dialog::resources::{
 use crate::dialog::yarn_bindings;
 use crate::game::commands::GameCommand;
 use crate::game::resources::{
-    GameUiEvent, InventoryState, PendingGameCommands, PendingGameUiEvents,
+    GameUiEvent, InventoryState, PendingGameCommands, PendingGameUiEvents, SpeechBubbleStyle,
 };
 use crate::player::components::{Player, PlayerId as PlayerIdType, PlayerIdentity};
 use crate::world::components::OverworldObject;
@@ -56,6 +56,7 @@ pub fn process_dialog_commands(
         &DialogNode,
         &crate::world::components::SpaceResident,
         &crate::world::components::TilePosition,
+        Option<&crate::npc::guilt::KnownGuilty>,
     )>,
     floors: crate::world::column::FloorGeometryParam,
     mut runners: Query<(&mut DialogueRunner, &DialogSession)>,
@@ -100,11 +101,19 @@ pub fn process_dialog_commands(
                     );
                     continue;
                 };
-                let Some((node_name, npc_resident, npc_tile)) =
-                    npc_query.iter().find_map(|(object, node, resident, tile)| {
-                        (object.object_id == npc_object_id)
-                            .then(|| (node.0.clone(), *resident, *tile))
-                    })
+                let Some((node_name, npc_resident, npc_tile, refuses)) =
+                    npc_query
+                        .iter()
+                        .find_map(|(object, node, resident, tile, guilt)| {
+                            (object.object_id == npc_object_id).then(|| {
+                                (
+                                    node.0.clone(),
+                                    *resident,
+                                    *tile,
+                                    crate::npc::guilt::refuses_interaction(guilt, acting_player_id),
+                                )
+                            })
+                        })
                 else {
                     bevy::log::warn!(
                         "TalkToNpc ignored: NPC {npc_object_id} missing or has no DialogNode"
@@ -126,6 +135,28 @@ pub fn process_dialog_commands(
                         acting_player_id,
                         "TalkToNpc",
                         "npc out of talk range",
+                    );
+                    continue;
+                }
+
+                // Guilt gate: an NPC that holds a grudge won't give this player
+                // the time of day. `refuse` is silent on the wire by design, so
+                // say it out loud too — otherwise the Talk verb would look
+                // broken rather than snubbed.
+                if refuses {
+                    crate::game::helpers::refuse(
+                        acting_player_id,
+                        "TalkToNpc",
+                        "npc refuses: player is guilty",
+                    );
+                    ui_events.push_broadcast_near(
+                        npc_resident.space_id,
+                        npc_tile,
+                        GameUiEvent::SpeechBubble {
+                            speaker_object_id: npc_object_id,
+                            text: crate::npc::guilt::REFUSAL_LINE.to_owned(),
+                            style: SpeechBubbleStyle::Say,
+                        },
                     );
                     continue;
                 }

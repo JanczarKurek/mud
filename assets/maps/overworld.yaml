@@ -364,6 +364,17 @@ objects:
       kind: roam
       bounds: { min_x: 42, min_y: 24, max_x: 45, max_y: 26 }
 
+  # -- the magistrate (holds court on the plaza, between the two gate posts) ----
+  # Right-click → "Pay Fine" to clear guilt with the Watch and the town. Stands
+  # in the open on purpose: a player the guards are hunting has to be able to
+  # reach them to settle up.
+  - type: judge
+    placement: { x: 34, y: 26 }
+    facing: south
+    behavior:
+      kind: roam
+      bounds: { min_x: 33, min_y: 25, max_x: 35, max_y: 27 }
+
   # -- the Grey Ledger (traveling assessor's office, east edge of the plaza) ----
   # Yarn-only quest-journal test NPCs from assets/modules/grey_ledger/.
   # Removing that module leaves these two type refs dangling — drop this block

@@ -1,6 +1,9 @@
 extends: npc
 name: Sheep
 tags: [beast, livestock]
+# Somebody's property: rustling the flock is a crime the Watch answers for.
+# (Wolves eat sheep freely — guilt is only ever charged to players.)
+factions: [emberbrook_town]
 description: A woolly grazer, blissfully unaware of anything but grass. Mostly.
 level: 1
 loot:

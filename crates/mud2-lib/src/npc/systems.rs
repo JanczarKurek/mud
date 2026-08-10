@@ -13,7 +13,8 @@ use crate::npc::components::{
     PreyBehavior, RoamingBehavior, RoamingRandomState, RoamingStepTimer,
 };
 use crate::npc::detection::detection_outcome;
-use crate::npc::hostility::{is_hostile_toward, TagMask, TagProfile};
+use crate::npc::guilt::KnownGuilty;
+use crate::npc::hostility::{is_hostile_toward, Aggressor, Subject, TagProfile};
 use crate::npc::routine::{routine_step, Routine, RoutineIntent, RoutinePhase, RoutineState};
 use crate::player::classes::ability_mod;
 use crate::player::components::{
@@ -192,7 +193,12 @@ pub fn update_roaming_npcs(
     // mutable-aliasing conflict with its `&mut TilePosition` — and it keeps the
     // already-15-wide `npc_query` tuple from overflowing.
     npc_faction_query: Query<
-        (Option<&Faction>, Option<&Companion>, Option<&TagProfile>),
+        (
+            Option<&Faction>,
+            Option<&Companion>,
+            Option<&TagProfile>,
+            Option<&KnownGuilty>,
+        ),
         (With<Npc>, Without<Player>),
     >,
     // Life-agenda state for hand-placed NPCs. A *separate* disjoint query (its
@@ -313,7 +319,7 @@ pub fn update_roaming_npcs(
     // `&mut TilePosition`); the faction comes from the disjoint
     // `npc_faction_query` by entity lookup.
     combatants.extend(npc_query.iter().filter_map(|(entity, resident, tile, ..)| {
-        let (faction, _, tags) = npc_faction_query.get(entity).ok()?;
+        let (faction, _, tags, _) = npc_faction_query.get(entity).ok()?;
         // Combatant = anything with a side (faction) *or* an identity (tags).
         // Tag-only NPCs (sheep) fall back to `Neutral`: valid targets for
         // tag-driven aggressors, nobody's faction enemy. NPCs with neither
@@ -437,16 +443,17 @@ pub fn update_roaming_npcs(
         // built without an explicit faction. The owner tile is resolved from the
         // combatant list (owner is a player or another faction NPC, both there)
         // and only when same-space, so a companion only follows on its own map.
-        let (self_faction, companion, self_tags) = npc_faction_query
+        let (self_faction, companion, self_tags, self_guilt) = npc_faction_query
             .get(entity)
-            .map(|(f, c, t)| {
+            .map(|(f, c, t, g)| {
                 (
                     f.copied().unwrap_or(Faction::MonsterSide),
                     c.copied(),
                     t.copied().unwrap_or_default(),
+                    g,
                 )
             })
-            .unwrap_or((Faction::MonsterSide, None, TagProfile::default()));
+            .unwrap_or((Faction::MonsterSide, None, TagProfile::default(), None));
         let companion_follow = companion.and_then(|c| {
             combatants
                 .iter()
@@ -512,6 +519,7 @@ pub fn update_roaming_npcs(
             attack_profile,
             self_faction,
             self_tags,
+            self_guilt,
             companion_follow,
             combatants: &combatants,
             blockers: &blockers,
@@ -790,6 +798,9 @@ struct StepAiInput<'a> {
     /// flees_from). Zero for untagged legacy NPCs, keeping the pure-faction
     /// behavior unchanged.
     self_tags: TagProfile,
+    /// This NPC's own grudge ledger. `None` until some player has actually
+    /// wronged it — the third hostility gate, and the only per-player one.
+    self_guilt: Option<&'a KnownGuilty>,
     /// `Some((owner_tile, follow_close_tiles))` if this NPC is a companion with
     /// a same-space owner. Drives the follow-when-idle behavior in `tick_wander`.
     companion_follow: Option<(TilePosition, i32)>,
@@ -815,6 +826,17 @@ struct StepAiInput<'a> {
     /// Loudest noise this NPC can currently hear (its tile), or `None`. A heard
     /// noise pulls a wandering hostile NPC into Alert at that tile.
     heard_noise: Option<TilePosition>,
+}
+
+impl<'a> StepAiInput<'a> {
+    /// This NPC as the aggressor half of the hostility predicate.
+    fn aggressor(&self) -> Aggressor<'a> {
+        Aggressor::new(
+            self.self_faction,
+            self.self_tags.hostile_towards,
+            self.self_guilt,
+        )
+    }
 }
 
 struct PendingBark {
@@ -877,8 +899,7 @@ fn tick_wander(input: &mut StepAiInput<'_>) -> AiOutcome {
             input.entity,
             input.tile_position,
             input.space_id,
-            input.self_faction,
-            input.self_tags.hostile_towards,
+            input.aggressor(),
             hostile,
             input.combatants,
             input.los_blockers,
@@ -1105,8 +1126,7 @@ fn tick_alert(
             input.entity,
             input.tile_position,
             input.space_id,
-            input.self_faction,
-            input.self_tags.hostile_towards,
+            input.aggressor(),
             hostile,
             input.combatants,
             input.los_blockers,
@@ -1625,8 +1645,7 @@ fn nearest_visible_enemy(
     self_entity: Entity,
     tile_position: TilePosition,
     space_id: SpaceId,
-    self_faction: Faction,
-    self_hostile_towards: TagMask,
+    aggressor: Aggressor<'_>,
     hostile: &HostileBehavior,
     combatants: &[CombatantDetectInfo],
     blockers: &BlockerIndex,
@@ -1641,8 +1660,9 @@ fn nearest_visible_enemy(
         // Explicit self-exclusion: with the tag gate an NPC could otherwise
         // match its own identity (faction alone used to make this impossible).
         .filter(|p| p.entity != self_entity)
-        // Hostility gate: opposing faction OR hostile_towards ∩ identity.
-        .filter(|p| is_hostile_toward(self_faction, self_hostile_towards, p.faction, p.identity))
+        // Hostility gate: opposing faction OR hostile_towards ∩ identity OR
+        // this player is Wanted by us.
+        .filter(|p| is_hostile_toward(aggressor, Subject::new(p.faction, p.identity, p.player_id)))
         .filter(|p| p.space_id == space_id)
         // No sensing across a *full* floor by default: an NPC detects players on
         // its own floor, plus anything within one auto-climb half-block (so a
@@ -1751,10 +1771,8 @@ fn closer_in_range_enemy(input: &StepAiInput<'_>, target: Entity) -> Option<Enti
         .filter(|c| c.entity != target && c.entity != input.entity)
         .filter(|c| {
             is_hostile_toward(
-                input.self_faction,
-                input.self_tags.hostile_towards,
-                c.faction,
-                c.identity,
+                input.aggressor(),
+                Subject::new(c.faction, c.identity, c.player_id),
             )
         })
         .filter(|c| c.space_id == input.space_id)
@@ -2406,6 +2424,7 @@ mod tests {
         AiMemory, AiState, Companion, Faction, HostileBehavior, Npc, RoamBounds, RoamingBehavior,
         RoamingRandomState, RoamingStepTimer,
     };
+    use crate::npc::hostility::TagMask;
     use crate::player::components::{
         ChatLog, Inventory, Player, PlayerId, PlayerIdentity, VitalStats,
     };
@@ -3088,8 +3107,7 @@ mod tests {
                 Entity::from_raw_u32(9999).unwrap(),
                 npc,
                 TEST_SPACE,
-                Faction::MonsterSide,
-                TagMask::EMPTY,
+                Aggressor::new(Faction::MonsterSide, TagMask::EMPTY, None),
                 &hostile,
                 &upstairs,
                 &blockers,
@@ -3108,8 +3126,7 @@ mod tests {
                 Entity::from_raw_u32(9999).unwrap(),
                 npc,
                 TEST_SPACE,
-                Faction::MonsterSide,
-                TagMask::EMPTY,
+                Aggressor::new(Faction::MonsterSide, TagMask::EMPTY, None),
                 &hostile,
                 &same_floor,
                 &blockers,
@@ -3141,8 +3158,7 @@ mod tests {
                 Entity::from_raw_u32(9999).unwrap(),
                 npc,
                 TEST_SPACE,
-                Faction::MonsterSide,
-                TagMask::EMPTY,
+                Aggressor::new(Faction::MonsterSide, TagMask::EMPTY, None),
                 &hostile,
                 &half_block_up,
                 &blockers,
@@ -3161,8 +3177,7 @@ mod tests {
                 Entity::from_raw_u32(9999).unwrap(),
                 npc,
                 TEST_SPACE,
-                Faction::MonsterSide,
-                TagMask::EMPTY,
+                Aggressor::new(Faction::MonsterSide, TagMask::EMPTY, None),
                 &hostile,
                 &full_floor_up,
                 &blockers,
@@ -3204,8 +3219,7 @@ mod tests {
                 Entity::from_raw_u32(9999).unwrap(),
                 npc,
                 TEST_SPACE,
-                Faction::PlayerSide,
-                TagMask::EMPTY,
+                Aggressor::new(Faction::PlayerSide, TagMask::EMPTY, None),
                 &hostile,
                 &allies,
                 &blockers,
@@ -3224,8 +3238,7 @@ mod tests {
                 Entity::from_raw_u32(9999).unwrap(),
                 npc,
                 TEST_SPACE,
-                Faction::PlayerSide,
-                TagMask::EMPTY,
+                Aggressor::new(Faction::PlayerSide, TagMask::EMPTY, None),
                 &hostile,
                 &foes,
                 &blockers,

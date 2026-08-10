@@ -275,6 +275,10 @@ pub enum ContextMenuAction {
     TakePartial,
     Talk,
     Trade,
+    /// Visible when the hovered NPC is a Judge in talk range. Clicking it
+    /// asks the server to price and settle the player's outstanding guilt with
+    /// the factions that Judge speaks for.
+    PayFine,
     /// Right-click on an inventory slot while a trade is open — clicking it
     /// adds the slot's contents to the trade's "us" column. Visibility also
     /// requires an open trade session (`TradePopupState`), which lives

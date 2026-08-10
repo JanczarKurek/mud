@@ -40,6 +40,10 @@ pub struct PendingPlayerDeath {
     pub space_id: SpaceId,
     pub tile_position: TilePosition,
     pub name: String,
+    /// Whoever struck the killing blow, when it was attributable. Used to
+    /// settle guilt: dying at the hands of a faction pays your debt to it.
+    /// `None` for lava, falls, and other unattributed deaths.
+    pub killer: Option<Entity>,
 }
 
 type DeathHandlerPlayerQuery<'w, 's> = Query<
@@ -100,6 +104,8 @@ pub fn handle_player_deaths(
     definitions: Res<OverworldObjectDefinitions>,
     mut player_query: DeathHandlerPlayerQuery,
     mut pending_ui_events: ResMut<PendingGameUiEvents>,
+    killer_faction_query: Query<&crate::npc::guilt::FactionMembership>,
+    mut pending_guilt: ResMut<crate::npc::guilt::PendingGuiltEvents>,
 ) {
     let deaths = std::mem::take(&mut pending.deaths);
 
@@ -116,6 +122,19 @@ pub fn handle_player_deaths(
         else {
             continue;
         };
+
+        // Dying at the hands of a faction settles your debt with it: the
+        // sentence has been carried out. Only that faction forgives — being
+        // executed by the Watch does nothing for your standing with the goblins.
+        if let Some(factions) = death
+            .killer
+            .and_then(|killer| killer_faction_query.get(killer).ok())
+        {
+            pending_guilt.push(crate::npc::guilt::GuiltEvent::Clear {
+                player: identity.id,
+                factions: factions.mask,
+            });
+        }
 
         let dropped = drain_inventory_with_drop_chance(&mut inventory, SLOT_DROP_CHANCE_PERCENT);
         let items_summary = summarize_dropped(&dropped, &definitions);
@@ -462,6 +481,8 @@ mod tests {
             .init_resource::<PendingGameCommands>()
             .init_resource::<PendingGameUiEvents>()
             .init_resource::<ObjectRegistry>()
+            // Death settles the dead player's guilt with the killer's factions.
+            .init_resource::<crate::npc::guilt::PendingGuiltEvents>()
             // Real definitions from disk: the corpse + tombstone spawn in
             // handle_player_deaths looks up 'generic_corpse'/'tombstone'.
             .insert_resource(OverworldObjectDefinitions::load_from_disk())
@@ -516,6 +537,7 @@ mod tests {
                 space_id: death_space,
                 tile_position: death_tile,
                 name: "Tester".to_owned(),
+                killer: None,
             });
         app.update();
 

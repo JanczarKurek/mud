@@ -101,6 +101,10 @@ type DamageTargetQuery<'w, 's> = Query<
         Option<&'static Experience>,
         Option<&'static mut MagicEffects>,
         Has<GodMode>,
+        // Read here rather than in the guilt system because a killed NPC is
+        // despawned below — by the time the guilt queue drains, its allegiance
+        // would be gone.
+        Option<&'static crate::npc::guilt::FactionMembership>,
     ),
 >;
 
@@ -122,6 +126,7 @@ pub fn apply_pending_damage(
     player_identity_query: Query<&PlayerIdentity, With<Player>>,
     parties: Res<crate::game::party::Parties>,
     mut pending_aggro: ResMut<crate::npc::aggro::PendingNpcAggro>,
+    mut pending_guilt: ResMut<crate::npc::guilt::PendingGuiltEvents>,
     mut commands: Commands,
 ) {
     let now = time.elapsed_secs();
@@ -141,6 +146,7 @@ pub fn apply_pending_damage(
             target_experience,
             mut target_effects,
             is_invincible,
+            target_factions,
         )) = targets.get_mut(event.target)
         else {
             continue;
@@ -183,6 +189,14 @@ pub fn apply_pending_damage(
                         attacker,
                     });
                 }
+                // Guilt: the victim's factions take this personally. Debounced
+                // per (attacker, victim) so a DoT tick or a flurry of fast
+                // swings reads as one offense rather than ratcheting the
+                // attacker to Wanted over a single scuffle.
+                if let (Some(player), Some(factions)) = (event.source.xp_credit(), target_factions)
+                {
+                    pending_guilt.push_attack(player, factions.mask, event.target, now);
+                }
             }
             // Survivor: emit the damage-type-keyed hit VFX. Death plays
             // `death_poof` below instead, so we don't stack two effects on
@@ -213,6 +227,9 @@ pub fn apply_pending_damage(
             .unwrap_or_else(|| definition_id.clone());
         let is_player_target = is_player.is_some();
         let is_npc_target = is_npc.is_some();
+        // Copied out before the despawn below takes the entity (and its
+        // allegiance) with it.
+        let victim_factions = target_factions.copied();
 
         if is_npc_target {
             if let Some(loot_table) = definitions
@@ -233,6 +250,16 @@ pub fn apply_pending_damage(
                 type_id: definition_id.clone(),
                 killer_player_id,
             });
+            // Murder: enough guilt on its own to make the killer Wanted by
+            // everyone who answered to the victim. Not debounced — a kill is
+            // singular by definition.
+            if let (Some(player), Some(factions)) = (event.source.xp_credit(), victim_factions) {
+                pending_guilt.push(crate::npc::guilt::GuiltEvent::Offense {
+                    player,
+                    factions: factions.mask,
+                    amount: crate::npc::guilt::KILL_GUILT,
+                });
+            }
             if let Some(player_id) = event.source.xp_credit() {
                 let amount = xp_grant_for_kill(level);
                 pending_xp_grants
@@ -292,6 +319,7 @@ pub fn apply_pending_damage(
                 space_id,
                 tile_position: position,
                 name: target_name,
+                killer: event.attacker,
             });
         }
     }

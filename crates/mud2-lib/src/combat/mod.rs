@@ -137,6 +137,19 @@ impl Plugin for CombatPlugin {
                     .after(apply_pending_damage)
                     .before(crate::network::sets::NetServerSend)
                     .run_if(simulation_active),
+            )
+            // Guilt propagation: spread the offenses the damage drain queued to
+            // every live member of the victim's factions. Registered here
+            // rather than in `NpcPlugin` for the same reason as the aggro
+            // system above — the `.after(apply_pending_damage)` edge only binds
+            // inside the plugin that owns the anchor. Before the projection so
+            // a guard that just turned Wanted replicates as hostile this frame.
+            .add_systems(
+                Update,
+                crate::npc::guilt::apply_pending_guilt
+                    .after(apply_pending_damage)
+                    .before(crate::network::sets::NetServerSend)
+                    .run_if(simulation_active),
             );
     }
 }

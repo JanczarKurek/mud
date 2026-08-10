@@ -26,6 +26,9 @@ pub struct ContextMenuState {
     /// True when the right-clicked target is a tradeable peer (another player
     /// adjacent to the local player; later: a shopkeeper NPC).
     pub can_trade: bool,
+    /// True when the right-clicked target is a Judge NPC within talk range —
+    /// drives the "Pay Fine" row. The fee itself is priced server-side.
+    pub can_pay_fine: bool,
     /// `(verb, label)` for the *single* interaction (door open/close,
     /// torch light/extinguish, lever pull) currently applicable to the
     /// hovered object. `None` means no interact button is shown.
@@ -90,6 +93,7 @@ impl ContextMenuState {
         self.can_read = false;
         self.can_invite_to_party = false;
         self.can_set_party_focus = false;
+        self.can_pay_fine = false;
     }
 
     /// Set the three lock-related verb flags. Called by the context-menu
@@ -106,6 +110,13 @@ impl ContextMenuState {
     /// keeps existing `show` call-sites unchanged.
     pub fn set_can_hide(&mut self, can_hide: bool) {
         self.can_hide = can_hide;
+    }
+
+    /// Set the Judge "Pay Fine" verb flag. Mirrors `set_lock_verbs` /
+    /// `set_can_hide`: a separate setter keeps existing `show` call-sites
+    /// unchanged.
+    pub fn set_can_pay_fine(&mut self, can_pay_fine: bool) {
+        self.can_pay_fine = can_pay_fine;
     }
 
     /// Set the read-verb flag (books / tombstones / engravable items).
@@ -137,6 +148,7 @@ impl ContextMenuState {
         self.can_read = false;
         self.can_invite_to_party = false;
         self.can_set_party_focus = false;
+        self.can_pay_fine = false;
     }
 
     pub fn is_visible(&self) -> bool {
@@ -158,6 +170,7 @@ impl ContextMenuState {
             ContextMenuAction::TakePartial => self.can_take_partial,
             ContextMenuAction::Talk => self.can_talk,
             ContextMenuAction::Trade => self.can_trade,
+            ContextMenuAction::PayFine => self.can_pay_fine,
             // The trade-session half of the condition lives outside this
             // resource; this half is "the target is one of the player's own
             // backpack/equipment/pouch slots".

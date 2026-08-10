@@ -479,6 +479,13 @@ pub fn spawn_hud(
                 menu,
                 &theme,
                 &palette,
+                "Pay Fine",
+                ContextMenuAction::PayFine,
+            );
+            spawn_context_button(
+                menu,
+                &theme,
+                &palette,
                 "Invite to Party",
                 ContextMenuAction::InviteToParty,
             );

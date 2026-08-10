@@ -15,6 +15,8 @@ use bevy::prelude::*;
 
 use crate::combat::components::CombatLeash;
 use crate::npc::components::{Companion, Faction, HostileBehavior, Npc, PreyBehavior};
+use crate::npc::guilt::{FactionInterner, FactionMembership, GuiltTier, Judge, KnownGuilty};
+use crate::player::components::PlayerId;
 use crate::world::components::OverworldObject;
 use crate::world::object_definitions::OverworldObjectDefinitions;
 
@@ -36,6 +38,13 @@ impl TagMask {
 
     pub fn is_empty(self) -> bool {
         self.0 == 0
+    }
+
+    /// The bit indices set in this mask, ascending. Used to turn a mask back
+    /// into the strings it was interned from (see
+    /// `guilt::FactionInterner::display_names`).
+    pub fn bits(self) -> impl Iterator<Item = u8> {
+        (0u8..64).filter(move |bit| self.0 & (1 << bit) != 0)
     }
 }
 
@@ -76,6 +85,15 @@ impl TagInterner {
         interner
     }
 
+    /// Reverse lookup: the string interned at `bit`. Linear over at most 64
+    /// entries — only used for player-facing text, never per tick.
+    pub fn name_for_bit(&self, bit: u8) -> Option<&str> {
+        self.bits
+            .iter()
+            .find(|(_, interned)| **interned == bit)
+            .map(|(name, _)| name.as_str())
+    }
+
     /// Resolve a YAML tag list to a mask. Unknown tags resolve to nothing
     /// (they were either overflowed at build time or never declared).
     pub fn resolve(&self, tags: &[String]) -> TagMask {
@@ -101,17 +119,69 @@ pub struct TagProfile {
     pub flees_from: TagMask,
 }
 
-/// The one hostility predicate: is `(a_faction, a_hostile_towards)` hostile
-/// toward `(b_faction, b_identity)`? Faction enmity is symmetric; the tag
-/// gate is not. Used by NPC target acquisition and the per-viewer
-/// `is_hostile` projection flag.
-pub fn is_hostile_toward(
-    a_faction: Faction,
-    a_hostile_towards: TagMask,
-    b_faction: Faction,
-    b_identity: TagMask,
-) -> bool {
-    a_faction.is_enemy_of(b_faction) || a_hostile_towards.intersects(b_identity)
+/// The side of the predicate doing the hating: what this creature fights on,
+/// what it hunts, and who it personally holds a grudge against.
+#[derive(Clone, Copy, Debug)]
+pub struct Aggressor<'a> {
+    pub faction: Faction,
+    pub hostile_towards: TagMask,
+    /// This NPC's own grudge ledger, if it has one. `None` for creatures that
+    /// have never been wronged (the overwhelmingly common case) and for
+    /// players.
+    pub guilt: Option<&'a KnownGuilty>,
+}
+
+impl<'a> Aggressor<'a> {
+    /// The common case at call sites that have the components in hand.
+    pub fn new(faction: Faction, hostile_towards: TagMask, guilt: Option<&'a KnownGuilty>) -> Self {
+        Self {
+            faction,
+            hostile_towards,
+            guilt,
+        }
+    }
+}
+
+/// The side being judged: what it fights on, what it *is*, and — when it's a
+/// player — who it is, so guilt can be looked up.
+#[derive(Clone, Copy, Debug)]
+pub struct Subject {
+    pub faction: Faction,
+    pub identity: TagMask,
+    /// `Some` only for players. NPCs never accrue guilt against each other.
+    pub player_id: Option<PlayerId>,
+}
+
+impl Subject {
+    pub fn new(faction: Faction, identity: TagMask, player_id: Option<PlayerId>) -> Self {
+        Self {
+            faction,
+            identity,
+            player_id,
+        }
+    }
+}
+
+/// The one hostility predicate. Three independent gates, any of which suffices:
+///
+/// 1. **Faction enmity** — symmetric, the PlayerSide↔MonsterSide axis.
+/// 2. **Tag hostility** — asymmetric by design: a wolf is hostile toward
+///    `livestock`, the sheep bears the tag without reciprocating.
+/// 3. **Guilt** — earned rather than authored: a player past
+///    [`WANTED_THRESHOLD`] with this NPC is attacked on sight even by a guard
+///    that is otherwise player-friendly.
+///
+/// Used by NPC target acquisition and by the per-viewer `is_hostile` projection
+/// flag — which is why gate 3 makes a guard render red to the criminal who
+/// robbed it and peaceful to everyone standing next to them.
+pub fn is_hostile_toward(a: Aggressor<'_>, b: Subject) -> bool {
+    if a.faction.is_enemy_of(b.faction) || a.hostile_towards.intersects(b.identity) {
+        return true;
+    }
+    match (a.guilt, b.player_id) {
+        (Some(guilt), Some(player)) => guilt.tier(player) >= GuiltTier::Wanted,
+        _ => false,
+    }
 }
 
 /// Detection numbers for a prey NPC whose definition has no `npc_behavior:`
@@ -138,6 +208,7 @@ const DEFAULT_PREY_DETECT_TILES: i32 = 6;
 /// the NPC's first AI step delay.
 pub fn resolve_npc_tag_components(
     interner: Res<TagInterner>,
+    faction_interner: Res<FactionInterner>,
     definitions: Res<OverworldObjectDefinitions>,
     fresh: Query<
         (
@@ -165,6 +236,23 @@ pub fn resolve_npc_tag_components(
             || !profile.flees_from.is_empty();
         if has_tag_data {
             commands.entity(entity).insert(profile);
+        }
+
+        // Social factions. Like `TagProfile` this is template data, so it is
+        // re-derived here rather than persisted — but the `KnownGuilty` grudges
+        // keyed against it *are* persisted, and are restored separately by the
+        // snapshot loader.
+        let factions = faction_interner.resolve(&def.factions);
+        if !factions.is_empty() {
+            commands
+                .entity(entity)
+                .insert(FactionMembership { mask: factions });
+        }
+        if let Some(judge) = def.judge.as_ref() {
+            commands.entity(entity).insert(Judge {
+                clears: faction_interner.resolve(&judge.clears_factions),
+                copper_per_guilt_point: judge.copper_per_guilt_point,
+            });
         }
 
         if !profile.flees_from.is_empty() {
@@ -249,36 +337,108 @@ mod tests {
         let wolf_hostile = TagMask(0b10); // hostile_towards: livestock
         let sheep_identity = TagMask(0b10); // tags: [livestock]
         let none = TagMask::EMPTY;
+        let creature = |faction, identity| Subject::new(faction, identity, None);
 
         // Faction axis: only PlayerSide↔MonsterSide are enemies.
-        assert!(is_hostile_toward(PlayerSide, none, MonsterSide, none));
-        assert!(is_hostile_toward(MonsterSide, none, PlayerSide, none));
-        assert!(!is_hostile_toward(PlayerSide, none, PlayerSide, none));
-        assert!(!is_hostile_toward(Neutral, none, PlayerSide, none));
-        assert!(!is_hostile_toward(Neutral, none, MonsterSide, none));
-        assert!(!is_hostile_toward(MonsterSide, none, Neutral, none));
+        assert!(is_hostile_toward(
+            Aggressor::new(PlayerSide, none, None),
+            creature(MonsterSide, none)
+        ));
+        assert!(is_hostile_toward(
+            Aggressor::new(MonsterSide, none, None),
+            creature(PlayerSide, none)
+        ));
+        assert!(!is_hostile_toward(
+            Aggressor::new(PlayerSide, none, None),
+            creature(PlayerSide, none)
+        ));
+        assert!(!is_hostile_toward(
+            Aggressor::new(Neutral, none, None),
+            creature(PlayerSide, none)
+        ));
+        assert!(!is_hostile_toward(
+            Aggressor::new(Neutral, none, None),
+            creature(MonsterSide, none)
+        ));
+        assert!(!is_hostile_toward(
+            Aggressor::new(MonsterSide, none, None),
+            creature(Neutral, none)
+        ));
 
         // Tag axis is asymmetric: wolf → sheep, never sheep → wolf.
         assert!(is_hostile_toward(
-            Neutral,
-            wolf_hostile,
-            Neutral,
-            sheep_identity
+            Aggressor::new(Neutral, wolf_hostile, None),
+            creature(Neutral, sheep_identity)
         ));
-        assert!(!is_hostile_toward(Neutral, none, Neutral, wolf_hostile));
+        assert!(!is_hostile_toward(
+            Aggressor::new(Neutral, none, None),
+            creature(Neutral, wolf_hostile)
+        ));
 
         // Either gate suffices.
         assert!(is_hostile_toward(
-            MonsterSide,
-            none,
-            PlayerSide,
-            sheep_identity
+            Aggressor::new(MonsterSide, none, None),
+            creature(PlayerSide, sheep_identity)
         ));
         assert!(is_hostile_toward(
-            PlayerSide,
-            wolf_hostile,
-            Neutral,
-            sheep_identity
+            Aggressor::new(PlayerSide, wolf_hostile, None),
+            creature(Neutral, sheep_identity)
+        ));
+    }
+
+    #[test]
+    fn guilt_gate_makes_a_friendly_guard_hostile_to_the_criminal_only() {
+        use crate::npc::guilt::KILL_GUILT;
+
+        let culprit = PlayerId(1);
+        let bystander = PlayerId(2);
+        let mut ledger = KnownGuilty::default();
+        ledger.add(culprit, KILL_GUILT);
+
+        // A town guard: PlayerSide, hostile only toward monster tags, so both
+        // players are normally safe from it.
+        let guard = |guilt| Aggressor::new(Faction::PlayerSide, TagMask::EMPTY, guilt);
+        let player = |id| Subject::new(Faction::PlayerSide, TagMask::PLAYER, Some(id));
+
+        assert!(
+            !is_hostile_toward(guard(None), player(culprit)),
+            "a guard with no ledger is hostile to nobody on the player side"
+        );
+        assert!(
+            is_hostile_toward(guard(Some(&ledger)), player(culprit)),
+            "past the Wanted threshold the guard turns on the criminal"
+        );
+        assert!(
+            !is_hostile_toward(guard(Some(&ledger)), player(bystander)),
+            "guilt is per-player: the bystander is still safe"
+        );
+    }
+
+    #[test]
+    fn guilt_below_wanted_is_not_hostile() {
+        use crate::npc::guilt::ATTACK_GUILT;
+
+        let culprit = PlayerId(1);
+        let mut ledger = KnownGuilty::default();
+        // Shunned-but-not-Wanted: refuses to talk, but does not draw steel.
+        ledger.add(culprit, ATTACK_GUILT * 4);
+        assert_eq!(ledger.tier(culprit), GuiltTier::Shunned);
+
+        assert!(!is_hostile_toward(
+            Aggressor::new(Faction::PlayerSide, TagMask::EMPTY, Some(&ledger)),
+            Subject::new(Faction::PlayerSide, TagMask::PLAYER, Some(culprit))
+        ));
+    }
+
+    #[test]
+    fn guilt_never_applies_between_npcs() {
+        let mut ledger = KnownGuilty::default();
+        ledger.add(PlayerId(1), crate::npc::guilt::KILL_GUILT);
+        // An NPC subject carries no player_id, so the guilt gate can't fire
+        // even though the ledger is loaded.
+        assert!(!is_hostile_toward(
+            Aggressor::new(Faction::Neutral, TagMask::EMPTY, Some(&ledger)),
+            Subject::new(Faction::Neutral, TagMask(0b10), None)
         ));
     }
 }

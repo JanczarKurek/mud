@@ -1,5 +1,7 @@
 extends: npc
 name: Villager
+tags: [humanoid, townsfolk]
+factions: [emberbrook_town]
 description: Just a wandering villager — also dabbles in trade.
 dialog_node: FriendlyVillager
 shopkeeper:

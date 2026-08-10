@@ -5,6 +5,8 @@ pub mod debug_overlay;
 #[cfg(feature = "server-sim")]
 pub mod detection;
 #[cfg(feature = "server-sim")]
+pub mod guilt;
+#[cfg(feature = "server-sim")]
 pub mod hostility;
 pub mod routine;
 pub mod social;
@@ -60,6 +62,14 @@ impl Plugin for NpcPlugin {
                     tick_social_chatter.after(update_roaming_npcs),
                     tick_spawn_groups,
                 )
+                    .run_if(simulation_active),
+            )
+            // Claims `PayGuiltFine` out of the command queue before the main
+            // dispatcher sees it, the same way dialog and trade claim theirs.
+            .add_systems(
+                Update,
+                crate::npc::guilt::process_pay_guilt_fine
+                    .in_set(crate::game::CommandIntercept)
                     .run_if(simulation_active),
             );
     }

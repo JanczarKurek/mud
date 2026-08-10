@@ -226,6 +226,12 @@ pub enum GameCommand {
     TalkToNpc {
         npc_object_id: u64,
     },
+    /// Pay a Judge NPC to clear the acting player's guilt with the factions it
+    /// speaks for. The server prices the fine from the player's current guilt,
+    /// deducts the coin, and zeroes the debt — see `npc::guilt`.
+    PayGuiltFine {
+        npc_object_id: u64,
+    },
     /// Advance past a line currently displayed in the dialog panel
     /// (client clicked "Continue").
     DialogAdvance {

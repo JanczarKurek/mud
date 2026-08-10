@@ -4,6 +4,10 @@ tags: [humanoid, guard]
 description: A watchful guard in town livery, hand never far from the hilt.
 level: 4
 faction: player_side
+# Two allegiances: the Watch itself, and the town it protects. Membership in
+# `emberbrook_town` is what makes a guard take a murdered villager (or a
+# slaughtered sheep) personally.
+factions: [emberbrook_watch, emberbrook_town]
 hostile_towards: [monster, undead]
 stats:
   strength: 13

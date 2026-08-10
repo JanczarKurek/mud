@@ -174,6 +174,8 @@ pub type ProjectionWorldObjectQuery<'w, 's> = Query<
             Option<&'static crate::npc::components::AiState>,
             Option<&'static crate::npc::components::Faction>,
             Option<&'static crate::npc::hostility::TagProfile>,
+            Option<&'static crate::npc::guilt::KnownGuilty>,
+            Option<&'static crate::npc::guilt::Judge>,
         ),
     ),
     Without<Player>,
@@ -1057,7 +1059,7 @@ fn emit_world_object_events(
         state,
         has_shopkeeper,
         hidden,
-        (has_hostile, npc_combat_target, ai_state, npc_faction, npc_tags),
+        (has_hostile, npc_combat_target, ai_state, npc_faction, npc_tags, npc_guilt, npc_judge),
     ) in world_object_query.iter()
     {
         if space_resident.space_id != local_space_id {
@@ -1086,12 +1088,21 @@ fn emit_world_object_events(
         // legacy faction-less hostiles red.
         let is_hostile_to_viewer = has_hostile
             && crate::npc::hostility::is_hostile_toward(
-                npc_faction
-                    .copied()
-                    .unwrap_or(crate::npc::components::Faction::MonsterSide),
-                npc_tags.map(|t| t.hostile_towards).unwrap_or_default(),
-                crate::npc::components::Faction::PlayerSide,
-                crate::npc::hostility::TagMask::PLAYER,
+                crate::npc::hostility::Aggressor::new(
+                    npc_faction
+                        .copied()
+                        .unwrap_or(crate::npc::components::Faction::MonsterSide),
+                    npc_tags.map(|t| t.hostile_towards).unwrap_or_default(),
+                    npc_guilt,
+                ),
+                // The viewer themself is the subject, so a guard the local
+                // player has wronged renders red to *them* while staying
+                // peaceful for the innocent standing beside them.
+                crate::npc::hostility::Subject::new(
+                    crate::npc::components::Faction::PlayerSide,
+                    crate::npc::hostility::TagMask::PLAYER,
+                    Some(local_player_id),
+                ),
             );
         // Awareness marker: only for hostile NPCs the local player has read
         // (passed a Perception check, tracked in `SenseReveals`). Alerted if it
@@ -1144,6 +1155,7 @@ fn emit_world_object_events(
                  facing: prev_facing,
                  state: prev_state,
                  is_shopkeeper: prev_is_shopkeeper,
+                 is_judge: prev_is_judge,
                  is_hidden: prev_is_hidden,
                  is_hostile: prev_is_hostile,
                  is_targeting_local_player: prev_is_targeting,
@@ -1163,6 +1175,7 @@ fn emit_world_object_events(
                     && *prev_facing == facing.copied().unwrap_or_default().0
                     && prev_state.as_deref() == state.map(|s| s.0.as_str())
                     && *prev_is_shopkeeper == has_shopkeeper
+                    && *prev_is_judge == npc_judge.is_some()
                     && *prev_is_hidden == hidden.is_some()
                     && *prev_is_hostile == is_hostile_to_viewer
                     && *prev_is_targeting == is_targeting_local_player
@@ -1189,6 +1202,7 @@ fn emit_world_object_events(
             facing: facing.copied().unwrap_or_default().0,
             state: state.map(|s| s.0.clone()),
             is_shopkeeper: has_shopkeeper,
+            is_judge: npc_judge.is_some(),
             is_hidden: hidden.is_some(),
             is_hostile: is_hostile_to_viewer,
             is_targeting_local_player,

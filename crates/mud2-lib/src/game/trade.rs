@@ -484,7 +484,12 @@ pub fn process_trade_commands(
     )>,
     max_carry_query: Query<&MaxCarryWeight, With<Player>>,
     shopkeeper_query: Query<
-        (&OverworldObject, &SpaceResident, &TilePosition),
+        (
+            &OverworldObject,
+            &SpaceResident,
+            &TilePosition,
+            Option<&crate::npc::guilt::KnownGuilty>,
+        ),
         (With<Shopkeeper>, Without<Player>),
     >,
     mut stockpile_query: Query<(&OverworldObject, &mut Stockpile)>,
@@ -613,7 +618,12 @@ fn handle_initiate_trade(
         With<Player>,
     >,
     shopkeeper_query: &Query<
-        (&OverworldObject, &SpaceResident, &TilePosition),
+        (
+            &OverworldObject,
+            &SpaceResident,
+            &TilePosition,
+            Option<&crate::npc::guilt::KnownGuilty>,
+        ),
         (With<Shopkeeper>, Without<Player>),
     >,
     geometry: crate::world::column::FloorGeometry<'_>,
@@ -691,10 +701,10 @@ fn handle_initiate_trade(
         TradeTarget::Shopkeeper {
             object_id: shop_object_id,
         } => {
-            let shopkeeper = shopkeeper_query.iter().find(|(object, resident, _)| {
+            let shopkeeper = shopkeeper_query.iter().find(|(object, resident, _, _)| {
                 resident.space_id == acting_space && object.object_id == shop_object_id
             });
-            let Some((_, _, shop_tile)) = shopkeeper else {
+            let Some((_, _, shop_tile, shop_guilt)) = shopkeeper else {
                 bevy::log::debug!(
                     "InitiateTrade: target object {shop_object_id} is not a shopkeeper"
                 );
@@ -702,6 +712,22 @@ fn handle_initiate_trade(
             };
             if !geometry.reachable(&acting_tile, shop_tile, acting_space) {
                 bevy::log::debug!("InitiateTrade rejected: shopkeeper out of reach");
+                return;
+            }
+            // Guilt gate, mirroring the Talk path: a merchant who holds a
+            // grudge won't open the ledger. Said out loud, since the rejection
+            // is otherwise silent on the wire.
+            if crate::npc::guilt::refuses_interaction(shop_guilt, acting_player_id) {
+                bevy::log::debug!("InitiateTrade rejected: shopkeeper refuses a guilty player");
+                ui_events.push_broadcast_near(
+                    acting_space,
+                    *shop_tile,
+                    GameUiEvent::SpeechBubble {
+                        speaker_object_id: shop_object_id,
+                        text: crate::npc::guilt::REFUSAL_LINE.to_owned(),
+                        style: crate::game::resources::SpeechBubbleStyle::Say,
+                    },
+                );
                 return;
             }
 

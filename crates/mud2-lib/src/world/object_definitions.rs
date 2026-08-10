@@ -230,6 +230,18 @@ pub struct OverworldObjectDefinition {
     /// set `player_side` so monsters attack them (and summons don't).
     #[serde(default)]
     pub faction: Option<FactionDef>,
+    /// Social factions this NPC answers to (`emberbrook_watch`,
+    /// `goblin_tribe`). Distinct from both `tags` (what it *is*) and `faction`
+    /// (which combat side it fights on): this is who takes it personally when
+    /// you hurt it. Harming a member propagates guilt to every living NPC
+    /// sharing one of these — see `npc::guilt`. Interned into their own bitmask,
+    /// so they don't consume the identity-tag budget.
+    #[serde(default)]
+    pub factions: Vec<String>,
+    /// Marks this NPC as a Judge: a player can pay it to clear their guilt with
+    /// the listed factions. See `npc::guilt` and `GameCommand::PayGuiltFine`.
+    #[serde(default)]
+    pub judge: Option<JudgeDef>,
     /// NPC spellcasting profile. Combat checks this before falling through to
     /// the physical `attack_profile` — see `npc::spellcasting` and
     /// `combat::npc_casting`. `None` for non-casters (default).
@@ -283,6 +295,20 @@ impl From<FactionDef> for crate::npc::components::Faction {
             FactionDef::Neutral => Self::Neutral,
         }
     }
+}
+
+/// A Judge: an NPC who will, for coin, wipe a player's guilt with the factions
+/// it speaks for. The fee scales with how much guilt is being forgiven, so
+/// murdering a guard costs meaningfully more to settle than a scuffle.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+pub struct JudgeDef {
+    /// Which social factions this Judge can absolve. Usually the same faction
+    /// it belongs to; a regional magistrate might list several.
+    #[serde(default)]
+    pub clears_factions: Vec<String>,
+    /// Fee in copper per point of guilt cleared.
+    pub copper_per_guilt_point: u32,
 }
 
 /// Kind of persistent-text artifact. Drives UI titles and which verbs (read /
@@ -1462,6 +1488,23 @@ impl OverworldObjectDefinitions {
                 .iter()
                 .chain(def.hostile_towards.iter())
                 .chain(def.flees_from.iter())
+                .map(String::as_str)
+        })
+    }
+
+    /// Every social-faction string mentioned by any definition's `factions` or
+    /// a Judge's `clears_factions` — the input to `FactionInterner::build`.
+    /// Judges are included so a magistrate can absolve a faction even if no
+    /// authored NPC has yet been placed for it.
+    pub fn all_faction_strings(&self) -> impl Iterator<Item = &str> {
+        self.definitions.values().flat_map(|def| {
+            def.factions
+                .iter()
+                .chain(
+                    def.judge
+                        .iter()
+                        .flat_map(|judge| judge.clears_factions.iter()),
+                )
                 .map(String::as_str)
         })
     }

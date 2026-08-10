@@ -1,5 +1,7 @@
 extends: npc
 name: Townsfolk
+tags: [humanoid, townsfolk]
+factions: [emberbrook_town]
 description: An ordinary villager going about their day.
 # Peaceful: never chases. Roams gently between routine goals when idle.
 npc_behavior:

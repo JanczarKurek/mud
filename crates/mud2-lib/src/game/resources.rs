@@ -479,6 +479,10 @@ pub struct ClientWorldObjectState {
     /// `InitiateTrade { Shopkeeper(_) }` command path.
     #[serde(default)]
     pub is_shopkeeper: bool,
+    /// True when this object is a Judge who can absolve guilt for coin. Drives
+    /// the "Pay fine" context-menu entry and the `PayGuiltFine` command path.
+    #[serde(default)]
+    pub is_judge: bool,
     /// True when this object currently carries the server-side `Hidden`
     /// component. The local player only sees the object at all when they
     /// are in `Hidden.detected_by` (the projection filters otherwise), so

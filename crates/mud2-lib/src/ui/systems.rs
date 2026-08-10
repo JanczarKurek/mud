@@ -1466,6 +1466,13 @@ pub fn handle_context_menu_actions(
                 });
             }
         }
+        ContextMenuAction::PayFine => {
+            if let Some(ContextMenuTarget::World(object_id)) = context_menu_state.target {
+                pending_commands.push(GameCommand::PayGuiltFine {
+                    npc_object_id: object_id,
+                });
+            }
+        }
         ContextMenuAction::Attack => {
             if let Some(ContextMenuTarget::World(object_id)) = context_menu_state.target {
                 pending_commands.push(GameCommand::SetCombatTarget {
@@ -2529,6 +2536,7 @@ pub fn handle_context_menu_opening(
                 near && object.is_shopkeeper,
                 interaction,
             );
+            context_menu_state.set_can_pay_fine(talk_near && object.is_judge);
             if near {
                 let (pick, force, key) = lock_verb_visibility(object, &definitions, &client_state);
                 context_menu_state.set_lock_verbs(pick, force, key);
@@ -2736,6 +2744,8 @@ pub fn handle_context_menu_opening(
             near && object.is_shopkeeper,
             interaction,
         );
+        // "Pay Fine" uses talk range, matching the server-side reach check.
+        context_menu_state.set_can_pay_fine(talk_near && object.is_judge);
         if near {
             let (pick, force, key) = lock_verb_visibility(object, &definitions, &client_state);
             context_menu_state.set_lock_verbs(pick, force, key);
@@ -5030,6 +5040,7 @@ mod tests {
             facing: Direction::default(),
             state: None,
             is_shopkeeper: false,
+            is_judge: false,
             is_hidden: false,
             is_hostile: false,
             is_targeting_local_player: false,

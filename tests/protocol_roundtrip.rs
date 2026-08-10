@@ -115,6 +115,7 @@ fn world_object() -> ClientWorldObjectState {
         facing: Direction::East,
         state: Some("closed".to_owned()),
         is_shopkeeper: false,
+        is_judge: false,
         is_hidden: true,
         is_hostile: false,
         is_targeting_local_player: false,
@@ -304,6 +305,7 @@ fn game_command_samples() -> Vec<GameCommand> {
             state: "open".to_owned(),
         },
         GameCommand::TalkToNpc { npc_object_id: 12 },
+        GameCommand::PayGuiltFine { npc_object_id: 12 },
         GameCommand::DialogAdvance { session_id: 1 },
         GameCommand::DialogChoose {
             session_id: 1,
@@ -471,6 +473,7 @@ fn game_command_coverage(command: &GameCommand) {
         | GameCommand::AdminSetVitals { .. }
         | GameCommand::AdminSetObjectState { .. }
         | GameCommand::TalkToNpc { .. }
+        | GameCommand::PayGuiltFine { .. }
         | GameCommand::DialogAdvance { .. }
         | GameCommand::DialogChoose { .. }
         | GameCommand::DialogEnd { .. }

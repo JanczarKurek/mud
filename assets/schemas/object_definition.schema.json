@@ -195,6 +195,14 @@
         }
       ]
     },
+    "factions": {
+      "description": "Social factions this NPC answers to (`emberbrook_watch`, `goblin_tribe`). Distinct from both `tags` (what it *is*) and `faction` (which combat side it fights on): this is who takes it personally when you hurt it. Harming a member propagates guilt to every living NPC sharing one of these — see `npc::guilt`. Interned into their own bitmask, so they don't consume the identity-tag budget.",
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "fillable_properties": {
       "default": [],
       "type": "array",
@@ -254,6 +262,18 @@
       "items": {
         "$ref": "#/definitions/ObjectInteractionDef"
       }
+    },
+    "judge": {
+      "description": "Marks this NPC as a Judge: a player can pay it to clear their guilt with the listed factions. See `npc::guilt` and `GameCommand::PayGuiltFine`.",
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/JudgeDef"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "learns_recipe": {
       "description": "When set, using this item (`UseItem`) teaches the recipe with this id and consumes the scroll. The recipe must exist in `assets/recipes/`. Designed to share the same use-flow that spell scrolls already follow.",
@@ -1148,6 +1168,29 @@
         "type_ex": {
           "description": "Exclusivity group. Anti-stacking is scoped per item per `type_ex`.",
           "type": "string"
+        }
+      }
+    },
+    "JudgeDef": {
+      "description": "A Judge: an NPC who will, for coin, wipe a player's guilt with the factions it speaks for. The fee scales with how much guilt is being forgiven, so murdering a guard costs meaningfully more to settle than a scuffle.",
+      "type": "object",
+      "required": [
+        "copper_per_guilt_point"
+      ],
+      "properties": {
+        "clears_factions": {
+          "description": "Which social factions this Judge can absolve. Usually the same faction it belongs to; a regional magistrate might list several.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "copper_per_guilt_point": {
+          "description": "Fee in copper per point of guilt cleared.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
         }
       }
     },

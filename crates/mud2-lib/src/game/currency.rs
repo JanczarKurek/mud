@@ -46,6 +46,125 @@ pub fn format_compact(total: u32) -> String {
     out.trim_end().to_string()
 }
 
+/// Every coin tier, largest first — the order change is minted in.
+const COIN_TIERS: [(&str, u32); 3] = [
+    (GOLD_TYPE_ID, COPPER_PER_GOLD),
+    (SILVER_TYPE_ID, COPPER_PER_SILVER),
+    (COPPER_TYPE_ID, 1),
+];
+
+/// Total copper value of every coin stack in the player's backpack.
+pub fn purse_total_copper(inventory: &crate::player::components::Inventory) -> u32 {
+    inventory
+        .backpack_slots
+        .iter()
+        .flatten()
+        .map(|stack| {
+            COIN_TIERS
+                .iter()
+                .find(|(type_id, _)| *type_id == stack.type_id)
+                .map(|(_, worth)| stack.quantity.saturating_mul(*worth))
+                .unwrap_or(0)
+        })
+        .sum()
+}
+
+/// Deduct `amount` copper from the purse, breaking large coins into change.
+///
+/// Implemented by re-minting: coins are fungible, so melting the whole purse
+/// down and paying the remainder back in compact denominations is equivalent to
+/// making change, and avoids a per-tier borrow/carry dance. The work happens on
+/// a clone that is only committed if the change actually fits, so a full
+/// backpack can never eat the player's money.
+///
+/// Returns false (leaving `inventory` untouched) if the purse is short or the
+/// change won't fit.
+pub fn spend_copper(
+    inventory: &mut crate::player::components::Inventory,
+    amount: u32,
+    definitions: &crate::world::object_definitions::OverworldObjectDefinitions,
+) -> bool {
+    if amount == 0 {
+        return true;
+    }
+    let total = purse_total_copper(inventory);
+    if total < amount {
+        return false;
+    }
+
+    let mut draft = inventory.clone();
+    for slot in draft.backpack_slots.iter_mut() {
+        let is_coin = slot
+            .as_ref()
+            .is_some_and(|stack| COIN_TIERS.iter().any(|(id, _)| *id == stack.type_id));
+        if is_coin {
+            *slot = None;
+        }
+    }
+    if !deposit_copper(&mut draft, total - amount, definitions) {
+        return false;
+    }
+    *inventory = draft;
+    true
+}
+
+/// Add `amount` copper to the backpack as the most compact coin mix that fits.
+/// Returns false without modifying `inventory` if there aren't enough slots.
+fn deposit_copper(
+    inventory: &mut crate::player::components::Inventory,
+    amount: u32,
+    definitions: &crate::world::object_definitions::OverworldObjectDefinitions,
+) -> bool {
+    let (gold, silver, copper) = split(amount);
+    for (type_id, count) in [
+        (GOLD_TYPE_ID, gold),
+        (SILVER_TYPE_ID, silver),
+        (COPPER_TYPE_ID, copper),
+    ] {
+        if count == 0 {
+            continue;
+        }
+        let max_stack = definitions
+            .get(type_id)
+            .map(|def| def.max_stack_size.max(1))
+            .unwrap_or(1);
+        let mut remaining = count;
+        // Top up partial stacks first, then claim empty slots.
+        for slot in inventory.backpack_slots.iter_mut() {
+            if remaining == 0 {
+                break;
+            }
+            let Some(stack) = slot else { continue };
+            if stack.type_id != type_id || stack.quantity >= max_stack {
+                continue;
+            }
+            let room = max_stack - stack.quantity;
+            let moved = room.min(remaining);
+            stack.quantity += moved;
+            remaining -= moved;
+        }
+        for slot in inventory.backpack_slots.iter_mut() {
+            if remaining == 0 {
+                break;
+            }
+            if slot.is_some() {
+                continue;
+            }
+            let moved = max_stack.min(remaining);
+            *slot = Some(crate::player::components::InventoryStack::item(
+                type_id,
+                crate::world::map_layout::ObjectProperties::new(),
+                moved,
+            ));
+            remaining -= moved;
+        }
+        if remaining > 0 {
+            return false;
+        }
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -82,6 +201,100 @@ mod tests {
             assert_eq!(total_copper(c, s, g), total, "total={total}");
             assert!(c < COPPER_PER_SILVER, "copper not normalised at {total}");
             assert!(s < SILVER_PER_GOLD, "silver not normalised at {total}");
+        }
+    }
+
+    use crate::player::components::{Inventory, InventoryStack};
+    use crate::world::object_definitions::OverworldObjectDefinitions;
+
+    /// Coin definitions with the authored `max_stack_size: 100`.
+    fn coin_definitions() -> OverworldObjectDefinitions {
+        OverworldObjectDefinitions::load_from_disk()
+    }
+
+    fn purse(stacks: &[(&str, u32)]) -> Inventory {
+        let mut inventory = Inventory::default();
+        for (i, (type_id, quantity)) in stacks.iter().enumerate() {
+            inventory.backpack_slots[i] = Some(InventoryStack::item(
+                *type_id,
+                crate::world::map_layout::ObjectProperties::new(),
+                *quantity,
+            ));
+        }
+        inventory
+    }
+
+    #[test]
+    fn purse_total_sums_every_tier_and_ignores_non_coins() {
+        let inventory = purse(&[
+            (GOLD_TYPE_ID, 1),
+            (SILVER_TYPE_ID, 2),
+            (COPPER_TYPE_ID, 3),
+            ("iron_sword", 1),
+        ]);
+        assert_eq!(purse_total_copper(&inventory), 240 + 24 + 3);
+    }
+
+    #[test]
+    fn spending_makes_change_from_a_larger_coin() {
+        let definitions = coin_definitions();
+        let mut inventory = purse(&[(GOLD_TYPE_ID, 1)]);
+        // Pay 1s out of a gold piece: the purse must come back as change.
+        assert!(spend_copper(
+            &mut inventory,
+            COPPER_PER_SILVER,
+            &definitions
+        ));
+        assert_eq!(
+            purse_total_copper(&inventory),
+            COPPER_PER_GOLD - COPPER_PER_SILVER
+        );
+    }
+
+    #[test]
+    fn spending_exactly_empties_the_purse() {
+        let definitions = coin_definitions();
+        let mut inventory = purse(&[(SILVER_TYPE_ID, 1)]);
+        assert!(spend_copper(
+            &mut inventory,
+            COPPER_PER_SILVER,
+            &definitions
+        ));
+        assert_eq!(purse_total_copper(&inventory), 0);
+    }
+
+    #[test]
+    fn spending_more_than_you_have_leaves_the_purse_untouched() {
+        let definitions = coin_definitions();
+        let mut inventory = purse(&[(SILVER_TYPE_ID, 1)]);
+        assert!(!spend_copper(&mut inventory, COPPER_PER_GOLD, &definitions));
+        assert_eq!(
+            purse_total_copper(&inventory),
+            COPPER_PER_SILVER,
+            "a failed payment must not consume coins"
+        );
+    }
+
+    #[test]
+    fn spending_zero_is_a_no_op() {
+        let definitions = coin_definitions();
+        let mut inventory = purse(&[(COPPER_TYPE_ID, 5)]);
+        assert!(spend_copper(&mut inventory, 0, &definitions));
+        assert_eq!(purse_total_copper(&inventory), 5);
+    }
+
+    #[test]
+    fn change_never_loses_value_across_many_amounts() {
+        let definitions = coin_definitions();
+        for fee in [1, 11, 12, 13, 239, 240, 241, 479] {
+            let mut inventory = purse(&[(GOLD_TYPE_ID, 2)]);
+            let before = purse_total_copper(&inventory);
+            assert!(spend_copper(&mut inventory, fee, &definitions), "fee={fee}");
+            assert_eq!(
+                purse_total_copper(&inventory),
+                before - fee,
+                "value leaked paying {fee}"
+            );
         }
     }
 }

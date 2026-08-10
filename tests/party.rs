@@ -144,6 +144,7 @@ fn party_lifecycle_shared_xp_and_disconnect_reap() {
             source: DamageSource::Player(alric_id),
             damage_type: DamageType::Blunt,
             vfx_override: None,
+            attacker: None,
         });
     let alric_after = wait_for_snapshot(&mut app, &mut alric, |s| {
         s.experience.as_ref().is_some_and(|e| e.current_xp == 43)

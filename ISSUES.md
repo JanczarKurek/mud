@@ -45,15 +45,54 @@ templates; `npc/hostility.rs`; guards/wolves/sheep in the overworld), plus
 aggro-on-damage (`npc/aggro.rs` — universal self-defense, attacker carried on
 `DamageEvent`) and the ranged-flee fix (A* `Budget` vs `NoPath`, flee re-engage).
 Follow-ups:
-- **Guilt/witness system**: NPCs that *see* a player harm another NPC push
-  `NpcAggroEvent`s (the `PendingNpcAggro` queue was shaped for this) — guards
-  should punish livestock-killers and villager-attackers.
+- ~~**Guilt/witness system**~~ — **shipped** (`npc/guilt.rs`): a third hostility
+  axis on top of faction+tags. NPC templates declare social `factions:`
+  (own interner, own 64-bit budget); harming a member propagates guilt to every
+  *live* member via the batched `PendingGuiltEvents` queue. Guilt is stored
+  **per NPC** (`KnownGuilty`, keyed by `PlayerId`, persisted in `NpcStateDump`),
+  so killing the witnesses buries the evidence and a respawned guard is
+  innocent. Tiers: 0–30 nothing / 31–60 refuses to talk or trade / 61+ hostile
+  on sight. Earned `+10` per attack (3s per-victim debounce) and `+70` per kill;
+  cleared by dying to that faction or paying a `judge:` NPC
+  (`GameCommand::PayGuiltFine` + a "Pay Fine" context verb). Guards now punish
+  livestock-killers and villager-attackers, and the per-viewer red highlight
+  makes a guard look hostile *only to the criminal*. Remaining gaps:
+  - Guilt only accrues from damage **you** deal. There is still no *witness*
+    model — murdering a lone shepherd out of sight incriminates you exactly as
+    much as doing it on the town plaza, and an NPC killed outright never
+    reports it (it just stops existing, though its faction already learned).
+  - No guilt decay over time, and no per-creature severity weighting (a sheep
+    and a magistrate cost the same).
+  - The Judge is reachable only in person, which is awkward once the whole town
+    is hunting you; a bounty-board or jail alternative would help.
+  - `Chatter` is re-derived on fresh spawn but **not** in the snapshot loader,
+    so chatty NPCs go silent after a world reload. Pre-existing, unrelated to
+    guilt, but noticed while wiring the faction components.
+
+### e2e suite breakage (pre-existing, found 2026-08-10)
+Two failures in `tests/` that predate the guilt work — both confirmed by
+re-running the suite on a clean `f62358d` checkout:
+- Three suites stopped **compiling** when `DamageEvent.attacker` was added in
+  `f62358d` (`combat_scoping`, `death_respawn`, `party` construct the struct
+  literally). Fixed in passing by adding `attacker: None`; the compile error had
+  been masking the two behavioral failures below.
+- `death_respawn::death_despatializes_player_and_npc_reaggros_after_respawn`
+  fails: an NPC keeps its `CombatTarget` on a de-spatialized (dead) player. The
+  equivalent unit test (`npc_drops_aggro_when_player_dies`) passes, so the gap
+  is somewhere in the full pipeline, not in `tick_pursue_or_engage`'s
+  missing-target branch.
+- `multiplayer_transport::two_clients_receive_snapshots_and_see_each_other_move`
+  fails **only inside a full `cargo test --workspace` run** (it passes when its
+  binary runs alone, and in a 5-binary subset), on an idle machine, at HEAD as
+  well as on this branch. The move command reaches the server queue and is
+  consumed, but the mover's tile never changes — looks like state accumulating
+  across test binaries (leaked listeners / ports), not a logic bug.
 - Prey flee only triggers from `Wander`; a sheep mid-routine or a hybrid
   (fight-or-flight) NPC in `Alert` won't spook. Fine for v1 livestock.
 - NPC-on-NPC kills grant no XP and no kill-feed line beyond `[X dies]`;
   guard kills are silent from the player's perspective.
-- Villager/townsfolk have no identity tags yet, so nothing can be made
-  `hostile_towards` them (blocked on wanting the guilt system first anyway).
+- ~~Villager/townsfolk have no identity tags yet~~ — both now carry
+  `tags: [humanoid, townsfolk]` and `factions: [emberbrook_town]`.
 - A wolf pack can wipe the paddock faster than `respawn_mean_seconds` refills
   it — tune counts/timers after playtest.
 
