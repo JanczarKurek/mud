@@ -1,4 +1,5 @@
 pub mod awareness;
+pub mod party_markers;
 pub mod projectile;
 pub mod speech_bubble;
 pub mod vfx;
@@ -7,6 +8,7 @@ pub mod vfx_attachment;
 use bevy::prelude::*;
 
 use crate::client_effects::awareness::{sync_awareness_markers, AwarenessMarkers};
+use crate::client_effects::party_markers::{sync_party_markers, PartyMarkers};
 use crate::client_effects::projectile::{advance_projectiles, consume_projectile_events};
 use crate::client_effects::speech_bubble::{
     consume_speech_bubble_events, resize_speech_bubble_backdrops, restack_speech_bubbles,
@@ -20,6 +22,7 @@ pub struct ClientEffectsPlugin;
 impl Plugin for ClientEffectsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<AwarenessMarkers>()
+            .init_resource::<PartyMarkers>()
             .init_resource::<SpeechBubbleStacks>()
             .add_systems(
                 Update,
@@ -38,6 +41,7 @@ impl Plugin for ClientEffectsPlugin {
                     project_active_effects_to_attachments,
                     advance_projectiles,
                     sync_awareness_markers,
+                    sync_party_markers,
                 ),
             );
     }

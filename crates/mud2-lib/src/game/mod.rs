@@ -5,6 +5,7 @@ pub mod currency;
 #[cfg(feature = "server-sim")]
 pub mod discovery;
 pub mod helpers;
+pub mod party;
 pub mod projection;
 pub mod resources;
 pub mod shop;
@@ -29,6 +30,8 @@ use crate::game::chat::process_say_commands;
 use crate::game::discovery::{
     apply_pending_discovery, discover_around_players, PendingDiscoveryEvents,
 };
+#[cfg(feature = "server-sim")]
+use crate::game::party::{cleanup_invalid_parties, process_party_commands, Parties};
 use crate::game::projection::apply_game_events_to_client_state;
 use crate::game::resources::{
     ClientGameState, ClientStateRevisions, PendingGameCommands, PendingGameEvents,
@@ -83,6 +86,7 @@ impl Plugin for GameServerPlugin {
             .insert_resource(ContainerViewers::default())
             .insert_resource(PlacementSeqCounter::default())
             .insert_resource(ActiveTrades::default())
+            .insert_resource(Parties::default())
             .insert_resource(crate::world::noise::PendingNoiseEvents::default())
             .insert_resource(crate::world::noise::NoiseField::default())
             .configure_sets(
@@ -147,10 +151,27 @@ impl Plugin for GameServerPlugin {
                     .in_set(CommandIntercept)
                     .run_if(simulation_active),
             )
+            // The cleanups mutate replicated session state, so they need the
+            // explicit `NetServerSend` edge — they are not in `CommandIntercept`
+            // and would otherwise be unordered vs. the same-frame flush.
             .add_systems(
                 Update,
                 cleanup_invalid_trades
                     .after(process_trade_commands)
+                    .before(crate::network::sets::NetServerSend)
+                    .run_if(simulation_active),
+            )
+            .add_systems(
+                Update,
+                process_party_commands
+                    .in_set(CommandIntercept)
+                    .run_if(simulation_active),
+            )
+            .add_systems(
+                Update,
+                cleanup_invalid_parties
+                    .after(process_party_commands)
+                    .before(crate::network::sets::NetServerSend)
                     .run_if(simulation_active),
             )
             .add_systems(

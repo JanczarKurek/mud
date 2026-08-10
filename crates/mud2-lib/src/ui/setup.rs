@@ -479,6 +479,20 @@ pub fn spawn_hud(
                 menu,
                 &theme,
                 &palette,
+                "Invite to Party",
+                ContextMenuAction::InviteToParty,
+            );
+            spawn_context_button(
+                menu,
+                &theme,
+                &palette,
+                "Set Focus",
+                ContextMenuAction::SetPartyFocus,
+            );
+            spawn_context_button(
+                menu,
+                &theme,
+                &palette,
                 "Offer to Trade",
                 ContextMenuAction::OfferToTrade,
             );
@@ -944,6 +958,7 @@ fn spawn_docked_panel_canvas(
     palette: &Palette,
 ) {
     spawn_nearby_npcs_panel(parent, theme, palette);
+    spawn_party_panel(parent, theme, palette);
 
     for offset in 0..DockedPanelState::MAX_OPEN_CONTAINERS {
         spawn_container_panel(
@@ -1058,6 +1073,24 @@ fn spawn_nearby_npcs_panel(
             spawn_themed_icon_button(title_extras, undock_image, NearbyNpcsPanelUndockButton);
         },
         |body| spawn_nearby_npcs_panel_body(body, palette),
+    );
+}
+
+fn spawn_party_panel(parent: &mut ChildSpawnerCommands, theme: &UiThemeAssets, palette: &Palette) {
+    let undock_image = theme.undock_button.clone();
+    spawn_docked_panel_with_extras(
+        parent,
+        DockedPanelState::PARTY_PANEL_ID,
+        theme,
+        palette,
+        |title_extras| {
+            spawn_themed_icon_button(
+                title_extras,
+                undock_image,
+                crate::ui::components::PartyPanelUndockButton,
+            );
+        },
+        |body| crate::ui::party_panel::spawn_party_panel_body(body, palette),
     );
 }
 

@@ -155,6 +155,24 @@ by L15, so players out-leveled content pacing.)
 
 Awarded to the entity holding the killing blow's `attacker` slot in `resolve_battle_turn` (`src/combat/systems.rs:72`). If the killer is an NPC, no grant. The XP grant emits an `ExperienceGained { amount }` GameEvent (see §9).
 
+#### Shared XP (parties)
+
+Kill grants are tagged with the kill site (`XpGrantKind::Kill` in
+`player/progression.rs`); `split_party_xp_grants` (`game/party.rs`) rewrites a
+partied killer's grant into per-member shares before `apply_xp_grants` banks
+it. Crafting / admin / scripting grants are `Direct` and never split.
+
+- **Eligibility**: alive, same space, and within `PARTY_SHARE_RADIUS_TILES`
+  (Chebyshev, 30 — matches the interest radius) of the kill tile. The killer
+  always qualifies, even on a remote kill (trap, summon). Fewer than 2
+  eligible members ⇒ the killer keeps the full grant.
+- **Pool bonus**: the split pool is
+  `base × (1 + PARTY_XP_BONUS_PCT_PER_EXTRA_MEMBER/100 × (n − 1))` — ×1.60 at
+  the 5-member cap, so grouping never costs a full 1/N.
+- **Level weighting**: each member's share is proportional to their level
+  (largest-remainder rounding, so shares sum exactly to the pool). A level-1
+  riding with level-20s earns a token share — no power-leveling.
+
 ### 4.3 What a level-up gives
 
 When `current_xp ≥ xp_for_level(level + 1)`, the character levels:
@@ -495,6 +513,10 @@ Single-source list of every `[tunable]` referenced above. When a number lives he
 | XP curve coefficient | 1000 | §4.1 |
 | Level cap | 20 | §4.1 |
 | XP awarded per kill | `victim_level × 75` (linear — constant ~13 kills/level) | §4.2 |
+| `MAX_PARTY_SIZE` | 5 | §4.2 shared XP |
+| `PARTY_SHARE_RADIUS_TILES` | 30 (Chebyshev, = interest radius) | §4.2 shared XP |
+| `PARTY_XP_BONUS_PCT_PER_EXTRA_MEMBER` | 15 (×1.60 pool at 5 members) | §4.2 shared XP |
+| `PARTY_INVITE_TTL_SECONDS` | 30 | party invites (`game/party.rs`) |
 | Mana per level (caster classes) | Wizard 10, Cleric 8 | §4.3, §6.1 |
 | Ability bump cadence | every 4 levels | §4.3 |
 | Skill DC anchors | 5 / 10 / 15 / 20 / 25 / 30 | §5.1 |

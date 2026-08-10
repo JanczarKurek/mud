@@ -60,6 +60,12 @@ pub enum MovableWindowId {
     NearbyNpcsPanel,
     /// Floating-mode minimap panel. Singleton.
     MinimapPanel,
+    /// Floating-mode party panel (roster + member health frames). Singleton.
+    PartyPanel,
+    /// Party invitation prompt (singleton). Lifecycle: spawned when
+    /// `PartyInvitePopupState.invite` becomes `Some`, despawned when it
+    /// returns to `None`. Accept/Decline/close-X all answer the server.
+    PartyInvite,
     /// Per-character Log window (quests + notes). Singleton, toggled by
     /// `KeyL`. Same lifecycle pattern as `RecipeBook` — close button only.
     Log,

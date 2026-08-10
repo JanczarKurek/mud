@@ -84,6 +84,7 @@ const MENU_DEFINITIONS: &[MenuDefinition] = &[
             entry("Character", MenuAction::ToggleStatus),
             entry("Equipment", MenuAction::ToggleEquipment),
             entry("Nearby NPCs", MenuAction::ToggleNearbyNpcs),
+            entry("Party", MenuAction::ToggleParty),
             entry("Log  (L)", MenuAction::ToggleLog),
         ],
     },
@@ -434,6 +435,9 @@ pub fn apply_menu_actions(
             }
             MenuAction::ToggleNearbyNpcs => {
                 toggle_panel::<crate::ui::nearby_npcs_panel::NearbyNpcsPanel>(&mut panel_state);
+            }
+            MenuAction::ToggleParty => {
+                toggle_panel::<crate::ui::party_panel::PartyPanel>(&mut panel_state);
             }
             MenuAction::ToggleLog => {
                 crate::ui::log_panel::toggle_log_window(

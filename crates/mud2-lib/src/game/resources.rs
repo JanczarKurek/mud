@@ -169,6 +169,18 @@ pub enum GameUiEvent {
         error: Option<String>,
         incomplete: bool,
     },
+    /// A party invitation arrived for this player. Opens the invite popup;
+    /// the roster itself replicates separately via
+    /// `GameEvent::PartyStateChanged` once the invite is accepted.
+    PartyInviteReceived {
+        from_player_id: crate::player::components::PlayerId,
+        from_name: String,
+        party_size: usize,
+    },
+    /// The pending invitation shown to this player is no longer actionable —
+    /// answered, expired, withdrawn by disconnect, or the party filled up.
+    /// Dismisses the invite popup.
+    PartyInviteClosed,
 }
 
 /// Visual treatment for a floating speech bubble. Drives backdrop color and
@@ -681,6 +693,12 @@ pub enum GameEvent {
     TradeStateChanged {
         state: Option<crate::game::trade::ClientTradeView>,
     },
+    /// Replicates the local player's party roster (or `None` when unpartied).
+    /// Sole authority for the party panel's contents — the projection diffs
+    /// the whole snapshot and emits this whenever any member row changes.
+    PartyStateChanged {
+        party: Option<crate::game::party::ClientPartyView>,
+    },
     /// Baseline / corrective replication of the local player's learned
     /// recipe set. Same pattern as `PlayerExperienceChanged` — emitted on
     /// bootstrap and whenever the projection detects drift between the
@@ -895,6 +913,11 @@ pub struct ClientGameState {
     /// `GameEvent::TradeStateChanged`; the trade panel reads from this.
     #[serde(default)]
     pub current_trade: Option<crate::game::trade::ClientTradeView>,
+    /// Snapshot of the local player's party roster, or `None` when unpartied.
+    /// Updated by `GameEvent::PartyStateChanged`; the party panel, minimap
+    /// dots, and world markers all read from this.
+    #[serde(default)]
+    pub party: Option<crate::game::party::ClientPartyView>,
     /// Recipes the local player has learned. Drives the recipe-book UI.
     /// Folded from `GameEvent::LearnedRecipesChanged`. `BTreeSet` for
     /// deterministic iteration in the UI.
@@ -961,4 +984,7 @@ pub struct ClientStateRevisions {
     /// / `PlayerStorageChanged` — everything the backpack / equipment /
     /// container-slot UIs render from.
     pub inventory: u64,
+    /// Bumped on `PartyStateChanged`. The minimap gates its party dots on
+    /// this — out-of-interest-radius members never touch `remote_players`.
+    pub party: u64,
 }

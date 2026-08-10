@@ -984,6 +984,7 @@ pub fn flush_server_messages(
     floor_maps: Res<crate::world::floor_map::FloorMaps>,
     mut world_clock: ResMut<crate::world::lighting::WorldClock>,
     active_trades: Res<crate::game::trade::ActiveTrades>,
+    parties: Res<crate::game::party::Parties>,
     object_definitions: Res<crate::world::object_definitions::OverworldObjectDefinitions>,
     mut commands: Commands,
 ) {
@@ -1043,6 +1044,7 @@ pub fn flush_server_messages(
                 &floor_maps,
                 &world_clock,
                 &active_trades,
+                &parties,
                 &object_definitions,
             );
             if events.iter().any(|event| {
@@ -1831,6 +1833,7 @@ mod tests {
             Res<'w, crate::world::resources::SpaceManager>,
             Res<'w, crate::world::floor_map::FloorMaps>,
             Res<'w, crate::game::trade::ActiveTrades>,
+            Res<'w, crate::game::party::Parties>,
             Res<'w, crate::world::object_definitions::OverworldObjectDefinitions>,
         )>;
         let mut state: PeerProjectionState = SystemState::new(app.world_mut());
@@ -1843,6 +1846,7 @@ mod tests {
             space_manager,
             floor_maps,
             active_trades,
+            parties,
             object_definitions,
         ) = state.get(app.world_mut());
 
@@ -1862,6 +1866,7 @@ mod tests {
             &floor_maps,
             &world_clock,
             &active_trades,
+            &parties,
             &object_definitions,
         );
         let mut projection = ClientGameState::default();
@@ -1908,6 +1913,7 @@ mod tests {
             Res<'w, crate::world::resources::SpaceManager>,
             Res<'w, crate::world::floor_map::FloorMaps>,
             Res<'w, crate::game::trade::ActiveTrades>,
+            Res<'w, crate::game::party::Parties>,
             Res<'w, crate::world::object_definitions::OverworldObjectDefinitions>,
         )>;
 
@@ -1921,6 +1927,7 @@ mod tests {
             space_manager,
             floor_maps,
             active_trades,
+            parties,
             object_definitions,
         ) = state.get(app.world_mut());
 
@@ -1938,6 +1945,7 @@ mod tests {
             &floor_maps,
             &world_clock,
             &active_trades,
+            &parties,
             &object_definitions,
         );
         let mut baseline = ClientGameState::default();
@@ -1959,6 +1967,7 @@ mod tests {
             &floor_maps,
             &world_clock,
             &active_trades,
+            &parties,
             &object_definitions,
         );
         assert!(
@@ -1993,6 +2002,7 @@ mod tests {
             space_manager,
             floor_maps,
             active_trades,
+            parties,
             object_definitions,
         ) = state.get(app.world_mut());
 
@@ -2009,6 +2019,7 @@ mod tests {
             &floor_maps,
             &world_clock,
             &active_trades,
+            &parties,
             &object_definitions,
         );
         let position_change_count = move_events
@@ -2035,6 +2046,7 @@ mod tests {
             Res<'w, crate::world::resources::SpaceManager>,
             Res<'w, crate::world::floor_map::FloorMaps>,
             Res<'w, crate::game::trade::ActiveTrades>,
+            Res<'w, crate::game::party::Parties>,
             Res<'w, crate::world::object_definitions::OverworldObjectDefinitions>,
         )>;
         let mut state: PeerProjectionState = SystemState::new(app.world_mut());
@@ -2047,6 +2059,7 @@ mod tests {
             space_manager,
             floor_maps,
             active_trades,
+            parties,
             object_definitions,
         ) = state.get(app.world_mut());
         let world_clock = crate::world::lighting::WorldClock::default();
@@ -2063,6 +2076,7 @@ mod tests {
             &floor_maps,
             &world_clock,
             &active_trades,
+            &parties,
             &object_definitions,
         )
     }

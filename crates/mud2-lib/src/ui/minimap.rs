@@ -106,6 +106,7 @@ pub fn update_minimap_images(
             world_objects_rev: revisions.world_objects,
             remote_players_rev: revisions.remote_players,
             map_tiles_rev: revisions.map_tiles,
+            party_rev: revisions.party,
         };
         if canvas.last_signature == Some(want_sig)
             && !object_definitions.is_changed()
@@ -226,6 +227,45 @@ pub fn update_minimap_images(
                         Color::srgb(0.45, 0.70, 1.0),
                         other_dot_size,
                     );
+                }
+
+                // Party members, drawn after the blue remote dots so a partied
+                // remote reads as party-colored. Includes members outside the
+                // interest radius (they aren't in `remote_players`); their
+                // roster tile keeps replicating regardless of distance.
+                if let Some(party) = client_state.party.as_ref() {
+                    let local_id = client_state.local_player_id;
+                    for member in &party.members {
+                        if Some(member.player_id) == local_id {
+                            continue;
+                        }
+                        let (Some(member_space), Some(member_tile)) =
+                            (member.space_id, member.tile)
+                        else {
+                            continue;
+                        };
+                        if member_space != space_id {
+                            continue;
+                        }
+                        if floor_index(member_tile.z) != player_floor {
+                            continue;
+                        }
+                        let dx = member_tile.x - center_x;
+                        let dy = member_tile.y - center_y;
+                        if dx.abs() > half_span || dy.abs() > half_span {
+                            continue;
+                        }
+                        spawn_dot(
+                            dots,
+                            tile_ui_x,
+                            tile_ui_y,
+                            half_span,
+                            dx,
+                            dy,
+                            Color::srgb(0.35, 0.85, 0.45),
+                            other_dot_size,
+                        );
+                    }
                 }
 
                 for object in client_state.world_objects.values() {

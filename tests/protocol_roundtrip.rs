@@ -16,6 +16,7 @@ use mud2::game::commands::{
     GameCommand, InspectTarget, ItemDestination, ItemReference, ItemSlotRef, MoveDelta,
     RotationDirection, UseTarget,
 };
+use mud2::game::party::{ClientPartyView, PartyMemberView};
 use mud2::game::resources::{
     ClientActiveEffect, ClientCarryWeight, ClientCombatStats, ClientExertion,
     ClientRemotePlayerState, ClientSpaceState, ClientVitalStats, ClientWorldObjectState, GameEvent,
@@ -150,6 +151,55 @@ fn trade_view() -> ClientTradeView {
             stock_remaining: Some(2),
             persuasion_modifier_pct: -12,
         }]),
+    }
+}
+
+fn party_view() -> ClientPartyView {
+    ClientPartyView {
+        party_id: 3,
+        leader: PlayerId(1),
+        members: vec![
+            PartyMemberView {
+                player_id: PlayerId(1),
+                display_name: "Merla".to_owned(),
+                level: 5,
+                class: Class::Wizard,
+                object_id: Some(42),
+                vitals: ClientVitalStats {
+                    health: 30.0,
+                    max_health: 40.0,
+                    mana: 12.0,
+                    max_mana: 20.0,
+                },
+                space_id: Some(SpaceId(0)),
+                tile: Some(TilePosition::ground(10, 12)),
+                online: true,
+                in_range: true,
+                is_leader: true,
+                share_pct: 63,
+            },
+            // A de-spatialized (dead) member: positionless but still listed.
+            PartyMemberView {
+                player_id: PlayerId(2),
+                display_name: "Bree".to_owned(),
+                level: 3,
+                class: Class::Fighter,
+                object_id: None,
+                vitals: ClientVitalStats {
+                    health: 0.0,
+                    max_health: 35.0,
+                    mana: 0.0,
+                    max_mana: 5.0,
+                },
+                space_id: None,
+                tile: None,
+                online: true,
+                in_range: false,
+                is_leader: false,
+                share_pct: 0,
+            },
+        ],
+        focus_target: Some(99),
     }
 }
 
@@ -374,6 +424,22 @@ fn game_command_samples() -> Vec<GameCommand> {
             username: "merla".to_owned(),
             admin: true,
         },
+        GameCommand::InviteToParty {
+            target_object_id: 42,
+        },
+        GameCommand::AcceptPartyInvite { from: PlayerId(3) },
+        GameCommand::DeclinePartyInvite { from: PlayerId(3) },
+        GameCommand::LeaveParty,
+        GameCommand::KickFromParty {
+            player_id: PlayerId(4),
+        },
+        GameCommand::PromotePartyLeader {
+            player_id: PlayerId(4),
+        },
+        GameCommand::SetPartyFocusTarget {
+            object_id: Some(42),
+        },
+        GameCommand::SetPartyFocusTarget { object_id: None },
     ]
 }
 
@@ -446,7 +512,14 @@ fn game_command_coverage(command: &GameCommand) {
         | GameCommand::Engrave { .. }
         | GameCommand::AdminExec { .. }
         | GameCommand::AdminReplReset
-        | GameCommand::AdminSetAccountAdmin { .. } => {}
+        | GameCommand::AdminSetAccountAdmin { .. }
+        | GameCommand::InviteToParty { .. }
+        | GameCommand::AcceptPartyInvite { .. }
+        | GameCommand::DeclinePartyInvite { .. }
+        | GameCommand::LeaveParty
+        | GameCommand::KickFromParty { .. }
+        | GameCommand::PromotePartyLeader { .. }
+        | GameCommand::SetPartyFocusTarget { .. } => {}
     }
 }
 
@@ -610,6 +683,10 @@ fn game_event_samples() -> Vec<GameEvent> {
         GameEvent::TradeStateChanged {
             state: Some(trade_view()),
         },
+        GameEvent::PartyStateChanged {
+            party: Some(party_view()),
+        },
+        GameEvent::PartyStateChanged { party: None },
         GameEvent::LearnedRecipesChanged {
             recipes: BTreeSet::from(["bread".to_owned(), "stew".to_owned()]),
         },
@@ -662,6 +739,7 @@ fn game_event_coverage(event: &GameEvent) {
         | GameEvent::PlayerAttributesChanged { .. }
         | GameEvent::PlayerCombatStatsChanged { .. }
         | GameEvent::TradeStateChanged { .. }
+        | GameEvent::PartyStateChanged { .. }
         | GameEvent::LearnedRecipesChanged { .. }
         | GameEvent::LogStateChanged { .. }
         | GameEvent::SkillSheetChanged { .. }
@@ -760,6 +838,12 @@ fn game_ui_event_samples() -> Vec<GameUiEvent> {
             error: Some("Traceback (most recent call last):\nboom".to_owned()),
             incomplete: false,
         },
+        GameUiEvent::PartyInviteReceived {
+            from_player_id: PlayerId(1),
+            from_name: "Merla".to_owned(),
+            party_size: 2,
+        },
+        GameUiEvent::PartyInviteClosed,
     ]
 }
 
@@ -789,7 +873,9 @@ fn game_ui_event_coverage(event: &GameUiEvent) {
         | GameUiEvent::AttackCrit { .. }
         | GameUiEvent::OpenBookPanel { .. }
         | GameUiEvent::SpeechBubble { .. }
-        | GameUiEvent::ReplOutput { .. } => {}
+        | GameUiEvent::ReplOutput { .. }
+        | GameUiEvent::PartyInviteReceived { .. }
+        | GameUiEvent::PartyInviteClosed => {}
     }
 }
 

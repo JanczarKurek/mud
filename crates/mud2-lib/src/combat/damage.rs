@@ -114,6 +114,7 @@ pub fn apply_pending_damage(
     mut pending_xp_grants: ResMut<PendingXpGrants>,
     mut chat_log_query: crate::combat::systems::ScopedChatLogQuery,
     player_identity_query: Query<&PlayerIdentity, With<Player>>,
+    parties: Res<crate::game::party::Parties>,
     mut commands: Commands,
 ) {
     let now = time.elapsed_secs();
@@ -218,18 +219,23 @@ pub fn apply_pending_damage(
                 let amount = xp_grant_for_kill(level);
                 pending_xp_grants
                     .grants
-                    .push(PendingXpGrant { player_id, amount });
-                let killer_name = player_identity_query
-                    .iter()
-                    .find(|identity| identity.id == player_id)
-                    .map(|identity| identity.display_name.clone())
-                    .unwrap_or_else(|| format!("Player#{}", player_id.0));
-                crate::combat::systems::push_chat_line_near(
-                    &mut chat_log_query,
-                    space_id,
-                    position,
-                    &format!("[{killer_name} gained {amount} XP]"),
-                );
+                    .push(PendingXpGrant::kill(player_id, amount, space_id, position));
+                // Partied killers get per-member share lines from
+                // `split_party_xp_grants` instead — the full amount here would
+                // overstate what the killer actually banks.
+                if parties.party_for(player_id).is_none() {
+                    let killer_name = player_identity_query
+                        .iter()
+                        .find(|identity| identity.id == player_id)
+                        .map(|identity| identity.display_name.clone())
+                        .unwrap_or_else(|| format!("Player#{}", player_id.0));
+                    crate::combat::systems::push_chat_line_near(
+                        &mut chat_log_query,
+                        space_id,
+                        position,
+                        &format!("[{killer_name} gained {amount} XP]"),
+                    );
+                }
             }
             ui_events.push_broadcast_near(
                 space_id,

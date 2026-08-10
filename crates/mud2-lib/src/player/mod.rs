@@ -83,10 +83,22 @@ impl Plugin for PlayerServerPlugin {
             .insert_resource(debug_presets)
             .add_systems(Startup, validate_loadouts_against_objects)
             .add_systems(Update, refresh_derived_player_stats)
+            // `split_party_xp_grants` rewrites kill grants into per-member
+            // shares between the damage drain (which tags them) and the bank.
+            // Registered here rather than in GameServerPlugin so the
+            // `.before(apply_xp_grants)` fn-edge stays same-plugin.
+            .add_systems(
+                Update,
+                crate::game::party::split_party_xp_grants
+                    .after(crate::combat::damage::apply_pending_damage)
+                    .before(apply_xp_grants)
+                    .run_if(simulation_active),
+            )
             .add_systems(
                 Update,
                 apply_xp_grants
                     .after(crate::combat::systems::resolve_battle_turn)
+                    .after(crate::combat::damage::apply_pending_damage)
                     .run_if(simulation_active),
             )
             // `tick_exertion` decays the fatigue meter; it runs before

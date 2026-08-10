@@ -51,9 +51,18 @@ fn build_loopback_app() -> App {
         server_addr: String::new(),
         tls: None,
     });
+    app.init_resource::<PendingControl>();
     app.update();
     app
 }
+
+/// Control messages read off the pipe but not yet claimed by a [`wait_for`].
+/// Server replies batch arbitrarily per frame (e.g. `CharacterSelected` and
+/// the asset manifest can share one read), so unclaimed messages must be
+/// queued for the next `wait_for` rather than dropped — same lesson as
+/// `TestClient::control` in `tests/common`.
+#[derive(Resource, Default)]
+struct PendingControl(std::collections::VecDeque<ServerMessage>);
 
 /// Write a message on the client half of the pipe (what the pre-InGame
 /// screens do on a real client).
@@ -80,16 +89,29 @@ fn client_read(app: &mut App) -> Vec<ServerMessage> {
     out
 }
 
-/// Pump updates until `pick` claims a message (handshake helper — the client
-/// systems are not running pre-InGame, so the test reads the pipe directly).
+/// Pump updates until `pick` claims a queued or freshly-read message
+/// (handshake helper — the client systems are not running pre-InGame, so the
+/// test reads the pipe directly). Messages `pick` declines stay queued in
+/// [`PendingControl`] for later waits.
 fn wait_for<T>(app: &mut App, what: &str, mut pick: impl FnMut(&ServerMessage) -> Option<T>) -> T {
     for _ in 0..200 {
-        app.update();
-        for message in client_read(app) {
-            if let Some(value) = pick(&message) {
-                return value;
+        {
+            let mut queue = app.world_mut().resource_mut::<PendingControl>();
+            let mut index = 0;
+            while index < queue.0.len() {
+                if let Some(value) = pick(&queue.0[index]) {
+                    queue.0.remove(index);
+                    return value;
+                }
+                index += 1;
             }
         }
+        app.update();
+        let fresh = client_read(app);
+        app.world_mut()
+            .resource_mut::<PendingControl>()
+            .0
+            .extend(fresh);
     }
     panic!("loopback handshake: never saw {what}");
 }

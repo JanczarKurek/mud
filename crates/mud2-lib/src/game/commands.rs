@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::player::classes::Class;
-use crate::player::components::AttributeKind;
+use crate::player::components::{AttributeKind, PlayerId};
 use crate::player::skills::Skill;
 use crate::world::components::{SpaceId, TilePosition};
 use crate::world::direction::Direction;
@@ -335,6 +335,50 @@ pub enum GameCommand {
         session_id: crate::game::trade::TradeSessionId,
         ware_index: usize,
         quantity: u32,
+    },
+    /// Invite the player behind `target_object_id` (what a right-click on a
+    /// remote player yields) to the acting player's party — forming a fresh
+    /// two-man party on accept if the inviter is unpartied. Server validates:
+    /// target is a live player, not already partied, inviter is unpartied or
+    /// the leader of a non-full party, and no duplicate live invite exists.
+    /// No adjacency requirement, unlike trade. Pushes `PartyInviteReceived`
+    /// to the target. Drained by `process_party_commands` in `CommandIntercept`.
+    InviteToParty {
+        target_object_id: u64,
+    },
+    /// Accept a pending party invitation from `from`. Server validates the
+    /// invite exists, hasn't expired, and the party still has room; forms the
+    /// party when the inviter was unpartied. Drops all other pending invites
+    /// to the joiner. Drained by `process_party_commands` in `CommandIntercept`.
+    AcceptPartyInvite {
+        from: PlayerId,
+    },
+    /// Decline a pending party invitation from `from`; the inviter is told via
+    /// a narrator chat line. Also sent by the invite popup's close-X so the
+    /// server never holds an invite the client stopped showing. Drained by
+    /// `process_party_commands` in `CommandIntercept`.
+    DeclinePartyInvite {
+        from: PlayerId,
+    },
+    /// Leave the acting player's party. Promotes the next member when the
+    /// leader leaves; disbands the party when it would drop below two members.
+    /// Drained by `process_party_commands` in `CommandIntercept`.
+    LeaveParty,
+    /// Remove `player_id` from the party. Leader only. Drained by
+    /// `process_party_commands` in `CommandIntercept`.
+    KickFromParty {
+        player_id: PlayerId,
+    },
+    /// Hand party leadership to `player_id`. Leader only. Drained by
+    /// `process_party_commands` in `CommandIntercept`.
+    PromotePartyLeader {
+        player_id: PlayerId,
+    },
+    /// Set (or clear, with `None`) the party's shared focus target — a world
+    /// object id every member sees highlighted. Any member may set it.
+    /// Drained by `process_party_commands` in `CommandIntercept`.
+    SetPartyFocusTarget {
+        object_id: Option<u64>,
     },
     /// Write or delete a key in the acting player's `CharacterStash`.
     /// `value = Some(json)` upserts; `value = None` deletes. Drained by

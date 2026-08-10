@@ -141,6 +141,7 @@ fn project_first_player_to_client_state(
     container_query: crate::game::projection::ProjectionContainerQuery,
     stockpile_query: crate::game::projection::ProjectionStockpileQuery,
     active_trades: Res<crate::game::trade::ActiveTrades>,
+    parties: Res<crate::game::party::Parties>,
     object_definitions: Res<crate::world::object_definitions::OverworldObjectDefinitions>,
     mut pending_game_events: ResMut<PendingGameEvents>,
     mut floor_diff_cache: Local<crate::game::projection::FloorDiffCache>,
@@ -161,6 +162,7 @@ fn project_first_player_to_client_state(
         &floor_maps,
         &world_clock,
         &active_trades,
+        &parties,
         &object_definitions,
     );
     if events.iter().any(|event| {

@@ -44,6 +44,7 @@ pub fn apply_game_ui_events(
     mut pending_ui_events: ResMut<PendingGameUiEvents>,
     mut docked_panel_state: ResMut<DockedPanelState>,
     mut trade_popup_state: ResMut<crate::ui::resources::TradePopupState>,
+    mut party_invite_state: ResMut<crate::ui::resources::PartyInvitePopupState>,
     mut dialog_state: ResMut<crate::ui::resources::ActiveDialogState>,
     mut book_panel_state: ResMut<crate::ui::book_panel::BookPanelState>,
     mut console_terminals: Query<
@@ -158,6 +159,16 @@ pub fn apply_game_ui_events(
                         terminal.push("...", bevy_terminal::LineStyle::Prompt);
                     }
                 }
+            }
+            GameUiEvent::PartyInviteReceived {
+                from_player_id,
+                from_name,
+                party_size,
+            } => {
+                party_invite_state.open(from_player_id, from_name, party_size);
+            }
+            GameUiEvent::PartyInviteClosed => {
+                party_invite_state.close();
             }
         }
     }
@@ -311,7 +322,8 @@ pub fn manage_open_containers(
         | DockedPanelKind::Status
         | DockedPanelKind::Equipment
         | DockedPanelKind::Backpack
-        | DockedPanelKind::NearbyNpcs => true,
+        | DockedPanelKind::NearbyNpcs
+        | DockedPanelKind::Party => true,
         DockedPanelKind::Container { object_id } => player_position
             .zip(client_state.world_objects.get(&object_id))
             .is_some_and(|(player_position, object)| {
@@ -395,7 +407,8 @@ pub fn handle_docked_panel_close_buttons(
                 | Some(DockedPanelKind::Equipment)
                 | Some(DockedPanelKind::Backpack)
                 | Some(DockedPanelKind::Minimap)
-                | Some(DockedPanelKind::NearbyNpcs) => {
+                | Some(DockedPanelKind::NearbyNpcs)
+                | Some(DockedPanelKind::Party) => {
                     docked_panel_state.close_panel(button.panel_id);
                 }
                 None => {}
@@ -434,7 +447,7 @@ fn nearby_npc_dot_asset(o: &crate::game::resources::ClientWorldObjectState) -> &
     }
 }
 
-fn hp_fill_color(ratio: f32) -> Color {
+pub(crate) fn hp_fill_color(ratio: f32) -> Color {
     if ratio > 0.6 {
         Color::srgb(0.30, 0.78, 0.32)
     } else if ratio > 0.3 {
@@ -1630,6 +1643,20 @@ pub fn handle_context_menu_actions(
                 pending_commands.push(GameCommand::InitiateTrade { target });
             }
         }
+        ContextMenuAction::InviteToParty => {
+            if let Some(ContextMenuTarget::World(object_id)) = context_menu_state.target {
+                pending_commands.push(GameCommand::InviteToParty {
+                    target_object_id: object_id,
+                });
+            }
+        }
+        ContextMenuAction::SetPartyFocus => {
+            if let Some(ContextMenuTarget::World(object_id)) = context_menu_state.target {
+                pending_commands.push(GameCommand::SetPartyFocusTarget {
+                    object_id: Some(object_id),
+                });
+            }
+        }
         ContextMenuAction::OfferToTrade => {
             if let (Some(session_id), Some(ContextMenuTarget::Slot(slot_kind))) =
                 (trade_popup_state.session_id, context_menu_state.target)
@@ -2601,6 +2628,25 @@ pub fn handle_context_menu_opening(
             near,
             None,
         );
+        // Party verbs: no adjacency gate — inviting someone across the
+        // screen is the point. Client-side we only know our own party; the
+        // server re-validates the target's.
+        let target_in_my_party = client_state.party.as_ref().is_some_and(|party| {
+            party
+                .members
+                .iter()
+                .any(|member| member.object_id == Some(remote_player.object_id))
+        });
+        let can_invite = !target_in_my_party
+            && match (client_state.party.as_ref(), client_state.local_player_id) {
+                (None, _) => true,
+                (Some(party), Some(local_id)) => {
+                    party.is_leader(local_id)
+                        && party.members.len() < crate::game::party::MAX_PARTY_SIZE
+                }
+                (Some(_), None) => false,
+            };
+        context_menu_state.set_party_verbs(can_invite, client_state.party.is_some());
         info!(
             "context_open_remote_player_success object_id={} can_use={} can_attack=true near={}",
             remote_player.object_id, can_use, near
@@ -2678,6 +2724,9 @@ pub fn handle_context_menu_opening(
             ));
             context_menu_state.set_can_read(can_read_target(&object.definition_id, &definitions));
         }
+        // Any party member may point the shared focus marker at any NPC —
+        // adjacency doesn't matter for calling a target.
+        context_menu_state.set_party_verbs(false, client_state.party.is_some() && object.is_npc);
         info!(
             "context_open_world_success object_id={} has_container={} can_use={} can_attack={} near={}",
             object.object_id, object.is_container, can_use, object.is_npc, near
@@ -2822,6 +2871,7 @@ pub fn sync_docked_panel_titles(
             Some(DockedPanelKind::Equipment) => "Equipment".to_owned(),
             Some(DockedPanelKind::Backpack) => "Backpack".to_owned(),
             Some(DockedPanelKind::NearbyNpcs) => "Nearby NPCs".to_owned(),
+            Some(DockedPanelKind::Party) => "Party".to_owned(),
             Some(DockedPanelKind::Container { object_id }) => client_state
                 .world_objects
                 .get(&object_id)

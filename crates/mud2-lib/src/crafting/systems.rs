@@ -182,10 +182,9 @@ pub fn process_craft_commands(
             chat_log.lines.push(format!("You craft a {}.", recipe.name));
 
             if recipe.xp_award > 0 {
-                xp_grants.grants.push(PendingXpGrant {
-                    player_id: identity.id,
-                    amount: recipe.xp_award,
-                });
+                xp_grants
+                    .grants
+                    .push(PendingXpGrant::direct(identity.id, recipe.xp_award));
             }
 
             break;

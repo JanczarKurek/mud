@@ -307,6 +307,13 @@ pub enum ContextMenuAction {
     /// click; the server responds with `OpenBookPanel` which spawns the
     /// reader-editor window (where the actual write/engrave flow lives).
     Read,
+    /// Visible when the right-clicked target is a remote player who can be
+    /// invited (viewer unpartied or the leader of a non-full party, target
+    /// unpartied). No adjacency requirement, unlike Trade.
+    InviteToParty,
+    /// Visible when the viewer is in a party and the target is a world
+    /// object — sets the party's shared focus target.
+    SetPartyFocus,
 }
 
 /// Marker + payload on every context-menu row button: which
@@ -449,6 +456,22 @@ pub struct NearbyNpcsPanelFloatingRoot;
 #[derive(Component, Default)]
 pub struct NearbyNpcsPanelFloatingCloseButton;
 
+/// Title-bar undock arrow on the docked party panel.
+#[derive(Component, Default)]
+pub struct PartyPanelUndockButton;
+
+/// Title-bar dock-back arrow on the floating party window.
+#[derive(Component, Default)]
+pub struct PartyPanelDockButton;
+
+/// Marker on the root of the floating party window.
+#[derive(Component, Default)]
+pub struct PartyPanelFloatingRoot;
+
+/// Close-X on the floating party window.
+#[derive(Component, Default)]
+pub struct PartyPanelFloatingCloseButton;
+
 /// Title-bar undock arrow on the docked minimap panel.
 #[derive(Component, Default)]
 pub struct MinimapPanelUndockButton;
@@ -533,6 +556,10 @@ impl_unit_panel_instance_marker!(
     MinimapPanelDockButton,
     MinimapPanelFloatingRoot,
     MinimapPanelFloatingCloseButton,
+    PartyPanelUndockButton,
+    PartyPanelDockButton,
+    PartyPanelFloatingRoot,
+    PartyPanelFloatingCloseButton,
 );
 
 macro_rules! impl_indexed_panel_instance_marker {
@@ -712,6 +739,9 @@ pub struct MinimapSignature {
     pub world_objects_rev: u64,
     pub remote_players_rev: u64,
     pub map_tiles_rev: u64,
+    /// Party roster changes — out-of-interest-radius members never touch
+    /// `remote_players_rev`, so party dots need their own counter.
+    pub party_rev: u64,
 }
 
 #[derive(Component)]

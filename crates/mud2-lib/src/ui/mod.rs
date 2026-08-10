@@ -17,6 +17,8 @@ pub mod mode_indicator;
 pub mod mountable_panel;
 pub mod movable_window;
 pub mod nearby_npcs_panel;
+pub mod party_invite_popup;
+pub mod party_panel;
 pub mod persistence;
 pub mod quickbar;
 pub mod recipe_book;
@@ -73,6 +75,13 @@ use crate::ui::minimap::{
 use crate::ui::minimap_panel::MinimapPanel;
 use crate::ui::mountable_panel::{MountablePanelLifecycleSet, MountablePanelPlugin};
 use crate::ui::nearby_npcs_panel::NearbyNpcsPanel;
+use crate::ui::party_invite_popup::{
+    handle_party_invite_buttons, handle_party_invite_close_click,
+    sync_party_invite_window_lifecycle,
+};
+use crate::ui::party_panel::{
+    auto_open_party_panel, handle_party_panel_buttons, sync_party_panel, PartyPanel,
+};
 use crate::ui::persistence::{load_ui_state_on_login, persist_ui_state, UiStateLoadedFor};
 use crate::ui::quickbar::{
     handle_bottom_panel_hide_button, handle_bottom_panel_hide_key, handle_quickbar_clicks,
@@ -131,6 +140,7 @@ impl Plugin for UiPlugin {
             MountablePanelPlugin::<BackpackPanel>::default(),
             MountablePanelPlugin::<NearbyNpcsPanel>::default(),
             MountablePanelPlugin::<MinimapPanel>::default(),
+            MountablePanelPlugin::<PartyPanel>::default(),
             MountablePanelPlugin::<ContainerPanel>::default(),
             crate::ui::settings::SettingsPlugin,
         ))
@@ -157,6 +167,7 @@ impl Plugin for UiPlugin {
         .insert_resource(crate::ui::book_panel::BookPanelRenderState::default())
         .insert_resource(TradePanelRenderState::default())
         .insert_resource(TradePopupState::default())
+        .insert_resource(resources::PartyInvitePopupState::default())
         .insert_resource(TimeOfDayPopupState::default())
         .insert_resource(Quickbar::default())
         .insert_resource(QuickbarLoadedFor::default())
@@ -428,6 +439,18 @@ impl Plugin for UiPlugin {
         .add_systems(
             Update,
             (
+                auto_open_party_panel,
+                sync_party_panel.after(MountablePanelLifecycleSet),
+                handle_party_panel_buttons,
+                sync_party_invite_window_lifecycle.after(apply_game_ui_events),
+                handle_party_invite_buttons.after(sync_party_invite_window_lifecycle),
+                handle_party_invite_close_click.after(sync_party_invite_window_lifecycle),
+            )
+                .run_if(in_state(ClientAppState::InGame)),
+        )
+        .add_systems(
+            Update,
+            (
                 load_quickbar_on_login,
                 load_ui_state_on_login,
                 sync_quickbar_visuals,
@@ -476,6 +499,7 @@ fn teardown_hud(
     mut pending_actions: ResMut<PendingMenuActions>,
     mut active_dialog: ResMut<ActiveDialogState>,
     mut trade_popup: ResMut<TradePopupState>,
+    mut party_invite: ResMut<resources::PartyInvitePopupState>,
     mut quickbar: ResMut<Quickbar>,
     mut quickbar_loaded: ResMut<QuickbarLoadedFor>,
     mut ui_state_loaded: ResMut<UiStateLoadedFor>,
@@ -491,6 +515,7 @@ fn teardown_hud(
     pending_actions.actions.clear();
     *active_dialog = ActiveDialogState::default();
     *trade_popup = TradePopupState::default();
+    *party_invite = resources::PartyInvitePopupState::default();
     *quickbar = Quickbar::default();
     *quickbar_loaded = QuickbarLoadedFor::default();
     *ui_state_loaded = UiStateLoadedFor::default();

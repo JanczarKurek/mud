@@ -254,9 +254,7 @@ impl Parties {
 /// solo. Integer math throughout so the pool is exactly reproducible.
 pub fn party_xp_pool(base_amount: u64, member_count: usize) -> u64 {
     let extra = member_count.saturating_sub(1) as u64;
-    base_amount
-        .saturating_mul(100 + PARTY_XP_BONUS_PCT_PER_EXTRA_MEMBER * extra)
-        / 100
+    base_amount.saturating_mul(100 + PARTY_XP_BONUS_PCT_PER_EXTRA_MEMBER * extra) / 100
 }
 
 /// Split a kill's XP across eligible party members, weighted by level.
@@ -276,7 +274,10 @@ pub fn split_kill_xp(base_amount: u64, members: &[(PlayerId, u32)]) -> Vec<(Play
 
     // Level 0 shouldn't exist, but a zero weight would make a member
     // permanently unpayable and could zero the divisor outright.
-    let weights: Vec<u64> = members.iter().map(|(_, level)| (*level).max(1) as u64).collect();
+    let weights: Vec<u64> = members
+        .iter()
+        .map(|(_, level)| (*level).max(1) as u64)
+        .collect();
     let total_weight: u64 = weights.iter().sum();
 
     let mut shares: Vec<(PlayerId, u64)> = Vec::with_capacity(members.len());
@@ -308,7 +309,10 @@ pub fn split_kill_xp(base_amount: u64, members: &[(PlayerId, u32)]) -> Vec<(Play
 /// nearest whole percent independently per member, so the column is readable
 /// rather than exactly summing to 100.
 pub fn share_percentages(members: &[(PlayerId, u32)]) -> Vec<u8> {
-    let total: u64 = members.iter().map(|(_, level)| (*level).max(1) as u64).sum();
+    let total: u64 = members
+        .iter()
+        .map(|(_, level)| (*level).max(1) as u64)
+        .sum();
     if total == 0 {
         return vec![0; members.len()];
     }
@@ -921,13 +925,14 @@ pub fn cleanup_invalid_parties(
 pub fn split_party_xp_grants(
     mut grants: ResMut<PendingXpGrants>,
     parties: Res<Parties>,
-    player_query: Query<
+    mut player_query: Query<
         (
             &PlayerIdentity,
             &SpaceResident,
             &TilePosition,
             &VitalStats,
             &Experience,
+            &mut ChatLogState,
         ),
         With<Player>,
     >,
@@ -938,6 +943,9 @@ pub fn split_party_xp_grants(
 
     let queued = std::mem::take(&mut grants.grants);
     let mut out: Vec<PendingXpGrant> = Vec::with_capacity(queued.len());
+    // Narrator lines for partied recipients, pushed after the rewrite loop so
+    // the loop doesn't fight the query over the chat-log borrow.
+    let mut share_lines: Vec<(PlayerId, String)> = Vec::new();
     for grant in queued {
         let XpGrantKind::Kill { space_id, tile } = grant.kind else {
             out.push(grant);
@@ -955,9 +963,9 @@ pub fn split_party_xp_grants(
             .members
             .iter()
             .filter_map(|member| {
-                let (_, resident, member_tile, vitals, experience) = player_query
+                let (_, resident, member_tile, vitals, experience, _) = player_query
                     .iter()
-                    .find(|(identity, _, _, _, _)| identity.id == *member)?;
+                    .find(|(identity, _, _, _, _, _)| identity.id == *member)?;
                 let qualifies = *member == grant.player_id
                     || (vitals.health > 0.0
                         && within_share_range(space_id, tile, resident.space_id, *member_tile));
@@ -965,15 +973,35 @@ pub fn split_party_xp_grants(
             })
             .collect();
 
+        // The killer's own "[X gained N XP]" broadcast is suppressed in
+        // `apply_pending_damage` for partied killers, so every partied
+        // recipient — split or pass-through — gets a narrator line here.
         if eligible.len() < 2 {
             out.push(PendingXpGrant::direct(grant.player_id, grant.amount));
+            share_lines.push((
+                grant.player_id,
+                format!("You gain {} XP from the kill.", grant.amount),
+            ));
             continue;
         }
         for (player_id, amount) in split_kill_xp(grant.amount, &eligible) {
             out.push(PendingXpGrant::direct(player_id, amount));
+            share_lines.push((
+                player_id,
+                format!("You gain {amount} XP from the party's kill."),
+            ));
         }
     }
     grants.grants = out;
+
+    for (player_id, line) in share_lines {
+        if let Some((_, _, _, _, _, mut chat_log)) = player_query
+            .iter_mut()
+            .find(|(identity, _, _, _, _, _)| identity.id == player_id)
+        {
+            chat_log.push_narrator(line);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1018,11 +1046,7 @@ mod tests {
         // Pool 975 over three equal members = 325 each, no dust.
         assert_eq!(
             shares,
-            vec![
-                (PlayerId(1), 325),
-                (PlayerId(2), 325),
-                (PlayerId(3), 325)
-            ]
+            vec![(PlayerId(1), 325), (PlayerId(2), 325), (PlayerId(3), 325)]
         );
     }
 
@@ -1055,7 +1079,10 @@ mod tests {
     #[test]
     fn share_percentages_track_levels() {
         assert_eq!(share_percentages(&ids(&[(1, 5), (2, 5)])), vec![50, 50]);
-        assert_eq!(share_percentages(&ids(&[(1, 20), (2, 10), (3, 1)])), vec![65, 32, 3]);
+        assert_eq!(
+            share_percentages(&ids(&[(1, 20), (2, 10), (3, 1)])),
+            vec![65, 32, 3]
+        );
         assert_eq!(share_percentages(&[]), Vec::<u8>::new());
     }
 

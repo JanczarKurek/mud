@@ -231,6 +231,7 @@ pub fn compute_events_for_peer(
     floor_maps: &FloorMaps,
     world_clock: &WorldClock,
     active_trades: &ActiveTrades,
+    parties: &crate::game::party::Parties,
     object_definitions: &OverworldObjectDefinitions,
 ) -> Vec<GameEvent> {
     let mut events = Vec::new();
@@ -249,6 +250,17 @@ pub fn compute_events_for_peer(
         local.space_id,
         local.tile,
         deferred_remote_candidates,
+        &mut events,
+    );
+    // Before the positionless early-return: a dead (de-spatialized) viewer
+    // must keep receiving roster updates behind the death overlay.
+    emit_party_events(
+        local_player_id,
+        previous,
+        parties,
+        player_query,
+        local.space_id,
+        local.tile,
         &mut events,
     );
 
@@ -292,6 +304,7 @@ pub fn compute_events_for_peer(
         local_player_id,
         previous,
         active_trades,
+        player_query,
         stockpile_query,
         object_definitions,
         local.persuasion_ranks,
@@ -1175,6 +1188,122 @@ fn emit_world_object_events(
     }
 }
 
+/// Party domain: projects the viewer's party roster and diffs the whole
+/// `Option<ClientPartyView>` against the baseline.
+///
+/// Unlike `remote_players`, rows are never vicinity-pruned — a member across
+/// the map (or de-spatialized by death) stays listed with `in_range: false`.
+/// Vitals are rounded to whole points so passive regen doesn't re-emit the
+/// roster every tick.
+#[cfg(feature = "server-sim")]
+fn emit_party_events(
+    local_player_id: PlayerId,
+    previous: &ClientGameState,
+    parties: &crate::game::party::Parties,
+    player_query: &ProjectionPlayerQuery,
+    viewer_space: Option<SpaceId>,
+    viewer_tile: Option<TilePosition>,
+    events: &mut Vec<GameEvent>,
+) {
+    use crate::game::party::{
+        share_percentages, ClientPartyView, PartyMemberView, PARTY_SHARE_RADIUS_TILES,
+    };
+    use crate::world::components::tile_distance_3d;
+
+    let projected_party = parties.party_for(local_player_id).map(|party| {
+        let mut members: Vec<PartyMemberView> = Vec::with_capacity(party.members.len());
+        for member_id in &party.members {
+            // Members are evicted by `cleanup_invalid_parties` (ordered before
+            // the flush) the tick their entity disappears, so a miss here is a
+            // sub-tick window; skip the row rather than inventing a ghost.
+            let Some((
+                (_, identity),
+                _,
+                _,
+                space_resident,
+                tile_position,
+                vital_stats,
+                ..,
+                player_object,
+                _,
+                _,
+                _,
+                experience,
+                (class, ..),
+                _,
+            )) = player_query
+                .iter()
+                .find(|((_, identity), ..)| identity.id == *member_id)
+            else {
+                continue;
+            };
+
+            let space_id = space_resident.map(|resident| resident.space_id);
+            let tile = tile_position.copied();
+            let in_range = *member_id == local_player_id
+                || match (viewer_space, viewer_tile, space_id, tile) {
+                    (Some(vs), Some(vt), Some(ms), Some(mt)) => {
+                        vs == ms && tile_distance_3d(vt, mt) <= PARTY_SHARE_RADIUS_TILES
+                    }
+                    _ => false,
+                };
+
+            members.push(PartyMemberView {
+                player_id: *member_id,
+                display_name: identity.display_name.clone(),
+                level: experience.map(|e| e.level).unwrap_or(1),
+                class: class.copied().unwrap_or_default(),
+                object_id: Some(player_object.object_id),
+                vitals: ClientVitalStats {
+                    health: vital_stats.health.round(),
+                    max_health: vital_stats.max_health.round(),
+                    mana: vital_stats.mana.round(),
+                    max_mana: vital_stats.max_mana.round(),
+                },
+                space_id,
+                tile,
+                online: true,
+                in_range,
+                is_leader: *member_id == party.leader,
+                share_pct: 0,
+            });
+        }
+
+        // Share percentages are computed over the in-range subset only —
+        // out-of-range members earn nothing from a kill next to the viewer.
+        let eligible: Vec<(PlayerId, u32)> = members
+            .iter()
+            .filter(|member| member.in_range)
+            .map(|member| (member.player_id, member.level))
+            .collect();
+        let percentages = share_percentages(&eligible);
+        for (index, (player_id, _)) in eligible.iter().enumerate() {
+            if let Some(member) = members
+                .iter_mut()
+                .find(|member| member.player_id == *player_id)
+            {
+                member.share_pct = percentages[index];
+            }
+        }
+
+        ClientPartyView {
+            party_id: party.party_id,
+            leader: party.leader,
+            members,
+            focus_target: party.focus_target,
+        }
+    });
+
+    diff_emit!(
+        events,
+        previous.party,
+        projected_party,
+        GameEvent::PartyStateChanged {
+            party: projected_party,
+        },
+    );
+}
+
 /// Trade domain: projects the local player's active trade session (partner
 /// name, shop wares with persuasion-adjusted prices) and diffs it against
 /// the baseline.
@@ -1183,6 +1312,7 @@ fn emit_trade_events(
     local_player_id: PlayerId,
     previous: &ClientGameState,
     active_trades: &ActiveTrades,
+    player_query: &ProjectionPlayerQuery,
     stockpile_query: &ProjectionStockpileQuery,
     object_definitions: &OverworldObjectDefinitions,
     local_persuasion_ranks: u8,
@@ -1201,7 +1331,11 @@ fn emit_trade_events(
                     match session.participants {
                         TradeParticipants::PlayerToPlayer { a, b } => {
                             let partner_id = if a == local_player_id { b } else { a };
-                            let partner_name = format!("Player {}", partner_id.0);
+                            let partner_name = player_query
+                                .iter()
+                                .find(|((_, identity), ..)| identity.id == partner_id)
+                                .map(|((_, identity), ..)| identity.display_name.clone())
+                                .unwrap_or_else(|| format!("Player {}", partner_id.0));
                             session.project_for(
                                 local_player_id,
                                 partner_name,
@@ -1309,6 +1443,9 @@ pub fn apply_game_events_to_client_state(
             | GameEvent::ContainerRemoved { .. }
             | GameEvent::PlayerStorageChanged { .. } => {
                 revisions.inventory = revisions.inventory.wrapping_add(1);
+            }
+            GameEvent::PartyStateChanged { .. } => {
+                revisions.party = revisions.party.wrapping_add(1);
             }
             _ => {}
         }
@@ -1439,6 +1576,9 @@ pub fn apply_event_to_state(state: &mut ClientGameState, event: GameEvent) {
         }
         GameEvent::TradeStateChanged { state: new_state } => {
             state.current_trade = new_state;
+        }
+        GameEvent::PartyStateChanged { party } => {
+            state.party = party;
         }
         GameEvent::LearnedRecipesChanged { recipes } => {
             state.learned_recipes = recipes;
@@ -1668,6 +1808,16 @@ fn log_client_game_event(client_state: &ClientGameState, event: &GameEvent) {
                 view.their_ready,
                 view.our_confirmed,
                 view.their_confirmed
+            ),
+        },
+        GameEvent::PartyStateChanged { party } => match party {
+            None => debug!("client party state cleared"),
+            Some(view) => debug!(
+                "client party state: party {} leader {:?} members={} focus={:?}",
+                view.party_id,
+                view.leader,
+                view.members.len(),
+                view.focus_target
             ),
         },
         GameEvent::LearnedRecipesChanged { recipes } => info!(

@@ -83,7 +83,7 @@ Additional progression-adjacent items not in scope of that doc:
 
 ### Chat & social
 - **Channels** — local vs global vs private.
-- **Party / group** — shared target highlighting, XP split.
+- **Party chat** — parties shipped (invite/kick/promote, shared XP, focus target, panel + markers); a party-only chat channel did not.
 
 ### UI / HUD
 - **Damage numbers / floating combat text** — currently only chat lines.

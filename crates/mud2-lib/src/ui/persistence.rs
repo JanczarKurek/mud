@@ -54,6 +54,7 @@ enum PersistedPanelKind {
     Equipment,
     Backpack,
     NearbyNpcs,
+    Party,
 }
 
 impl PersistedPanelKind {
@@ -64,6 +65,7 @@ impl PersistedPanelKind {
             DockedPanelKind::Equipment => Some(Self::Equipment),
             DockedPanelKind::Backpack => Some(Self::Backpack),
             DockedPanelKind::NearbyNpcs => Some(Self::NearbyNpcs),
+            DockedPanelKind::Party => Some(Self::Party),
             DockedPanelKind::Container { .. } | DockedPanelKind::PouchInBackpack { .. } => None,
         }
     }
@@ -75,6 +77,7 @@ impl PersistedPanelKind {
             Self::Backpack => DockedPanelState::BACKPACK_PANEL_ID,
             Self::NearbyNpcs => DockedPanelState::NEARBY_NPCS_PANEL_ID,
             Self::Minimap => DockedPanelState::MINIMAP_PANEL_ID,
+            Self::Party => DockedPanelState::PARTY_PANEL_ID,
         }
     }
 
@@ -125,6 +128,15 @@ impl PersistedPanelKind {
                 kind: DockedPanelKind::NearbyNpcs,
                 title: "Nearby NPCs".to_owned(),
                 height: DockedPanelState::DEFAULT_TARGET_PANEL_HEIGHT,
+                closable: true,
+                resizable: true,
+                movable: true,
+            },
+            Self::Party => DockedPanel {
+                id: DockedPanelState::PARTY_PANEL_ID,
+                kind: DockedPanelKind::Party,
+                title: "Party".to_owned(),
+                height: DockedPanelState::DEFAULT_PARTY_PANEL_HEIGHT,
                 closable: true,
                 resizable: true,
                 movable: true,

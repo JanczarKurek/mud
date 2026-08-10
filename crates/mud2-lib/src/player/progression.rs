@@ -120,6 +120,19 @@ pub fn banked_awards_through_level(
     (points, bumps)
 }
 
+/// Where an XP grant came from. `Kill` grants carry the kill site so
+/// `split_party_xp_grants` can rewrite them into per-member shares before
+/// `apply_xp_grants` banks them; crafting / admin / scripting grants are
+/// `Direct` and pass through the split untouched.
+#[derive(Clone, Copy, Debug)]
+pub enum XpGrantKind {
+    Direct,
+    Kill {
+        space_id: crate::world::components::SpaceId,
+        tile: crate::world::components::TilePosition,
+    },
+}
+
 /// Queued XP grant for a player, produced by combat on a kill, drained by
 /// `apply_xp_grants` after combat resolution. Decoupled from the combat loop
 /// so we don't borrow the `Experience` query inside the `ParamSet`.
@@ -127,6 +140,30 @@ pub fn banked_awards_through_level(
 pub struct PendingXpGrant {
     pub player_id: PlayerId,
     pub amount: u64,
+    pub kind: XpGrantKind,
+}
+
+impl PendingXpGrant {
+    pub fn direct(player_id: PlayerId, amount: u64) -> Self {
+        Self {
+            player_id,
+            amount,
+            kind: XpGrantKind::Direct,
+        }
+    }
+
+    pub fn kill(
+        player_id: PlayerId,
+        amount: u64,
+        space_id: crate::world::components::SpaceId,
+        tile: crate::world::components::TilePosition,
+    ) -> Self {
+        Self {
+            player_id,
+            amount,
+            kind: XpGrantKind::Kill { space_id, tile },
+        }
+    }
 }
 
 #[derive(Resource, Default)]

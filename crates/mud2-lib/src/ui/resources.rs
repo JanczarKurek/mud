@@ -47,6 +47,13 @@ pub struct ContextMenuState {
     /// tombstone) or is `engravable`. Drives the "Read" right-click action;
     /// the writing-edit affordance lives inside the resulting panel.
     pub can_read: bool,
+    /// True when the right-clicked target is a remote player the viewer may
+    /// invite to a party (viewer unpartied or leader-with-room, target
+    /// unpartied). No adjacency requirement, unlike `can_trade`.
+    pub can_invite_to_party: bool,
+    /// True when the viewer is partied and the target is a world object —
+    /// drives the "Set Focus" row (shared party focus target).
+    pub can_set_party_focus: bool,
 }
 
 impl ContextMenuState {
@@ -81,6 +88,8 @@ impl ContextMenuState {
         self.can_use_key = false;
         self.can_hide = false;
         self.can_read = false;
+        self.can_invite_to_party = false;
+        self.can_set_party_focus = false;
     }
 
     /// Set the three lock-related verb flags. Called by the context-menu
@@ -104,6 +113,13 @@ impl ContextMenuState {
         self.can_read = can_read;
     }
 
+    /// Set the party verb flags. Mirrors `set_lock_verbs`: a separate method
+    /// so the existing `show` call-sites stay unchanged.
+    pub fn set_party_verbs(&mut self, can_invite: bool, can_set_focus: bool) {
+        self.can_invite_to_party = can_invite;
+        self.can_set_party_focus = can_set_focus;
+    }
+
     pub fn hide(&mut self) {
         self.target = None;
         self.can_open = false;
@@ -119,6 +135,8 @@ impl ContextMenuState {
         self.can_use_key = false;
         self.can_hide = false;
         self.can_read = false;
+        self.can_invite_to_party = false;
+        self.can_set_party_focus = false;
     }
 
     pub fn is_visible(&self) -> bool {
@@ -157,6 +175,8 @@ impl ContextMenuState {
             ContextMenuAction::UseKey => self.can_use_key,
             ContextMenuAction::Hide => self.can_hide,
             ContextMenuAction::Read => self.can_read,
+            ContextMenuAction::InviteToParty => self.can_invite_to_party,
+            ContextMenuAction::SetPartyFocus => self.can_set_party_focus,
         }
     }
 }
@@ -329,6 +349,7 @@ pub enum DockedPanelKind {
     Equipment,
     Backpack,
     NearbyNpcs,
+    Party,
     Container {
         object_id: u64,
     },
@@ -400,6 +421,7 @@ singleton_mode_resource!(
     BackpackPanelMode,
     NearbyNpcsPanelMode,
     MinimapPanelMode,
+    PartyPanelMode,
 );
 
 /// Per-instance mount state for the container/pouch panel pool. Keyed
@@ -444,6 +466,7 @@ impl DockedPanelState {
     pub const NEARBY_NPCS_PANEL_ID: usize = 3;
     pub const FIRST_CONTAINER_PANEL_ID: usize = 4;
     pub const MINIMAP_PANEL_ID: usize = 10;
+    pub const PARTY_PANEL_ID: usize = 11;
     pub const MAX_OPEN_CONTAINERS: usize = 4;
     pub const DEFAULT_STATUS_PANEL_HEIGHT: f32 = 96.0;
     pub const DEFAULT_EQUIPMENT_PANEL_HEIGHT: f32 = 248.0;
@@ -453,6 +476,24 @@ impl DockedPanelState {
     pub const DEFAULT_MINIMAP_PANEL_HEIGHT: f32 = 220.0;
     pub const MIN_PANEL_HEIGHT: f32 = 84.0;
     pub const MAX_PANEL_HEIGHT: f32 = 480.0;
+    pub const DEFAULT_PARTY_PANEL_HEIGHT: f32 = 140.0;
+
+    pub fn open_party(&mut self) {
+        let panel = DockedPanel {
+            id: Self::PARTY_PANEL_ID,
+            kind: DockedPanelKind::Party,
+            title: "Party".to_owned(),
+            height: Self::DEFAULT_PARTY_PANEL_HEIGHT,
+            closable: true,
+            resizable: true,
+            movable: true,
+        };
+        self.upsert_panel(panel);
+    }
+
+    pub fn close_party(&mut self) {
+        self.close_panel(Self::PARTY_PANEL_ID);
+    }
 
     pub fn open_nearby_npcs(&mut self) {
         let panel = DockedPanel {
@@ -884,6 +925,7 @@ pub enum MenuAction {
     ToggleEquipment,
     ToggleMinimap,
     ToggleNearbyNpcs,
+    ToggleParty,
     ToggleLog,
     OpenSettings,
     Logout,
@@ -950,5 +992,47 @@ impl TradePopupState {
 
     pub fn close(&mut self) {
         self.session_id = None;
+    }
+}
+
+/// A pending party invitation shown to the local player. Opened by
+/// `GameUiEvent::PartyInviteReceived`, cleared by `PartyInviteClosed` (the
+/// server echoes one for every resolution path: answered, expired, withdrawn).
+/// The popup window is a `MovableWindow` spawned/despawned off this state,
+/// like the trade popup.
+#[derive(Resource, Default)]
+pub struct PartyInvitePopupState {
+    pub invite: Option<PartyInviteOffer>,
+    /// Last-seen window position (top-left, px). `None` ⇒ open at center.
+    pub last_position: Option<Vec2>,
+}
+
+/// The displayable contents of a pending invitation.
+#[derive(Clone, Debug)]
+pub struct PartyInviteOffer {
+    pub from_player_id: crate::player::components::PlayerId,
+    pub from_name: String,
+    /// Current size of the inviter's party (1 = forming a fresh pair).
+    pub party_size: usize,
+}
+
+impl PartyInvitePopupState {
+    pub const DEFAULT_SIZE: Vec2 = Vec2::new(320.0, 140.0);
+
+    pub fn open(
+        &mut self,
+        from_player_id: crate::player::components::PlayerId,
+        from_name: String,
+        party_size: usize,
+    ) {
+        self.invite = Some(PartyInviteOffer {
+            from_player_id,
+            from_name,
+            party_size,
+        });
+    }
+
+    pub fn close(&mut self) {
+        self.invite = None;
     }
 }

@@ -65,10 +65,9 @@ pub fn process_admin_progression_commands(
                 let Some(target) = queued_player_id.or(local_player_id) else {
                     continue;
                 };
-                xp_grants.grants.push(PendingXpGrant {
-                    player_id: target,
-                    amount,
-                });
+                xp_grants
+                    .grants
+                    .push(PendingXpGrant::direct(target, amount));
             }
             GameCommand::AdminSetLevel { level } => {
                 let Some(target) = queued_player_id.or(local_player_id) else {
