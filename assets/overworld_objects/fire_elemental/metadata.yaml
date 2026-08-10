@@ -1,5 +1,6 @@
 extends: npc
 name: Fire Elemental
+tags: [elemental, monster]
 description: A swirling vortex of living flame with a molten core. Heat rises from it in shimmering waves.
 level: 6
 loot:

@@ -1,5 +1,6 @@
 extends: npc
 name: Goblin Mage
+tags: [humanoid, greenskin, monster]
 description: A hunched goblin in tattered purple robes, clutching a bone staff topped with a glowing crystal. Mutters incantations under its breath.
 level: 3
 loot:

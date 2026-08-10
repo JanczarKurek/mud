@@ -1,5 +1,6 @@
 extends: npc
 name: Archer Goblin
+tags: [humanoid, greenskin, monster]
 description: A wiry goblin wielding a crude shortbow. Keep your distance — that's exactly what it wants.
 level: 2
 loot:

@@ -94,7 +94,8 @@ mod tests {
         assert!(npc_aware_of(
             Some(&AiState::Flee {
                 from: me,
-                expires_at_seconds: 0.0
+                expires_at_seconds: 0.0,
+                reason: crate::npc::components::FleeReason::UnreachableAttacker,
             }),
             None,
             me

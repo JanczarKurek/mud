@@ -77,6 +77,9 @@ pub fn tick_player_sense(
         ),
         With<Player>,
     >,
+    // `HostileBehavior` = "has combat AI", which since the tag-hostility model
+    // includes player-friendly guards. That's fine: a guard is legitimately
+    // "senseable"; it just projects as non-hostile to the player.
     npc_q: Query<
         (&OverworldObject, &SpaceResident, &TilePosition),
         (With<Npc>, With<HostileBehavior>),

@@ -7,22 +7,30 @@ use crate::world::components::{SpaceId, TilePosition};
 #[derive(Component, Clone, Copy, Debug, Deserialize, Serialize)]
 pub struct Npc;
 
-/// Which side a combatant fights on. Targeting is faction-aware: an entity only
-/// acquires enemies of a *different* faction. Players default to `PlayerSide`;
-/// hostile mobs are tagged `MonsterSide` at spawn; a companion inherits its
-/// owner's side. A faction-less NPC (shopkeeper, quest-giver) reads as the
-/// `PlayerSide` default — never an enemy of the player side, so companions and
+/// Which side a combatant fights on. Faction enmity is one of the two gates
+/// in `npc::hostility::is_hostile_toward` (the other is tag overlap). Players
+/// default to `PlayerSide`; map-hostile mobs are tagged `MonsterSide` at
+/// spawn; a companion inherits its owner's side. `Neutral` is for creatures
+/// that fight only through tags (a wolf hunting `livestock`) or not at all
+/// (sheep): nobody's faction enemy, but still a valid combatant/target. A
+/// faction-less NPC (shopkeeper, quest-giver) reads as the `PlayerSide`
+/// default — never an enemy of the player side, so companions and
 /// player-allied creatures leave it alone.
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Default, Deserialize, Serialize)]
 pub enum Faction {
     #[default]
     PlayerSide,
     MonsterSide,
+    Neutral,
 }
 
 impl Faction {
     pub fn is_enemy_of(self, other: Faction) -> bool {
-        self != other
+        matches!(
+            (self, other),
+            (Faction::PlayerSide, Faction::MonsterSide)
+                | (Faction::MonsterSide, Faction::PlayerSide)
+        )
     }
 }
 
@@ -167,14 +175,41 @@ pub enum AiState {
     Pursue { target: Entity },
     /// Have a target and in attack range. Hold (melee) or kite (ranged).
     Engage { target: Entity },
-    /// Took damage from a target we can't reach (the player camped a ledge
-    /// we can't climb to). Move away from `from` and try to break line of
-    /// sight. Expires to Wander at `expires_at_seconds` if no new damage
-    /// arrives and the attacker can't see us.
+    /// Running away from `from`. See `FleeReason` for what started it; the
+    /// reason also decides how the flee sustains and ends (re-engage when a
+    /// path opens vs. calm down when the predator is out of detect range).
     Flee {
         from: Entity,
         expires_at_seconds: f32,
+        reason: FleeReason,
     },
+}
+
+/// Why an NPC is in `AiState::Flee`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FleeReason {
+    /// Took damage from a target A* proved unreachable (the player camped a
+    /// ledge we can't climb to). Move away and try to break line of sight;
+    /// re-engage the moment a path to the attacker opens up.
+    UnreachableAttacker,
+    /// A creature bearing one of our `flees_from` tags is nearby (prey
+    /// behavior — sheep running from a wolf). Keeps running while the
+    /// predator stays within detect range, then calms down to Wander.
+    Fear,
+}
+
+/// Prey behavior: the NPC runs from creatures bearing any of its
+/// `flees_from` tags (resolved into `TagProfile.flees_from`). Attached at
+/// spawn when the definition lists `flees_from`; carries its own detection
+/// numbers because prey (sheep) usually has no `HostileBehavior` to borrow
+/// them from.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct PreyBehavior {
+    /// Chebyshev radius within which a feared creature is noticed — and
+    /// within which an ongoing flee keeps refreshing instead of expiring.
+    pub detect_distance_tiles: i32,
+    /// When true, a feared creature behind an unbroken wall goes unnoticed.
+    pub requires_line_of_sight: bool,
 }
 
 /// Per-NPC scratch memory the FSM reads and writes between ticks.

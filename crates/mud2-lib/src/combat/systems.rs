@@ -673,6 +673,7 @@ pub fn resolve_battle_turn(
             source: damage_source,
             damage_type: attacker.damage_type,
             vfx_override,
+            attacker: Some(attacker.entity),
         });
 
         // Modifier-driven bonus elemental damage.
@@ -953,6 +954,7 @@ fn apply_bonus_damage(
             source: damage_source,
             damage_type: *damage_type,
             vfx_override: None,
+            attacker: Some(attacker.entity),
         });
         push_chat_line_near(
             chat_log_query,
@@ -1302,6 +1304,7 @@ fn execute_npc_spell_cast(
                 },
                 damage_type: splash.damage_type,
                 vfx_override: splash.vfx_override.clone(),
+                attacker: Some(attacker.entity),
             });
         }
     }

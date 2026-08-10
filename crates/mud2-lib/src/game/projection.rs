@@ -172,6 +172,8 @@ pub type ProjectionWorldObjectQuery<'w, 's> = Query<
             Has<crate::npc::components::HostileBehavior>,
             Option<&'static CombatTarget>,
             Option<&'static crate::npc::components::AiState>,
+            Option<&'static crate::npc::components::Faction>,
+            Option<&'static crate::npc::hostility::TagProfile>,
         ),
     ),
     Without<Player>,
@@ -1055,7 +1057,7 @@ fn emit_world_object_events(
         state,
         has_shopkeeper,
         hidden,
-        (has_hostile, npc_combat_target, ai_state),
+        (has_hostile, npc_combat_target, ai_state, npc_faction, npc_tags),
     ) in world_object_query.iter()
     {
         if space_resident.space_id != local_space_id {
@@ -1077,14 +1079,34 @@ fn emit_world_object_events(
             (Some(target), Some(local_entity)) => target.entity == local_entity,
             _ => false,
         };
+        // "Hostile" is per-viewer: does this NPC's hostility model make it an
+        // aggressor toward the player side? A town guard (PlayerSide, hostile
+        // only toward monster tags) has combat AI but renders peaceful; a
+        // goblin (MonsterSide) is red as ever. The MonsterSide fallback keeps
+        // legacy faction-less hostiles red.
+        let is_hostile_to_viewer = has_hostile
+            && crate::npc::hostility::is_hostile_toward(
+                npc_faction
+                    .copied()
+                    .unwrap_or(crate::npc::components::Faction::MonsterSide),
+                npc_tags.map(|t| t.hostile_towards).unwrap_or_default(),
+                crate::npc::components::Faction::PlayerSide,
+                crate::npc::hostility::TagMask::PLAYER,
+            );
         // Awareness marker: only for hostile NPCs the local player has read
         // (passed a Perception check, tracked in `SenseReveals`). Alerted if it
         // targets us, Searching if it's in Alert, else Unaware.
-        let awareness = if has_hostile && local_revealed.contains(&object.object_id) {
+        let awareness = if is_hostile_to_viewer && local_revealed.contains(&object.object_id) {
             use crate::npc::components::AiState;
             let level = if is_targeting_local_player {
                 NpcAwareness::Alerted
-            } else if matches!(ai_state, Some(AiState::Alert { .. })) {
+            } else if matches!(
+                ai_state,
+                // A fleeing NPC has no CombatTarget but absolutely knows
+                // something is out there — "Searching" reads truer than
+                // "Unaware" while it runs.
+                Some(AiState::Alert { .. }) | Some(AiState::Flee { .. })
+            ) {
                 NpcAwareness::Searching
             } else {
                 NpcAwareness::Unaware
@@ -1142,7 +1164,7 @@ fn emit_world_object_events(
                     && prev_state.as_deref() == state.map(|s| s.0.as_str())
                     && *prev_is_shopkeeper == has_shopkeeper
                     && *prev_is_hidden == hidden.is_some()
-                    && *prev_is_hostile == has_hostile
+                    && *prev_is_hostile == is_hostile_to_viewer
                     && *prev_is_targeting == is_targeting_local_player
                     && *prev_awareness == awareness
                     && *prev_placement_seq == object.placement_seq
@@ -1168,7 +1190,7 @@ fn emit_world_object_events(
             state: state.map(|s| s.0.clone()),
             is_shopkeeper: has_shopkeeper,
             is_hidden: hidden.is_some(),
-            is_hostile: has_hostile,
+            is_hostile: is_hostile_to_viewer,
             is_targeting_local_player,
             awareness,
             placement_seq: object.placement_seq,

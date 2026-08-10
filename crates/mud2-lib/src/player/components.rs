@@ -543,6 +543,7 @@ impl ChatLog {
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct AttributeSet {
     pub strength: i32,
     pub agility: i32,

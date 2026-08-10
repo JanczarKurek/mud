@@ -344,6 +344,25 @@ objects:
       kind: roam
       step_interval_seconds: 1.8
       bounds: { min_x: 31, min_y: 21, max_x: 36, max_y: 24 }
+  # Gate guards: posted at the west and east ends of the main road, tight roam
+  # bounds so they hold their posts. Their template's `hostile_towards:
+  # [monster, undead]` gives them combat AI without map hostility, so they
+  # intercept anything nasty that wanders up the road, then drift back to the
+  # gate. Hand-placed (no spawn group), so a fallen gate guard stays down until
+  # a map reload — the roaming `village_guards` spawn group is the renewable
+  # muscle.
+  - type: town_guard
+    placement: { x: 24, y: 25 }
+    facing: west
+    behavior:
+      kind: roam
+      bounds: { min_x: 23, min_y: 24, max_x: 26, max_y: 26 }
+  - type: town_guard
+    placement: { x: 44, y: 25 }
+    facing: east
+    behavior:
+      kind: roam
+      bounds: { min_x: 42, min_y: 24, max_x: 45, max_y: 26 }
 
   # -- the Grey Ledger (traveling assessor's office, east edge of the plaza) ----
   # Yarn-only quest-journal test NPCs from assets/modules/grey_ledger/.
@@ -685,3 +704,42 @@ spawn_groups:
       detect_distance_tiles: 6
       disengage_distance_tiles: 10
       bounds: { min_x: 2, min_y: 36, max_x: 10, max_y: 48 }
+
+  # Village watch — tag-hostile toward monsters/undead, peaceful to players
+  # (plain `roam`; their combat AI comes from the template's hostile_towards).
+  # They patrol the village core and the north road toward the Thornwood edge,
+  # so stray goblins that wander south get met with steel.
+  - id: village_guards
+    template: town_guard
+    max_count: 2
+    respawn_mean_seconds: 240.0
+    area:
+      bounds: { min_x: 24, min_y: 22, max_x: 44, max_y: 28 }
+    behavior:
+      kind: roam
+      bounds: { min_x: 22, min_y: 21, max_x: 46, max_y: 34 }
+
+  # Emberbrook pasture — sheep between the west fields and the village.
+  # Prey only: they graze until something tagged `predator` shows up.
+  - id: pasture_sheep
+    template: sheep
+    max_count: 4
+    respawn_mean_seconds: 180.0
+    area:
+      bounds: { min_x: 10, min_y: 20, max_x: 16, max_y: 25 }
+    behavior:
+      kind: roam
+      bounds: { min_x: 8, min_y: 19, max_x: 18, max_y: 27 }
+
+  # Wolves off the Thornwood edge, ranging down toward the pasture. Not
+  # player-hostile here (`roam` + hostile_towards: [livestock]) — they're
+  # after mutton, and only fight back if attacked.
+  - id: pasture_wolves
+    template: wolf
+    max_count: 2
+    respawn_mean_seconds: 240.0
+    area:
+      bounds: { min_x: 8, min_y: 30, max_x: 18, max_y: 35 }
+    behavior:
+      kind: roam
+      bounds: { min_x: 6, min_y: 20, max_x: 20, max_y: 36 }

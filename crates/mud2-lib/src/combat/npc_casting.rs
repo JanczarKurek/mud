@@ -213,6 +213,7 @@ pub fn build_npc_cast_outcome(
                     source: damage_source,
                     damage_type,
                     vfx_override: spell.effects.vfx_on_target_hit.clone(),
+                    attacker: Some(attacker_entity),
                 });
             }
             for spec in &spell.effects.buffs_target {
@@ -272,6 +273,7 @@ pub fn build_npc_cast_outcome(
                     source: damage_source,
                     damage_type,
                     vfx_override: spell.effects.vfx_on_target_hit.clone(),
+                    attacker: Some(attacker_entity),
                 });
             }
             for spec in &spell.effects.buffs_target {

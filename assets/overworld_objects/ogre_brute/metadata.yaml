@@ -1,5 +1,6 @@
 extends: npc
 name: Ogre Brute
+tags: [humanoid, giant, monster]
 description: A slab-shouldered ogre dragging a tree-trunk club. It smells you before it sees you.
 level: 10
 # Brute: full BAB track — accurate for its level, like the Cyclops.

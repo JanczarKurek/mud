@@ -1734,6 +1734,49 @@ through it.
 Roam bounds and the hostile/passive toggle live on the map's spawn group, not
 here — see `spawn_groups` under section 1.
 
+### `tags`, `hostile_towards`, `flees_from`, `faction` (NPC templates)
+
+The tag-based hostility model. All four are top-level template fields
+(sibling to `npc_behavior`, not inside it) and all default to empty/absent —
+untagged templates behave exactly as before.
+
+```yaml
+tags: [humanoid, guard]           # identity: what this creature IS
+faction: player_side              # player_side | monster_side | neutral
+hostile_towards: [monster, undead]  # attacks these tags on sight
+flees_from: [predator]            # prey: runs from these tags on sight
+```
+
+- `tags` are free-form strings, interned game-wide into a 64-bit mask at
+  startup (the name `player` is reserved: every player implicitly carries
+  it, so `hostile_towards: [player]` works). Keep the vocabulary small —
+  `humanoid`, `beast`, `undead`, `monster`, `predator`, `livestock`, …
+- **Hostility predicate** (either gate suffices): opposing faction
+  (`player_side` ↔ `monster_side`) OR `hostile_towards` ∩ target `tags`.
+  Tag hostility is asymmetric — a wolf hunts `livestock`; the sheep does not
+  reciprocate.
+- A non-empty `hostile_towards` attaches combat AI (`HostileBehavior`, using
+  the `npc_behavior` numbers) even when the spawn behavior is a plain
+  `roam` — that's how a town guard fights monsters without being
+  player-hostile. Any NPC with combat AI also **retaliates against whoever
+  damages it**, regardless of tags (universal self-defense).
+- A non-empty `flees_from` attaches prey behavior: on sighting a feared tag
+  within `detect_distance_tiles` the NPC bolts (the flee refreshes while the
+  threat stays inside that radius). Prey templates still need an
+  `npc_behavior:` block (it supplies the tick cadence and detect radius) but
+  can omit `attack_profile`/`damage`.
+- `faction` resolution when the field is absent: a `roam_and_chase` spawn is
+  `monster_side` (unchanged legacy behavior); any other tagged NPC lands on
+  `neutral` — a valid target for tag-driven aggressors but nobody's faction
+  enemy (so plain monsters do NOT slaughter the livestock; only tagged
+  predators do). Guards set `faction: player_side` explicitly so monsters
+  proactively fight them and player summons leave them alone.
+- The client's red "hostile" highlight is per-viewer: it shows only for NPCs
+  hostile *toward the player side*, so guards render as peaceful.
+
+Reference templates: `town_guard` (guard vs monsters), `wolf` + `sheep`
+(predator/prey pair) in `assets/overworld_objects/`.
+
 ### `barks` (NPC templates only)
 
 Lists of short utterances the NPC may emit as floating speech bubbles over

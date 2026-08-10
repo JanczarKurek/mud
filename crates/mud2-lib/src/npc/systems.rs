@@ -9,10 +9,11 @@ use crate::game::resources::{GameUiEvent, PendingGameUiEvents, SpeechBubbleStyle
 use crate::game::shop::Shopkeeper;
 use crate::magic::effects::MagicEffects;
 use crate::npc::components::{
-    AiMemory, AiState, Barks, Companion, Faction, HostileBehavior, LastDamagedAt, Npc,
-    RoamingBehavior, RoamingRandomState, RoamingStepTimer,
+    AiMemory, AiState, Barks, Companion, Faction, FleeReason, HostileBehavior, LastDamagedAt, Npc,
+    PreyBehavior, RoamingBehavior, RoamingRandomState, RoamingStepTimer,
 };
 use crate::npc::detection::detection_outcome;
+use crate::npc::hostility::{is_hostile_toward, TagMask, TagProfile};
 use crate::npc::routine::{routine_step, Routine, RoutineIntent, RoutinePhase, RoutineState};
 use crate::player::classes::ability_mod;
 use crate::player::components::{
@@ -59,6 +60,31 @@ const FLEE_RECENT_DAMAGE_WINDOW_SECS: f32 = 4.0;
 /// every tick the NPC re-spots the attacker.
 const FLEE_DURATION_SECS: f32 = 6.0;
 
+/// Fallback calm-down radius for a `FleeReason::Fear` flee when the fleeing
+/// NPC somehow has no `PreyBehavior` to read `detect_distance_tiles` from.
+const DEFAULT_FEAR_CALM_RADIUS_TILES: i32 = 6;
+
+/// Within this chebyshev distance, an `AstarResult::Budget` bail-out is
+/// trusted as proof of unreachability. Rationale: with the closed set, a
+/// *reachable* goal this close is found well inside `ASTAR_EXPANSION_CAP`
+/// distinct-tile expansions (goal-biased tie-breaking keeps the open-terrain
+/// plateau near-linear), so burning the whole budget without reaching it
+/// means the goal is walled off — a target on an unreachable ledge in open
+/// terrain never yields `NoPath` (A* walks the whole outdoors instead), and
+/// this is what lets the flee still fire there. Beyond this distance a
+/// `Budget` just means "far away" and must NOT be read as unreachable — that
+/// misread was the ranged-attack flee bug.
+const FLEE_ASTAR_TRUST_RADIUS_TILES: i32 = 12;
+
+/// Should this A* outcome be treated as "the target cannot be reached"?
+fn astar_deems_unreachable(result: AstarResult, distance_to_goal: i32) -> bool {
+    match result {
+        AstarResult::Step(_) => false,
+        AstarResult::NoPath => true,
+        AstarResult::Budget => distance_to_goal <= FLEE_ASTAR_TRUST_RADIUS_TILES,
+    }
+}
+
 /// Grace window an NPC keeps pursuing a target that just changed floors: it
 /// heads to where it last saw them (via Alert) and climbs after them if the
 /// stairs are close enough to reach in time, otherwise the Alert decays to
@@ -80,7 +106,7 @@ const CROSS_FLOOR_FOLLOW_SECS: f32 = 8.0;
 /// This must also comfortably exceed a single AI step interval (~1s for most
 /// NPCs) — otherwise the window expires before the NPC's next tick and the
 /// hysteresis never actually fires. Tune by playtest.
-const CONTACT_GRACE_SECS: f32 = 3.0;
+pub(crate) const CONTACT_GRACE_SECS: f32 = 3.0;
 
 /// Spatial index of static blocker tiles, rebuilt at the top of
 /// `update_roaming_npcs`. Replaces a per-NPC × per-candidate-tile linear scan
@@ -103,10 +129,15 @@ struct CombatantDetectInfo {
     player_id: Option<PlayerId>,
     space_id: SpaceId,
     tile: TilePosition,
-    /// Side this combatant fights on. The detector only returns candidates of a
-    /// *different* faction than the searcher, which also excludes the searcher's
-    /// own entry (you are never your own enemy).
+    /// Side this combatant fights on. One of the two hostility gates the
+    /// detector applies (see `npc::hostility::is_hostile_toward`).
     faction: Faction,
+    /// What this combatant *is*, as an interned tag mask. Players always carry
+    /// the reserved `player` bit; NPCs carry their definition's `tags`. The
+    /// other hostility gate: a searcher whose `hostile_towards` intersects
+    /// this is an aggressor, and a prey searcher whose `flees_from` intersects
+    /// this runs away.
+    identity: crate::npc::hostility::TagMask,
     /// `ranks(Stealth) + ability_mod(AGI)` — the static part of the player's
     /// Stealth check; the d20 is rolled per contest inside the detector.
     stealth_total: i32,
@@ -160,7 +191,10 @@ pub fn update_roaming_npcs(
     // and `Companion` (which `npc_query` never accesses), so there's no
     // mutable-aliasing conflict with its `&mut TilePosition` — and it keeps the
     // already-15-wide `npc_query` tuple from overflowing.
-    npc_faction_query: Query<(Option<&Faction>, Option<&Companion>), (With<Npc>, Without<Player>)>,
+    npc_faction_query: Query<
+        (Option<&Faction>, Option<&Companion>, Option<&TagProfile>),
+        (With<Npc>, Without<Player>),
+    >,
     // Life-agenda state for hand-placed NPCs. A *separate* disjoint query (its
     // component set — `Routine`/`RoutineState`/`ObjectState` — is touched by no
     // other query here), consulted only in the no-threat branch so the routine
@@ -201,7 +235,7 @@ pub fn update_roaming_npcs(
         ),
         (With<Npc>, Without<Player>),
     >,
-    last_damaged_query: Query<&LastDamagedAt, With<Npc>>,
+    last_damaged_query: Query<(Option<&LastDamagedAt>, Option<&PreyBehavior>), With<Npc>>,
     derived_stats_query: Query<&DerivedStats, With<Npc>>,
     mut pending_steps: ResMut<crate::world::step_triggers::PendingStepEvents>,
     mut ui_events: Option<ResMut<PendingGameUiEvents>>,
@@ -268,6 +302,7 @@ pub fn update_roaming_npcs(
                     space_id: resident.space_id,
                     tile: *tile_position,
                     faction: faction.copied().unwrap_or_default(),
+                    identity: crate::npc::hostility::TagMask::PLAYER,
                     stealth_total,
                     sneaking,
                 }
@@ -278,16 +313,24 @@ pub fn update_roaming_npcs(
     // `&mut TilePosition`); the faction comes from the disjoint
     // `npc_faction_query` by entity lookup.
     combatants.extend(npc_query.iter().filter_map(|(entity, resident, tile, ..)| {
-        let faction = npc_faction_query
-            .get(entity)
-            .ok()
-            .and_then(|(f, _)| f.copied())?;
+        let (faction, _, tags) = npc_faction_query.get(entity).ok()?;
+        // Combatant = anything with a side (faction) *or* an identity (tags).
+        // Tag-only NPCs (sheep) fall back to `Neutral`: valid targets for
+        // tag-driven aggressors, nobody's faction enemy. NPCs with neither
+        // stay out of the list entirely (peaceful shopkeepers).
+        let identity = tags.map(|t| t.identity).unwrap_or_default();
+        let faction = match (faction, tags) {
+            (Some(f), _) => *f,
+            (None, Some(_)) => Faction::Neutral,
+            (None, None) => return None,
+        };
         Some(CombatantDetectInfo {
             entity,
             player_id: None,
             space_id: resident.space_id,
             tile: *tile,
             faction,
+            identity,
             stealth_total: 0,
             sneaking: false,
         })
@@ -385,7 +428,8 @@ pub fn update_roaming_npcs(
             continue;
         }
 
-        let last_damaged_at = last_damaged_query.get(entity).ok().map(|t| t.0);
+        let (last_damaged, prey_behavior) = last_damaged_query.get(entity).unwrap_or((None, None));
+        let last_damaged_at = last_damaged.map(|t| t.0);
 
         // This NPC's own side + (if it's a companion) where its owner is. A
         // faction-less NPC that somehow reaches the FSM defaults to MonsterSide,
@@ -393,10 +437,16 @@ pub fn update_roaming_npcs(
         // built without an explicit faction. The owner tile is resolved from the
         // combatant list (owner is a player or another faction NPC, both there)
         // and only when same-space, so a companion only follows on its own map.
-        let (self_faction, companion) = npc_faction_query
+        let (self_faction, companion, self_tags) = npc_faction_query
             .get(entity)
-            .map(|(f, c)| (f.copied().unwrap_or(Faction::MonsterSide), c.copied()))
-            .unwrap_or((Faction::MonsterSide, None));
+            .map(|(f, c, t)| {
+                (
+                    f.copied().unwrap_or(Faction::MonsterSide),
+                    c.copied(),
+                    t.copied().unwrap_or_default(),
+                )
+            })
+            .unwrap_or((Faction::MonsterSide, None, TagProfile::default()));
         let companion_follow = companion.and_then(|c| {
             combatants
                 .iter()
@@ -458,8 +508,10 @@ pub fn update_roaming_npcs(
             memory: *ai_memory,
             behavior,
             hostile_behavior,
+            prey_behavior,
             attack_profile,
             self_faction,
+            self_tags,
             companion_follow,
             combatants: &combatants,
             blockers: &blockers,
@@ -727,10 +779,17 @@ struct StepAiInput<'a> {
     memory: AiMemory,
     behavior: &'a RoamingBehavior,
     hostile_behavior: Option<&'a HostileBehavior>,
+    /// Present when the NPC has prey instincts (`flees_from` tags). Drives
+    /// the fear-flee acquisition in `tick_wander` and the calm-down radius
+    /// in `tick_flee`.
+    prey_behavior: Option<&'a PreyBehavior>,
     attack_profile: Option<&'a AttackProfile>,
-    /// The searcher's own side. The detector returns only enemies of this
-    /// faction (which also excludes the searcher itself).
+    /// The searcher's own side. Feeds the faction half of the hostility gate.
     self_faction: Faction,
+    /// The searcher's resolved tag masks (identity / hostile_towards /
+    /// flees_from). Zero for untagged legacy NPCs, keeping the pure-faction
+    /// behavior unchanged.
+    self_tags: TagProfile,
     /// `Some((owner_tile, follow_close_tiles))` if this NPC is a companion with
     /// a same-space owner. Drives the follow-when-idle behavior in `tick_wander`.
     companion_follow: Option<(TilePosition, i32)>,
@@ -791,19 +850,35 @@ fn step_ai(mut input: StepAiInput<'_>) -> AiOutcome {
         AiState::Flee {
             from,
             expires_at_seconds,
-        } => tick_flee(&mut input, from, expires_at_seconds),
+            reason,
+        } => tick_flee(&mut input, from, expires_at_seconds, reason),
     }
 }
 
 fn tick_wander(input: &mut StepAiInput<'_>) -> AiOutcome {
+    // Prey instinct first: a creature that fears something nearby runs, even
+    // if it could also fight (fear outranks aggression for hybrid NPCs).
+    if let Some(threat) = nearest_feared_creature(input) {
+        // Delegate to the flee tick for the first step so entry and sustain
+        // share one movement rule (best no-LoS, distance-maximizing neighbor).
+        return tick_flee(
+            input,
+            threat,
+            input.elapsed + FLEE_DURATION_SECS,
+            FleeReason::Fear,
+        );
+    }
+
     // Try to acquire a target. On fresh aggro, execute the corresponding
     // pursue/engage action immediately rather than burning a tick to "wake
     // up" — players expect a chasing NPC to actually take its first step.
     if let Some(hostile) = input.hostile_behavior {
         if let Some(spotted) = nearest_visible_enemy(
+            input.entity,
             input.tile_position,
             input.space_id,
             input.self_faction,
+            input.self_tags.hostile_towards,
             hostile,
             input.combatants,
             input.los_blockers,
@@ -815,9 +890,13 @@ fn tick_wander(input: &mut StepAiInput<'_>) -> AiOutcome {
             let target_entity = spotted.entity;
             let mut outcome = tick_pursue_or_engage(input, target_entity, false);
             // We just transitioned from Wander, so there's no prior
-            // CombatTarget — ensure we mark the component regardless of what
-            // the pursue/engage helper decided about target re-affirmation.
-            outcome.target = TargetChange::Set(target_entity);
+            // CombatTarget — mark the component unless the pursue/engage
+            // helper explicitly cleared it (it fled or bailed to Wander);
+            // resurrecting the target then would leave e.g. a fleeing NPC
+            // still swinging at the foe it's running from.
+            if !matches!(outcome.target, TargetChange::Clear) {
+                outcome.target = TargetChange::Set(target_entity);
+            }
             outcome.bark = pick_bark(input, BarkKind::Aggro);
             return outcome;
         }
@@ -1023,9 +1102,11 @@ fn tick_alert(
     // contact, freezing it in a detect→abort loop.
     if let Some(hostile) = input.hostile_behavior {
         if let Some(spotted) = nearest_visible_enemy(
+            input.entity,
             input.tile_position,
             input.space_id,
             input.self_faction,
+            input.self_tags.hostile_towards,
             hostile,
             input.combatants,
             input.los_blockers,
@@ -1036,7 +1117,11 @@ fn tick_alert(
         ) {
             let target_entity = spotted.entity;
             let mut outcome = tick_pursue_or_engage(input, target_entity, false);
-            outcome.target = TargetChange::Set(target_entity);
+            // Re-affirm the target unless the helper explicitly cleared it
+            // (fled / bailed) — see the matching guard in `tick_wander`.
+            if !matches!(outcome.target, TargetChange::Clear) {
+                outcome.target = TargetChange::Set(target_entity);
+            }
             return outcome;
         }
     }
@@ -1302,7 +1387,7 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
 
     // Healthy pursuit: A* toward target, target tile treated as walkable for the
     // pathfinder so it doesn't dead-end against the player's own tile.
-    let astar = astar_next_step(
+    let astar = astar_search(
         input.entity,
         input.space_id,
         input.tile_position,
@@ -1313,13 +1398,16 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
         Some(target_pos),
     );
 
-    // Flee trigger: A* couldn't find a path *and* the target has hurt us
+    // Flee trigger: A* deems the target unreachable *and* it has hurt us
     // recently. Catches "player camped on a ledge we can't climb while
     // shooting down" — without this, the NPC would stand still eating
     // arrows. Greedy seek isn't enough to disprove reachability (it might
-    // make local progress while still being permanently stuck), so we
-    // gate strictly on A*.
-    if astar.is_none()
+    // make local progress while still being permanently stuck), so we gate
+    // on A*: a hard `NoPath`, or a `Budget` bail-out on a *close* target
+    // (see `astar_deems_unreachable`). A `Budget` on a distant target just
+    // means "far away" — that misread was the ranged-attack flee bug — so it
+    // falls through to a normal greedy pursue step instead.
+    if astar_deems_unreachable(astar, chebyshev_distance(input.tile_position, target_pos))
         && input
             .last_damaged_at
             .is_some_and(|t| input.elapsed - t <= FLEE_RECENT_DAMAGE_WINDOW_SECS)
@@ -1328,6 +1416,7 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
             next_state: AiState::Flee {
                 from: target,
                 expires_at_seconds: input.elapsed + FLEE_DURATION_SECS,
+                reason: FleeReason::UnreachableAttacker,
             },
             next_memory: AiMemory {
                 last_step: None,
@@ -1340,7 +1429,11 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
         };
     }
 
-    let move_to = astar.or_else(|| {
+    let astar_step = match astar {
+        AstarResult::Step(step) => Some(step),
+        AstarResult::NoPath | AstarResult::Budget => None,
+    };
+    let move_to = astar_step.or_else(|| {
         choose_seek_step(
             input.entity,
             input.space_id,
@@ -1368,10 +1461,15 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
 
 /// Run a flee tick: pick the best (no-LoS, distant) neighbor away from
 /// `from`. Expires to Wander when `expires_at_seconds` has elapsed or the
-/// attacker leaves the space. Refreshes the timer while LoS to `from` is
-/// still possible — staying visible means the NPC is still being chased and
-/// shouldn't stop fleeing yet.
-fn tick_flee(input: &mut StepAiInput<'_>, from: Entity, expires_at_seconds: f32) -> AiOutcome {
+/// threat leaves the space. `UnreachableAttacker` flees re-engage the moment
+/// A* finds a path to the attacker again (the ledge-camper climbed down);
+/// `Fear` flees calm down once the predator is outside detect range.
+fn tick_flee(
+    input: &mut StepAiInput<'_>,
+    from: Entity,
+    expires_at_seconds: f32,
+    reason: FleeReason,
+) -> AiOutcome {
     let attacker = input
         .combatants
         .iter()
@@ -1405,18 +1503,70 @@ fn tick_flee(input: &mut StepAiInput<'_>, from: Entity, expires_at_seconds: f32)
         };
     }
 
-    // Refresh the timer while the attacker can still see us — they're
-    // still chasing, so the flee shouldn't time out.
-    let still_in_sight = has_line_of_sight(
-        input.tile_position,
-        attacker_pos,
-        input.space_id,
-        input.los_blockers,
-    );
-    let next_expires_at = if still_in_sight {
-        input.elapsed + FLEE_DURATION_SECS
-    } else {
-        expires_at_seconds
+    let next_expires_at = match reason {
+        FleeReason::UnreachableAttacker => {
+            // The flee exists because A* proved the attacker unreachable.
+            // Re-check every tick: the moment a path opens (they stepped off
+            // the ledge, a door opened, the crowd dispersed) turn around and
+            // resume the pursuit instead of cowering in a corner.
+            let path = astar_search(
+                input.entity,
+                input.space_id,
+                input.tile_position,
+                attacker_pos,
+                input.blockers,
+                input.npc_tiles,
+                input.player_tiles,
+                Some(attacker_pos),
+            );
+            if !astar_deems_unreachable(path, chebyshev_distance(input.tile_position, attacker_pos))
+            {
+                let step = match path {
+                    AstarResult::Step(step) => Some(step),
+                    AstarResult::NoPath | AstarResult::Budget => None,
+                };
+                return AiOutcome {
+                    next_state: AiState::Pursue { target: from },
+                    next_memory: AiMemory {
+                        last_step: None,
+                        contact_grace_until: input.elapsed + CONTACT_GRACE_SECS,
+                        ..input.memory
+                    },
+                    target: TargetChange::Set(from),
+                    move_to: step,
+                    idle_pause: false,
+                    bark: None,
+                };
+            }
+            // Still unreachable: refresh the timer while the attacker can
+            // see us — visible means still being shot at, so the flee
+            // shouldn't time out under fire.
+            let still_in_sight = has_line_of_sight(
+                input.tile_position,
+                attacker_pos,
+                input.space_id,
+                input.los_blockers,
+            );
+            if still_in_sight {
+                input.elapsed + FLEE_DURATION_SECS
+            } else {
+                expires_at_seconds
+            }
+        }
+        FleeReason::Fear => {
+            // Prey keeps running while the predator stays close, and calms
+            // down (timer runs out) once it has opened enough distance —
+            // bare LoS would never let a sheep in an open meadow stop.
+            let calm_radius = input
+                .prey_behavior
+                .map(|p| p.detect_distance_tiles)
+                .unwrap_or(DEFAULT_FEAR_CALM_RADIUS_TILES);
+            if chebyshev_distance(input.tile_position, attacker_pos) <= calm_radius {
+                input.elapsed + FLEE_DURATION_SECS
+            } else {
+                expires_at_seconds
+            }
+        }
     };
 
     // Pick the neighbor that maximizes (no-LoS, distance-from-attacker).
@@ -1457,6 +1607,7 @@ fn tick_flee(input: &mut StepAiInput<'_>, from: Entity, expires_at_seconds: f32)
         next_state: AiState::Flee {
             from,
             expires_at_seconds: next_expires_at,
+            reason,
         },
         next_memory: AiMemory {
             last_step: None,
@@ -1469,10 +1620,13 @@ fn tick_flee(input: &mut StepAiInput<'_>, from: Entity, expires_at_seconds: f32)
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn nearest_visible_enemy(
+    self_entity: Entity,
     tile_position: TilePosition,
     space_id: SpaceId,
     self_faction: Faction,
+    self_hostile_towards: TagMask,
     hostile: &HostileBehavior,
     combatants: &[CombatantDetectInfo],
     blockers: &BlockerIndex,
@@ -1484,10 +1638,11 @@ fn nearest_visible_enemy(
     combatants
         .iter()
         .copied()
-        // Faction gate: only an opposing side is an enemy. This also drops the
-        // searcher's own entry — you share your own faction, so you're never
-        // your own enemy — making a separate self-exclusion unnecessary.
-        .filter(|p| self_faction.is_enemy_of(p.faction))
+        // Explicit self-exclusion: with the tag gate an NPC could otherwise
+        // match its own identity (faction alone used to make this impossible).
+        .filter(|p| p.entity != self_entity)
+        // Hostility gate: opposing faction OR hostile_towards ∩ identity.
+        .filter(|p| is_hostile_toward(self_faction, self_hostile_towards, p.faction, p.identity))
         .filter(|p| p.space_id == space_id)
         // No sensing across a *full* floor by default: an NPC detects players on
         // its own floor, plus anything within one auto-climb half-block (so a
@@ -1537,6 +1692,36 @@ fn nearest_visible_enemy(
         .min_by_key(|p| chebyshev_distance(tile_position, p.tile))
 }
 
+/// Nearest same-space creature whose identity intersects this NPC's
+/// `flees_from` mask, within the prey detect radius (+ LoS when required).
+/// `None` for NPCs without `PreyBehavior`. No stealth contest — prey fear is
+/// about scent/presence, and creatures don't sneak.
+fn nearest_feared_creature(input: &StepAiInput<'_>) -> Option<Entity> {
+    let prey = input.prey_behavior?;
+    let flees_from = input.self_tags.flees_from;
+    if flees_from.is_empty() {
+        return None;
+    }
+    input
+        .combatants
+        .iter()
+        .filter(|c| c.entity != input.entity)
+        .filter(|c| c.space_id == input.space_id)
+        .filter(|c| flees_from.intersects(c.identity))
+        .filter(|c| chebyshev_distance(input.tile_position, c.tile) <= prey.detect_distance_tiles)
+        .filter(|c| {
+            !prey.requires_line_of_sight
+                || has_line_of_sight(
+                    input.tile_position,
+                    c.tile,
+                    input.space_id,
+                    input.los_blockers,
+                )
+        })
+        .min_by_key(|c| chebyshev_distance(input.tile_position, c.tile))
+        .map(|c| c.entity)
+}
+
 /// The NPC's attack kind, defaulting an absent profile to `Melee`. Feeds the
 /// shared `is_target_in_range` reach test so an unarmed NPC engages at melee
 /// reach rather than not at all.
@@ -1563,8 +1748,15 @@ fn closer_in_range_enemy(input: &StepAiInput<'_>, target: Entity) -> Option<Enti
     input
         .combatants
         .iter()
-        .filter(|c| c.entity != target)
-        .filter(|c| input.self_faction.is_enemy_of(c.faction))
+        .filter(|c| c.entity != target && c.entity != input.entity)
+        .filter(|c| {
+            is_hostile_toward(
+                input.self_faction,
+                input.self_tags.hostile_towards,
+                c.faction,
+                c.identity,
+            )
+        })
         .filter(|c| c.space_id == input.space_id)
         .filter(|c| reachable(c.tile))
         .min_by_key(|c| chebyshev_distance(input.tile_position, c.tile))
@@ -1906,6 +2098,17 @@ fn resolve_npc_step(
     None
 }
 
+/// Outcome of an A* search. `NoPath` is a *proof* of unreachability (the open
+/// set drained), while `Budget` only means the search was cut off by
+/// `ASTAR_EXPANSION_CAP` — the goal may well be reachable, just far. Callers
+/// deciding "should I give up / flee?" must key on `NoPath`, never `Budget`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AstarResult {
+    Step(TilePosition),
+    NoPath,
+    Budget,
+}
+
 fn astar_next_step(
     entity: Entity,
     space_id: SpaceId,
@@ -1916,14 +2119,41 @@ fn astar_next_step(
     player_tiles: &PlayerTileSet,
     goal_override: Option<TilePosition>,
 ) -> Option<TilePosition> {
+    match astar_search(
+        entity,
+        space_id,
+        start,
+        goal,
+        blockers,
+        npc_tiles,
+        player_tiles,
+        goal_override,
+    ) {
+        AstarResult::Step(step) => Some(step),
+        AstarResult::NoPath | AstarResult::Budget => None,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn astar_search(
+    entity: Entity,
+    space_id: SpaceId,
+    start: TilePosition,
+    goal: TilePosition,
+    blockers: &BlockerIndex,
+    npc_tiles: &NpcTileIndex,
+    player_tiles: &PlayerTileSet,
+    goal_override: Option<TilePosition>,
+) -> AstarResult {
     let _t = crate::diagnostics::SystemTimer::new("npc:astar", 1.0);
     if start == goal {
-        return None;
+        return AstarResult::NoPath;
     }
 
     let mut open: BinaryHeap<Reverse<AstarNode>> = BinaryHeap::new();
     let mut g_score: HashMap<TilePosition, i32> = HashMap::new();
     let mut came_from: HashMap<TilePosition, TilePosition> = HashMap::new();
+    let mut closed: HashSet<TilePosition> = HashSet::new();
 
     g_score.insert(start, 0);
     let mut counter: u32 = 0;
@@ -1941,17 +2171,25 @@ fn astar_next_step(
             let mut node = current;
             while let Some(&parent) = came_from.get(&node) {
                 if parent == start {
-                    return Some(node);
+                    return AstarResult::Step(node);
                 }
                 node = parent;
             }
             // current == start case is handled by the early return above.
-            return None;
+            return AstarResult::NoPath;
+        }
+
+        // A node can sit in the heap multiple times (re-pushed on every
+        // g-improvement); only its best pop is worth expanding. Skipping the
+        // duplicates keeps `expansions` a count of distinct tiles, so open
+        // terrain no longer burns the budget on equal-f plateau re-pops.
+        if !closed.insert(current) {
+            continue;
         }
 
         expansions += 1;
         if expansions > ASTAR_EXPANSION_CAP {
-            return None;
+            return AstarResult::Budget;
         }
 
         let current_g = *g_score.get(&current).unwrap_or(&i32::MAX);
@@ -1994,6 +2232,9 @@ fn astar_next_step(
             // exist. Descents (dz<0) are free — gravity does the work.
             let dz_up = (neighbor.z - current.z).max(0);
             let tentative_g = current_g + 1 + dz_up;
+            if closed.contains(&neighbor) {
+                continue;
+            }
             let existing = g_score.get(&neighbor).copied().unwrap_or(i32::MAX);
             if tentative_g < existing {
                 came_from.insert(neighbor, current);
@@ -2009,7 +2250,7 @@ fn astar_next_step(
         }
     }
 
-    None
+    AstarResult::NoPath
 }
 
 // Line-of-sight lives in `crate::world::spatial::has_line_of_sight`; we
@@ -2212,6 +2453,7 @@ mod tests {
             space_id: TEST_SPACE,
             tile,
             faction: Faction::PlayerSide,
+            identity: TagMask::PLAYER,
             stealth_total: 0,
             sneaking: false,
         }
@@ -2843,9 +3085,11 @@ mod tests {
         let upstairs = vec![detect_player(TilePosition::new(5, 6, 2))];
         assert!(
             nearest_visible_enemy(
+                Entity::from_raw_u32(9999).unwrap(),
                 npc,
                 TEST_SPACE,
                 Faction::MonsterSide,
+                TagMask::EMPTY,
                 &hostile,
                 &upstairs,
                 &blockers,
@@ -2861,9 +3105,11 @@ mod tests {
         let same_floor = vec![detect_player(TilePosition::new(5, 6, 1))];
         assert!(
             nearest_visible_enemy(
+                Entity::from_raw_u32(9999).unwrap(),
                 npc,
                 TEST_SPACE,
                 Faction::MonsterSide,
+                TagMask::EMPTY,
                 &hostile,
                 &same_floor,
                 &blockers,
@@ -2892,9 +3138,11 @@ mod tests {
         let half_block_up = vec![detect_player(TilePosition::new(5, 6, 2))];
         assert!(
             nearest_visible_enemy(
+                Entity::from_raw_u32(9999).unwrap(),
                 npc,
                 TEST_SPACE,
                 Faction::MonsterSide,
+                TagMask::EMPTY,
                 &hostile,
                 &half_block_up,
                 &blockers,
@@ -2910,9 +3158,11 @@ mod tests {
         let full_floor_up = vec![detect_player(TilePosition::new(5, 6, 3))];
         assert!(
             nearest_visible_enemy(
+                Entity::from_raw_u32(9999).unwrap(),
                 npc,
                 TEST_SPACE,
                 Faction::MonsterSide,
+                TagMask::EMPTY,
                 &hostile,
                 &full_floor_up,
                 &blockers,
@@ -2943,6 +3193,7 @@ mod tests {
             space_id: TEST_SPACE,
             tile,
             faction,
+            identity: TagMask::EMPTY,
             stealth_total: 0,
             sneaking: false,
         };
@@ -2950,9 +3201,11 @@ mod tests {
         let allies = vec![make(TilePosition::ground(5, 6), Faction::PlayerSide)];
         assert!(
             nearest_visible_enemy(
+                Entity::from_raw_u32(9999).unwrap(),
                 npc,
                 TEST_SPACE,
                 Faction::PlayerSide,
+                TagMask::EMPTY,
                 &hostile,
                 &allies,
                 &blockers,
@@ -2968,9 +3221,11 @@ mod tests {
         let foes = vec![make(TilePosition::ground(5, 6), Faction::MonsterSide)];
         assert!(
             nearest_visible_enemy(
+                Entity::from_raw_u32(9999).unwrap(),
                 npc,
                 TEST_SPACE,
                 Faction::PlayerSide,
+                TagMask::EMPTY,
                 &hostile,
                 &foes,
                 &blockers,
@@ -3679,6 +3934,457 @@ mod tests {
         assert!(
             matches!(*app.world().get::<AiState>(npc).unwrap(), AiState::Wander),
             "NPC should return to Wander after alert expires"
+        );
+    }
+
+    // ── Flee-fix + tag-hostility tests ─────────────────────────────────────
+
+    /// Bit assignments the tag tests share (bit 0 is the reserved player bit).
+    const MONSTER_TAG: TagMask = TagMask(1 << 1);
+    const PREDATOR_TAG: TagMask = TagMask(1 << 2);
+    const LIVESTOCK_TAG: TagMask = TagMask(1 << 3);
+
+    fn stamp_recent_damage(app: &mut App, entity: Entity) {
+        let now = app.world().resource::<Time>().elapsed_secs();
+        app.world_mut()
+            .entity_mut(entity)
+            .insert(LastDamagedAt(now));
+    }
+
+    fn wall_ring(app: &mut App, center: TilePosition) -> Vec<Entity> {
+        let mut walls = Vec::new();
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                if dx == 0 && dy == 0 {
+                    continue;
+                }
+                for z in 0..=crate::game::traversal::CLIMB_MAX_DZ {
+                    walls.push(
+                        app.world_mut()
+                            .spawn((
+                                Collider,
+                                SpaceResident {
+                                    space_id: TEST_SPACE,
+                                },
+                                TilePosition::new(center.x + dx, center.y + dy, z),
+                            ))
+                            .id(),
+                    );
+                }
+            }
+        }
+        walls
+    }
+
+    /// Regression for the ranged-flee bug: a recently-damaged NPC pursuing a
+    /// distant target across *open terrain* must keep pursuing. The old A*
+    /// (no closed set) blew its expansion cap on the equal-f plateau at this
+    /// distance, and the cap bail-out was misread as "unreachable" → Flee.
+    #[test]
+    fn no_flee_on_expansion_cap_open_terrain() {
+        let mut app = npc_test_app();
+
+        let player = spawn_player(&mut app, 1, TilePosition::ground(36, 36));
+        let npc = spawn_melee(&mut app, TilePosition::ground(1, 1));
+        app.world_mut()
+            .get_mut::<HostileBehavior>(npc)
+            .unwrap()
+            .detect_distance_tiles = 60;
+        app.world_mut()
+            .get_mut::<HostileBehavior>(npc)
+            .unwrap()
+            .disengage_distance_tiles = 80;
+        app.world_mut()
+            .get_mut::<RoamingBehavior>(npc)
+            .unwrap()
+            .bounds = RoamBounds {
+            min_x: 0,
+            min_y: 0,
+            max_x: 60,
+            max_y: 60,
+        };
+        stamp_recent_damage(&mut app, npc);
+
+        app.add_systems(Update, update_roaming_npcs);
+        for _ in 0..3 {
+            app.world_mut()
+                .get_mut::<RoamingStepTimer>(npc)
+                .unwrap()
+                .remaining_seconds = 0.0;
+            app.update();
+        }
+
+        assert!(
+            !matches!(
+                *app.world().get::<AiState>(npc).unwrap(),
+                AiState::Flee { .. }
+            ),
+            "open-terrain pursuit of a distant damager must not flee"
+        );
+        assert_eq!(
+            app.world().get::<CombatTarget>(npc).map(|t| t.entity),
+            Some(player),
+            "the shot NPC should keep its target while charging"
+        );
+    }
+
+    /// The legitimate flee case still works: the attacker is walled off on
+    /// every side (A* proves NoPath) and has hurt us recently → Flee, and the
+    /// CombatTarget is dropped (no Flee-with-target inconsistent state).
+    #[test]
+    fn flee_still_works_when_truly_unreachable() {
+        let mut app = npc_test_app();
+
+        let player_tile = TilePosition::ground(10, 10);
+        spawn_player(&mut app, 1, player_tile);
+        wall_ring(&mut app, player_tile);
+        let npc = spawn_melee(&mut app, TilePosition::ground(5, 10));
+        stamp_recent_damage(&mut app, npc);
+
+        app.add_systems(Update, update_roaming_npcs);
+        for _ in 0..2 {
+            app.world_mut()
+                .get_mut::<RoamingStepTimer>(npc)
+                .unwrap()
+                .remaining_seconds = 0.0;
+            app.update();
+        }
+
+        assert!(
+            matches!(
+                *app.world().get::<AiState>(npc).unwrap(),
+                AiState::Flee {
+                    reason: FleeReason::UnreachableAttacker,
+                    ..
+                }
+            ),
+            "walled-off recently-damaging attacker must trigger Flee, got {:?}",
+            app.world().get::<AiState>(npc).unwrap()
+        );
+        assert!(
+            app.world().get::<CombatTarget>(npc).is_none(),
+            "fleeing NPC must not keep a CombatTarget (wander-delegation clobber regression)"
+        );
+    }
+
+    /// A fleeing NPC re-engages the moment a path to its attacker opens.
+    #[test]
+    fn flee_reengages_when_path_opens() {
+        let mut app = npc_test_app();
+
+        let player_tile = TilePosition::ground(10, 10);
+        let player = spawn_player(&mut app, 1, player_tile);
+        let walls = wall_ring(&mut app, player_tile);
+        let npc = spawn_melee(&mut app, TilePosition::ground(5, 10));
+        stamp_recent_damage(&mut app, npc);
+
+        app.add_systems(Update, update_roaming_npcs);
+        for _ in 0..2 {
+            app.world_mut()
+                .get_mut::<RoamingStepTimer>(npc)
+                .unwrap()
+                .remaining_seconds = 0.0;
+            app.update();
+        }
+        assert!(
+            matches!(
+                *app.world().get::<AiState>(npc).unwrap(),
+                AiState::Flee { .. }
+            ),
+            "setup: NPC should be fleeing the unreachable attacker"
+        );
+
+        // Tear the walls down — the ledge-camper climbed down.
+        for wall in walls {
+            app.world_mut().entity_mut(wall).despawn();
+        }
+        app.world_mut()
+            .get_mut::<RoamingStepTimer>(npc)
+            .unwrap()
+            .remaining_seconds = 0.0;
+        app.update();
+
+        assert!(
+            matches!(
+                *app.world().get::<AiState>(npc).unwrap(),
+                AiState::Pursue { .. }
+            ),
+            "flee should flip back to Pursue once a path opens, got {:?}",
+            app.world().get::<AiState>(npc).unwrap()
+        );
+        assert_eq!(
+            app.world().get::<CombatTarget>(npc).map(|t| t.entity),
+            Some(player),
+            "re-engage must restore the CombatTarget"
+        );
+    }
+
+    fn spawn_guard(app: &mut App, pos: TilePosition) -> Entity {
+        let guard = spawn_melee(app, pos);
+        app.world_mut().entity_mut(guard).insert((
+            Faction::PlayerSide,
+            TagProfile {
+                identity: TagMask::EMPTY,
+                hostile_towards: MONSTER_TAG,
+                flees_from: TagMask::EMPTY,
+            },
+        ));
+        guard
+    }
+
+    /// A monster NPC for tag tests: MonsterSide with a `monster` identity.
+    fn spawn_tagged_monster(app: &mut App, pos: TilePosition) -> Entity {
+        let monster = spawn_melee(app, pos);
+        app.world_mut().entity_mut(monster).insert((
+            Faction::MonsterSide,
+            TagProfile {
+                identity: MONSTER_TAG,
+                hostile_towards: TagMask::EMPTY,
+                flees_from: TagMask::EMPTY,
+            },
+        ));
+        monster
+    }
+
+    #[test]
+    fn guard_attacks_monster_by_tag() {
+        let mut app = npc_test_app();
+
+        let guard = spawn_guard(&mut app, TilePosition::ground(5, 5));
+        let monster = spawn_tagged_monster(&mut app, TilePosition::ground(10, 5));
+
+        app.add_systems(Update, update_roaming_npcs);
+        for _ in 0..8 {
+            for e in [guard, monster] {
+                app.world_mut()
+                    .get_mut::<RoamingStepTimer>(e)
+                    .unwrap()
+                    .remaining_seconds = 0.0;
+            }
+            app.update();
+        }
+
+        assert_eq!(
+            app.world().get::<CombatTarget>(guard).map(|t| t.entity),
+            Some(monster),
+            "guard should acquire the monster through its hostile_towards tags"
+        );
+        let gap = chebyshev_distance(
+            *app.world().get::<TilePosition>(guard).unwrap(),
+            *app.world().get::<TilePosition>(monster).unwrap(),
+        );
+        assert_eq!(gap, 1, "guard and monster should close to melee adjacency");
+    }
+
+    #[test]
+    fn monster_attacks_guard_by_faction() {
+        let mut app = npc_test_app();
+
+        let guard = spawn_guard(&mut app, TilePosition::ground(5, 5));
+        let monster = spawn_tagged_monster(&mut app, TilePosition::ground(9, 5));
+
+        app.add_systems(Update, update_roaming_npcs);
+        for e in [guard, monster] {
+            app.world_mut()
+                .get_mut::<RoamingStepTimer>(e)
+                .unwrap()
+                .remaining_seconds = 0.0;
+        }
+        app.update();
+
+        assert_eq!(
+            app.world().get::<CombatTarget>(monster).map(|t| t.entity),
+            Some(guard),
+            "a MonsterSide NPC should target a PlayerSide guard by faction"
+        );
+    }
+
+    #[test]
+    fn guard_ignores_player() {
+        let mut app = npc_test_app();
+
+        spawn_player(&mut app, 1, TilePosition::ground(6, 5));
+        let guard = spawn_guard(&mut app, TilePosition::ground(5, 5));
+
+        app.add_systems(Update, update_roaming_npcs);
+        for _ in 0..5 {
+            app.world_mut()
+                .get_mut::<RoamingStepTimer>(guard)
+                .unwrap()
+                .remaining_seconds = 0.0;
+            app.update();
+        }
+
+        assert!(
+            app.world().get::<CombatTarget>(guard).is_none(),
+            "a guard (PlayerSide, hostile only toward monster tags) must never target a player"
+        );
+    }
+
+    #[test]
+    fn neutral_npc_is_not_faction_targeted() {
+        let mut app = npc_test_app();
+
+        // Sheep: neutral, livestock identity, no combat AI.
+        let sheep = app
+            .world_mut()
+            .spawn((
+                Npc,
+                SpaceResident {
+                    space_id: TEST_SPACE,
+                },
+                TilePosition::ground(6, 5),
+                default_roaming(
+                    RoamBounds {
+                        min_x: 0,
+                        min_y: 0,
+                        max_x: 20,
+                        max_y: 20,
+                    },
+                    0.1,
+                ),
+                RoamingStepTimer {
+                    remaining_seconds: 1000.0,
+                },
+                RoamingRandomState { seed: 7 },
+                AiState::default(),
+                AiMemory::default(),
+                Faction::Neutral,
+                TagProfile {
+                    identity: LIVESTOCK_TAG,
+                    hostile_towards: TagMask::EMPTY,
+                    flees_from: TagMask::EMPTY,
+                },
+            ))
+            .id();
+        let monster = spawn_tagged_monster(&mut app, TilePosition::ground(5, 5));
+
+        app.add_systems(Update, update_roaming_npcs);
+        app.world_mut()
+            .get_mut::<RoamingStepTimer>(monster)
+            .unwrap()
+            .remaining_seconds = 0.0;
+        app.update();
+
+        assert!(
+            app.world().get::<CombatTarget>(monster).is_none(),
+            "a plain MonsterSide monster must not attack neutral livestock"
+        );
+
+        // A wolf hostile_towards livestock does target the sheep.
+        let wolf = spawn_melee(&mut app, TilePosition::ground(7, 5));
+        app.world_mut().entity_mut(wolf).insert((
+            Faction::Neutral,
+            TagProfile {
+                identity: PREDATOR_TAG,
+                hostile_towards: LIVESTOCK_TAG,
+                flees_from: TagMask::EMPTY,
+            },
+        ));
+        app.world_mut()
+            .get_mut::<RoamingStepTimer>(wolf)
+            .unwrap()
+            .remaining_seconds = 0.0;
+        app.update();
+
+        assert_eq!(
+            app.world().get::<CombatTarget>(wolf).map(|t| t.entity),
+            Some(sheep),
+            "a predator tagged hostile_towards livestock must hunt the sheep"
+        );
+    }
+
+    #[test]
+    fn prey_flees_from_predator_tag() {
+        let mut app = npc_test_app();
+
+        // Wolf: neutral predator (identity only — enough to scare prey).
+        let wolf = spawn_melee(&mut app, TilePosition::ground(10, 10));
+        app.world_mut().entity_mut(wolf).insert((
+            Faction::Neutral,
+            TagProfile {
+                identity: PREDATOR_TAG,
+                hostile_towards: LIVESTOCK_TAG,
+                flees_from: TagMask::EMPTY,
+            },
+        ));
+        // Sheep: prey with no combat AI.
+        let sheep = app
+            .world_mut()
+            .spawn((
+                Npc,
+                SpaceResident {
+                    space_id: TEST_SPACE,
+                },
+                TilePosition::ground(12, 10),
+                default_roaming(
+                    RoamBounds {
+                        min_x: 0,
+                        min_y: 0,
+                        max_x: 40,
+                        max_y: 40,
+                    },
+                    0.1,
+                ),
+                RoamingStepTimer {
+                    remaining_seconds: 0.0,
+                },
+                RoamingRandomState { seed: 7 },
+                AiState::default(),
+                AiMemory::default(),
+                Faction::Neutral,
+                TagProfile {
+                    identity: LIVESTOCK_TAG,
+                    hostile_towards: TagMask::EMPTY,
+                    flees_from: PREDATOR_TAG,
+                },
+                PreyBehavior {
+                    detect_distance_tiles: 6,
+                    requires_line_of_sight: false,
+                },
+            ))
+            .id();
+
+        app.add_systems(Update, update_roaming_npcs);
+        let start_gap = chebyshev_distance(
+            *app.world().get::<TilePosition>(sheep).unwrap(),
+            *app.world().get::<TilePosition>(wolf).unwrap(),
+        );
+        for _ in 0..4 {
+            for e in [wolf, sheep] {
+                app.world_mut()
+                    .get_mut::<RoamingStepTimer>(e)
+                    .unwrap()
+                    .remaining_seconds = 0.0;
+            }
+            app.update();
+        }
+
+        assert!(
+            matches!(
+                *app.world().get::<AiState>(sheep).unwrap(),
+                AiState::Flee {
+                    reason: FleeReason::Fear,
+                    ..
+                }
+            ),
+            "sheep must enter a Fear flee at the sight of a predator, got {:?}",
+            app.world().get::<AiState>(sheep).unwrap()
+        );
+        assert_eq!(
+            app.world().get::<CombatTarget>(wolf).map(|t| t.entity),
+            Some(sheep),
+            "the wolf should be hunting the sheep meanwhile"
+        );
+        // Wolf steps toward the sheep, sheep runs — the sheep must at least
+        // not be cornered into the wolf: it never closes the gap itself.
+        let end_gap = chebyshev_distance(
+            *app.world().get::<TilePosition>(sheep).unwrap(),
+            *app.world().get::<TilePosition>(wolf).unwrap(),
+        );
+        assert!(
+            end_gap >= start_gap.min(2),
+            "fleeing sheep should not run into the wolf (start {start_gap}, end {end_gap})"
         );
     }
 }

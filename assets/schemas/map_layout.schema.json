@@ -4,7 +4,7 @@
   "type": "object",
   "required": [
     "authored_id",
-    "fill_object_type",
+    "fill_floor_type",
     "height",
     "width"
   ],
@@ -12,8 +12,16 @@
     "authored_id": {
       "type": "string"
     },
-    "fill_object_type": {
+    "fill_floor_type": {
       "type": "string"
+    },
+    "floors": {
+      "description": "Floor placements grouped by floor type id. Overlay on top of `fill_floor_type`.",
+      "default": {},
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/FloorPlacements"
+      }
     },
     "height": {
       "type": "integer",
@@ -26,6 +34,32 @@
       "additionalProperties": {
         "type": "string"
       }
+    },
+    "lighting": {
+      "description": "Lighting configuration for this space. Replicated to clients via `ClientSpaceState` and consumed by the lighting system.",
+      "default": {
+        "darkness_color": [
+          0,
+          0,
+          0
+        ],
+        "has_day_night": true,
+        "indoor_ambient": [
+          55,
+          50,
+          60
+        ],
+        "outdoor_ambient": [
+          220,
+          220,
+          230
+        ]
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/SpaceLightingDef"
+        }
+      ]
     },
     "objects": {
       "type": "array",
@@ -47,13 +81,29 @@
         "$ref": "#/definitions/PortalDefinition"
       }
     },
+    "spawn_groups": {
+      "description": "Spawner zones for dynamically-respawning NPCs. Each group caps the simultaneously-alive members of one template and refills slots on a Poisson-style timer when members die or are removed.",
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/SpawnGroupDef"
+      }
+    },
     "tiles": {
-      "description": "ASCII grid of tiles, row-major with y=0 at top. Each character maps via `legend`; unmapped characters are skipped (fill_object_type applies).",
+      "description": "ASCII grid of tiles, row-major with y=0 at top. Each character maps via `legend`; unmapped characters are skipped (fill_floor_type applies).",
       "default": null,
       "type": [
         "string",
         "null"
       ]
+    },
+    "vendor_stashes": {
+      "description": "Named ware lists (\"vendor stashes\") authored in this map. Referenced by a shopkeeper NPC instance's `vendor_stash` property to override the template's default wares — see `spawn_overworld_object_instance`. Created and edited in the level editor's Vendor Stashes panel.",
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/VendorStashDef"
+      }
     },
     "width": {
       "type": "integer",
@@ -61,6 +111,35 @@
     }
   },
   "definitions": {
+    "AmbientKeyframe": {
+      "description": "Day/night curve keyframe. `time` is normalized world-clock position (0.0 = midnight, 0.5 = noon, cyclic). `color` is the ambient tint in sRGB bytes; `alpha` is the darkness overlay opacity at this time (0.0 = transparent — daylight; 1.0 = pitch black).",
+      "type": "object",
+      "required": [
+        "alpha",
+        "color",
+        "time"
+      ],
+      "properties": {
+        "alpha": {
+          "type": "number",
+          "format": "float"
+        },
+        "color": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "time": {
+          "type": "number",
+          "format": "float"
+        }
+      }
+    },
     "AnonymousObjectPlacements": {
       "type": "object",
       "required": [
@@ -68,6 +147,17 @@
         "type"
       ],
       "properties": {
+        "facing": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Direction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "placement": {
           "type": "array",
           "items": {
@@ -86,14 +176,42 @@
         }
       }
     },
+    "Direction": {
+      "type": "string",
+      "enum": [
+        "north",
+        "south",
+        "east",
+        "west"
+      ]
+    },
+    "FloorPlacements": {
+      "type": "object",
+      "properties": {
+        "placement": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/TileCoordinate"
+          }
+        },
+        "rects": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/TileRectangleArea"
+          }
+        }
+      }
+    },
     "MapBehavior": {
+      "description": "Spawner / instance-level behavior knobs. Intrinsic per-mob values (movement cadence, detection range, alert duration, LoS) live on the object definition's `npc_behavior` block (`OverworldObjectDefinition`); the only things authored here are the patrol rectangle and whether this particular spawn should chase (i.e. attach a `HostileBehavior` at spawn).",
       "oneOf": [
         {
           "type": "object",
           "required": [
             "bounds",
-            "kind",
-            "step_interval_seconds"
+            "kind"
           ],
           "properties": {
             "bounds": {
@@ -104,10 +222,6 @@
               "enum": [
                 "roam"
               ]
-            },
-            "step_interval_seconds": {
-              "type": "number",
-              "format": "float"
             }
           }
         },
@@ -115,34 +229,30 @@
           "type": "object",
           "required": [
             "bounds",
-            "detect_distance_tiles",
-            "disengage_distance_tiles",
-            "kind",
-            "step_interval_seconds"
+            "kind"
           ],
           "properties": {
             "bounds": {
               "$ref": "#/definitions/TileRectangle"
-            },
-            "detect_distance_tiles": {
-              "type": "integer",
-              "format": "int32"
-            },
-            "disengage_distance_tiles": {
-              "type": "integer",
-              "format": "int32"
             },
             "kind": {
               "type": "string",
               "enum": [
                 "roam_and_chase"
               ]
-            },
-            "step_interval_seconds": {
-              "type": "number",
-              "format": "float"
             }
           }
+        }
+      ]
+    },
+    "MapObjectChild": {
+      "description": "A child of a container's `contents:` list. Either a symbolic reference to another instance's `id` (must resolve at load time) or an inline nested `MapObjectInstance` whose location is \"inside the parent\".",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/definitions/MapObjectInstance"
         }
       ]
     },
@@ -157,13 +267,14 @@
       ]
     },
     "MapObjectInstance": {
+      "description": "Authored object entry as it appears in YAML. Carries an *optional* symbolic `id` (a string) used to refer back to it from another object's `contents`. Numeric runtime IDs are assigned by `SpaceDefinition::resolve_objects` — authored YAML never sees them.",
       "type": "object",
       "required": [
-        "id",
         "type"
       ],
       "properties": {
         "behavior": {
+          "default": null,
           "anyOf": [
             {
               "$ref": "#/definitions/MapBehavior"
@@ -174,18 +285,28 @@
           ]
         },
         "contents": {
-          "default": [],
           "type": "array",
           "items": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0.0
+            "$ref": "#/definitions/MapObjectChild"
           }
         },
+        "facing": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Direction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "id": {
-          "type": "integer",
-          "format": "uint64",
-          "minimum": 0.0
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "placement": {
           "default": null,
@@ -205,10 +326,79 @@
             "type": "string"
           }
         },
+        "quantity": {
+          "description": "Stack count when this instance sits inside a container's `contents:`. Only consumed during contents recursion (see `resolved_to_stack` in `src/world/setup.rs`); a top-level placement uses the `properties[\"quantity\"]` mechanism instead. Absent/`1` = a single item.",
+          "default": null,
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "routine": {
+          "description": "Patrol route / day-night schedule for a hand-placed NPC. Baked into a `Routine` component at spawn. `None` = no agenda (default wander).",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RoutineInstanceDef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "type": {
           "type": "string"
         }
       }
+    },
+    "PatrolDef": {
+      "type": "object",
+      "required": [
+        "waypoints"
+      ],
+      "properties": {
+        "mode": {
+          "default": "loop",
+          "allOf": [
+            {
+              "$ref": "#/definitions/PatrolModeDef"
+            }
+          ]
+        },
+        "waypoints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/WaypointDef"
+          }
+        }
+      }
+    },
+    "PatrolModeDef": {
+      "oneOf": [
+        {
+          "description": "Cycle `0 → 1 → 2 → 0 → …`.",
+          "type": "string",
+          "enum": [
+            "loop"
+          ]
+        },
+        {
+          "description": "Bounce `0 → 1 → 2 → 1 → 0 → …`.",
+          "type": "string",
+          "enum": [
+            "ping_pong"
+          ]
+        },
+        {
+          "description": "Walk once then hold at the final waypoint.",
+          "type": "string",
+          "enum": [
+            "once"
+          ]
+        }
+      ]
     },
     "PortalDefinition": {
       "type": "object",
@@ -244,11 +434,221 @@
         }
       }
     },
+    "RoutineInstanceDef": {
+      "description": "Instance-level \"life agenda\" for a hand-placed NPC: a patrol route and/or a day/night schedule. Coordinates are location-specific so they live here in the map YAML, while the *type* of each activity (pose, flavor barks) lives on the object definition's `activities:` block. Baked into a `crate::npc::routine::Routine` at spawn. See `docs/yaml_formats.md`.",
+      "type": "object",
+      "properties": {
+        "patrol": {
+          "description": "Walked when no schedule window is active. Omit for a pure schedule.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PatrolDef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schedule": {
+          "description": "Time-of-day windows binding `time → activity → station tile`. First match wins; a window with `to < from` wraps midnight.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ScheduleWindowDef"
+          }
+        }
+      }
+    },
+    "ScheduleWindowDef": {
+      "type": "object",
+      "required": [
+        "activity",
+        "at",
+        "from",
+        "to"
+      ],
+      "properties": {
+        "activity": {
+          "description": "Activity name; resolved against the object definition's `activities:`.",
+          "type": "string"
+        },
+        "at": {
+          "description": "Tile the NPC stands on while performing the activity.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/TileCoordinate"
+            }
+          ]
+        },
+        "face": {
+          "description": "Direction to face while dwelling (e.g. toward a workbench).",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Direction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "from": {
+          "description": "Start of the window (inclusive), in `[0, 1)` world-clock time.",
+          "type": "number",
+          "format": "float"
+        },
+        "to": {
+          "description": "End of the window (exclusive). `to < from` straddles midnight.",
+          "type": "number",
+          "format": "float"
+        }
+      }
+    },
+    "SpaceLightingDef": {
+      "description": "Per-space ambient lighting and day/night flag. Outdoor ambient is driven by `outdoor_curve` (or the engine default curve when empty) when `has_day_night` is true; otherwise it's the constant `outdoor_ambient`. Indoor ambient is always constant — roofs block the sky.",
+      "type": "object",
+      "properties": {
+        "darkness_color": {
+          "description": "Hue of the constant darkness overlay when `has_day_night` is false. Defaults to black so a dim `outdoor_ambient` darkens the scene instead of washing it with its own (grey) color; `outdoor_ambient` still controls the overlay *strength*. Curve-driven spaces ignore this — keyframe colors own the hue there.",
+          "default": [
+            0,
+            0,
+            0
+          ],
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "has_day_night": {
+          "default": true,
+          "type": "boolean"
+        },
+        "indoor_ambient": {
+          "default": [
+            55,
+            50,
+            60
+          ],
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "outdoor_ambient": {
+          "default": [
+            220,
+            220,
+            230
+          ],
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "outdoor_curve": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/AmbientKeyframe"
+          }
+        }
+      }
+    },
     "SpacePermanence": {
       "type": "string",
       "enum": [
         "persistent",
         "ephemeral"
+      ]
+    },
+    "SpawnArea": {
+      "description": "Spawn area. Exactly one of `bounds` or `tiles` must be set; this is enforced by `SpaceDefinition::validate_spawn_groups`.",
+      "type": "object",
+      "properties": {
+        "bounds": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/TileRectangle"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tiles": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/TileCoordinate"
+          }
+        }
+      }
+    },
+    "SpawnGroupDef": {
+      "description": "Authored spawn-group entry. Each group spawns up to `max_count` instances of a single `template` within `area` and refills empty slots after a Poisson-distributed delay with mean `respawn_mean_seconds`. All members inherit the group's `behavior`.",
+      "type": "object",
+      "required": [
+        "area",
+        "behavior",
+        "id",
+        "max_count",
+        "respawn_mean_seconds",
+        "template"
+      ],
+      "properties": {
+        "area": {
+          "$ref": "#/definitions/SpawnArea"
+        },
+        "behavior": {
+          "$ref": "#/definitions/MapBehavior"
+        },
+        "id": {
+          "type": "string"
+        },
+        "max_count": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "respawn_mean_seconds": {
+          "type": "number",
+          "format": "float"
+        },
+        "template": {
+          "description": "Object definition id (e.g. `\"rat\"`). Resolved via `OverworldObjectDefinitions`.",
+          "type": "string"
+        }
+      }
+    },
+    "StockModeDef": {
+      "description": "`stock:` field accepts either the literal string `\"infinite\"` or an integer count. The `untagged` serde repr lets YAML pick the right arm (numbers → `Count`, strings → `Word`).",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/StockWord"
+        },
+        {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      ]
+    },
+    "StockWord": {
+      "type": "string",
+      "enum": [
+        "infinite"
       ]
     },
     "TileCoordinate": {
@@ -263,6 +663,10 @@
           "format": "int32"
         },
         "y": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "z": {
           "type": "integer",
           "format": "int32"
         }
@@ -290,6 +694,111 @@
           "format": "int32"
         },
         "min_y": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "TileRectangleArea": {
+      "type": "object",
+      "required": [
+        "h",
+        "w",
+        "x",
+        "y"
+      ],
+      "properties": {
+        "h": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "w": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "x": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "y": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "z": {
+          "default": 0,
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "VendorStashDef": {
+      "description": "Named ware list for a vendor on this map. Shopkeeper NPC instances pointed at this stash (via the `vendor_stash` property) override their template's default wares with this list. Unique by `id` within the space.",
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "wares": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/WareDef"
+          }
+        }
+      }
+    },
+    "WareDef": {
+      "description": "YAML form of `StockEntry`. `stock` accepts the literal string `\"infinite\"` or a non-negative integer.",
+      "type": "object",
+      "required": [
+        "price_copper",
+        "type_id"
+      ],
+      "properties": {
+        "price_copper": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "stock": {
+          "default": "infinite",
+          "allOf": [
+            {
+              "$ref": "#/definitions/StockModeDef"
+            }
+          ]
+        },
+        "type_id": {
+          "type": "string"
+        }
+      }
+    },
+    "WaypointDef": {
+      "type": "object",
+      "required": [
+        "x",
+        "y"
+      ],
+      "properties": {
+        "dwell": {
+          "description": "Seconds to pause on this waypoint before moving to the next.",
+          "default": 0.0,
+          "type": "number",
+          "format": "float"
+        },
+        "x": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "y": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "z": {
+          "default": 0,
           "type": "integer",
           "format": "int32"
         }

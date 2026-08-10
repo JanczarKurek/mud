@@ -34,6 +34,9 @@ libc = "0.2"
 mud2-lib = { path = "crates/mud2-lib", default-features = false }
 mud2-editor = { path = "crates/mud2-editor", optional = true }
 schemars = { version = "0.8", optional = true }
+# For the gen_schemas bin's pretty-printer only (already in the graph via
+# mud2-lib and dev-dependencies, so this adds no new crate).
+serde_json = { version = "1", optional = true }
 
 [features]
 # Dev default: full game (simulation + editor) with bevy dynamic linking for
@@ -48,7 +51,7 @@ dynamic_linking = ["mud2-lib/dynamic_linking"]
 server-sim = ["mud2-lib/server-sim"]
 # In-game map editor + asset/floor viewers. Editing needs the live sim.
 editor = ["dep:mud2-editor", "server-sim"]
-gen-schemas = ["mud2-lib/gen-schemas", "schemars"]
+gen-schemas = ["mud2-lib/gen-schemas", "schemars", "dep:serde_json"]
 dev-self-signed = ["mud2-lib/dev-self-signed"]
 profiling = ["mud2-lib/profiling"]
 tracy = ["mud2-lib/tracy"]

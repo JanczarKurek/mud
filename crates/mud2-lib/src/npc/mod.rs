@@ -1,7 +1,11 @@
+#[cfg(feature = "server-sim")]
+pub mod aggro;
 pub mod components;
 pub mod debug_overlay;
 #[cfg(feature = "server-sim")]
 pub mod detection;
+#[cfg(feature = "server-sim")]
+pub mod hostility;
 pub mod routine;
 pub mod social;
 #[cfg(feature = "server-sim")]
@@ -35,6 +39,7 @@ impl Plugin for NpcPlugin {
         app.init_resource::<SpawnGroupRegistry>()
             .init_resource::<PendingSpawnGroupDumps>()
             .init_resource::<ConversationRegistry>()
+            .init_resource::<crate::npc::aggro::PendingNpcAggro>()
             .add_systems(
                 Startup,
                 bootstrap_spawn_groups.after(WorldStartupSet::InitializeRuntimeSpaces),
@@ -42,6 +47,10 @@ impl Plugin for NpcPlugin {
             .add_systems(
                 Update,
                 (
+                    // Resolve tag/faction components for freshly-spawned NPCs
+                    // before the AI tick so a new guard/prey acts on its tags
+                    // from its very first step.
+                    crate::npc::hostility::resolve_npc_tag_components.before(update_roaming_npcs),
                     // Free orphaned companions before the AI tick so a companion
                     // never steps against a dangling owner lookup.
                     despawn_orphaned_companions.before(update_roaming_npcs),

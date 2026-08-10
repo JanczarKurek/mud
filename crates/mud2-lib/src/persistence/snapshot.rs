@@ -412,6 +412,13 @@ pub struct NpcStateDump {
     /// field existed.
     #[serde(default)]
     pub magic_effects: MagicEffects,
+    /// The NPC's combat side. `#[serde(default)]` (additive — no
+    /// format_version bump): dumps written before this field restore `None`,
+    /// and the loader then infers `MonsterSide` for anything with a
+    /// `hostile_behavior` — fixing the old bug where restored monsters lost
+    /// their faction and dropped out of the NPC-vs-NPC combatant list.
+    #[serde(default)]
+    pub faction: Option<crate::npc::components::Faction>,
 }
 
 fn save_world_on_app_exit(
@@ -457,6 +464,7 @@ fn save_world_on_app_exit(
             Option<&RoamingRandomState>,
             Option<&SpawnGroupMember>,
             Option<&MagicEffects>,
+            Option<&crate::npc::components::Faction>,
         ),
         With<Npc>,
     >,
@@ -568,6 +576,7 @@ fn save_world_on_app_exit(
                         roaming_random_state,
                         spawn_group_member,
                         magic_effects,
+                        faction,
                     ) = npc_query.get(entity).unwrap_or_default();
 
                     NpcStateDump {
@@ -584,6 +593,7 @@ fn save_world_on_app_exit(
                         roaming_random_state: roaming_random_state.copied(),
                         spawn_group: spawn_group_member.cloned(),
                         magic_effects: magic_effects.cloned().unwrap_or_default(),
+                        faction: faction.copied(),
                     }
                 }),
             },
@@ -990,6 +1000,20 @@ fn load_world_from_snapshot(
             }
             if !npc.magic_effects.is_empty() {
                 entity.insert(npc.magic_effects);
+            }
+            // Faction: persisted value wins; legacy dumps (no `faction` field)
+            // infer `MonsterSide` for anything hostile, restoring the pre-save
+            // behavior. Tag components (`TagProfile` / `PreyBehavior`) are not
+            // persisted — `resolve_npc_tag_components` re-derives them from
+            // the definition off this insert's `Added<Npc>`.
+            match npc.faction {
+                Some(faction) => {
+                    entity.insert(faction);
+                }
+                None if npc.hostile_behavior.is_some() => {
+                    entity.insert(crate::npc::components::Faction::MonsterSide);
+                }
+                None => {}
             }
             if let Some(profile) = object_definitions
                 .get(&definition_id_for_lookup)
@@ -1711,6 +1735,7 @@ mod tests {
                     roaming_random_state: Some(RoamingRandomState { seed: 1 }),
                     spawn_group: None,
                     magic_effects: Default::default(),
+                    faction: None,
                 }),
                 quantity: None,
                 remaining_ttl: None,
@@ -1733,9 +1758,10 @@ mod tests {
             &TilePosition,
             Option<&AiState>,
             Option<&AiMemory>,
+            Option<&crate::npc::components::Faction>,
         ), With<Npc>>();
         let mut saw_snapshot_goblin = false;
-        for (object, tile, ai_state, ai_memory) in npc_query.iter(world) {
+        for (object, tile, ai_state, ai_memory, faction) in npc_query.iter(world) {
             assert!(
                 ai_state.is_some(),
                 "loaded NPC {} at {tile:?} is missing AiState — update_roaming_npcs requires it",
@@ -1748,6 +1774,14 @@ mod tests {
             );
             if object.definition_id == "goblin" && *tile == TilePosition::ground(10, 10) {
                 saw_snapshot_goblin = true;
+                // Legacy dump (`faction: None`) + hostile_behavior present →
+                // the loader must infer MonsterSide, or the restored monster
+                // drops out of the NPC-vs-NPC combatant list.
+                assert_eq!(
+                    faction.copied(),
+                    Some(crate::npc::components::Faction::MonsterSide),
+                    "hostile NPC restored from a legacy dump must infer MonsterSide",
+                );
             }
         }
         assert!(

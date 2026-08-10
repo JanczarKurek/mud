@@ -2483,6 +2483,7 @@ fn handle_use_item(
                 source: DamageSource::Player(acting_player_id),
                 damage_type: spell.effects.effective_damage_type(),
                 vfx_override: spell.effects.vfx_on_target_hit.clone(),
+                attacker: Some(player_entity),
             });
         }
         if let Ok(mut effects) = magic_effects_query.get_mut(player_entity) {
@@ -3214,6 +3215,7 @@ fn handle_cast_spell_at(
             damage: rolled_damage,
             damage_type: spell.effects.effective_damage_type(),
             source: DamageSource::Player(caster_id),
+            attacker: Some(player_entity),
             kind: ImpactKind::Locked {
                 target: target_entity,
                 hit_vfx: spell.effects.vfx_on_target_hit.clone(),
@@ -3228,6 +3230,7 @@ fn handle_cast_spell_at(
                 source: DamageSource::Player(caster_id),
                 damage_type: spell.effects.effective_damage_type(),
                 vfx_override: spell.effects.vfx_on_target_hit.clone(),
+                attacker: Some(player_entity),
             });
         }
 
@@ -3405,6 +3408,7 @@ fn handle_cast_spell_at_tile(
                 damage,
                 damage_type,
                 source: DamageSource::Player(caster_id),
+                attacker: Some(player_entity),
                 kind: ImpactKind::Point {
                     tile,
                     hit_vfx: hit_vfx.clone(),

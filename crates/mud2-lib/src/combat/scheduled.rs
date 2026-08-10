@@ -37,6 +37,10 @@ pub struct ScheduledImpact {
     pub damage_type: DamageType,
     /// Carries the caster's `PlayerId` for XP attribution / buff ownership.
     pub source: DamageSource,
+    /// The caster's live entity, for NPC aggro-on-damage attribution. `None`
+    /// when the caster despawned before the cast resolved is fine — the
+    /// impact then just lands unattributed.
+    pub attacker: Option<Entity>,
     pub kind: ImpactKind,
 }
 
@@ -151,6 +155,7 @@ fn resolve_impact(
         damage,
         damage_type,
         source,
+        attacker,
         kind,
         ..
     } = impact;
@@ -174,6 +179,7 @@ fn resolve_impact(
                     source,
                     damage_type,
                     vfx_override: hit_vfx,
+                    attacker,
                 });
             }
             if !buffs.is_empty() {
@@ -210,6 +216,7 @@ fn resolve_impact(
                         source,
                         damage_type,
                         vfx_override: hit_vfx.clone(),
+                        attacker,
                     });
                 }
                 if is_npc && !buffs.is_empty() {
@@ -259,6 +266,7 @@ mod tests {
             damage: 7.0,
             damage_type: DamageType::Fire,
             source: DamageSource::Player(PlayerId(1)),
+            attacker: None,
             kind: ImpactKind::Point {
                 tile,
                 hit_vfx: None,
@@ -362,6 +370,7 @@ mod tests {
                 damage: 5.0,
                 damage_type: DamageType::Arcane,
                 source: DamageSource::Player(PlayerId(1)),
+                attacker: None,
                 kind: ImpactKind::Locked {
                     target,
                     hit_vfx: None,

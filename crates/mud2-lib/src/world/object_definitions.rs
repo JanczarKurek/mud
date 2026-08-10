@@ -208,6 +208,28 @@ pub struct OverworldObjectDefinition {
     /// the spawn factory both treat `Some(_)` as the "this is an NPC" signal.
     #[serde(default)]
     pub npc_behavior: Option<NpcBehaviorDefaults>,
+    /// Identity tags for the tag-based hostility model (`beast`, `undead`,
+    /// `monster`, `livestock`, …). Free-form strings, interned to a bitmask at
+    /// startup (`npc::hostility::TagInterner`); other creatures' `hostile_towards`
+    /// / `flees_from` lists match against these. Empty = untagged.
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Tags this NPC proactively attacks on sight (a town guard's
+    /// `[monster, undead]`, a wolf's `[livestock]`). Non-empty implies combat
+    /// AI (`HostileBehavior`) even when the spawn behavior is a plain `roam`.
+    /// Orthogonal to faction hostility — both gates are checked.
+    #[serde(default)]
+    pub hostile_towards: Vec<String>,
+    /// Tags this NPC runs from on sight (prey: a sheep's `[predator]`).
+    /// Non-empty attaches `PreyBehavior` at spawn.
+    #[serde(default)]
+    pub flees_from: Vec<String>,
+    /// Explicit faction override. When unset, spawn infers: map-hostile
+    /// (`roam_and_chase`) → `monster_side`; otherwise tagged NPCs land on
+    /// `neutral` and untagged peaceful NPCs carry no faction at all. Guards
+    /// set `player_side` so monsters attack them (and summons don't).
+    #[serde(default)]
+    pub faction: Option<FactionDef>,
     /// NPC spellcasting profile. Combat checks this before falling through to
     /// the physical `attack_profile` — see `npc::spellcasting` and
     /// `combat::npc_casting`. `None` for non-casters (default).
@@ -240,6 +262,27 @@ pub struct OverworldObjectDefinition {
     /// `render_template` path via the `{properties.inscription}` placeholder.
     #[serde(default)]
     pub engravable: bool,
+}
+
+/// YAML-facing spelling of `npc::components::Faction`. Kept separate so the
+/// runtime component doesn't need a schemars derive.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum FactionDef {
+    PlayerSide,
+    MonsterSide,
+    Neutral,
+}
+
+impl From<FactionDef> for crate::npc::components::Faction {
+    fn from(def: FactionDef) -> Self {
+        match def {
+            FactionDef::PlayerSide => Self::PlayerSide,
+            FactionDef::MonsterSide => Self::MonsterSide,
+            FactionDef::Neutral => Self::Neutral,
+        }
+    }
 }
 
 /// Kind of persistent-text artifact. Drives UI titles and which verbs (read /
@@ -689,6 +732,7 @@ fn default_on_hit_chance() -> f32 {
 
 /// Quantity roll for a loot drop: either a fixed count or a uniform random range.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub enum QuantityDistribution {
     Fixed(u32),
     /// Inclusive [min, max].
@@ -754,6 +798,7 @@ impl<'de> Deserialize<'de> for QuantityDistribution {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct LootDropDef {
     pub type_id: String,
     #[serde(default = "default_quantity")]
@@ -771,6 +816,7 @@ fn default_probability() -> f32 {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct LootTableDef {
     #[serde(default = "default_corpse_type_id")]
     pub corpse_type_id: String,
@@ -1406,6 +1452,18 @@ impl OverworldObjectDefinitions {
             .get(id)
             .map(|chain| chain.iter().any(|a| a == ancestor))
             .unwrap_or(false)
+    }
+
+    /// Every tag string mentioned by any definition's `tags` /
+    /// `hostile_towards` / `flees_from` — the input to `TagInterner::build`.
+    pub fn all_tag_strings(&self) -> impl Iterator<Item = &str> {
+        self.definitions.values().flat_map(|def| {
+            def.tags
+                .iter()
+                .chain(def.hostile_towards.iter())
+                .chain(def.flees_from.iter())
+                .map(String::as_str)
+        })
     }
 
     pub fn get(&self, id: &str) -> Option<&OverworldObjectDefinition> {

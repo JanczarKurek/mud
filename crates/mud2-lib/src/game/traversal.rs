@@ -226,6 +226,7 @@ pub fn apply_fall_damage(
         source: DamageSource::Environment,
         damage_type: DamageType::Blunt,
         vfx_override: None,
+        attacker: None,
     });
 }
 

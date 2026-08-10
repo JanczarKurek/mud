@@ -302,6 +302,7 @@ pub fn process_step_triggers(
                 source,
                 damage_type: DamageType::Pierce,
                 vfx_override: None,
+                attacker: None,
             });
         }
     }
@@ -505,6 +506,7 @@ pub fn process_continuous_step_triggers(
                 source,
                 damage_type: DamageType::Pierce,
                 vfx_override: None,
+                attacker: None,
             });
         }
     }

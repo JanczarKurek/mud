@@ -319,6 +319,7 @@ pub fn tick_dot_effects(
                     source,
                     damage_type,
                     vfx_override: None,
+                    attacker: None,
                 });
             }
         }

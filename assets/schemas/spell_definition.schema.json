@@ -9,8 +9,36 @@
     "targeting"
   ],
   "properties": {
+    "class_access": {
+      "description": "Classes permitted to cast this spell directly (via a memorized-spell path that does not exist yet — Phase E). Empty = any class. Scrolls bypass this gate; see `check_caster_eligibility` in `game::systems`.",
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Class"
+      }
+    },
     "effects": {
-      "$ref": "#/definitions/SpellEffects"
+      "default": {
+        "aoe": null,
+        "buffs_self": [],
+        "buffs_target": [],
+        "clears_self": [],
+        "damage": null,
+        "damage_type": null,
+        "enchant_item": null,
+        "projectile": null,
+        "restore_health": 0.0,
+        "restore_mana": 0.0,
+        "spawns_object": null,
+        "summons_creature": null,
+        "vfx_on_cast": null,
+        "vfx_on_target_hit": null
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/SpellEffects"
+        }
+      ]
     },
     "incantation": {
       "type": "string"
@@ -18,6 +46,13 @@
     "mana_cost": {
       "type": "number",
       "format": "float"
+    },
+    "min_caster_level": {
+      "description": "Minimum caster level. `0` = anyone. Enforced on every cast path, including scrolls.",
+      "default": 0,
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0.0
     },
     "name": {
       "type": "string"
@@ -32,32 +67,925 @@
     }
   },
   "definitions": {
-    "SpellEffects": {
+    "AoePattern": {
+      "description": "Spatial/temporal shape of an AoE blast. Internal tagging (`kind:`) matches the project convention for data-carrying YAML enums. Damage on each tile is scheduled at its delay and resolved planar at the target floor.",
+      "oneOf": [
+        {
+          "description": "Whole radius resolves simultaneously (delay 0 for every tile).",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "instant"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Rings bloom outward: the tile on Chebyshev ring `r` fires at `r * ring_delay_seconds` (ring 0 = center at delay 0).",
+          "type": "object",
+          "required": [
+            "kind",
+            "ring_delay_seconds"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "spread"
+              ]
+            },
+            "ring_delay_seconds": {
+              "type": "number",
+              "format": "float"
+            }
+          }
+        },
+        {
+          "description": "One tile at a time along an outward square spiral: the `i`-th spiral tile fires at `i * step_delay_seconds`. `clockwise` flips the spiral handedness.",
+          "type": "object",
+          "required": [
+            "kind",
+            "step_delay_seconds"
+          ],
+          "properties": {
+            "clockwise": {
+              "default": false,
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "spiral"
+              ]
+            },
+            "step_delay_seconds": {
+              "type": "number",
+              "format": "float"
+            }
+          }
+        }
+      ]
+    },
+    "AoeSpec": {
       "type": "object",
+      "required": [
+        "radius_tiles"
+      ],
       "properties": {
-        "damage": {
-          "default": 0.0,
+        "pattern": {
+          "description": "How the AoE footprint resolves in space and time. Defaults to `Instant` (the whole radius at once, matching the original behavior). `Spread` blooms ring-by-ring from the center; `Spiral` hits one tile at a time in an outward spiral. See `combat::scheduled::tick_scheduled_impacts`.",
+          "default": {
+            "kind": "instant"
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/AoePattern"
+            }
+          ]
+        },
+        "radius_tiles": {
+          "description": "Chebyshev radius around the target tile. `0` hits only the target tile.",
+          "type": "integer",
+          "format": "int32"
+        },
+        "vfx_on_tile": {
+          "description": "VFX definition id (under `assets/vfx/`) played once on **every** tile in the AoE — not just on entities hit. Use for explosion-style spells where the floor itself should flash. `None` skips the per-tile VFX (only hit entities get `vfx_on_target_hit`).",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "AttributeKind": {
+      "type": "string",
+      "enum": [
+        "Strength",
+        "Agility",
+        "Constitution",
+        "Willpower",
+        "Charisma",
+        "Focus"
+      ]
+    },
+    "AttributeSet": {
+      "type": "object",
+      "required": [
+        "agility",
+        "charisma",
+        "constitution",
+        "focus",
+        "strength",
+        "willpower"
+      ],
+      "properties": {
+        "agility": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "charisma": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "constitution": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "focus": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "strength": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "willpower": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "Class": {
+      "description": "The four base classes shipping in v1.",
+      "type": "string",
+      "enum": [
+        "Fighter",
+        "Wizard",
+        "Cleric",
+        "Vagabond"
+      ]
+    },
+    "DamageExpr": {
+      "type": "object",
+      "required": [
+        "bonus",
+        "stats"
+      ],
+      "properties": {
+        "bonus": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "dice": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": [
+            {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          ],
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "level": {
+          "description": "Level-scaling terms (usually empty). `#[serde(default)]` so existing serialized exprs without this field still load.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LevelTerm"
+          }
+        },
+        "stats": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/StatTerm"
+          }
+        }
+      }
+    },
+    "DamageType": {
+      "type": "string",
+      "enum": [
+        "blunt",
+        "cut",
+        "pierce",
+        "fire",
+        "frost",
+        "earth",
+        "lightning",
+        "poison",
+        "acid",
+        "death",
+        "holy",
+        "arcane"
+      ]
+    },
+    "EffectKind": {
+      "description": "Kinds of timed magical effects tracked by `MagicEffects`.",
+      "oneOf": [
+        {
+          "description": "Player's personal light halo grows. Magnitude = tile radius.",
+          "type": "string",
+          "enum": [
+            "glimmer"
+          ]
+        },
+        {
+          "description": "Player moves faster. Magnitude = step interval multiplier (e.g. 0.7).",
+          "type": "string",
+          "enum": [
+            "haste"
+          ]
+        },
+        {
+          "description": "Caster gains tracked AC bonus. Magnitude = AC bonus (combat math reads this once §7 lands — no-op today).",
+          "type": "string",
+          "enum": [
+            "shield"
+          ]
+        },
+        {
+          "description": "Caster gains tracked to-hit bonus. Magnitude = to-hit bonus (no-op today, hooked for Phase B combat math).",
+          "type": "string",
+          "enum": [
+            "bless"
+          ]
+        },
+        {
+          "description": "Target NPC's roaming step interval lengthens. Magnitude = multiplier (e.g. 2.0 doubles the interval = half speed).",
+          "type": "string",
+          "enum": [
+            "slow"
+          ]
+        },
+        {
+          "description": "Target NPC is asleep — its AI tick is skipped. Magnitude unused (presence is what matters). Cleared on damage by `resolve_battle_turn`.",
+          "type": "string",
+          "enum": [
+            "sleep"
+          ]
+        },
+        {
+          "description": "Target cannot move or cast spells. Magnitude unused. Unlike Sleep, damage does *not* clear Paralyze — it only expires on its timer.",
+          "type": "string",
+          "enum": [
+            "paralyze"
+          ]
+        },
+        {
+          "description": "DOT (cold damage) plus slow movement. Magnitude = damage per tick (1s cadence); `secondary_magnitude` = NPC step interval multiplier (Some(2.0) doubles the interval). When omitted, the slow component is a no-op and Chill behaves as pure cold DOT.",
+          "type": "string",
+          "enum": [
+            "chill"
+          ]
+        },
+        {
+          "description": "DOT (fire damage). Magnitude = damage per tick (1s cadence).",
+          "type": "string",
+          "enum": [
+            "burning"
+          ]
+        },
+        {
+          "description": "DOT (poison damage). Magnitude = damage per tick (1s cadence).",
+          "type": "string",
+          "enum": [
+            "poisoned"
+          ]
+        },
+        {
+          "description": "Player's movement commands are randomly rotated by ±45° to an adjacent direction. Magnitude = deviation probability in `[0, 1]` (e.g. 0.3 = 30% chance to fumble each step). NPCs ignore Drunk for now.",
+          "type": "string",
+          "enum": [
+            "drunk"
+          ]
+        }
+      ]
+    },
+    "EffectSpec": {
+      "type": "object",
+      "required": [
+        "kind",
+        "magnitude",
+        "seconds"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/definitions/EffectKind"
+        },
+        "magnitude": {
           "type": "number",
           "format": "float"
         },
-        "restore_health": {
-          "default": 0.0,
-          "type": "number",
+        "secondary_magnitude": {
+          "description": "Optional second parameter. Currently only `Chill` reads it, as the slow multiplier paired with the DOT magnitude.",
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
           "format": "float"
         },
-        "restore_mana": {
-          "default": 0.0,
+        "seconds": {
           "type": "number",
           "format": "float"
         }
       }
     },
+    "ItemModifier": {
+      "description": "A single per-instance modifier on an item.",
+      "type": "object",
+      "required": [
+        "duration",
+        "effect",
+        "lvl",
+        "type_ex"
+      ],
+      "properties": {
+        "duration": {
+          "$ref": "#/definitions/ModifierDuration"
+        },
+        "effect": {
+          "$ref": "#/definitions/ModifierEffect"
+        },
+        "label": {
+          "description": "Player-facing label for tooltips / chat (e.g. \"Flaming (+1d6 fire)\").",
+          "default": "",
+          "type": "string"
+        },
+        "lvl": {
+          "description": "Strength rank within the `type_ex` group. Higher overrides lower.",
+          "type": "integer",
+          "format": "int32"
+        },
+        "type_ex": {
+          "description": "Exclusivity group. Anti-stacking is scoped per item per `type_ex`.",
+          "type": "string"
+        }
+      }
+    },
+    "LevelTerm": {
+      "description": "A term that scales with the caster/wielder's level, e.g. `level`, `level/2`, `level*3`. Spells key damage off caster level with it, and every real weapon carries a `level/2` skill-growth term (tools and fists don't).",
+      "type": "object",
+      "required": [
+        "divisor",
+        "multiplier"
+      ],
+      "properties": {
+        "divisor": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "multiplier": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "ModifierDuration": {
+      "description": "How long a modifier lasts.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "permanent"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Wall-clock seconds remaining. Ticked (in whole-second steps) only while the item is equipped — see [`tick_item_modifiers`].",
+          "type": "object",
+          "required": [
+            "kind",
+            "remaining_seconds"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "timed"
+              ]
+            },
+            "remaining_seconds": {
+              "type": "number",
+              "format": "float"
+            }
+          }
+        },
+        {
+          "description": "Remaining successful applications. Decremented on each application.",
+          "type": "object",
+          "required": [
+            "kind",
+            "remaining"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "charges"
+              ]
+            },
+            "remaining": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          }
+        }
+      ]
+    },
+    "ModifierEffect": {
+      "description": "What a modifier does.",
+      "oneOf": [
+        {
+          "description": "Extra damage on every hit, applied as its own `DamageEvent` so the element shows its own number and hit VFX. `dice: Some((1, 6))` = +1d6.",
+          "type": "object",
+          "required": [
+            "damage_type",
+            "kind"
+          ],
+          "properties": {
+            "bonus": {
+              "default": 0,
+              "type": "integer",
+              "format": "int32"
+            },
+            "damage_type": {
+              "$ref": "#/definitions/DamageType"
+            },
+            "dice": {
+              "default": null,
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": [
+                {
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0.0
+                },
+                {
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0.0
+                }
+              ],
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "bonus_damage"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Chance to apply a magical effect to the struck target on hit.",
+          "type": "object",
+          "required": [
+            "chance",
+            "kind",
+            "spec"
+          ],
+          "properties": {
+            "chance": {
+              "description": "Probability in `[0, 1]`, rolled per hit.",
+              "type": "number",
+              "format": "float"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "on_hit"
+              ]
+            },
+            "spec": {
+              "$ref": "#/definitions/EffectSpec"
+            }
+          }
+        },
+        {
+          "description": "Flat bonus to the wielder's derived attributes / defense while the item is equipped.",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "armor": {
+              "default": 0,
+              "type": "integer",
+              "format": "int32"
+            },
+            "attributes": {
+              "default": {
+                "agility": 0,
+                "charisma": 0,
+                "constitution": 0,
+                "focus": 0,
+                "strength": 0,
+                "willpower": 0
+              },
+              "allOf": [
+                {
+                  "$ref": "#/definitions/AttributeSet"
+                }
+              ]
+            },
+            "dodge_bonus": {
+              "default": 0,
+              "type": "integer",
+              "format": "int32"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "wielder_stats"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "ProjectileSpec": {
+      "description": "Flying-missile parameters for a spell. The cast itself is immediate (mana, cast VFX, narrator) but the damage/AoE is deferred until the missile lands.",
+      "type": "object",
+      "required": [
+        "sprite"
+      ],
+      "properties": {
+        "speed_tiles_per_second": {
+          "description": "Travel speed in tiles per second. Flight time = `distance / speed`, floored by a small minimum so adjacent casts still show a brief flight.",
+          "default": 10.0,
+          "type": "number",
+          "format": "float"
+        },
+        "sprite": {
+          "description": "Overworld-object definition id whose sprite renders the flying missile (resolved via `OverworldObjectDefinitions`, like `arrow`/`bolt`).",
+          "type": "string"
+        }
+      }
+    },
+    "ScalableAmount": {
+      "description": "A YAML-authorable amount that is either a **flat number** (kept as f32 so fractional multipliers like haste `0.7` survive) or a **roll expression** keyed off the caster's attributes/level (e.g. `\"2d8+wil_mod*2+level\"`). Used for heal/restore amounts and effect magnitudes; unlike `SpellDamage`, a flat value is preserved verbatim rather than rounded/dropped.",
+      "anyOf": [
+        {
+          "type": "number",
+          "format": "float"
+        },
+        {
+          "$ref": "#/definitions/DamageExpr"
+        }
+      ]
+    },
+    "ScalableEffectSpec": {
+      "description": "YAML-side effect spec whose `magnitude` may scale with the caster (`\"1+foc_mod/2+level/4\"` burning ticks). Resolved to a plain, `Copy`, persistence-safe [`EffectSpec`] at cast time — `EffectSpec` itself is embedded in persisted `ItemModifier`s and trap defs, so it must not grow an expression. A bare-number `magnitude` keeps every existing YAML loading.",
+      "type": "object",
+      "required": [
+        "kind",
+        "magnitude",
+        "seconds"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/definitions/EffectKind"
+        },
+        "magnitude": {
+          "$ref": "#/definitions/ScalableAmount"
+        },
+        "secondary_magnitude": {
+          "description": "See [`EffectSpec::secondary_magnitude`] — stays flat (it's a multiplier, not a scaling amount).",
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "seconds": {
+          "type": "number",
+          "format": "float"
+        }
+      }
+    },
+    "SpawnObjectSpec": {
+      "type": "object",
+      "required": [
+        "lifetime_seconds",
+        "type_id"
+      ],
+      "properties": {
+        "attribute_to_caster": {
+          "description": "When true, every spawned object inherits a `HazardOwner(caster_id)` component so damage and DoTs it produces credit the caster via `DamageSource::OwnedByPlayer`.",
+          "default": false,
+          "type": "boolean"
+        },
+        "lifetime_seconds": {
+          "type": "number",
+          "format": "float"
+        },
+        "pattern": {
+          "description": "How many tiles to spawn and where, relative to the cast target tile.",
+          "default": "single",
+          "allOf": [
+            {
+              "$ref": "#/definitions/SpawnPattern"
+            }
+          ]
+        },
+        "type_id": {
+          "type": "string"
+        }
+      }
+    },
+    "SpawnPattern": {
+      "description": "Tile pattern for `SpawnObjectSpec`. `Single` is the default and matches pre-existing behavior (one entity at the target tile).",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "single"
+          ]
+        },
+        {
+          "description": "Three tiles in a straight line perpendicular to the caster→target axis, centered on the target tile.",
+          "type": "string",
+          "enum": [
+            "perpendicular_line_3"
+          ]
+        }
+      ]
+    },
+    "SpellDamage": {
+      "description": "A spell's damage, as a roll expression keyed off the caster's attributes and level (e.g. `\"3d6 + focus/2 + level/2\"`). Deserializes from either a YAML **number** (flat damage — back-compat with the old `damage: 18.0` form, where `0`/absent means \"no damage\") or a **string** `DamageExpr`. This lets each spell scale however its author wants, mirroring weapon `damage:` expressions.",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/DamageExpr"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "SpellEffects": {
+      "type": "object",
+      "properties": {
+        "aoe": {
+          "description": "Deal `damage` to every entity within `aoe.radius_tiles` Chebyshev distance of the target tile. Only meaningful for tile-target spells.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AoeSpec"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "buffs_self": {
+          "description": "Timed buffs applied to the caster. Magnitudes may be expressions; resolved to plain `EffectSpec`s at cast time.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ScalableEffectSpec"
+          }
+        },
+        "buffs_target": {
+          "description": "Timed debuffs applied to the targeted NPC. Ignored for untargeted casts. Magnitudes may be expressions; resolved at cast time.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ScalableEffectSpec"
+          }
+        },
+        "clears_self": {
+          "description": "Effect kinds to remove from the caster after other effects apply. Drives Cleric \"Restore\" clearing Slow/Sleep on self.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/EffectKind"
+          }
+        },
+        "damage": {
+          "default": null,
+          "allOf": [
+            {
+              "$ref": "#/definitions/SpellDamage"
+            }
+          ]
+        },
+        "damage_type": {
+          "description": "Damage type for damaging spells. Defaults to `Arcane` when omitted — see `effective_damage_type`.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DamageType"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enchant_item": {
+          "description": "Enchant the targeted item (any of the caster's inventory/equipment slots) with this modifier. Only meaningful for `targeted_item` spells. Routed through `combat::modifiers::apply_modifier`, so the per-item TYPE_EX/LVL anti-stack rule applies.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ItemModifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectile": {
+          "description": "When set, the spell fires a flying missile and its damage/AoE only resolves when the missile lands (`travel = distance / speed`). For entity-target spells the missile homes — it hits the locked target wherever it moved. `None` keeps the instantaneous behavior. See `tick_scheduled_impacts` in `combat::scheduled`.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ProjectileSpec"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "restore_health": {
+          "description": "HP restored on the caster/target. A flat number (back-compat) or a roll expression keyed off the caster (e.g. `\"2d8+wil_mod*2+level\"`).",
+          "default": 0.0,
+          "allOf": [
+            {
+              "$ref": "#/definitions/ScalableAmount"
+            }
+          ]
+        },
+        "restore_mana": {
+          "description": "Mana restored — same forms as `restore_health`.",
+          "default": 0.0,
+          "allOf": [
+            {
+              "$ref": "#/definitions/ScalableAmount"
+            }
+          ]
+        },
+        "spawns_object": {
+          "description": "Spawn a transient world object at the cast location.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SpawnObjectSpec"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "summons_creature": {
+          "description": "Summon a timed creature (a companion) that fights on the caster's side. A player's summon credits its kills to them. Honored for both player and NPC casts: the creature appears at the target tile, or on the caster's own tile for an untargeted/self cast — which is how a boss drops adds around itself.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SummonSpec"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "vfx_on_cast": {
+          "description": "VFX definition id played on the caster at cast time. `None` falls back to `\"cast_flash\"` in the trigger code.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "vfx_on_target_hit": {
+          "description": "VFX definition id played on the target on a targeted hit. `None` falls back to `\"hit_flash\"` for damaging spells; healing spells should override with `\"heal_sparkle\"`.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
     "SpellTargeting": {
+      "oneOf": [
+        {
+          "description": "Player picks an entity. Range is checked against the entity's tile.",
+          "type": "string",
+          "enum": [
+            "targeted"
+          ]
+        },
+        {
+          "description": "Player picks a tile (entity optional). Used for AoE and patterned summons like firewall.",
+          "type": "string",
+          "enum": [
+            "targeted_tile"
+          ]
+        },
+        {
+          "description": "Player picks one of their own inventory/equipment items (the next slot click resolves to an `ItemSlotRef`). Used by item-enchant spells; the only effect honored is `effects.enchant_item`.",
+          "type": "string",
+          "enum": [
+            "targeted_item"
+          ]
+        },
+        {
+          "description": "No picker — casts on the caster's tile / self.",
+          "type": "string",
+          "enum": [
+            "untargeted"
+          ]
+        }
+      ]
+    },
+    "StatTerm": {
+      "type": "object",
+      "required": [
+        "divisor",
+        "kind",
+        "multiplier"
+      ],
+      "properties": {
+        "divisor": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "kind": {
+          "$ref": "#/definitions/AttributeKind"
+        },
+        "mode": {
+          "description": "`#[serde(default)]` so exprs serialized before this field existed load as `Raw`.",
+          "default": "raw",
+          "allOf": [
+            {
+              "$ref": "#/definitions/StatTermMode"
+            }
+          ]
+        },
+        "multiplier": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "StatTermMode": {
+      "description": "How a stat term reads its attribute: `Raw` uses the full score (`strength` at STR 16 adds 16), `Mod` uses the d20 ability modifier (`str_mod` at STR 16 adds +3, matching to-hit math). Raw stays the default so existing expressions — creature `hp:` like `2d20+80+constitution*6` in particular — keep their meaning.",
       "type": "string",
       "enum": [
-        "targeted",
-        "untargeted"
+        "raw",
+        "mod"
       ]
+    },
+    "SummonSpec": {
+      "description": "A timed friendly creature summoned by a spell. The creature is realized as a full hostile NPC (so it acquires and fights enemies through the normal AI), then tagged with the caster's `Faction` + `Companion` so it fights *for* the caster. A player's summon is `PlayerSide` and its kills are credited to them; an NPC's summon is `MonsterSide` with `owner_player: None` (a boss's adds). It despawns when its `lifetime_seconds` `Ttl` expires (or when the caster dies). One companion per owner: re-casting replaces the previous summon.",
+      "type": "object",
+      "required": [
+        "lifetime_seconds",
+        "type_id"
+      ],
+      "properties": {
+        "count": {
+          "description": "How many to summon at the target tile. Defaults to 1.",
+          "default": 1,
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "follow_close_tiles": {
+          "description": "When no enemy is visible, the companion follows its owner until within this many tiles. Defaults to 2.",
+          "default": 2,
+          "type": "integer",
+          "format": "int32"
+        },
+        "lifetime_seconds": {
+          "description": "Seconds the summon lives before its `Ttl` despawns it.",
+          "type": "number",
+          "format": "float"
+        },
+        "type_id": {
+          "description": "Overworld-object definition id of the creature to summon.",
+          "type": "string"
+        }
+      }
     }
   }
 }

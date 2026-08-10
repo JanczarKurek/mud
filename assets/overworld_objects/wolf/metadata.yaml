@@ -1,43 +1,54 @@
 extends: npc
-name: Summoned Wolf
-tags: [beast, predator]
-description: A spectral wolf bound to its summoner's will, fierce but fleeting.
-level: 2
-# No loot block: a conjured creature leaves no corpse or drops when it falls.
+name: Wolf
+tags: [beast, predator, monster]
+description: A lean grey hunter of the forest edge, always downwind of the flock.
+level: 3
+loot:
+  corpse_despawn_seconds: 60
+  drops:
+    - type_id: raw_fish
+      quantity: 1
+      probability: 0.2
 stats:
   strength: 12
   agility: 14
-  constitution: 10
+  constitution: 11
   willpower: 6
   charisma: 6
-  focus: 6
+  focus: 7
 # Creature template: dice + flat, sized to the level budget (~mean 2+1.1·L).
-damage: "1d6+1"
+damage: "1d6+2"
 attack_profile:
   kind: melee
   damage_type: cut
-hp: "2d8+constitution*2"
+# HP budget: mean ≈ 20 + 10·L.
+hp: "1d8+22+constitution*2"
+# Hunts livestock through the tag model; players are fair game only where a
+# map spawn uses roam_and_chase (the deep-forest packs), so the pasture-edge
+# wolves stalk sheep without mugging every passerby.
+hostile_towards: [livestock]
 npc_behavior:
-  step_interval_seconds: 0.6
-  detect_distance_tiles: 6
+  step_interval_seconds: 0.7
+  detect_distance_tiles: 7
   disengage_distance_tiles: 10
 barks:
   aggro:
     - "*snarls*"
-    - "*growls low*"
+    - "*bares its teeth*"
   mutter:
+    - "*sniffs the air*"
     - "*pads quietly*"
 render:
   debug_color:
-    - 122
-    - 130
-    - 150
+    - 110
+    - 104
+    - 96
   debug_size: 0.85
-  sprite_path: overworld_objects/summoned_wolf/sprite.png
+  sprite_path: overworld_objects/wolf/sprite.png
   y_sort: true
   logical_height_tiles: 0.75
   animation:
-    sheet_path: overworld_objects/summoned_wolf/sheet.png
+    sheet_path: overworld_objects/wolf/sheet.png
     frame_width: 96
     frame_height: 64
     sheet_columns: 4

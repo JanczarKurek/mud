@@ -69,6 +69,12 @@ pub struct DamageEvent {
     /// Optional override for the hit VFX. When `None`, the drainer falls back
     /// to `damage_type.default_hit_vfx_id()`.
     pub vfx_override: Option<String>,
+    /// The live entity that dealt this damage, when one exists — the swinging
+    /// player/NPC or the caster behind a spell. Orthogonal to `source` (which
+    /// drives XP credit): this feeds NPC aggro-on-damage, so an NPC shot from
+    /// outside its detect radius still learns exactly who to charge. `None`
+    /// for unattributed damage (environment, lingering DoT ticks).
+    pub attacker: Option<Entity>,
 }
 
 #[derive(Resource, Default)]
@@ -115,6 +121,7 @@ pub fn apply_pending_damage(
     mut chat_log_query: crate::combat::systems::ScopedChatLogQuery,
     player_identity_query: Query<&PlayerIdentity, With<Player>>,
     parties: Res<crate::game::party::Parties>,
+    mut pending_aggro: ResMut<crate::npc::aggro::PendingNpcAggro>,
     mut commands: Commands,
 ) {
     let now = time.elapsed_secs();
@@ -166,6 +173,17 @@ pub fn apply_pending_damage(
         }
 
         if target_vitals.health > 0.0 {
+            // Surviving NPC hit by a known attacker: queue aggro so it turns
+            // on the shooter — the sole "who hurt me" signal the AI gets
+            // (detection alone can't see past `detect_distance_tiles`).
+            if is_npc.is_some() {
+                if let Some(attacker) = event.attacker.filter(|a| *a != event.target) {
+                    pending_aggro.push(crate::npc::aggro::NpcAggroEvent {
+                        victim: event.target,
+                        attacker,
+                    });
+                }
+            }
             // Survivor: emit the damage-type-keyed hit VFX. Death plays
             // `death_poof` below instead, so we don't stack two effects on
             // the killing blow.

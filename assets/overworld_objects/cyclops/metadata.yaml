@@ -1,5 +1,6 @@
 extends: npc
 name: Cyclops
+tags: [humanoid, giant, monster]
 description: A hulking one-eyed giant with a massive club and a short temper.
 level: 8
 # Brute: full BAB track so it stays accurate at its level (most creatures use

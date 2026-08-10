@@ -133,6 +133,12 @@ impl Plugin for WorldServerPlugin {
         .insert_resource(FloorRenderDirty::default())
         .insert_resource(WorldClock::default())
         .insert_resource(ObjectRegistry::from_space_definitions(&authored_spaces))
+        // Tag interner for the hostility model — built once from every tag
+        // string the loaded definitions mention. (The server never reloads
+        // definitions at runtime, so no rebuild path is needed.)
+        .insert_resource(crate::npc::hostility::TagInterner::build(
+            object_definitions.all_tag_strings(),
+        ))
         .insert_resource(object_definitions)
         .insert_resource(VfxDefinitions::load_from_disk())
         .insert_resource(FloorTilesetDefinitions::load_from_disk())

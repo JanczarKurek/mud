@@ -11,6 +11,117 @@
     "storable"
   ],
   "properties": {
+    "accepts_storable_containers": {
+      "description": "When this object is itself a container, can it hold other items that are themselves storable containers? Pouches set this to `false` to keep nesting depth at 2 (pouch can sit in a backpack/chest, but a pouch cannot contain another pouch). Default `true` so backpacks/chests accept everything as before.",
+      "default": true,
+      "type": "boolean"
+    },
+    "activities": {
+      "description": "Named activity library for this NPC type (pose + flavor barks). A map instance's `routine:` schedule references these by name. Each activity's `pose_state` names an entry in `states:` whose animation plays while the NPC performs it. See `crate::npc::routine` and `docs/yaml_formats.md`.",
+      "default": {},
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/ActivityDef"
+      }
+    },
+    "ammo_type": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "armor": {
+      "default": 0,
+      "type": "integer",
+      "format": "int32"
+    },
+    "attack_profile": {
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/AttackProfileDef"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "bab_track": {
+      "description": "BAB advancement track for this creature's to-hit (`full | three_quarter | half`). Defaults to `three_quarter` at the combat snapshot when unset — most creatures; set `full` for brutes (e.g. the Cyclops) that should stay accurate at their level. Replaces the old uncapped raw `+level` to-hit.",
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/BabTrack"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "barks": {
+      "description": "Lists of short utterances this NPC may emit as floating speech bubbles. Defaults to empty (NPC stays silent); see `BarkDef`.",
+      "default": {
+        "aggro": [],
+        "mutter": []
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/BarkDef"
+        }
+      ]
+    },
+    "base_range_tiles": {
+      "default": null,
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "int32"
+    },
+    "block": {
+      "default": 0,
+      "type": "integer",
+      "format": "int32"
+    },
+    "block_chance": {
+      "description": "Percentage chance (0-100) that a shield triggers its `block` mitigation on an incoming hit. Only meaningful when this definition occupies the Shield slot (for players) or, for NPCs, when the monster's definition itself represents the defender's loadout. Default 0.",
+      "default": 0,
+      "type": "integer",
+      "format": "int32"
+    },
+    "can_hide": {
+      "description": "When present, players can invoke the `Hide` context-menu action on this object. The action runs a Thievery check (DC 10, `sneakiness` as situational bonus). On success, the object gains the `Hidden` component with `dc = check_total / 2`, and the placer is seeded into `detected_by` so they keep seeing it.",
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/CanHideDef"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "category": {
+      "description": "Optional palette grouping label. When set, the editor's object palette renders all entries sharing a category together under a collapsible section header. Free-form string; missing values fall into the \"Uncategorized\" bucket.",
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "chatter": {
+      "description": "Ambient/social chatter pool. NPCs with this block trade short speech-bubble lines with nearby idle NPCs. See `crate::npc::social`.",
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ChatterDef"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "colliding": {
       "type": "boolean"
     },
@@ -23,14 +134,61 @@
       "format": "uint",
       "minimum": 0.0
     },
+    "crit_range": {
+      "description": "Lowest raw d20 face that upgrades a landed hit to a critical (double damage roll). `None` = 20 (nat-20 only); a dagger with `crit_range: 19` crits on 19-20 *when the attack also hits*. Clamped to `2..=20` at the combat snapshot. Meaningful on weapons and on creature definitions.",
+      "default": null,
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "int32"
+    },
+    "damage": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "description": {
-      "type": "string"
+      "$ref": "#/definitions/DescriptionField"
+    },
+    "dialog_node": {
+      "description": "Yarn node name a player reaches when talking to this object. Empty = not talkable.",
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "dodge_bonus": {
+      "description": "Flat bonus to the wearer's dodge DC when equipped (any slot). Combatants also read this directly from their own definition (NPCs aren't running an inventory loop). Default 0.",
+      "default": 0,
+      "type": "integer",
+      "format": "int32"
+    },
+    "engravable": {
+      "description": "When true, players carrying a pen can right-click to set `properties[\"inscription\"]` on this item (once). Used for naming swords / armor. The inscription itself is rendered into descriptions by the `render_template` path via the `{properties.inscription}` placeholder.",
+      "default": false,
+      "type": "boolean"
     },
     "equipment_slot": {
       "default": null,
       "anyOf": [
         {
           "$ref": "#/definitions/EquipmentSlot"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "faction": {
+      "description": "Explicit faction override. When unset, spawn infers: map-hostile (`roam_and_chase`) → `monster_side`; otherwise tagged NPCs land on `neutral` and untagged peaceful NPCs carry no faction at all. Guards set `player_side` so monsters attack them (and summons don't).",
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/FactionDef"
         },
         {
           "type": "null"
@@ -44,14 +202,194 @@
         "type": "string"
       }
     },
+    "flees_from": {
+      "description": "Tags this NPC runs from on sight (prey: a sheep's `[predator]`). Non-empty attaches `PreyBehavior` at spawn.",
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "hostile_towards": {
+      "description": "Tags this NPC proactively attacks on sight (a town guard's `[monster, undead]`, a wolf's `[livestock]`). Non-empty implies combat AI (`HostileBehavior`) even when the spawn behavior is a plain `roam`. Orthogonal to faction hostility — both gates are checked.",
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "hp": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "infinite_uses": {
+      "description": "When `true`, this item is never consumed on use. Overrides `max_charges`. Used for permanent spellcasting items and gathering tools.",
+      "default": false,
+      "type": "boolean"
+    },
+    "initial_state": {
+      "description": "Default state for fresh instances. Persistence overrides per-instance via `properties[\"state\"]`.",
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "inspect_range": {
+      "description": "Base number of tiles from which this object can be identified on `Inspect`. When `None`, callers apply a sensible default (currently 3).",
+      "default": null,
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "int32"
+    },
+    "interactions": {
+      "description": "Verbs the player can invoke on this object via the context menu. Each verb declares an optional `from`-state filter, the resulting `to`-state, and any `side_effects` to run after the transition lands.",
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ObjectInteractionDef"
+      }
+    },
+    "learns_recipe": {
+      "description": "When set, using this item (`UseItem`) teaches the recipe with this id and consumes the scroll. The recipe must exist in `assets/recipes/`. Designed to share the same use-flow that spell scrolls already follow.",
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "level": {
+      "description": "Creature level (HD per `docs/content_bible.md` §6). Drives XP awarded on kill via `xp_grant_for_kill`. Optional so non-creature definitions (items, scenery, doors) can omit it; spawn paths default to 1.",
+      "default": null,
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint32",
+      "minimum": 0.0
+    },
+    "light": {
+      "description": "Light this object emits in the base / unstated case. May be overridden or suppressed per-state via `ObjectStateDef::light` / `clear_light`. Resolved into a `LightSource` ECS component on the projected entity.",
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/LightEmissionDef"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "lock": {
+      "description": "Optional lock metadata. When present, declares the `lock_id` (matched by keys' `lock_id`) and DC values referenced by interactions whose `skill_gate.dc_source` is `FromLockPick` / `FromLockForce`. Only used on stateful objects that have a `locked` state.",
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/LockDef"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "lock_id": {
+      "description": "On *items*: the `lock_id` this item's key matches. Used by the `key_gate` verb path to find an inventory key for a locked target.",
+      "default": null,
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint32",
+      "minimum": 0.0
+    },
+    "loot": {
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/LootTableDef"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "max_charges": {
+      "description": "When `Some(N)`, this item starts with N charges. Charges are tracked per-stack in `InventoryStack::properties[\"charges_remaining\"]`. On use, one charge is consumed; the item is destroyed when charges reach 0. When `None`, behaviour is the legacy single-consume-on-use (scrolls).",
+      "default": null,
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint32",
+      "minimum": 0.0
+    },
+    "max_stack_size": {
+      "default": 1,
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0.0
+    },
     "movable": {
       "type": "boolean"
     },
     "name": {
       "type": "string"
     },
+    "npc_behavior": {
+      "description": "Intrinsic NPC behavior knobs (speed, detection, etc.). Presence of this block also marks a template as a mob — the editor's Mobs palette and the spawn factory both treat `Some(_)` as the \"this is an NPC\" signal.",
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/NpcBehaviorDefaults"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "on_stepped": {
+      "description": "Passive triggers that fire when an entity (player or NPC) steps onto a tile containing this object. Each trigger can apply status effects, deal damage, and/or transition the object's `ObjectState`. Run in declared order so `apply_damage` lands before `set_state` when a trap snaps. Empty = no trigger (default).",
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/StepTriggerDef"
+      }
+    },
+    "pressure_plate": {
+      "description": "When present, this object behaves as a pressure plate: it flips to `pressed_state` while an entity (player/NPC) or a heavy-enough resting object sits on its tile, and back to `released_state` when vacated, optionally driving a wired target (e.g. a door) between its open/closed states. See `src/world/pressure_plate.rs` and `docs/utility_systems.md` §4.",
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/PressurePlateDef"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "render": {
       "$ref": "#/definitions/RenderMetadata"
+    },
+    "rotatable": {
+      "default": false,
+      "type": "boolean"
+    },
+    "shopkeeper": {
+      "description": "Marks this object as a shopkeeper (merchant NPC). At spawn time a matching `Stockpile` entity is created and linked via the `Shopkeeper` component on this NPC. See `crate::game::shop`.",
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ShopkeeperDef"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "sound_paths": {
       "default": [],
@@ -67,14 +405,95 @@
         "null"
       ]
     },
+    "spellcasting": {
+      "description": "NPC spellcasting profile. Combat checks this before falling through to the physical `attack_profile` — see `npc::spellcasting` and `combat::npc_casting`. `None` for non-casters (default).",
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/SpellcastingDef"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "stack_sprites": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/StackSpriteTier"
+      }
+    },
+    "states": {
+      "description": "Per-state visual + collider overrides. When non-empty `initial_state` must name one of the keys; otherwise the object behaves identically to one with no states declared.",
+      "default": {},
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/ObjectStateDef"
+      }
+    },
     "stats": {
-      "$ref": "#/definitions/StatModifiers"
+      "default": {
+        "agility": 0,
+        "charisma": 0,
+        "constitution": 0,
+        "focus": 0,
+        "max_health": 0,
+        "max_mana": 0,
+        "storage_slots": 0,
+        "strength": 0,
+        "willpower": 0
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/StatModifiers"
+        }
+      ]
     },
     "storable": {
       "type": "boolean"
     },
+    "tags": {
+      "description": "Identity tags for the tag-based hostility model (`beast`, `undead`, `monster`, `livestock`, …). Free-form strings, interned to a bitmask at startup (`npc::hostility::TagInterner`); other creatures' `hostile_towards` / `flees_from` lists match against these. Empty = untagged.",
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "text_kind": {
+      "description": "Marks this object as a persistent-text artifact (book, tombstone, …). Drives the \"Read\" context-menu verb and, for `Book`, the \"Edit\" affordance inside the read panel. Text lives in `properties[\"title\"]` / `properties[\"text\"]` / `properties[\"author_name\"]` — see `src/game/systems.rs::handle_read_book` and `handle_write_book`.",
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/TextKind"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "use_effects": {
-      "$ref": "#/definitions/UseEffects"
+      "default": {
+        "grants_item_modifier": null,
+        "regen_duration_seconds": 0.0,
+        "regen_multiplier": 0.0,
+        "restore_health": 0.0,
+        "restore_mana": 0.0
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/UseEffects"
+        }
+      ]
+    },
+    "use_on_cursor": {
+      "description": "Optional cursor sprite (path under `assets/`) shown while the player is targeting with this item via \"Use On\". `None` → auto-derived: gathering tools get `cursors/gather_cursor.png`, everything else gets the default `cursors/use_on_cursor.png`. Targeted spells take a different `CursorMode` entirely and ignore this field.",
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "use_on_texts": {
       "default": [],
@@ -89,9 +508,550 @@
       "items": {
         "type": "string"
       }
+    },
+    "weight": {
+      "description": "Carry weight in kilograms (per single instance, multiplied by stack `quantity` for stacked items). `0.0` = weightless; this is the default for objects that pre-date the weight system.",
+      "default": 0.0,
+      "type": "number",
+      "format": "float"
+    },
+    "wires_to": {
+      "description": "Property keys whose values are authored object ids. Resolved to runtime u64s (as decimal strings) during map load — see `SpaceDefinition::resolve_objects`. Used for cross-object wiring such as a lever's `target` pointing at a door.",
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     }
   },
   "definitions": {
+    "ActivityDef": {
+      "description": "One named activity an NPC can perform at a station (work, sleep, pray, …). Referenced by a map instance's `routine:` schedule. The `pose_state` drives the per-state animation while the NPC dwells; `barks` are flavor lines emitted on the dwell timer.",
+      "type": "object",
+      "properties": {
+        "barks": {
+          "description": "Flavor lines emitted on the dwell timer. Empty = silent.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "dwell": {
+          "description": "Seconds between flavor barks while dwelling.",
+          "default": {
+            "max": 8.0,
+            "min": 4.0
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/DwellRange"
+            }
+          ]
+        },
+        "pose_state": {
+          "description": "`ObjectState` name (must match a `states:` key) to adopt while performing this activity. `None` keeps the base sprite.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "AnimationClipDef": {
+      "type": "object",
+      "required": [
+        "fps",
+        "frame_count",
+        "row",
+        "start_col"
+      ],
+      "properties": {
+        "fps": {
+          "type": "number",
+          "format": "float"
+        },
+        "frame_count": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "looping": {
+          "default": true,
+          "type": "boolean"
+        },
+        "row": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "start_col": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      }
+    },
+    "AnimationSheetDef": {
+      "type": "object",
+      "required": [
+        "clips",
+        "frame_height",
+        "frame_width",
+        "sheet_columns",
+        "sheet_path",
+        "sheet_rows"
+      ],
+      "properties": {
+        "clips": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/AnimationClipDef"
+          }
+        },
+        "frame_height": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "frame_width": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "sheet_columns": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "sheet_path": {
+          "type": "string"
+        },
+        "sheet_rows": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      }
+    },
+    "AttackProfileDef": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "damage_type": {
+          "description": "What kind of damage this weapon deals. When omitted, defaults to `Blunt` for melee and `Pierce` for ranged (resolved in `attack_profile_for_definition`).",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DamageType"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hit_vfx": {
+          "description": "Override for the VFX played on the target when a hit lands. Looked up in `VfxDefinitions`; falls back to `\"blood_splash\"` when omitted.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/definitions/AttackProfileKindDef"
+        },
+        "on_hit_effects": {
+          "description": "Magic effects rolled probabilistically every time this attack lands. Each entry is rolled independently. Combat reads these straight off the definition (see `resolve_battle_turn`) rather than mirroring them onto the `AttackProfile` runtime component, since the latter is `Copy`.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/OnHitEffectDef"
+          }
+        }
+      }
+    },
+    "AttackProfileKindDef": {
+      "type": "string",
+      "enum": [
+        "melee",
+        "ranged"
+      ]
+    },
+    "AttributeSet": {
+      "type": "object",
+      "required": [
+        "agility",
+        "charisma",
+        "constitution",
+        "focus",
+        "strength",
+        "willpower"
+      ],
+      "properties": {
+        "agility": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "charisma": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "constitution": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "focus": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "strength": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "willpower": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "BabTrack": {
+      "description": "BAB advancement track per `progression.md` §7.4. Loadable from NPC YAML (`bab_track: full | three_quarter | half`) via `OverworldObjectDefinition`; defaults to `ThreeQuarter` for creatures that don't specify one.",
+      "oneOf": [
+        {
+          "description": "`+1 / level` (Fighter).",
+          "type": "string",
+          "enum": [
+            "full"
+          ]
+        },
+        {
+          "description": "`+3 / 4 levels` (Cleric, Vagabond).",
+          "type": "string",
+          "enum": [
+            "three_quarter"
+          ]
+        },
+        {
+          "description": "`+1 / 2 levels` (Wizard).",
+          "type": "string",
+          "enum": [
+            "half"
+          ]
+        }
+      ]
+    },
+    "BarkDef": {
+      "description": "Lists of short utterances for an NPC's floating speech bubbles. Both lists default to empty, which leaves the NPC silent. The server picks a random entry from `aggro` on Wander → Pursue transitions, and from `mutter` on a low-probability roll while wandering.",
+      "type": "object",
+      "properties": {
+        "aggro": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "mutter": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "CanHideDef": {
+      "description": "Authoring block for the player-driven Hide action.",
+      "type": "object",
+      "properties": {
+        "sneakiness": {
+          "description": "Flat bonus added to the placer's Thievery check total. Higher = item is inherently easier to conceal (small, camouflaged, etc.). May be negative for bulky items.",
+          "default": 0,
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "ChatterDef": {
+      "description": "Ambient/social chatter pool for an NPC type. NPCs trade short lines with nearby idle NPCs of any chattering type. See `crate::npc::social`.",
+      "type": "object",
+      "properties": {
+        "greetings": {
+          "description": "One-line openers used when two NPCs first meet.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "radius_tiles": {
+          "description": "Max tiles between two NPCs to start a conversation.",
+          "default": 3,
+          "type": "integer",
+          "format": "int32"
+        },
+        "topics": {
+          "description": "Each topic is an ordered back-and-forth the pair takes turns speaking.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "DamageType": {
+      "type": "string",
+      "enum": [
+        "blunt",
+        "cut",
+        "pierce",
+        "fire",
+        "frost",
+        "earth",
+        "lightning",
+        "poison",
+        "acid",
+        "death",
+        "holy",
+        "arcane"
+      ]
+    },
+    "DcSource": {
+      "description": "Where the DC for a `SkillGateDef` comes from.",
+      "oneOf": [
+        {
+          "description": "Read `lock.pick_dc` on the object's definition.",
+          "type": "string",
+          "enum": [
+            "from_lock_pick"
+          ]
+        },
+        {
+          "description": "Read `lock.force_dc` on the object's definition.",
+          "type": "string",
+          "enum": [
+            "from_lock_force"
+          ]
+        },
+        {
+          "description": "Use the inline DC value.",
+          "type": "object",
+          "required": [
+            "fixed"
+          ],
+          "properties": {
+            "fixed": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "DescriptionEntry": {
+      "description": "One element of a description list. Either an unconditional string or a stack-size-gated text.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "required": [
+            "stack_size",
+            "text"
+          ],
+          "properties": {
+            "stack_size": {
+              "description": "`[min, max]` — either bound may be `null` for open-ended.",
+              "type": "array",
+              "items": [
+                {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint32",
+                  "minimum": 0.0
+                },
+                {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint32",
+                  "minimum": 0.0
+                }
+              ],
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "text": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "DescriptionField": {
+      "description": "A description field that accepts either a plain string or a list of conditional entries.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/DescriptionEntry"
+          }
+        }
+      ]
+    },
+    "Direction": {
+      "type": "string",
+      "enum": [
+        "north",
+        "south",
+        "east",
+        "west"
+      ]
+    },
+    "DwellRange": {
+      "description": "Inclusive seconds range sampled uniformly for an activity's dwell/bark gap.",
+      "type": "object",
+      "properties": {
+        "max": {
+          "default": 8.0,
+          "type": "number",
+          "format": "float"
+        },
+        "min": {
+          "default": 4.0,
+          "type": "number",
+          "format": "float"
+        }
+      }
+    },
+    "EffectKind": {
+      "description": "Kinds of timed magical effects tracked by `MagicEffects`.",
+      "oneOf": [
+        {
+          "description": "Player's personal light halo grows. Magnitude = tile radius.",
+          "type": "string",
+          "enum": [
+            "glimmer"
+          ]
+        },
+        {
+          "description": "Player moves faster. Magnitude = step interval multiplier (e.g. 0.7).",
+          "type": "string",
+          "enum": [
+            "haste"
+          ]
+        },
+        {
+          "description": "Caster gains tracked AC bonus. Magnitude = AC bonus (combat math reads this once §7 lands — no-op today).",
+          "type": "string",
+          "enum": [
+            "shield"
+          ]
+        },
+        {
+          "description": "Caster gains tracked to-hit bonus. Magnitude = to-hit bonus (no-op today, hooked for Phase B combat math).",
+          "type": "string",
+          "enum": [
+            "bless"
+          ]
+        },
+        {
+          "description": "Target NPC's roaming step interval lengthens. Magnitude = multiplier (e.g. 2.0 doubles the interval = half speed).",
+          "type": "string",
+          "enum": [
+            "slow"
+          ]
+        },
+        {
+          "description": "Target NPC is asleep — its AI tick is skipped. Magnitude unused (presence is what matters). Cleared on damage by `resolve_battle_turn`.",
+          "type": "string",
+          "enum": [
+            "sleep"
+          ]
+        },
+        {
+          "description": "Target cannot move or cast spells. Magnitude unused. Unlike Sleep, damage does *not* clear Paralyze — it only expires on its timer.",
+          "type": "string",
+          "enum": [
+            "paralyze"
+          ]
+        },
+        {
+          "description": "DOT (cold damage) plus slow movement. Magnitude = damage per tick (1s cadence); `secondary_magnitude` = NPC step interval multiplier (Some(2.0) doubles the interval). When omitted, the slow component is a no-op and Chill behaves as pure cold DOT.",
+          "type": "string",
+          "enum": [
+            "chill"
+          ]
+        },
+        {
+          "description": "DOT (fire damage). Magnitude = damage per tick (1s cadence).",
+          "type": "string",
+          "enum": [
+            "burning"
+          ]
+        },
+        {
+          "description": "DOT (poison damage). Magnitude = damage per tick (1s cadence).",
+          "type": "string",
+          "enum": [
+            "poisoned"
+          ]
+        },
+        {
+          "description": "Player's movement commands are randomly rotated by ±45° to an adjacent direction. Magnitude = deviation probability in `[0, 1]` (e.g. 0.3 = 30% chance to fumble each step). NPCs ignore Drunk for now.",
+          "type": "string",
+          "enum": [
+            "drunk"
+          ]
+        }
+      ]
+    },
+    "EffectSpec": {
+      "type": "object",
+      "required": [
+        "kind",
+        "magnitude",
+        "seconds"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/definitions/EffectKind"
+        },
+        "magnitude": {
+          "type": "number",
+          "format": "float"
+        },
+        "secondary_magnitude": {
+          "description": "Optional second parameter. Currently only `Chill` reads it, as the slow multiplier paired with the DOT magnitude.",
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "seconds": {
+          "type": "number",
+          "format": "float"
+        }
+      }
+    },
     "EquipmentSlot": {
       "type": "string",
       "enum": [
@@ -103,8 +1063,871 @@
         "legs",
         "backpack",
         "ring",
-        "boots"
+        "boots",
+        "ammo"
       ]
+    },
+    "FactionDef": {
+      "description": "YAML-facing spelling of `npc::components::Faction`. Kept separate so the runtime component doesn't need a schemars derive.",
+      "type": "string",
+      "enum": [
+        "player_side",
+        "monster_side",
+        "neutral"
+      ]
+    },
+    "InteractionSideEffect": {
+      "description": "Side-effect to run after an interaction transitions an object's state.",
+      "oneOf": [
+        {
+          "description": "Resolve `target` (a property template like `\"{properties.target}\"`) against the source object's properties, then transition the resolved object into `to`. The resolved string must parse as a runtime u64 (the map-load pass rewrites authored ids in `wires_to` properties).",
+          "type": "object",
+          "required": [
+            "kind",
+            "target",
+            "to"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "set_target_state"
+              ]
+            },
+            "target": {
+              "type": "string"
+            },
+            "to": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "description": "Emit `GameUiEvent::OpenContainer` for the acting player. Pairs with `container_capacity` to make a stateful chest both \"openable\" and \"viewable\".",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "open_container_panel"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "ItemModifier": {
+      "description": "A single per-instance modifier on an item.",
+      "type": "object",
+      "required": [
+        "duration",
+        "effect",
+        "lvl",
+        "type_ex"
+      ],
+      "properties": {
+        "duration": {
+          "$ref": "#/definitions/ModifierDuration"
+        },
+        "effect": {
+          "$ref": "#/definitions/ModifierEffect"
+        },
+        "label": {
+          "description": "Player-facing label for tooltips / chat (e.g. \"Flaming (+1d6 fire)\").",
+          "default": "",
+          "type": "string"
+        },
+        "lvl": {
+          "description": "Strength rank within the `type_ex` group. Higher overrides lower.",
+          "type": "integer",
+          "format": "int32"
+        },
+        "type_ex": {
+          "description": "Exclusivity group. Anti-stacking is scoped per item per `type_ex`.",
+          "type": "string"
+        }
+      }
+    },
+    "KeyGateDef": {
+      "description": "Key-required description authored on an interaction.",
+      "type": "object",
+      "required": [
+        "source"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "#/definitions/KeyIdSource"
+        }
+      }
+    },
+    "KeyIdSource": {
+      "description": "Where the required `lock_id` for a `KeyGateDef` comes from.",
+      "oneOf": [
+        {
+          "description": "Read `lock.lock_id` on the object's definition.",
+          "type": "string",
+          "enum": [
+            "from_lock"
+          ]
+        },
+        {
+          "description": "Use the inline id.",
+          "type": "object",
+          "required": [
+            "fixed"
+          ],
+          "properties": {
+            "fixed": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "LightEmissionDef": {
+      "description": "Per-object light authoring. `intensity` is a 0..=1+ multiplier on `color` — values above 1 are clamped during the apply pass. `radius` is in tiles.",
+      "type": "object",
+      "required": [
+        "color",
+        "radius"
+      ],
+      "properties": {
+        "color": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "intensity": {
+          "default": 1.0,
+          "type": "number",
+          "format": "float"
+        },
+        "radius": {
+          "type": "number",
+          "format": "float"
+        }
+      }
+    },
+    "LockDef": {
+      "description": "Authored lock metadata on an `OverworldObjectDefinition`.",
+      "type": "object",
+      "required": [
+        "force_dc",
+        "lock_id",
+        "pick_dc"
+      ],
+      "properties": {
+        "force_dc": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "lock_id": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "pick_dc": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "LootDropDef": {
+      "type": "object",
+      "required": [
+        "type_id"
+      ],
+      "properties": {
+        "probability": {
+          "default": 1.0,
+          "type": "number",
+          "format": "float"
+        },
+        "quantity": {
+          "default": {
+            "Fixed": 1
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/QuantityDistribution"
+            }
+          ]
+        },
+        "type_id": {
+          "type": "string"
+        }
+      }
+    },
+    "LootTableDef": {
+      "type": "object",
+      "properties": {
+        "corpse_despawn_seconds": {
+          "default": 60.0,
+          "type": "number",
+          "format": "float"
+        },
+        "corpse_type_id": {
+          "default": "generic_corpse",
+          "type": "string"
+        },
+        "drops": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LootDropDef"
+          }
+        }
+      }
+    },
+    "ModifierDuration": {
+      "description": "How long a modifier lasts.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "permanent"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Wall-clock seconds remaining. Ticked (in whole-second steps) only while the item is equipped — see [`tick_item_modifiers`].",
+          "type": "object",
+          "required": [
+            "kind",
+            "remaining_seconds"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "timed"
+              ]
+            },
+            "remaining_seconds": {
+              "type": "number",
+              "format": "float"
+            }
+          }
+        },
+        {
+          "description": "Remaining successful applications. Decremented on each application.",
+          "type": "object",
+          "required": [
+            "kind",
+            "remaining"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "charges"
+              ]
+            },
+            "remaining": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          }
+        }
+      ]
+    },
+    "ModifierEffect": {
+      "description": "What a modifier does.",
+      "oneOf": [
+        {
+          "description": "Extra damage on every hit, applied as its own `DamageEvent` so the element shows its own number and hit VFX. `dice: Some((1, 6))` = +1d6.",
+          "type": "object",
+          "required": [
+            "damage_type",
+            "kind"
+          ],
+          "properties": {
+            "bonus": {
+              "default": 0,
+              "type": "integer",
+              "format": "int32"
+            },
+            "damage_type": {
+              "$ref": "#/definitions/DamageType"
+            },
+            "dice": {
+              "default": null,
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": [
+                {
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0.0
+                },
+                {
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0.0
+                }
+              ],
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "bonus_damage"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Chance to apply a magical effect to the struck target on hit.",
+          "type": "object",
+          "required": [
+            "chance",
+            "kind",
+            "spec"
+          ],
+          "properties": {
+            "chance": {
+              "description": "Probability in `[0, 1]`, rolled per hit.",
+              "type": "number",
+              "format": "float"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "on_hit"
+              ]
+            },
+            "spec": {
+              "$ref": "#/definitions/EffectSpec"
+            }
+          }
+        },
+        {
+          "description": "Flat bonus to the wielder's derived attributes / defense while the item is equipped.",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "armor": {
+              "default": 0,
+              "type": "integer",
+              "format": "int32"
+            },
+            "attributes": {
+              "default": {
+                "agility": 0,
+                "charisma": 0,
+                "constitution": 0,
+                "focus": 0,
+                "strength": 0,
+                "willpower": 0
+              },
+              "allOf": [
+                {
+                  "$ref": "#/definitions/AttributeSet"
+                }
+              ]
+            },
+            "dodge_bonus": {
+              "default": 0,
+              "type": "integer",
+              "format": "int32"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "wielder_stats"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "NpcBehaviorDefaults": {
+      "description": "Intrinsic per-mob behavior values copied onto each spawned NPC's `RoamingBehavior` / `HostileBehavior` components. Roam bounds and the hostile toggle remain spawner-level (see `SpawnGroupDef`); everything else is sourced from here so authors don't have to re-type the same numbers in every map.",
+      "type": "object",
+      "required": [
+        "detect_distance_tiles",
+        "disengage_distance_tiles",
+        "step_interval_seconds"
+      ],
+      "properties": {
+        "alert_duration_seconds": {
+          "default": 4.0,
+          "type": "number",
+          "format": "float"
+        },
+        "detect_distance_tiles": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "disengage_distance_tiles": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "hostile": {
+          "description": "When true, this NPC's *synthesized* default behavior (used when it is spawned/placed without an explicit map behavior — e.g. via `world.spawn`) is `RoamAndChase`: it chases and attacks players on sight. Peaceful NPCs (questgivers, shopkeepers) leave this false and stand their ground. An explicit map `behavior:` always overrides this default.",
+          "default": false,
+          "type": "boolean"
+        },
+        "idle_pause_chance": {
+          "default": 0.30000001192092896,
+          "type": "number",
+          "format": "float"
+        },
+        "momentum_bias": {
+          "default": 0.6000000238418579,
+          "type": "number",
+          "format": "float"
+        },
+        "perception": {
+          "description": "Perception bonus contesting a sneaking player's Stealth roll. 0 = an average guard. See `docs/utility_systems.md` §3.",
+          "default": 0,
+          "type": "integer",
+          "format": "int32"
+        },
+        "requires_line_of_sight": {
+          "default": true,
+          "type": "boolean"
+        },
+        "step_interval_jitter_seconds": {
+          "default": 0.0,
+          "type": "number",
+          "format": "float"
+        },
+        "step_interval_seconds": {
+          "type": "number",
+          "format": "float"
+        }
+      }
+    },
+    "NpcSpellConditionDef": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "target_within_range"
+          ],
+          "properties": {
+            "target_within_range": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "target_visible"
+          ],
+          "properties": {
+            "target_visible": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "target_hp_below_fraction"
+          ],
+          "properties": {
+            "target_hp_below_fraction": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "self_hp_below_fraction"
+          ],
+          "properties": {
+            "self_hp_below_fraction": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "target_without_effect"
+          ],
+          "properties": {
+            "target_without_effect": {
+              "$ref": "#/definitions/EffectKind"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "self_without_effect"
+          ],
+          "properties": {
+            "self_without_effect": {
+              "$ref": "#/definitions/EffectKind"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "NpcSpellEntryDef": {
+      "type": "object",
+      "required": [
+        "cooldown_seconds",
+        "spell_id"
+      ],
+      "properties": {
+        "conditions": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/NpcSpellConditionDef"
+          }
+        },
+        "cooldown_seconds": {
+          "type": "number",
+          "format": "float"
+        },
+        "spell_id": {
+          "type": "string"
+        },
+        "target": {
+          "default": "target",
+          "allOf": [
+            {
+              "$ref": "#/definitions/NpcSpellTargetKindDef"
+            }
+          ]
+        }
+      }
+    },
+    "NpcSpellTargetKindDef": {
+      "type": "string",
+      "enum": [
+        "target",
+        "target_tile",
+        "self"
+      ]
+    },
+    "ObjectInteractionDef": {
+      "description": "One verb the player may invoke on a stateful object.",
+      "type": "object",
+      "required": [
+        "to",
+        "verb"
+      ],
+      "properties": {
+        "from": {
+          "description": "Filter: only show this verb when the object is in one of these states. Empty = always available.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "grants_items": {
+          "description": "Items to grant the acting player on a successful transition. Reuses the same `LootDropDef` shape as corpse loot — each entry rolls quantity + probability independently.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LootDropDef"
+          }
+        },
+        "key_gate": {
+          "description": "Optional key-required gate. When present, the verb is hidden in the context menu when the actor's inventory doesn't contain a matching `lock_id` key; the handler also re-checks at apply time.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/KeyGateDef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "label": {
+          "description": "Display label for the context menu. Defaults to `verb` capitalised when missing.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "respawn_seconds": {
+          "description": "When set, after this transition fires a `RespawnTimer` is attached to the object that will revert it to the first entry in `from` after the given delay. Drives gatherable respawn (mined ore returns after N seconds, etc.).",
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "side_effects": {
+          "description": "Side-effects to execute after the transition (e.g. flipping a wired door, opening a container panel).",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/InteractionSideEffect"
+          }
+        },
+        "skill_gate": {
+          "description": "Optional skill-check gate (`progression.md` §5). When present, the verb runs a `skill_check` against `dc_source` and only transitions on success; failures emit a chat-line. The verb is hidden in the context menu when the actor's rank in `skill` is 0.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SkillGateDef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "to": {
+          "description": "Resulting state after the transition lands.",
+          "type": "string"
+        },
+        "tool_gate": {
+          "description": "Optional tool-required gate. Looks for the named item type in the player's `EquipmentSlot::Weapon`. Used for gathering interactions where the harvest requires a specific tool (pickaxe, fishing rod, herb knife).",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ToolGateDef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verb": {
+          "type": "string"
+        }
+      }
+    },
+    "ObjectStateDef": {
+      "description": "Per-state override of the rendering / collider knobs on `OverworldObjectDefinition`. `None` fields fall back to the base definition.",
+      "type": "object",
+      "properties": {
+        "animation": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AnimationSheetDef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clear_light": {
+          "description": "When true, this state suppresses any base light (used for an `unlit` torch state when the base inherits a light from a parent).",
+          "default": false,
+          "type": "boolean"
+        },
+        "colliding": {
+          "description": "Override the authoritative `colliding` flag for this state (e.g. a closed door collides, an open one does not). `None` = inherit base.",
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "light": {
+          "description": "Override the base light for this state. `None` = inherit base.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LightEmissionDef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sprite_path": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "OnHitEffectDef": {
+      "description": "A timed `MagicEffects` entry that an attacker rolls for on every landed hit. `chance` is in `[0, 1]`; a `1.0` chance always applies.",
+      "type": "object",
+      "required": [
+        "kind",
+        "magnitude",
+        "seconds"
+      ],
+      "properties": {
+        "chance": {
+          "default": 1.0,
+          "type": "number",
+          "format": "float"
+        },
+        "kind": {
+          "$ref": "#/definitions/EffectKind"
+        },
+        "magnitude": {
+          "type": "number",
+          "format": "float"
+        },
+        "secondary_magnitude": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "seconds": {
+          "type": "number",
+          "format": "float"
+        }
+      }
+    },
+    "PressurePlateDef": {
+      "description": "Authoring block for a pressure plate (Cluster B, `docs/utility_systems.md` §4). The plate is a stateful object: `update_pressure_plates` flips it to `pressed_state` while its tile is occupied and to `released_state` when vacated. \"Occupied\" means a player or NPC stands on it, or a resting object weighs at least `min_weight` kg — so a shoved barrel can hold a plate down. When `target_property` (also listed in the object's `wires_to`) names a wired object, the plate drives it between `target_pressed_state` / `target_released_state` (e.g. a door open/closed) via the same `apply_state_transition` path interactions use.",
+      "type": "object",
+      "required": [
+        "pressed_state",
+        "released_state"
+      ],
+      "properties": {
+        "min_weight": {
+          "description": "Minimum weight (kg) a resting object must have to hold the plate down. `0.0` means any object with non-zero weight counts. Players and NPCs always hold the plate regardless of this value.",
+          "default": 0.0,
+          "type": "number",
+          "format": "float"
+        },
+        "pressed_state": {
+          "description": "State the plate enters while occupied.",
+          "type": "string"
+        },
+        "released_state": {
+          "description": "State the plate returns to when vacated.",
+          "type": "string"
+        },
+        "target_pressed_state": {
+          "description": "State applied to the wired target while the plate is pressed.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "target_property": {
+          "description": "Property key (declared in `wires_to`) whose value resolves to the wired target object's runtime id. `None` = the plate drives only its own state.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "target_released_state": {
+          "description": "State applied to the wired target while the plate is released.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "QuantityDistribution": {
+      "description": "Quantity roll for a loot drop: either a fixed count or a uniform random range.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "Fixed"
+          ],
+          "properties": {
+            "Fixed": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Inclusive [min, max].",
+          "type": "object",
+          "required": [
+            "Uniform"
+          ],
+          "properties": {
+            "Uniform": {
+              "type": "array",
+              "items": [
+                {
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0.0
+                },
+                {
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0.0
+                }
+              ],
+              "maxItems": 2,
+              "minItems": 2
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "RecolorLayerDef": {
+      "description": "One optional sprite layer stacked on top of an object's base sprite. `key` names the region (`\"skin\"`, `\"hair\"`, `\"torso\"`, `\"trousers\"`). The layer PNG must share the same dimensions as the parent's animation sheet so frame indices stay in lockstep.",
+      "type": "object",
+      "required": [
+        "key",
+        "sheet_path"
+      ],
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "sheet_path": {
+          "type": "string"
+        }
+      }
     },
     "RenderMetadata": {
       "type": "object",
@@ -114,6 +1937,24 @@
         "z_index"
       ],
       "properties": {
+        "animation": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AnimationSheetDef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "block_size": {
+          "description": "Physical size of this object in half-block units. `0` = flat (ground items, decals), `1` = half-block (chest, low rock), `2` = full block (barrel, wall, stone step). Drives stacking math, auto-climb, and bottom-anchored sprite alignment.",
+          "default": 0,
+          "type": "integer",
+          "format": "uint8",
+          "minimum": 0.0
+        },
         "debug_color": {
           "type": "array",
           "items": {
@@ -127,6 +1968,71 @@
         "debug_size": {
           "type": "number",
           "format": "float"
+        },
+        "default_facing": {
+          "description": "Initial facing for this object type when no per-instance facing is supplied in the map YAML. Missing = `Direction::default()` (south).",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Direction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "floor_mask_rect": {
+          "description": "Optional sub-tile rectangle, in tile fractions `[x0, y0, x1, y1]` with x = west→east and y = south→north (matching world axes), that restricts where floor is drawn on this object's tile: floor renders **only** inside the rectangle. Used by walls to keep floor on the interior side of the slab so it meets the wall flush, leaving the exterior strip free. `None` = no restriction (floor fills the whole tile as usual).",
+          "default": null,
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "float"
+          },
+          "maxItems": 4,
+          "minItems": 4
+        },
+        "hide_when_inside_facing": {
+          "description": "Which building-wall side this object represents, for the hide-when-inside rule. Only `South` and `East` are honoured (the camera-facing sides). `None` = not a wall.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Direction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "logical_height_tiles": {
+          "description": "Logical character/object height in TILE units. Decouples HUD-style placement (health bar, status icons) from the raw sprite frame height so an oversized canvas — e.g. an iso-projected character whose visible body only occupies 1 tile of vertical screen space inside a 96×96 frame — can declare its \"real\" height for hover-anchored UI to use. `None` falls back to the sprite frame's pixel height (legacy behaviour).",
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "occludes_floor_above": {
+          "description": "Tiles on floor N with this flag hide everything on floor N+1 and above from view when the player stands directly beneath them. Walls and floor planks opt in so buildings feel enclosed.",
+          "default": false,
+          "type": "boolean"
+        },
+        "recolor_layers": {
+          "description": "Optional per-region sprite layers stacked on top of the base sprite at spawn time. Each layer reuses the base `animation:` frame grid (same dimensions and clip layout) and receives a per-character tint via `Sprite::color`. Generic mechanism — currently used by the player definition for hair / torso / trousers customization.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RecolorLayerDef"
+          }
+        },
+        "rotation_by_facing": {
+          "description": "When true, the sprite is rotated via `Transform::rotation_z` to match the object's `Facing` component. Use this for single-sprite props (signposts, arrows) that have no per-direction animation frames. Rotated sprites use center anchoring — the bottom-center y-sort shift is skipped so they sit square on the tile after rotation.",
+          "default": false,
+          "type": "boolean"
         },
         "sprite_height_tiles": {
           "default": 0.0,
@@ -145,6 +2051,29 @@
           "type": "number",
           "format": "float"
         },
+        "stack_order": {
+          "description": "Tiebreaker for stack ordering when several block-sized objects share `(space, x, y, z)`. Suggested values: barrel=10, chest=20. When equal, the authoritative `object_id` breaks the tie.",
+          "default": 0,
+          "type": "integer",
+          "format": "int32"
+        },
+        "walkable_surface": {
+          "description": "Upper floors are empty space by default; a tile on z > 0 is only walkable if some object at that tile has this flag set. Floor planks and stair tiles opt in. The ground floor is always walkable.",
+          "default": false,
+          "type": "boolean"
+        },
+        "wall_corner": {
+          "description": "Which building corner this object represents, for the hide-when-inside rule. A corner spans two wall faces, so it can't be described by the single-axis `hide_when_inside_facing`. Front corners (`se`/`sw`) fade when the player is inside; back corners (`ne`/`nw`) tint instead. `None` = not a wall corner.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/WallCorner"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "y_sort": {
           "default": false,
           "type": "boolean"
@@ -152,6 +2081,82 @@
         "z_index": {
           "type": "number",
           "format": "float"
+        }
+      }
+    },
+    "ShopkeeperDef": {
+      "description": "YAML form of `Shopkeeper`. Parsed off the NPC's `metadata.yaml` and converted to an in-memory `Stockpile` at spawn time.",
+      "type": "object",
+      "properties": {
+        "wares": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/WareDef"
+          }
+        }
+      }
+    },
+    "Skill": {
+      "description": "All ten skills, in their canonical ordering. Indexes into `SkillSheet.ranks`.",
+      "type": "string",
+      "enum": [
+        "Athletics",
+        "Stealth",
+        "Perception",
+        "Lore",
+        "Spellcraft",
+        "Persuasion",
+        "Survival",
+        "Heal",
+        "Thievery",
+        "Endurance"
+      ]
+    },
+    "SkillGateDef": {
+      "description": "Skill-check description authored on an interaction.",
+      "type": "object",
+      "required": [
+        "dc",
+        "skill"
+      ],
+      "properties": {
+        "dc": {
+          "$ref": "#/definitions/DcSource"
+        },
+        "skill": {
+          "$ref": "#/definitions/Skill"
+        }
+      }
+    },
+    "SpellcastingDef": {
+      "type": "object",
+      "required": [
+        "spells"
+      ],
+      "properties": {
+        "spells": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/NpcSpellEntryDef"
+          }
+        }
+      }
+    },
+    "StackSpriteTier": {
+      "type": "object",
+      "required": [
+        "min_count",
+        "sprite_path"
+      ],
+      "properties": {
+        "min_count": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "sprite_path": {
+          "type": "string"
         }
       }
     },
@@ -205,9 +2210,212 @@
         }
       }
     },
+    "StepEffectDef": {
+      "description": "One effect within an `on_stepped` trigger.",
+      "oneOf": [
+        {
+          "description": "Apply a timed `MagicEffects` entry (Burning, Chill, Slow, …) to the stepper. Same parameter shape as a spell's `EffectSpec`. The trap is the caster (`caster = None` → no XP attribution if the DoT delivers the killing blow).",
+          "type": "object",
+          "required": [
+            "effect",
+            "kind",
+            "magnitude",
+            "seconds"
+          ],
+          "properties": {
+            "effect": {
+              "$ref": "#/definitions/EffectKind"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "apply_effect"
+              ]
+            },
+            "magnitude": {
+              "type": "number",
+              "format": "float"
+            },
+            "secondary_magnitude": {
+              "default": null,
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "float"
+            },
+            "seconds": {
+              "type": "number",
+              "format": "float"
+            }
+          }
+        },
+        {
+          "description": "Deal a `DamageExpr` roll to the stepper as `DamageSource::Environment`.",
+          "type": "object",
+          "required": [
+            "amount",
+            "kind"
+          ],
+          "properties": {
+            "amount": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "apply_damage"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Transition this object's `ObjectState` to `state`. The definition must declare matching `states:` + (usually) a re-arm `interactions:` verb to recover.",
+          "type": "object",
+          "required": [
+            "kind",
+            "state"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "set_state"
+              ]
+            },
+            "state": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "StepTriggerDef": {
+      "description": "One passive `on_stepped` trigger authored on an object. Fires when an entity moves onto a tile containing this object and the current `ObjectState` matches the `from` filter (or the filter is empty).",
+      "type": "object",
+      "required": [
+        "effects"
+      ],
+      "properties": {
+        "effects": {
+          "description": "Ordered list of effects to apply. Damage runs before any state transition that the same trigger also requests.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/StepEffectDef"
+          }
+        },
+        "from": {
+          "description": "Allowed source states. Empty = fire regardless of state (or for stateless objects).",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tick_seconds": {
+          "description": "If set, in addition to firing on entry, this trigger also fires every `tick_seconds` while an entity remains colocated with the object and the `from` filter still matches. `None` = legacy one-shot-on-entry.",
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        }
+      }
+    },
+    "StockModeDef": {
+      "description": "`stock:` field accepts either the literal string `\"infinite\"` or an integer count. The `untagged` serde repr lets YAML pick the right arm (numbers → `Count`, strings → `Word`).",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/StockWord"
+        },
+        {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      ]
+    },
+    "StockWord": {
+      "type": "string",
+      "enum": [
+        "infinite"
+      ]
+    },
+    "TextKind": {
+      "description": "Kind of persistent-text artifact. Drives UI titles and which verbs (read / write) are surfaced. Stateless flag — the per-instance text lives in `properties`.",
+      "oneOf": [
+        {
+          "description": "Read + write (with pen). Title + body editable.",
+          "type": "string",
+          "enum": [
+            "book"
+          ]
+        },
+        {
+          "description": "Read-only. Auto-engraved on spawn (typically at player death).",
+          "type": "string",
+          "enum": [
+            "tombstone"
+          ]
+        },
+        {
+          "description": "Read + one-time write (with pen). Used by the engrave flow on inventory items; reuses the book panel with `title` doubling as the inscription field.",
+          "type": "string",
+          "enum": [
+            "engraving"
+          ]
+        }
+      ]
+    },
+    "ToolGateDef": {
+      "description": "Required-tool gate authored on an interaction. The player must have an item of the matching type equipped in `EquipmentSlot::Weapon` for the verb to fire.",
+      "type": "object",
+      "required": [
+        "required_type_id"
+      ],
+      "properties": {
+        "fail_message": {
+          "description": "Narrator line shown on rejection. Defaults to a generic prompt.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "required_type_id": {
+          "description": "Definition id of the required equipped item (e.g. `\"pickaxe\"`).",
+          "type": "string"
+        }
+      }
+    },
     "UseEffects": {
       "type": "object",
       "properties": {
+        "grants_item_modifier": {
+          "description": "When set, using this item grants the modifier to a targeted item (the player picks the target slot). Drives enchant consumables like the poison flask. Applied via `combat::modifiers::apply_modifier`.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ItemModifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "regen_duration_seconds": {
+          "description": "How long the regen buff lasts after consumption, in seconds. Stacking rule: re-eating extends the remaining time; the multiplier snaps to `max(current, new)` so a stronger buff isn't diluted by a weaker one.",
+          "default": 0.0,
+          "type": "number",
+          "format": "float"
+        },
+        "regen_multiplier": {
+          "description": "Multiplier applied to the player's HP/MP regen rate while the buff is active. `1.0` (default) means no buff. Values below 1.0 are silently clamped to 1.0 by the consume handler — debuffs aren't a thing yet.",
+          "default": 1.0,
+          "type": "number",
+          "format": "float"
+        },
         "restore_health": {
           "default": 0.0,
           "type": "number",
@@ -217,6 +2425,42 @@
           "default": 0.0,
           "type": "number",
           "format": "float"
+        }
+      }
+    },
+    "WallCorner": {
+      "description": "Which corner of a building shell a wall-corner sprite sits on. A straight wall is a single [`Direction`] face, but a corner spans two axes, so it needs its own descriptor to drive the inside-fade and indoor-tint logic in `sync_tile_transforms` (a single `Direction` cannot express both arms).",
+      "type": "string",
+      "enum": [
+        "ne",
+        "nw",
+        "se",
+        "sw"
+      ]
+    },
+    "WareDef": {
+      "description": "YAML form of `StockEntry`. `stock` accepts the literal string `\"infinite\"` or a non-negative integer.",
+      "type": "object",
+      "required": [
+        "price_copper",
+        "type_id"
+      ],
+      "properties": {
+        "price_copper": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "stock": {
+          "default": "infinite",
+          "allOf": [
+            {
+              "$ref": "#/definitions/StockModeDef"
+            }
+          ]
+        },
+        "type_id": {
+          "type": "string"
         }
       }
     }

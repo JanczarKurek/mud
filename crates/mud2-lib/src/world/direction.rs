@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Component, Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub enum Direction {
     North,
     #[default]
@@ -84,6 +85,7 @@ impl Direction {
 /// `sync_tile_transforms` (a single `Direction` cannot express both arms).
 #[derive(Component, Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub enum WallCorner {
     Ne,
     Nw,

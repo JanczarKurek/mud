@@ -18,6 +18,7 @@ use crate::player::progression::Experience;
 
 /// All ten skills, in their canonical ordering. Indexes into `SkillSheet.ranks`.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub enum Skill {
     Athletics,
     Stealth,

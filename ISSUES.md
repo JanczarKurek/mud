@@ -39,6 +39,24 @@ the project's broad direction lives in `PLAN.md`.
 - bevy_yarnspinner drops unregistered/typo'd `<<commands>>` with no log at all. Mitigated for quest ids by the `yarn_quest_ids_have_registered_scripts` test; a general "unknown command" observer/lint would catch the rest (pairs with the `dialog_node`-validation idea above).
 - `assets/modules/hollow_bell/module.md` reward drift vs the shipped yarn: `down_the_shaft` promises `torch x10` (yarn gives `potion x2` + `silver_coin x30`), and `the_deeplistener` lists `deeplisteners_ear x1` as a reward (it's kill-loot only — deliberate per the comment in the quest script; the design doc is stale).
 
+### NPC AI (tag hostility + aggro, 2026-08)
+Tag-based hostility shipped (`tags` / `hostile_towards` / `flees_from` / `faction` in
+templates; `npc/hostility.rs`; guards/wolves/sheep in the overworld), plus
+aggro-on-damage (`npc/aggro.rs` — universal self-defense, attacker carried on
+`DamageEvent`) and the ranged-flee fix (A* `Budget` vs `NoPath`, flee re-engage).
+Follow-ups:
+- **Guilt/witness system**: NPCs that *see* a player harm another NPC push
+  `NpcAggroEvent`s (the `PendingNpcAggro` queue was shaped for this) — guards
+  should punish livestock-killers and villager-attackers.
+- Prey flee only triggers from `Wander`; a sheep mid-routine or a hybrid
+  (fight-or-flight) NPC in `Alert` won't spook. Fine for v1 livestock.
+- NPC-on-NPC kills grant no XP and no kill-feed line beyond `[X dies]`;
+  guard kills are silent from the player's perspective.
+- Villager/townsfolk have no identity tags yet, so nothing can be made
+  `hostile_towards` them (blocked on wanting the guilt system first anyway).
+- A wolf pack can wipe the paddock faster than `respawn_mean_seconds` refills
+  it — tune counts/timers after playtest.
+
 ### Combat & progression balance
 The **balance retune** shipped on top of the earlier BAB batch (see the rewritten
 `docs/balance/report.md` §1 for the full scaling scheme): modifier-based weapon/spell damage

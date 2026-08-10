@@ -126,6 +126,17 @@ impl Plugin for CombatPlugin {
                     .after(tick_scheduled_impacts)
                     .before(crate::network::sets::NetServerSend)
                     .run_if(simulation_active),
+            )
+            // Aggro-on-damage: surviving NPC victims lock onto their attacker.
+            // After the damage drain (which pushes the events) and before the
+            // projection, so a shot NPC replicates its new target this frame;
+            // its actual first pursue step lands on the next AI tick.
+            .add_systems(
+                Update,
+                crate::npc::aggro::apply_damage_aggro
+                    .after(apply_pending_damage)
+                    .before(crate::network::sets::NetServerSend)
+                    .run_if(simulation_active),
             );
     }
 }

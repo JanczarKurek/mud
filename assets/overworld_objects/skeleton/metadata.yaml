@@ -1,5 +1,6 @@
 extends: npc
 name: Skeleton
+tags: [undead, monster]
 description: A reanimated skeleton, its empty eye sockets flickering with a sickly green glow.
 level: 3
 stats:

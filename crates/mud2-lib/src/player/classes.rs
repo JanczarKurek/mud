@@ -21,6 +21,7 @@ pub enum CastingAttribute {
 /// (`bab_track: full | three_quarter | half`) via `OverworldObjectDefinition`;
 /// defaults to `ThreeQuarter` for creatures that don't specify one.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum BabTrack {
     /// `+1 / level` (Fighter).
@@ -65,6 +66,7 @@ impl GoodSaves {
 
 /// The four base classes shipping in v1.
 #[derive(Component, Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub enum Class {
     #[default]
     Fighter,

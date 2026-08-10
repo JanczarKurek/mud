@@ -1,5 +1,6 @@
 extends: npc
 name: Goblin
+tags: [humanoid, greenskin, monster]
 description: A wiry green nuisance with a mean stare and quick hands.
 level: 2
 loot:
