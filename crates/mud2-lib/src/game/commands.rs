@@ -240,6 +240,14 @@ pub enum GameCommand {
         npc_object_id: u64,
         crime_id: u64,
     },
+    /// Ask for the acting player's social read of an NPC — how it regards
+    /// them, gated by a Persuasion check with a per-(player, NPC) cooldown.
+    /// The server replies with `GameUiEvent::OpenSocialRead`. Inspecting an
+    /// NPC runs the same check implicitly (chat summary only); this explicit
+    /// command backs the "Details" context-menu verb — see `npc::social_read`.
+    RequestSocialRead {
+        npc_object_id: u64,
+    },
     /// Advance past a line currently displayed in the dialog panel
     /// (client clicked "Continue").
     DialogAdvance {

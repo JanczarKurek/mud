@@ -279,6 +279,11 @@ pub enum ContextMenuAction {
     /// asks the server to price and settle the player's outstanding guilt with
     /// the factions that Judge speaks for.
     PayFine,
+    /// Visible when the hovered object is an NPC in talk range. Clicking it
+    /// asks the server for a social read of the NPC
+    /// (`GameCommand::RequestSocialRead`); the reply opens the social-read
+    /// window with as much detail as the Persuasion check earned.
+    Details,
     /// Right-click on an inventory slot while a trade is open — clicking it
     /// adds the slot's contents to the trade's "us" column. Visibility also
     /// requires an open trade session (`TradePopupState`), which lives

@@ -48,6 +48,7 @@ pub fn apply_game_ui_events(
     mut dialog_state: ResMut<crate::ui::resources::ActiveDialogState>,
     mut book_panel_state: ResMut<crate::ui::book_panel::BookPanelState>,
     mut crime_ledger_state: ResMut<crate::ui::crime_ledger::CrimeLedgerState>,
+    mut social_read_state: ResMut<crate::ui::social_read::SocialReadPanelState>,
     mut console_terminals: Query<
         &mut bevy_terminal::Terminal,
         With<crate::ui::components::PythonConsoleTerminal>,
@@ -177,6 +178,13 @@ pub fn apply_game_ui_events(
                 crimes,
             } => {
                 crime_ledger_state.open(npc_object_id, judge_name, crimes);
+            }
+            GameUiEvent::OpenSocialRead {
+                npc_object_id,
+                npc_name,
+                lines,
+            } => {
+                social_read_state.open(npc_object_id, npc_name, lines);
             }
         }
     }
@@ -1481,6 +1489,13 @@ pub fn handle_context_menu_actions(
                 });
             }
         }
+        ContextMenuAction::Details => {
+            if let Some(ContextMenuTarget::World(object_id)) = context_menu_state.target {
+                pending_commands.push(GameCommand::RequestSocialRead {
+                    npc_object_id: object_id,
+                });
+            }
+        }
         ContextMenuAction::Attack => {
             if let Some(ContextMenuTarget::World(object_id)) = context_menu_state.target {
                 pending_commands.push(GameCommand::SetCombatTarget {
@@ -2545,6 +2560,7 @@ pub fn handle_context_menu_opening(
                 interaction,
             );
             context_menu_state.set_can_pay_fine(talk_near && object.is_judge);
+            context_menu_state.set_can_details(talk_near && object.is_npc);
             if near {
                 let (pick, force, key) = lock_verb_visibility(object, &definitions, &client_state);
                 context_menu_state.set_lock_verbs(pick, force, key);
@@ -2754,6 +2770,9 @@ pub fn handle_context_menu_opening(
         );
         // "Pay Fine" uses talk range, matching the server-side reach check.
         context_menu_state.set_can_pay_fine(talk_near && object.is_judge);
+        // "Details" (social read) uses the same talk-range rule the server
+        // enforces for `RequestSocialRead`.
+        context_menu_state.set_can_details(talk_near && object.is_npc);
         if near {
             let (pick, force, key) = lock_verb_visibility(object, &definitions, &client_state);
             context_menu_state.set_lock_verbs(pick, force, key);

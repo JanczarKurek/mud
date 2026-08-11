@@ -224,6 +224,11 @@ pub fn resolve_npc_tag_components(
     mut commands: Commands,
 ) {
     for (entity, object, faction, has_hostile, is_companion) in &fresh {
+        // Every NPC can be socially read; seeding the (empty) cache here keeps
+        // `process_social_read`'s query a plain `&mut` instead of an Option.
+        commands
+            .entity(entity)
+            .insert(crate::npc::social_read::SocialReadMemory::default());
         let Some(def) = definitions.get(&object.definition_id) else {
             continue;
         };

@@ -11,6 +11,8 @@ pub mod hostility;
 pub mod routine;
 pub mod social;
 #[cfg(feature = "server-sim")]
+pub mod social_read;
+#[cfg(feature = "server-sim")]
 pub mod spawn_groups;
 pub mod spellcasting;
 #[cfg(feature = "server-sim")]
@@ -72,6 +74,16 @@ impl Plugin for NpcPlugin {
             .add_systems(
                 Update,
                 crate::npc::guilt::process_judge_commands
+                    .in_set(crate::game::CommandIntercept)
+                    .run_if(simulation_active),
+            )
+            // Social reads: peeks at `Inspect` (leaving it queued for the main
+            // dispatcher) and claims `RequestSocialRead`. Its chat summaries
+            // are deferred through `PendingSocialReadLines` so they print
+            // after the inspect description.
+            .add_systems(
+                Update,
+                crate::npc::social_read::process_social_read
                     .in_set(crate::game::CommandIntercept)
                     .run_if(simulation_active),
             );

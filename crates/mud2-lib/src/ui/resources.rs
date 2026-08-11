@@ -29,6 +29,9 @@ pub struct ContextMenuState {
     /// True when the right-clicked target is a Judge NPC within talk range —
     /// drives the "Pay Fine" row. The fee itself is priced server-side.
     pub can_pay_fine: bool,
+    /// The target is an NPC in talk range — shows the "Details" social-read
+    /// verb.
+    pub can_details: bool,
     /// `(verb, label)` for the *single* interaction (door open/close,
     /// torch light/extinguish, lever pull) currently applicable to the
     /// hovered object. `None` means no interact button is shown.
@@ -94,6 +97,7 @@ impl ContextMenuState {
         self.can_invite_to_party = false;
         self.can_set_party_focus = false;
         self.can_pay_fine = false;
+        self.can_details = false;
     }
 
     /// Set the three lock-related verb flags. Called by the context-menu
@@ -117,6 +121,12 @@ impl ContextMenuState {
     /// unchanged.
     pub fn set_can_pay_fine(&mut self, can_pay_fine: bool) {
         self.can_pay_fine = can_pay_fine;
+    }
+
+    /// Set the NPC "Details" (social read) verb flag. Same separate-setter
+    /// pattern as `set_can_pay_fine`.
+    pub fn set_can_details(&mut self, can_details: bool) {
+        self.can_details = can_details;
     }
 
     /// Set the read-verb flag (books / tombstones / engravable items).
@@ -149,6 +159,7 @@ impl ContextMenuState {
         self.can_invite_to_party = false;
         self.can_set_party_focus = false;
         self.can_pay_fine = false;
+        self.can_details = false;
     }
 
     pub fn is_visible(&self) -> bool {
@@ -171,6 +182,7 @@ impl ContextMenuState {
             ContextMenuAction::Talk => self.can_talk,
             ContextMenuAction::Trade => self.can_trade,
             ContextMenuAction::PayFine => self.can_pay_fine,
+            ContextMenuAction::Details => self.can_details,
             // The trade-session half of the condition lives outside this
             // resource; this half is "the target is one of the player's own
             // backpack/equipment/pouch slots".

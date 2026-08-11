@@ -191,6 +191,16 @@ pub enum GameUiEvent {
         judge_name: String,
         crimes: Vec<CrimeListing>,
     },
+    /// Open (or refresh) the social-read window for an NPC — the server's
+    /// reply to `GameCommand::RequestSocialRead`. `lines` is the full
+    /// pre-formatted read (attitude, and — with a good enough Persuasion
+    /// margin — crime knowledge and faction grudges); the thin client renders
+    /// the strings verbatim and carries no guilt logic.
+    OpenSocialRead {
+        npc_object_id: u64,
+        npc_name: String,
+        lines: Vec<String>,
+    },
 }
 
 /// One row of the judge's crime ledger, ready for display.

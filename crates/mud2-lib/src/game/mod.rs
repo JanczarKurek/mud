@@ -96,6 +96,12 @@ impl Plugin for GameServerPlugin {
             // them existing.
             .insert_resource(crate::npc::witness::PendingCrimes::default())
             .insert_resource(crate::npc::witness::CrimeLog::default())
+            // Social-read chat summaries: produced by the intercept-set reader
+            // in NpcPlugin, drained here after `process_game_commands` so the
+            // line prints below the inspect description it annotates. The
+            // resource lives here (like the crime queues above) so test apps
+            // can wire either half alone.
+            .insert_resource(crate::npc::social_read::PendingSocialReadLines::default())
             .configure_sets(
                 Update,
                 CommandIntercept
@@ -192,6 +198,15 @@ impl Plugin for GameServerPlugin {
                 Update,
                 sync_container_visual_state
                     .after(process_game_commands)
+                    .run_if(simulation_active),
+            )
+            // Social-read summaries print below the inspect description, and
+            // mutate replicated chat state, hence both explicit edges.
+            .add_systems(
+                Update,
+                crate::npc::social_read::emit_social_read_lines
+                    .after(process_game_commands)
+                    .before(crate::network::sets::NetServerSend)
                     .run_if(simulation_active),
             )
             .add_systems(

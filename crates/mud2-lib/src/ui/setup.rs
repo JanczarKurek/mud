@@ -520,6 +520,13 @@ pub fn spawn_hud(
                 "Inspect",
                 ContextMenuAction::Inspect,
             );
+            spawn_context_button(
+                menu,
+                &theme,
+                &palette,
+                "Details",
+                ContextMenuAction::Details,
+            );
             spawn_context_button(menu, &theme, &palette, "Open", ContextMenuAction::Open);
             spawn_context_button(
                 menu,

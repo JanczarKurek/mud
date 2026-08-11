@@ -29,6 +29,7 @@ pub(crate) mod scroll;
 pub mod settings;
 pub mod setup;
 pub mod skills_panel;
+pub mod social_read;
 pub mod sprite_state;
 pub mod status_panel;
 pub mod systems;
@@ -168,6 +169,8 @@ impl Plugin for UiPlugin {
         .insert_resource(crate::ui::book_panel::BookPanelRenderState::default())
         .insert_resource(crate::ui::crime_ledger::CrimeLedgerState::default())
         .insert_resource(crate::ui::crime_ledger::CrimeLedgerRenderState::default())
+        .insert_resource(crate::ui::social_read::SocialReadPanelState::default())
+        .insert_resource(crate::ui::social_read::SocialReadRenderState::default())
         .insert_resource(TradePanelRenderState::default())
         .insert_resource(TradePopupState::default())
         .insert_resource(resources::PartyInvitePopupState::default())
@@ -419,6 +422,18 @@ impl Plugin for UiPlugin {
                     .after(apply_game_ui_events),
                 crate::ui::crime_ledger::sync_crime_ledger_body
                     .after(crate::ui::crime_ledger::sync_crime_ledger_lifecycle),
+            )
+                .run_if(in_state(ClientAppState::InGame)),
+        )
+        .add_systems(
+            Update,
+            (
+                crate::ui::social_read::handle_social_read_clicks,
+                crate::ui::social_read::sync_social_read_lifecycle
+                    .after(crate::ui::social_read::handle_social_read_clicks)
+                    .after(apply_game_ui_events),
+                crate::ui::social_read::sync_social_read_body
+                    .after(crate::ui::social_read::sync_social_read_lifecycle),
             )
                 .run_if(in_state(ClientAppState::InGame)),
         )

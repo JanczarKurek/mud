@@ -97,6 +97,10 @@ pub enum MovableWindowId {
     /// Spawned in response to `GameUiEvent::OpenCrimeLedger`; re-opening at
     /// another judge replaces the snapshot in `CrimeLedgerState`.
     CrimeLedger,
+    /// Singleton social-read window (what an NPC thinks of you). Spawned in
+    /// response to `GameUiEvent::OpenSocialRead`; reading another NPC
+    /// replaces the snapshot in `SocialReadPanelState`.
+    SocialRead,
 }
 
 #[derive(Component)]
