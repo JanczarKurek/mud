@@ -1048,10 +1048,14 @@ fn load_world_from_snapshot(
                 entity.insert(profile);
             }
             if let Some(def) = object_definitions.get(&definition_id_for_lookup) {
-                if !def.barks.aggro.is_empty() || !def.barks.mutter.is_empty() {
+                if !def.barks.aggro.is_empty()
+                    || !def.barks.mutter.is_empty()
+                    || !def.barks.alarm.is_empty()
+                {
                     entity.insert(crate::npc::components::Barks {
                         aggro: def.barks.aggro.clone(),
                         mutter: def.barks.mutter.clone(),
+                        alarm: def.barks.alarm.clone(),
                     });
                 }
             }

@@ -125,10 +125,16 @@ pub fn apply_pending_damage(
     mut chat_log_query: crate::combat::systems::ScopedChatLogQuery,
     player_identity_query: Query<&PlayerIdentity, With<Player>>,
     parties: Res<crate::game::party::Parties>,
-    mut pending_aggro: ResMut<crate::npc::aggro::PendingNpcAggro>,
-    mut pending_guilt: ResMut<crate::npc::guilt::PendingGuiltEvents>,
+    // NPC-reaction queues, grouped as one tuple param so the system stays
+    // within Bevy's 16-parameter ceiling.
+    npc_queues: (
+        ResMut<crate::npc::aggro::PendingNpcAggro>,
+        ResMut<crate::npc::guilt::PendingGuiltEvents>,
+        ResMut<crate::npc::witness::PendingCrimes>,
+    ),
     mut commands: Commands,
 ) {
+    let (mut pending_aggro, mut pending_guilt, mut pending_crimes) = npc_queues;
     let now = time.elapsed_secs();
     if pending.events.is_empty() {
         return;
@@ -197,6 +203,22 @@ pub fn apply_pending_damage(
                 {
                     pending_guilt.push_attack(player, factions.mask, event.target, now);
                 }
+                // Witnessable crime: any attributed hit on a faction-bearing
+                // NPC — player *or* NPC attacker (a wolf mauling a sheep
+                // counts). Nearby protectors/faction-mates that can see it
+                // react immediately, independent of the guilt ledger above.
+                if let (Some(attacker), Some(factions)) = (
+                    event.attacker.filter(|a| *a != event.target),
+                    target_factions,
+                ) {
+                    pending_crimes.push(crate::npc::witness::CrimeReport {
+                        attacker,
+                        victim: event.target,
+                        victim_tile: *target_position,
+                        victim_factions: factions.mask,
+                        space_id: target_space.space_id,
+                    });
+                }
             }
             // Survivor: emit the damage-type-keyed hit VFX. Death plays
             // `death_poof` below instead, so we don't stack two effects on
@@ -258,6 +280,21 @@ pub fn apply_pending_damage(
                     player,
                     factions: factions.mask,
                     amount: crate::npc::guilt::KILL_GUILT,
+                });
+            }
+            // A witnessed kill is a crime like a witnessed hit — the report
+            // carries the factions copied out above, since the victim is
+            // despawned below.
+            if let (Some(attacker), Some(factions)) = (
+                event.attacker.filter(|a| *a != event.target),
+                victim_factions,
+            ) {
+                pending_crimes.push(crate::npc::witness::CrimeReport {
+                    attacker,
+                    victim: event.target,
+                    victim_tile: position,
+                    victim_factions: factions.mask,
+                    space_id,
                 });
             }
             if let Some(player_id) = event.source.xp_credit() {

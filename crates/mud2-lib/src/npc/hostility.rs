@@ -185,8 +185,9 @@ pub fn is_hostile_toward(a: Aggressor<'_>, b: Subject) -> bool {
 }
 
 /// Detection numbers for a prey NPC whose definition has no `npc_behavior:`
-/// block to borrow them from.
-const DEFAULT_PREY_DETECT_TILES: i32 = 6;
+/// block to borrow them from. Also the civilian crime-witness radius fallback
+/// (`npc::systems::resolve_witnessed_crime`).
+pub(crate) const DEFAULT_PREY_DETECT_TILES: i32 = 6;
 
 /// Resolves the tag-model components for every freshly-added NPC, whatever
 /// path spawned it (map placement, spawn group, summon, admin spawn, snapshot
@@ -253,6 +254,16 @@ pub fn resolve_npc_tag_components(
                 clears: faction_interner.resolve(&judge.clears_factions),
                 copper_per_guilt_point: judge.copper_per_guilt_point,
             });
+        }
+        // Protector duty (`protects_factions:`): template data like the
+        // membership above. The witness system requires combat AI to act on
+        // it, but the component is attached regardless so data errors surface
+        // as inert protectors rather than silently-dropped YAML.
+        let protects = faction_interner.resolve(&def.protects_factions);
+        if !protects.is_empty() {
+            commands
+                .entity(entity)
+                .insert(crate::npc::witness::Protector { protects });
         }
 
         if !profile.flees_from.is_empty() {

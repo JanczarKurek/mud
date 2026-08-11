@@ -55,14 +55,19 @@ impl Plugin for CombatPlugin {
             .init_resource::<PendingRetaliations>()
             .init_resource::<ScheduledImpacts>()
             // Drop any in-flight missiles / pending AoE waves (and stale
-            // retaliation records, whose Entities would dangle) when leaving
-            // the world, so they can't leak into a freshly-loaded one.
+            // retaliation records and crime reports, whose Entities would
+            // dangle) when leaving the world, so they can't leak into a
+            // freshly-loaded one.
             .add_systems(
                 OnExit(ClientAppState::InGame),
                 |mut scheduled: ResMut<ScheduledImpacts>,
-                 mut retaliations: ResMut<PendingRetaliations>| {
+                 mut retaliations: ResMut<PendingRetaliations>,
+                 mut pending_crimes: ResMut<crate::npc::witness::PendingCrimes>,
+                 mut crime_log: ResMut<crate::npc::witness::CrimeLog>| {
                     scheduled.items.clear();
                     retaliations.items.clear();
+                    pending_crimes.items.clear();
+                    crime_log.clear();
                 },
             )
             .add_systems(
@@ -125,6 +130,17 @@ impl Plugin for CombatPlugin {
                     .after(tick_dot_effects)
                     .after(tick_scheduled_impacts)
                     .before(crate::network::sets::NetServerSend)
+                    .run_if(simulation_active),
+            )
+            // Witnessed crimes: fold the reports the damage drain filed into
+            // the lingering log NPCs sample on their AI ticks. Same anchor
+            // rationale as the aggro/guilt systems below; no `NetServerSend`
+            // edge because the log mutates no replicated state (crimes live
+            // ~5s, so frame latency is irrelevant).
+            .add_systems(
+                Update,
+                crate::npc::witness::update_crime_log
+                    .after(apply_pending_damage)
                     .run_if(simulation_active),
             )
             // Aggro-on-damage: surviving NPC victims lock onto their attacker.

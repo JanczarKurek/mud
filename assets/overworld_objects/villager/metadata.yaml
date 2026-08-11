@@ -3,6 +3,14 @@ name: Villager
 tags: [humanoid, townsfolk]
 factions: [emberbrook_town]
 description: Just a wandering villager — also dabbles in trade.
+# Mobility only: no `hostile:` flag, and placed instances default to
+# stationary roam (single-tile bounds), so the shop stays where it was
+# authored — but an attacked villager can now actually run for it, and walk
+# back home after calming down.
+npc_behavior:
+  step_interval_seconds: 0.7
+  detect_distance_tiles: 6
+  disengage_distance_tiles: 8
 dialog_node: FriendlyVillager
 shopkeeper:
   wares:

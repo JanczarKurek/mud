@@ -57,10 +57,22 @@ Follow-ups:
   (`GameCommand::PayGuiltFine` + a "Pay Fine" context verb). Guards now punish
   livestock-killers and villager-attackers, and the per-viewer red highlight
   makes a guard look hostile *only to the criminal*. Remaining gaps:
-  - Guilt only accrues from damage **you** deal. There is still no *witness*
-    model — murdering a lone shepherd out of sight incriminates you exactly as
-    much as doing it on the town plaza, and an NPC killed outright never
-    reports it (it just stops existing, though its faction already learned).
+  - ~~No immediate witness reactions~~ — **shipped** (`npc/witness.rs`,
+    2026-08-11): every attributed hit/kill on a faction-bearing NPC files a
+    `CrimeReport` into a decaying `CrimeLog` (the `NoiseField` pattern); NPCs
+    that can *see* the assault react on their next AI tick at **zero** guilt.
+    `protects_factions:` NPCs (town guard) attack the aggressor — player or
+    NPC (wolf-on-sheep counts) — shout a `barks.alarm` line (cooldown-exempt)
+    and emit `ALARM_NOISE` so out-of-LoS guards go Alert; unarmed
+    faction-mates scatter. Victims without combat AI now panic-flee when hit
+    (`FleeReason::Attacked`, refreshed by fresh damage), the villager gained
+    an `npc_behavior:` block so it can actually run (stationary roam keeps
+    the shop in place), and the shopkeeper freeze-near-player pause is gated
+    to Wander/Alert so a fleeing shopkeeper moves.
+  - *Guilt propagation* itself is still witness-blind: murdering a lone
+    shepherd out of sight incriminates you with the whole faction exactly as
+    much as doing it on the plaza (only the immediate reactions above are
+    sight-gated).
   - No guilt decay over time, and no per-creature severity weighting (a sheep
     and a magistrate cost the same).
   - The Judge is reachable only in person, which is awkward once the whole town

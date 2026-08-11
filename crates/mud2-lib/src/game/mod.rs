@@ -89,6 +89,13 @@ impl Plugin for GameServerPlugin {
             .insert_resource(Parties::default())
             .insert_resource(crate::world::noise::PendingNoiseEvents::default())
             .insert_resource(crate::world::noise::NoiseField::default())
+            // Witnessed-crime queue + log. Like the noise field above, the
+            // producer (`apply_pending_damage` in `CombatPlugin`) and the
+            // consumer (`update_roaming_npcs` in `NpcPlugin`) are optional in
+            // test apps, so the resources live here where both can rely on
+            // them existing.
+            .insert_resource(crate::npc::witness::PendingCrimes::default())
+            .insert_resource(crate::npc::witness::CrimeLog::default())
             .configure_sets(
                 Update,
                 CommandIntercept

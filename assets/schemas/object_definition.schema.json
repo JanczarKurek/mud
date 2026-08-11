@@ -63,6 +63,7 @@
       "description": "Lists of short utterances this NPC may emit as floating speech bubbles. Defaults to empty (NPC stays silent); see `BarkDef`.",
       "default": {
         "aggro": [],
+        "alarm": [],
         "mutter": []
       },
       "allOf": [
@@ -391,6 +392,14 @@
           "type": "null"
         }
       ]
+    },
+    "protects_factions": {
+      "description": "Social factions this NPC actively protects: witnessing an attributed attack on a member makes it attack the aggressor on the spot (and shout its `barks.alarm`), independent of the guilt ledger. Requires combat AI (`npc_behavior` / `hostile_towards`) to act on. See `npc::witness`.",
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     },
     "render": {
       "$ref": "#/definitions/RenderMetadata"
@@ -769,6 +778,14 @@
       "type": "object",
       "properties": {
         "aggro": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "alarm": {
+          "description": "Shouted when this NPC (a protector — see `protects_factions`) raises the alarm about a witnessed crime. Exempt from the bubble cooldown.",
           "default": [],
           "type": "array",
           "items": {

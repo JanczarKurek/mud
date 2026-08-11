@@ -476,10 +476,14 @@ pub fn realize_npc(
         ));
     }
     if let Some(def) = definition {
-        if !def.barks.aggro.is_empty() || !def.barks.mutter.is_empty() {
+        if !def.barks.aggro.is_empty()
+            || !def.barks.mutter.is_empty()
+            || !def.barks.alarm.is_empty()
+        {
             entity_commands.insert(Barks {
                 aggro: def.barks.aggro.clone(),
                 mutter: def.barks.mutter.clone(),
+                alarm: def.barks.alarm.clone(),
             });
         }
     }

@@ -8,6 +8,10 @@ faction: player_side
 # `emberbrook_town` is what makes a guard take a murdered villager (or a
 # slaughtered sheep) personally.
 factions: [emberbrook_watch, emberbrook_town]
+# Active duty: a guard that *sees* an attack on a member of these factions
+# attacks the aggressor immediately (and shouts an alarm bark), regardless of
+# how much guilt the attacker has accrued.
+protects_factions: [emberbrook_watch, emberbrook_town]
 hostile_towards: [monster, undead]
 stats:
   strength: 13
@@ -38,6 +42,10 @@ barks:
     - "All quiet."
     - "Long shift..."
     - "*scans the treeline*"
+  alarm:
+    - "Stop! Criminal!"
+    - "You there! Drop your weapon!"
+    - "To arms! Assault in the streets!"
 render:
   debug_color:
   - 120

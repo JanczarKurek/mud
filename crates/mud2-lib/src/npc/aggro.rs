@@ -8,6 +8,10 @@
 //! `hostile_towards` players still retaliates when a player attacks it. Only
 //! *proactive* aggression goes through the faction/tag hostility model.
 //!
+//! Fight or flight: a victim with `HostileBehavior` turns and fights; one
+//! without (a villager, a sheep) has no way to fight back and panics into
+//! `AiState::Flee` instead — see `FleeReason::Attacked`.
+//!
 //! `PendingNpcAggro` is deliberately shaped as a generic "this NPC now hates
 //! that entity" queue rather than a damage-specific one: a future
 //! guilt/witness system (guards attacking a player they *saw* murder a
@@ -17,7 +21,7 @@ use bevy::prelude::*;
 
 use crate::combat::components::CombatTarget;
 use crate::npc::components::{
-    AiMemory, AiState, Companion, HostileBehavior, Npc, RoamingStepTimer,
+    AiMemory, AiState, Companion, FleeReason, HostileBehavior, Npc, RoamingStepTimer,
 };
 use crate::player::components::VitalStats;
 use crate::world::components::SpaceResident;
@@ -52,15 +56,19 @@ type AggroVictimQuery<'w, 's> = Query<
         &'static VitalStats,
         &'static SpaceResident,
         Option<&'static Companion>,
+        Has<HostileBehavior>,
     ),
-    (With<Npc>, With<HostileBehavior>),
+    With<Npc>,
 >;
 
-/// Drains [`PendingNpcAggro`]: the victim (if it can fight at all — has
-/// `HostileBehavior` — and isn't already committed to a live fight) locks a
-/// `CombatTarget` on its attacker and goes straight to `Pursue`. Runs after
-/// `apply_pending_damage`; the retarget takes effect on the victim's next AI
-/// tick, which the zeroed step timer pulls forward to the next frame.
+/// Drains [`PendingNpcAggro`]: a victim that can fight (has
+/// `HostileBehavior`, and isn't already committed to a live fight) locks a
+/// `CombatTarget` on its attacker and goes straight to `Pursue`; a victim
+/// that can't fight panics into `Flee` away from the attacker instead. Runs
+/// after `apply_pending_damage`; the reaction takes effect on the victim's
+/// next AI tick, which the zeroed step timer pulls forward to the next frame.
+/// NPCs without the roaming/AI component set (stationary prop-NPCs) fail the
+/// query lookup and simply don't react.
 pub fn apply_damage_aggro(
     time: Res<Time>,
     mut pending: ResMut<PendingNpcAggro>,
@@ -73,7 +81,7 @@ pub fn apply_damage_aggro(
     }
     let now = time.elapsed_secs();
     for event in std::mem::take(&mut pending.items) {
-        let Ok((mut ai_state, mut ai_memory, mut timer, vitals, resident, companion)) =
+        let Ok((mut ai_state, mut ai_memory, mut timer, vitals, resident, companion, can_fight)) =
             victims.get_mut(event.victim)
         else {
             continue;
@@ -90,6 +98,18 @@ pub fn apply_damage_aggro(
         }
         // A companion never turns on its own owner over stray splash damage.
         if companion.is_some_and(|c| c.owner == event.attacker) {
+            continue;
+        }
+        // No way to fight back: panic instead of retaliating. Overwrites an
+        // ongoing Flee so every fresh hit refreshes the timer (the re-flee
+        // rule), and never inserts a CombatTarget.
+        if !can_fight {
+            *ai_state = AiState::Flee {
+                from: event.attacker,
+                expires_at_seconds: now + crate::npc::systems::FLEE_DURATION_SECS,
+                reason: FleeReason::Attacked,
+            };
+            timer.remaining_seconds = 0.0;
             continue;
         }
         // Already committed to a fight: don't ping-pong between attackers.
@@ -301,6 +321,100 @@ mod tests {
         assert!(
             app.world().get::<CombatTarget>(npc).is_none(),
             "an attacker in another space must not be chased"
+        );
+    }
+
+    /// A mobile NPC with no combat AI — a villager or sheep.
+    fn spawn_non_fighter(app: &mut App, pos: TilePosition) -> Entity {
+        app.world_mut()
+            .spawn((
+                Npc,
+                SpaceResident {
+                    space_id: TEST_SPACE,
+                },
+                pos,
+                RoamingBehavior {
+                    bounds: RoamBounds {
+                        min_x: 0,
+                        min_y: 0,
+                        max_x: 30,
+                        max_y: 30,
+                    },
+                    step_interval_seconds: 0.5,
+                    step_interval_jitter_seconds: 0.0,
+                    idle_pause_chance: 0.0,
+                    momentum_bias: 0.6,
+                },
+                RoamingStepTimer {
+                    remaining_seconds: 100.0,
+                },
+                AiState::default(),
+                crate::npc::components::AiMemory::default(),
+                VitalStats::full(20.0, 0.0),
+            ))
+            .id()
+    }
+
+    #[test]
+    fn non_fighter_victim_flees_instead_of_retaliating() {
+        let mut app = test_app();
+        let villager = spawn_non_fighter(&mut app, TilePosition::ground(0, 0));
+        let player = spawn_player(&mut app, TilePosition::ground(1, 0));
+
+        push_aggro(&mut app, villager, player);
+        app.update();
+
+        assert!(
+            matches!(
+                *app.world().get::<AiState>(villager).unwrap(),
+                AiState::Flee { from, reason: FleeReason::Attacked, .. } if from == player
+            ),
+            "a victim without HostileBehavior must panic into Flee"
+        );
+        assert!(
+            app.world().get::<CombatTarget>(villager).is_none(),
+            "a fleeing non-fighter must not acquire a CombatTarget"
+        );
+        assert_eq!(
+            app.world()
+                .get::<RoamingStepTimer>(villager)
+                .unwrap()
+                .remaining_seconds,
+            0.0,
+            "step timer zeroed so the panic acts on the next AI tick"
+        );
+    }
+
+    #[test]
+    fn re_hit_refreshes_the_flee_timer() {
+        let mut app = test_app();
+        let villager = spawn_non_fighter(&mut app, TilePosition::ground(0, 0));
+        let player = spawn_player(&mut app, TilePosition::ground(1, 0));
+
+        push_aggro(&mut app, villager, player);
+        app.update();
+        let first_expiry = match *app.world().get::<AiState>(villager).unwrap() {
+            AiState::Flee {
+                expires_at_seconds, ..
+            } => expires_at_seconds,
+            other => panic!("expected Flee, got {other:?}"),
+        };
+
+        // Let some time pass, then hit again: the deadline must move forward.
+        app.world_mut()
+            .resource_mut::<Time<Virtual>>()
+            .advance_by(std::time::Duration::from_millis(500));
+        push_aggro(&mut app, villager, player);
+        app.update();
+        let second_expiry = match *app.world().get::<AiState>(villager).unwrap() {
+            AiState::Flee {
+                expires_at_seconds, ..
+            } => expires_at_seconds,
+            other => panic!("expected Flee, got {other:?}"),
+        };
+        assert!(
+            second_expiry > first_expiry,
+            "a fresh hit must refresh the flee deadline ({second_expiry} vs {first_expiry})"
         );
     }
 }

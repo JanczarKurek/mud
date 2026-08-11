@@ -13,9 +13,10 @@ use crate::npc::components::{
     PreyBehavior, RoamingBehavior, RoamingRandomState, RoamingStepTimer,
 };
 use crate::npc::detection::detection_outcome;
-use crate::npc::guilt::KnownGuilty;
+use crate::npc::guilt::{FactionMembership, KnownGuilty};
 use crate::npc::hostility::{is_hostile_toward, Aggressor, Subject, TagProfile};
 use crate::npc::routine::{routine_step, Routine, RoutineIntent, RoutinePhase, RoutineState};
+use crate::npc::witness::{CrimeLog, Protector, ALARM_NOISE};
 use crate::player::classes::ability_mod;
 use crate::player::components::{
     AwaitingRespawn, BaseStats, DerivedStats, Player, PlayerId, PlayerIdentity, Sneaking,
@@ -31,7 +32,7 @@ use crate::world::direction::Direction;
 use crate::world::lighting::{
     default_day_night_curve, light_level_at, AmbientKeyframeF32, PointLight, WorldClock,
 };
-use crate::world::noise::NoiseField;
+use crate::world::noise::{NoiseField, PendingNoiseEvents};
 use crate::world::spatial::{self, has_line_of_sight, BlockerIndex};
 
 /// Shopkeepers stop wandering when a player is within this many tiles, so the
@@ -58,8 +59,10 @@ pub(crate) use crate::npc::components::BUBBLE_COOLDOWN_SECONDS;
 const FLEE_RECENT_DAMAGE_WINDOW_SECS: f32 = 4.0;
 
 /// Total time the Flee stance lasts before reverting to Wander. Refreshes
-/// every tick the NPC re-spots the attacker.
-const FLEE_DURATION_SECS: f32 = 6.0;
+/// every tick the NPC re-spots the attacker. `pub(crate)` because the
+/// aggro-on-damage drain (`npc::aggro`) starts `FleeReason::Attacked` panics
+/// with the same duration.
+pub(crate) const FLEE_DURATION_SECS: f32 = 6.0;
 
 /// Fallback calm-down radius for a `FleeReason::Fear` flee when the fleeing
 /// NPC somehow has no `PreyBehavior` to read `detect_distance_tiles` from.
@@ -173,7 +176,9 @@ pub fn update_roaming_npcs(
         Option<Res<crate::world::floor_definitions::FloorTilesetDefinitions>>,
     ),
     world_clock: Option<Res<WorldClock>>,
-    noise_field: Option<Res<NoiseField>>,
+    // Ambient signal fields NPCs sample: lingering noise and witnessed crimes.
+    // Grouped as one tuple param to stay under Bevy's 16-parameter ceiling.
+    signal_fields: (Option<Res<NoiseField>>, Option<Res<CrimeLog>>),
     player_query: Query<
         (
             Entity,
@@ -198,6 +203,8 @@ pub fn update_roaming_npcs(
             Option<&Companion>,
             Option<&TagProfile>,
             Option<&KnownGuilty>,
+            Option<&FactionMembership>,
+            Option<&Protector>,
         ),
         (With<Npc>, Without<Player>),
     >,
@@ -243,7 +250,12 @@ pub fn update_roaming_npcs(
     >,
     last_damaged_query: Query<(Option<&LastDamagedAt>, Option<&PreyBehavior>), With<Npc>>,
     derived_stats_query: Query<&DerivedStats, With<Npc>>,
-    mut pending_steps: ResMut<crate::world::step_triggers::PendingStepEvents>,
+    // Outgoing queues: step-trigger events and (for alarm shouts) noise
+    // emissions. Grouped as one tuple param for the 16-parameter ceiling.
+    mut pending_out: (
+        ResMut<crate::world::step_triggers::PendingStepEvents>,
+        Option<ResMut<PendingNoiseEvents>>,
+    ),
     mut ui_events: Option<ResMut<PendingGameUiEvents>>,
     mut commands: Commands,
 ) {
@@ -319,7 +331,7 @@ pub fn update_roaming_npcs(
     // `&mut TilePosition`); the faction comes from the disjoint
     // `npc_faction_query` by entity lookup.
     combatants.extend(npc_query.iter().filter_map(|(entity, resident, tile, ..)| {
-        let (faction, _, tags, _) = npc_faction_query.get(entity).ok()?;
+        let (faction, _, tags, _, _, _) = npc_faction_query.get(entity).ok()?;
         // Combatant = anything with a side (faction) *or* an identity (tags).
         // Tag-only NPCs (sheep) fall back to `Neutral`: valid targets for
         // tag-driven aggressors, nobody's faction enemy. NPCs with neither
@@ -443,17 +455,27 @@ pub fn update_roaming_npcs(
         // built without an explicit faction. The owner tile is resolved from the
         // combatant list (owner is a player or another faction NPC, both there)
         // and only when same-space, so a companion only follows on its own map.
-        let (self_faction, companion, self_tags, self_guilt) = npc_faction_query
-            .get(entity)
-            .map(|(f, c, t, g)| {
-                (
-                    f.copied().unwrap_or(Faction::MonsterSide),
-                    c.copied(),
-                    t.copied().unwrap_or_default(),
-                    g,
-                )
-            })
-            .unwrap_or((Faction::MonsterSide, None, TagProfile::default(), None));
+        let (self_faction, companion, self_tags, self_guilt, self_membership, self_protector) =
+            npc_faction_query
+                .get(entity)
+                .map(|(f, c, t, g, m, p)| {
+                    (
+                        f.copied().unwrap_or(Faction::MonsterSide),
+                        c.copied(),
+                        t.copied().unwrap_or_default(),
+                        g,
+                        m.copied(),
+                        p.copied(),
+                    )
+                })
+                .unwrap_or((
+                    Faction::MonsterSide,
+                    None,
+                    TagProfile::default(),
+                    None,
+                    None,
+                    None,
+                ));
         let companion_follow = companion.and_then(|c| {
             combatants
                 .iter()
@@ -474,8 +496,10 @@ pub fn update_roaming_npcs(
         }
 
         // Shopkeeper pause is orthogonal to the FSM: peaceful NPCs face the
-        // nearest nearby player so context menus / trade UI stay live.
-        if is_shopkeeper {
+        // nearest nearby player so context menus / trade UI stay live. Only
+        // while idle — a fleeing (or fighting) shopkeeper must reach its FSM
+        // tick, or an attacked one would freeze in place next to its attacker.
+        if is_shopkeeper && matches!(*ai_state, AiState::Wander | AiState::Alert { .. }) {
             let nearest = combatants
                 .iter()
                 .copied()
@@ -503,9 +527,33 @@ pub fn update_roaming_npcs(
 
         // Noise this NPC can hear right now (loudest audible in its space).
         // Drives Wander → Alert investigation even with no line of sight.
-        let heard_noise = noise_field
+        let heard_noise = signal_fields
+            .0
             .as_deref()
             .and_then(|field| field.loudest_audible(resident.space_id, *tile_position));
+
+        // A recent crime this NPC can see, if any: as a protector of the
+        // victim's faction (→ attack the aggressor) or as an unarmed
+        // faction-mate (→ scatter).
+        let witnessed_crime = resolve_witnessed_crime(
+            signal_fields.1.as_deref(),
+            entity,
+            resident.space_id,
+            *tile_position,
+            self_membership,
+            self_protector,
+            hostile_behavior,
+            prey_behavior,
+            &combatants,
+            &los_blockers,
+            |attacker| {
+                npc_faction_query
+                    .get(attacker)
+                    .ok()
+                    .and_then(|(_, _, _, _, membership, _)| membership)
+                    .map(|m| m.mask)
+            },
+        );
 
         let mut outcome = step_ai(StepAiInput {
             entity,
@@ -534,6 +582,7 @@ pub fn update_roaming_npcs(
             time_of_day,
             light_emitters: &light_emitters,
             heard_noise,
+            witnessed_crime,
         });
 
         // --- Life-agenda overlay (parallel to the combat FSM) -----------------
@@ -698,7 +747,7 @@ pub fn update_roaming_npcs(
                 occupied.remove(&(resident.space_id, old_position));
                 occupied.insert(new_key);
                 *tile_position = new_position;
-                pending_steps.push(crate::world::step_triggers::StepEvent {
+                pending_out.0.push(crate::world::step_triggers::StepEvent {
                     entity,
                     space_id: resident.space_id,
                     tile: new_position,
@@ -734,6 +783,15 @@ pub fn update_roaming_npcs(
                     },
                 );
                 ai_memory.last_bark_seconds = elapsed;
+            }
+        }
+
+        // Raising the alarm is audible beyond sight: a loud noise at the
+        // shouter's tile pulls out-of-LoS wandering guards into Alert via the
+        // regular noise path.
+        if outcome.raise_alarm {
+            if let Some(pending_noise) = pending_out.1.as_deref_mut() {
+                pending_noise.push(resident.space_id, *tile_position, ALARM_NOISE);
             }
         }
 
@@ -826,6 +884,11 @@ struct StepAiInput<'a> {
     /// Loudest noise this NPC can currently hear (its tile), or `None`. A heard
     /// noise pulls a wandering hostile NPC into Alert at that tile.
     heard_noise: Option<TilePosition>,
+    /// A recent crime this NPC can see (see `resolve_witnessed_crime`).
+    /// `as_protector` decides the reaction: attack the aggressor (guard) vs
+    /// scatter (unarmed faction-mate). Independent of the guilt ledger by
+    /// construction — resolution never consults `KnownGuilty`.
+    witnessed_crime: Option<WitnessedCrime>,
 }
 
 impl<'a> StepAiInput<'a> {
@@ -851,6 +914,10 @@ struct AiOutcome {
     move_to: Option<TilePosition>,
     idle_pause: bool,
     bark: Option<PendingBark>,
+    /// When true, the NPC is raising the alarm about a witnessed crime: the
+    /// outcome application emits an `ALARM_NOISE` at its tile so out-of-sight
+    /// faction-mates go Alert via the normal noise path.
+    raise_alarm: bool,
 }
 
 #[derive(Debug)]
@@ -889,6 +956,30 @@ fn tick_wander(input: &mut StepAiInput<'_>) -> AiOutcome {
             input.elapsed + FLEE_DURATION_SECS,
             FleeReason::Fear,
         );
+    }
+
+    // Witnessed crime: a protector attacks the aggressor on the spot (and
+    // raises the alarm); an unarmed faction-mate scatters. Checked before
+    // regular target acquisition — a guard that just saw an assault doesn't
+    // wait to be attacked itself, and this fires at zero guilt points.
+    if let Some(crime) = input.witnessed_crime {
+        if crime.as_protector {
+            let mut outcome = tick_pursue_or_engage(input, crime.attacker, false);
+            if !matches!(outcome.target, TargetChange::Clear) {
+                outcome.target = TargetChange::Set(crime.attacker);
+            }
+            outcome.bark = pick_bark(input, BarkKind::Alarm);
+            outcome.raise_alarm = true;
+            return outcome;
+        }
+        if input.hostile_behavior.is_none() {
+            return tick_flee(
+                input,
+                crime.attacker,
+                input.elapsed + FLEE_DURATION_SECS,
+                FleeReason::Fear,
+            );
+        }
     }
 
     // Try to acquire a target. On fresh aggro, execute the corresponding
@@ -961,6 +1052,7 @@ fn tick_wander(input: &mut StepAiInput<'_>) -> AiOutcome {
                     move_to: step,
                     idle_pause: false,
                     bark: None,
+                    raise_alarm: false,
                 };
             }
         } else if let Some(noise_tile) = input.heard_noise {
@@ -977,6 +1069,7 @@ fn tick_wander(input: &mut StepAiInput<'_>) -> AiOutcome {
                 move_to: None,
                 idle_pause: false,
                 bark: pick_bark(input, BarkKind::Mutter),
+                raise_alarm: false,
             };
         }
     }
@@ -1002,6 +1095,7 @@ fn tick_wander(input: &mut StepAiInput<'_>) -> AiOutcome {
             move_to: None,
             idle_pause: true,
             bark: mutter,
+            raise_alarm: false,
         };
     }
 
@@ -1043,6 +1137,7 @@ fn tick_wander(input: &mut StepAiInput<'_>) -> AiOutcome {
             move_to: step,
             idle_pause: false,
             bark: mutter,
+            raise_alarm: false,
         };
     }
 
@@ -1089,6 +1184,7 @@ fn tick_wander(input: &mut StepAiInput<'_>) -> AiOutcome {
             move_to: Some(target_position),
             idle_pause: false,
             bark: mutter,
+            raise_alarm: false,
         };
     }
 
@@ -1103,6 +1199,7 @@ fn tick_wander(input: &mut StepAiInput<'_>) -> AiOutcome {
         move_to: None,
         idle_pause: false,
         bark: mutter,
+        raise_alarm: false,
     }
 }
 
@@ -1111,6 +1208,21 @@ fn tick_alert(
     last_seen: TilePosition,
     expires_at_seconds: f32,
 ) -> AiOutcome {
+    // A witnessed crime preempts the investigation: an alerted guard that
+    // walks in on the assault attacks the aggressor directly (same reaction
+    // as in `tick_wander`).
+    if let Some(crime) = input.witnessed_crime {
+        if crime.as_protector {
+            let mut outcome = tick_pursue_or_engage(input, crime.attacker, false);
+            if !matches!(outcome.target, TargetChange::Clear) {
+                outcome.target = TargetChange::Set(crime.attacker);
+            }
+            outcome.bark = pick_bark(input, BarkKind::Alarm);
+            outcome.raise_alarm = true;
+            return outcome;
+        }
+    }
+
     // While alert, re-detect at the *engage* radius (hysteresis). Lets a
     // briefly-hidden player snap back into pursuit before the alert decays.
     // Act on the new state immediately, same as Wander → Pursue.
@@ -1158,6 +1270,7 @@ fn tick_alert(
             move_to: None,
             idle_pause: false,
             bark: None,
+            raise_alarm: false,
         };
     }
 
@@ -1200,6 +1313,7 @@ fn tick_alert(
         move_to: next,
         idle_pause: false,
         bark: None,
+        raise_alarm: false,
     }
 }
 
@@ -1232,6 +1346,7 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
             move_to: None,
             idle_pause: false,
             bark: None,
+            raise_alarm: false,
         };
     };
     if target_space != input.space_id {
@@ -1245,6 +1360,7 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
             move_to: None,
             idle_pause: false,
             bark: None,
+            raise_alarm: false,
         };
     }
 
@@ -1259,6 +1375,7 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
             move_to: None,
             idle_pause: false,
             bark: None,
+            raise_alarm: false,
         };
     };
 
@@ -1310,6 +1427,7 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
             move_to,
             idle_pause: false,
             bark: None,
+            raise_alarm: false,
         };
     }
 
@@ -1335,6 +1453,7 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
             move_to: None,
             idle_pause: false,
             bark: None,
+            raise_alarm: false,
         };
     }
 
@@ -1366,6 +1485,7 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
                 move_to: None,
                 idle_pause: false,
                 bark: None,
+                raise_alarm: false,
             };
         }
         // Within grace: keep the target, keep pressing toward their last tile.
@@ -1402,6 +1522,7 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
             move_to,
             idle_pause: false,
             bark: None,
+            raise_alarm: false,
         };
     }
 
@@ -1446,6 +1567,7 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
             move_to: None,
             idle_pause: false,
             bark: None,
+            raise_alarm: false,
         };
     }
 
@@ -1476,6 +1598,7 @@ fn tick_pursue_or_engage(input: &mut StepAiInput<'_>, target: Entity, engaged: b
         move_to,
         idle_pause: false,
         bark: None,
+        raise_alarm: false,
     }
 }
 
@@ -1506,6 +1629,7 @@ fn tick_flee(
             move_to: None,
             idle_pause: false,
             bark: None,
+            raise_alarm: false,
         };
     };
     let attacker_lost = attacker_space != input.space_id;
@@ -1520,6 +1644,7 @@ fn tick_flee(
             move_to: None,
             idle_pause: false,
             bark: None,
+            raise_alarm: false,
         };
     }
 
@@ -1556,6 +1681,7 @@ fn tick_flee(
                     move_to: step,
                     idle_pause: false,
                     bark: None,
+                    raise_alarm: false,
                 };
             }
             // Still unreachable: refresh the timer while the attacker can
@@ -1573,15 +1699,23 @@ fn tick_flee(
                 expires_at_seconds
             }
         }
-        FleeReason::Fear => {
+        FleeReason::Fear | FleeReason::Attacked => {
             // Prey keeps running while the predator stays close, and calms
             // down (timer runs out) once it has opened enough distance —
-            // bare LoS would never let a sheep in an open meadow stop.
+            // bare LoS would never let a sheep in an open meadow stop. An
+            // `Attacked` panic additionally stays refreshed while damage is
+            // fresh: being shot at range must keep the victim running even
+            // past the calm radius.
             let calm_radius = input
                 .prey_behavior
                 .map(|p| p.detect_distance_tiles)
                 .unwrap_or(DEFAULT_FEAR_CALM_RADIUS_TILES);
-            if chebyshev_distance(input.tile_position, attacker_pos) <= calm_radius {
+            let threat_close = chebyshev_distance(input.tile_position, attacker_pos) <= calm_radius;
+            let fresh_damage = reason == FleeReason::Attacked
+                && input
+                    .last_damaged_at
+                    .is_some_and(|t| input.elapsed - t <= FLEE_RECENT_DAMAGE_WINDOW_SECS);
+            if threat_close || fresh_damage {
                 input.elapsed + FLEE_DURATION_SECS
             } else {
                 expires_at_seconds
@@ -1637,6 +1771,7 @@ fn tick_flee(
         move_to: best.map(|(pos, _)| pos),
         idle_pause: false,
         bark: None,
+        raise_alarm: false,
     }
 }
 
@@ -1742,6 +1877,105 @@ fn nearest_feared_creature(input: &StepAiInput<'_>) -> Option<Entity> {
         .map(|c| c.entity)
 }
 
+/// A crime from the [`CrimeLog`] that this NPC has line of sight on, resolved
+/// once per AI tick before `step_ai`.
+#[derive(Clone, Copy, Debug)]
+struct WitnessedCrime {
+    /// The aggressor, still present in this NPC's space.
+    attacker: Entity,
+    /// True when this NPC's `Protector.protects` covers the victim's factions
+    /// (and it can fight): react by attacking. False for a plain faction-mate
+    /// witness: react by scattering.
+    as_protector: bool,
+}
+
+/// Scan the [`CrimeLog`] for an assault this NPC cares about and can see.
+///
+/// Relevance: the victim's factions intersect this NPC's `Protector.protects`
+/// (protector reaction, requires combat AI) or its own `FactionMembership`
+/// (civilian witness). Range and LoS mirror regular detection — protectors
+/// use their `HostileBehavior` numbers, civilians their `PreyBehavior` (or
+/// the prey defaults) — measured against the aggressor's *current* tile, with
+/// the crime scene as a fallback sight-line (the NPC saw the assault land
+/// even if the archer has since ducked behind cover). In-faction squabbles
+/// (attacker answers to one of the victim's own factions) mobilize nobody.
+/// Deliberately guilt-blind: this is the immediate-reaction channel, working
+/// at zero guilt points.
+#[allow(clippy::too_many_arguments)]
+fn resolve_witnessed_crime(
+    crime_log: Option<&CrimeLog>,
+    self_entity: Entity,
+    space_id: SpaceId,
+    tile_position: TilePosition,
+    membership: Option<FactionMembership>,
+    protector: Option<Protector>,
+    hostile: Option<&HostileBehavior>,
+    prey: Option<&PreyBehavior>,
+    combatants: &[CombatantDetectInfo],
+    los_blockers: &BlockerIndex,
+    attacker_factions: impl Fn(Entity) -> Option<crate::npc::guilt::FactionMask>,
+) -> Option<WitnessedCrime> {
+    let log = crime_log?;
+    // Prefer protector reactions over civilian ones, then the nearest
+    // aggressor.
+    let mut best: Option<(WitnessedCrime, (bool, i32))> = None;
+    for crime in log.iter_space(space_id) {
+        if crime.attacker == self_entity || crime.victim == self_entity {
+            continue;
+        }
+        if attacker_factions(crime.attacker).is_some_and(|m| m.intersects(crime.victim_factions)) {
+            continue;
+        }
+        let as_protector = hostile.is_some()
+            && protector.is_some_and(|p| p.protects.intersects(crime.victim_factions));
+        let as_member = membership.is_some_and(|m| m.mask.intersects(crime.victim_factions));
+        if !as_protector && !as_member {
+            continue;
+        }
+        // The aggressor must still be around to react to.
+        let Some(attacker) = combatants
+            .iter()
+            .find(|c| c.entity == crime.attacker && c.space_id == space_id)
+        else {
+            continue;
+        };
+        let (radius, requires_los) = if as_protector {
+            let h = hostile.expect("as_protector implies combat AI");
+            (h.detect_distance_tiles, h.requires_line_of_sight)
+        } else {
+            prey.map(|p| (p.detect_distance_tiles, p.requires_line_of_sight))
+                .unwrap_or((crate::npc::hostility::DEFAULT_PREY_DETECT_TILES, true))
+        };
+        // Same floor band as regular detection (`nearest_visible_enemy`).
+        if floor_index(attacker.tile.z) != floor_index(tile_position.z)
+            && (attacker.tile.z - tile_position.z).abs() > crate::game::traversal::CLIMB_FREE_DZ
+        {
+            continue;
+        }
+        let distance = chebyshev_distance(tile_position, attacker.tile);
+        if distance > radius {
+            continue;
+        }
+        let seen = !requires_los
+            || has_line_of_sight(tile_position, attacker.tile, space_id, los_blockers)
+            || has_line_of_sight(tile_position, crime.victim_tile, space_id, los_blockers);
+        if !seen {
+            continue;
+        }
+        let score = (as_protector, -distance);
+        if best.as_ref().is_none_or(|(_, existing)| score > *existing) {
+            best = Some((
+                WitnessedCrime {
+                    attacker: crime.attacker,
+                    as_protector,
+                },
+                score,
+            ));
+        }
+    }
+    best.map(|(crime, _)| crime)
+}
+
 /// The NPC's attack kind, defaulting an absent profile to `Melee`. Feeds the
 /// shared `is_target_in_range` reach test so an unarmed NPC engages at melee
 /// reach rather than not at all.
@@ -1781,25 +2015,31 @@ fn closer_in_range_enemy(input: &StepAiInput<'_>, target: Entity) -> Option<Enti
         .map(|c| c.entity)
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 enum BarkKind {
     Aggro,
     Mutter,
+    /// A protector shouting about a witnessed crime. Exempt from the bubble
+    /// cooldown — a guard that just muttered "All quiet." must still shout.
+    Alarm,
 }
 
 /// Pull a random utterance from the NPC's `Barks` pool of the requested
-/// kind, honoring the per-NPC cooldown. Returns `None` if the pool is empty
-/// or the cooldown hasn't elapsed.
+/// kind, honoring the per-NPC cooldown (`Alarm` is exempt). Returns `None` if
+/// the pool is empty or the cooldown hasn't elapsed.
 fn pick_bark(input: &mut StepAiInput<'_>, kind: BarkKind) -> Option<PendingBark> {
     let barks = input.barks?;
     let pool = match kind {
         BarkKind::Aggro => &barks.aggro,
         BarkKind::Mutter => &barks.mutter,
+        BarkKind::Alarm => &barks.alarm,
     };
     if pool.is_empty() {
         return None;
     }
-    if input.elapsed - input.memory.last_bark_seconds < BUBBLE_COOLDOWN_SECONDS {
+    if kind != BarkKind::Alarm
+        && input.elapsed - input.memory.last_bark_seconds < BUBBLE_COOLDOWN_SECONDS
+    {
         return None;
     }
     let pick = (next_random_f32(input.random_state) * pool.len() as f32) as usize;
@@ -1807,7 +2047,7 @@ fn pick_bark(input: &mut StepAiInput<'_>, kind: BarkKind) -> Option<PendingBark>
     Some(PendingBark {
         text: pool[pick].clone(),
         style: match kind {
-            BarkKind::Aggro => SpeechBubbleStyle::Bark,
+            BarkKind::Aggro | BarkKind::Alarm => SpeechBubbleStyle::Bark,
             BarkKind::Mutter => SpeechBubbleStyle::Mutter,
         },
     })
@@ -4398,6 +4638,218 @@ mod tests {
         assert!(
             end_gap >= start_gap.min(2),
             "fleeing sheep should not run into the wolf (start {start_gap}, end {end_gap})"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Witnessed crimes (npc::witness): protector attack + civilian scatter.
+    // -----------------------------------------------------------------------
+
+    use crate::npc::guilt::{FactionMask, FactionMembership};
+    use crate::npc::witness::{CrimeLog, CrimeReport, PendingCrimes, Protector};
+
+    const TOWN: FactionMask = TagMask(0b1);
+    const OTHER_FACTION: FactionMask = TagMask(0b10);
+
+    /// App wired for witness tests: crime fold runs before the AI tick, and
+    /// the noise queue exists so `raise_alarm` has somewhere to land.
+    fn witness_test_app() -> App {
+        let mut app = npc_test_app();
+        app.init_resource::<PendingCrimes>();
+        app.init_resource::<CrimeLog>();
+        app.init_resource::<crate::world::noise::PendingNoiseEvents>();
+        app.add_systems(
+            Update,
+            (crate::npc::witness::update_crime_log, update_roaming_npcs).chain(),
+        );
+        app
+    }
+
+    /// A town guard: PlayerSide, protects `TOWN`, *not* hostile to players —
+    /// the only way it can turn on a player is the witness path.
+    fn spawn_protector_guard(app: &mut App, pos: TilePosition) -> Entity {
+        let guard = spawn_melee(app, pos);
+        app.world_mut().entity_mut(guard).insert((
+            Faction::PlayerSide,
+            FactionMembership { mask: TOWN },
+            Protector { protects: TOWN },
+        ));
+        guard
+    }
+
+    /// A mobile non-fighter faction member (villager) — no `HostileBehavior`.
+    fn spawn_civilian(app: &mut App, pos: TilePosition) -> Entity {
+        app.world_mut()
+            .spawn((
+                Npc,
+                SpaceResident {
+                    space_id: TEST_SPACE,
+                },
+                pos,
+                default_roaming(
+                    RoamBounds {
+                        min_x: 0,
+                        min_y: 0,
+                        max_x: 20,
+                        max_y: 20,
+                    },
+                    0.1,
+                ),
+                RoamingStepTimer {
+                    remaining_seconds: 0.0,
+                },
+                RoamingRandomState { seed: 1 },
+                AiState::default(),
+                AiMemory::default(),
+                FactionMembership { mask: TOWN },
+            ))
+            .id()
+    }
+
+    fn file_crime(app: &mut App, attacker: Entity, victim: Entity, tile: TilePosition) {
+        file_crime_against(app, attacker, victim, tile, TOWN);
+    }
+
+    fn file_crime_against(
+        app: &mut App,
+        attacker: Entity,
+        victim: Entity,
+        tile: TilePosition,
+        factions: FactionMask,
+    ) {
+        app.world_mut()
+            .resource_mut::<PendingCrimes>()
+            .push(CrimeReport {
+                attacker,
+                victim,
+                victim_tile: tile,
+                victim_factions: factions,
+                space_id: TEST_SPACE,
+            });
+    }
+
+    #[test]
+    fn protector_attacks_witnessed_attacker_at_zero_guilt() {
+        let mut app = witness_test_app();
+        // Attacker is a plain PlayerSide player with zero guilt anywhere: no
+        // hostility gate (faction/tag/guilt) can possibly fire — only the
+        // witness path can turn the guard on them.
+        let attacker = spawn_player(&mut app, 1, TilePosition::ground(8, 5));
+        let victim = spawn_civilian(&mut app, TilePosition::ground(9, 5));
+        let guard = spawn_protector_guard(&mut app, TilePosition::ground(5, 5));
+
+        file_crime(&mut app, attacker, victim, TilePosition::ground(9, 5));
+        app.update();
+
+        assert_eq!(
+            app.world().get::<CombatTarget>(guard).map(|t| t.entity),
+            Some(attacker),
+            "a protector that saw the assault must attack the aggressor"
+        );
+        assert!(
+            matches!(
+                *app.world().get::<AiState>(guard).unwrap(),
+                AiState::Pursue { target } | AiState::Engage { target } if target == attacker
+            ),
+            "guard should be pursuing/engaging, got {:?}",
+            app.world().get::<AiState>(guard).unwrap()
+        );
+        // The reaction raises the alarm: a loud noise at the guard's tile.
+        let noise = app
+            .world()
+            .resource::<crate::world::noise::PendingNoiseEvents>();
+        assert!(
+            noise
+                .events
+                .iter()
+                .any(|e| e.loudness == crate::npc::witness::ALARM_NOISE),
+            "raising the alarm must emit an ALARM_NOISE event"
+        );
+    }
+
+    #[test]
+    fn crime_against_unprotected_faction_is_ignored() {
+        let mut app = witness_test_app();
+        let attacker = spawn_player(&mut app, 1, TilePosition::ground(8, 5));
+        let victim = spawn_civilian(&mut app, TilePosition::ground(9, 5));
+        let guard = spawn_protector_guard(&mut app, TilePosition::ground(5, 5));
+
+        // Goblin-on-goblin (well, player-on-goblin) violence is not the
+        // watch's problem.
+        file_crime_against(
+            &mut app,
+            attacker,
+            victim,
+            TilePosition::ground(9, 5),
+            OTHER_FACTION,
+        );
+        app.update();
+
+        assert!(
+            app.world().get::<CombatTarget>(guard).is_none(),
+            "a crime against a faction the guard neither protects nor belongs to must be ignored"
+        );
+    }
+
+    #[test]
+    fn crime_beyond_detect_radius_is_not_witnessed() {
+        let mut app = witness_test_app();
+        // spawn_melee's detect radius is 20 — put the attacker at 25.
+        let attacker = spawn_player(&mut app, 1, TilePosition::ground(30, 5));
+        let victim = spawn_civilian(&mut app, TilePosition::ground(29, 5));
+        let guard = spawn_protector_guard(&mut app, TilePosition::ground(5, 5));
+
+        file_crime(&mut app, attacker, victim, TilePosition::ground(29, 5));
+        app.update();
+
+        assert!(
+            app.world().get::<CombatTarget>(guard).is_none(),
+            "an assault outside the guard's detect radius goes unnoticed"
+        );
+    }
+
+    #[test]
+    fn civilian_witness_scatters() {
+        let mut app = witness_test_app();
+        let attacker = spawn_player(&mut app, 1, TilePosition::ground(8, 5));
+        let victim = spawn_civilian(&mut app, TilePosition::ground(9, 5));
+        // A second villager 3 tiles from the attacker sees the assault.
+        let bystander = spawn_civilian(&mut app, TilePosition::ground(5, 5));
+
+        file_crime(&mut app, attacker, victim, TilePosition::ground(9, 5));
+        app.update();
+
+        assert!(
+            matches!(
+                *app.world().get::<AiState>(bystander).unwrap(),
+                AiState::Flee { from, reason: FleeReason::Fear, .. } if from == attacker
+            ),
+            "an unarmed faction-mate that saw the assault must scatter, got {:?}",
+            app.world().get::<AiState>(bystander).unwrap()
+        );
+        assert!(
+            app.world().get::<CombatTarget>(bystander).is_none(),
+            "a scattering civilian never acquires a combat target"
+        );
+    }
+
+    #[test]
+    fn npc_on_npc_crime_mobilizes_protectors() {
+        let mut app = witness_test_app();
+        // A wolf (hostile NPC with a Neutral side) mauling a town sheep: the
+        // guard must intervene even though no player is involved.
+        let wolf = spawn_melee(&mut app, TilePosition::ground(8, 5));
+        app.world_mut().entity_mut(wolf).insert(Faction::Neutral);
+        let sheep = spawn_civilian(&mut app, TilePosition::ground(9, 5));
+        let guard = spawn_protector_guard(&mut app, TilePosition::ground(5, 5));
+
+        file_crime(&mut app, wolf, sheep, TilePosition::ground(9, 5));
+        app.update();
+
+        assert_eq!(
+            app.world().get::<CombatTarget>(guard).map(|t| t.entity),
+            Some(wolf),
+            "a guard that saw a predator maul a protected NPC must attack it"
         );
     }
 }

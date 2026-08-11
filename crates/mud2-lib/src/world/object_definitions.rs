@@ -238,6 +238,13 @@ pub struct OverworldObjectDefinition {
     /// so they don't consume the identity-tag budget.
     #[serde(default)]
     pub factions: Vec<String>,
+    /// Social factions this NPC actively protects: witnessing an attributed
+    /// attack on a member makes it attack the aggressor on the spot (and
+    /// shout its `barks.alarm`), independent of the guilt ledger. Requires
+    /// combat AI (`npc_behavior` / `hostile_towards`) to act on. See
+    /// `npc::witness`.
+    #[serde(default)]
+    pub protects_factions: Vec<String>,
     /// Marks this NPC as a Judge: a player can pay it to clear their guilt with
     /// the listed factions. See `npc::guilt` and `GameCommand::PayGuiltFine`.
     #[serde(default)]
@@ -389,6 +396,10 @@ pub struct BarkDef {
     pub aggro: Vec<String>,
     #[serde(default)]
     pub mutter: Vec<String>,
+    /// Shouted when this NPC (a protector — see `protects_factions`) raises
+    /// the alarm about a witnessed crime. Exempt from the bubble cooldown.
+    #[serde(default)]
+    pub alarm: Vec<String>,
 }
 
 /// One named activity an NPC can perform at a station (work, sleep, pray, …).
@@ -1492,14 +1503,16 @@ impl OverworldObjectDefinitions {
         })
     }
 
-    /// Every social-faction string mentioned by any definition's `factions` or
-    /// a Judge's `clears_factions` — the input to `FactionInterner::build`.
-    /// Judges are included so a magistrate can absolve a faction even if no
+    /// Every social-faction string mentioned by any definition's `factions`,
+    /// `protects_factions`, or a Judge's `clears_factions` — the input to
+    /// `FactionInterner::build`. Judges and protectors are included so a
+    /// magistrate can absolve (or a guard protect) a faction even if no
     /// authored NPC has yet been placed for it.
     pub fn all_faction_strings(&self) -> impl Iterator<Item = &str> {
         self.definitions.values().flat_map(|def| {
             def.factions
                 .iter()
+                .chain(def.protects_factions.iter())
                 .chain(
                     def.judge
                         .iter()

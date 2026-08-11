@@ -15,6 +15,8 @@ pub mod spawn_groups;
 pub mod spellcasting;
 #[cfg(feature = "server-sim")]
 pub mod systems;
+#[cfg(feature = "server-sim")]
+pub mod witness;
 
 #[cfg(feature = "server-sim")]
 use bevy::prelude::*;

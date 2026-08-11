@@ -90,7 +90,7 @@
       }
     },
     "tiles": {
-      "description": "ASCII grid of tiles, row-major with y=0 at top. Each character maps via `legend`; unmapped characters are skipped (fill_floor_type applies).",
+      "description": "ASCII grid of tiles, row-major. Text row 0 is world y=0 — the **south** edge, since Bevy's +y points north — so the block reads upside down relative to the screen and (0,0) is the south-west corner. Each character maps via `legend`; unmapped characters are skipped (fill_floor_type applies).",
       "default": null,
       "type": [
         "string",

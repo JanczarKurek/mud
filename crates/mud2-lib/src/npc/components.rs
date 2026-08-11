@@ -196,6 +196,12 @@ pub enum FleeReason {
     /// behavior — sheep running from a wolf). Keeps running while the
     /// predator stays within detect range, then calms down to Wander.
     Fear,
+    /// Hit by `from` while having no way to fight back (no `HostileBehavior`
+    /// — a villager or sheep under attack). Sustained like `Fear` (calm down
+    /// once the attacker is out of detect range) and additionally refreshed
+    /// while damage stays fresh, so a ranged attacker keeps the victim
+    /// running.
+    Attacked,
 }
 
 /// Prey behavior: the NPC runs from creatures bearing any of its
@@ -237,6 +243,8 @@ pub struct AiMemory {
 pub struct Barks {
     pub aggro: Vec<String>,
     pub mutter: Vec<String>,
+    /// Shouted when raising the alarm about a witnessed crime (protectors).
+    pub alarm: Vec<String>,
 }
 
 /// Elapsed-seconds timestamp of the last time this entity took damage.

@@ -1820,6 +1820,32 @@ factions: [emberbrook_watch, emberbrook_town]   # may belong to several
 - A peaceful NPC with no combat AI never turns hostile no matter how high the
   number climbs — it simply refuses to deal with you.
 
+Independent of the ledger, attacks also have **immediate** consequences
+(`npc::witness`): an attributed hit on a faction member files a short-lived
+"crime" at the victim's tile, and NPCs that can *see* the assault react on
+their next AI tick, at **zero** guilt points. A mobile faction-mate with no
+combat AI (villager, sheep) scatters; a `protects_factions` NPC attacks (next
+section). A hit victim that can't fight back also panics and flees on its own,
+faction or not.
+
+### `protects_factions` (NPC templates) — protectors
+
+Social factions this NPC actively defends. Witnessing an attributed attack on
+a member — player *or* NPC attacker (a wolf mauling a town sheep counts) —
+makes it attack the aggressor on the spot, shout an `alarm` bark (below), and
+emit a loud alarm noise that pulls out-of-sight fellow guards into Alert.
+Requires combat AI (an `npc_behavior:` block / `hostile_towards`) to act on.
+Range and line-of-sight follow the NPC's normal detection numbers, checked
+against the aggressor's current tile (with the crime scene as a fallback
+sight-line).
+
+```yaml
+protects_factions: [emberbrook_watch, emberbrook_town]
+```
+
+In-faction squabbles are ignored: an attacker that itself answers to one of
+the victim's factions mobilizes nobody.
+
 ### `judge` (NPC templates)
 
 Marks an NPC as a magistrate who will clear a player's guilt for coin. Adds a
@@ -1845,9 +1871,12 @@ Emberbrook town and Watch), and `judge` (the magistrate on the plaza).
 Lists of short utterances the NPC may emit as floating speech bubbles over
 its sprite. `aggro` entries fire on the Wander → Pursue transition when the
 NPC first sees a player; `mutter` entries fire on a low-probability per-tick
-roll while wandering. Both lists are optional; an NPC with neither stays
-silent. A per-NPC cooldown (8 seconds) limits any given mob to one bubble
-at a time. ASCII-only — the default font can't render symbols/emoji.
+roll while wandering; `alarm` entries fire when a `protects_factions` NPC
+turns on a witnessed aggressor. All lists are optional; an NPC with none
+stays silent. A per-NPC cooldown (8 seconds) limits any given mob to one
+bubble at a time — except `alarm`, which always fires (a guard that just
+muttered "All quiet." must still shout). ASCII-only — the default font can't
+render symbols/emoji.
 
 ```yaml
 barks:
@@ -1857,6 +1886,8 @@ barks:
   mutter:
     - "*grumbles*"
     - "Hungry..."
+  alarm:
+    - "Stop! Criminal!"
 ```
 
 ### `activities` (NPC templates only)
