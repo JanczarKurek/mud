@@ -58,7 +58,7 @@ fn player_death_is_scoped_and_hides_the_body_until_respawn() {
     );
     let addr = server_addr(&app);
 
-    // Victim and nearby witness spawn together at the plaza (35, 25);
+    // Victim and nearby witness spawn together at the plaza (90, 65);
     // the far peer is teleported to the map corner, >30 tiles away.
     let mut victim = TestClient::connect(addr);
     register_and_enter_world(&mut app, &mut victim, "scope_victim", "Victim");

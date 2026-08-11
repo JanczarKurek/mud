@@ -6784,22 +6784,22 @@ mod tests {
     }
 
     /// The reported bug, against authored `overworld.yaml` coordinates: a chair
-    /// pushed onto the tavern loft at (40, 28), player standing one tile south
-    /// of it at (40, 29) on the same painted floor. Pairs with
+    /// pushed onto the tavern loft at (95, 68), player standing one tile south
+    /// of it at (95, 69) on the same painted floor. Pairs with
     /// `overworld_yaml_paints_wooden_floor_on_upper_storey`.
     #[test]
     fn bumping_furniture_on_the_tavern_loft_stays_on_the_loft() {
         let mut app = setup_server_app();
-        let player = spawn_player(&mut app, 1, 40, 29);
+        let player = spawn_player(&mut app, 1, 95, 69);
         app.world_mut()
             .entity_mut(player)
-            .insert(TilePosition::new(40, 29, 2));
+            .insert(TilePosition::new(95, 69, 2));
 
         let object_id = app
             .world_mut()
             .resource_mut::<ObjectRegistry>()
             .allocate_runtime_id("chair");
-        spawn_world_object(&mut app, "chair", object_id, TilePosition::new(40, 28, 2));
+        spawn_world_object(&mut app, "chair", object_id, TilePosition::new(95, 68, 2));
         app.update();
 
         crate::test_support::push_move(&mut app, 1, 0, -1);
@@ -6808,23 +6808,23 @@ mod tests {
         let tile = *app.world().get::<TilePosition>(player).unwrap();
         assert_eq!(
             tile,
-            TilePosition::new(40, 28, 3),
+            TilePosition::new(95, 68, 3),
             "stepping into the loft chair must not teleport the player to the ground floor"
         );
     }
 
     /// The anti-over-correction guard. The slab gate keys on the **target**
-    /// column, not the actor's own — (39, 29) is the authored stairwell gap, so
+    /// column, not the actor's own — (94, 69) is the authored stairwell gap, so
     /// nothing is painted there and the descent must still find `stair_n_low`'s
     /// top at z=1. Gating on the source column instead would wall the player
     /// onto the loft with no way down.
     #[test]
     fn loft_stairwell_gap_still_drops_onto_the_stair_tread() {
         let mut app = setup_server_app();
-        let player = spawn_player(&mut app, 1, 40, 29);
+        let player = spawn_player(&mut app, 1, 95, 69);
         app.world_mut()
             .entity_mut(player)
-            .insert(TilePosition::new(40, 29, 2));
+            .insert(TilePosition::new(95, 69, 2));
         app.update();
 
         crate::test_support::push_move(&mut app, 1, -1, 0);
@@ -6833,7 +6833,7 @@ mod tests {
         let tile = *app.world().get::<TilePosition>(player).unwrap();
         assert_eq!(
             tile,
-            TilePosition::new(39, 29, 1),
+            TilePosition::new(94, 69, 1),
             "stepping into the stairwell gap should land on the stair_n_low tread"
         );
     }
@@ -6845,10 +6845,10 @@ mod tests {
     #[test]
     fn climbing_the_tavern_stairs_reaches_the_loft() {
         let mut app = setup_server_app();
-        let player = spawn_player(&mut app, 1, 39, 30);
+        let player = spawn_player(&mut app, 1, 94, 70);
         app.update();
 
-        // (39,30) ground → stair_n_low (39,29) → stair_n_high (39,28) → loft.
+        // (94,70) ground → stair_n_low (94,69) → stair_n_high (94,68) → loft.
         for _ in 0..3 {
             crate::test_support::push_move(&mut app, 1, 0, -1);
             if let Some(mut cd) = app.world_mut().get_mut::<MovementCooldown>(player) {
@@ -6860,7 +6860,7 @@ mod tests {
         let tile = *app.world().get::<TilePosition>(player).unwrap();
         assert_eq!(
             tile,
-            TilePosition::new(39, 27, 2),
+            TilePosition::new(94, 67, 2),
             "the authored stair chain should still carry the player onto the loft"
         );
     }
@@ -7031,7 +7031,7 @@ mod tests {
 
     /// `assets/maps/overworld.yaml` must produce a `FloorMap` at floor
     /// index 1 that paints `wooden_floor` over the tavern loft (the upper
-    /// storey of the Gilded Toad, interior x=39..44, y=27..31). If this
+    /// storey of the Gilded Toad, interior x=94..99, y=67..71). If this
     /// fails, the in-game `is_indoor_tile` predicate has no data to chew on
     /// and the upper floor would render through the player when they step
     /// inside.
@@ -7043,7 +7043,7 @@ mod tests {
         let upper = floor_maps
             .get(space_id, 1)
             .expect("FloorMap at floor index 1 must exist after loading overworld.yaml");
-        for (x, y) in [(39, 27), (41, 28), (43, 30), (44, 31)] {
+        for (x, y) in [(94, 67), (96, 68), (98, 70), (99, 71)] {
             assert_eq!(
                 upper.get(x, y).map(String::as_str),
                 Some("wooden_floor"),
@@ -7051,12 +7051,12 @@ mod tests {
             );
         }
         assert!(
-            upper.get(39, 28).is_none(),
-            "(39, 28) on floor 1 should be the stairwell gap, not painted"
+            upper.get(94, 68).is_none(),
+            "(94, 68) on floor 1 should be the stairwell gap, not painted"
         );
         assert!(
-            upper.get(39, 29).is_none(),
-            "(39, 29) on floor 1 should be the stairwell gap, not painted"
+            upper.get(94, 69).is_none(),
+            "(94, 69) on floor 1 should be the stairwell gap, not painted"
         );
     }
 
@@ -7161,8 +7161,8 @@ mod tests {
 
         let column = crate::world::column::Column::from_world(
             space_id,
-            42,
-            28,
+            97,
+            68,
             Entity::PLACEHOLDER,
             members,
             app.world().resource::<OverworldObjectDefinitions>(),

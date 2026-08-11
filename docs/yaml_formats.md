@@ -397,7 +397,7 @@ Instead of listing every tile coordinate in anonymous placement groups, you can 
 ### `tiles`
 - Type: multi-line string (YAML literal block scalar `|`)
 - Optional: yes
-- Meaning: ASCII grid representation of the map, row-major with y=0 at the top row
+- Meaning: ASCII grid representation of the map, row-major. **Text row 0 is world y=0, which is the SOUTH edge** (Bevy's +y points north), so the block reads "upside down" relative to the screen: the last line of the block is the northern edge of the map, and tile (0,0) is the south-west corner.
 - Each row must be exactly `width` characters wide
 - The number of rows must be exactly `height`
 - Characters present in `legend` produce anonymous object placements; all other characters are ignored (the `fill_object_type` applies to those cells)
@@ -507,11 +507,19 @@ spawn_groups:
       bounds: { min_x: 1, min_y: 1, max_x: 10, max_y: 8 }
     behavior:
       kind: roam_and_chase
-      step_interval_seconds: 0.5
-      detect_distance_tiles: 4
-      disengage_distance_tiles: 6
       bounds: { min_x: 1, min_y: 1, max_x: 10, max_y: 8 }
 ```
+
+> **`behavior` accepts only `kind` and `bounds`.** `MapBehavior` has no other
+> fields and there is no `deny_unknown_fields`, so `step_interval_seconds`,
+> `detect_distance_tiles` and `disengage_distance_tiles` written here are
+> silently discarded by serde. Those knobs are intrinsic to the creature and
+> live on its `npc_behavior:` block in
+> `assets/overworld_objects/<id>/metadata.yaml`.
+>
+> Note also that `behavior.bounds` is **not** range-checked against the map's
+> `width`/`height` (only `area.bounds` is), so an out-of-range rectangle here
+> produces a silently misbehaving NPC rather than a load-time panic.
 
 ## 2. Overworld Object Metadata YAML
 

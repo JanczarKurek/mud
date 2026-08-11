@@ -76,7 +76,7 @@ portals:
   - id: moor_road
     source: { x: 10, y: 19 }
     destination_space_id: overworld
-    destination_tile: { x: 6, y: 44 }
+    destination_tile: { x: 17, y: 22 }
     destination_permanence: persistent
 
   # The cage-lift, down the shaft. Mind the third rung; it lies.

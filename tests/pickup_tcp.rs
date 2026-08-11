@@ -93,12 +93,16 @@ fn enter_proving_grounds(app: &mut App, client: &mut TestClient) -> SpaceId {
         let (mut tile, mut resident) = players
             .single_mut(app.world_mut())
             .expect("exactly one connected player");
-        *tile = TilePosition { x: 46, y: 25, z: 0 };
+        *tile = TilePosition {
+            x: 118,
+            y: 65,
+            z: 0,
+        };
         resident.space_id = overworld;
     }
     pump(app, client, 5);
 
-    // Real portal traversal: one step east onto the arch at (47,25).
+    // Real portal traversal: one step east onto the arch at (119,65).
     step(app, client, 1, 0);
     let (tile, space) = player_position(app);
     assert_ne!(space, overworld, "portal should have moved the player");
@@ -167,7 +171,7 @@ fn proving_grounds_pickup_after_reentry() {
     step(&mut app, &mut client, -1, 0);
     let (tile, space) = player_position(&mut app);
     assert_ne!(space, first_space, "pg_exit should return to the overworld");
-    assert_eq!((tile.x, tile.y), (46, 25), "pg_exit landing tile");
+    assert_eq!((tile.x, tile.y), (118, 65), "pg_exit landing tile");
     // Give cleanup a chance to tear the empty instance down.
     pump(&mut app, &mut client, 10);
 

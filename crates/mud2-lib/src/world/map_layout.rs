@@ -69,8 +69,11 @@ pub struct SpaceDefinition {
     /// Single-character keys mapping to object type IDs for use in `tiles`.
     #[serde(default)]
     pub legend: HashMap<String, String>,
-    /// ASCII grid of tiles, row-major with y=0 at top. Each character maps
-    /// via `legend`; unmapped characters are skipped (fill_floor_type applies).
+    /// ASCII grid of tiles, row-major. Text row 0 is world y=0 — the **south**
+    /// edge, since Bevy's +y points north — so the block reads upside down
+    /// relative to the screen and (0,0) is the south-west corner. Each
+    /// character maps via `legend`; unmapped characters are skipped
+    /// (fill_floor_type applies).
     #[serde(default)]
     pub tiles: Option<String>,
     /// File this definition was parsed from. Set by the loaders, not authored.
@@ -1392,5 +1395,74 @@ objects:
 "#;
         let mut def = parse_and_resolve(yaml);
         def.resolve_wiring(&lever_definitions());
+    }
+
+    /// Chebyshev separation between two inclusive rectangles; 0 if they touch
+    /// or overlap.
+    fn rect_gap(a: TileRectangle, b: TileRectangle) -> i32 {
+        let dx = (b.min_x - a.max_x).max(a.min_x - b.max_x).max(0);
+        let dy = (b.min_y - a.max_y).max(a.min_y - b.max_y).max(0);
+        dx.max(dy)
+    }
+
+    /// The containment invariant behind the 180x130 overworld: monsters must
+    /// stay far enough from the Watch that the two never meet on their own.
+    ///
+    /// There is no leash-to-home in the NPC AI — `RoamBounds` clamps wandering
+    /// only — so this distance is the entire mechanism. A `town_guard` detects
+    /// at 7 tiles and re-acquires from `Alert` at its disengage range of 10,
+    /// and an attack anywhere within `ATTACK_NOISE` (10) pulls it off post, so
+    /// anything closer than ~20 tiles puts guards into the wildlife. Widening
+    /// a monster rectangle (or the guards') until this fails re-creates the
+    /// permanent guards-vs-skeletons brawl the old 70x50 map had.
+    #[test]
+    fn overworld_keeps_monster_roam_bounds_clear_of_the_village_watch() {
+        const MIN_GAP: i32 = 20;
+
+        let spaces = SpaceDefinitions::load_from_disk();
+        let overworld = spaces
+            .get(DEFAULT_BOOTSTRAP_SPACE_ID)
+            .expect("overworld space definition");
+
+        assert_eq!(
+            (overworld.width, overworld.height),
+            (180, 130),
+            "the spawn point is (width/2, height/2), so resizing the map moves \
+             the plaza — update the village coordinates with it"
+        );
+
+        let guards = overworld
+            .spawn_groups
+            .iter()
+            .find(|g| g.id == "village_guards")
+            .expect("village_guards spawn group");
+        let guard_bounds = guards.behavior.bounds();
+
+        let definitions =
+            crate::world::object_definitions::OverworldObjectDefinitions::load_from_disk();
+        let mut checked = 0;
+        for group in &overworld.spawn_groups {
+            let Some(def) = definitions.get(&group.template) else {
+                continue;
+            };
+            let hostile = def.tags.iter().any(|t| t == "monster" || t == "undead");
+            if !hostile {
+                continue;
+            }
+            let gap = rect_gap(guard_bounds, group.behavior.bounds());
+            assert!(
+                gap >= MIN_GAP,
+                "spawn group '{}' (template '{}') roams within {gap} tiles of \
+                 the village watch; needs at least {MIN_GAP}",
+                group.id,
+                group.template,
+            );
+            checked += 1;
+        }
+        assert!(
+            checked >= 8,
+            "expected the overworld to still declare its hostile spawn groups, \
+             only found {checked}"
+        );
     }
 }

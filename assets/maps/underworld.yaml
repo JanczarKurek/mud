@@ -55,7 +55,7 @@ portals:
   - id: surface_return
     source: { x: 3, y: 14 }
     destination_space_id: overworld
-    destination_tile: { x: 57, y: 16 }   # beside the Cinder Hills sinkhole
+    destination_tile: { x: 149, y: 50 }  # beside the Cinder Hills sinkhole
     destination_permanence: persistent
 
 objects:

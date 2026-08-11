@@ -37,7 +37,7 @@ portals:
   - id: cellar_exit
     source: { x: 5, y: 0 }
     destination_space_id: overworld
-    destination_tile: { x: 43, y: 31 }
+    destination_tile: { x: 98, y: 71 }
     destination_permanence: persistent
 
 spawn_groups:
