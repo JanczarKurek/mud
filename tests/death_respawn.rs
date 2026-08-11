@@ -7,6 +7,10 @@
 //!
 //! The wire-level scoping of the death (witness loses the body, victim keeps
 //! vitals/chat, far peers hear nothing) is covered by `combat_scoping.rs`.
+//!
+//! The test hostile is deliberately tag-scoped rather than `MonsterSide` (see
+//! `spawn_hostile`) so the surrounding town population can't muddy the
+//! assertions.
 
 mod common;
 
@@ -24,6 +28,7 @@ use mud2::npc::components::{
     AiMemory, AiState, Faction, HostileBehavior, Npc, RoamBounds, RoamingBehavior,
     RoamingRandomState, RoamingStepTimer,
 };
+use mud2::npc::hostility::{TagMask, TagProfile};
 use mud2::player::components::{AwaitingRespawn, PlayerId, PlayerIdentity, VitalStats};
 use mud2::world::components::{SpaceId, SpaceResident, TilePosition};
 
@@ -38,6 +43,15 @@ fn server_player_entity(app: &mut App, player_id: PlayerId) -> Entity {
 }
 
 /// Spawn a melee hostile that detects across the whole map, next to `tile`.
+///
+/// Hostility is *tag-scoped* (`Neutral` + `hostile_towards: player`) rather
+/// than `MonsterSide` on purpose: the player spawns in the town center, and a
+/// `MonsterSide` mob there is a faction enemy of every guard and townsfolk
+/// around it. It would then — correctly — retarget an adjacent neighbor the
+/// instant the victim dies (`closer_in_range_enemy`), and the guards would
+/// charge it, none of which has anything to do with the death contract under
+/// test. `Neutral` with an empty identity is nobody's faction enemy, so the
+/// only valid target in the world is the player.
 fn spawn_hostile(app: &mut App, space_id: SpaceId, tile: TilePosition) -> Entity {
     app.world_mut()
         .spawn((
@@ -70,7 +84,12 @@ fn spawn_hostile(app: &mut App, space_id: SpaceId, tile: TilePosition) -> Entity
             RoamingRandomState { seed: 1 },
             AiState::default(),
             AiMemory::default(),
-            Faction::MonsterSide,
+            Faction::Neutral,
+            TagProfile {
+                identity: TagMask::EMPTY,
+                hostile_towards: TagMask::PLAYER,
+                flees_from: TagMask::EMPTY,
+            },
             VitalStats::full(500.0, 0.0),
         ))
         .id()
