@@ -181,6 +181,27 @@ pub enum GameUiEvent {
     /// answered, expired, withdrawn by disconnect, or the party filled up.
     /// Dismisses the invite popup.
     PartyInviteClosed,
+    /// Open (or refresh) the crime-ledger window for a Judge NPC — the
+    /// server's reply to `GameCommand::RequestCrimeList` and to a successful
+    /// `PayCrime`. Descriptions and price text are composed server-side so
+    /// the thin client carries no pricing or faction logic. An empty `crimes`
+    /// list closes the window (everything is settled).
+    OpenCrimeLedger {
+        npc_object_id: u64,
+        judge_name: String,
+        crimes: Vec<CrimeListing>,
+    },
+}
+
+/// One row of the judge's crime ledger, ready for display.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct CrimeListing {
+    pub crime_id: u64,
+    /// "Assault on Bob" / "Murder of Alice".
+    pub description: String,
+    /// Pre-formatted price, e.g. "2g 4s". The numeric price stays
+    /// server-side; paying re-derives it there.
+    pub price_text: String,
 }
 
 /// Visual treatment for a floating speech bubble. Drives backdrop color and

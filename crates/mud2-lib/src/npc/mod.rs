@@ -66,11 +66,12 @@ impl Plugin for NpcPlugin {
                 )
                     .run_if(simulation_active),
             )
-            // Claims `PayGuiltFine` out of the command queue before the main
-            // dispatcher sees it, the same way dialog and trade claim theirs.
+            // Claims the judge commands (`RequestCrimeList` / `PayCrime`) out
+            // of the command queue before the main dispatcher sees them, the
+            // same way dialog and trade claim theirs.
             .add_systems(
                 Update,
-                crate::npc::guilt::process_pay_guilt_fine
+                crate::npc::guilt::process_judge_commands
                     .in_set(crate::game::CommandIntercept)
                     .run_if(simulation_active),
             );

@@ -91,6 +91,16 @@ pub struct WorldStateDump {
     /// previous boot-time value.
     #[serde(default = "default_world_time")]
     pub world_time: f32,
+    /// High-water mark of the `CrimeIdAllocator`. Persisted so a reload can
+    /// never reissue a crime id that lives in some NPC's saved `CrimeMemory`
+    /// (settling the new crime would silently pardon the old one). Defaults
+    /// to 1 for snapshots written before the field existed.
+    #[serde(default = "default_next_crime_id")]
+    pub next_crime_id: u64,
+}
+
+fn default_next_crime_id() -> u64 {
+    1
 }
 
 fn default_world_time() -> f32 {
@@ -426,7 +436,7 @@ pub struct NpcStateDump {
     /// no format_version bump. Safe to key by `PlayerId` because that is the
     /// character id; object ids are reallocated on load and never appear here.
     #[serde(default)]
-    pub known_guilty: Option<crate::npc::guilt::KnownGuilty>,
+    pub crime_memory: Option<crate::npc::guilt::CrimeMemory>,
 }
 
 fn save_world_on_app_exit(
@@ -439,6 +449,7 @@ fn save_world_on_app_exit(
     object_registry: Res<ObjectRegistry>,
     tcp_server_state: Option<Res<TcpServerState>>,
     world_clock: Res<WorldClock>,
+    crime_ids: Option<Res<crate::npc::guilt::CrimeIdAllocator>>,
     world_object_query: Query<
         (
             Entity,
@@ -476,7 +487,7 @@ fn save_world_on_app_exit(
             // only implemented for tuples up to 12 wide.
             (
                 Option<&crate::npc::components::Faction>,
-                Option<&crate::npc::guilt::KnownGuilty>,
+                Option<&crate::npc::guilt::CrimeMemory>,
             ),
         ),
         With<Npc>,
@@ -589,7 +600,7 @@ fn save_world_on_app_exit(
                         roaming_random_state,
                         spawn_group_member,
                         magic_effects,
-                        (faction, known_guilty),
+                        (faction, crime_memory),
                     ) = npc_query.get(entity).unwrap_or_default();
 
                     NpcStateDump {
@@ -609,7 +620,7 @@ fn save_world_on_app_exit(
                         faction: faction.copied(),
                         // Skipped when nobody has wronged this NPC, keeping the
                         // field absent from the overwhelming majority of rows.
-                        known_guilty: known_guilty.filter(|g| !g.is_empty()).cloned(),
+                        crime_memory: crime_memory.filter(|g| !g.is_empty()).cloned(),
                     }
                 }),
             },
@@ -667,6 +678,7 @@ fn save_world_on_app_exit(
         floor_maps: floor_map_dumps,
         spawn_groups: spawn_group_dumps,
         world_time: world_clock.time_of_day,
+        next_crime_id: crime_ids.map(|ids| ids.next).unwrap_or(1),
     };
 
     if let Err(error) = write_world_dump(&save_config.path, &dump) {
@@ -693,6 +705,7 @@ fn load_world_from_snapshot(
     object_definitions: Res<crate::world::object_definitions::OverworldObjectDefinitions>,
     mut pending_spawn_groups: ResMut<PendingSpawnGroupDumps>,
     mut world_clock: ResMut<WorldClock>,
+    mut crime_ids: Option<ResMut<crate::npc::guilt::CrimeIdAllocator>>,
 ) {
     let dump = match read_world_dump(&save_config.path) {
         Ok(dump) => dump,
@@ -742,11 +755,28 @@ fn load_world_from_snapshot(
         floor_maps: dump_floor_maps,
         spawn_groups: dump_spawn_groups,
         world_time: dump_world_time,
+        next_crime_id: dump_next_crime_id,
         ..
     } = dump;
 
     world_clock.time_of_day = dump_world_time.rem_euclid(1.0);
     world_clock.seconds_since_emit = 0.0;
+
+    // Restore the crime-id high-water mark. Belt-and-braces against a
+    // hand-edited or pre-field snapshot: never fall below the highest id any
+    // restored `CrimeMemory` actually carries, or settling a new crime could
+    // silently pardon an old one.
+    if let Some(crime_ids) = crime_ids.as_mut() {
+        let max_saved_record_id = world_objects
+            .iter()
+            .filter_map(|object| object.npc.as_ref())
+            .filter_map(|npc| npc.crime_memory.as_ref())
+            .flat_map(|memory| memory.records.iter())
+            .map(|record| record.id)
+            .max()
+            .unwrap_or(0);
+        crime_ids.next = dump_next_crime_id.max(max_saved_record_id + 1);
+    }
 
     let legacy_fill_floor_type = dump_map_layout
         .as_ref()
@@ -1035,9 +1065,9 @@ fn load_world_from_snapshot(
             // remembered a murder before the save must still remember it after.
             // (Its `FactionMembership` comes back off the definition, same as
             // the tag components above.)
-            if let Some(known_guilty) = npc.known_guilty {
-                if !known_guilty.is_empty() {
-                    entity.insert(known_guilty);
+            if let Some(crime_memory) = npc.crime_memory {
+                if !crime_memory.is_empty() {
+                    entity.insert(crime_memory);
                 }
             }
             if let Some(profile) = object_definitions
@@ -1310,6 +1340,7 @@ mod tests {
             floor_maps: vec![],
             spawn_groups: vec![],
             world_time: 0.25,
+            next_crime_id: 1,
         };
         write_world_dump(&save_path, &dump).unwrap();
 
@@ -1416,6 +1447,7 @@ mod tests {
             floor_maps: vec![],
             spawn_groups: vec![],
             world_time: 0.25,
+            next_crime_id: 1,
         };
         write_world_dump(&save_path, &dump).unwrap();
 
@@ -1767,10 +1799,13 @@ mod tests {
                     faction: None,
                     // Runtime-earned state: must survive the round trip, or
                     // every world reload would amnesty the whole server.
-                    known_guilty: Some(crate::npc::guilt::KnownGuilty {
-                        entries: vec![crate::npc::guilt::GuiltEntry {
+                    crime_memory: Some(crate::npc::guilt::CrimeMemory {
+                        records: vec![crate::npc::guilt::CrimeRecord {
+                            id: 9,
                             player: PlayerId(42),
-                            points: crate::npc::guilt::KILL_GUILT,
+                            kind: crate::npc::guilt::CrimeKind::Kill,
+                            victim_name: "Fellow Goblin".to_owned(),
+                            victim_factions: vec!["goblin_tribe".to_owned()],
                         }],
                     }),
                 }),
@@ -1783,6 +1818,7 @@ mod tests {
             floor_maps: vec![],
             spawn_groups: vec![],
             world_time: 0.0,
+            next_crime_id: 1,
         };
         write_world_dump(&save_path, &dump).unwrap();
 
@@ -1796,10 +1832,10 @@ mod tests {
             Option<&AiState>,
             Option<&AiMemory>,
             Option<&crate::npc::components::Faction>,
-            Option<&crate::npc::guilt::KnownGuilty>,
+            Option<&crate::npc::guilt::CrimeMemory>,
         ), With<Npc>>();
         let mut saw_snapshot_goblin = false;
-        for (object, tile, ai_state, ai_memory, faction, known_guilty) in npc_query.iter(world) {
+        for (object, tile, ai_state, ai_memory, faction, crime_memory) in npc_query.iter(world) {
             assert!(
                 ai_state.is_some(),
                 "loaded NPC {} at {tile:?} is missing AiState — update_roaming_npcs requires it",
@@ -1823,7 +1859,7 @@ mod tests {
                 // Guilt is earned at runtime, so it is persisted rather than
                 // re-derived: the restored goblin must still remember player 42.
                 assert_eq!(
-                    known_guilty.map(|g| g.points(PlayerId(42))),
+                    crime_memory.map(|g| g.points(PlayerId(42))),
                     Some(crate::npc::guilt::KILL_GUILT),
                     "a restored NPC must remember who wronged it",
                 );

@@ -4,6 +4,7 @@ pub mod character_sheet;
 pub mod chat_input;
 pub mod components;
 pub mod container_panel;
+pub mod crime_ledger;
 pub mod debug_menu;
 pub mod dialog;
 pub mod equipment_panel;
@@ -165,6 +166,8 @@ impl Plugin for UiPlugin {
         .insert_resource(DialogPanelRenderState::default())
         .insert_resource(crate::ui::book_panel::BookPanelState::default())
         .insert_resource(crate::ui::book_panel::BookPanelRenderState::default())
+        .insert_resource(crate::ui::crime_ledger::CrimeLedgerState::default())
+        .insert_resource(crate::ui::crime_ledger::CrimeLedgerRenderState::default())
         .insert_resource(TradePanelRenderState::default())
         .insert_resource(TradePopupState::default())
         .insert_resource(resources::PartyInvitePopupState::default())
@@ -404,6 +407,18 @@ impl Plugin for UiPlugin {
                 crate::ui::book_panel::release_book_focus_when_idle
                     .after(crate::ui::book_panel::sync_book_panel_body),
                 crate::ui::book_panel::consume_book_text_edit_submits,
+            )
+                .run_if(in_state(ClientAppState::InGame)),
+        )
+        .add_systems(
+            Update,
+            (
+                crate::ui::crime_ledger::handle_crime_ledger_clicks,
+                crate::ui::crime_ledger::sync_crime_ledger_lifecycle
+                    .after(crate::ui::crime_ledger::handle_crime_ledger_clicks)
+                    .after(apply_game_ui_events),
+                crate::ui::crime_ledger::sync_crime_ledger_body
+                    .after(crate::ui::crime_ledger::sync_crime_ledger_lifecycle),
             )
                 .run_if(in_state(ClientAppState::InGame)),
         )

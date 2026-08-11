@@ -63,11 +63,15 @@ impl Plugin for CombatPlugin {
                 |mut scheduled: ResMut<ScheduledImpacts>,
                  mut retaliations: ResMut<PendingRetaliations>,
                  mut pending_crimes: ResMut<crate::npc::witness::PendingCrimes>,
-                 mut crime_log: ResMut<crate::npc::witness::CrimeLog>| {
+                 mut crime_log: ResMut<crate::npc::witness::CrimeLog>,
+                 mut pending_learns: ResMut<crate::npc::guilt::PendingCrimeLearns>,
+                 mut pending_clears: ResMut<crate::npc::guilt::PendingGuiltClears>| {
                     scheduled.items.clear();
                     retaliations.items.clear();
                     pending_crimes.items.clear();
                     crime_log.clear();
+                    pending_learns.items.clear();
+                    pending_clears.items.clear();
                 },
             )
             .add_systems(
@@ -154,16 +158,23 @@ impl Plugin for CombatPlugin {
                     .before(crate::network::sets::NetServerSend)
                     .run_if(simulation_active),
             )
-            // Guilt propagation: spread the offenses the damage drain queued to
-            // every live member of the victim's factions. Registered here
-            // rather than in `NpcPlugin` for the same reason as the aggro
-            // system above — the `.after(apply_pending_damage)` edge only binds
-            // inside the plugin that owns the anchor. Before the projection so
-            // a guard that just turned Wanted replicates as hostile this frame.
+            // Guilt: gossip queues learns for nearby NPCs, then the memory
+            // sweep drains every learn/clear queued this frame — by the crime
+            // log (surviving victims), the AI tick (witnesses), gossip, the
+            // death handler, and the judge. Registered here rather than in
+            // `NpcPlugin` for the same reason as the aggro system above — the
+            // `.after(...)` edges only bind inside the plugin that owns the
+            // anchors. Before the projection so a guard that just learned
+            // enough to want you dead replicates as hostile this frame.
             .add_systems(
                 Update,
-                crate::npc::guilt::apply_pending_guilt
-                    .after(apply_pending_damage)
+                (
+                    crate::npc::guilt::tick_crime_gossip,
+                    crate::npc::guilt::apply_crime_memory_updates,
+                )
+                    .chain()
+                    .after(crate::npc::witness::update_crime_log)
+                    .after(update_roaming_npcs)
                     .before(crate::network::sets::NetServerSend)
                     .run_if(simulation_active),
             );

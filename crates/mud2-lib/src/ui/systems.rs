@@ -47,6 +47,7 @@ pub fn apply_game_ui_events(
     mut party_invite_state: ResMut<crate::ui::resources::PartyInvitePopupState>,
     mut dialog_state: ResMut<crate::ui::resources::ActiveDialogState>,
     mut book_panel_state: ResMut<crate::ui::book_panel::BookPanelState>,
+    mut crime_ledger_state: ResMut<crate::ui::crime_ledger::CrimeLedgerState>,
     mut console_terminals: Query<
         &mut bevy_terminal::Terminal,
         With<crate::ui::components::PythonConsoleTerminal>,
@@ -169,6 +170,13 @@ pub fn apply_game_ui_events(
             }
             GameUiEvent::PartyInviteClosed => {
                 party_invite_state.close();
+            }
+            GameUiEvent::OpenCrimeLedger {
+                npc_object_id,
+                judge_name,
+                crimes,
+            } => {
+                crime_ledger_state.open(npc_object_id, judge_name, crimes);
             }
         }
     }
@@ -1468,7 +1476,7 @@ pub fn handle_context_menu_actions(
         }
         ContextMenuAction::PayFine => {
             if let Some(ContextMenuTarget::World(object_id)) = context_menu_state.target {
-                pending_commands.push(GameCommand::PayGuiltFine {
+                pending_commands.push(GameCommand::RequestCrimeList {
                     npc_object_id: object_id,
                 });
             }

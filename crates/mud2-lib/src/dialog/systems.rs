@@ -56,7 +56,7 @@ pub fn process_dialog_commands(
         &DialogNode,
         &crate::world::components::SpaceResident,
         &crate::world::components::TilePosition,
-        Option<&crate::npc::guilt::KnownGuilty>,
+        Option<&crate::npc::guilt::CrimeMemory>,
     )>,
     floors: crate::world::column::FloorGeometryParam,
     mut runners: Query<(&mut DialogueRunner, &DialogSession)>,

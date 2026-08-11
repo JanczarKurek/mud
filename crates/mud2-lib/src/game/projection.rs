@@ -174,7 +174,7 @@ pub type ProjectionWorldObjectQuery<'w, 's> = Query<
             Option<&'static crate::npc::components::AiState>,
             Option<&'static crate::npc::components::Faction>,
             Option<&'static crate::npc::hostility::TagProfile>,
-            Option<&'static crate::npc::guilt::KnownGuilty>,
+            Option<&'static crate::npc::guilt::CrimeMemory>,
             Option<&'static crate::npc::guilt::Judge>,
         ),
     ),

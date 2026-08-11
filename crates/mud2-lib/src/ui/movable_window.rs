@@ -93,6 +93,10 @@ pub enum MovableWindowId {
     /// open at a time (re-opening a different book replaces the snapshot
     /// in `BookPanelState`).
     Book,
+    /// Singleton judge crime-ledger window (per-crime fine picker).
+    /// Spawned in response to `GameUiEvent::OpenCrimeLedger`; re-opening at
+    /// another judge replaces the snapshot in `CrimeLedgerState`.
+    CrimeLedger,
 }
 
 #[derive(Component)]

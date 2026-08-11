@@ -305,7 +305,11 @@ fn game_command_samples() -> Vec<GameCommand> {
             state: "open".to_owned(),
         },
         GameCommand::TalkToNpc { npc_object_id: 12 },
-        GameCommand::PayGuiltFine { npc_object_id: 12 },
+        GameCommand::RequestCrimeList { npc_object_id: 12 },
+        GameCommand::PayCrime {
+            npc_object_id: 12,
+            crime_id: 3,
+        },
         GameCommand::DialogAdvance { session_id: 1 },
         GameCommand::DialogChoose {
             session_id: 1,
@@ -473,7 +477,8 @@ fn game_command_coverage(command: &GameCommand) {
         | GameCommand::AdminSetVitals { .. }
         | GameCommand::AdminSetObjectState { .. }
         | GameCommand::TalkToNpc { .. }
-        | GameCommand::PayGuiltFine { .. }
+        | GameCommand::RequestCrimeList { .. }
+        | GameCommand::PayCrime { .. }
         | GameCommand::DialogAdvance { .. }
         | GameCommand::DialogChoose { .. }
         | GameCommand::DialogEnd { .. }
@@ -847,6 +852,15 @@ fn game_ui_event_samples() -> Vec<GameUiEvent> {
             party_size: 2,
         },
         GameUiEvent::PartyInviteClosed,
+        GameUiEvent::OpenCrimeLedger {
+            npc_object_id: 12,
+            judge_name: "Magistrate Orla".to_owned(),
+            crimes: vec![mud2::game::resources::CrimeListing {
+                crime_id: 3,
+                description: "Murder of Bob".to_owned(),
+                price_text: "1g 3s".to_owned(),
+            }],
+        },
     ]
 }
 
@@ -878,7 +892,8 @@ fn game_ui_event_coverage(event: &GameUiEvent) {
         | GameUiEvent::SpeechBubble { .. }
         | GameUiEvent::ReplOutput { .. }
         | GameUiEvent::PartyInviteReceived { .. }
-        | GameUiEvent::PartyInviteClosed => {}
+        | GameUiEvent::PartyInviteClosed
+        | GameUiEvent::OpenCrimeLedger { .. } => {}
     }
 }
 

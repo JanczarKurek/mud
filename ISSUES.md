@@ -69,10 +69,23 @@ Follow-ups:
     an `npc_behavior:` block so it can actually run (stationary roam keeps
     the shop in place), and the shopkeeper freeze-near-player pause is gated
     to Wander/Alert so a fleeing shopkeeper moves.
-  - *Guilt propagation* itself is still witness-blind: murdering a lone
-    shepherd out of sight incriminates you with the whole faction exactly as
-    much as doing it on the plaza (only the immediate reactions above are
-    sight-gated).
+  - ~~*Guilt propagation* is witness-blind~~ — **replaced** (2026-08-11) by the
+    witness-gated crime registry: offenses mint per-crime `CrimeRecord`s in
+    `update_crime_log` (3s scuffle debounce; kill upgrades the assault record
+    in place), and only the surviving victim + NPCs that pass the existing
+    witness range/LoS gates learn them (`CrimeMemory` replaces the scalar
+    `KnownGuilty`; guilt = sum of known records). Knowledge then spreads by
+    proximity gossip (`tick_crime_gossip`, 3 tiles / 4s beat, relevance-
+    filtered). An unwitnessed murder of the last witness is now the perfect
+    crime. The judge lists and settles **specific crimes** in a new crime-
+    ledger window (`RequestCrimeList`/`PayCrime` replace `PayGuiltFine`;
+    `GameUiEvent::OpenCrimeLedger`; `ui/crime_ledger.rs`); paying erases that
+    crime id from every NPC at once. **Upgrade note:** old saves' scalar
+    `known_guilty` field is silently dropped — a one-time guilt amnesty
+    (records can't be reconstructed from a scalar). `WorldStateDump` gained
+    `next_crime_id` (serde-defaulted, no format bump). Follow-ups:
+    corpse-discovery channel (a found body currently incriminates nobody),
+    per-template `gossips: false` opt-out.
   - No guilt decay over time, and no per-creature severity weighting (a sheep
     and a magistrate cost the same).
   - The Judge is reachable only in person, which is awkward once the whole town

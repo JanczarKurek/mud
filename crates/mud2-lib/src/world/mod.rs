@@ -144,10 +144,12 @@ impl Plugin for WorldServerPlugin {
         .insert_resource(crate::npc::guilt::FactionInterner::build(
             object_definitions.all_faction_strings(),
         ))
-        // The guilt queue lives here rather than in `NpcPlugin` because its
+        // The guilt queues live here rather than in `NpcPlugin` because their
         // *producers* (the damage drain, the player death handler) are always
         // registered while `NpcPlugin` is optional — notably in test apps.
-        .init_resource::<crate::npc::guilt::PendingGuiltEvents>()
+        .init_resource::<crate::npc::guilt::PendingCrimeLearns>()
+        .init_resource::<crate::npc::guilt::PendingGuiltClears>()
+        .init_resource::<crate::npc::guilt::CrimeIdAllocator>()
         .insert_resource(object_definitions)
         .insert_resource(VfxDefinitions::load_from_disk())
         .insert_resource(FloorTilesetDefinitions::load_from_disk())

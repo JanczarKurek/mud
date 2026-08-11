@@ -105,7 +105,7 @@ pub fn handle_player_deaths(
     mut player_query: DeathHandlerPlayerQuery,
     mut pending_ui_events: ResMut<PendingGameUiEvents>,
     killer_faction_query: Query<&crate::npc::guilt::FactionMembership>,
-    mut pending_guilt: ResMut<crate::npc::guilt::PendingGuiltEvents>,
+    mut pending_guilt: ResMut<crate::npc::guilt::PendingGuiltClears>,
 ) {
     let deaths = std::mem::take(&mut pending.deaths);
 
@@ -130,7 +130,7 @@ pub fn handle_player_deaths(
             .killer
             .and_then(|killer| killer_faction_query.get(killer).ok())
         {
-            pending_guilt.push(crate::npc::guilt::GuiltEvent::Clear {
+            pending_guilt.push(crate::npc::guilt::GuiltClear::Faction {
                 player: identity.id,
                 factions: factions.mask,
             });
@@ -482,7 +482,7 @@ mod tests {
             .init_resource::<PendingGameUiEvents>()
             .init_resource::<ObjectRegistry>()
             // Death settles the dead player's guilt with the killer's factions.
-            .init_resource::<crate::npc::guilt::PendingGuiltEvents>()
+            .init_resource::<crate::npc::guilt::PendingGuiltClears>()
             // Real definitions from disk: the corpse + tombstone spawn in
             // handle_player_deaths looks up 'generic_corpse'/'tombstone'.
             .insert_resource(OverworldObjectDefinitions::load_from_disk())

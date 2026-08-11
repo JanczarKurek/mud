@@ -13,7 +13,7 @@ use crate::npc::components::{
     PreyBehavior, RoamingBehavior, RoamingRandomState, RoamingStepTimer,
 };
 use crate::npc::detection::detection_outcome;
-use crate::npc::guilt::{FactionMembership, KnownGuilty};
+use crate::npc::guilt::{CrimeMemory, FactionMembership};
 use crate::npc::hostility::{is_hostile_toward, Aggressor, Subject, TagProfile};
 use crate::npc::routine::{routine_step, Routine, RoutineIntent, RoutinePhase, RoutineState};
 use crate::npc::witness::{CrimeLog, Protector, ALARM_NOISE};
@@ -176,9 +176,14 @@ pub fn update_roaming_npcs(
         Option<Res<crate::world::floor_definitions::FloorTilesetDefinitions>>,
     ),
     world_clock: Option<Res<WorldClock>>,
-    // Ambient signal fields NPCs sample: lingering noise and witnessed crimes.
-    // Grouped as one tuple param to stay under Bevy's 16-parameter ceiling.
-    signal_fields: (Option<Res<NoiseField>>, Option<Res<CrimeLog>>),
+    // Ambient signal fields NPCs sample: lingering noise, witnessed crimes,
+    // and the learn queue witnessed records are committed through. Grouped as
+    // one tuple param to stay under Bevy's 16-parameter ceiling.
+    mut signal_fields: (
+        Option<Res<NoiseField>>,
+        Option<Res<CrimeLog>>,
+        Option<ResMut<crate::npc::guilt::PendingCrimeLearns>>,
+    ),
     player_query: Query<
         (
             Entity,
@@ -202,7 +207,7 @@ pub fn update_roaming_npcs(
             Option<&Faction>,
             Option<&Companion>,
             Option<&TagProfile>,
-            Option<&KnownGuilty>,
+            Option<&CrimeMemory>,
             Option<&FactionMembership>,
             Option<&Protector>,
         ),
@@ -534,8 +539,10 @@ pub fn update_roaming_npcs(
 
         // A recent crime this NPC can see, if any: as a protector of the
         // victim's faction (→ attack the aggressor) or as an unarmed
-        // faction-mate (→ scatter).
-        let witnessed_crime = resolve_witnessed_crime(
+        // faction-mate (→ scatter). The scan also yields any witnessed guilt
+        // records, committed via the learn queue (this system can't mutate
+        // `CrimeMemory` — the disjoint faction query is read-only).
+        let scan = resolve_witnessed_crime(
             signal_fields.1.as_deref(),
             entity,
             resident.space_id,
@@ -544,6 +551,7 @@ pub fn update_roaming_npcs(
             self_protector,
             hostile_behavior,
             prey_behavior,
+            self_guilt,
             &combatants,
             &los_blockers,
             |attacker| {
@@ -554,6 +562,12 @@ pub fn update_roaming_npcs(
                     .map(|m| m.mask)
             },
         );
+        if let Some(learns) = signal_fields.2.as_mut() {
+            for record in scan.learned {
+                learns.push(entity, record);
+            }
+        }
+        let witnessed_crime = scan.reaction;
 
         let mut outcome = step_ai(StepAiInput {
             entity,
@@ -858,7 +872,7 @@ struct StepAiInput<'a> {
     self_tags: TagProfile,
     /// This NPC's own grudge ledger. `None` until some player has actually
     /// wronged it — the third hostility gate, and the only per-player one.
-    self_guilt: Option<&'a KnownGuilty>,
+    self_guilt: Option<&'a CrimeMemory>,
     /// `Some((owner_tile, follow_close_tiles))` if this NPC is a companion with
     /// a same-space owner. Drives the follow-when-idle behavior in `tick_wander`.
     companion_follow: Option<(TilePosition, i32)>,
@@ -887,7 +901,7 @@ struct StepAiInput<'a> {
     /// A recent crime this NPC can see (see `resolve_witnessed_crime`).
     /// `as_protector` decides the reaction: attack the aggressor (guard) vs
     /// scatter (unarmed faction-mate). Independent of the guilt ledger by
-    /// construction — resolution never consults `KnownGuilty`.
+    /// construction — resolution never consults `CrimeMemory`.
     witnessed_crime: Option<WitnessedCrime>,
 }
 
@@ -1889,6 +1903,15 @@ struct WitnessedCrime {
     as_protector: bool,
 }
 
+/// Everything one NPC's per-tick crime scan produced: the reaction (if any)
+/// for the FSM, plus the guilt records it witnessed and should commit to its
+/// `CrimeMemory` (via `PendingCrimeLearns` — the scan runs inside
+/// `update_roaming_npcs`, which cannot mutate the memory directly).
+struct WitnessScan {
+    reaction: Option<WitnessedCrime>,
+    learned: Vec<crate::npc::guilt::CrimeRecord>,
+}
+
 /// Scan the [`CrimeLog`] for an assault this NPC cares about and can see.
 ///
 /// Relevance: the victim's factions intersect this NPC's `Protector.protects`
@@ -1911,15 +1934,25 @@ fn resolve_witnessed_crime(
     protector: Option<Protector>,
     hostile: Option<&HostileBehavior>,
     prey: Option<&PreyBehavior>,
+    self_guilt: Option<&crate::npc::guilt::CrimeMemory>,
     combatants: &[CombatantDetectInfo],
     los_blockers: &BlockerIndex,
     attacker_factions: impl Fn(Entity) -> Option<crate::npc::guilt::FactionMask>,
-) -> Option<WitnessedCrime> {
-    let log = crime_log?;
+) -> WitnessScan {
+    let mut learned = Vec::new();
+    let Some(log) = crime_log else {
+        return WitnessScan {
+            reaction: None,
+            learned,
+        };
+    };
     // Prefer protector reactions over civilian ones, then the nearest
     // aggressor.
     let mut best: Option<(WitnessedCrime, (bool, i32))> = None;
-    for crime in log.iter_space(space_id) {
+    for active in log.iter_space(space_id) {
+        let crime = &active.report;
+        // The attacker never testifies against itself; the victim already
+        // learned first-hand in `update_crime_log`.
         if crime.attacker == self_entity || crime.victim == self_entity {
             continue;
         }
@@ -1928,17 +1961,13 @@ fn resolve_witnessed_crime(
         }
         let as_protector = hostile.is_some()
             && protector.is_some_and(|p| p.protects.intersects(crime.victim_factions));
+        // A protector cares even without combat AI — it can't retaliate, but
+        // it still remembers.
+        let in_remit = protector.is_some_and(|p| p.protects.intersects(crime.victim_factions));
         let as_member = membership.is_some_and(|m| m.mask.intersects(crime.victim_factions));
-        if !as_protector && !as_member {
+        if !in_remit && !as_member {
             continue;
         }
-        // The aggressor must still be around to react to.
-        let Some(attacker) = combatants
-            .iter()
-            .find(|c| c.entity == crime.attacker && c.space_id == space_id)
-        else {
-            continue;
-        };
         let (radius, requires_los) = if as_protector {
             let h = hostile.expect("as_protector implies combat AI");
             (h.detect_distance_tiles, h.requires_line_of_sight)
@@ -1947,21 +1976,44 @@ fn resolve_witnessed_crime(
                 .unwrap_or((crate::npc::hostility::DEFAULT_PREY_DETECT_TILES, true))
         };
         // Same floor band as regular detection (`nearest_visible_enemy`).
-        if floor_index(attacker.tile.z) != floor_index(tile_position.z)
-            && (attacker.tile.z - tile_position.z).abs() > crate::game::traversal::CLIMB_FREE_DZ
-        {
-            continue;
-        }
-        let distance = chebyshev_distance(tile_position, attacker.tile);
-        if distance > radius {
-            continue;
-        }
-        let seen = !requires_los
-            || has_line_of_sight(tile_position, attacker.tile, space_id, los_blockers)
-            || has_line_of_sight(tile_position, crime.victim_tile, space_id, los_blockers);
+        let in_floor_band = |target: TilePosition| {
+            floor_index(target.z) == floor_index(tile_position.z)
+                || (target.z - tile_position.z).abs() <= crate::game::traversal::CLIMB_FREE_DZ
+        };
+        // The aggressor still being around gates the *reaction*; witnessing
+        // (learning) falls back to sight of the crime scene, so a murder still
+        // registers when the killer bolts inside the log's lifetime.
+        let attacker = combatants
+            .iter()
+            .find(|c| c.entity == crime.attacker && c.space_id == space_id);
+        let witnessed_via = |target: TilePosition, extra_sightline: Option<TilePosition>| {
+            in_floor_band(target)
+                && chebyshev_distance(tile_position, target) <= radius
+                && (!requires_los
+                    || has_line_of_sight(tile_position, target, space_id, los_blockers)
+                    || extra_sightline.is_some_and(|tile| {
+                        has_line_of_sight(tile_position, tile, space_id, los_blockers)
+                    }))
+        };
+        let seen = match attacker {
+            Some(attacker) => witnessed_via(attacker.tile, Some(crime.victim_tile)),
+            None => witnessed_via(crime.victim_tile, None),
+        };
         if !seen {
             continue;
         }
+        // Slow channel: commit the crime to memory (deduped against what this
+        // NPC already knows; an Attack→Kill upgrade re-learns).
+        if let Some(record) = &active.record {
+            if !self_guilt.is_some_and(|g| g.knows_at_least(record)) {
+                learned.push(record.clone());
+            }
+        }
+        // Fast channel: react only while the aggressor is actually present.
+        let Some(attacker) = attacker else {
+            continue;
+        };
+        let distance = chebyshev_distance(tile_position, attacker.tile);
         let score = (as_protector, -distance);
         if best.as_ref().is_none_or(|(_, existing)| score > *existing) {
             best = Some((
@@ -1973,7 +2025,10 @@ fn resolve_witnessed_crime(
             ));
         }
     }
-    best.map(|(crime, _)| crime)
+    WitnessScan {
+        reaction: best.map(|(crime, _)| crime),
+        learned,
+    }
 }
 
 /// The NPC's attack kind, defaulting an absent profile to `Melee`. Feeds the
@@ -4657,6 +4712,9 @@ mod tests {
         let mut app = npc_test_app();
         app.init_resource::<PendingCrimes>();
         app.init_resource::<CrimeLog>();
+        app.init_resource::<crate::npc::guilt::CrimeIdAllocator>();
+        app.init_resource::<crate::npc::guilt::PendingCrimeLearns>();
+        app.init_resource::<crate::npc::guilt::FactionInterner>();
         app.init_resource::<crate::world::noise::PendingNoiseEvents>();
         app.add_systems(
             Update,
@@ -4721,7 +4779,10 @@ mod tests {
             .resource_mut::<PendingCrimes>()
             .push(CrimeReport {
                 attacker,
+                attacker_player: None,
                 victim,
+                kind: crate::npc::guilt::CrimeKind::Attack,
+                victim_name: "Villager".to_owned(),
                 victim_tile: tile,
                 victim_factions: factions,
                 space_id: TEST_SPACE,
@@ -4850,6 +4911,148 @@ mod tests {
             app.world().get::<CombatTarget>(guard).map(|t| t.entity),
             Some(wolf),
             "a guard that saw a predator maul a protected NPC must attack it"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Witness-gated guilt: crime records only reach the memories of NPCs that
+    // actually saw the crime (plus the surviving victim).
+    // -----------------------------------------------------------------------
+
+    use crate::npc::guilt::{
+        apply_crime_memory_updates, CrimeKind, CrimeMemory, FactionInterner, ATTACK_GUILT,
+    };
+
+    /// Full server pipeline for guilt: crime fold (mints records, victim
+    /// learns) → AI tick (witnesses learn) → memory sweep. Uses a *real*
+    /// interner so record faction strings round-trip through masks.
+    fn guilt_pipeline_app() -> (App, FactionMask) {
+        let mut app = npc_test_app();
+        app.init_resource::<PendingCrimes>();
+        app.init_resource::<CrimeLog>();
+        app.init_resource::<crate::npc::guilt::CrimeIdAllocator>();
+        app.init_resource::<crate::npc::guilt::PendingCrimeLearns>();
+        app.init_resource::<crate::npc::guilt::PendingGuiltClears>();
+        app.init_resource::<crate::world::noise::PendingNoiseEvents>();
+        let interner = FactionInterner::build(["town"].into_iter());
+        let town = interner.resolve(&["town".to_owned()]);
+        app.insert_resource(interner);
+        app.add_systems(
+            Update,
+            (
+                crate::npc::witness::update_crime_log,
+                update_roaming_npcs,
+                apply_crime_memory_updates,
+            )
+                .chain(),
+        );
+        (app, town)
+    }
+
+    fn spawn_town_member(app: &mut App, pos: TilePosition, town: FactionMask) -> Entity {
+        let member = spawn_civilian(app, pos);
+        app.world_mut()
+            .entity_mut(member)
+            .insert(FactionMembership { mask: town });
+        member
+    }
+
+    fn file_player_crime(
+        app: &mut App,
+        attacker: Entity,
+        victim: Entity,
+        kind: CrimeKind,
+        tile: TilePosition,
+        factions: FactionMask,
+    ) {
+        app.world_mut()
+            .resource_mut::<PendingCrimes>()
+            .push(CrimeReport {
+                attacker,
+                attacker_player: Some(crate::player::components::PlayerId(1)),
+                victim,
+                kind,
+                victim_name: "Villager".to_owned(),
+                victim_tile: tile,
+                victim_factions: factions,
+                space_id: TEST_SPACE,
+            });
+    }
+
+    fn guilt_points(app: &App, entity: Entity) -> u32 {
+        app.world()
+            .get::<CrimeMemory>(entity)
+            .map(|m| m.points(crate::player::components::PlayerId(1)))
+            .unwrap_or(0)
+    }
+
+    #[test]
+    fn a_witnessed_attack_is_learned_by_victim_and_witness_but_not_the_distant() {
+        let (mut app, town) = guilt_pipeline_app();
+        let attacker = spawn_player(&mut app, 1, TilePosition::ground(8, 5));
+        let victim = spawn_town_member(&mut app, TilePosition::ground(9, 5), town);
+        // 3 tiles from the attacker: inside the civilian witness radius.
+        let witness = spawn_town_member(&mut app, TilePosition::ground(5, 5), town);
+        // Same faction, far across the map: saw nothing, learns nothing.
+        let distant = spawn_town_member(&mut app, TilePosition::ground(30, 30), town);
+
+        file_player_crime(
+            &mut app,
+            attacker,
+            victim,
+            CrimeKind::Attack,
+            TilePosition::ground(9, 5),
+            town,
+        );
+        app.update();
+        app.update();
+
+        assert_eq!(
+            guilt_points(&app, victim),
+            ATTACK_GUILT,
+            "the surviving victim knows first-hand"
+        );
+        assert_eq!(
+            guilt_points(&app, witness),
+            ATTACK_GUILT,
+            "an in-range faction-mate witnessed the assault"
+        );
+        assert_eq!(
+            guilt_points(&app, distant),
+            0,
+            "guilt no longer broadcasts: an NPC that saw nothing knows nothing"
+        );
+    }
+
+    #[test]
+    fn an_unwitnessed_kill_is_the_perfect_crime() {
+        let (mut app, town) = guilt_pipeline_app();
+        let attacker = spawn_player(&mut app, 1, TilePosition::ground(8, 5));
+        let victim = spawn_town_member(&mut app, TilePosition::ground(9, 5), town);
+        // The victim's whole faction exists — but nowhere near the crime.
+        let distant = spawn_town_member(&mut app, TilePosition::ground(30, 30), town);
+
+        file_player_crime(
+            &mut app,
+            attacker,
+            victim,
+            CrimeKind::Kill,
+            TilePosition::ground(9, 5),
+            town,
+        );
+        // The kill despawns the victim before anyone's AI tick can see it.
+        app.world_mut().entity_mut(victim).despawn();
+        for _ in 0..4 {
+            app.update();
+        }
+
+        assert_eq!(guilt_points(&app, distant), 0);
+        let world = app.world_mut();
+        let mut memories = world.query::<&CrimeMemory>();
+        assert_eq!(
+            memories.iter(world).count(),
+            0,
+            "no witness + dead victim ⇒ the record decays unlearned, everywhere"
         );
     }
 }

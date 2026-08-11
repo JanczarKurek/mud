@@ -1791,8 +1791,9 @@ Reference templates: `town_guard` (guard vs monsters), `wolf` + `sheep`
 
 A **third**, orthogonal axis, distinct from both of the above: `tags` are what a
 creature *is*, `faction` is which side it *fights on*, and `factions` is who it
-*answers to*. Harming a faction member propagates guilt to every living NPC
-sharing one of its factions.
+*answers to*. Harming a faction member creates a **crime record** — but guilt is
+**witness-gated**: only NPCs that actually come to know of the crime hold it
+against you.
 
 ```yaml
 factions: [emberbrook_watch, emberbrook_town]   # may belong to several
@@ -1800,14 +1801,28 @@ factions: [emberbrook_watch, emberbrook_town]   # may belong to several
 
 - Free-form strings interned into their **own** 64-bit mask, so allegiances
   never consume the identity-tag budget.
-- Guilt is stored **per NPC**, keyed by player (`npc::guilt::KnownGuilty`), and
-  is persisted in the world snapshot. Consequences: killing every witness
-  really does bury the evidence, and an NPC that respawns after your crime is
-  genuinely unaware of it.
-- **Earning guilt** (uniform for now): `+10` per attack on a faction member —
-  debounced to once per 3s per victim, so a damage-over-time tick or a flurry
-  of swings counts as one offense — and `+70` for a kill.
-- **Effects are tiered** even though the number is uncapped:
+- Each attributed offense mints one `CrimeRecord` (globally unique id, kind,
+  victim name, victim factions). NPCs store the specific records they know
+  (`npc::guilt::CrimeMemory`, persisted in the world snapshot); an NPC's guilt
+  toward a player is the sum of its known records' points.
+- **How NPCs learn of a crime** — three channels, all relevance-filtered (an
+  NPC only retains crimes against factions it belongs to or protects):
+  1. **The victim**, if it survives — first-hand, no sight check.
+  2. **Witnesses** — NPCs whose AI tick sees the assault (same ~5s window,
+     radius, and line-of-sight rules as the immediate-reaction channel below).
+  3. **Gossip** — every ~4s, NPCs that know spread relevant records to
+     faction-bearing NPCs within 3 tiles (same space and floor; no LoS — it's
+     talk). Knowledge chains hop-by-hop through a town over time.
+     (A per-template `gossips: false` opt-out is a planned follow-up.)
+- **The perfect crime**: no living witness within the ~5s window and a dead
+  victim ⇒ the record decays unlearned and nobody ever holds it against you.
+  Killing every witness really does bury the evidence.
+- **Record points**: `+10` for an assault — repeated hits on the same victim
+  inside 3s fold into one record, and a sustained beating mints another every
+  3s — and `+70` for a kill. A kill inside the same 3s scuffle *upgrades* the
+  assault record to murder (same id, worse kind) rather than stacking.
+- **Effects are tiered** per NPC, by what *that NPC* knows, and the total is
+  uncapped:
 
   | Points | Effect |
   |---|---|
@@ -1815,8 +1830,9 @@ factions: [emberbrook_watch, emberbrook_town]   # may belong to several
   | 31–60 | refuses to talk or trade (says so out loud) |
   | 61+ | attacks on sight, if it has combat AI at all |
 
-- **Clearing guilt**: being killed by a member of that faction settles your debt
-  with it (and only it), or pay a `judge:` NPC (below).
+- **Clearing guilt**: being killed by a member of a faction erases all your
+  crimes against it (and only it) everywhere, or pay a `judge:` NPC per crime
+  (below) — a paid crime vanishes from every NPC's memory at once.
 - A peaceful NPC with no combat AI never turns hostile no matter how high the
   number climbs — it simply refuses to deal with you.
 
@@ -1848,8 +1864,12 @@ the victim's factions mobilizes nobody.
 
 ### `judge` (NPC templates)
 
-Marks an NPC as a magistrate who will clear a player's guilt for coin. Adds a
-"Pay Fine" right-click verb (talk range, same 3 tiles as Talk).
+Marks an NPC as a magistrate who settles a player's crimes for coin, one crime
+at a time. The "Pay Fine" right-click verb (talk range, same 3 tiles as Talk)
+opens the **crime ledger** window: the deduped union of the player's crimes
+known by any live member of `clears_factions`, filtered to crimes *against*
+those factions, each row priced and payable individually ("Assault on Bob —
+3s 4c", "Murder of Alice — 2g 4s").
 
 ```yaml
 judge:
@@ -1857,11 +1877,13 @@ judge:
   copper_per_guilt_point: 4
 ```
 
-The fee is `copper_per_guilt_point` × the **worst** outstanding grudge any live
-member of `clears_factions` holds against the player — with per-NPC ledgers
-there is no single "faction opinion", so the deepest grudge is what has to be
-bought off. Payment uses the standard coin tiers and makes change; a player who
-can't afford it is told the price and charged nothing.
+A crime's fee is `copper_per_guilt_point` × its points (10 for an assault, 70
+for a murder). Paying erases that crime id from **every** NPC's memory at once
+— justice is official and public. Payment uses the standard coin tiers and
+makes change; a player who can't afford a row is told the price and charged
+nothing. A judge cannot take money for crimes against factions outside
+`clears_factions`, and never lists crimes nobody in its factions knows about —
+the perfect crime can't be confessed to.
 
 Reference templates: `town_guard` + `villager` / `townsfolk` + `sheep` (the
 Emberbrook town and Watch), and `judge` (the magistrate on the plaza).

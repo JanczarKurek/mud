@@ -246,7 +246,7 @@ pub struct OverworldObjectDefinition {
     #[serde(default)]
     pub protects_factions: Vec<String>,
     /// Marks this NPC as a Judge: a player can pay it to clear their guilt with
-    /// the listed factions. See `npc::guilt` and `GameCommand::PayGuiltFine`.
+    /// the listed factions. See `npc::guilt` and `GameCommand::PayCrime`.
     #[serde(default)]
     pub judge: Option<JudgeDef>,
     /// NPC spellcasting profile. Combat checks this before falling through to

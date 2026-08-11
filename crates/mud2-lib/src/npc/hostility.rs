@@ -15,7 +15,7 @@ use bevy::prelude::*;
 
 use crate::combat::components::CombatLeash;
 use crate::npc::components::{Companion, Faction, HostileBehavior, Npc, PreyBehavior};
-use crate::npc::guilt::{FactionInterner, FactionMembership, GuiltTier, Judge, KnownGuilty};
+use crate::npc::guilt::{CrimeMemory, FactionInterner, FactionMembership, GuiltTier, Judge};
 use crate::player::components::PlayerId;
 use crate::world::components::OverworldObject;
 use crate::world::object_definitions::OverworldObjectDefinitions;
@@ -128,12 +128,12 @@ pub struct Aggressor<'a> {
     /// This NPC's own grudge ledger, if it has one. `None` for creatures that
     /// have never been wronged (the overwhelmingly common case) and for
     /// players.
-    pub guilt: Option<&'a KnownGuilty>,
+    pub guilt: Option<&'a CrimeMemory>,
 }
 
 impl<'a> Aggressor<'a> {
     /// The common case at call sites that have the components in hand.
-    pub fn new(faction: Faction, hostile_towards: TagMask, guilt: Option<&'a KnownGuilty>) -> Self {
+    pub fn new(faction: Faction, hostile_towards: TagMask, guilt: Option<&'a CrimeMemory>) -> Self {
         Self {
             faction,
             hostile_towards,
@@ -240,7 +240,7 @@ pub fn resolve_npc_tag_components(
         }
 
         // Social factions. Like `TagProfile` this is template data, so it is
-        // re-derived here rather than persisted — but the `KnownGuilty` grudges
+        // re-derived here rather than persisted — but the `CrimeMemory` grudges
         // keyed against it *are* persisted, and are restored separately by the
         // snapshot loader.
         let factions = faction_interner.resolve(&def.factions);
@@ -399,12 +399,11 @@ mod tests {
 
     #[test]
     fn guilt_gate_makes_a_friendly_guard_hostile_to_the_criminal_only() {
-        use crate::npc::guilt::KILL_GUILT;
+        use crate::npc::guilt::CrimeKind;
 
         let culprit = PlayerId(1);
         let bystander = PlayerId(2);
-        let mut ledger = KnownGuilty::default();
-        ledger.add(culprit, KILL_GUILT);
+        let ledger = CrimeMemory::test_knowing(culprit, &[CrimeKind::Kill]);
 
         // A town guard: PlayerSide, hostile only toward monster tags, so both
         // players are normally safe from it.
@@ -427,12 +426,11 @@ mod tests {
 
     #[test]
     fn guilt_below_wanted_is_not_hostile() {
-        use crate::npc::guilt::ATTACK_GUILT;
+        use crate::npc::guilt::CrimeKind;
 
         let culprit = PlayerId(1);
-        let mut ledger = KnownGuilty::default();
         // Shunned-but-not-Wanted: refuses to talk, but does not draw steel.
-        ledger.add(culprit, ATTACK_GUILT * 4);
+        let ledger = CrimeMemory::test_knowing(culprit, &[CrimeKind::Attack; 4]);
         assert_eq!(ledger.tier(culprit), GuiltTier::Shunned);
 
         assert!(!is_hostile_toward(
@@ -443,8 +441,7 @@ mod tests {
 
     #[test]
     fn guilt_never_applies_between_npcs() {
-        let mut ledger = KnownGuilty::default();
-        ledger.add(PlayerId(1), crate::npc::guilt::KILL_GUILT);
+        let ledger = CrimeMemory::test_knowing(PlayerId(1), &[crate::npc::guilt::CrimeKind::Kill]);
         // An NPC subject carries no player_id, so the guilt gate can't fire
         // even though the ledger is loaded.
         assert!(!is_hostile_toward(

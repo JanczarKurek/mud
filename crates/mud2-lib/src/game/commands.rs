@@ -226,11 +226,19 @@ pub enum GameCommand {
     TalkToNpc {
         npc_object_id: u64,
     },
-    /// Pay a Judge NPC to clear the acting player's guilt with the factions it
-    /// speaks for. The server prices the fine from the player's current guilt,
-    /// deducts the coin, and zeroes the debt — see `npc::guilt`.
-    PayGuiltFine {
+    /// Ask a Judge NPC for the ledger of the acting player's known crimes
+    /// against the factions it speaks for. The server replies with
+    /// `GameUiEvent::OpenCrimeLedger` (or a narrator brush-off when the slate
+    /// is clean) — see `npc::guilt`.
+    RequestCrimeList {
         npc_object_id: u64,
+    },
+    /// Pay a Judge NPC to settle one specific crime from the ledger. The
+    /// server re-derives the ledger (the id must be in it), prices the crime,
+    /// deducts the coin, and erases the crime id from every NPC's memory.
+    PayCrime {
+        npc_object_id: u64,
+        crime_id: u64,
     },
     /// Advance past a line currently displayed in the dialog panel
     /// (client clicked "Continue").

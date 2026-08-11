@@ -129,12 +129,11 @@ pub fn apply_pending_damage(
     // within Bevy's 16-parameter ceiling.
     npc_queues: (
         ResMut<crate::npc::aggro::PendingNpcAggro>,
-        ResMut<crate::npc::guilt::PendingGuiltEvents>,
         ResMut<crate::npc::witness::PendingCrimes>,
     ),
     mut commands: Commands,
 ) {
-    let (mut pending_aggro, mut pending_guilt, mut pending_crimes) = npc_queues;
+    let (mut pending_aggro, mut pending_crimes) = npc_queues;
     let now = time.elapsed_secs();
     if pending.events.is_empty() {
         return;
@@ -195,25 +194,25 @@ pub fn apply_pending_damage(
                         attacker,
                     });
                 }
-                // Guilt: the victim's factions take this personally. Debounced
-                // per (attacker, victim) so a DoT tick or a flurry of fast
-                // swings reads as one offense rather than ratcheting the
-                // attacker to Wanted over a single scuffle.
-                if let (Some(player), Some(factions)) = (event.source.xp_credit(), target_factions)
-                {
-                    pending_guilt.push_attack(player, factions.mask, event.target, now);
-                }
                 // Witnessable crime: any attributed hit on a faction-bearing
                 // NPC — player *or* NPC attacker (a wolf mauling a sheep
                 // counts). Nearby protectors/faction-mates that can see it
-                // react immediately, independent of the guilt ledger above.
+                // react immediately; when the attacker is a player, this
+                // report is also what mints the guilt `CrimeRecord` in
+                // `update_crime_log` — witnesses and the surviving victim are
+                // the only routes by which the offense is ever remembered.
                 if let (Some(attacker), Some(factions)) = (
                     event.attacker.filter(|a| *a != event.target),
                     target_factions,
                 ) {
                     pending_crimes.push(crate::npc::witness::CrimeReport {
                         attacker,
+                        attacker_player: event.source.xp_credit(),
                         victim: event.target,
+                        kind: crate::npc::guilt::CrimeKind::Attack,
+                        victim_name: object_registry
+                            .display_name(target_object.object_id, &definitions, &spell_definitions)
+                            .unwrap_or_else(|| target_object.definition_id.clone()),
                         victim_tile: *target_position,
                         victim_factions: factions.mask,
                         space_id: target_space.space_id,
@@ -272,26 +271,21 @@ pub fn apply_pending_damage(
                 type_id: definition_id.clone(),
                 killer_player_id,
             });
-            // Murder: enough guilt on its own to make the killer Wanted by
-            // everyone who answered to the victim. Not debounced — a kill is
-            // singular by definition.
-            if let (Some(player), Some(factions)) = (event.source.xp_credit(), victim_factions) {
-                pending_guilt.push(crate::npc::guilt::GuiltEvent::Offense {
-                    player,
-                    factions: factions.mask,
-                    amount: crate::npc::guilt::KILL_GUILT,
-                });
-            }
             // A witnessed kill is a crime like a witnessed hit — the report
-            // carries the factions copied out above, since the victim is
-            // despawned below.
+            // carries the factions and name copied out above, since the victim
+            // is despawned below. `update_crime_log` upgrades a same-scuffle
+            // assault record to murder (`KILL_GUILT` alone makes the killer
+            // Wanted with anyone who learns of it).
             if let (Some(attacker), Some(factions)) = (
                 event.attacker.filter(|a| *a != event.target),
                 victim_factions,
             ) {
                 pending_crimes.push(crate::npc::witness::CrimeReport {
                     attacker,
+                    attacker_player: event.source.xp_credit(),
                     victim: event.target,
+                    kind: crate::npc::guilt::CrimeKind::Kill,
+                    victim_name: target_name.clone(),
                     victim_tile: position,
                     victim_factions: factions.mask,
                     space_id,
