@@ -275,6 +275,7 @@ pub fn handle_quickbar_keybinds(
     keybindings: Res<crate::ui::settings::Keybindings>,
     console_state: Option<Res<PythonConsoleState>>,
     context_menu_state: Res<ContextMenuState>,
+    trade_quantity_edit: Res<crate::ui::resources::TradeQuantityEdit>,
     definitions: Res<OverworldObjectDefinitions>,
     spell_definitions: Res<SpellDefinitions>,
     quickbar: Res<Quickbar>,
@@ -288,6 +289,10 @@ pub fn handle_quickbar_keybinds(
         return;
     }
     if context_menu_state.is_visible() {
+        return;
+    }
+    // Digits belong to the trade panel while a quantity is being typed.
+    if trade_quantity_edit.is_active() {
         return;
     }
     if use_on_state.source.is_some() || spell_targeting_state.source.is_some() {

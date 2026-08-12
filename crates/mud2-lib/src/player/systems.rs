@@ -240,9 +240,14 @@ pub fn move_player_on_grid(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     keybindings: Res<Keybindings>,
     console_state: Option<Res<PythonConsoleState>>,
+    trade_quantity_edit: Option<Res<crate::ui::resources::TradeQuantityEdit>>,
     mut pending_commands: ResMut<ClientPendingCommands>,
 ) {
     if console_state.as_ref().is_some_and(|state| state.is_open) {
+        return;
+    }
+    // Typing a trade quantity owns the keyboard.
+    if trade_quantity_edit.is_some_and(|edit| edit.is_active()) {
         return;
     }
 

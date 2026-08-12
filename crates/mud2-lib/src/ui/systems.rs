@@ -45,6 +45,7 @@ pub fn apply_game_ui_events(
     mut docked_panel_state: ResMut<DockedPanelState>,
     mut trade_popup_state: ResMut<crate::ui::resources::TradePopupState>,
     mut party_invite_state: ResMut<crate::ui::resources::PartyInvitePopupState>,
+    mut confirm_popup_state: ResMut<crate::ui::resources::ConfirmPopupState>,
     mut dialog_state: ResMut<crate::ui::resources::ActiveDialogState>,
     mut book_panel_state: ResMut<crate::ui::book_panel::BookPanelState>,
     mut crime_ledger_state: ResMut<crate::ui::crime_ledger::CrimeLedgerState>,
@@ -64,8 +65,29 @@ pub fn apply_game_ui_events(
             GameUiEvent::OpenTradePanel { session_id } => {
                 trade_popup_state.open(session_id);
             }
-            GameUiEvent::CloseTradePanel { .. } => {
+            GameUiEvent::ConfirmTradeDrop {
+                session_id,
+                overflow_summary,
+            } => {
+                confirm_popup_state.open(crate::ui::resources::ConfirmRequest {
+                    title: "Not enough room".to_owned(),
+                    message: format!(
+                        "You can't carry {}. Buy anyway and drop it at your feet?",
+                        overflow_summary
+                    ),
+                    confirm_label: "Buy anyway".to_owned(),
+                    cancel_label: "Cancel".to_owned(),
+                    action: crate::ui::resources::ConfirmAction::ConfirmTradeWithDrop {
+                        session_id,
+                    },
+                });
+            }
+            GameUiEvent::CloseTradePanel { session_id, .. } => {
                 trade_popup_state.close();
+                crate::ui::confirm_popup::close_confirm_popup_for_trade(
+                    &mut confirm_popup_state,
+                    session_id,
+                );
             }
             GameUiEvent::DialogLine {
                 session_id,

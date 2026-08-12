@@ -1007,6 +1007,73 @@ pub struct TradePopupState {
     pub last_size: Option<Vec2>,
 }
 
+/// What a confirmed prompt does. One variant per prompt; the popup turns it
+/// into a `GameCommand` (see `ui::confirm_popup`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConfirmAction {
+    /// Buy anyway and let the overflow drop at the player's feet.
+    ConfirmTradeWithDrop { session_id: u64 },
+}
+
+/// One pending "are you sure?" question.
+#[derive(Clone, Debug)]
+pub struct ConfirmRequest {
+    pub title: String,
+    pub message: String,
+    pub confirm_label: String,
+    pub cancel_label: String,
+    pub action: ConfirmAction,
+}
+
+/// Generic confirm-prompt state. `request: Some(_)` means the dialog is up.
+#[derive(Resource, Default)]
+pub struct ConfirmPopupState {
+    pub request: Option<ConfirmRequest>,
+    /// Remembered position so repeated prompts stay where the user put them.
+    pub last_position: Option<Vec2>,
+}
+
+impl ConfirmPopupState {
+    /// Width used for the dialog; the height is content-driven, so this is
+    /// only a centering estimate.
+    pub const DEFAULT_SIZE: Vec2 = Vec2::new(360.0, 150.0);
+
+    pub fn open(&mut self, request: ConfirmRequest) {
+        self.request = Some(request);
+    }
+
+    pub fn close(&mut self) {
+        self.request = None;
+    }
+}
+
+/// Typed-quantity edit on one merchant-basket row. Set by clicking the number
+/// between the `<` / `>` steppers; digits accumulate in `buffer` until Enter
+/// commits (`SetShopOfferQuantity`) or Escape cancels. While it is active the
+/// movement keys and quickbar hotkeys stand down so typing "100" doesn't walk
+/// the player around or fire quickbar slots.
+#[derive(Resource, Default)]
+pub struct TradeQuantityEdit {
+    pub offer_index: Option<usize>,
+    pub buffer: String,
+}
+
+impl TradeQuantityEdit {
+    pub fn is_active(&self) -> bool {
+        self.offer_index.is_some()
+    }
+
+    pub fn begin(&mut self, offer_index: usize, quantity: u32) {
+        self.offer_index = Some(offer_index);
+        self.buffer = quantity.to_string();
+    }
+
+    pub fn clear(&mut self) {
+        self.offer_index = None;
+        self.buffer.clear();
+    }
+}
+
 impl TradePopupState {
     pub const DEFAULT_SIZE: Vec2 = Vec2::new(720.0, 480.0);
     pub const MIN_SIZE: Vec2 = Vec2::new(480.0, 320.0);

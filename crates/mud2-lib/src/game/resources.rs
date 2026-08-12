@@ -69,6 +69,14 @@ pub enum GameUiEvent {
     OpenTradePanel {
         session_id: crate::game::trade::TradeSessionId,
     },
+    /// The purchase is affordable but won't fit in the player's pack. The
+    /// client asks whether to buy anyway and let `overflow_summary` land on
+    /// the ground; "yes" comes back as `GameCommand::ConfirmTradeWithDrop`.
+    /// The session stays open and confirmed in the meantime.
+    ConfirmTradeDrop {
+        session_id: crate::game::trade::TradeSessionId,
+        overflow_summary: String,
+    },
     /// The trade session has ended. The client closes the panel and surfaces
     /// the outcome (completed/cancelled/etc.) to the user.
     CloseTradePanel {

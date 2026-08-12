@@ -347,6 +347,23 @@ pub enum GameCommand {
         source: ItemSlotRef,
         quantity: u32,
     },
+    /// Shop-trade only: set how many of the ware at `offer_index` in the
+    /// merchant's column the player is buying. Clamped server-side to the
+    /// remaining stock; a quantity of 0 drops the entry entirely.
+    /// Auto-resets the Ready/Confirm flags.
+    SetShopOfferQuantity {
+        session_id: crate::game::trade::TradeSessionId,
+        offer_index: usize,
+        quantity: u32,
+    },
+    /// Shop-trade only: drop the ware at `offer_index` from the merchant's
+    /// column — the player drives both sides of a shop session, so this is
+    /// how a mis-clicked purchase comes back out of the basket.
+    /// Auto-resets the Ready/Confirm flags.
+    WithdrawShopOffer {
+        session_id: crate::game::trade::TradeSessionId,
+        offer_index: usize,
+    },
     /// Remove the offer at `offer_index` from the acting player's "us" column.
     /// Auto-resets both sides' Ready/Confirm flags.
     WithdrawTradeItem {
@@ -361,6 +378,12 @@ pub enum GameCommand {
     /// Set the acting side's Confirm flag. Once both sides have Ready+Confirm,
     /// the trade commits transactionally.
     ConfirmTrade {
+        session_id: crate::game::trade::TradeSessionId,
+    },
+    /// Answer to the "this won't fit in your pack" prompt
+    /// (`GameUiEvent::ConfirmTradeDrop`): commit the trade anyway and let the
+    /// goods that don't fit land on the ground at the player's feet.
+    ConfirmTradeWithDrop {
         session_id: crate::game::trade::TradeSessionId,
     },
     /// Abort the trade. Both panels close with outcome `Cancelled`.

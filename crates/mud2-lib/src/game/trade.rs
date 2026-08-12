@@ -37,6 +37,8 @@ use crate::player::components::{InventoryStack, MaxCarryWeight, Player, PlayerId
 #[cfg(feature = "server-sim")]
 use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
 use crate::world::map_layout::ObjectProperties;
+#[cfg(feature = "server-sim")]
+use crate::world::object_registry::ObjectRegistry;
 // Ungated for the same reason as the currency constants above.
 use crate::world::object_definitions::OverworldObjectDefinitions;
 
@@ -193,6 +195,11 @@ pub struct TradeSession {
     pub ready_b: bool,
     pub confirmed_a: bool,
     pub confirmed_b: bool,
+    /// The player has been warned that the goods won't fit and agreed to have
+    /// the overflow dropped at their feet (`ConfirmTradeWithDrop`). Cleared
+    /// whenever the offers change, so consent never outlives the basket it
+    /// was given for.
+    pub allow_drop: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -385,6 +392,8 @@ impl TradeSession {
     fn reset_locks(&mut self) {
         self.ready_a = false;
         self.confirmed_a = false;
+        // Consent to drop the overflow was given for a specific basket.
+        self.allow_drop = false;
         if matches!(self.participants, TradeParticipants::PlayerToPlayer { .. }) {
             self.ready_b = false;
             self.confirmed_b = false;
@@ -515,13 +524,18 @@ pub fn process_trade_commands(
     mut stockpile_query: Query<(&OverworldObject, &mut Stockpile)>,
     skill_query: Query<(&PlayerIdentity, &crate::player::skills::SkillSheet), With<Player>>,
     floors: crate::world::column::FloorGeometryParam,
+    mut object_registry: ResMut<ObjectRegistry>,
+    mut commands: Commands,
 ) {
     for (queued_player_id, command) in pending_commands.drain_matching(|command| match command {
         claimed @ (GameCommand::InitiateTrade { .. }
         | GameCommand::OfferTradeItem { .. }
         | GameCommand::WithdrawTradeItem { .. }
+        | GameCommand::WithdrawShopOffer { .. }
+        | GameCommand::SetShopOfferQuantity { .. }
         | GameCommand::ToggleTradeReady { .. }
         | GameCommand::ConfirmTrade { .. }
+        | GameCommand::ConfirmTradeWithDrop { .. }
         | GameCommand::CancelTrade { .. }
         | GameCommand::BrowseShopBuy { .. }) => Ok(claimed),
         other => Err(other),
@@ -576,13 +590,41 @@ pub fn process_trade_commands(
                     &mut active_trades,
                 );
             }
+            GameCommand::WithdrawShopOffer {
+                session_id,
+                offer_index,
+            } => {
+                handle_withdraw_shop_offer(
+                    acting_player_id,
+                    session_id,
+                    offer_index,
+                    &mut active_trades,
+                );
+            }
+            GameCommand::SetShopOfferQuantity {
+                session_id,
+                offer_index,
+                quantity,
+            } => {
+                handle_set_shop_offer_quantity(
+                    acting_player_id,
+                    session_id,
+                    offer_index,
+                    quantity,
+                    &mut active_trades,
+                    &stockpile_query,
+                );
+            }
             GameCommand::ToggleTradeReady { session_id } => {
                 handle_toggle_trade_ready(acting_player_id, session_id, &mut active_trades);
             }
-            GameCommand::ConfirmTrade { session_id } => {
+            GameCommand::ConfirmTrade { session_id }
+            | GameCommand::ConfirmTradeWithDrop { session_id } => {
+                let allow_drop = matches!(command, GameCommand::ConfirmTradeWithDrop { .. });
                 handle_confirm_trade(
                     acting_player_id,
                     session_id,
+                    allow_drop,
                     &mut active_trades,
                     &mut ui_events,
                     &definitions,
@@ -590,6 +632,8 @@ pub fn process_trade_commands(
                     &max_carry_query,
                     &mut stockpile_query,
                     &skill_query,
+                    &mut object_registry,
+                    &mut commands,
                 );
             }
             GameCommand::CancelTrade { session_id } => {
@@ -712,6 +756,7 @@ fn handle_initiate_trade(
                 ready_b: false,
                 confirmed_a: false,
                 confirmed_b: false,
+                allow_drop: false,
             };
             active_trades.sessions.insert(session_id, session);
 
@@ -768,6 +813,7 @@ fn handle_initiate_trade(
                 ready_b: true,
                 confirmed_a: false,
                 confirmed_b: true,
+                allow_drop: false,
             };
             active_trades.sessions.insert(session_id, session);
 
@@ -874,6 +920,93 @@ fn handle_withdraw_trade_item(
     session.reset_locks();
 }
 
+/// Take a ware back out of the merchant's column. Shop sessions only — in a
+/// player-to-player trade the partner's column is theirs to edit.
+#[cfg(feature = "server-sim")]
+fn handle_withdraw_shop_offer(
+    acting_player_id: PlayerId,
+    session_id: TradeSessionId,
+    offer_index: usize,
+    active_trades: &mut ActiveTrades,
+) {
+    if side_for_session_player(active_trades, session_id, acting_player_id).is_none() {
+        return;
+    }
+    let session = active_trades
+        .sessions
+        .get_mut(&session_id)
+        .expect("session resolved earlier");
+    if !matches!(session.participants, TradeParticipants::PlayerToShop { .. }) {
+        return;
+    }
+    if offer_index >= session.offers_b.len() {
+        return;
+    }
+    session.offers_b.remove(offer_index);
+    session.reset_locks();
+}
+
+/// Set how many of one ware the player is buying. Clamped to the remaining
+/// finite stock; zero drops the entry, matching the × on the row.
+#[cfg(feature = "server-sim")]
+fn handle_set_shop_offer_quantity(
+    acting_player_id: PlayerId,
+    session_id: TradeSessionId,
+    offer_index: usize,
+    quantity: u32,
+    active_trades: &mut ActiveTrades,
+    stockpile_query: &Query<(&OverworldObject, &mut Stockpile)>,
+) {
+    if side_for_session_player(active_trades, session_id, acting_player_id).is_none() {
+        return;
+    }
+    let Some(session) = active_trades.sessions.get(&session_id) else {
+        return;
+    };
+    let TradeParticipants::PlayerToShop { shop_object_id, .. } = session.participants else {
+        return;
+    };
+    let Some(offer) = session.offers_b.get(offer_index) else {
+        return;
+    };
+    let OfferSource::Stockpile { ware_index } = offer.source else {
+        return;
+    };
+
+    // Never let the basket promise more than the shelf holds; infinite stock
+    // takes whatever was asked for.
+    let stock_remaining = stockpile_query
+        .iter()
+        .find(|(object, _)| object.object_id == shop_object_id)
+        .and_then(|(_, stockpile)| stockpile.wares.get(ware_index))
+        .map(|entry| match entry.stock {
+            StockMode::Infinite => None,
+            StockMode::Finite(n) => Some(n),
+        });
+    let Some(stock_remaining) = stock_remaining else {
+        // The ware vanished from the shelf under us — leave the basket alone.
+        return;
+    };
+    let clamped = match stock_remaining {
+        Some(remaining) => quantity.min(remaining),
+        None => quantity,
+    };
+
+    let session = active_trades
+        .sessions
+        .get_mut(&session_id)
+        .expect("session resolved earlier");
+    if clamped == 0 {
+        session.offers_b.remove(offer_index);
+    } else if let Some(offer) = session.offers_b.get_mut(offer_index) {
+        if offer.quantity == clamped {
+            return;
+        }
+        offer.quantity = clamped;
+    }
+    session.reset_locks();
+}
+
 #[cfg(feature = "server-sim")]
 fn handle_toggle_trade_ready(
     acting_player_id: PlayerId,
@@ -898,9 +1031,11 @@ fn handle_toggle_trade_ready(
 }
 
 #[cfg(feature = "server-sim")]
+#[allow(clippy::too_many_arguments)]
 fn handle_confirm_trade(
     acting_player_id: PlayerId,
     session_id: TradeSessionId,
+    allow_drop: bool,
     active_trades: &mut ActiveTrades,
     ui_events: &mut PendingGameUiEvents,
     definitions: &OverworldObjectDefinitions,
@@ -908,10 +1043,20 @@ fn handle_confirm_trade(
     max_carry_query: &Query<&MaxCarryWeight, With<Player>>,
     stockpile_query: &mut Query<(&OverworldObject, &mut Stockpile)>,
     skill_query: &Query<(&PlayerIdentity, &crate::player::skills::SkillSheet), With<Player>>,
+    object_registry: &mut ObjectRegistry,
+    commands: &mut Commands,
 ) {
     let Some(side) = side_for_session_player(active_trades, session_id, acting_player_id) else {
         return;
     };
+    if allow_drop {
+        // The player answered the "you'll drop this" prompt. Recording it on
+        // the session keeps the consent tied to this exact basket — any edit
+        // clears it again via `reset_locks`.
+        if let Some(session) = active_trades.sessions.get_mut(&session_id) {
+            session.allow_drop = true;
+        }
+    }
 
     // Scope the mutable borrow on `active_trades.sessions` so we can call
     // `active_trades.remove(...)` after the commit, with the borrow released.
@@ -967,10 +1112,25 @@ fn handle_confirm_trade(
                     max_carry_query,
                     stockpile_query,
                     persuasion_ranks,
+                    object_registry,
+                    commands,
                 );
                 (ok, vec![player])
             }
         };
+
+    if let CommitResult::NeedsDropConsent { overflow_summary } = &result {
+        // Leave the session exactly as it is — ready and confirmed — so the
+        // player's answer can commit it straight away.
+        ui_events.push(
+            acting_player_id,
+            GameUiEvent::ConfirmTradeDrop {
+                session_id,
+                overflow_summary: overflow_summary.clone(),
+            },
+        );
+        return;
+    }
 
     if result == CommitResult::Refused {
         // Keep the session alive and just unlock it, so the player can adjust
@@ -1096,6 +1256,38 @@ fn handle_browse_shop_buy(
     }
 }
 
+/// `"3 Apples and an Iron Sword"`-style list of offer entries, for the
+/// "won't fit" prompt and its follow-up narrator line.
+#[cfg(feature = "server-sim")]
+fn summarize_offers(
+    offers: &[TradeOfferEntry],
+    definitions: &OverworldObjectDefinitions,
+) -> String {
+    let parts: Vec<String> = offers
+        .iter()
+        .map(|offer| {
+            let name = definitions
+                .get(&offer.type_id)
+                .map(|def| def.name.clone())
+                .unwrap_or_else(|| offer.type_id.clone());
+            if offer.quantity > 1 {
+                format!("{} x{}", name, offer.quantity)
+            } else {
+                name
+            }
+        })
+        .collect();
+    match parts.len() {
+        0 => String::new(),
+        1 => parts[0].clone(),
+        _ => format!(
+            "{} and {}",
+            parts[..parts.len() - 1].join(", "),
+            parts[parts.len() - 1]
+        ),
+    }
+}
+
 /// Render a copper-denominated price as `"3g 5s 4c"` (parts that are zero
 /// are omitted; the all-zero case prints `0c`).
 #[cfg(feature = "server-sim")]
@@ -1121,11 +1313,17 @@ fn format_copper(copper: u32) -> String {
 /// player assembled isn't thrown away — they can drop an item and re-confirm.
 /// `Failed` is a hard abort (stale offers, missing shop) and cancels.
 #[cfg(feature = "server-sim")]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum CommitResult {
     Completed,
     Failed,
     Refused,
+    /// The goods are bought and paid for, but some of them won't fit in the
+    /// pack. Nothing is committed; the player is asked whether to buy anyway
+    /// and have the listed items land at their feet.
+    NeedsDropConsent {
+        overflow_summary: String,
+    },
 }
 
 #[cfg(feature = "server-sim")]
@@ -1138,6 +1336,8 @@ fn commit_player_to_shop_trade(
     max_carry_query: &Query<&MaxCarryWeight, With<Player>>,
     stockpile_query: &mut Query<(&OverworldObject, &mut Stockpile)>,
     persuasion_ranks: u8,
+    object_registry: &mut ObjectRegistry,
+    commands: &mut Commands,
 ) -> CommitResult {
     let entity = player_inventory_query
         .iter()
@@ -1224,9 +1424,23 @@ fn commit_player_to_shop_trade(
         return CommitResult::Refused;
     }
 
-    // Insert the wares into the snapshot.
-    if !insert_offers_into(&session.offers_b, &mut inv, definitions, &max_carry) {
-        return CommitResult::Failed;
+    // Insert the wares into the snapshot, whole stack by whole stack. Anything
+    // that won't fit — too heavy, no free slot — is overflow: with consent it
+    // lands on the ground at the player's feet, without consent the commit
+    // stops here and asks.
+    let mut overflow: Vec<TradeOfferEntry> = Vec::new();
+    for offer in &session.offers_b {
+        let mut candidate = inv.clone();
+        if insert_one_offer(offer, &mut candidate, definitions, &max_carry) {
+            inv = candidate;
+        } else {
+            overflow.push(offer.clone());
+        }
+    }
+    if !overflow.is_empty() && !session.allow_drop {
+        return CommitResult::NeedsDropConsent {
+            overflow_summary: summarize_offers(&overflow, definitions),
+        };
     }
 
     // Pay out the difference. `deposit_copper` may leave partial coin behind
@@ -1247,10 +1461,18 @@ fn commit_player_to_shop_trade(
     }
 
     // Commit: write the inventory snapshot back and decrement finite stocks.
-    if let Ok((_, _, mut inventory, mut chat_log, _, _, _, _, _)) =
+    let mut drop_placement = None;
+    if let Ok((_, _, mut inventory, mut chat_log, space_resident, position, _, _, _)) =
         player_inventory_query.get_mut(entity)
     {
         *inventory = inv;
+        if !overflow.is_empty() {
+            drop_placement = Some((space_resident.space_id, *position));
+            chat_log.push_narrator(format!(
+                "You can't carry it all — {} lands at your feet.",
+                summarize_offers(&overflow, definitions)
+            ));
+        }
         if change_copper > 0 {
             chat_log.push_narrator(format!(
                 "Trade complete. The merchant counts out {}.",
@@ -1263,6 +1485,28 @@ fn commit_player_to_shop_trade(
             ));
         } else {
             chat_log.push_narrator("Trade complete.");
+        }
+    }
+
+    // Overflow goes to the ground where the player stands, the same way any
+    // dropped item lives in the world.
+    if let Some((space_id, tile)) = drop_placement {
+        for offer in &overflow {
+            let object_id = object_registry.allocate_runtime_id_with_properties(
+                offer.type_id.clone(),
+                offer.properties.clone(),
+            );
+            crate::world::setup::spawn_overworld_object(
+                commands,
+                definitions,
+                object_registry,
+                object_id,
+                &offer.type_id,
+                None,
+                space_id,
+                tile,
+                (offer.quantity > 1).then_some(offer.quantity),
+            );
         }
     }
 
@@ -1949,8 +2193,12 @@ mod purchase_tests {
     const APPLE_PRICE: u32 = 10;
 
     /// Player at (10,10) with `purse` coin stacks, a shopkeeper next door
-    /// selling apples at `APPLE_PRICE`.
+    /// selling apples at `APPLE_PRICE` from an endless shelf.
     fn setup(purse: &[(&str, u32)]) -> (App, Entity) {
+        setup_with_stock(purse, StockMode::Infinite)
+    }
+
+    fn setup_with_stock(purse: &[(&str, u32)], stock: StockMode) -> (App, Entity) {
         let mut app = crate::test_support::TestServerApp::new().build();
         let player = crate::test_support::spawn_server_player(&mut app, 1, 10, 10);
         {
@@ -1981,7 +2229,7 @@ mod purchase_tests {
                 wares: vec![StockEntry {
                     type_id: "apple".to_owned(),
                     price_copper: APPLE_PRICE,
-                    stock: StockMode::Infinite,
+                    stock,
                 }],
             },
         ));
@@ -2026,6 +2274,155 @@ mod purchase_tests {
             .filter(|stack| stack.type_id == "apple")
             .map(|stack| stack.quantity)
             .sum()
+    }
+
+    fn set_quantity(app: &mut App, quantity: u32) {
+        crate::test_support::push_player_command(
+            app,
+            1,
+            GameCommand::SetShopOfferQuantity {
+                session_id: 1,
+                offer_index: 0,
+                quantity,
+            },
+        );
+        app.update();
+    }
+
+    /// 2000 apples weigh 400kg — far past any carry cap — so the purchase is
+    /// affordable but unliftable.
+    #[test]
+    fn an_unliftable_purchase_asks_before_dropping_anything() {
+        let (mut app, player) = setup(&[(GOLD_TYPE_ID, 200)]);
+        set_quantity(&mut app, 2000);
+        confirm(&mut app);
+
+        // Per-player outbox: the prompt is addressed to the buyer alone.
+        let ui_events: Vec<GameUiEvent> = app
+            .world()
+            .resource::<PendingGameUiEvents>()
+            .peer_events
+            .values()
+            .flatten()
+            .cloned()
+            .collect();
+        assert!(
+            ui_events
+                .iter()
+                .any(|event| matches!(event, GameUiEvent::ConfirmTradeDrop { session_id: 1, .. })),
+            "expected a drop-consent prompt; got {ui_events:?}"
+        );
+        assert!(
+            app.world()
+                .resource::<ActiveTrades>()
+                .sessions
+                .contains_key(&1),
+            "the session must stay open while the question is outstanding"
+        );
+        assert_eq!(apples(&app, player), 0, "nothing changes hands until asked");
+        assert_eq!(purse_of(&app, player), 200 * COPPER_PER_GOLD);
+    }
+
+    #[test]
+    fn consenting_completes_the_purchase_and_drops_the_overflow() {
+        let (mut app, player) = setup(&[(GOLD_TYPE_ID, 200)]);
+        set_quantity(&mut app, 2000);
+        confirm(&mut app);
+        crate::test_support::push_player_command(
+            &mut app,
+            1,
+            GameCommand::ConfirmTradeWithDrop { session_id: 1 },
+        );
+        app.update();
+
+        assert_eq!(
+            purse_of(&app, player),
+            200 * COPPER_PER_GOLD - 2000 * APPLE_PRICE,
+            "the apples are paid for"
+        );
+        assert_eq!(
+            apples(&app, player),
+            0,
+            "none of them fit — they all went to the ground"
+        );
+        let mut ground = app
+            .world_mut()
+            .query::<(&OverworldObject, &crate::world::components::Quantity)>();
+        let dropped: u32 = ground
+            .iter(app.world())
+            .filter(|(object, _)| object.definition_id == "apple")
+            .map(|(_, quantity)| quantity.0)
+            .sum();
+        assert_eq!(dropped, 2000, "the overflow must exist as a world pile");
+        assert!(
+            app.world().resource::<ActiveTrades>().sessions.is_empty(),
+            "the trade completes once consent is given"
+        );
+    }
+
+    #[test]
+    fn a_typed_quantity_buys_that_many_and_is_charged_per_unit() {
+        let (mut app, player) = setup(&[(GOLD_TYPE_ID, 1)]);
+        set_quantity(&mut app, 10);
+        confirm(&mut app);
+
+        assert_eq!(apples(&app, player), 10);
+        assert_eq!(
+            purse_of(&app, player),
+            COPPER_PER_GOLD - 10 * APPLE_PRICE,
+            "ten apples cost ten times the unit price"
+        );
+    }
+
+    #[test]
+    fn quantity_is_clamped_to_the_remaining_stock() {
+        let (mut app, _player) = setup_with_stock(&[(GOLD_TYPE_ID, 1)], StockMode::Finite(3));
+        set_quantity(&mut app, 100);
+
+        assert_eq!(
+            app.world().resource::<ActiveTrades>().sessions[&1].offers_b[0].quantity,
+            3,
+            "the basket must never promise more than the shelf holds"
+        );
+    }
+
+    #[test]
+    fn a_quantity_of_zero_drops_the_row() {
+        let (mut app, _player) = setup(&[(GOLD_TYPE_ID, 1)]);
+        set_quantity(&mut app, 0);
+
+        assert!(
+            app.world().resource::<ActiveTrades>().sessions[&1]
+                .offers_b
+                .is_empty(),
+            "zero is the same as removing the row"
+        );
+    }
+
+    #[test]
+    fn a_ware_can_be_taken_back_out_of_the_merchants_column() {
+        let (mut app, player) = setup(&[(SILVER_TYPE_ID, 1)]);
+        crate::test_support::push_player_command(
+            &mut app,
+            1,
+            GameCommand::WithdrawShopOffer {
+                session_id: 1,
+                offer_index: 0,
+            },
+        );
+        app.update();
+
+        assert!(
+            app.world().resource::<ActiveTrades>().sessions[&1]
+                .offers_b
+                .is_empty(),
+            "the basket must be empty after withdrawing the only ware"
+        );
+
+        // And confirming the now-empty trade costs nothing.
+        confirm(&mut app);
+        assert_eq!(apples(&app, player), 0);
+        assert_eq!(purse_of(&app, player), COPPER_PER_SILVER);
     }
 
     #[test]

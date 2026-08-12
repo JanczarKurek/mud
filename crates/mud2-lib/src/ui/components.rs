@@ -623,6 +623,38 @@ pub enum TradeColumn {
     Them,
 }
 
+/// `<` / `>` stepper button on a merchant-basket row. `delta` is applied to
+/// that row's quantity (clamped server-side against remaining stock).
+#[derive(Component, Clone, Copy, Debug)]
+pub struct TradeQuantityStepButton {
+    pub index: usize,
+    pub delta: i32,
+}
+
+/// The clickable number between the two steppers. Clicking it starts a typed
+/// edit (see `TradeQuantityEdit`) so a player can enter "100" directly.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct TradeQuantityField {
+    pub index: usize,
+}
+
+/// The `Text` inside a [`TradeQuantityField`], rewritten every frame while
+/// that row is being typed into.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct TradeQuantityText {
+    pub index: usize,
+}
+
+/// Small red × on an offer row in the trade panel's Us / Them column: pulls
+/// that entry back out of the trade. `column` decides which command the click
+/// becomes (`WithdrawTradeItem` for ours, `WithdrawShopOffer` for the
+/// merchant's basket).
+#[derive(Component, Clone, Copy, Debug)]
+pub struct TradeOfferRemoveButton {
+    pub column: TradeColumn,
+    pub index: usize,
+}
+
 /// Marker on the Ready button inside the trade panel.
 #[derive(Component)]
 pub struct TradeReadyButton;

@@ -3,6 +3,7 @@ pub mod book_panel;
 pub mod character_sheet;
 pub mod chat_input;
 pub mod components;
+pub mod confirm_popup;
 pub mod container_panel;
 pub mod crime_ledger;
 pub mod debug_menu;
@@ -124,8 +125,10 @@ use crate::ui::time_of_day_button::{
     update_time_of_day_popup_contents, TimeOfDayPopupState,
 };
 use crate::ui::trade::{
-    handle_trade_panel_clicks, handle_trade_popup_close_click, sync_trade_panel_buttons,
-    sync_trade_panel_partner_label, sync_trade_panel_rows, sync_trade_window_lifecycle,
+    drive_trade_quantity_edit, handle_trade_offer_remove_clicks, handle_trade_panel_clicks,
+    handle_trade_popup_close_click, handle_trade_quantity_field_clicks,
+    handle_trade_quantity_step_clicks, sync_trade_panel_buttons, sync_trade_panel_partner_label,
+    sync_trade_panel_rows, sync_trade_quantity_labels, sync_trade_window_lifecycle,
     TradePanelRenderState,
 };
 
@@ -173,6 +176,8 @@ impl Plugin for UiPlugin {
         .insert_resource(crate::ui::social_read::SocialReadRenderState::default())
         .insert_resource(TradePanelRenderState::default())
         .insert_resource(TradePopupState::default())
+        .init_resource::<resources::TradeQuantityEdit>()
+        .init_resource::<resources::ConfirmPopupState>()
         .insert_resource(resources::PartyInvitePopupState::default())
         .insert_resource(TimeOfDayPopupState::default())
         .insert_resource(Quickbar::default())
@@ -458,6 +463,11 @@ impl Plugin for UiPlugin {
                 sync_trade_panel_buttons.after(sync_trade_window_lifecycle),
                 sync_trade_panel_rows.after(sync_trade_window_lifecycle),
                 handle_trade_panel_clicks.after(sync_trade_panel_rows),
+                handle_trade_offer_remove_clicks.after(sync_trade_panel_rows),
+                handle_trade_quantity_step_clicks.after(sync_trade_panel_rows),
+                handle_trade_quantity_field_clicks.after(sync_trade_panel_rows),
+                drive_trade_quantity_edit.after(handle_trade_quantity_field_clicks),
+                sync_trade_quantity_labels.after(sync_trade_panel_rows),
             )
                 .run_if(in_state(ClientAppState::InGame)),
         )
@@ -476,6 +486,9 @@ impl Plugin for UiPlugin {
                 sync_party_invite_window_lifecycle.after(apply_game_ui_events),
                 handle_party_invite_buttons.after(sync_party_invite_window_lifecycle),
                 handle_party_invite_close_click.after(sync_party_invite_window_lifecycle),
+                confirm_popup::sync_confirm_window_lifecycle.after(apply_game_ui_events),
+                confirm_popup::handle_confirm_popup_buttons
+                    .after(confirm_popup::sync_confirm_window_lifecycle),
             )
                 .run_if(in_state(ClientAppState::InGame)),
         )
@@ -531,6 +544,7 @@ fn teardown_hud(
     mut active_dialog: ResMut<ActiveDialogState>,
     mut trade_popup: ResMut<TradePopupState>,
     mut party_invite: ResMut<resources::PartyInvitePopupState>,
+    mut confirm_popup: ResMut<resources::ConfirmPopupState>,
     mut quickbar: ResMut<Quickbar>,
     mut quickbar_loaded: ResMut<QuickbarLoadedFor>,
     mut ui_state_loaded: ResMut<UiStateLoadedFor>,
@@ -547,6 +561,7 @@ fn teardown_hud(
     *active_dialog = ActiveDialogState::default();
     *trade_popup = TradePopupState::default();
     *party_invite = resources::PartyInvitePopupState::default();
+    *confirm_popup = resources::ConfirmPopupState::default();
     *quickbar = Quickbar::default();
     *quickbar_loaded = QuickbarLoadedFor::default();
     *ui_state_loaded = UiStateLoadedFor::default();

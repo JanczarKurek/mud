@@ -9,6 +9,8 @@
 //! row out of the popup to withdraw. The actual drag mechanics for slots
 //! are handled by `handle_movable_dragging` in `ui::systems`.
 
+use bevy::ecs::message::MessageReader;
+use bevy::input::keyboard::KeyboardInput;
 use bevy::input::mouse::MouseButton;
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, UiGlobalTransform};
@@ -21,15 +23,17 @@ use crate::game::trade::{
 };
 use crate::ui::components::{
     ItemSlotButton, ItemSlotKind, TradeButtonLabel, TradeCancelButton, TradeColumn,
-    TradeConfirmButton, TradePartnerLabel, TradePopupCloseButton, TradePopupRoot, TradeReadyButton,
-    TradeSlotButton,
+    TradeConfirmButton, TradeOfferRemoveButton, TradePartnerLabel, TradePopupCloseButton,
+    TradePopupRoot, TradeQuantityField, TradeQuantityStepButton, TradeQuantityText,
+    TradeReadyButton, TradeSlotButton,
 };
 use crate::ui::movable_window::{
     close_window_and_release_drag, persist_window_geometry, restored_or_centered_geometry,
     spawn_movable_window, spawn_themed_close_button, MovableWindowDrag, MovableWindowId,
     WindowGeometryMemory,
 };
-use crate::ui::resources::TradePopupState;
+use crate::ui::resources::{TradePopupState, TradeQuantityEdit};
+use crate::ui::theme::text_field::{apply_text_edit, CharPolicy, TextEditOutcome};
 use crate::ui::theme::widgets::{idle_colors, ButtonStyle, ThemedButton};
 use crate::ui::theme::{Palette, UiThemeAssets};
 use crate::world::object_definitions::OverworldObjectDefinitions;
@@ -421,13 +425,13 @@ pub fn sync_trade_panel_rows(
         *cached = Some(current.to_owned());
 
         commands.entity(entity).despawn_related::<Children>();
-        let labels = items.into_row_labels(&definitions);
+        let column = *column;
+        let rows = items.into_rows(column, &definitions);
         let theme = theme.clone();
         let palette = *palette;
-        let column = *column;
         commands.entity(entity).with_children(move |parent| {
-            for (index, label) in labels.iter().enumerate() {
-                spawn_trade_row(parent, &theme, &palette, column, index, label);
+            for (index, row) in rows.iter().enumerate() {
+                spawn_trade_row(parent, &theme, &palette, column, index, row);
             }
             match column {
                 // Us and Them get an always-on drop-zone slot beneath their
@@ -435,10 +439,10 @@ pub fn sync_trade_panel_rows(
                 // rest of the column so drops into the empty space below
                 // still register as a TradeUs/TradeThem hit.
                 TradeColumn::Us | TradeColumn::Them => {
-                    spawn_trade_drop_zone(parent, &palette, column, labels.is_empty());
+                    spawn_trade_drop_zone(parent, &palette, column, rows.is_empty());
                 }
                 TradeColumn::Merchant => {
-                    if labels.is_empty() {
+                    if rows.is_empty() {
                         parent.spawn((
                             Text::new("(no wares)"),
                             TextFont {
@@ -506,16 +510,40 @@ enum ColumnContent<'a> {
     Offers(&'a [TradeOfferEntry]),
 }
 
+/// One rendered row: its text plus, for offer rows, how many the entry holds
+/// (the merchant column has no quantity of its own).
+struct TradeRow {
+    label: String,
+    quantity: u32,
+}
+
 impl<'a> ColumnContent<'a> {
-    fn into_row_labels(self, definitions: &OverworldObjectDefinitions) -> Vec<String> {
+    fn into_rows(
+        self,
+        column: TradeColumn,
+        definitions: &OverworldObjectDefinitions,
+    ) -> Vec<TradeRow> {
         match self {
             ColumnContent::Merchant(wares) => wares
                 .iter()
-                .map(|ware| format_ware_label(ware, definitions))
+                .map(|ware| TradeRow {
+                    label: format_ware_label(ware, definitions),
+                    quantity: 0,
+                })
                 .collect(),
             ColumnContent::Offers(offers) => offers
                 .iter()
-                .map(|entry| format_offer_label(entry, definitions))
+                .map(|entry| TradeRow {
+                    // Basket rows carry a `< n >` stepper, so the count would
+                    // be redundant in the label; our own column has no stepper
+                    // and keeps the "x3" suffix.
+                    label: format_offer_label(
+                        entry,
+                        definitions,
+                        !matches!(column, TradeColumn::Them),
+                    ),
+                    quantity: entry.quantity,
+                })
                 .collect(),
         }
     }
@@ -539,12 +567,16 @@ fn format_ware_label(ware: &WareView, definitions: &OverworldObjectDefinitions) 
     format!("{}  {}{}{}", display, price, persuasion, stock)
 }
 
-fn format_offer_label(entry: &TradeOfferEntry, definitions: &OverworldObjectDefinitions) -> String {
+fn format_offer_label(
+    entry: &TradeOfferEntry,
+    definitions: &OverworldObjectDefinitions,
+    with_quantity: bool,
+) -> String {
     let display = definitions
         .get(&entry.type_id)
         .map(|def| def.name.clone())
         .unwrap_or_else(|| entry.type_id.clone());
-    if entry.quantity > 1 {
+    if with_quantity && entry.quantity > 1 {
         format!("{} x{}", display, entry.quantity)
     } else {
         display
@@ -557,7 +589,7 @@ fn spawn_trade_row(
     palette: &Palette,
     column: TradeColumn,
     index: usize,
-    label: &str,
+    row: &TradeRow,
 ) {
     let kind = match column {
         TradeColumn::Merchant => ItemSlotKind::MerchantWare { ware_index: index },
@@ -576,6 +608,8 @@ fn spawn_trade_row(
                 min_height: px(22.0),
                 padding: UiRect::axes(px(6.0), px(2.0)),
                 align_items: AlignItems::Center,
+                justify_content: JustifyContent::SpaceBetween,
+                column_gap: px(4.0),
                 border: UiRect::all(px(1.0)),
                 ..default()
             },
@@ -583,6 +617,117 @@ fn spawn_trade_row(
                 .with_mode(theme.button_image_mode())
                 .with_color(bg),
             BackgroundColor(Color::NONE),
+            BorderColor::all(border),
+        ))
+        .with_children(|button| {
+            button.spawn((
+                Text::new(row.label.clone()),
+                TextFont {
+                    font_size: 12.0,
+                    ..default()
+                },
+                TextColor(text_color),
+            ));
+            // Trailing controls, right-aligned by the row's SpaceBetween.
+            button
+                .spawn((
+                    Node {
+                        align_items: AlignItems::Center,
+                        column_gap: px(3.0),
+                        flex_shrink: 0.0,
+                        ..default()
+                    },
+                    BackgroundColor(Color::NONE),
+                ))
+                .with_children(|controls| {
+                    // The basket is the only column whose counts the player
+                    // sets directly: `< n >`, with `n` typeable.
+                    if matches!(column, TradeColumn::Them) {
+                        spawn_quantity_stepper(controls, palette, index, row.quantity);
+                    }
+                    // Offer rows (ours and the merchant's basket) can be
+                    // pulled back out; merchant wares are a catalogue and have
+                    // nothing to remove.
+                    if matches!(column, TradeColumn::Us | TradeColumn::Them) {
+                        spawn_offer_remove_button(controls, palette, column, index);
+                    }
+                });
+        });
+}
+
+/// `[<] n [>]` for one basket row. The middle cell is a button too: clicking
+/// it starts a typed edit so "100" can be entered directly.
+fn spawn_quantity_stepper(
+    parent: &mut ChildSpawnerCommands,
+    palette: &Palette,
+    index: usize,
+    quantity: u32,
+) {
+    spawn_stepper_button(
+        parent,
+        palette,
+        "<",
+        TradeQuantityStepButton { index, delta: -1 },
+    );
+    let (bg, border, text_color) = idle_colors(palette, ButtonStyle::Slot, false);
+    parent
+        .spawn((
+            Button,
+            ThemedButton::new(ButtonStyle::Slot),
+            TradeQuantityField { index },
+            Node {
+                min_width: px(30.0),
+                height: px(16.0),
+                padding: UiRect::axes(px(3.0), px(0.0)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                border: UiRect::all(px(1.0)),
+                ..default()
+            },
+            BackgroundColor(bg),
+            BorderColor::all(border),
+        ))
+        .with_children(|field| {
+            field.spawn((
+                Text::new(quantity.to_string()),
+                TradeQuantityText { index },
+                TextFont {
+                    font_size: 12.0,
+                    ..default()
+                },
+                TextColor(text_color),
+            ));
+        });
+    spawn_stepper_button(
+        parent,
+        palette,
+        ">",
+        TradeQuantityStepButton { index, delta: 1 },
+    );
+}
+
+fn spawn_stepper_button(
+    parent: &mut ChildSpawnerCommands,
+    palette: &Palette,
+    label: &str,
+    marker: TradeQuantityStepButton,
+) {
+    let (bg, border, text_color) = idle_colors(palette, ButtonStyle::Secondary, false);
+    parent
+        .spawn((
+            Button,
+            ThemedButton::new(ButtonStyle::Secondary),
+            marker,
+            Node {
+                width: px(16.0),
+                height: px(16.0),
+                flex_shrink: 0.0,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                border: UiRect::all(px(1.0)),
+                ..default()
+            },
+            BackgroundColor(bg),
             BorderColor::all(border),
         ))
         .with_children(|button| {
@@ -595,6 +740,198 @@ fn spawn_trade_row(
                 TextColor(text_color),
             ));
         });
+}
+
+/// The little red × that pulls one row back out of a trade column.
+fn spawn_offer_remove_button(
+    parent: &mut ChildSpawnerCommands,
+    palette: &Palette,
+    column: TradeColumn,
+    index: usize,
+) {
+    let (bg, border, _) = idle_colors(palette, ButtonStyle::Danger, false);
+    parent
+        .spawn((
+            Button,
+            ThemedButton::new(ButtonStyle::Danger),
+            TradeOfferRemoveButton { column, index },
+            Node {
+                width: px(16.0),
+                height: px(16.0),
+                flex_shrink: 0.0,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                border: UiRect::all(px(1.0)),
+                ..default()
+            },
+            BackgroundColor(bg),
+            BorderColor::all(border),
+        ))
+        .with_children(|remove| {
+            remove.spawn((
+                Text::new("×"),
+                TextFont {
+                    font_size: 13.0,
+                    ..default()
+                },
+                TextColor(palette.text_primary),
+            ));
+        });
+}
+
+/// How many the basket holds for `index`, straight from the replicated view.
+fn basket_quantity(client_state: &ClientGameState, index: usize) -> Option<u32> {
+    client_state
+        .current_trade
+        .as_ref()?
+        .their_offers
+        .get(index)
+        .map(|entry| entry.quantity)
+}
+
+/// `<` / `>` on a basket row. The server clamps against remaining stock; the
+/// floor of 1 is here because dropping to zero is the ×'s job.
+pub fn handle_trade_quantity_step_clicks(
+    state: Res<TradePopupState>,
+    client_state: Res<ClientGameState>,
+    mut edit: ResMut<TradeQuantityEdit>,
+    buttons: Query<(&Interaction, &TradeQuantityStepButton), Changed<Interaction>>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
+) {
+    let Some(session_id) = state.session_id else {
+        return;
+    };
+    for (interaction, button) in &buttons {
+        if !matches!(interaction, Interaction::Pressed) {
+            continue;
+        }
+        let Some(current) = basket_quantity(&client_state, button.index) else {
+            continue;
+        };
+        let next = (current as i64 + button.delta as i64).max(1) as u32;
+        if next == current {
+            continue;
+        }
+        edit.clear();
+        pending_commands.push(GameCommand::SetShopOfferQuantity {
+            session_id,
+            offer_index: button.index,
+            quantity: next,
+        });
+    }
+}
+
+/// Click the number to type into it.
+pub fn handle_trade_quantity_field_clicks(
+    client_state: Res<ClientGameState>,
+    mut edit: ResMut<TradeQuantityEdit>,
+    fields: Query<(&Interaction, &TradeQuantityField), Changed<Interaction>>,
+) {
+    for (interaction, field) in &fields {
+        if !matches!(interaction, Interaction::Pressed) {
+            continue;
+        }
+        let Some(current) = basket_quantity(&client_state, field.index) else {
+            continue;
+        };
+        edit.begin(field.index, current);
+    }
+}
+
+/// Digits into the buffer; Enter commits the typed count, Escape drops it.
+/// The edit also ends on its own if the trade closes or the row disappears.
+pub fn drive_trade_quantity_edit(
+    mut keyboard_events: MessageReader<KeyboardInput>,
+    state: Res<TradePopupState>,
+    client_state: Res<ClientGameState>,
+    mut edit: ResMut<TradeQuantityEdit>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
+) {
+    let Some(index) = edit.offer_index else {
+        keyboard_events.clear();
+        return;
+    };
+    let (Some(session_id), Some(_)) = (state.session_id, basket_quantity(&client_state, index))
+    else {
+        edit.clear();
+        keyboard_events.clear();
+        return;
+    };
+    for event in keyboard_events.read() {
+        if !event.state.is_pressed() {
+            continue;
+        }
+        match apply_text_edit(&mut edit.buffer, event, CharPolicy::digits()) {
+            TextEditOutcome::Cancel => {
+                edit.clear();
+                return;
+            }
+            TextEditOutcome::Submit | TextEditOutcome::Next => {
+                // An empty buffer means "never mind"; otherwise send the
+                // number and let the server clamp it to the stock.
+                if let Ok(quantity) = edit.buffer.parse::<u32>() {
+                    pending_commands.push(GameCommand::SetShopOfferQuantity {
+                        session_id,
+                        offer_index: index,
+                        quantity,
+                    });
+                }
+                edit.clear();
+                return;
+            }
+            TextEditOutcome::Edited | TextEditOutcome::Ignored => {}
+        }
+    }
+}
+
+/// Keep every basket row's number in sync — the replicated quantity normally,
+/// the in-progress buffer (with a trailing cursor) on the row being typed into.
+pub fn sync_trade_quantity_labels(
+    client_state: Res<ClientGameState>,
+    edit: Res<TradeQuantityEdit>,
+    mut labels: Query<(&mut Text, &TradeQuantityText)>,
+) {
+    for (mut text, label) in &mut labels {
+        let next = if edit.offer_index == Some(label.index) {
+            format!("{}_", edit.buffer)
+        } else {
+            basket_quantity(&client_state, label.index)
+                .map(|quantity| quantity.to_string())
+                .unwrap_or_default()
+        };
+        if text.0 != next {
+            text.0 = next;
+        }
+    }
+}
+
+/// Click on an offer row's ×: withdraw that entry. Ours goes back to the
+/// backpack, the merchant's back onto his shelf.
+pub fn handle_trade_offer_remove_clicks(
+    state: Res<TradePopupState>,
+    buttons: Query<(&Interaction, &TradeOfferRemoveButton), Changed<Interaction>>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
+) {
+    let Some(session_id) = state.session_id else {
+        return;
+    };
+    for (interaction, button) in &buttons {
+        if !matches!(interaction, Interaction::Pressed) {
+            continue;
+        }
+        let command = match button.column {
+            TradeColumn::Us => GameCommand::WithdrawTradeItem {
+                session_id,
+                offer_index: button.index,
+            },
+            TradeColumn::Them => GameCommand::WithdrawShopOffer {
+                session_id,
+                offer_index: button.index,
+            },
+            TradeColumn::Merchant => continue,
+        };
+        pending_commands.push(command);
+    }
 }
 
 pub fn handle_trade_panel_clicks(

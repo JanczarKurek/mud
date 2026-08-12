@@ -352,8 +352,18 @@ fn game_command_samples() -> Vec<GameCommand> {
             session_id: 7,
             offer_index: 0,
         },
+        GameCommand::WithdrawShopOffer {
+            session_id: 7,
+            offer_index: 1,
+        },
+        GameCommand::SetShopOfferQuantity {
+            session_id: 7,
+            offer_index: 0,
+            quantity: 100,
+        },
         GameCommand::ToggleTradeReady { session_id: 7 },
         GameCommand::ConfirmTrade { session_id: 7 },
+        GameCommand::ConfirmTradeWithDrop { session_id: 7 },
         GameCommand::CancelTrade { session_id: 7 },
         GameCommand::TakeAllFromContainer {
             container: ContainerRef::World { object_id: 12 },
@@ -508,8 +518,11 @@ fn game_command_coverage(command: &GameCommand) {
         | GameCommand::InitiateTrade { .. }
         | GameCommand::OfferTradeItem { .. }
         | GameCommand::WithdrawTradeItem { .. }
+        | GameCommand::WithdrawShopOffer { .. }
+        | GameCommand::SetShopOfferQuantity { .. }
         | GameCommand::ToggleTradeReady { .. }
         | GameCommand::ConfirmTrade { .. }
+        | GameCommand::ConfirmTradeWithDrop { .. }
         | GameCommand::CancelTrade { .. }
         | GameCommand::BrowseShopBuy { .. }
         | GameCommand::StashMutate { .. }
@@ -803,6 +816,10 @@ fn game_ui_event_samples() -> Vec<GameUiEvent> {
             xp_lost: 250,
         },
         GameUiEvent::OpenTradePanel { session_id: 7 },
+        GameUiEvent::ConfirmTradeDrop {
+            session_id: 7,
+            overflow_summary: "Iron Sword".to_owned(),
+        },
         GameUiEvent::CloseTradePanel {
             session_id: 7,
             outcome: TradeOutcome::PartnerDisconnected,
@@ -919,6 +936,7 @@ fn game_ui_event_coverage(event: &GameUiEvent) {
         | GameUiEvent::LevelUpToast { .. }
         | GameUiEvent::DeathSummary { .. }
         | GameUiEvent::OpenTradePanel { .. }
+        | GameUiEvent::ConfirmTradeDrop { .. }
         | GameUiEvent::CloseTradePanel { .. }
         | GameUiEvent::VfxSpawn { .. }
         | GameUiEvent::RecipeLearnedToast { .. }

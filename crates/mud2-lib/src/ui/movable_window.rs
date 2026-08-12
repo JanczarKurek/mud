@@ -66,6 +66,10 @@ pub enum MovableWindowId {
     /// `PartyInvitePopupState.invite` becomes `Some`, despawned when it
     /// returns to `None`. Accept/Decline/close-X all answer the server.
     PartyInvite,
+    /// Generic "are you sure?" prompt (singleton). Lifecycle: spawned when
+    /// `ConfirmPopupState.request` becomes `Some`, despawned when it returns
+    /// to `None`.
+    Confirm,
     /// Per-character Log window (quests + notes). Singleton, toggled by
     /// `KeyL`. Same lifecycle pattern as `RecipeBook` — close button only.
     Log,
