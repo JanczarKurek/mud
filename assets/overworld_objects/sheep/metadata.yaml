@@ -5,6 +5,8 @@ tags: [beast, livestock]
 # (Wolves eat sheep freely — guilt is only ever charged to players.)
 factions: [emberbrook_town]
 description: A woolly grazer, blissfully unaware of anything but grass. Mostly.
+lore: >-
+  Emberbrook's flock is common property in practice and somebody's property in law, which is why the Watch takes a dead sheep personally.
 level: 1
 loot:
   corpse_despawn_seconds: 60

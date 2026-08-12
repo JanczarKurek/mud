@@ -2,6 +2,8 @@ extends: npc
 name: Dire Wight
 tags: [undead, monster]
 description: A gaunt revenant wrapped in grave-cold air. Frost creeps across the ground where it walks.
+lore: >-
+  The cold around a wight is not weather but appetite — it draws the warmth out of a room the way a drain takes water.
 level: 12
 stats:
   strength: 14

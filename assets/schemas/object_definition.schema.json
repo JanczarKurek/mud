@@ -123,6 +123,18 @@
         }
       ]
     },
+    "codex": {
+      "description": "Which codex ladder this definition belongs to. Defaults to [`CodexClass::classify_fallback`] when absent — set it explicitly on any NPC the heuristic gets wrong (a silent, dialog-less guard would otherwise be filed as a monster).",
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/CodexClass"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "colliding": {
       "type": "boolean"
     },
@@ -196,6 +208,14 @@
         }
       ]
     },
+    "faction_display_names": {
+      "description": "Human-readable names for the social factions this definition mentions in `factions`, `protects_factions`, or `judge.clears_factions`. Overrides the title-cased id that `prettify_faction_id` falls back to (`emberbrook_watch` → \"Emberbrook Watch\"). Any definition may declare a name for any faction — the registry unions them, so it's conventional to put them on the faction's most prominent member.",
+      "default": {},
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
     "factions": {
       "description": "Social factions this NPC answers to (`emberbrook_watch`, `goblin_tribe`). Distinct from both `tags` (what it *is*) and `faction` (which combat side it fights on): this is who takes it personally when you hurt it. Harming a member propagates guilt to every living NPC sharing one of these — see `npc::guilt`. Interned into their own bitmask, so they don't consume the identity-tag budget.",
       "default": [],
@@ -265,7 +285,7 @@
       }
     },
     "judge": {
-      "description": "Marks this NPC as a Judge: a player can pay it to clear their guilt with the listed factions. See `npc::guilt` and `GameCommand::PayGuiltFine`.",
+      "description": "Marks this NPC as a Judge: a player can pay it to clear their guilt with the listed factions. See `npc::guilt` and `GameCommand::PayCrime`.",
       "default": null,
       "anyOf": [
         {
@@ -339,6 +359,14 @@
         }
       ]
     },
+    "lore": {
+      "description": "Long-form background. Revealed only at the top of a knowledge ladder: a high-margin Persuasion read (People tier 3) or a mastered Bestiary entry (tier 4). Keep it to a few sentences — codex bodies ride along in the whole-log replication snapshot.",
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "max_charges": {
       "description": "When `Some(N)`, this item starts with N charges. Charges are tracked per-stack in `InventoryStack::properties[\"charges_remaining\"]`. On use, one charge is consumed; the item is destroyed when charges reach 0. When `None`, behaviour is the legacy single-consume-on-use (scrolls).",
       "default": null,
@@ -371,6 +399,14 @@
         {
           "type": "null"
         }
+      ]
+    },
+    "occupation": {
+      "description": "Short role label for an NPC — \"Watch Sergeant\", \"Herbalist\". Shown under the name in the dossier window and in the People codex entry. Tier-0 knowledge: visible on any Details read, even a failed one.",
+      "default": null,
+      "type": [
+        "string",
+        "null"
       ]
     },
     "on_stepped": {
@@ -843,6 +879,15 @@
           }
         }
       }
+    },
+    "CodexClass": {
+      "description": "Which codex ladder a definition is filed under — see `crate::codex`.\n\n`People` entries are earned with an active Persuasion read (right-click → Details); `Bestiary` entries accrue from passive Perception while you watch the creature, capped by how many you've killed. `None` opts a definition out of the codex entirely (summons, scenery-ish NPCs, debug spawns).",
+      "type": "string",
+      "enum": [
+        "people",
+        "bestiary",
+        "none"
+      ]
     },
     "DamageType": {
       "type": "string",

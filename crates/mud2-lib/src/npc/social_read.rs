@@ -1,12 +1,25 @@
-//! Social reads: a Persuasion-gated glimpse of what an NPC thinks of you.
+//! Social reads: a Persuasion-gated glimpse of who an NPC is and what they
+//! think of you.
 //!
 //! Inspecting an NPC (`GameCommand::Inspect`) implicitly rolls a Persuasion
 //! check against the NPC's demeanor and drops a one-line summary into chat;
 //! the "Details" context-menu verb (`GameCommand::RequestSocialRead`) replies
-//! with the full read as `GameUiEvent::OpenSocialRead`. How much the read
-//! reveals scales with the check's margin: a bare success reads the NPC's
-//! attitude, +5 adds whether it knows of your crimes (and how bad), +10 adds
-//! which factions' grudges it carries.
+//! with the full dossier as `GameUiEvent::OpenSocialRead`. How much the read
+//! reveals scales with the check's margin:
+//!
+//! | Margin | Tier | Adds |
+//! |---|---|---|
+//! | (failure) | 0 | name, occupation, description — you can still see them |
+//! | ≥ 0 | 1 | their bearing toward you |
+//! | ≥ [`MARGIN_CRIMES`] | 1 | whether they know of your crimes, and how bad |
+//! | ≥ [`MARGIN_FACTIONS`] | 2 | which factions' grudges they carry |
+//! | ≥ [`MARGIN_LORE`] | 3 | background lore and their social ties |
+//!
+//! The durable half of a successful read (who they are, allegiances, lore) is
+//! also filed into the reader's People codex via `codex::PendingCodexUpdates`,
+//! so the Log window keeps what the popup showed. The live half (bearing,
+//! crime knowledge) is deliberately *not* filed — it changes, and a stale
+//! "they hate you" line in a journal would lie.
 //!
 //! Each (player, NPC) pair rolls at most once per [`SOCIAL_READ_COOLDOWN_SECS`]
 //! — inside the window both paths replay the cached read verbatim, so the
@@ -19,6 +32,7 @@ use std::collections::HashMap;
 use bevy::prelude::*;
 
 use crate::game::commands::{GameCommand, InspectTarget};
+use crate::game::resources::{DossierBearing, DossierRelation, NpcDossier};
 use crate::npc::components::{Faction, HostileBehavior, Npc};
 use crate::npc::guilt::{CrimeMemory, FactionInterner, GuiltTier};
 use crate::npc::hostility::{is_hostile_toward, Aggressor, Subject, TagMask, TagProfile};
@@ -40,6 +54,10 @@ pub const MARGIN_CRIMES: i32 = 5;
 /// Margin at which the read also names the factions whose grudges it carries.
 pub const MARGIN_FACTIONS: i32 = 10;
 
+/// Margin at which the read also yields background lore and the NPC's ties to
+/// other people and factions.
+pub const MARGIN_LORE: i32 = 15;
+
 /// One resolved read, replayed verbatim until it expires.
 #[derive(Clone, Debug)]
 pub struct CachedSocialRead {
@@ -47,8 +65,10 @@ pub struct CachedSocialRead {
     pub expires_at: f64,
     /// The one-line chat summary.
     pub summary: String,
-    /// The full window body, pre-formatted.
-    pub lines: Vec<String>,
+    /// The full dossier. Cached *structured*, not pre-formatted: caching
+    /// rendered strings would replay stale text the moment a new field is
+    /// added to the window.
+    pub dossier: NpcDossier,
 }
 
 /// Per-NPC cache of social reads keyed by reader. Seeded on every fresh NPC by
@@ -67,13 +87,13 @@ impl SocialReadMemory {
             .filter(|cached| now < cached.expires_at)
     }
 
-    pub fn store(&mut self, player: PlayerId, now: f64, summary: String, lines: Vec<String>) {
+    pub fn store(&mut self, player: PlayerId, now: f64, summary: String, dossier: NpcDossier) {
         self.reads.insert(
             player,
             CachedSocialRead {
                 expires_at: now + SOCIAL_READ_COOLDOWN_SECS,
                 summary,
-                lines,
+                dossier,
             },
         );
     }
@@ -88,13 +108,10 @@ pub struct PendingSocialReadLines {
 }
 
 /// How the NPC regards the reader, coarsest first.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Attitude {
-    Friendly,
-    Neutral,
-    Wary,
-    Hostile,
-}
+///
+/// Aliased to the ungated wire type in `game::resources`: this module is
+/// `server-sim`-gated, and the attitude has to reach the thin client.
+pub use crate::game::resources::DossierAttitude as Attitude;
 
 /// Fold the hostility predicate, the guilt ledger, and faction alignment into
 /// one word. `hostile` is the same per-viewer verdict the projection's red
@@ -121,21 +138,72 @@ fn attitude_phrase(attitude: Attitude, npc_name: &str) -> String {
     }
 }
 
-/// The successful read's summary + window body, tiered by margin.
-pub fn compose_read(
+/// Highest dossier tier a read can reach (bearing → crimes → factions → lore).
+pub const MAX_DOSSIER_TIER: u8 = 4;
+
+/// The dossier tier a read of `margin` unlocks: 1 for a bare success, up to
+/// [`MAX_DOSSIER_TIER`].
+pub fn tier_for_margin(margin: i32) -> u8 {
+    1 + u8::from(margin >= MARGIN_CRIMES)
+        + u8::from(margin >= MARGIN_FACTIONS)
+        + u8::from(margin >= MARGIN_LORE)
+}
+
+/// Maps a dossier tier onto the People codex's three-rung ladder.
+///
+/// They differ because the codex only records *durable* knowledge: the crimes
+/// rung (dossier tier 2) is live state and leaves no trace in the journal, so
+/// tiers 1 and 2 both file as codex tier 1.
+pub fn codex_tier_for_dossier(dossier_tier: u8) -> u8 {
+    match dossier_tier {
+        0 => 0,
+        1 | 2 => 1,
+        3 => 2,
+        _ => 3,
+    }
+}
+
+/// Everything a dossier needs that comes from the NPC's *definition* rather
+/// than from the roll. Grouped so `compose_dossier` doesn't take ten strings.
+pub struct DossierSubject<'a> {
+    pub name: &'a str,
+    pub occupation: Option<&'a str>,
+    pub description: &'a str,
+    pub lore: Option<&'a str>,
+    /// Faction display names this NPC answers to.
+    pub factions: Vec<String>,
+    /// `(note, subject)` social ties, from `codex::compose::derive_relationships`.
+    pub relationships: Vec<(String, String)>,
+}
+
+impl DossierSubject<'_> {
+    /// The tier-0 dossier: who they are, and nothing else. The floor for both
+    /// a success and a failure — you can always see a person.
+    fn identity(&self) -> NpcDossier {
+        NpcDossier {
+            name: self.name.to_owned(),
+            occupation: self.occupation.map(str::to_owned),
+            description: self.description.to_owned(),
+            ..Default::default()
+        }
+    }
+}
+
+/// The successful read's chat summary + dossier, tiered by margin.
+pub fn compose_dossier(
+    subject: &DossierSubject<'_>,
     attitude: Attitude,
     margin: i32,
     guilt_points: u32,
-    faction_names: &[String],
-    npc_name: &str,
-) -> (String, Vec<String>) {
-    let summary = attitude_phrase(attitude, npc_name);
-    let mut lines = vec![summary.clone()];
-    if margin >= MARGIN_CRIMES {
+    grudge_factions: &[String],
+) -> (String, NpcDossier) {
+    let summary = attitude_phrase(attitude, subject.name);
+
+    let crime_note = (margin >= MARGIN_CRIMES).then(|| {
         if guilt_points == 0 {
-            lines.push("Your name means nothing ill to them.".to_owned());
+            "Your name means nothing ill to them.".to_owned()
         } else {
-            lines.push(match GuiltTier::of(guilt_points) {
+            match GuiltTier::of(guilt_points) {
                 GuiltTier::Clean => {
                     "They know of a misdeed of yours, but think it minor.".to_owned()
                 }
@@ -143,32 +211,61 @@ pub fn compose_read(
                     "They know enough of your crimes to want nothing to do with you.".to_owned()
                 }
                 GuiltTier::Wanted => "They know your crimes — enough to want you dead.".to_owned(),
-            });
+            }
         }
-    }
+    });
+
+    // The faction tier reports two different things at once: whose colours
+    // they wear, and whose grudge they carry. Both are worth the margin.
+    let mut factions = Vec::new();
     if margin >= MARGIN_FACTIONS {
-        if faction_names.is_empty() {
-            lines.push("They carry no faction's grudge against you.".to_owned());
-        } else {
-            lines.push(format!(
-                "Word of your crimes against the {} has reached them.",
-                faction_names.join(", ")
-            ));
+        factions.extend(subject.factions.iter().cloned());
+        for grudge in grudge_factions {
+            if !factions.contains(grudge) {
+                factions.push(grudge.clone());
+            }
         }
     }
-    (summary, lines)
+
+    let mut dossier = NpcDossier {
+        bearing: Some(DossierBearing {
+            attitude,
+            phrase: summary.clone(),
+            crime_note,
+        }),
+        factions,
+        tier: tier_for_margin(margin),
+        ..subject.identity()
+    };
+
+    if margin >= MARGIN_LORE {
+        dossier.lore = subject.lore.map(str::to_owned);
+        dossier.relationships = subject
+            .relationships
+            .iter()
+            .map(|(note, subject)| DossierRelation {
+                note: note.clone(),
+                subject: subject.clone(),
+            })
+            .collect();
+    }
+
+    (summary, dossier)
 }
 
-/// The failed read: the NPC gives nothing away.
-pub fn compose_failure(npc_name: &str) -> (String, Vec<String>) {
+/// The failed read: you can see who they are, and learn nothing more.
+pub fn compose_failure(subject: &DossierSubject<'_>) -> (String, NpcDossier) {
     (
-        format!("{npc_name} gives nothing away."),
-        vec![format!("You can't get a read on {npc_name}.")],
+        format!("{} gives nothing away.", subject.name),
+        NpcDossier {
+            failed: true,
+            ..subject.identity()
+        },
     )
 }
 
 /// Roll (or replay) `player`'s read of one NPC. Returns the summary, the
-/// window body, and whether this call performed a fresh roll.
+/// dossier, and whether this call performed a fresh roll.
 #[allow(clippy::too_many_arguments)]
 fn ensure_read(
     memory: &mut SocialReadMemory,
@@ -176,14 +273,14 @@ fn ensure_read(
     player: PlayerId,
     sheet: &SkillSheet,
     attributes: &crate::player::components::AttributeSet,
-    npc_name: &str,
+    subject: &DossierSubject<'_>,
     npc_faction: Faction,
     hostile: bool,
     guilt: Option<&CrimeMemory>,
     interner: &FactionInterner,
-) -> (String, Vec<String>, bool) {
+) -> (String, NpcDossier, bool) {
     if let Some(cached) = memory.fresh(player, now) {
-        return (cached.summary.clone(), cached.lines.clone(), false);
+        return (cached.summary.clone(), cached.dossier.clone(), false);
     }
 
     let guilt_points = guilt.map(|g| g.points(player)).unwrap_or(0);
@@ -197,7 +294,7 @@ fn ensure_read(
     }
     let result = skill_check(sheet, attributes, Skill::Persuasion, dc.total(), 0);
 
-    let (summary, mut lines) = if result.success {
+    let (summary, mut dossier) = if result.success {
         // Which factions' grudges this NPC carries against the reader — the
         // union of the victim factions across its records of the reader.
         let grudge_mask = guilt
@@ -210,25 +307,21 @@ fn ensure_read(
                     })
             })
             .unwrap_or(TagMask::EMPTY);
-        let faction_names = interner.display_names(grudge_mask);
-        compose_read(
+        let grudge_factions = interner.display_names(grudge_mask);
+        compose_dossier(
+            subject,
             attitude,
             result.total - dc.total(),
             guilt_points,
-            &faction_names,
-            npc_name,
+            &grudge_factions,
         )
     } else {
-        compose_failure(npc_name)
+        compose_failure(subject)
     };
-    lines.push(format!(
-        "(Persuasion {} vs DC {})",
-        result.total,
-        dc.explain()
-    ));
+    dossier.check_line = format!("(Persuasion {} vs DC {})", result.total, dc.explain());
 
-    memory.store(player, now, summary.clone(), lines.clone());
-    (summary, lines, true)
+    memory.store(player, now, summary.clone(), dossier.clone());
+    (summary, dossier, true)
 }
 
 type SocialReadPlayerQuery<'w, 's> = Query<
@@ -282,6 +375,7 @@ pub fn process_social_read(
     interner: Res<FactionInterner>,
     mut ui_events: ResMut<crate::game::resources::PendingGameUiEvents>,
     mut chat_lines: ResMut<PendingSocialReadLines>,
+    mut codex_updates: ResMut<crate::codex::PendingCodexUpdates>,
 ) {
     // Cheap read-only probe first, like `process_judge_commands`: don't touch
     // (and change-flag) anything for the overwhelmingly common empty frame.
@@ -388,18 +482,52 @@ pub fn process_social_read(
             .display_name(npc_object.object_id, &definitions, &spell_definitions)
             .unwrap_or_else(|| "They".to_owned());
 
-        let (summary, lines, fresh) = ensure_read(
+        // Definition-sourced half of the dossier. A missing definition (an
+        // NPC spawned from a deleted template) still yields a usable read —
+        // just one with nothing but a name.
+        let def = definitions.get(&npc_object.definition_id);
+        let subject = DossierSubject {
+            name: &npc_name,
+            occupation: def.and_then(|d| d.occupation.as_deref()),
+            description: def.map(|d| d.description_for_count(1)).unwrap_or(""),
+            lore: def.and_then(|d| d.lore.as_deref()),
+            factions: def
+                .map(|d| {
+                    d.factions
+                        .iter()
+                        .map(|f| definitions.faction_display_name(f))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            relationships: def
+                .map(|d| crate::codex::compose::derive_relationships(&definitions, d))
+                .unwrap_or_default(),
+        };
+
+        let (summary, dossier, fresh) = ensure_read(
             &mut memory,
             now,
             player_id,
             sheet,
             &base_stats.attributes,
-            &npc_name,
+            &subject,
             social_faction,
             hostile,
             guilt,
             &interner,
         );
+
+        // File the durable half into the reader's People codex. Only on a
+        // fresh roll: a cache replay learned nothing new.
+        if fresh && dossier.tier > 0 && def.is_some() {
+            codex_updates.push(
+                player_id,
+                crate::codex::CodexUpdate::NpcTier {
+                    definition_id: npc_object.definition_id.clone(),
+                    tier: codex_tier_for_dossier(dossier.tier),
+                },
+            );
+        }
 
         if is_explicit {
             ui_events.push(
@@ -407,7 +535,7 @@ pub fn process_social_read(
                 crate::game::resources::GameUiEvent::OpenSocialRead {
                     npc_object_id,
                     npc_name,
-                    lines,
+                    dossier,
                 },
             );
             // The window shows everything; only a fresh roll also narrates.
@@ -481,30 +609,88 @@ mod tests {
         );
     }
 
+    fn test_subject() -> DossierSubject<'static> {
+        DossierSubject {
+            name: "Guard",
+            occupation: Some("Watch Sergeant"),
+            description: "Broad-shouldered and bored.",
+            lore: Some("Took the post after the mill fire."),
+            factions: vec!["The Emberbrook Watch".to_owned()],
+            relationships: vec![("Protects".to_owned(), "Emberbrook".to_owned())],
+        }
+    }
+
     #[test]
-    fn compose_read_tiers_by_margin() {
-        let factions = vec!["Emberbrook Watch".to_owned()];
-        let (_, bare) = compose_read(Attitude::Wary, 0, 40, &factions, "Guard");
-        assert_eq!(bare.len(), 1, "bare success: attitude only");
+    fn compose_dossier_tiers_by_margin() {
+        let subject = test_subject();
+        let grudges = vec!["Emberbrook Watch".to_owned()];
 
-        let (_, crimes) = compose_read(Attitude::Wary, MARGIN_CRIMES, 40, &factions, "Guard");
-        assert_eq!(crimes.len(), 2, "margin 5 adds crime knowledge");
-        assert!(crimes[1].contains("nothing to do with you"), "{crimes:?}");
+        // Bare success: bearing, nothing deeper.
+        let (_, bare) = compose_dossier(&subject, Attitude::Wary, 0, 40, &grudges);
+        assert_eq!(bare.tier, 1);
+        assert!(bare.bearing.is_some());
+        assert!(bare.bearing.as_ref().unwrap().crime_note.is_none());
+        assert!(bare.factions.is_empty());
+        assert!(bare.lore.is_none());
 
-        let (_, full) = compose_read(Attitude::Wary, MARGIN_FACTIONS, 40, &factions, "Guard");
-        assert_eq!(full.len(), 3, "margin 10 adds faction grudges");
-        assert!(full[2].contains("Emberbrook Watch"), "{full:?}");
+        // +5: crime knowledge.
+        let (_, crimes) = compose_dossier(&subject, Attitude::Wary, MARGIN_CRIMES, 40, &grudges);
+        assert_eq!(crimes.tier, 2);
+        let note = crimes.bearing.unwrap().crime_note.expect("crime note");
+        assert!(note.contains("nothing to do with you"), "{note}");
 
-        let (_, clean) = compose_read(Attitude::Friendly, MARGIN_FACTIONS, 0, &[], "Ann");
-        assert!(clean[1].contains("nothing ill"), "{clean:?}");
-        assert!(clean[2].contains("no faction"), "{clean:?}");
+        // +10: allegiances, including the grudge-bearing faction.
+        let (_, full) = compose_dossier(&subject, Attitude::Wary, MARGIN_FACTIONS, 40, &grudges);
+        assert_eq!(full.tier, 3);
+        assert!(full.factions.contains(&"The Emberbrook Watch".to_owned()));
+        assert!(full.lore.is_none(), "lore is a tier above factions");
+
+        // +15: background and social ties.
+        let (_, deep) = compose_dossier(&subject, Attitude::Wary, MARGIN_LORE, 40, &grudges);
+        assert_eq!(deep.tier, MAX_DOSSIER_TIER);
+        assert_eq!(
+            deep.lore.as_deref(),
+            Some("Took the post after the mill fire.")
+        );
+        assert_eq!(deep.relationships.len(), 1);
+        assert_eq!(deep.relationships[0].note, "Protects");
+
+        // The codex ladder collapses the live crimes rung: tiers 1 and 2 are
+        // the same durable knowledge.
+        assert_eq!(codex_tier_for_dossier(1), 1);
+        assert_eq!(codex_tier_for_dossier(2), 1);
+        assert_eq!(codex_tier_for_dossier(3), 2);
+        assert_eq!(codex_tier_for_dossier(MAX_DOSSIER_TIER), 3);
+        assert_eq!(codex_tier_for_dossier(0), 0, "a failed read files nothing");
+
+        // A clean reader hears the reassuring version of both lines.
+        let (_, clean) = compose_dossier(&subject, Attitude::Friendly, MARGIN_CRIMES, 0, &[]);
+        let note = clean.bearing.unwrap().crime_note.expect("crime note");
+        assert!(note.contains("nothing ill"), "{note}");
+    }
+
+    /// Even a botched read still tells you who you're looking at — the
+    /// identity block is tier 0, not a reward.
+    #[test]
+    fn dossier_identity_survives_a_failed_check() {
+        let (summary, failed) = compose_failure(&test_subject());
+        assert!(summary.contains("gives nothing away"));
+        assert!(failed.failed);
+        assert_eq!(failed.tier, 0);
+        assert!(failed.bearing.is_none());
+        assert_eq!(failed.name, "Guard");
+        assert_eq!(failed.occupation.as_deref(), Some("Watch Sergeant"));
+        assert_eq!(failed.description, "Broad-shouldered and bored.");
+        // ...but nothing that had to be earned.
+        assert!(failed.lore.is_none());
+        assert!(failed.factions.is_empty());
     }
 
     #[test]
     fn cache_expires_after_cooldown() {
         let mut memory = SocialReadMemory::default();
         let player = PlayerId(1);
-        memory.store(player, 100.0, "s".into(), vec!["l".into()]);
+        memory.store(player, 100.0, "s".into(), NpcDossier::default());
         assert!(memory.fresh(player, 100.0).is_some());
         assert!(memory
             .fresh(player, 100.0 + SOCIAL_READ_COOLDOWN_SECS - 0.1)
@@ -525,6 +711,7 @@ mod tests {
         app.init_resource::<crate::game::resources::PendingGameCommands>()
             .init_resource::<crate::game::resources::PendingGameUiEvents>()
             .init_resource::<PendingSocialReadLines>()
+            .init_resource::<crate::codex::PendingCodexUpdates>()
             .init_resource::<crate::world::floor_map::FloorMaps>()
             .init_resource::<crate::world::object_registry::ObjectRegistry>()
             .insert_resource(FactionInterner::build(["emberbrook_watch"].into_iter()))
@@ -561,12 +748,21 @@ mod tests {
     }
 
     fn spawn_npc(app: &mut App, object_id: u64, tile: (i32, i32)) -> Entity {
+        spawn_npc_of(app, object_id, tile, "npc")
+    }
+
+    fn spawn_npc_of(
+        app: &mut App,
+        object_id: u64,
+        tile: (i32, i32),
+        definition_id: &str,
+    ) -> Entity {
         app.world_mut()
             .spawn((
                 Npc,
                 crate::world::components::OverworldObject {
                     object_id,
-                    definition_id: "npc".to_owned(),
+                    definition_id: definition_id.to_owned(),
                     placement_seq: 0,
                 },
                 SpaceResident {
@@ -584,7 +780,7 @@ mod tests {
             .push_for_player(player, command);
     }
 
-    fn reads_sent(app: &App, player: PlayerId) -> Vec<Vec<String>> {
+    fn reads_sent(app: &App, player: PlayerId) -> Vec<NpcDossier> {
         app.world()
             .resource::<crate::game::resources::PendingGameUiEvents>()
             .peer_events
@@ -592,8 +788,8 @@ mod tests {
             .into_iter()
             .flatten()
             .filter_map(|event| match event {
-                crate::game::resources::GameUiEvent::OpenSocialRead { lines, .. } => {
-                    Some(lines.clone())
+                crate::game::resources::GameUiEvent::OpenSocialRead { dossier, .. } => {
+                    Some(dossier.clone())
                 }
                 _ => None,
             })
@@ -620,12 +816,13 @@ mod tests {
 
         let sent = reads_sent(&app, player);
         assert_eq!(sent.len(), 1, "one window payload");
-        assert!(sent[0].len() >= 2, "body + check line: {:?}", sent[0]);
         assert!(
-            sent[0].last().unwrap().starts_with("(Persuasion"),
+            sent[0].check_line.starts_with("(Persuasion"),
             "{:?}",
             sent[0]
         );
+        // Identity is unconditional, so it's there whichever way the d20 fell.
+        assert!(!sent[0].name.is_empty());
         let chat_after_roll = chat_len(&app, reader);
         assert!(
             chat_after_roll > ChatLog::default().lines.len(),
@@ -648,6 +845,59 @@ mod tests {
             chat_after_roll,
             "cache hit is silent"
         );
+    }
+
+    /// A successful read files the durable half into the People codex; the
+    /// cached replay that follows must not file it a second time.
+    #[test]
+    fn details_queues_a_people_codex_update_once() {
+        let mut app = test_app();
+        let player = PlayerId(1);
+        spawn_reader(&mut app, player, (5, 5));
+        spawn_npc_of(&mut app, 77, (5, 6), "town_guard");
+
+        // The check can fail, and a failed read files nothing. Loop until we
+        // land a success so the assertion isn't at the mercy of one d20.
+        let mut queued = Vec::new();
+        for attempt in 0..40u64 {
+            app.world_mut()
+                .resource_mut::<crate::codex::PendingCodexUpdates>()
+                .items
+                .clear();
+            // A fresh NPC each pass — re-asking the same one would replay its
+            // 60s cache instead of rolling again.
+            let object_id = 100 + attempt;
+            spawn_npc_of(&mut app, object_id, (5, 6), "town_guard");
+            queue(
+                &mut app,
+                player,
+                GameCommand::RequestSocialRead {
+                    npc_object_id: object_id,
+                },
+            );
+            app.update();
+            queued = app
+                .world()
+                .resource::<crate::codex::PendingCodexUpdates>()
+                .items
+                .clone();
+            if !queued.is_empty() {
+                break;
+            }
+        }
+
+        let (owner, update) = queued.first().expect("a successful read in 40 tries");
+        assert_eq!(*owner, player);
+        match update {
+            crate::codex::CodexUpdate::NpcTier {
+                definition_id,
+                tier,
+            } => {
+                assert_eq!(definition_id, "town_guard");
+                assert!((1..=3).contains(tier), "codex tier out of range: {tier}");
+            }
+            other => panic!("expected an NpcTier update, got {other:?}"),
+        }
     }
 
     #[test]

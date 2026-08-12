@@ -102,6 +102,30 @@ impl Plugin for GameServerPlugin {
             // resource lives here (like the crime queues above) so test apps
             // can wire either half alone.
             .insert_resource(crate::npc::social_read::PendingSocialReadLines::default())
+            // Codex queues, here for the same reason: their producers (the
+            // social read, the bestiary tick, the damage resolver) are spread
+            // across optional plugins, but the single writer must always exist.
+            .init_resource::<crate::codex::PendingCodexUpdates>()
+            .init_resource::<crate::codex::PendingCodexKills>()
+            .configure_sets(
+                Update,
+                (
+                    crate::codex::CodexSet::Reveal.in_set(CommandIntercept),
+                    crate::codex::CodexSet::Apply
+                        .in_set(CommandIntercept)
+                        .after(crate::codex::CodexSet::Reveal),
+                ),
+            )
+            .add_systems(
+                Update,
+                (
+                    crate::codex::updates::drain_codex_kills,
+                    crate::codex::updates::apply_codex_updates,
+                )
+                    .chain()
+                    .in_set(crate::codex::CodexSet::Apply)
+                    .run_if(simulation_active),
+            )
             .configure_sets(
                 Update,
                 CommandIntercept

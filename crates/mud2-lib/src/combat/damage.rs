@@ -130,10 +130,11 @@ pub fn apply_pending_damage(
     npc_queues: (
         ResMut<crate::npc::aggro::PendingNpcAggro>,
         ResMut<crate::npc::witness::PendingCrimes>,
+        ResMut<crate::codex::PendingCodexKills>,
     ),
     mut commands: Commands,
 ) {
-    let (mut pending_aggro, mut pending_crimes) = npc_queues;
+    let (mut pending_aggro, mut pending_crimes, mut pending_codex_kills) = npc_queues;
     let now = time.elapsed_secs();
     if pending.events.is_empty() {
         return;
@@ -271,6 +272,15 @@ pub fn apply_pending_damage(
                 type_id: definition_id.clone(),
                 killer_player_id,
             });
+            // Bestiary kill credit, on the same attribution as XP: knowing
+            // what a creature drops is earned by the one who put it down.
+            // Queued separately from `QuestEvent` because that queue is
+            // drained by the feature-gated quest plugin.
+            if let Some(player_id) = event.source.xp_credit() {
+                pending_codex_kills
+                    .kills
+                    .push((player_id, definition_id.clone()));
+            }
             // A witnessed kill is a crime like a witnessed hit — the report
             // carries the factions and name copied out above, since the victim
             // is despawned below. `update_crime_log` upgrades a same-scuffle

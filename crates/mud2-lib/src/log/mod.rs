@@ -26,6 +26,22 @@ pub const QUESTS_SECTION: &str = "Quests";
 pub const BODY_DIVIDER: &str = "---";
 /// Default user-owned section for free-form notes.
 pub const NOTES_SECTION: &str = "Notes";
+/// Engine-owned NPC dossiers, written by `npc::social_read` through
+/// `codex::updates::apply_codex_updates`.
+pub const PEOPLE_SECTION: &str = "People";
+/// Engine-owned creature codex, written by `npc::bestiary` through
+/// `codex::updates::apply_codex_updates`.
+pub const BESTIARY_SECTION: &str = "Bestiary";
+
+/// Sections always shown as bookmark tabs in the Log window, in display
+/// order, whether or not they currently hold entries. Script-created sections
+/// are appended after these (see `ui::log_panel::section_list`).
+pub const PINNED_SECTIONS: [&str; 4] = [
+    QUESTS_SECTION,
+    PEOPLE_SECTION,
+    BESTIARY_SECTION,
+    NOTES_SECTION,
+];
 
 /// Server-side caps. Enforced by command handlers to keep the per-character
 /// JSON payload bounded.

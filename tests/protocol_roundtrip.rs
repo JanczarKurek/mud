@@ -386,6 +386,12 @@ fn game_command_samples() -> Vec<GameCommand> {
             quest_name: "rats".to_owned(),
             text: "bring cheese".to_owned(),
         },
+        GameCommand::SetLogPlayerNotes {
+            section: "Bestiary".to_owned(),
+            subsection: "wolf".to_owned(),
+            text: "always three of them".to_owned(),
+        },
+        GameCommand::RequestSocialRead { npc_object_id: 12 },
         GameCommand::AllocateSkillPoint {
             skill: Skill::Stealth,
             ranks: 2,
@@ -504,6 +510,8 @@ fn game_command_coverage(command: &GameCommand) {
         | GameCommand::UpsertLogEntry { .. }
         | GameCommand::DeleteLogEntry { .. }
         | GameCommand::SetQuestPlayerNotes { .. }
+        | GameCommand::SetLogPlayerNotes { .. }
+        | GameCommand::RequestSocialRead { .. }
         | GameCommand::AllocateSkillPoint { .. }
         | GameCommand::AllocateAbilityBump { .. }
         | GameCommand::AdminGrantXp { .. }
@@ -861,6 +869,31 @@ fn game_ui_event_samples() -> Vec<GameUiEvent> {
                 price_text: "1g 3s".to_owned(),
             }],
         },
+        // Fully populated: every tier present, so the thin-client contract is
+        // exercised end to end rather than just the identity block.
+        GameUiEvent::OpenSocialRead {
+            npc_object_id: 12,
+            npc_name: "Town Guard".to_owned(),
+            dossier: mud2::game::resources::NpcDossier {
+                name: "Town Guard".to_owned(),
+                occupation: Some("Watch Sergeant".to_owned()),
+                description: "A watchful guard in town livery.".to_owned(),
+                bearing: Some(mud2::game::resources::DossierBearing {
+                    attitude: mud2::game::resources::DossierAttitude::Wary,
+                    phrase: "Town Guard eyes you with cold distrust.".to_owned(),
+                    crime_note: Some("They know your crimes.".to_owned()),
+                }),
+                factions: vec!["The Emberbrook Watch".to_owned()],
+                lore: Some("Recruited from Emberbrook itself.".to_owned()),
+                relationships: vec![mud2::game::resources::DossierRelation {
+                    subject: "Emberbrook".to_owned(),
+                    note: "Protects".to_owned(),
+                }],
+                tier: 4,
+                check_line: "(Persuasion 27 vs DC 12 read intent)".to_owned(),
+                failed: false,
+            },
+        },
     ]
 }
 
@@ -893,7 +926,8 @@ fn game_ui_event_coverage(event: &GameUiEvent) {
         | GameUiEvent::ReplOutput { .. }
         | GameUiEvent::PartyInviteReceived { .. }
         | GameUiEvent::PartyInviteClosed
-        | GameUiEvent::OpenCrimeLedger { .. } => {}
+        | GameUiEvent::OpenCrimeLedger { .. }
+        | GameUiEvent::OpenSocialRead { .. } => {}
     }
 }
 

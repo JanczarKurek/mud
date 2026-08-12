@@ -2,6 +2,8 @@ extends: npc
 name: Wolf
 tags: [beast, predator, monster]
 description: A lean grey hunter of the forest edge, always downwind of the flock.
+lore: >-
+  Packs shadow the pasture edge for weeks before they take anything, learning the shepherd's rounds better than the shepherd does.
 level: 3
 loot:
   corpse_despawn_seconds: 60

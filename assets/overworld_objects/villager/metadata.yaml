@@ -2,7 +2,11 @@ extends: npc
 name: Villager
 tags: [humanoid, townsfolk]
 factions: [emberbrook_town]
+occupation: Trader
 description: Just a wandering villager — also dabbles in trade.
+lore: >-
+  Keeps a stall when the weather holds and a pack when it doesn't. Buys
+  gathered goods at a loss to himself, mostly to have someone to talk to.
 # Mobility only: no `hostile:` flag, and placed instances default to
 # stationary roam (single-tile bounds), so the shop stays where it was
 # authored — but an attacked villager can now actually run for it, and walk

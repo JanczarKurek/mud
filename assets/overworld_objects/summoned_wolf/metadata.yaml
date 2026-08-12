@@ -2,6 +2,8 @@ extends: npc
 name: Summoned Wolf
 tags: [beast, predator]
 description: A spectral wolf bound to its summoner's will, fierce but fleeting.
+lore: >-
+  Not a wolf but the idea of one, held together by a summoner's attention. It frays the moment that attention lapses.
 level: 2
 # No loot block: a conjured creature leaves no corpse or drops when it falls.
 stats:

@@ -16,11 +16,44 @@ use crate::combat::damage_type::DamageType;
 use crate::magic::resources::EffectKind;
 use crate::world::direction::{Direction, WallCorner};
 
+/// Which codex ladder a definition is filed under — see `crate::codex`.
+///
+/// `People` entries are earned with an active Persuasion read (right-click →
+/// Details); `Bestiary` entries accrue from passive Perception while you watch
+/// the creature, capped by how many you've killed. `None` opts a definition out
+/// of the codex entirely (summons, scenery-ish NPCs, debug spawns).
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum CodexClass {
+    #[default]
+    People,
+    Bestiary,
+    None,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "gen-schemas", derive(schemars::JsonSchema))]
 pub struct OverworldObjectDefinition {
     pub name: String,
     pub description: DescriptionField,
+    /// Short role label for an NPC — "Watch Sergeant", "Herbalist". Shown
+    /// under the name in the dossier window and in the People codex entry.
+    /// Tier-0 knowledge: visible on any Details read, even a failed one.
+    #[serde(default)]
+    pub occupation: Option<String>,
+    /// Long-form background. Revealed only at the top of a knowledge ladder:
+    /// a high-margin Persuasion read (People tier 3) or a mastered Bestiary
+    /// entry (tier 4). Keep it to a few sentences — codex bodies ride along
+    /// in the whole-log replication snapshot.
+    #[serde(default)]
+    pub lore: Option<String>,
+    /// Which codex ladder this definition belongs to. Defaults to
+    /// [`CodexClass::classify_fallback`] when absent — set it explicitly on
+    /// any NPC the heuristic gets wrong (a silent, dialog-less guard would
+    /// otherwise be filed as a monster).
+    #[serde(default)]
+    pub codex: Option<CodexClass>,
     /// Optional palette grouping label. When set, the editor's object
     /// palette renders all entries sharing a category together under a
     /// collapsible section header. Free-form string; missing values fall
@@ -245,6 +278,14 @@ pub struct OverworldObjectDefinition {
     /// `npc::witness`.
     #[serde(default)]
     pub protects_factions: Vec<String>,
+    /// Human-readable names for the social factions this definition mentions
+    /// in `factions`, `protects_factions`, or `judge.clears_factions`.
+    /// Overrides the title-cased id that `prettify_faction_id` falls back to
+    /// (`emberbrook_watch` → "Emberbrook Watch"). Any definition may declare a
+    /// name for any faction — the registry unions them, so it's conventional
+    /// to put them on the faction's most prominent member.
+    #[serde(default)]
+    pub faction_display_names: HashMap<String, String>,
     /// Marks this NPC as a Judge: a player can pay it to clear their guilt with
     /// the listed factions. See `npc::guilt` and `GameCommand::PayCrime`.
     #[serde(default)]
@@ -1218,6 +1259,26 @@ impl RenderMetadata {
 }
 
 impl OverworldObjectDefinition {
+    /// Which codex ladder this definition belongs to.
+    ///
+    /// An explicit `codex:` in YAML always wins. Otherwise: anything with AI
+    /// but no way to talk to it, sell to it, or be judged by it is a creature;
+    /// everything else is a person. Content authors should set `codex:`
+    /// explicitly whenever a conversational NPC has no `dialog_node` yet.
+    pub fn codex_class(&self) -> CodexClass {
+        if let Some(explicit) = self.codex {
+            return explicit;
+        }
+        if self.npc_behavior.is_none() {
+            return CodexClass::None;
+        }
+        if self.dialog_node.is_none() && self.shopkeeper.is_none() && self.judge.is_none() {
+            CodexClass::Bestiary
+        } else {
+            CodexClass::People
+        }
+    }
+
     /// Returns the raw description template text appropriate for `count` items.
     /// The caller must still interpolate `{count}`, `{count_written}`, `{count_customary}`.
     pub fn description_for_count(&self, count: u32) -> &str {
@@ -1522,6 +1583,27 @@ impl OverworldObjectDefinitions {
         })
     }
 
+    /// Every `faction_display_names` pair declared anywhere in the catalogue,
+    /// as `(faction_id, display_name)`. Fed to `FactionInterner` so a single
+    /// authored override reaches every consumer of the interner.
+    pub fn all_faction_display_names(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.definitions.values().flat_map(|def| {
+            def.faction_display_names
+                .iter()
+                .map(|(id, name)| (id.as_str(), name.as_str()))
+        })
+    }
+
+    /// Display name for one faction id: an authored override if any definition
+    /// declares one, else the title-cased id. Lets the codex render faction
+    /// names without going through the (server-only) `FactionInterner`.
+    pub fn faction_display_name(&self, faction_id: &str) -> String {
+        self.all_faction_display_names()
+            .find(|(id, _)| *id == faction_id)
+            .map(|(_, name)| name.to_owned())
+            .unwrap_or_else(|| prettify_faction_id(faction_id))
+    }
+
     pub fn get(&self, id: &str) -> Option<&OverworldObjectDefinition> {
         self.definitions.get(id)
     }
@@ -1710,6 +1792,23 @@ fn as_mapping_clone(value: &Value, id: &str) -> Mapping {
         .as_mapping()
         .cloned()
         .unwrap_or_else(|| panic!("Resolved YAML for '{}' must be a mapping", id))
+}
+
+/// `emberbrook_watch` → `Emberbrook Watch`. The fallback when no definition
+/// declares a `faction_display_names` override for the id. Lives here rather
+/// than in `npc::guilt` so the (ungated) codex can format faction names too.
+pub fn prettify_faction_id(id: &str) -> String {
+    id.split('_')
+        .filter(|word| !word.is_empty())
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn merge_yaml_values(parent: Value, child: Value) -> Value {

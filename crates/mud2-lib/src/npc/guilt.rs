@@ -41,6 +41,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::npc::hostility::{TagInterner, TagMask};
 use crate::player::components::{ChatLog, PlayerId, PlayerIdentity};
+use crate::world::object_definitions::prettify_faction_id;
 
 /// Interned social factions. Same bit-per-string representation as
 /// [`TagMask`], but a separate interner (and therefore a separate 64-entry
@@ -104,12 +105,33 @@ impl GuiltTier {
 #[derive(Resource, Default)]
 pub struct FactionInterner {
     inner: TagInterner,
+    /// Authored `faction_display_names` overrides, unioned across every
+    /// definition that declares one. Missing ids fall back to title-casing.
+    display: HashMap<String, String>,
 }
 
 impl FactionInterner {
+    /// Interns `all_factions` with no authored display names — every id gets
+    /// the title-cased fallback. Used by tests; the real build site is
+    /// [`Self::build_with_display_names`].
     pub fn build<'a>(all_factions: impl Iterator<Item = &'a str>) -> Self {
         Self {
             inner: TagInterner::build(all_factions),
+            display: HashMap::new(),
+        }
+    }
+
+    /// Interns `all_factions` and records the authored display-name overrides
+    /// collected from every definition's `faction_display_names`.
+    pub fn build_with_display_names<'a>(
+        all_factions: impl Iterator<Item = &'a str>,
+        display_names: impl Iterator<Item = (&'a str, &'a str)>,
+    ) -> Self {
+        Self {
+            inner: TagInterner::build(all_factions),
+            display: display_names
+                .map(|(id, name)| (id.to_owned(), name.to_owned()))
+                .collect(),
         }
     }
 
@@ -118,12 +140,21 @@ impl FactionInterner {
     }
 
     /// Human-readable name for every faction in `mask`, for player-facing
-    /// text. `emberbrook_watch` → `Emberbrook Watch`.
+    /// text: the authored `faction_display_names` override if there is one,
+    /// else the title-cased id (`emberbrook_watch` → `Emberbrook Watch`).
     pub fn display_names(&self, mask: FactionMask) -> Vec<String> {
         mask.bits()
             .filter_map(|bit| self.inner.name_for_bit(bit))
-            .map(prettify_faction_id)
+            .map(|id| self.display_name(id))
             .collect()
+    }
+
+    /// Display name for a single faction id.
+    pub fn display_name(&self, faction_id: &str) -> String {
+        self.display
+            .get(faction_id)
+            .cloned()
+            .unwrap_or_else(|| prettify_faction_id(faction_id))
     }
 
     /// Raw faction ids for every faction in `mask` — the inverse of
@@ -135,23 +166,6 @@ impl FactionInterner {
             .map(str::to_owned)
             .collect()
     }
-}
-
-/// `emberbrook_watch` → `Emberbrook Watch`. A `display_name:` YAML field could
-/// override this later; title-casing the id covers every faction authored so
-/// far.
-fn prettify_faction_id(id: &str) -> String {
-    id.split('_')
-        .filter(|word| !word.is_empty())
-        .map(|word| {
-            let mut chars = word.chars();
-            match chars.next() {
-                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-                None => String::new(),
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
 }
 
 /// The social factions an NPC answers to, resolved from its definition's

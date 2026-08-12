@@ -2,6 +2,8 @@ extends: npc
 name: Giant Rat
 tags: [beast, monster]
 description: A mangy, oversized rodent with beady red eyes and a vicious bite.
+lore: >-
+  Where there is one there are forty, and the forty are why cellars in Emberbrook are floored in stone.
 level: 1
 stats:
   strength: 5

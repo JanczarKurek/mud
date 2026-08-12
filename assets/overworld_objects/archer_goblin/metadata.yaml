@@ -2,6 +2,8 @@ extends: npc
 name: Archer Goblin
 tags: [humanoid, greenskin, monster]
 description: A wiry goblin wielding a crude shortbow. Keep your distance — that's exactly what it wants.
+lore: >-
+  The tribe's marksmen are simply the goblins too slight to hold a line. They compensate by never letting you close one.
 level: 2
 loot:
   corpse_despawn_seconds: 60

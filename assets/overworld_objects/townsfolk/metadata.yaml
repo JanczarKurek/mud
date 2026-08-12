@@ -2,7 +2,12 @@ extends: npc
 name: Townsfolk
 tags: [humanoid, townsfolk]
 factions: [emberbrook_town]
+occupation: Townsfolk
 description: An ordinary villager going about their day.
+lore: >-
+  Emberbrook is small enough that everyone is somebody's cousin. Wrong one of
+  them in the square and the whole market will have heard by dusk.
+codex: people
 # Peaceful: never chases. Roams gently between routine goals when idle.
 npc_behavior:
   hostile: false

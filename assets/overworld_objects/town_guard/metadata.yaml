@@ -1,7 +1,18 @@
 extends: npc
 name: Town Guard
 tags: [humanoid, guard]
+occupation: Watch Sergeant
 description: A watchful guard in town livery, hand never far from the hilt.
+lore: >-
+  The Watch takes its recruits from Emberbrook itself, which is why a guard
+  will chase a sheep-thief as hard as a murderer — half the flock belongs to
+  someone they grew up with.
+# No `dialog_node`, so the People/Bestiary heuristic would file guards as
+# monsters. Say it outright instead.
+codex: people
+faction_display_names:
+  emberbrook_watch: The Emberbrook Watch
+  emberbrook_town: Emberbrook
 level: 4
 faction: player_side
 # Two allegiances: the Watch itself, and the town it protects. Membership in

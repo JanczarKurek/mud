@@ -1,5 +1,7 @@
 #[cfg(feature = "server-sim")]
 pub mod aggro;
+#[cfg(feature = "server-sim")]
+pub mod bestiary;
 pub mod components;
 pub mod debug_overlay;
 #[cfg(feature = "server-sim")]
@@ -85,6 +87,16 @@ impl Plugin for NpcPlugin {
                 Update,
                 crate::npc::social_read::process_social_read
                     .in_set(crate::game::CommandIntercept)
+                    // Queues People-codex updates for `CodexSet::Apply`.
+                    .in_set(crate::codex::CodexSet::Reveal)
+                    .run_if(simulation_active),
+            )
+            // Passive Bestiary observation. Same set, so its tier-ups land in
+            // the same `CodexSet::Apply` pass as any read this frame.
+            .add_systems(
+                Update,
+                crate::npc::bestiary::tick_bestiary_observation
+                    .in_set(crate::codex::CodexSet::Reveal)
                     .run_if(simulation_active),
             );
     }

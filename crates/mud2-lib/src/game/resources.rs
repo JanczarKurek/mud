@@ -191,16 +191,89 @@ pub enum GameUiEvent {
         judge_name: String,
         crimes: Vec<CrimeListing>,
     },
-    /// Open (or refresh) the social-read window for an NPC — the server's
-    /// reply to `GameCommand::RequestSocialRead`. `lines` is the full
-    /// pre-formatted read (attitude, and — with a good enough Persuasion
-    /// margin — crime knowledge and faction grudges); the thin client renders
-    /// the strings verbatim and carries no guilt logic.
+    /// Open (or refresh) the NPC dossier window — the server's reply to
+    /// `GameCommand::RequestSocialRead`. Every field is composed server-side
+    /// and gated by the Persuasion margin, so the thin client carries no
+    /// guilt, faction, or gating logic: it renders whatever is present and
+    /// omits whatever is absent.
     OpenSocialRead {
         npc_object_id: u64,
         npc_name: String,
-        lines: Vec<String>,
+        dossier: NpcDossier,
     },
+}
+
+/// How an NPC regards the reader, coarsest first.
+///
+/// Defined here rather than in `npc::social_read` because that module is
+/// `server-sim`-gated and this is a wire type — the thin client must be able
+/// to name it. **Keep this type ungated.**
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub enum DossierAttitude {
+    Friendly,
+    #[default]
+    Neutral,
+    Wary,
+    Hostile,
+}
+
+/// One read of an NPC, tiered by the Persuasion margin.
+///
+/// Tier 0 (identity) is always present — even a botched read still tells you
+/// who you're looking at. The deeper tiers show up as `Option`/empty-vec
+/// absences rather than placeholder text, so the window can honestly render
+/// "you didn't learn this" and prompt for a better attempt.
+///
+/// Live state only: `bearing` is how they feel about you *right now*. The
+/// durable half of a read (description, allegiances, lore) is also written
+/// into the player's People codex — see `crate::codex`.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+pub struct NpcDossier {
+    // --- tier 0: always, even on a failure ---
+    pub name: String,
+    #[serde(default)]
+    pub occupation: Option<String>,
+    pub description: String,
+    // --- tier 1: the check succeeded ---
+    /// Their bearing toward you. `None` when the read failed outright.
+    #[serde(default)]
+    pub bearing: Option<DossierBearing>,
+    // --- tier 2: margin >= MARGIN_FACTIONS ---
+    /// Faction display names this NPC answers to.
+    #[serde(default)]
+    pub factions: Vec<String>,
+    // --- tier 3: margin >= MARGIN_LORE ---
+    #[serde(default)]
+    pub lore: Option<String>,
+    #[serde(default)]
+    pub relationships: Vec<DossierRelation>,
+    /// Highest tier this read unlocked, 0..=3. Drives the "a sharper read
+    /// might reveal more" hint and the People codex tier recorded for the type.
+    pub tier: u8,
+    /// The audit line, e.g. "(Persuasion 17 vs DC 12 read intent)".
+    pub check_line: String,
+    /// True when the Persuasion check failed outright.
+    pub failed: bool,
+}
+
+/// The live half of a dossier: attitude, and what they've heard about you.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct DossierBearing {
+    pub attitude: DossierAttitude,
+    /// "The Guard eyes you with cold distrust."
+    pub phrase: String,
+    /// What they know of your crimes. Present from `MARGIN_CRIMES` up.
+    #[serde(default)]
+    pub crime_note: Option<String>,
+}
+
+/// One line of the NPC's social web — who they serve, protect, or answer to.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct DossierRelation {
+    /// "Emberbrook Watch" / "Magistrate Orla".
+    pub subject: String,
+    /// "Answers to" / "Protects" / "Can absolve crimes against".
+    pub note: String,
 }
 
 /// One row of the judge's crime ledger, ready for display.

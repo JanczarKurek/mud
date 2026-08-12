@@ -16,6 +16,9 @@ impl Plugin for LogServerPlugin {
             Update,
             process_log_commands
                 .in_set(CommandIntercept)
+                // The codex writer emits `UpsertLogEntry` for newly-revealed
+                // dossiers; running after it lands them the same tick.
+                .after(crate::codex::CodexSet::Apply)
                 .run_if(simulation_active),
         );
     }

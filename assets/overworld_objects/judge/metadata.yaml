@@ -7,6 +7,12 @@ factions: [emberbrook_town]
 description: >-
   A grey-haired magistrate of the Emberbrook Watch, staff of office in hand.
   For the right price, they will strike your name from the ledger.
+occupation: Magistrate of Emberbrook
+lore: >-
+  Appointed by the town rather than the Watch, so the ledger they keep is the
+  town's — a magistrate can forgive a debt the guards would still arrest you
+  over, and does, for a fee.
+codex: people
 level: 3
 # Clears guilt with both town bodies. The fee scales with the debt: a brawl
 # (~40 points) runs about 1 gold, a murder (70) about 1g 1s.

@@ -2,6 +2,8 @@ extends: npc
 name: Goblin Mage
 tags: [humanoid, greenskin, monster]
 description: A hunched goblin in tattered purple robes, clutching a bone staff topped with a glowing crystal. Mutters incantations under its breath.
+lore: >-
+  Goblin sorcery is stolen, not studied — a crystal prised off a dead wizard's staff and waved until something happens.
 level: 3
 loot:
   corpse_despawn_seconds: 60

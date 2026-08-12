@@ -570,6 +570,45 @@ The `text` value supports three count placeholders in addition to the normal `{p
 
 `{count_customary}` uses built-in English customary names (singleton, pair, trio, dozen, baker's dozen, score, gross) and falls back to `{count_written}` when no customary name exists for the quantity.
 
+### `occupation` (NPC templates)
+- Type: string
+- Optional: yes
+- Meaning: short role label shown under the name in the dossier window and in
+  the **People** codex entry — "Watch Sergeant", "Herbalist", "Trader".
+
+Tier-0 knowledge: visible on any Details read, even one whose Persuasion check
+failed. See [The codex](#the-codex-people-and-bestiary).
+
+### `lore` (NPC and creature templates)
+- Type: string
+- Optional: yes
+- Meaning: long-form background, revealed only at the top of a knowledge
+  ladder — a high-margin Persuasion read (People tier 3) or a mastered Bestiary
+  entry (tier 4).
+
+Keep it to a few sentences: codex bodies ride along in the whole-log
+replication snapshot, so every entry is re-sent whenever any of them changes.
+
+```yaml
+lore: >-
+  Packs shadow the pasture edge for weeks before they take anything, learning
+  the shepherd's rounds better than the shepherd does.
+```
+
+### `codex` (NPC and creature templates)
+- Type: enum — `people` | `bestiary` | `none`
+- Optional: yes
+- Meaning: which codex ladder this definition is filed under.
+
+When omitted, it is inferred: a definition with `npc_behavior` but no
+`dialog_node`, `shopkeeper`, or `judge` is a **creature** (`bestiary`);
+anything else with `npc_behavior` is a **person** (`people`); a definition with
+no `npc_behavior` at all is `none` and never enters the codex.
+
+**Set it explicitly whenever the inference is wrong** — most often for a
+conversational NPC that has no `dialog_node` yet. `town_guard` is exactly this
+case, and carries `codex: people`.
+
 ### `extends`
 - Type: string
 - Optional: yes
@@ -1887,6 +1926,67 @@ the perfect crime can't be confessed to.
 
 Reference templates: `town_guard` + `villager` / `townsfolk` + `sheep` (the
 Emberbrook town and Watch), and `judge` (the magistrate on the plaza).
+
+### `faction_display_names` (NPC templates)
+
+Human-readable names for the social factions a definition mentions in
+`factions`, `protects_factions`, or `judge.clears_factions`. Without an
+override, a faction id is title-cased (`emberbrook_watch` → "Emberbrook
+Watch"), which is fine for most ids and wrong for any that wants an article or
+different wording.
+
+```yaml
+faction_display_names:
+  emberbrook_watch: The Emberbrook Watch
+  emberbrook_town: Emberbrook
+```
+
+Any definition may name any faction — the registry unions every declaration at
+load time — so by convention the names live on the faction's most prominent
+member (`town_guard` and `judge` for the Emberbrook pair).
+
+### The codex: People and Bestiary
+
+Two engine-owned sections of the Log window (**L**), filled in as the player
+earns knowledge. Both are keyed by `definition_id`, so knowledge is per
+*type*: reading one `townsfolk` fills in the entry for all of them.
+
+**People** — one dossier per NPC type, earned with the "Details" right-click
+verb (talk range), which rolls Persuasion once per NPC per 60s. What the roll
+reveals scales with its margin:
+
+| Margin | Dossier tier | Adds |
+|---|---|---|
+| (failure) | 0 | `name`, `occupation`, `description` — you can always see a person |
+| ≥ 0 | 1 | their bearing toward you |
+| ≥ 5 | 2 | whether they know of your crimes, and how bad |
+| ≥ 10 | 3 | their `factions`, plus any whose grudge they carry |
+| ≥ 15 | 4 | `lore`, and their ties to other people and factions |
+
+Only the *durable* half is filed into the log: identity, allegiances, and lore.
+Bearing and crime knowledge are live state and stay in the popup, because a
+stale "they hate you" line in a journal would lie.
+
+**Bestiary** — one entry per creature type, filled in passively. While a
+creature is within 12 tiles and visible, the player rolls Perception against
+`8 + level + 2 × (tier - 1)` every 3 seconds, advancing one rung at a time:
+
+| Tier | Name | Reveals |
+|---|---|---|
+| 1 | Sighted | `tags`, `description` |
+| 2 | Studied | `level`, a coarse vitality band from `hp`, `armor`, `block` |
+| 3 | Analyzed | `damage`, damage type, `dodge_bonus`, `hostile_towards` / `flees_from`, `detect_distance_tiles` |
+| 4 | Mastered | `loot` drop names with worded odds, and `lore` |
+
+Tier 4 additionally requires **10 kills** of that creature type — you can watch
+a wolf all day without learning what a wolf is worth. Tiers never skip and
+never regress, and derived numbers are deliberately blurred (a vitality band,
+not the `hp` expression; "often", not `0.6`).
+
+Authoring checklist for a new NPC or creature: set `description` (required),
+add `occupation` for people and `lore` for anything you want a top tier to pay
+out, and set `codex:` explicitly if the inference in
+[`codex`](#codex-npc-and-creature-templates) would file it wrongly.
 
 ### `barks` (NPC templates only)
 

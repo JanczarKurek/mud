@@ -23,7 +23,10 @@ use bevy_terminal::{
 use crate::app::state::{simulation_active, ClientAppState};
 use crate::game::commands::GameCommand;
 use crate::game::resources::{ClientGameState, ClientPendingCommands};
-use crate::log::{LogEntry, LogOwner, LogState, BODY_DIVIDER, NOTES_SECTION, QUESTS_SECTION};
+use crate::log::{
+    LogEntry, LogOwner, LogState, BESTIARY_SECTION, BODY_DIVIDER, NOTES_SECTION, PEOPLE_SECTION,
+    PINNED_SECTIONS,
+};
 use crate::ui::components::HudRoot;
 use crate::ui::movable_window::{
     find_window_by_id, spawn_standard_window, MovableWindow, MovableWindowId,
@@ -177,6 +180,7 @@ pub fn register(app: &mut App) {
         Update,
         (
             handle_body_display_scrolling,
+            handle_bookmark_column_scrolling,
             handle_body_scrollbar_dragging,
             sync_body_display_scrollbar,
         )
@@ -464,8 +468,12 @@ fn spawn_log_panel(commands: &mut Commands, theme: &UiThemeAssets, palette: &Pal
                     row_gap: Val::Px(4.0),
                     padding: UiRect::all(Val::Px(4.0)),
                     border: UiRect::left(Val::Px(1.0)),
+                    // The pinned tabs always fit; script-created sections may
+                    // not. See `handle_bookmark_column_scrolling`.
+                    overflow: Overflow::scroll_y(),
                     ..default()
                 },
+                ScrollPosition::default(),
                 BorderColor::all(palette.border_slot),
                 BackgroundColor(palette.surface_panel),
                 LogPanelBookmarkColumnSlot,
@@ -667,7 +675,7 @@ fn rebuild_log_panel_contents(
     if let Ok(slot) = bookmark_column_slots.single() {
         commands.entity(slot).despawn_related::<Children>();
         commands.entity(slot).with_children(|col| {
-            populate_bookmark_column(col, &palette_copy, selected_section.as_deref());
+            populate_bookmark_column(col, &palette_copy, &sections, selected_section.as_deref());
         });
     }
 
@@ -704,12 +712,24 @@ fn rebuild_log_panel_contents(
     }
 }
 
+/// Placeholder shown when the selected section holds no entries. The codex
+/// sections get their own copy so an empty tab reads as "not earned yet"
+/// rather than as a bug.
+fn empty_section_hint(section: &str) -> &'static str {
+    match section {
+        PEOPLE_SECTION => "(nobody sized up yet)",
+        BESTIARY_SECTION => "(no creatures studied yet)",
+        _ => "(no entries yet)",
+    }
+}
+
+/// Bookmark tabs in display order: the pinned sections first (always shown,
+/// even when empty), then any extra section a script created.
 fn section_list(log: &LogState) -> Vec<String> {
     let mut sections: Vec<String> = log.sections.keys().cloned().collect();
-    let pinned = [QUESTS_SECTION, NOTES_SECTION];
-    let mut out: Vec<String> = pinned.iter().map(|s| s.to_string()).collect();
+    let mut out: Vec<String> = PINNED_SECTIONS.iter().map(|s| s.to_string()).collect();
     for s in sections.drain(..) {
-        if !pinned.contains(&s.as_str()) {
+        if !PINNED_SECTIONS.contains(&s.as_str()) {
             out.push(s);
         }
     }
@@ -719,9 +739,11 @@ fn section_list(log: &LogState) -> Vec<String> {
 fn populate_bookmark_column(
     parent: &mut ChildSpawnerCommands,
     palette: &Palette,
+    sections: &[String],
     selected_section: Option<&str>,
 ) {
-    for section in [QUESTS_SECTION, NOTES_SECTION] {
+    for section in sections {
+        let section = section.as_str();
         let is_selected = selected_section == Some(section);
         let bg = if is_selected {
             palette.surface_raised
@@ -776,7 +798,7 @@ fn populate_subentry_list(
     };
     let Some(section_data) = log.section(section) else {
         parent.spawn((
-            Text::new("(no entries yet)".to_owned()),
+            Text::new(empty_section_hint(section).to_owned()),
             TextFont {
                 font_size: 13.0,
                 ..default()
@@ -1027,6 +1049,43 @@ fn populate_notes_label(
 /// Mouse-wheel scrolling for the body history viewport (mirrors
 /// `handle_dialog_transcript_scrolling`).
 fn handle_body_display_scrolling(
+    wheel_reader: MessageReader<MouseWheel>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    viewports: Query<
+        (
+            &Node,
+            &ComputedNode,
+            &UiGlobalTransform,
+            &mut ScrollPosition,
+        ),
+        With<LogPanelBodyDisplaySlot>,
+    >,
+) {
+    handle_viewport_scrolling(wheel_reader, window_query, viewports);
+}
+
+/// Mouse-wheel scrolling for the bookmark column. The four pinned tabs always
+/// fit, but scripts may create sections up to `MAX_SECTIONS_PER_PLAYER`, which
+/// would otherwise run off the bottom of the panel unreachably.
+fn handle_bookmark_column_scrolling(
+    wheel_reader: MessageReader<MouseWheel>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    viewports: Query<
+        (
+            &Node,
+            &ComputedNode,
+            &UiGlobalTransform,
+            &mut ScrollPosition,
+        ),
+        With<LogPanelBookmarkColumnSlot>,
+    >,
+) {
+    handle_viewport_scrolling(wheel_reader, window_query, viewports);
+}
+
+/// Shared wheel-scroll body, generic over the viewport marker so the body
+/// display and the bookmark column behave identically.
+fn handle_viewport_scrolling<M: Component>(
     mut wheel_reader: MessageReader<MouseWheel>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     mut viewports: Query<
@@ -1036,7 +1095,7 @@ fn handle_body_display_scrolling(
             &UiGlobalTransform,
             &mut ScrollPosition,
         ),
-        With<LogPanelBodyDisplaySlot>,
+        With<M>,
     >,
 ) {
     let Ok(window) = window_query.single() else {
@@ -1205,7 +1264,12 @@ fn populate_buttons(
         ))
         .with_children(|b| {
             b.spawn((
-                Text::new("Save".to_owned()),
+                // Engine bodies are read-only — the editor under them holds
+                // only the player's own annotations, so say so on the button.
+                Text::new(match entry.owner {
+                    LogOwner::Engine => "Save notes".to_owned(),
+                    LogOwner::Player => "Save".to_owned(),
+                }),
                 TextFont {
                     font_size: 13.0,
                     ..default()
@@ -1443,9 +1507,12 @@ fn submit_pending_save(
         .unwrap_or_else(|| entry.title.clone());
 
     match entry.owner {
+        // Section-agnostic: the same "Save notes" path serves quests,
+        // People dossiers, and Bestiary entries alike.
         LogOwner::Engine => {
-            pending.push(GameCommand::SetQuestPlayerNotes {
-                quest_name: subsection.clone(),
+            pending.push(GameCommand::SetLogPlayerNotes {
+                section: section.clone(),
+                subsection: subsection.clone(),
                 text: body_buffer,
             });
         }
@@ -1564,5 +1631,65 @@ fn handle_editor_focus_click(
         if root.focus_id == LOG_NOTES_FOCUS_ID || root.focus_id == LOG_TITLE_FOCUS_ID {
             focus.focused = Some(root.focus_id);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::log::QUESTS_SECTION;
+
+    fn log_with_sections(sections: &[&str]) -> LogState {
+        let mut log = LogState::default();
+        for section in sections {
+            log.upsert(
+                (*section).to_owned(),
+                "entry".to_owned(),
+                LogEntry {
+                    title: "t".to_owned(),
+                    body: "b".to_owned(),
+                    player_notes: String::new(),
+                    owner: LogOwner::Engine,
+                },
+            );
+        }
+        log
+    }
+
+    #[test]
+    fn pinned_sections_always_lead_in_declared_order() {
+        // Empty log: the four tabs still show, so the player can see that a
+        // Bestiary exists before they've studied anything.
+        let sections = section_list(&LogState::default());
+        assert_eq!(sections, PINNED_SECTIONS.map(str::to_owned).to_vec());
+    }
+
+    #[test]
+    fn script_created_sections_are_appended_without_duplicates() {
+        let log = log_with_sections(&[PEOPLE_SECTION, BESTIARY_SECTION, "Rumours"]);
+        let sections = section_list(&log);
+
+        assert_eq!(sections.first().map(String::as_str), Some(QUESTS_SECTION));
+        assert_eq!(sections.last().map(String::as_str), Some("Rumours"));
+
+        let mut sorted = sections.clone();
+        sorted.sort();
+        let before = sorted.len();
+        sorted.dedup();
+        assert_eq!(
+            before,
+            sorted.len(),
+            "a populated pinned section duplicated"
+        );
+    }
+
+    #[test]
+    fn codex_sections_get_their_own_empty_copy() {
+        assert_eq!(empty_section_hint(PEOPLE_SECTION), "(nobody sized up yet)");
+        assert_eq!(
+            empty_section_hint(BESTIARY_SECTION),
+            "(no creatures studied yet)"
+        );
+        assert_eq!(empty_section_hint(NOTES_SECTION), "(no entries yet)");
     }
 }

@@ -28,7 +28,8 @@ pub fn process_log_commands(
     for (queued_player_id, command) in pending_commands.drain_matching(|command| match command {
         claimed @ (GameCommand::UpsertLogEntry { .. }
         | GameCommand::DeleteLogEntry { .. }
-        | GameCommand::SetQuestPlayerNotes { .. }) => Ok(claimed),
+        | GameCommand::SetQuestPlayerNotes { .. }
+        | GameCommand::SetLogPlayerNotes { .. }) => Ok(claimed),
         other => Err(other),
     }) {
         let acting =
@@ -140,29 +141,55 @@ fn apply_command(command: &GameCommand, log: &mut LogState) -> bool {
             }
             log.remove(section, subsection).is_some()
         }
+        // Quests-section shorthand — same path as `SetLogPlayerNotes`.
         GameCommand::SetQuestPlayerNotes { quest_name, text } => {
-            if text.chars().count() > MAX_PLAYER_NOTES_LEN {
-                warn!("SetQuestPlayerNotes rejected: player_notes too long");
-                return false;
-            }
-            let Some(entry) = log.entry_mut(QUESTS_SECTION, quest_name) else {
-                warn!("SetQuestPlayerNotes rejected: quest entry does not exist");
-                return false;
-            };
-            if entry.player_notes == *text {
-                return false;
-            }
-            entry.player_notes = text.clone();
-            true
+            set_player_notes(log, QUESTS_SECTION, quest_name, text)
         }
+        GameCommand::SetLogPlayerNotes {
+            section,
+            subsection,
+            text,
+        } => set_player_notes(log, section, subsection, text),
         _ => false,
     }
+}
+
+/// Write `text` into the `player_notes` field of one entry, in any section.
+/// The engine-owned `body` is never touched, so this is the one write a player
+/// is allowed to make against an engine entry (quest, dossier, or bestiary).
+fn set_player_notes(log: &mut LogState, section: &str, subsection: &str, text: &str) -> bool {
+    if text.chars().count() > MAX_PLAYER_NOTES_LEN {
+        warn!("SetLogPlayerNotes rejected: player_notes too long");
+        return false;
+    }
+    let Some(entry) = log.entry_mut(section, subsection) else {
+        warn!("SetLogPlayerNotes rejected: entry {section}/{subsection} does not exist");
+        return false;
+    };
+    if entry.player_notes == *text {
+        return false;
+    }
+    entry.player_notes = text.to_owned();
+    true
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::log::{LogEntry, LogOwner, NOTES_SECTION};
+    use crate::log::{LogEntry, LogOwner, BESTIARY_SECTION, NOTES_SECTION, PEOPLE_SECTION};
+
+    fn engine_entry(log: &mut LogState, section: &str, subsection: &str) {
+        log.upsert(
+            section.to_owned(),
+            subsection.to_owned(),
+            LogEntry {
+                title: "t".to_owned(),
+                body: "b".to_owned(),
+                player_notes: String::new(),
+                owner: LogOwner::Engine,
+            },
+        );
+    }
 
     fn upsert_player(section: &str, subsection: &str, title: &str, body: &str) -> GameCommand {
         GameCommand::UpsertLogEntry {
@@ -217,12 +244,14 @@ mod tests {
         assert_eq!(entry.player_notes, "scratchpad");
     }
 
+    /// Pointed at the Bestiary rather than Quests to prove the owner guard is
+    /// section-agnostic — codex entries must be as read-only as quest entries.
     #[test]
     fn player_cannot_overwrite_engine_entry() {
         let mut log = LogState::default();
         log.upsert(
-            QUESTS_SECTION.to_owned(),
-            "demo".to_owned(),
+            BESTIARY_SECTION.to_owned(),
+            "wolf".to_owned(),
             LogEntry {
                 title: "engine title".to_owned(),
                 body: "engine body".to_owned(),
@@ -231,12 +260,12 @@ mod tests {
             },
         );
         let mutated = apply_command(
-            &upsert_player(QUESTS_SECTION, "demo", "hax", "hax"),
+            &upsert_player(BESTIARY_SECTION, "wolf", "hax", "hax"),
             &mut log,
         );
         assert!(!mutated);
         assert_eq!(
-            log.entry(QUESTS_SECTION, "demo").unwrap().body,
+            log.entry(BESTIARY_SECTION, "wolf").unwrap().body,
             "engine body"
         );
     }
@@ -244,25 +273,53 @@ mod tests {
     #[test]
     fn player_cannot_delete_engine_entry() {
         let mut log = LogState::default();
-        log.upsert(
-            QUESTS_SECTION.to_owned(),
-            "demo".to_owned(),
-            LogEntry {
-                title: "t".to_owned(),
-                body: "b".to_owned(),
-                player_notes: String::new(),
-                owner: LogOwner::Engine,
-            },
-        );
+        engine_entry(&mut log, BESTIARY_SECTION, "wolf");
         let mutated = apply_command(
             &GameCommand::DeleteLogEntry {
-                section: QUESTS_SECTION.to_owned(),
-                subsection: "demo".to_owned(),
+                section: BESTIARY_SECTION.to_owned(),
+                subsection: "wolf".to_owned(),
             },
             &mut log,
         );
         assert!(!mutated);
-        assert!(log.entry(QUESTS_SECTION, "demo").is_some());
+        assert!(log.entry(BESTIARY_SECTION, "wolf").is_some());
+    }
+
+    #[test]
+    fn set_log_player_notes_works_on_any_section() {
+        let mut log = LogState::default();
+        engine_entry(&mut log, PEOPLE_SECTION, "villager");
+        engine_entry(&mut log, BESTIARY_SECTION, "wolf");
+
+        for (section, subsection) in [(PEOPLE_SECTION, "villager"), (BESTIARY_SECTION, "wolf")] {
+            let mutated = apply_command(
+                &GameCommand::SetLogPlayerNotes {
+                    section: section.to_owned(),
+                    subsection: subsection.to_owned(),
+                    text: "sells apples cheap".to_owned(),
+                },
+                &mut log,
+            );
+            assert!(mutated, "{section} notes should be writable");
+            let entry = log.entry(section, subsection).unwrap();
+            assert_eq!(entry.player_notes, "sells apples cheap");
+            // The engine body is never touched by a notes write.
+            assert_eq!(entry.body, "b");
+        }
+    }
+
+    #[test]
+    fn set_log_player_notes_requires_existing_entry() {
+        let mut log = LogState::default();
+        let mutated = apply_command(
+            &GameCommand::SetLogPlayerNotes {
+                section: PEOPLE_SECTION.to_owned(),
+                subsection: "nobody".to_owned(),
+                text: "hi".to_owned(),
+            },
+            &mut log,
+        );
+        assert!(!mutated);
     }
 
     #[test]

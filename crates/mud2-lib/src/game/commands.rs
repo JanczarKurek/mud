@@ -460,8 +460,19 @@ pub enum GameCommand {
     /// Update the player-editable notes tail under a quest entry. Only the
     /// `player_notes` field is mutated; the engine-owned body is untouched.
     /// Rejected when the targeted quest entry does not exist.
+    ///
+    /// Quests-section shorthand for [`GameCommand::SetLogPlayerNotes`], kept
+    /// so older clients keep working; the server delegates to the same path.
     SetQuestPlayerNotes {
         quest_name: String,
+        text: String,
+    },
+    /// Update the player-editable notes tail on *any* log entry, engine- or
+    /// player-owned — quests, People dossiers, Bestiary entries alike. Only
+    /// `player_notes` is mutated. Rejected when the entry does not exist.
+    SetLogPlayerNotes {
+        section: String,
+        subsection: String,
         text: String,
     },
     /// Spend skill points on `skill`, raising its rank by up to `ranks` (the

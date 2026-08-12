@@ -182,9 +182,9 @@ pub fn apply_game_ui_events(
             GameUiEvent::OpenSocialRead {
                 npc_object_id,
                 npc_name,
-                lines,
+                dossier,
             } => {
-                social_read_state.open(npc_object_id, npc_name, lines);
+                social_read_state.open(npc_object_id, npc_name, dossier);
             }
         }
     }

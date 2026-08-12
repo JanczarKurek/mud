@@ -141,9 +141,12 @@ impl Plugin for WorldServerPlugin {
         ))
         // Social factions get their own interner (and their own 64-entry
         // budget) so allegiances never crowd out identity tags.
-        .insert_resource(crate::npc::guilt::FactionInterner::build(
-            object_definitions.all_faction_strings(),
-        ))
+        .insert_resource(
+            crate::npc::guilt::FactionInterner::build_with_display_names(
+                object_definitions.all_faction_strings(),
+                object_definitions.all_faction_display_names(),
+            ),
+        )
         // The guilt queues live here rather than in `NpcPlugin` because their
         // *producers* (the damage drain, the player death handler) are always
         // registered while `NpcPlugin` is optional — notably in test apps.

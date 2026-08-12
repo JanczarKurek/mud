@@ -2,6 +2,8 @@ extends: npc
 name: Goblin
 tags: [humanoid, greenskin, monster]
 description: A wiry green nuisance with a mean stare and quick hands.
+lore: >-
+  Goblins raid in threes and flee in ones. What they cannot carry they break, on the theory that nobody else should have it either.
 level: 2
 loot:
   corpse_despawn_seconds: 60

@@ -2,6 +2,8 @@ extends: npc
 name: Ogre Brute
 tags: [humanoid, giant, monster]
 description: A slab-shouldered ogre dragging a tree-trunk club. It smells you before it sees you.
+lore: >-
+  Ogres claim territory by smell and defend it by weight. The tree-trunk clubs are not weapons so much as furniture they refuse to put down.
 level: 10
 # Brute: full BAB track — accurate for its level, like the Cyclops.
 bab_track: full

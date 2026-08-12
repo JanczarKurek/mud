@@ -2,6 +2,8 @@ extends: npc
 name: Skeleton
 tags: [undead, monster]
 description: A reanimated skeleton, its empty eye sockets flickering with a sickly green glow.
+lore: >-
+  Bound bone remembers only the last order it was given, and keeps giving it. Break the binding and the whole thing simply falls over.
 level: 3
 stats:
   strength: 7

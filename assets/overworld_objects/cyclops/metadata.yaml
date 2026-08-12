@@ -2,6 +2,8 @@ extends: npc
 name: Cyclops
 tags: [humanoid, giant, monster]
 description: A hulking one-eyed giant with a massive club and a short temper.
+lore: >-
+  One eye means no depth perception, which is why a cyclops swings wide and often. Get inside the arc and it is nearly harmless; stay outside it and you are nearly dead.
 level: 8
 # Brute: full BAB track so it stays accurate at its level (most creatures use
 # the default ¾ track). Its to-hit is now bab_at(full, 8) + STR_mod, not raw +8.

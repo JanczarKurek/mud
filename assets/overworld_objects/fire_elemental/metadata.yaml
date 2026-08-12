@@ -2,6 +2,8 @@ extends: npc
 name: Fire Elemental
 tags: [elemental, monster]
 description: A swirling vortex of living flame with a molten core. Heat rises from it in shimmering waves.
+lore: >-
+  It has no interest in you and no way to express that. Fire elementals simply continue in whatever direction they were last burning.
 level: 6
 loot:
   corpse_despawn_seconds: 45

@@ -2,6 +2,7 @@ pub mod accounts;
 pub mod app;
 pub mod assets;
 pub mod client_effects;
+pub mod codex;
 pub mod combat;
 pub mod crafting;
 pub mod diagnostics;
