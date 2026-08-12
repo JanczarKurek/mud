@@ -190,6 +190,7 @@ impl Plugin for UiPlugin {
                 apply_game_ui_events.after(crate::network::sets::NetClientReceive),
                 toggle_cursor_mode,
                 manage_open_containers,
+                crate::ui::container_panel::handle_container_take_all_click,
                 sync_vital_bars,
                 sync_xp_bar,
                 consume_level_up_toasts,

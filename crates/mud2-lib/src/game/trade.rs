@@ -113,6 +113,13 @@ pub struct ClientTradeView {
     /// recomputed client-side.
     #[serde(default)]
     pub sale_credit_copper: u32,
+    /// What the merchant is asking for everything currently in their column,
+    /// in copper, Persuasion included. Always 0 for player-to-player trades.
+    ///
+    /// Same guarantee as `sale_credit_copper`: computed by the pricing
+    /// functions the commit path uses, never recomputed client-side.
+    #[serde(default)]
+    pub total_owed_copper: u32,
 }
 
 /// Per-ware projection used by the trade panel's Browse Wares list.
@@ -262,6 +269,7 @@ impl TradeSession {
         partner_kind: TradePartnerKind,
         wares: Option<Vec<WareView>>,
         sale_credit_copper: u32,
+        total_owed_copper: u32,
     ) -> Option<ClientTradeView> {
         let (us, them, our_ready, their_ready, our_confirmed, their_confirmed) =
             match self.participants {
@@ -316,6 +324,7 @@ impl TradeSession {
             their_confirmed,
             wares,
             sale_credit_copper,
+            total_owed_copper,
         })
     }
 
@@ -922,44 +931,60 @@ fn handle_confirm_trade(
         session.clone()
     };
 
-    let (success, players_to_notify): (bool, Vec<PlayerId>) = match session_snapshot.participants {
-        TradeParticipants::PlayerToPlayer { a, b } => {
-            let ok = commit_player_to_player_trade(
-                &session_snapshot,
-                a,
-                b,
-                definitions,
-                player_inventory_query,
-                max_carry_query,
-            );
-            (ok, vec![a, b])
-        }
-        TradeParticipants::PlayerToShop {
-            player,
-            shop_object_id,
-        } => {
-            let persuasion_ranks = skill_query
-                .iter()
-                .find(|(identity, _)| identity.id == player)
-                .map(|(_, sheet)| sheet.rank(crate::player::skills::Skill::Persuasion))
-                .unwrap_or(0);
-            let ok = commit_player_to_shop_trade(
-                &session_snapshot,
+    let (result, players_to_notify): (CommitResult, Vec<PlayerId>) =
+        match session_snapshot.participants {
+            TradeParticipants::PlayerToPlayer { a, b } => {
+                let ok = commit_player_to_player_trade(
+                    &session_snapshot,
+                    a,
+                    b,
+                    definitions,
+                    player_inventory_query,
+                    max_carry_query,
+                );
+                let result = if ok {
+                    CommitResult::Completed
+                } else {
+                    CommitResult::Failed
+                };
+                (result, vec![a, b])
+            }
+            TradeParticipants::PlayerToShop {
                 player,
                 shop_object_id,
-                definitions,
-                player_inventory_query,
-                max_carry_query,
-                stockpile_query,
-                persuasion_ranks,
-            );
-            (ok, vec![player])
+            } => {
+                let persuasion_ranks = skill_query
+                    .iter()
+                    .find(|(identity, _)| identity.id == player)
+                    .map(|(_, sheet)| sheet.rank(crate::player::skills::Skill::Persuasion))
+                    .unwrap_or(0);
+                let ok = commit_player_to_shop_trade(
+                    &session_snapshot,
+                    player,
+                    shop_object_id,
+                    definitions,
+                    player_inventory_query,
+                    max_carry_query,
+                    stockpile_query,
+                    persuasion_ranks,
+                );
+                (ok, vec![player])
+            }
+        };
+
+    if result == CommitResult::Refused {
+        // Keep the session alive and just unlock it, so the player can adjust
+        // the basket instead of losing it. The mutation makes the projection
+        // re-emit the trade state, which un-sticks the panel's Ready/Confirm.
+        if let Some(session) = active_trades.sessions.get_mut(&session_id) {
+            session.reset_locks();
         }
-    };
+        return;
+    }
 
     active_trades.remove(session_id);
 
-    let outcome = if success {
+    let outcome = if result == CommitResult::Completed {
         TradeOutcome::Completed
     } else {
         TradeOutcome::Cancelled
@@ -1089,6 +1114,20 @@ fn format_copper(copper: u32) -> String {
     out.trim_end().to_owned()
 }
 
+/// Outcome of a commit attempt.
+///
+/// `Refused` is the player-fixable case (can't afford it, nowhere to put the
+/// change): nothing is committed, but the session survives so the basket the
+/// player assembled isn't thrown away — they can drop an item and re-confirm.
+/// `Failed` is a hard abort (stale offers, missing shop) and cancels.
+#[cfg(feature = "server-sim")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CommitResult {
+    Completed,
+    Failed,
+    Refused,
+}
+
 #[cfg(feature = "server-sim")]
 fn commit_player_to_shop_trade(
     session: &TradeSession,
@@ -1099,46 +1138,46 @@ fn commit_player_to_shop_trade(
     max_carry_query: &Query<&MaxCarryWeight, With<Player>>,
     stockpile_query: &mut Query<(&OverworldObject, &mut Stockpile)>,
     persuasion_ranks: u8,
-) -> bool {
+) -> CommitResult {
     let entity = player_inventory_query
         .iter()
         .find(|(_, identity, _, _, _, _, _, _, _)| identity.id == player)
         .map(|(e, _, _, _, _, _, _, _, _)| e);
     let Some(entity) = entity else {
-        return false;
+        return CommitResult::Failed;
     };
     let mut inv = match player_inventory_query.get(entity) {
         Ok((_, _, inventory, _, _, _, _, _, _)) => inventory.clone(),
-        Err(_) => return false,
+        Err(_) => return CommitResult::Failed,
     };
     let max_carry = max_carry_query.get(entity).copied().unwrap_or_default();
 
     // Validate player coin offers against current inventory.
     if !validate_offers_against(&session.offers_a, &inv) {
-        return false;
+        return CommitResult::Failed;
     }
 
     // Total price the merchant is asking for (sum of ware price * quantity).
     let mut total_owed_copper: u32 = 0;
     for offer in &session.offers_b {
         let OfferSource::Stockpile { ware_index } = &offer.source else {
-            return false;
+            return CommitResult::Failed;
         };
         let stocks = stockpile_query
             .iter()
             .find(|(object, _)| object.object_id == shop_object_id);
         let Some((_, stockpile)) = stocks else {
-            return false;
+            return CommitResult::Failed;
         };
         let Some(entry) = stockpile.wares.get(*ware_index) else {
-            return false;
+            return CommitResult::Failed;
         };
         if entry.type_id != offer.type_id {
-            return false;
+            return CommitResult::Failed;
         }
         if let StockMode::Finite(n) = entry.stock {
             if n < offer.quantity {
-                return false;
+                return CommitResult::Failed;
             }
         }
         let modified_price =
@@ -1158,34 +1197,43 @@ fn commit_player_to_shop_trade(
         .map(|entry| offer_credit_copper(entry, definitions, persuasion_ranks))
         .fold(0u32, |acc, v| acc.saturating_add(v));
 
-    if total_offered_copper < total_owed_copper {
-        let shortfall = total_owed_copper - total_offered_copper;
-        if let Ok((_, _, _, mut chat_log, _, _, _, _, _)) = player_inventory_query.get_mut(entity) {
-            chat_log.push_narrator(format!(
-                "The merchant frowns. \"Short by {} — bring more coin.\"",
-                format_copper(shortfall)
-            ));
-        }
-        return false;
+    // Remove player's offers from the inventory snapshot. This runs *before*
+    // the purse is tapped and the change is minted, so the slots freed by the
+    // sold goods are available to hold the coin that replaces them — and so
+    // coins the player dragged in are not counted twice (once as an offer,
+    // once as purse).
+    if !remove_offered_from(&session.offers_a, &mut inv) {
+        return CommitResult::Failed;
     }
 
-    // Remove player's offers from the inventory snapshot. This runs *before*
-    // the change is minted so the slots freed by the sold goods are available
-    // to hold the coin that replaces them.
-    if !remove_offered_from(&session.offers_a, &mut inv) {
-        return false;
+    // Whatever the offered goods and coin don't cover, the merchant takes
+    // straight out of the purse — no coin-dragging required for a plain
+    // purchase. `spend_copper` melts the purse and re-mints the change on its
+    // own clone, so a failure here leaves `inv` untouched.
+    let purse_paid_copper = total_owed_copper.saturating_sub(total_offered_copper);
+    if purse_paid_copper > 0
+        && !crate::game::currency::spend_copper(&mut inv, purse_paid_copper, definitions)
+    {
+        if let Ok((_, _, _, mut chat_log, _, _, _, _, _)) = player_inventory_query.get_mut(entity) {
+            chat_log.push_narrator(format!(
+                "The merchant frowns. \"Short by {} — you carry only {}.\"",
+                format_copper(purse_paid_copper),
+                format_copper(crate::game::currency::purse_total_copper(&inv))
+            ));
+        }
+        return CommitResult::Refused;
     }
 
     // Insert the wares into the snapshot.
     if !insert_offers_into(&session.offers_b, &mut inv, definitions, &max_carry) {
-        return false;
+        return CommitResult::Failed;
     }
 
     // Pay out the difference. `deposit_copper` may leave partial coin behind
     // when it fails, but `inv` is a snapshot that is only committed below, so
     // bailing here leaves the player's real inventory untouched — better than
     // taking their goods and swallowing the payment.
-    let change_copper = total_offered_copper - total_owed_copper;
+    let change_copper = total_offered_copper.saturating_sub(total_owed_copper);
     if change_copper > 0
         && !crate::game::currency::deposit_copper(&mut inv, change_copper, definitions)
     {
@@ -1195,7 +1243,7 @@ fn commit_player_to_shop_trade(
                 format_copper(change_copper)
             ));
         }
-        return false;
+        return CommitResult::Refused;
     }
 
     // Commit: write the inventory snapshot back and decrement finite stocks.
@@ -1207,6 +1255,11 @@ fn commit_player_to_shop_trade(
             chat_log.push_narrator(format!(
                 "Trade complete. The merchant counts out {}.",
                 format_copper(change_copper)
+            ));
+        } else if purse_paid_copper > 0 {
+            chat_log.push_narrator(format!(
+                "Trade complete. The merchant takes {} from your purse.",
+                format_copper(purse_paid_copper)
             ));
         } else {
             chat_log.push_narrator("Trade complete.");
@@ -1248,7 +1301,7 @@ fn commit_player_to_shop_trade(
             }
         }
     }
-    true
+    CommitResult::Completed
 }
 
 /// What the merchant credits the player for one offer entry, in copper.
@@ -1879,5 +1932,167 @@ mod sell_tests {
         };
         infinite.restock(3);
         assert!(matches!(infinite.stock, StockMode::Infinite));
+    }
+}
+
+/// End-to-end purchases through the real command pipeline: the merchant
+/// settles whatever the player's column doesn't cover out of the purse.
+#[cfg(all(test, feature = "server-sim"))]
+mod purchase_tests {
+    use super::*;
+    use crate::game::commands::GameCommand;
+    use crate::player::components::{ChatLog, Inventory, InventoryStack};
+    use crate::world::components::SpaceResident;
+    use crate::world::WorldConfig;
+    use bevy::prelude::{App, Entity};
+
+    const APPLE_PRICE: u32 = 10;
+
+    /// Player at (10,10) with `purse` coin stacks, a shopkeeper next door
+    /// selling apples at `APPLE_PRICE`.
+    fn setup(purse: &[(&str, u32)]) -> (App, Entity) {
+        let mut app = crate::test_support::TestServerApp::new().build();
+        let player = crate::test_support::spawn_server_player(&mut app, 1, 10, 10);
+        {
+            let mut inventory = app.world_mut().get_mut::<Inventory>(player).unwrap();
+            for (index, (type_id, quantity)) in purse.iter().enumerate() {
+                inventory.backpack_slots[index] = Some(InventoryStack::item(
+                    (*type_id).to_owned(),
+                    ObjectProperties::new(),
+                    *quantity,
+                ));
+            }
+        }
+        let space_id = app.world().resource::<WorldConfig>().current_space_id;
+        let object_id = app
+            .world_mut()
+            .resource_mut::<crate::world::object_registry::ObjectRegistry>()
+            .allocate_runtime_id("shopkeeper");
+        app.world_mut().spawn((
+            OverworldObject {
+                object_id,
+                definition_id: "shopkeeper".to_owned(),
+                placement_seq: 0,
+            },
+            SpaceResident { space_id },
+            TilePosition::ground(11, 10),
+            Shopkeeper,
+            Stockpile {
+                wares: vec![StockEntry {
+                    type_id: "apple".to_owned(),
+                    price_copper: APPLE_PRICE,
+                    stock: StockMode::Infinite,
+                }],
+            },
+        ));
+
+        for command in [
+            GameCommand::InitiateTrade {
+                target: TradeTarget::Shopkeeper { object_id },
+            },
+            GameCommand::BrowseShopBuy {
+                session_id: 1,
+                ware_index: 0,
+                quantity: 1,
+            },
+        ] {
+            crate::test_support::push_player_command(&mut app, 1, command);
+            app.update();
+        }
+        (app, player)
+    }
+
+    fn confirm(app: &mut App) {
+        for command in [
+            GameCommand::ToggleTradeReady { session_id: 1 },
+            GameCommand::ConfirmTrade { session_id: 1 },
+        ] {
+            crate::test_support::push_player_command(app, 1, command);
+            app.update();
+        }
+    }
+
+    fn purse_of(app: &App, player: Entity) -> u32 {
+        crate::game::currency::purse_total_copper(app.world().get::<Inventory>(player).unwrap())
+    }
+
+    fn apples(app: &App, player: Entity) -> u32 {
+        app.world()
+            .get::<Inventory>(player)
+            .unwrap()
+            .backpack_slots
+            .iter()
+            .flatten()
+            .filter(|stack| stack.type_id == "apple")
+            .map(|stack| stack.quantity)
+            .sum()
+    }
+
+    #[test]
+    fn an_empty_offer_column_is_paid_straight_out_of_the_purse() {
+        let (mut app, player) = setup(&[(SILVER_TYPE_ID, 1)]);
+        confirm(&mut app);
+
+        assert_eq!(apples(&app, player), 1, "the apple must change hands");
+        assert_eq!(
+            purse_of(&app, player),
+            COPPER_PER_SILVER - APPLE_PRICE,
+            "exactly the asking price leaves the purse"
+        );
+        assert!(
+            app.world().resource::<ActiveTrades>().sessions.is_empty(),
+            "a completed trade closes its session"
+        );
+    }
+
+    #[test]
+    fn offered_coin_is_credited_once_and_the_purse_covers_the_rest() {
+        // 4c offered + 12c left in the purse; the apple costs 10c. If the
+        // offered stack were counted twice the purse would end at 10c.
+        let (mut app, player) = setup(&[(COPPER_TYPE_ID, 4), (SILVER_TYPE_ID, 1)]);
+        crate::test_support::push_player_command(
+            &mut app,
+            1,
+            GameCommand::OfferTradeItem {
+                session_id: 1,
+                source: ItemSlotRef::Backpack(0),
+                quantity: 4,
+            },
+        );
+        app.update();
+        confirm(&mut app);
+
+        assert_eq!(apples(&app, player), 1);
+        assert_eq!(
+            purse_of(&app, player),
+            COPPER_PER_SILVER + 4 - APPLE_PRICE,
+            "the offered coin must not be charged twice"
+        );
+    }
+
+    #[test]
+    fn a_short_purse_refuses_without_closing_the_session() {
+        let (mut app, player) = setup(&[(COPPER_TYPE_ID, APPLE_PRICE - 1)]);
+        confirm(&mut app);
+
+        assert_eq!(apples(&app, player), 0, "no goods on a refused purchase");
+        assert_eq!(
+            purse_of(&app, player),
+            APPLE_PRICE - 1,
+            "a refused purchase must not touch the purse"
+        );
+        assert!(
+            app.world()
+                .resource::<ActiveTrades>()
+                .sessions
+                .contains_key(&1),
+            "the session must survive so the basket isn't lost"
+        );
+        let chat_log = app.world().get::<ChatLog>(player).unwrap();
+        assert!(
+            chat_log.lines.iter().any(|line| line.contains("Short by")),
+            "expected the shortfall line; got {:?}",
+            chat_log.lines
+        );
     }
 }

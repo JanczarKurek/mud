@@ -506,6 +506,14 @@ pub struct ContainerPanelUndockButton {
     pub panel_id: usize,
 }
 
+/// "Take all" button in the body of a container/pouch panel. Carries the
+/// `panel_id` so the handler can resolve the underlying container through
+/// `DockedPanelState`, exactly like the undock arrow does.
+#[derive(Component)]
+pub struct ContainerTakeAllButton {
+    pub panel_id: usize,
+}
+
 /// Title-bar dock-back arrow on a floating container/pouch window.
 #[derive(Component)]
 pub struct ContainerPanelDockButton {

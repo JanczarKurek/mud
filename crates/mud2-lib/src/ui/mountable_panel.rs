@@ -133,6 +133,18 @@ pub trait MountablePanel: Send + Sync + 'static {
         None
     }
 
+    /// Extra title-bar buttons, spawned just before the dock arrow and the
+    /// close-X. The docked variant builds its own title bar (see
+    /// `spawn_docked_panel_with_extras`), so implementors that want a button
+    /// in both places populate both. Default: nothing.
+    fn spawn_title_extras(
+        _bar: &mut ChildSpawnerCommands,
+        _key: Self::Key,
+        _theme: &UiThemeAssets,
+        _palette: &Palette,
+    ) {
+    }
+
     /// Build the body contents (the same one used by the docked variant
     /// at startup). Called when the floating window is spawned.
     fn spawn_body(
@@ -308,7 +320,10 @@ fn spawn_floating_window_for<P: MountablePanel>(
 
     let dock_image = theme.dock_button.clone();
     let close_image = theme.close_button.clone();
+    let title_theme = theme.clone();
+    let title_palette = *palette;
     commands.entity(title_bar).with_children(|bar| {
+        P::spawn_title_extras(bar, key, &title_theme, &title_palette);
         spawn_themed_icon_button(bar, dock_image, P::DockButton::new(key));
         spawn_themed_icon_button(bar, close_image, P::FloatingCloseButton::new(key));
     });

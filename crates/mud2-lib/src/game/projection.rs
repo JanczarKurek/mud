@@ -35,7 +35,9 @@ use crate::game::resources::{ClientGameState, ClientStateRevisions, GameEvent, P
 #[cfg(feature = "server-sim")]
 use crate::game::shop::{Shopkeeper, StockMode, Stockpile};
 #[cfg(feature = "server-sim")]
-use crate::game::trade::{ActiveTrades, TradeParticipants, TradePartnerKind, WareView};
+use crate::game::trade::{
+    ActiveTrades, OfferSource, TradeParticipants, TradePartnerKind, WareView,
+};
 #[cfg(feature = "server-sim")]
 use crate::magic::effects::MagicEffects;
 #[cfg(feature = "server-sim")]
@@ -1378,7 +1380,9 @@ fn emit_trade_events(
                                 TradePartnerKind::Player,
                                 None,
                                 // Players don't buy from each other for coin
-                                // by the item — there's nothing to credit.
+                                // by the item — there's nothing to credit or
+                                // to owe.
+                                0,
                                 0,
                             )
                         }
@@ -1442,12 +1446,31 @@ fn emit_trade_events(
                                     )
                                 })
                                 .fold(0u32, |acc, v| acc.saturating_add(v));
+                            // And what he's asking for the basket. Prices come
+                            // from the same `vendor_price_for` output already
+                            // projected into `wares`, so this cannot drift from
+                            // what the commit charges.
+                            let total_owed = session
+                                .offers_b
+                                .iter()
+                                .map(|entry| match entry.source {
+                                    OfferSource::Stockpile { ware_index } => wares
+                                        .as_ref()
+                                        .and_then(|w| w.get(ware_index))
+                                        .map(|ware| {
+                                            ware.price_copper.saturating_mul(entry.quantity)
+                                        })
+                                        .unwrap_or(0),
+                                    OfferSource::PlayerSlot(_) => 0,
+                                })
+                                .fold(0u32, |acc, v| acc.saturating_add(v));
                             session.project_for(
                                 local_player_id,
                                 partner_name,
                                 TradePartnerKind::Shopkeeper,
                                 wares,
                                 sale_credit,
+                                total_owed,
                             )
                         }
                     }

@@ -8,7 +8,8 @@ use crate::combat::scheduled::{
     projectile_travel_seconds, ImpactKind, ScheduledImpact, ScheduledImpacts,
 };
 use crate::game::commands::{
-    GameCommand, InspectTarget, ItemDestination, ItemReference, ItemSlotRef, MoveDelta, UseTarget,
+    ContainerRef, GameCommand, InspectTarget, ItemDestination, ItemReference, ItemSlotRef,
+    MoveDelta, UseTarget,
 };
 use crate::game::helpers::{
     colliders_in_space, column_members, player_space_id, refuse, AthleticsQuery,
@@ -643,6 +644,22 @@ pub fn process_game_commands(
                     &mut command_outputs.pending_noise,
                     &mut command_outputs.pending_stack_settle,
                     &mut commands,
+                );
+            }
+            GameCommand::TakeAllFromContainer { container } => {
+                if source_space_id.is_none() {
+                    continue;
+                }
+                handle_take_all_from_container(
+                    player_entity,
+                    container,
+                    &mut container_query,
+                    &object_query,
+                    &mut player_queries.p2(),
+                    &command_outputs.player_carry,
+                    &definitions,
+                    &space_authority.floor_maps,
+                    &space_authority.floor_defs,
                 );
             }
             GameCommand::TakeFromStack {
@@ -3693,6 +3710,177 @@ fn apply_buffs_target(
         existing.as_deref_mut(),
         commands,
     );
+}
+
+/// Empty a container into the player's backpack in one go.
+///
+/// Whole stacks move — properties, modifiers and pouch contents intact — so
+/// this is the bulk form of the drag path, not a `handle_give_item`-style
+/// mint. Anything that won't fit (no room, over the carry cap) is left where
+/// it is and counted for the closing narrator line. Everything happens on
+/// drafts that are only written back once both sides are known good.
+fn handle_take_all_from_container(
+    player_entity: Entity,
+    container: ContainerRef,
+    container_query: &mut Query<&mut Container>,
+    object_query: &WorldObjectQuery,
+    player_query: &mut PlayerActorQuery,
+    max_carry_query: &Query<&MaxCarryWeight, With<Player>>,
+    definitions: &OverworldObjectDefinitions,
+    floor_maps: &crate::world::floor_map::FloorMaps,
+    floor_defs: &crate::world::floor_definitions::FloorTilesetDefinitions,
+) {
+    let max_carry = max_carry_query
+        .get(player_entity)
+        .copied()
+        .unwrap_or_default();
+    let Ok((_, player_identity, inventory_state, _, space_resident, player_position, _, _, _)) =
+        player_query.get(player_entity)
+    else {
+        return;
+    };
+    let player_id = player_identity.id;
+    let mut inventory = inventory_state.clone();
+    let space_id = space_resident.space_id;
+    let player_position = *player_position;
+
+    // Read the source slots. World containers get the same reach check
+    // `handle_open_container` applies — a one-click bulk move should not be a
+    // way to loot a chest you have since walked away from.
+    let (container_entity, mut source_slots) = match container {
+        ContainerRef::World { object_id } => {
+            let Some((entity, tile_position)) =
+                find_object_entity(object_id, space_id, object_query)
+            else {
+                return;
+            };
+            let reachable = FloorGeometry::server(floor_maps, floor_defs).reachable(
+                &player_position,
+                &tile_position,
+                space_id,
+            );
+            let Ok(container) = container_query.get(entity) else {
+                return;
+            };
+            if !reachable {
+                refuse(player_id, "TakeAllFromContainer", "out of reach");
+                if let Ok((_, _, _, mut chat_log, _, _, _, _, _)) =
+                    player_query.get_mut(player_entity)
+                {
+                    chat_log.push_narrator("That container is out of reach.");
+                }
+                return;
+            }
+            (Some(entity), container.slots.clone())
+        }
+        ContainerRef::PouchInBackpack { backpack_slot } => {
+            let Some(Some(pouch)) = inventory.backpack_slots.get(backpack_slot) else {
+                return;
+            };
+            let Some(slots) = pouch.contained_slots.clone() else {
+                return;
+            };
+            (None, slots)
+        }
+    };
+
+    let mut taken = 0usize;
+    let mut left_behind = 0usize;
+    for slot in source_slots.iter_mut() {
+        let Some(stack) = slot.take() else { continue };
+        if would_overload_carry(&inventory, &stack, &max_carry, definitions) {
+            *slot = Some(stack);
+            left_behind += 1;
+            continue;
+        }
+        match place_stack_in_backpack(&mut inventory, stack, definitions, container) {
+            None => taken += 1,
+            Some(returned) => {
+                *slot = Some(returned);
+                left_behind += 1;
+            }
+        }
+    }
+
+    if taken == 0 && left_behind == 0 {
+        if let Ok((_, _, _, mut chat_log, _, _, _, _, _)) = player_query.get_mut(player_entity) {
+            chat_log.push_narrator("There's nothing to take.");
+        }
+        return;
+    }
+
+    // Commit the source side first: for a pouch that means writing into the
+    // very inventory draft we are about to install, so it has to happen
+    // before the draft is moved into the component.
+    if taken > 0 {
+        match container {
+            ContainerRef::World { .. } => {
+                if let Some(entity) = container_entity {
+                    let Ok(mut component) = container_query.get_mut(entity) else {
+                        return;
+                    };
+                    component.slots = source_slots;
+                }
+            }
+            ContainerRef::PouchInBackpack { backpack_slot } => {
+                let Some(Some(pouch)) = inventory.backpack_slots.get_mut(backpack_slot) else {
+                    return;
+                };
+                pouch.contained_slots = Some(source_slots);
+            }
+        }
+    }
+
+    if let Ok((_, _, mut inventory_state, mut chat_log, _, _, _, _, _)) =
+        player_query.get_mut(player_entity)
+    {
+        if taken > 0 {
+            *inventory_state = inventory;
+        }
+        if left_behind == 0 {
+            chat_log.push_narrator("You take everything.");
+        } else if taken == 0 {
+            chat_log.push_narrator("You can't carry any of it.");
+        } else {
+            chat_log.push_narrator(format!(
+                "You take what you can — {} stack{} left behind.",
+                left_behind,
+                if left_behind == 1 { "" } else { "s" }
+            ));
+        }
+    }
+}
+
+/// Place a whole stack into the backpack: merge into a matching stack if one
+/// has room, otherwise claim the first empty slot. Returns the stack back
+/// when neither works, leaving `inventory` untouched.
+///
+/// `source` is the container the stack came from, so a pouch can never be
+/// stowed inside itself.
+fn place_stack_in_backpack(
+    inventory: &mut InventoryState,
+    stack: InventoryStack,
+    definitions: &OverworldObjectDefinitions,
+    source: ContainerRef,
+) -> Option<InventoryStack> {
+    let source_pouch_slot = match source {
+        ContainerRef::PouchInBackpack { backpack_slot } => Some(backpack_slot),
+        ContainerRef::World { .. } => None,
+    };
+    for (index, slot) in inventory.backpack_slots.iter_mut().enumerate() {
+        if slot.is_none() || Some(index) == source_pouch_slot {
+            continue;
+        }
+        if place_stack_in_option_slot(slot, stack.clone(), definitions) {
+            return None;
+        }
+    }
+    let empty_index = inventory
+        .backpack_slots
+        .iter()
+        .position(|slot| slot.is_none())?;
+    inventory.backpack_slots[empty_index] = Some(stack);
+    None
 }
 
 fn handle_move_item(
@@ -7570,5 +7758,181 @@ mod tests {
         );
         assert_eq!(slot.as_ref().unwrap().quantity, 3);
         let _ = CHARGES_KEY; // keep the import alive even if charges aren't used in this test
+    }
+
+    /// Spawn a chest next to the player and fill the given slots.
+    fn spawn_chest_with(app: &mut App, tile: TilePosition, stacks: &[(usize, &str, u32)]) -> u64 {
+        let chest_id = app
+            .world_mut()
+            .resource_mut::<ObjectRegistry>()
+            .allocate_runtime_id("iron_chest");
+        let chest = spawn_world_object(app, "iron_chest", chest_id, tile);
+        let mut container = app
+            .world_mut()
+            .get_mut::<Container>(chest)
+            .expect("iron_chest is a container");
+        for (index, type_id, quantity) in stacks {
+            container.slots[*index] = Some(InventoryStack::item(
+                (*type_id).to_owned(),
+                ObjectProperties::new(),
+                *quantity,
+            ));
+        }
+        chest_id
+    }
+
+    fn chest_slots(app: &mut App, chest_id: u64) -> Vec<Option<InventoryStack>> {
+        let mut query = app.world_mut().query::<(&OverworldObject, &Container)>();
+        query
+            .iter(app.world())
+            .find(|(object, _)| object.object_id == chest_id)
+            .map(|(_, container)| container.slots.clone())
+            .expect("chest still exists")
+    }
+
+    #[test]
+    fn take_all_empties_the_container_and_merges_into_existing_stacks() {
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+        // A partial stack of the same type must be topped up, not duplicated.
+        app.world_mut()
+            .get_mut::<Inventory>(player)
+            .unwrap()
+            .backpack_slots[0] = Some(InventoryStack::item(
+            "apple".to_owned(),
+            ObjectProperties::new(),
+            2,
+        ));
+        let chest_id = spawn_chest_with(
+            &mut app,
+            TilePosition::ground(11, 10),
+            &[(0, "apple", 3), (4, "apple", 1)],
+        );
+
+        crate::test_support::push_player_command(
+            &mut app,
+            1,
+            GameCommand::TakeAllFromContainer {
+                container: ContainerRef::World {
+                    object_id: chest_id,
+                },
+            },
+        );
+        app.update();
+
+        let inventory = app.world().get::<Inventory>(player).unwrap().clone();
+        let apples: u32 = inventory
+            .backpack_slots
+            .iter()
+            .flatten()
+            .filter(|stack| stack.type_id == "apple")
+            .map(|stack| stack.quantity)
+            .sum();
+        assert_eq!(apples, 6, "every apple must end up in the backpack");
+        assert!(
+            chest_slots(&mut app, chest_id).iter().all(Option::is_none),
+            "the chest must be empty afterwards"
+        );
+    }
+
+    #[test]
+    fn take_all_leaves_behind_what_does_not_fit() {
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+        // 2000 apples weigh 400kg — far past any hard carry cap — while the
+        // small stack next to them is trivially liftable.
+        let chest_id = spawn_chest_with(
+            &mut app,
+            TilePosition::ground(11, 10),
+            &[(0, "apple", 3), (4, "apple", 2000)],
+        );
+
+        crate::test_support::push_player_command(
+            &mut app,
+            1,
+            GameCommand::TakeAllFromContainer {
+                container: ContainerRef::World {
+                    object_id: chest_id,
+                },
+            },
+        );
+        app.update();
+
+        let slots = chest_slots(&mut app, chest_id);
+        assert!(slots[0].is_none(), "the light stack must have been taken");
+        assert_eq!(
+            slots[4].as_ref().map(|stack| stack.quantity),
+            Some(2000),
+            "the overweight stack must stay put, whole"
+        );
+        let chat_log = app.world().get::<ChatLog>(player).unwrap();
+        assert!(
+            chat_log
+                .lines
+                .last()
+                .is_some_and(|line| line.contains("1 stack left behind")),
+            "expected the partial-take line; got {:?}",
+            chat_log.lines
+        );
+    }
+
+    #[test]
+    fn take_all_on_an_empty_container_says_so() {
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+        let chest_id = spawn_chest_with(&mut app, TilePosition::ground(11, 10), &[]);
+
+        crate::test_support::push_player_command(
+            &mut app,
+            1,
+            GameCommand::TakeAllFromContainer {
+                container: ContainerRef::World {
+                    object_id: chest_id,
+                },
+            },
+        );
+        app.update();
+
+        let chat_log = app.world().get::<ChatLog>(player).unwrap();
+        assert!(
+            chat_log
+                .lines
+                .last()
+                .is_some_and(|line| line.contains("nothing to take")),
+            "expected the empty-container line; got {:?}",
+            chat_log.lines
+        );
+    }
+
+    #[test]
+    fn take_all_refuses_an_out_of_reach_container() {
+        let mut app = setup_server_app();
+        let player = spawn_player(&mut app, 1, 10, 10);
+        let chest_id = spawn_chest_with(&mut app, TilePosition::ground(20, 20), &[(0, "apple", 1)]);
+
+        crate::test_support::push_player_command(
+            &mut app,
+            1,
+            GameCommand::TakeAllFromContainer {
+                container: ContainerRef::World {
+                    object_id: chest_id,
+                },
+            },
+        );
+        app.update();
+
+        assert!(
+            chest_slots(&mut app, chest_id)[0].is_some(),
+            "a distant chest must not be lootable"
+        );
+        let chat_log = app.world().get::<ChatLog>(player).unwrap();
+        assert!(
+            chat_log
+                .lines
+                .last()
+                .is_some_and(|line| line.contains("out of reach")),
+            "expected the out-of-reach line; got {:?}",
+            chat_log.lines
+        );
     }
 }

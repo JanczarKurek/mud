@@ -13,8 +13,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use mud2::combat::components::AttackKind;
 use mud2::combat::damage_type::DamageType;
 use mud2::game::commands::{
-    GameCommand, InspectTarget, ItemDestination, ItemReference, ItemSlotRef, MoveDelta,
-    RotationDirection, UseTarget,
+    ContainerRef, GameCommand, InspectTarget, ItemDestination, ItemReference, ItemSlotRef,
+    MoveDelta, RotationDirection, UseTarget,
 };
 use mud2::game::party::{ClientPartyView, PartyMemberView};
 use mud2::game::resources::{
@@ -153,6 +153,7 @@ fn trade_view() -> ClientTradeView {
             persuasion_modifier_pct: -12,
         }]),
         sale_credit_copper: 150,
+        total_owed_copper: 240,
     }
 }
 
@@ -354,6 +355,12 @@ fn game_command_samples() -> Vec<GameCommand> {
         GameCommand::ToggleTradeReady { session_id: 7 },
         GameCommand::ConfirmTrade { session_id: 7 },
         GameCommand::CancelTrade { session_id: 7 },
+        GameCommand::TakeAllFromContainer {
+            container: ContainerRef::World { object_id: 12 },
+        },
+        GameCommand::TakeAllFromContainer {
+            container: ContainerRef::PouchInBackpack { backpack_slot: 3 },
+        },
         GameCommand::BrowseShopBuy {
             session_id: 7,
             ware_index: 0,
@@ -477,6 +484,7 @@ fn game_command_coverage(command: &GameCommand) {
         | GameCommand::CastSpellAtTile { .. }
         | GameCommand::CastSpellAtItem { .. }
         | GameCommand::MoveItem { .. }
+        | GameCommand::TakeAllFromContainer { .. }
         | GameCommand::TakeFromStack { .. }
         | GameCommand::AdminSpawn { .. }
         | GameCommand::AdminTeleport { .. }

@@ -1143,6 +1143,7 @@ fn spawn_container_panel(
         theme,
         palette,
         |title_extras| {
+            spawn_container_take_all_button(title_extras, theme, palette, panel_id);
             spawn_themed_icon_button(
                 title_extras,
                 undock_image,
@@ -1193,6 +1194,34 @@ pub(crate) fn spawn_container_panel_body(
                 });
             }
         });
+}
+
+/// Compact "Take all" button for a container/pouch panel's title bar. Sits in
+/// the same button cluster as the undock arrow and the close-X, in both the
+/// docked and the floating variant.
+pub(crate) fn spawn_container_take_all_button(
+    parent: &mut ChildSpawnerCommands,
+    theme: &UiThemeAssets,
+    palette: &Palette,
+    panel_id: usize,
+) {
+    spawn_themed_button(
+        parent,
+        theme,
+        palette,
+        ButtonStyle::Secondary,
+        Node {
+            height: px(18.0),
+            padding: UiRect::axes(px(6.0), px(0.0)),
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
+            border: UiRect::all(px(1.0)),
+            ..default()
+        },
+        "Take all",
+        11.0,
+        crate::ui::components::ContainerTakeAllButton { panel_id },
+    );
 }
 
 /// Spawn a docked sidebar panel — wood-grain framed container with a

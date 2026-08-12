@@ -50,6 +50,16 @@ pub enum ItemSlotRef {
     },
 }
 
+/// A whole container, addressed the way an open container panel knows it:
+/// either a world object or a pouch sitting in the player's backpack. The
+/// slot-level counterpart is [`ItemSlotRef::Container`] /
+/// [`ItemSlotRef::PouchInBackpack`].
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub enum ContainerRef {
+    World { object_id: u64 },
+    PouchInBackpack { backpack_slot: usize },
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub enum ItemReference {
     WorldObject(u64),
@@ -183,6 +193,15 @@ pub enum GameCommand {
     MoveItem {
         source: ItemReference,
         destination: ItemDestination,
+    },
+    /// Empty `container` into the player's backpack — the bulk form of
+    /// dragging every slot out one at a time. Stacks are moved whole (with
+    /// their properties and modifiers), merging into matching backpack stacks
+    /// first, then claiming empty slots. Anything that doesn't fit — no room,
+    /// over the carry cap, a pouch that can't nest — stays put and is
+    /// reported. Server validates reach on world containers.
+    TakeAllFromContainer {
+        container: ContainerRef,
     },
     TakeFromStack {
         source: ItemReference,
@@ -349,10 +368,11 @@ pub enum GameCommand {
         session_id: crate::game::trade::TradeSessionId,
     },
     /// Shop-trade only: add `quantity` of the ware at `ware_index` to the
-    /// THEY column. The server auto-balances the buyer's coin payment by
-    /// adding the cheapest sufficient mix of copper/silver/gold from the
-    /// buyer's inventory into the US column. Rejects if the buyer has
-    /// insufficient funds or the ware is out of stock.
+    /// THEY column. Rejects only if the ware is out of stock — money is not
+    /// checked here. At commit time the merchant credits whatever the player
+    /// put in the US column (coins at face value, goods at half price) and
+    /// takes the remainder straight out of the purse; a purse that can't
+    /// cover the rest refuses the commit but leaves the session open.
     BrowseShopBuy {
         session_id: crate::game::trade::TradeSessionId,
         ware_index: usize,

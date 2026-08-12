@@ -16,7 +16,9 @@ use bevy::window::PrimaryWindow;
 
 use crate::game::commands::GameCommand;
 use crate::game::resources::{ClientGameState, ClientPendingCommands};
-use crate::game::trade::{ClientTradeView, TradeOfferEntry, TradeSessionId, WareView};
+use crate::game::trade::{
+    ClientTradeView, TradeOfferEntry, TradePartnerKind, TradeSessionId, WareView,
+};
 use crate::ui::components::{
     ItemSlotButton, ItemSlotKind, TradeButtonLabel, TradeCancelButton, TradeColumn,
     TradeConfirmButton, TradePartnerLabel, TradePopupCloseButton, TradePopupRoot, TradeReadyButton,
@@ -93,13 +95,33 @@ pub fn sync_trade_panel_partner_label(
                 yes_no(view.our_ready),
                 yes_no(view.their_ready),
             );
-            // Shop sessions only: what the merchant will pay for what we've
-            // put up. Server-computed, Persuasion included.
-            if view.sale_credit_copper > 0 {
-                text.push_str(&format!(
-                    "   —  he'll pay {} for your side",
-                    crate::game::currency::format_compact(view.sale_credit_copper),
-                ));
+            // Shop sessions only: the price, what the merchant will pay for
+            // what we've put up, and what's left in the purse to cover the
+            // rest. All server-computed, Persuasion included.
+            if view.partner_kind == TradePartnerKind::Shopkeeper {
+                if view.total_owed_copper > 0 {
+                    text.push_str(&format!(
+                        "   —  asks {}",
+                        crate::game::currency::format_compact(view.total_owed_copper),
+                    ));
+                    if view.sale_credit_copper > 0 {
+                        text.push_str(&format!(
+                            ", credits {} for your side",
+                            crate::game::currency::format_compact(view.sale_credit_copper),
+                        ));
+                    }
+                    text.push_str(&format!(
+                        ";  purse {}",
+                        crate::game::currency::format_compact(
+                            crate::game::currency::purse_total_copper(&client_state.inventory),
+                        ),
+                    ));
+                } else if view.sale_credit_copper > 0 {
+                    text.push_str(&format!(
+                        "   —  he'll pay {} for your side",
+                        crate::game::currency::format_compact(view.sale_credit_copper),
+                    ));
+                }
             }
             text
         }
