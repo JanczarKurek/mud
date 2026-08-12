@@ -1,6 +1,7 @@
 extends: pickup
 name: Empower Weapon Scroll
 weight: 0.1
+value_copper: 420
 description: A scroll heavy with runic might. Reading it permanently strengthens the wielder of a weapon.
 spell_id: empower_weapon
 render:

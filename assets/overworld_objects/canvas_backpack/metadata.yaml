@@ -1,6 +1,7 @@
 extends: equipment
 name: Canvas Backpack
 weight: 1.5
+value_copper: 480
 description: A roomy canvas backpack with leather straps.
 equipment_slot: backpack
 stats:

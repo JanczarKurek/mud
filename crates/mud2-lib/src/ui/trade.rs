@@ -86,12 +86,23 @@ pub fn sync_trade_panel_partner_label(
         return;
     };
     let new_text = match client_state.current_trade.as_ref() {
-        Some(view) => format!(
-            "Trading with {}  (us {} / them {})",
-            view.partner_name,
-            yes_no(view.our_ready),
-            yes_no(view.their_ready),
-        ),
+        Some(view) => {
+            let mut text = format!(
+                "Trading with {}  (us {} / them {})",
+                view.partner_name,
+                yes_no(view.our_ready),
+                yes_no(view.their_ready),
+            );
+            // Shop sessions only: what the merchant will pay for what we've
+            // put up. Server-computed, Persuasion included.
+            if view.sale_credit_copper > 0 {
+                text.push_str(&format!(
+                    "   —  he'll pay {} for your side",
+                    crate::game::currency::format_compact(view.sale_credit_copper),
+                ));
+            }
+            text
+        }
         None => "No active trade.".to_owned(),
     };
     if label.0 != new_text {

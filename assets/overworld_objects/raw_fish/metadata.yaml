@@ -1,6 +1,7 @@
 extends: pickup
 name: Raw Fish
 weight: 0.4
+value_copper: 4
 max_stack_size: 20
 description:
   - text: A slippery fresh-caught fish.

@@ -1,0 +1,15 @@
+extends: pickup
+name: Raw Hide
+weight: 1.2
+value_copper: 8
+max_stack_size: 10
+description:
+  - text: A folded square of untanned hide, stiff and strong-smelling.
+    stack_size: [1, 1]
+  - text: "{count_written} folded squares of untanned hide."
+    stack_size: [2, ~]
+render:
+  z_index: 0.24
+  debug_color: [136, 100, 68]
+  debug_size: 0.52
+  sprite_path: overworld_objects/raw_hide/sprite.png

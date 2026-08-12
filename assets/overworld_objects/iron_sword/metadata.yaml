@@ -1,6 +1,7 @@
 extends: equipment
 name: Iron Sword
 weight: 3.0
+value_copper: 2400
 description: "A well-forged iron blade — a clear step up from bronze. {properties.inscription_line|}"
 equipment_slot: weapon
 engravable: true

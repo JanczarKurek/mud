@@ -1,0 +1,15 @@
+extends: pickup
+name: Bundle of Wool
+weight: 0.4
+value_copper: 5
+max_stack_size: 20
+description:
+  - text: A greasy bundle of raw fleece, still smelling of the animal.
+    stack_size: [1, 1]
+  - text: "{count_written} bundles of raw fleece."
+    stack_size: [2, ~]
+render:
+  z_index: 0.24
+  debug_color: [232, 228, 218]
+  debug_size: 0.46
+  sprite_path: overworld_objects/sheep_wool/sprite.png

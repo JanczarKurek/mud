@@ -8,9 +8,24 @@ level: 2
 loot:
   corpse_despawn_seconds: 60
   drops:
-    - type_id: apple
+    - type_id: copper_coin
+      quantity: "uniform(2, 8)"
+      probability: 0.8   # pocket scrapings
+    - type_id: goblin_ear
       quantity: 1
       probability: 0.5
+    - type_id: apple
+      quantity: 1
+      probability: 0.3
+    - type_id: dried_meat
+      quantity: 1
+      probability: 0.25
+    - type_id: glass_bead_string
+      quantity: 1
+      probability: 0.1   # the shiny things it was muttering about
+    - type_id: dagger
+      quantity: 1
+      probability: 0.05
 stats:
   strength: 8
   agility: 11

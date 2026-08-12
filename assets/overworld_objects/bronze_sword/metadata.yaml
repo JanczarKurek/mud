@@ -1,6 +1,7 @@
 extends: equipment
 name: Bronze Sword
 weight: 2.0
+value_copper: 720
 description: "A simple bronze sword with a broad beginner blade. {properties.inscription_line|}"
 equipment_slot: weapon
 engravable: true

@@ -953,6 +953,33 @@ case, and carries `codex: people`.
   jump-distance term; `docs/utility_systems.md` §4) and the minimum a resting
   object needs to hold a `pressure_plate` down.
 
+### `value_copper`
+- Type: integer (copper)
+- Optional: yes
+- Default: absent (the item has no market value)
+- Meaning: what one of these is worth on the open market — the **buy** price a
+  merchant asks. Players **sell at half** (`docs/content_bible.md` §9.2), and
+  the halving is applied to the whole stack rather than per item, so a 1c
+  trinket isn't rounded away when you bring in forty of them. Persuasion moves
+  the sale price in the seller's favour by up to +20%
+  (`vendor_price_for(.., TradeSide::PlayerSells)`).
+- Where it is used: `OverworldObjectDefinition::sell_value_copper(quantity)`,
+  read by the shop-trade commit path (`game/trade.rs`), the "Sells for" row in
+  the item Details window, and the running credit line on the trade panel.
+- Selling mechanics: put items in **your** column of a shopkeeper trade and
+  confirm. The merchant credits their sale value against anything you're
+  buying and pays the balance in coin; goods you sell are added to their
+  wares list at full `value_copper`, so they visibly resell them.
+- Omit it deliberately for:
+  - **coins** — priced at face value by `game::currency`; a market value would
+    let a player sell coin for coin.
+  - **quest items** — an item with no value cannot be sold away by accident.
+    The merchant still accepts it (and pays nothing), which is the
+    long-standing behaviour for anything put in their column.
+- Anchors for picking a number: the price ladder in `docs/content_bible.md`
+  §9.1. `1 silver = 12 copper`, `1 gold = 240 copper`.
+- Example: `value_copper: 16` on a wolf pelt → 16c on the shelf, 8c in hand.
+
 ### `pressure_plate`
 - Type: mapping
 - Optional: yes
@@ -1667,6 +1694,12 @@ constant and `world::hide_action::process_hide_commands` for the apply path.
 
 NPCs (objects that `extends: npc`) may include an optional `loot` section. When the NPC dies it spawns a corpse container at its tile. The corpse holds any rolled loot and disappears after `corpse_despawn_seconds`.
 
+> **A creature with no `loot:` block at all leaves no corpse either** — the death hook in `combat/damage.rs` only calls `spawn_corpse_for_npc` when `loot_table` is `Some`. If you want a body but no drops, write `loot:` with an empty `drops:` list rather than omitting the block.
+
+**Choosing what drops.** The tier table in `docs/content_bible.md` §10 sizes the coin roll: T1 copper, T2–T3 silver, elites gold. Two conventions on top of it:
+- Coin only goes on things that would plausibly carry a purse. Beasts, vermin and elementals drop **materials** instead — a pelt, a tail, a shard of slag — which the player converts to money by selling (see [`value_copper`](#value_copper)).
+- Gear drops stay rare (~0.05 for common mobs, ~0.10–0.12 on the L10+ elites that anchor a tier). The elites are still the intended source of the top gear tier; the odds are per-piece, so a full set is not a single kill away.
+
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `corpse_type_id` | string | `generic_corpse` | Object definition ID to use for the corpse container. Create a custom one to give it a unique sprite/description. |
@@ -1681,22 +1714,30 @@ Each entry in `drops`:
 | `quantity` | int or `uniform(min, max)` | `1` | How many to place. A bare integer gives a fixed count; `uniform(5, 10)` rolls a random integer in `[5, 10]` inclusive. |
 | `probability` | float | `1.0` | Chance (0.0–1.0) of this drop occurring. `1.0` = always, `0.5` = 50 % chance. |
 
-Example (goblin):
+Example (the shipped goblin — copper because it's T2, an ear as the sell-fodder, gear rare):
 
 ```yaml
 loot:
   corpse_despawn_seconds: 60
   drops:
-    - type_id: gold_coin
-      quantity: uniform(3, 8)
-      probability: 1.0
+    - type_id: copper_coin
+      quantity: "uniform(2, 8)"
+      probability: 0.8   # pocket scrapings
+    - type_id: goblin_ear
+      quantity: 1
+      probability: 0.5
     - type_id: apple
       quantity: 1
-      probability: 0.4
-    - type_id: leather_armor
+      probability: 0.3
+    - type_id: glass_bead_string
+      quantity: 1
+      probability: 0.1   # the shiny things it was muttering about
+    - type_id: dagger
       quantity: 1
       probability: 0.05
 ```
+
+Quantity rolls are salted per drop (`world::loot::drop_salt`), so two `uniform` entries in one table roll independently. The unit test `every_loot_drop_names_a_real_definition` fails the build if a `type_id` here doesn't resolve — a typo would otherwise be silent, with the drop simply never appearing.
 
 To use a custom corpse sprite, define a separate object (e.g. `goblin_corpse`) that `extends: corpse` with its own `render.sprite_path`, then set `corpse_type_id: goblin_corpse` in the loot block.
 

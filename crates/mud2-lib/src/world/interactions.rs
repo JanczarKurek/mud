@@ -221,11 +221,13 @@ pub fn process_interact_commands(
         // which is configured before process_game_commands).
         if !grants_items.is_empty() {
             if let Some(player_id) = actor_id {
-                for drop in &grants_items {
+                for (index, drop) in grants_items.iter().enumerate() {
                     if drop.probability < 1.0 && roll_unit_interval() >= drop.probability {
                         continue;
                     }
-                    let qty = drop.quantity.roll();
+                    let qty = drop
+                        .quantity
+                        .roll(crate::world::loot::drop_salt(index, &drop.type_id));
                     if qty == 0 {
                         continue;
                     }

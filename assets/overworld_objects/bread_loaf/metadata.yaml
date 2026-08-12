@@ -1,0 +1,25 @@
+extends: consumable
+name: Loaf of Bread
+weight: 0.4
+value_copper: 1
+max_stack_size: 20
+description:
+  - text: A dense brown loaf, one day's calories and not a mouthful more.
+    stack_size: [1, 1]
+  - text: "{count_written} brown loaves."
+    stack_size: [2, ~]
+use_effects:
+  regen_multiplier: 1.5
+  regen_duration_seconds: 45
+use_texts:
+  - You tear off a hunk of bread and eat it.
+  - The bread is dry, but it fills you.
+  - You work through a crust of the loaf.
+use_on_texts:
+  - You offer the loaf to {target}.
+  - You break the bread and hold half out to {target}.
+render:
+  z_index: 0.24
+  debug_color: [196, 152, 88]
+  debug_size: 0.48
+  sprite_path: overworld_objects/bread_loaf/sprite.png

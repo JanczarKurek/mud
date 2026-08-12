@@ -1,6 +1,7 @@
 extends: equipment
 name: Leather Legs
 weight: 3.0
+value_copper: 500
 description: A pair of practical leather leggings.
 equipment_slot: legs
 # Full-value armor retune (see leather_armor).

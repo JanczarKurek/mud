@@ -1,6 +1,7 @@
 extends: pickup
 name: Iron Ore
 weight: 1.2
+value_copper: 30
 max_stack_size: 20
 description:
   - text: A chunk of rough iron ore, flecked with rust-coloured streaks.

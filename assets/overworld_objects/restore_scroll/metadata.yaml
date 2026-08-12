@@ -1,6 +1,7 @@
 extends: pickup
 name: Restore Scroll
 weight: 0.1
+value_copper: 360
 description: A revered scroll whose words mend the body and burn away crippling magics.
 spell_id: restore
 render:

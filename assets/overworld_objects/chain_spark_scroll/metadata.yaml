@@ -1,6 +1,7 @@
 extends: pickup
 name: Chain Spark Scroll
 weight: 0.1
+value_copper: 360
 description: A crackling scroll that sends electricity spiralling out across the ground from a chosen tile.
 spell_id: chain_spark
 render:

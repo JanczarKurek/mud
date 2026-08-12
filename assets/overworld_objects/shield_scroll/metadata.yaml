@@ -1,6 +1,7 @@
 extends: pickup
 name: Shield Scroll
 weight: 0.1
+value_copper: 180
 description: A scroll inscribed with a warding sigil that hardens the air around its reader.
 spell_id: shield
 render:

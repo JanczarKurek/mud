@@ -1,0 +1,25 @@
+extends: consumable
+name: Travel Ration
+weight: 0.5
+value_copper: 5
+max_stack_size: 20
+description:
+  - text: Hard biscuit, dried fruit and fat pressed into a waxed block. Built to be carried, not enjoyed.
+    stack_size: [1, 1]
+  - text: "{count_written} waxed blocks of travel ration."
+    stack_size: [2, ~]
+use_effects:
+  regen_multiplier: 2.0
+  regen_duration_seconds: 120
+use_texts:
+  - You work through a corner of the ration block.
+  - It tastes of wax and endurance. It keeps you going a long while.
+  - You eat the ration slowly, the way you're supposed to.
+use_on_texts:
+  - You offer a ration block to {target}.
+  - You cut the ration in half and pass a piece to {target}.
+render:
+  z_index: 0.24
+  debug_color: [168, 148, 112]
+  debug_size: 0.46
+  sprite_path: overworld_objects/travel_ration/sprite.png

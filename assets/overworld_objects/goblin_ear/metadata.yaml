@@ -1,0 +1,15 @@
+extends: pickup
+name: Goblin Ear
+weight: 0.03
+value_copper: 3
+max_stack_size: 50
+description:
+  - text: A notched green ear. The Watch has been known to pay by the ear.
+    stack_size: [1, 1]
+  - text: A string of {count} notched green ears.
+    stack_size: [2, ~]
+render:
+  z_index: 0.24
+  debug_color: [110, 158, 82]
+  debug_size: 0.32
+  sprite_path: overworld_objects/goblin_ear/sprite.png

@@ -1,6 +1,7 @@
 extends: pickup
 name: Light Scroll
 weight: 0.1
+value_copper: 60
 description: A scroll that conjures a hovering lantern of arcane light to drive back the dark.
 spell_id: light
 render:

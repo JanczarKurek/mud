@@ -19,6 +19,20 @@ attack_profile:
   kind: melee
   damage_type: pierce
 hp: "1d4+10+constitution*2"
+# Vermin: no purse, but the tails are worth a copper a dozen to the
+# right buyer.
+loot:
+  corpse_despawn_seconds: 45
+  drops:
+    - type_id: rat_tail
+      quantity: 1
+      probability: 0.6
+    - type_id: cracked_bone
+      quantity: 1
+      probability: 0.2
+    - type_id: cheese_wedge
+      quantity: 1
+      probability: 0.15   # dragged back from someone's larder
 npc_behavior:
   step_interval_seconds: 0.5
   detect_distance_tiles: 4

@@ -1,6 +1,7 @@
 extends: consumable
 name: Tallow Candle
 weight: 0.2
+value_copper: 12
 max_stack_size: 20
 description:
   - text: A stubby hand-dipped tallow candle, uneven and yellowed, with a long black wick. Sister Wick makes them herself with a great deal of muttering over the wick, and they burn steadier and longer than they have any right to in bad air.

@@ -1,6 +1,7 @@
 extends: pickup
 name: Pen
 weight: 0.05
+value_copper: 24
 description:
   - text: "A quill pen. Lets you write in books or engrave items."
     stack_size: [1, 1]

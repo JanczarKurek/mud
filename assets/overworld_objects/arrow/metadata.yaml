@@ -1,6 +1,7 @@
 extends: consumable
 name: Arrow
 weight: 0.05
+value_copper: 1
 description: A fletched arrow. Equip in the ammo slot to shoot with a bow.
 equipment_slot: ammo
 render:

@@ -1,6 +1,7 @@
 extends: equipment
 name: Herb Knife
 weight: 0.5
+value_copper: 96
 description: A small curved blade for snipping stems. Use it on herb patches to harvest.
 equipment_slot: weapon
 # Harvesting tool: tiny dice + STR modifier — utility, not a combat weapon.

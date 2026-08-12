@@ -1,0 +1,25 @@
+extends: consumable
+name: Honeycomb
+weight: 0.15
+value_copper: 4
+max_stack_size: 20
+description:
+  - text: A dripping slab of wild comb, still sticky and faintly warm.
+    stack_size: [1, 1]
+  - text: "{count_written} slabs of dripping honeycomb."
+    stack_size: [2, ~]
+use_effects:
+  regen_multiplier: 2.5
+  regen_duration_seconds: 40
+use_texts:
+  - You chew the comb. The honey is astonishing.
+  - Wax and sweetness. You feel considerably better about things.
+  - You eat the honeycomb and lick your fingers.
+use_on_texts:
+  - You offer the honeycomb to {target}.
+  - You hold the sticky comb out toward {target}.
+render:
+  z_index: 0.24
+  debug_color: [228, 176, 52]
+  debug_size: 0.42
+  sprite_path: overworld_objects/honeycomb/sprite.png

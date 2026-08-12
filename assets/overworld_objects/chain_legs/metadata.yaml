@@ -1,6 +1,7 @@
 extends: equipment
 name: Chain Legs
 weight: 6.0
+value_copper: 1500
 description: Mail chausses strapped over woolen hose.
 equipment_slot: legs
 armor: 2

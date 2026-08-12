@@ -9,11 +9,20 @@ loot:
   corpse_despawn_seconds: 60
   drops:
     - type_id: arrow
-      quantity: 5
+      quantity: "uniform(3, 7)"
       probability: 1.0
+    - type_id: copper_coin
+      quantity: "uniform(1, 6)"
+      probability: 0.7
+    - type_id: goblin_ear
+      quantity: 1
+      probability: 0.5
+    - type_id: forest_nuts
+      quantity: 1
+      probability: 0.25
     - type_id: bow
       quantity: 1
-      probability: 0.1
+      probability: 0.06
 stats:
   strength: 7
   agility: 13

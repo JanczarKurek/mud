@@ -31,6 +31,9 @@ loot:
     - type_id: hollow_bell/deep_iron_shard
       quantity: 1
       probability: 0.25
+    - type_id: grave_ring
+      quantity: 1
+      probability: 0.1
 npc_behavior:
   step_interval_seconds: 0.9
   detect_distance_tiles: 9

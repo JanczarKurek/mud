@@ -1,6 +1,7 @@
 extends: consumable
 name: Pit Tea
 weight: 0.3
+value_copper: 12
 max_stack_size: 10
 description: A dented tin cup of very dark stewed tea, three sugars, a chip out of the rim. Stewed roughly twenty minutes longer than any reasonable person would leave it. Ashen Hollow runs on this, and you are expected to return the cup.
 use_effects:

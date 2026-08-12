@@ -1,0 +1,15 @@
+extends: pickup
+name: String of Glass Beads
+weight: 0.1
+value_copper: 10
+max_stack_size: 10
+description:
+  - text: Cheap coloured glass on a leather thong. Goblins love them.
+    stack_size: [1, 1]
+  - text: "{count_written} strings of cheap glass beads."
+    stack_size: [2, ~]
+render:
+  z_index: 0.24
+  debug_color: [92, 168, 188]
+  debug_size: 0.38
+  sprite_path: overworld_objects/glass_bead_string/sprite.png

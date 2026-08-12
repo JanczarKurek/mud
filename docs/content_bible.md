@@ -414,18 +414,29 @@ The conversion arithmetic lives in `src/game/currency.rs`:
 | Plate armor | 60g | 14400 | Made for one specific beastfolk. |
 | Named legendary blade | 500g+ | 120000+ | Or unsellable. |
 
-### 9.2 Vendor convention (when vendors land)
+### 9.2 Vendor convention
+
+**Implemented.** Each item definition carries `value_copper` (its shelf
+price); see `docs/yaml_formats.md`.
 
 - Buy at price, sell at half. Persuasion modifies up to ±20% per
-  `progression.md §5`.
-- Some named items refuse to be sold (story-only).
+  `progression.md §5` — favourably in both directions
+  (`vendor_price_for`, `src/game/trade.rs`).
+- Selling is the ordinary shop trade: put goods in your column of a
+  shopkeeper session and confirm. The merchant credits their sale value
+  against whatever you're buying and pays the balance in coin. Goods you
+  sell join their wares list at full `value_copper`, so they resell them.
+- The half-price cut is applied to the **stack**, not per item, so cheap
+  trinkets don't round to nothing in bulk.
+- Items that refuse to be sold (story-only, quest items) simply omit
+  `value_copper`. Coins omit it too — they're face value.
 
 ---
 
 ## 10. Loot tiers
 
-A *generic schema* for what an encounter or chest drops. Real loot tables
-implement this in code/YAML later.
+A *generic schema* for what an encounter or chest drops. The core creature
+roster implements this; see each `assets/overworld_objects/*/metadata.yaml`.
 
 | Tier | Coin roll | Consumable roll (50%) | Equipment roll (10%) | Notes |
 |---|---|---|---|---|
@@ -437,6 +448,18 @@ implement this in code/YAML later.
 Per-monster drops follow the existing `loot:` schema in
 `assets/overworld_objects/*/metadata.yaml` (probability + quantity per type_id).
 The tier here is a tuning guideline.
+
+Two conventions layered on the table above:
+
+- **Materials, not coin, for beasts and elementals.** A wolf has no pockets
+  and a fire elemental has no use for money. They drop things worth selling —
+  pelts, hides, teeth, slag — and the player converts them at a vendor. Only
+  creatures that would plausibly carry a purse (humanoids, the coin-hoarding
+  undead, guards and townsfolk) actually drop coin.
+- **Gear stays rare.** ~0.05 per piece on common mobs, ~0.10–0.12 on the L10+
+  elites that anchor a tier. The elites remain the intended source of the top
+  gear tier, but the odds are per-piece, so a full set is several kills away
+  rather than one.
 
 ---
 

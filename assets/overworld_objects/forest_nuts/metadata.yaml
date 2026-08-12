@@ -1,0 +1,24 @@
+extends: consumable
+name: Forest Nuts
+weight: 0.1
+value_copper: 2
+max_stack_size: 50
+description:
+  - text: A handful of hard-shelled nuts gathered from the leaf litter.
+    stack_size: [1, 1]
+  - text: "{count_written} handfuls of hard-shelled forest nuts."
+    stack_size: [2, ~]
+use_effects:
+  regen_multiplier: 1.4
+  regen_duration_seconds: 40
+use_texts:
+  - You crack the nuts between your teeth and eat them.
+  - Bitter, oily, and better than nothing.
+  - You shell the nuts one by one.
+use_on_texts:
+  - You offer a handful of nuts to {target}.
+render:
+  z_index: 0.24
+  debug_color: [142, 106, 66]
+  debug_size: 0.38
+  sprite_path: overworld_objects/forest_nuts/sprite.png

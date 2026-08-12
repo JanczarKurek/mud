@@ -1,6 +1,7 @@
 extends: consumable
 name: Apple
 weight: 0.2
+value_copper: 3
 description:
   - text: A simple red apple that can be picked up.
     stack_size: [1, 1]

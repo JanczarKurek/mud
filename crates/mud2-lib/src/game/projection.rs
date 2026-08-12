@@ -1377,6 +1377,9 @@ fn emit_trade_events(
                                 partner_name,
                                 TradePartnerKind::Player,
                                 None,
+                                // Players don't buy from each other for coin
+                                // by the item — there's nothing to credit.
+                                0,
                             )
                         }
                         TradeParticipants::PlayerToShop { shop_object_id, .. } => {
@@ -1424,11 +1427,27 @@ fn emit_trade_events(
                                 }
                                 None => ("Shopkeeper".to_owned(), None),
                             };
+                            // Preview what the merchant will pay for what we
+                            // have already put in our column. Same function
+                            // the commit path uses, so the preview cannot
+                            // disagree with the payout.
+                            let sale_credit = session
+                                .offers_a
+                                .iter()
+                                .map(|entry| {
+                                    crate::game::trade::offer_credit_copper(
+                                        entry,
+                                        object_definitions,
+                                        local_persuasion_ranks,
+                                    )
+                                })
+                                .fold(0u32, |acc, v| acc.saturating_add(v));
                             session.project_for(
                                 local_player_id,
                                 partner_name,
                                 TradePartnerKind::Shopkeeper,
                                 wares,
+                                sale_credit,
                             )
                         }
                     }

@@ -1,6 +1,7 @@
 extends: consumable
 name: Vial of Black Poison
 weight: 0.3
+value_copper: 240
 description: A vial of viscous black poison. Apply it to a melee weapon to envenom its next 20 strikes.
 use_texts:
   - You carefully coat your weapon with the black poison.

@@ -30,6 +30,9 @@ loot:
     - type_id: arrow
       quantity: "uniform(1, 8)"
       probability: 0.4
+    - type_id: giant_tooth
+      quantity: 1
+      probability: 0.1
 npc_behavior:
   step_interval_seconds: 0.75
   detect_distance_tiles: 10

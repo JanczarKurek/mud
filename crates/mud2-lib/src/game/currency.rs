@@ -109,8 +109,13 @@ pub fn spend_copper(
 }
 
 /// Add `amount` copper to the backpack as the most compact coin mix that fits.
-/// Returns false without modifying `inventory` if there aren't enough slots.
-fn deposit_copper(
+/// Returns false if there aren't enough slots.
+///
+/// **Callers must pass a draft they are willing to throw away**: a failing
+/// call leaves behind whatever coins it managed to place before running out of
+/// room. `spend_copper` clones the inventory for exactly this reason, and the
+/// shop-trade commit path works on its own snapshot.
+pub(crate) fn deposit_copper(
     inventory: &mut crate::player::components::Inventory,
     amount: u32,
     definitions: &crate::world::object_definitions::OverworldObjectDefinitions,

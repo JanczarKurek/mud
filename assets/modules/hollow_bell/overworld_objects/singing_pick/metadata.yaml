@@ -1,6 +1,7 @@
 extends: equipment
 name: The Singing Pick
 weight: 4.5
+value_copper: 3000
 equipment_slot: weapon
 description: A miner's pick with a head of pale seam-bronze and a scarred ash haft. It hums in the hand and cuts stone as though the stone had agreed to it beforehand. Also a perfectly serviceable weapon, which is more than anyone has ever been able to say for an ordinary pickaxe.
 damage: "1d8+str_mod+level/2"

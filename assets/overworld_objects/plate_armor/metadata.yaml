@@ -1,6 +1,7 @@
 extends: equipment
 name: Plate Armor
 weight: 25.0
+value_copper: 14400
 description: A full steel breastplate with articulated pauldrons. Heavy — plan your carry weight.
 equipment_slot: armor
 # Top body-armor tier (loot-only). The weight is the tradeoff: encumbrance bites.

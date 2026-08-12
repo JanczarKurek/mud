@@ -1,6 +1,7 @@
 extends: equipment
 name: Chain Helmet
 weight: 3.0
+value_copper: 1200
 description: A riveted mail coif over a padded cap.
 equipment_slot: helmet
 armor: 2

@@ -1,6 +1,7 @@
 extends: equipment
 name: Traveler Boots
 weight: 1.0
+value_copper: 360
 description: Worn boots made for roads, mud, and shallow marshes.
 equipment_slot: boots
 # Full-value armor retune: boots keep their identity as the dodge item.

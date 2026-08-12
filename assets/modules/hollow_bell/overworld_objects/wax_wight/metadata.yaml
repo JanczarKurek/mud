@@ -37,6 +37,9 @@ loot:
     - type_id: hollow_bell/tallow_candle
       quantity: 1
       probability: 0.3
+    - type_id: tarnished_locket
+      quantity: 1
+      probability: 0.12
 npc_behavior:
   step_interval_seconds: 1.0
   detect_distance_tiles: 8

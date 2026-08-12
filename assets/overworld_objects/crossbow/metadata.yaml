@@ -1,6 +1,7 @@
 extends: equipment
 name: Crossbow
 weight: 5.0
+value_copper: 1200
 description: A slower, heavier ranged weapon. Bolts load into the ammo slot.
 equipment_slot: weapon
 attack_profile:

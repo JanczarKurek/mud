@@ -1,6 +1,7 @@
 extends: consumable
 name: Miner's Draught
 weight: 0.4
+value_copper: 240
 max_stack_size: 10
 description: A squat brown bottle with a waxed cork and a hand-inked label in Sister Wick's cramped hand. Tastes of pine tar and regret. Puts you back on your feet, which is the entire brief.
 use_effects:

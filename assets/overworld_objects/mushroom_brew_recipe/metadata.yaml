@@ -1,6 +1,7 @@
 extends: pickup
 name: Mushroom Brew Recipe
 weight: 0.1
+value_copper: 180
 description: A weathered slip of parchment scrawled with a brewing recipe.
 learns_recipe: mushroom_brew
 render:

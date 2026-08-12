@@ -1,6 +1,7 @@
 extends: pouch
 name: Herb Pouch
 weight: 0.6
+value_copper: 90
 container_capacity: 6
 description: A linen pouch divided into compartments. Smells of dried herbs.
 render:

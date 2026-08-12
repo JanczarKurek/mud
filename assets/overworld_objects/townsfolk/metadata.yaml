@@ -9,6 +9,22 @@ lore: >-
   them in the square and the whole market will have heard by dusk.
 codex: people
 # Peaceful: never chases. Roams gently between routine goals when idle.
+# Market money and a packed lunch.
+loot:
+  corpse_despawn_seconds: 60
+  drops:
+    - type_id: copper_coin
+      quantity: "uniform(1, 10)"
+      probability: 0.6
+    - type_id: bread_loaf
+      quantity: 1
+      probability: 0.3
+    - type_id: cheese_wedge
+      quantity: 1
+      probability: 0.25
+    - type_id: bent_silver_spoon
+      quantity: 1
+      probability: 0.05
 npc_behavior:
   hostile: false
   step_interval_seconds: 0.7

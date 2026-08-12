@@ -27,6 +27,9 @@ loot:
     - type_id: hollow_bell/tallow_wax
       quantity: 1
       probability: 0.5
+    - type_id: ember_shard
+      quantity: 1
+      probability: 0.1
 npc_behavior:
   step_interval_seconds: 0.7
   detect_distance_tiles: 6

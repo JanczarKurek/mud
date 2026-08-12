@@ -350,6 +350,22 @@ fn spawn_properties_section(
         };
         rows.push(("Weight".to_owned(), value));
     }
+    // What a merchant would pay for the stack in hand. Shown as the sale
+    // price rather than the shelf price, because that is the number the
+    // player is deciding on when they look at loot.
+    let sale = def.sell_value_copper(stack.quantity.max(1));
+    if sale > 0 {
+        let value = if stack.quantity > 1 {
+            format!(
+                "{} for {}",
+                crate::game::currency::format_compact(sale),
+                stack.quantity
+            )
+        } else {
+            crate::game::currency::format_compact(sale)
+        };
+        rows.push(("Sells for".to_owned(), value));
+    }
     if let Some(damage) = def.damage.as_deref() {
         rows.push(("Damage".to_owned(), damage.to_owned()));
     }

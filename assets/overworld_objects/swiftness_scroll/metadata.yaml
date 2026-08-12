@@ -1,6 +1,7 @@
 extends: pickup
 name: Swiftness Scroll
 weight: 0.1
+value_copper: 300
 description: A scroll that quickens its reader's stride with crackling, restless vigor.
 spell_id: swiftness
 render:

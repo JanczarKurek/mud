@@ -8,8 +8,20 @@ description: A woolly grazer, blissfully unaware of anything but grass. Mostly.
 lore: >-
   Emberbrook's flock is common property in practice and somebody's property in law, which is why the Watch takes a dead sheep personally.
 level: 1
+# Livestock: butchery yields, no coin. Killing one in sight of the town
+# is still a crime — see the crime registry.
 loot:
   corpse_despawn_seconds: 60
+  drops:
+    - type_id: sheep_wool
+      quantity: "uniform(1, 2)"
+      probability: 0.8
+    - type_id: raw_hide
+      quantity: 1
+      probability: 0.5
+    - type_id: dried_meat
+      quantity: "uniform(1, 2)"
+      probability: 0.3
 stats:
   strength: 6
   agility: 8

@@ -1,0 +1,15 @@
+extends: pickup
+name: Lump of Amber
+weight: 0.15
+value_copper: 120
+max_stack_size: 10
+description:
+  - text: A honey-coloured lump of fossil resin with something small and long-dead suspended inside it.
+    stack_size: [1, 1]
+  - text: "{count_written} lumps of honey-coloured amber."
+    stack_size: [2, ~]
+render:
+  z_index: 0.24
+  debug_color: [224, 158, 48]
+  debug_size: 0.4
+  sprite_path: overworld_objects/amber_lump/sprite.png

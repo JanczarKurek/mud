@@ -1,0 +1,15 @@
+extends: pickup
+name: Cracked Bone
+weight: 0.2
+value_copper: 2
+max_stack_size: 40
+description:
+  - text: A yellowed bone, split lengthwise. The marrow is long gone.
+    stack_size: [1, 1]
+  - text: "{count_written} cracked, yellowed bones."
+    stack_size: [2, ~]
+render:
+  z_index: 0.24
+  debug_color: [214, 208, 188]
+  debug_size: 0.38
+  sprite_path: overworld_objects/cracked_bone/sprite.png

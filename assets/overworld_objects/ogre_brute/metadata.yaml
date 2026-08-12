@@ -22,24 +22,33 @@ attack_profile:
 # HP budget: mean ≈ 20 + 11·L, tanky ×1.4.
 hp: "2d20+75+constitution*5"
 armor: 2
+# Gear odds trimmed from .15-.25 to ~.12: still the intended source of the
+# chain tier (~40% chance of some piece per kill), but no longer a near-
+# guaranteed full set.
 loot:
-  corpse_despawn_seconds: 60
+  corpse_despawn_seconds: 90
   drops:
-    - type_id: gold_coin
-      quantity: "uniform(2, 5)"
-      probability: 1.0
+    - type_id: silver_coin
+      quantity: "uniform(10, 30)"
+      probability: 1.0   # ~2-6 gold: an elite purse that does not out-earn the price ladder
+    - type_id: giant_tooth
+      quantity: 1
+      probability: 0.5
+    - type_id: honeycomb
+      quantity: 1
+      probability: 0.3
     - type_id: chain_armor
       quantity: 1
-      probability: 0.25
+      probability: 0.12
     - type_id: chain_helmet
       quantity: 1
-      probability: 0.2
+      probability: 0.12
     - type_id: chain_legs
       quantity: 1
-      probability: 0.2
+      probability: 0.12
     - type_id: iron_sword
       quantity: 1
-      probability: 0.15
+      probability: 0.1
 npc_behavior:
   step_interval_seconds: 1.3
   detect_distance_tiles: 5

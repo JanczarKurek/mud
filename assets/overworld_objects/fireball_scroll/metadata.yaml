@@ -1,6 +1,7 @@
 extends: pickup
 name: Fireball Scroll
 weight: 0.1
+value_copper: 600
 description: A volatile scroll that detonates a roaring sphere of flame on a chosen tile.
 spell_id: fireball
 render:

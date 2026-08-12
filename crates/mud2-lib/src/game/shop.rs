@@ -155,6 +155,15 @@ impl StockEntry {
         }
     }
 
+    /// Add `qty` to finite stock; no-op for infinite (already unlimited).
+    /// Used when a player sells goods to the merchant, which puts them back
+    /// on the shelf.
+    pub fn restock(&mut self, qty: u32) {
+        if let StockMode::Finite(remaining) = &mut self.stock {
+            *remaining = remaining.saturating_add(qty);
+        }
+    }
+
     /// Decrement finite stock by `qty`; no-op for infinite. Returns `false`
     /// when the request would exceed available stock.
     pub fn try_take(&mut self, qty: u32) -> bool {

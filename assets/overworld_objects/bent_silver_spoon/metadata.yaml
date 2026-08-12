@@ -1,0 +1,15 @@
+extends: pickup
+name: Bent Silver Spoon
+weight: 0.06
+value_copper: 20
+max_stack_size: 10
+description:
+  - text: Good silver, badly bent. Someone used it to pry something open.
+    stack_size: [1, 1]
+  - text: "{count_written} bent silver spoons."
+    stack_size: [2, ~]
+render:
+  z_index: 0.24
+  debug_color: [192, 196, 204]
+  debug_size: 0.36
+  sprite_path: overworld_objects/bent_silver_spoon/sprite.png

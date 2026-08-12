@@ -152,6 +152,7 @@ fn trade_view() -> ClientTradeView {
             stock_remaining: Some(2),
             persuasion_modifier_pct: -12,
         }]),
+        sale_credit_copper: 150,
     }
 }
 

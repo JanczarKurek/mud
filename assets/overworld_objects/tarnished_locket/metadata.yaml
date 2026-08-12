@@ -1,0 +1,15 @@
+extends: pickup
+name: Tarnished Locket
+weight: 0.04
+value_copper: 40
+max_stack_size: 5
+description:
+  - text: A small hinged locket, black with tarnish. Whatever portrait it held has gone to damp and mould.
+    stack_size: [1, 1]
+  - text: "{count_written} tarnished lockets, none of them opening cleanly."
+    stack_size: [2, ~]
+render:
+  z_index: 0.24
+  debug_color: [148, 140, 108]
+  debug_size: 0.34
+  sprite_path: overworld_objects/tarnished_locket/sprite.png

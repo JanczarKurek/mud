@@ -1,6 +1,7 @@
 extends: pickup
 name: Magic Dart Scroll
 weight: 0.1
+value_copper: 90
 description: A novice's scroll that flings a small dart of force at a single foe.
 spell_id: magic_dart
 render:

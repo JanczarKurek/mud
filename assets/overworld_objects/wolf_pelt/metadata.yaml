@@ -1,0 +1,15 @@
+extends: pickup
+name: Wolf Pelt
+weight: 1.5
+value_copper: 16
+max_stack_size: 10
+description:
+  - text: A grey pelt, well-furred at the shoulder. Worth something to a tanner.
+    stack_size: [1, 1]
+  - text: "{count_written} grey wolf pelts."
+    stack_size: [2, ~]
+render:
+  z_index: 0.24
+  debug_color: [118, 112, 104]
+  debug_size: 0.55
+  sprite_path: overworld_objects/wolf_pelt/sprite.png

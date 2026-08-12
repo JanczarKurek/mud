@@ -1,6 +1,7 @@
 extends: pickup
 name: Bell-Bronze Ore
 weight: 3.0
+value_copper: 60
 max_stack_size: 20
 description:
   - text: A fist-sized chunk of pale crystalline ore shot through with bronze veins. It is faintly warm and it hums against your palm. Struck, it rings for an absurdly long time.

@@ -1,6 +1,7 @@
 extends: pouch
 name: Small Pouch
 weight: 0.5
+value_copper: 60
 container_capacity: 4
 description: A small leather pouch with a drawstring. Holds a few small things.
 render:

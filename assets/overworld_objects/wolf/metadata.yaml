@@ -5,12 +5,19 @@ description: A lean grey hunter of the forest edge, always downwind of the flock
 lore: >-
   Packs shadow the pasture edge for weeks before they take anything, learning the shepherd's rounds better than the shepherd does.
 level: 3
+# Beast: pelt and hide, no coin.
 loot:
   corpse_despawn_seconds: 60
   drops:
+    - type_id: wolf_pelt
+      quantity: 1
+      probability: 0.6
+    - type_id: raw_hide
+      quantity: 1
+      probability: 0.4
     - type_id: raw_fish
       quantity: 1
-      probability: 0.2
+      probability: 0.2   # whatever it took off the riverbank
 stats:
   strength: 12
   agility: 14

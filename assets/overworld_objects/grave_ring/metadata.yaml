@@ -1,0 +1,15 @@
+extends: pickup
+name: Grave Ring
+weight: 0.03
+value_copper: 240
+max_stack_size: 5
+description:
+  - text: A heavy band of grey metal taken off a hand that had stopped objecting. It is colder than it has any business being.
+    stack_size: [1, 1]
+  - text: "{count_written} cold grey grave rings."
+    stack_size: [2, ~]
+render:
+  z_index: 0.24
+  debug_color: [178, 182, 172]
+  debug_size: 0.34
+  sprite_path: overworld_objects/grave_ring/sprite.png

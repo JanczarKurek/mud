@@ -1,0 +1,15 @@
+extends: pickup
+name: Rat Tail
+weight: 0.05
+value_copper: 2
+max_stack_size: 50
+description:
+  - text: A long scaly tail. Some cellars pay a copper a dozen for these.
+    stack_size: [1, 1]
+  - text: A bundle of {count} rat tails, tied at the ends.
+    stack_size: [2, ~]
+render:
+  z_index: 0.24
+  debug_color: [128, 104, 96]
+  debug_size: 0.34
+  sprite_path: overworld_objects/rat_tail/sprite.png

@@ -1,6 +1,7 @@
 extends: equipment
 name: Shortbow
 weight: 2.0
+value_copper: 480
 description: A sturdy shortbow strung with gut. Needs arrows in the ammo slot.
 equipment_slot: weapon
 attack_profile:

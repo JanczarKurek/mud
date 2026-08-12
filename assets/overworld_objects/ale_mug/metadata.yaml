@@ -1,0 +1,25 @@
+extends: consumable
+name: Mug of Ale
+weight: 0.6
+value_copper: 6
+max_stack_size: 10
+description:
+  - text: A wooden mug of brown ale with a finger of head on it.
+    stack_size: [1, 1]
+  - text: "{count_written} mugs of brown ale."
+    stack_size: [2, ~]
+use_effects:
+  regen_multiplier: 1.5
+  regen_duration_seconds: 90
+use_texts:
+  - You drink the ale down. The ache goes quiet for a while.
+  - Warm, brown and honest. You feel steadier.
+  - You drain the mug and set it down.
+use_on_texts:
+  - You push the mug across to {target}.
+  - You raise the mug to {target}.
+render:
+  z_index: 0.24
+  debug_color: [172, 108, 44]
+  debug_size: 0.46
+  sprite_path: overworld_objects/ale_mug/sprite.png

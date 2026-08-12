@@ -1,6 +1,7 @@
 extends: pickup
 name: Firewall Scroll
 weight: 0.1
+value_copper: 720
 description: A scorching scroll that conjures a short-lived line of blazing fire across the ground.
 spell_id: firewall
 render:

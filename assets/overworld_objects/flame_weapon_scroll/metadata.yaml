@@ -1,6 +1,7 @@
 extends: pickup
 name: Flame Weapon Scroll
 weight: 0.1
+value_copper: 420
 description: A scroll wreathed in scorch marks. Reading it sheathes a weapon in flame for a time.
 spell_id: flame_weapon
 render:

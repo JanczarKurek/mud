@@ -1,6 +1,7 @@
 extends: equipment
 name: Pickaxe
 weight: 2.5
+value_copper: 240
 description: A heavy iron-headed pickaxe. Use it on rocky outcrops to mine ore.
 equipment_slot: weapon
 # A mining tool, not a weapon: small dice + STR modifier keeps it a usable

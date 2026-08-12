@@ -1,6 +1,7 @@
 extends: pickup
 name: "{properties.title|Book}"
 weight: 0.5
+value_copper: 60
 text_kind: book
 description:
   - text: "A book titled '{properties.title|Untitled}'. {properties.author_line|It is unsigned.}"

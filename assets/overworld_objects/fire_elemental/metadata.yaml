@@ -5,12 +5,17 @@ description: A swirling vortex of living flame with a molten core. Heat rises fr
 lore: >-
   It has no interest in you and no way to express that. Fire elementals simply continue in whatever direction they were last burning.
 level: 6
+# No coin: a being of living flame has no pockets and no use for money.
+# Its worth is the slag it leaves behind.
 loot:
   corpse_despawn_seconds: 45
   drops:
-    - type_id: copper_coin
-      quantity: "uniform(2, 5)"
-      probability: 1.0
+    - type_id: ember_shard
+      quantity: "uniform(1, 2)"
+      probability: 0.6
+    - type_id: amber_lump
+      quantity: 1
+      probability: 0.15   # resin cooked out of whatever it burned through
 stats:
   strength: 12
   agility: 13

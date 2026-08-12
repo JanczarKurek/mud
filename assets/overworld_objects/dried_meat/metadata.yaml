@@ -1,0 +1,25 @@
+extends: consumable
+name: Dried Meat
+weight: 0.2
+value_copper: 3
+max_stack_size: 30
+description:
+  - text: A strip of dark meat, smoked hard enough to keep for a season.
+    stack_size: [1, 1]
+  - text: "{count_written} strips of dried meat."
+    stack_size: [2, ~]
+use_effects:
+  regen_multiplier: 2.0
+  regen_duration_seconds: 60
+use_texts:
+  - You gnaw off a piece of the dried meat.
+  - Salt, smoke, and a long chew.
+  - The meat is tough, but it puts strength back in you.
+use_on_texts:
+  - You offer a strip of dried meat to {target}.
+  - You tear the strip in half and hold a piece out to {target}.
+render:
+  z_index: 0.24
+  debug_color: [132, 62, 48]
+  debug_size: 0.42
+  sprite_path: overworld_objects/dried_meat/sprite.png

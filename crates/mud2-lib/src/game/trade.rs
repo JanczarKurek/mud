@@ -18,7 +18,8 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "server-sim")]
 use crate::game::commands::GameCommand;
 use crate::game::commands::ItemSlotRef;
-#[cfg(feature = "server-sim")]
+// Ungated: `offer_credit_copper` is shared by the (gated) commit path and the
+// projection that previews the same number for thin clients.
 use crate::game::currency::{
     COPPER_PER_GOLD, COPPER_PER_SILVER, COPPER_TYPE_ID, GOLD_TYPE_ID, SILVER_TYPE_ID,
 };
@@ -29,14 +30,14 @@ use crate::game::resources::{
     GameUiEvent, InventoryState, PendingGameCommands, PendingGameUiEvents,
 };
 #[cfg(feature = "server-sim")]
-use crate::game::shop::{Shopkeeper, StockMode, Stockpile};
+use crate::game::shop::{Shopkeeper, StockEntry, StockMode, Stockpile};
 use crate::player::components::PlayerId;
 #[cfg(feature = "server-sim")]
 use crate::player::components::{InventoryStack, MaxCarryWeight, Player, PlayerIdentity};
 #[cfg(feature = "server-sim")]
 use crate::world::components::{OverworldObject, SpaceResident, TilePosition};
 use crate::world::map_layout::ObjectProperties;
-#[cfg(feature = "server-sim")]
+// Ungated for the same reason as the currency constants above.
 use crate::world::object_definitions::OverworldObjectDefinitions;
 
 pub type TradeSessionId = u64;
@@ -104,6 +105,14 @@ pub struct ClientTradeView {
     /// a "Browse Wares" subpanel. `None` for player-to-player trades.
     #[serde(default)]
     pub wares: Option<Vec<WareView>>,
+    /// What the merchant will credit for everything currently in our column,
+    /// in copper, Persuasion included. Always 0 for player-to-player trades.
+    ///
+    /// Computed server-side by the same function the commit path uses, so the
+    /// number on screen is the number that gets paid — money is never
+    /// recomputed client-side.
+    #[serde(default)]
+    pub sale_credit_copper: u32,
 }
 
 /// Per-ware projection used by the trade panel's Browse Wares list.
@@ -252,6 +261,7 @@ impl TradeSession {
         partner_name: String,
         partner_kind: TradePartnerKind,
         wares: Option<Vec<WareView>>,
+        sale_credit_copper: u32,
     ) -> Option<ClientTradeView> {
         let (us, them, our_ready, their_ready, our_confirmed, their_confirmed) =
             match self.participants {
@@ -305,6 +315,7 @@ impl TradeSession {
             our_confirmed,
             their_confirmed,
             wares,
+            sale_credit_copper,
         })
     }
 
@@ -1136,19 +1147,16 @@ fn commit_player_to_shop_trade(
             total_owed_copper.saturating_add(modified_price.saturating_mul(offer.quantity));
     }
 
-    // Sum the coin value the player is offering. Non-coin items in offers_a
-    // are transferred to the merchant for free (the merchant doesn't price
-    // them) — that's the player's choice for putting them there.
+    // Sum what the player is handing over. Coins count at face value; anything
+    // else is *sold* to the merchant at its market value (see
+    // `sell_offer_value_copper`). Items with no `value_copper` still come
+    // across for free, which is the long-standing behaviour for putting
+    // junk in a merchant's column.
     let total_offered_copper: u32 = session
         .offers_a
         .iter()
-        .map(|entry| match entry.type_id.as_str() {
-            COPPER_TYPE_ID => entry.quantity,
-            SILVER_TYPE_ID => entry.quantity.saturating_mul(COPPER_PER_SILVER),
-            GOLD_TYPE_ID => entry.quantity.saturating_mul(COPPER_PER_GOLD),
-            _ => 0,
-        })
-        .sum();
+        .map(|entry| offer_credit_copper(entry, definitions, persuasion_ranks))
+        .fold(0u32, |acc, v| acc.saturating_add(v));
 
     if total_offered_copper < total_owed_copper {
         let shortfall = total_owed_copper - total_offered_copper;
@@ -1161,7 +1169,9 @@ fn commit_player_to_shop_trade(
         return false;
     }
 
-    // Remove player's coin offers from the inventory snapshot.
+    // Remove player's offers from the inventory snapshot. This runs *before*
+    // the change is minted so the slots freed by the sold goods are available
+    // to hold the coin that replaces them.
     if !remove_offered_from(&session.offers_a, &mut inv) {
         return false;
     }
@@ -1171,12 +1181,36 @@ fn commit_player_to_shop_trade(
         return false;
     }
 
+    // Pay out the difference. `deposit_copper` may leave partial coin behind
+    // when it fails, but `inv` is a snapshot that is only committed below, so
+    // bailing here leaves the player's real inventory untouched — better than
+    // taking their goods and swallowing the payment.
+    let change_copper = total_offered_copper - total_owed_copper;
+    if change_copper > 0
+        && !crate::game::currency::deposit_copper(&mut inv, change_copper, definitions)
+    {
+        if let Ok((_, _, _, mut chat_log, _, _, _, _, _)) = player_inventory_query.get_mut(entity) {
+            chat_log.push_narrator(format!(
+                "The merchant counts out {} and waits — you've nowhere to put it.",
+                format_copper(change_copper)
+            ));
+        }
+        return false;
+    }
+
     // Commit: write the inventory snapshot back and decrement finite stocks.
     if let Ok((_, _, mut inventory, mut chat_log, _, _, _, _, _)) =
         player_inventory_query.get_mut(entity)
     {
         *inventory = inv;
-        chat_log.push_narrator("Trade complete.");
+        if change_copper > 0 {
+            chat_log.push_narrator(format!(
+                "Trade complete. The merchant counts out {}.",
+                format_copper(change_copper)
+            ));
+        } else {
+            chat_log.push_narrator("Trade complete.");
+        }
     }
 
     if let Some((_, mut stockpile)) = stockpile_query
@@ -1190,8 +1224,63 @@ fn commit_player_to_shop_trade(
                 }
             }
         }
+        // What the player sold goes onto the shelf, so the merchant visibly
+        // resells it. Priced at full market value (he sells at price, buys at
+        // half — that spread is his margin). Coins are not wares.
+        for offer in &session.offers_a {
+            let Some(def) = definitions.get(&offer.type_id) else {
+                continue;
+            };
+            let Some(value) = def.value_copper.filter(|v| *v > 0) else {
+                continue;
+            };
+            match stockpile
+                .wares
+                .iter_mut()
+                .find(|w| w.type_id == offer.type_id)
+            {
+                Some(existing) => existing.restock(offer.quantity),
+                None => stockpile.wares.push(StockEntry {
+                    type_id: offer.type_id.clone(),
+                    price_copper: value,
+                    stock: StockMode::Finite(offer.quantity),
+                }),
+            }
+        }
     }
     true
+}
+
+/// What the merchant credits the player for one offer entry, in copper.
+///
+/// Coins are face value. Everything else is a sale at half the item's
+/// `value_copper`, nudged in the player's favour by Persuasion — the first
+/// live use of [`TradeSide::PlayerSells`].
+///
+/// Ungated on purpose: the projection calls it to fill
+/// `ClientTradeView::sale_credit_copper`, so the previewed total and the
+/// committed payout come from one function and cannot drift.
+pub fn offer_credit_copper(
+    entry: &TradeOfferEntry,
+    definitions: &OverworldObjectDefinitions,
+    persuasion_ranks: u8,
+) -> u32 {
+    match entry.type_id.as_str() {
+        COPPER_TYPE_ID => entry.quantity,
+        SILVER_TYPE_ID => entry.quantity.saturating_mul(COPPER_PER_SILVER),
+        GOLD_TYPE_ID => entry.quantity.saturating_mul(COPPER_PER_GOLD),
+        type_id => {
+            // Priced per stack, not per item — see `sell_value_copper`.
+            let base = definitions
+                .get(type_id)
+                .map(|def| def.sell_value_copper(entry.quantity))
+                .unwrap_or(0);
+            if base == 0 {
+                return 0;
+            }
+            vendor_price_for(persuasion_ranks, base, TradeSide::PlayerSells)
+        }
+    }
 }
 
 #[cfg(feature = "server-sim")]
@@ -1550,7 +1639,6 @@ fn insert_one_offer(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::shop::StockEntry;
 
     #[test]
     fn try_take_handles_finite_and_infinite_stock() {
@@ -1672,5 +1760,124 @@ mod tests {
         // 4-copper apple at 10 ranks: floor(4 * 20 / 100) = 0 still.
         // The next-cheapest discount tier kicks in at base >= 5c.
         assert_eq!(vendor_price_for(10, 5, TradeSide::PlayerBuys), 4);
+    }
+}
+
+#[cfg(test)]
+mod sell_tests {
+    use super::*;
+
+    fn offer(type_id: &str, quantity: u32) -> TradeOfferEntry {
+        TradeOfferEntry {
+            source: OfferSource::PlayerSlot(ItemSlotRef::Backpack(0)),
+            type_id: type_id.to_owned(),
+            properties: ObjectProperties::new(),
+            quantity,
+        }
+    }
+
+    #[test]
+    fn coins_credit_at_face_value() {
+        let definitions = OverworldObjectDefinitions::load_from_disk();
+        assert_eq!(
+            offer_credit_copper(&offer(COPPER_TYPE_ID, 7), &definitions, 0),
+            7
+        );
+        assert_eq!(
+            offer_credit_copper(&offer(SILVER_TYPE_ID, 2), &definitions, 0),
+            2 * COPPER_PER_SILVER
+        );
+        assert_eq!(
+            offer_credit_copper(&offer(GOLD_TYPE_ID, 1), &definitions, 0),
+            COPPER_PER_GOLD
+        );
+    }
+
+    #[test]
+    fn goods_credit_at_half_market_value() {
+        let definitions = OverworldObjectDefinitions::load_from_disk();
+        let pelt = definitions.get("wolf_pelt").expect("wolf_pelt exists");
+        assert_eq!(pelt.value_copper, Some(16));
+        // One pelt: 16c on the shelf, 8c in the hand.
+        assert_eq!(
+            offer_credit_copper(&offer("wolf_pelt", 1), &definitions, 0),
+            8
+        );
+        // Priced per stack, so three pelts are worth three times one.
+        assert_eq!(
+            offer_credit_copper(&offer("wolf_pelt", 3), &definitions, 0),
+            24
+        );
+    }
+
+    /// The reason the halving is applied to the stack rather than per item:
+    /// a 2c trinket would otherwise round to 1c each, and a 1c one to nothing.
+    #[test]
+    fn cheap_trinkets_are_not_rounded_away() {
+        let definitions = OverworldObjectDefinitions::load_from_disk();
+        let tail = definitions.get("rat_tail").expect("rat_tail exists");
+        assert_eq!(tail.value_copper, Some(2));
+        assert_eq!(tail.sell_value_copper(1), 1);
+        assert_eq!(tail.sell_value_copper(9), 9);
+        assert_eq!(
+            offer_credit_copper(&offer("rat_tail", 9), &definitions, 0),
+            9
+        );
+    }
+
+    #[test]
+    fn persuasion_pays_the_seller_more() {
+        let definitions = OverworldObjectDefinitions::load_from_disk();
+        let plain = offer_credit_copper(&offer("grave_ring", 1), &definitions, 0);
+        let smooth = offer_credit_copper(&offer("grave_ring", 1), &definitions, 10);
+        assert_eq!(plain, 120); // 240c ring, sold at half
+        assert_eq!(smooth, 144); // +20%, the clamp ceiling
+                                 // Persuasion never *reduces* what the seller is paid.
+        assert!(offer_credit_copper(&offer("grave_ring", 1), &definitions, 3) >= plain);
+    }
+
+    #[test]
+    fn valueless_and_unknown_items_credit_nothing() {
+        let definitions = OverworldObjectDefinitions::load_from_disk();
+        // Quest items deliberately carry no `value_copper` so they cannot be
+        // sold away by accident.
+        assert_eq!(
+            offer_credit_copper(&offer("iron_key", 1), &definitions, 0),
+            0
+        );
+        assert_eq!(
+            offer_credit_copper(&offer("no_such_item", 4), &definitions, 0),
+            0
+        );
+    }
+
+    /// Coins must stay unvalued: a market value on a coin would let a player
+    /// sell 1 gold for its "half value" in change and launder the difference.
+    #[test]
+    fn coins_carry_no_market_value() {
+        let definitions = OverworldObjectDefinitions::load_from_disk();
+        for id in [COPPER_TYPE_ID, SILVER_TYPE_ID, GOLD_TYPE_ID] {
+            let def = definitions.get(id).expect("coin definition exists");
+            assert_eq!(def.value_copper, None, "{id} must not declare value_copper");
+        }
+    }
+
+    #[test]
+    fn restock_adds_to_finite_stock_only() {
+        let mut finite = StockEntry {
+            type_id: "wolf_pelt".to_owned(),
+            price_copper: 16,
+            stock: StockMode::Finite(2),
+        };
+        finite.restock(3);
+        assert!(matches!(finite.stock, StockMode::Finite(5)));
+
+        let mut infinite = StockEntry {
+            type_id: "apple".to_owned(),
+            price_copper: 4,
+            stock: StockMode::Infinite,
+        };
+        infinite.restock(3);
+        assert!(matches!(infinite.stock, StockMode::Infinite));
     }
 }

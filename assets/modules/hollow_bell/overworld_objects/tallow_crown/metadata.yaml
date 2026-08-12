@@ -1,6 +1,7 @@
 extends: equipment
 name: The Tallow Crown
 weight: 3.5
+value_copper: 2400
 equipment_slot: helmet
 description: Cinderjack's crown, which was never a crown. Scrape the wax off and it is an honest iron half-helm, dented all over the top, and it has been keeping the heat off something for a very long time.
 stats:

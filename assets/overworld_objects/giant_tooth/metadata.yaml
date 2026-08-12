@@ -1,0 +1,15 @@
+extends: pickup
+name: Giant's Tooth
+weight: 0.5
+value_copper: 60
+max_stack_size: 10
+description:
+  - text: A molar the size of a fist, worn flat and cracked at the root.
+    stack_size: [1, 1]
+  - text: "{count_written} fist-sized molars."
+    stack_size: [2, ~]
+render:
+  z_index: 0.24
+  debug_color: [226, 216, 186]
+  debug_size: 0.44
+  sprite_path: overworld_objects/giant_tooth/sprite.png

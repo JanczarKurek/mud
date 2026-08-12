@@ -31,6 +31,9 @@ loot:
     - type_id: green_herb
       quantity: 1
       probability: 0.25
+    - type_id: cracked_bone
+      quantity: 1
+      probability: 0.2
     - type_id: poison_flask
       quantity: 1
       probability: 0.15

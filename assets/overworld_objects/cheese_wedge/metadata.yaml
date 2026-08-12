@@ -1,0 +1,25 @@
+extends: consumable
+name: Wedge of Cheese
+weight: 0.25
+value_copper: 2
+max_stack_size: 20
+description:
+  - text: A pale wedge of hard cheese, rind still waxed.
+    stack_size: [1, 1]
+  - text: "{count_written} wedges of hard cheese."
+    stack_size: [2, ~]
+use_effects:
+  regen_multiplier: 1.75
+  regen_duration_seconds: 45
+use_texts:
+  - You eat the cheese. Sharp and salty.
+  - You pare off the rind and eat the rest.
+  - The cheese is good — better than it looks.
+use_on_texts:
+  - You offer the cheese to {target}.
+  - You hold the wedge out toward {target}.
+render:
+  z_index: 0.24
+  debug_color: [226, 196, 96]
+  debug_size: 0.44
+  sprite_path: overworld_objects/cheese_wedge/sprite.png

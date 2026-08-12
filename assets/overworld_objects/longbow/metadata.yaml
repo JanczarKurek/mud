@@ -1,6 +1,7 @@
 extends: equipment
 name: Longbow
 weight: 2.5
+value_copper: 1920
 description: A tall yew bow with serious draw weight. Needs arrows in the ammo slot.
 equipment_slot: weapon
 attack_profile:

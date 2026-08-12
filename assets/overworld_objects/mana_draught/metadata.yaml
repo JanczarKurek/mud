@@ -1,0 +1,20 @@
+extends: consumable
+name: Mana Draught
+weight: 0.35
+value_copper: 300
+max_stack_size: 10
+description: A slender blue vial that is faintly, unpleasantly cold to hold.
+use_effects:
+  restore_mana: 30.0
+use_texts:
+  - You drink the draught. Something behind your eyes unclenches.
+  - Cold at the throat, clear at the mind.
+  - The blue draught returns what the casting took.
+use_on_texts:
+  - You offer the blue vial to {target}.
+  - You hold the cold vial out to {target}.
+render:
+  z_index: 0.24
+  debug_color: [64, 112, 214]
+  debug_size: 0.45
+  sprite_path: overworld_objects/mana_draught/sprite.png

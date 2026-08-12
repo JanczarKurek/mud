@@ -1,6 +1,7 @@
 extends: equipment
 name: Leather Armor
 weight: 8.0
+value_copper: 1200
 description: A sturdy leather cuirass with shoulder guards.
 equipment_slot: armor
 # Armor now subtracts its FULL value post-hit (was a hidden /2); item values

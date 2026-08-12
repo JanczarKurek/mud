@@ -1,0 +1,15 @@
+extends: pickup
+name: Carved Bone Die
+weight: 0.02
+value_copper: 6
+max_stack_size: 20
+description:
+  - text: A small die cut from bone, its pips inked black. It is subtly, deliberately weighted.
+    stack_size: [1, 1]
+  - text: "{count_written} bone dice, all of them weighted."
+    stack_size: [2, ~]
+render:
+  z_index: 0.24
+  debug_color: [222, 214, 190]
+  debug_size: 0.3
+  sprite_path: overworld_objects/carved_bone_die/sprite.png

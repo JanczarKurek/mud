@@ -1,6 +1,7 @@
 extends: pickup
 name: Summon Wolf Scroll
 weight: 0.1
+value_copper: 600
 description: A rune-etched scroll that conjures a spectral wolf to fight at your side for a short time.
 spell_id: summon_wolf
 render:

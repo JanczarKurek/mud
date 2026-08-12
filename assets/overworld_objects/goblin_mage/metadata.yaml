@@ -8,12 +8,21 @@ level: 3
 loot:
   corpse_despawn_seconds: 60
   drops:
+    - type_id: copper_coin
+      quantity: "uniform(3, 10)"
+      probability: 0.8
+    - type_id: goblin_ear
+      quantity: 1
+      probability: 0.5
     - type_id: magic_dart_scroll
       quantity: 1
       probability: 0.25
-    - type_id: copper_coin
-      quantity: 3
-      probability: 0.7
+    - type_id: carved_bone_die
+      quantity: 1
+      probability: 0.2   # weighted, of course
+    - type_id: mana_draught
+      quantity: 1
+      probability: 0.08
 stats:
   strength: 6
   agility: 10

@@ -1,0 +1,15 @@
+extends: pickup
+name: Ember Shard
+weight: 0.1
+value_copper: 80
+max_stack_size: 20
+description:
+  - text: A shard of cooled elemental slag that has not quite stopped glowing. It is warm through a glove.
+    stack_size: [1, 1]
+  - text: "{count_written} shards of warm elemental slag."
+    stack_size: [2, ~]
+render:
+  z_index: 0.24
+  debug_color: [240, 124, 44]
+  debug_size: 0.4
+  sprite_path: overworld_objects/ember_shard/sprite.png

@@ -1,6 +1,7 @@
 extends: consumable
 name: Berries
 weight: 0.05
+value_copper: 2
 max_stack_size: 50
 description:
   - text: A small handful of plump red berries.

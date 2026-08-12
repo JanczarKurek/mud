@@ -1,6 +1,7 @@
 extends: pickup
 name: Sack of Tallow Wax
 weight: 1.5
+value_copper: 20
 max_stack_size: 20
 description:
   - text: A greasy grey-white lump of rendered tallow, wrapped in waxed cloth and string. It smells faintly of the foundry, and faintly of something the foundry was not supposed to be rendering.

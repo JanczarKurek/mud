@@ -1,6 +1,7 @@
 extends: pickup
 name: Sleep Scroll
 weight: 0.1
+value_copper: 240
 description: A scroll whose drowsy syllables coax a single foe into helpless slumber.
 spell_id: sleep
 render:

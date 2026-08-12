@@ -1,6 +1,7 @@
 extends: pickup
 name: Flower Mana Potion Recipe
 weight: 0.1
+value_copper: 240
 description: A pressed-flower parchment scrawled with a mana brew recipe.
 learns_recipe: flower_mana_potion
 render:

@@ -1,6 +1,7 @@
 extends: equipment
 name: Dagger
 weight: 0.8
+value_copper: 6
 description: A slim double-edged blade that slips between ribs. Crits on 19-20.
 equipment_slot: weapon
 # Light blade: small dice, but an expanded crit range (19-20) — its identity

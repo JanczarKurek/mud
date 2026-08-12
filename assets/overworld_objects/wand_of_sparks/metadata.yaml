@@ -1,6 +1,7 @@
 extends: pickup
 name: Wand of Sparks
 weight: 0.6
+value_copper: 900
 description: A slender wand humming with stored lightning. Each use crackles forth a Spark Bolt.
 spell_id: spark_bolt
 max_charges: 30

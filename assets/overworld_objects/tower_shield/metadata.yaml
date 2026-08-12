@@ -1,6 +1,7 @@
 extends: equipment
 name: Tower Shield
 weight: 9.0
+value_copper: 3600
 description: A body-length shield you can practically hide behind. Bulky enough to slow your footwork.
 equipment_slot: shield
 # The tank option: blocks often and hard, at the cost of a little dodge.

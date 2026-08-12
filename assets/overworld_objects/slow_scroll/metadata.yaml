@@ -1,6 +1,7 @@
 extends: pickup
 name: Slow Scroll
 weight: 0.1
+value_copper: 240
 description: A scroll that mires a chosen target's limbs in heavy, honeyed magic.
 spell_id: slow
 render:

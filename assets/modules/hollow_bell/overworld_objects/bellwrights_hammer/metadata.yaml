@@ -1,6 +1,7 @@
 extends: equipment
 name: The Bellwright's Hammer
 weight: 6.0
+value_copper: 3600
 equipment_slot: weapon
 description: "Grandam Bellow's own casting hammer — ash shaft bound in worn leather, a heavy bronze head gone green with age and inscribed round with tiny bell-marks. She had it with her when she went down to hang the bell and did not come back up. Two hundred years under the Deeplistener has done something to it. It rings when it lands. {properties.inscription_line|}"
 engravable: true

@@ -110,6 +110,16 @@ pub struct OverworldObjectDefinition {
     /// for objects that pre-date the weight system.
     #[serde(default)]
     pub weight: f32,
+    /// What the item is worth on the open market, in copper, per single
+    /// instance. This is the *buy* price a merchant would ask; players sell
+    /// at half (see [`Self::sell_value_copper`]). `None` means the item has
+    /// no market value — a merchant will accept it but pay nothing.
+    ///
+    /// Coins deliberately leave this unset: they are priced by
+    /// `game::currency` at face value, and giving them a market value would
+    /// let a player sell coin for coin.
+    #[serde(default)]
+    pub value_copper: Option<u32>,
     pub render: RenderMetadata,
     #[serde(default)]
     pub sound_paths: Vec<String>,
@@ -818,7 +828,13 @@ pub enum QuantityDistribution {
 }
 
 impl QuantityDistribution {
-    pub fn roll(&self) -> u32 {
+    /// Roll a quantity. `salt` de-correlates rolls made within the same
+    /// nanosecond: the clock is the only entropy source here (house style,
+    /// see `combat::damage_expr::roll_die`), so two `uniform` drops on one
+    /// loot table would otherwise always land on the same number. Callers
+    /// pass something that varies per drop — the drop index mixed with a hash
+    /// of its `type_id`.
+    pub fn roll(&self, salt: u64) -> u32 {
         match self {
             QuantityDistribution::Fixed(n) => *n,
             QuantityDistribution::Uniform(min, max) => {
@@ -829,8 +845,9 @@ impl QuantityDistribution {
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.subsec_nanos() as u64)
                     .unwrap_or(0);
+                let mixed = nanos.wrapping_add(salt.wrapping_mul(0x9E37_79B9_7F4A_7C15));
                 let range = (max - min + 1) as u64;
-                *min + (nanos % range) as u32
+                *min + (mixed % range) as u32
             }
         }
     }
@@ -1259,6 +1276,23 @@ impl RenderMetadata {
 }
 
 impl OverworldObjectDefinition {
+    /// What a merchant pays for `quantity` of these, in copper, before
+    /// Persuasion.
+    ///
+    /// The content bible's vendor convention (§9.2) is "buy at price, sell at
+    /// half". The halving is applied to the *stack*, not to each item: at
+    /// per-item granularity a 1c trinket would round to zero and a sack of
+    /// forty of them would still be worth nothing. Items with no
+    /// `value_copper` are worth nothing outright — the merchant takes them but
+    /// pays zero, which is the pre-existing behaviour for anything handed over
+    /// in a shop trade.
+    pub fn sell_value_copper(&self, quantity: u32) -> u32 {
+        self.value_copper
+            .unwrap_or(0)
+            .saturating_mul(quantity)
+            .div_euclid(2)
+    }
+
     /// Which codex ladder this definition belongs to.
     ///
     /// An explicit `codex:` in YAML always wins. Otherwise: anything with AI

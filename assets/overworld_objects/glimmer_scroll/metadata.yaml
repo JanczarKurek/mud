@@ -1,6 +1,7 @@
 extends: pickup
 name: Glimmer Scroll
 weight: 0.1
+value_copper: 60
 description: A scroll bearing a softly glowing rune that wreathes its reader in faint light.
 spell_id: glimmer
 render:

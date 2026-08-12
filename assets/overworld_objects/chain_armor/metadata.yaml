@@ -1,6 +1,7 @@
 extends: equipment
 name: Chain Armor
 weight: 12.0
+value_copper: 3600
 description: A knee-length hauberk of riveted mail rings.
 equipment_slot: armor
 armor: 3

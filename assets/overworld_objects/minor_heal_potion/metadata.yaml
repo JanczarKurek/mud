@@ -1,0 +1,20 @@
+extends: consumable
+name: Minor Heal Potion
+weight: 0.3
+value_copper: 60
+max_stack_size: 10
+description: A thumb-sized vial of cloudy red liquid, corked with wax. Enough to close a bad cut and not much more.
+use_effects:
+  restore_health: 25.0
+use_texts:
+  - You knock back the vial. The bleeding slows.
+  - Warmth spreads from your stomach outward.
+  - The little red vial does its small, honest work.
+use_on_texts:
+  - You press the vial into {target}'s hands.
+  - You try to get the vial to {target}.
+render:
+  z_index: 0.24
+  debug_color: [204, 72, 84]
+  debug_size: 0.45
+  sprite_path: overworld_objects/minor_heal_potion/sprite.png
