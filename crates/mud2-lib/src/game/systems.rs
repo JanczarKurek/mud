@@ -3962,7 +3962,16 @@ fn handle_move_item(
                 chat_log_state.push_narrator("That item is out of reach.");
                 return;
             }
-            let quantity = quantity_query.get(entity).map(|q| q.0).unwrap_or(1);
+            let ground_quantity = quantity_query.get(entity).map(|q| q.0).unwrap_or(1);
+            // A ground pile bigger than one stack (a legacy save, a script,
+            // an admin spawn) must not collapse into a single slot — take a
+            // stack's worth and leave the rest lying there.
+            let max_stack = definitions
+                .get(&definition_id)
+                .map(|def| def.max_stack_size.max(1))
+                .unwrap_or(1);
+            let quantity = ground_quantity.min(max_stack);
+            let left_on_ground = ground_quantity - quantity;
             let properties = object_registry
                 .properties(object_id)
                 .cloned()
@@ -3997,6 +4006,16 @@ fn handle_move_item(
                 definitions,
             ) {
                 chat_log_state.push_narrator("There's no room for that there.");
+                return;
+            }
+            if left_on_ground > 0 {
+                // Partial pickup: the pile stays put, just lighter.
+                if left_on_ground > 1 {
+                    commands.entity(entity).insert(Quantity(left_on_ground));
+                } else {
+                    commands.entity(entity).remove::<Quantity>();
+                }
+                chat_log_state.push_narrator("You take as much as you can carry in one stack.");
                 return;
             }
             commands.entity(entity).despawn();
@@ -4495,10 +4514,82 @@ fn handle_take_from_stack(
                 .cloned()
                 .unwrap_or_default();
 
-            let new_stack = InventoryStack::item(definition_id, properties, actual_amount);
+            let new_stack =
+                InventoryStack::item(definition_id.clone(), properties.clone(), actual_amount);
             let destination_slot = match destination {
                 ItemDestination::Slot(s) => s,
-                ItemDestination::WorldTile(_) => return,
+                // Splitting a ground pile onto another tile — "take 5 of
+                // those and set them down over here". Previously this
+                // combination was unreachable (the only caller always aimed
+                // at a backpack slot) and fell through as a silent no-op.
+                ItemDestination::WorldTile(target_tile) => {
+                    let placed_block_size = definitions
+                        .get(&definition_id)
+                        .map_or(0, |def| def.render.block_size);
+                    let Some(world_drop_tile) = find_nearest_valid_world_drop_tile(
+                        target_tile,
+                        None,
+                        placed_block_size,
+                        space_resident.space_id,
+                        &player_position,
+                        entity,
+                        object_query,
+                        collider_positions,
+                        definitions,
+                        floor_maps,
+                        floor_defs,
+                        world_config,
+                    ) else {
+                        chat_log_state.push_narrator("There's no room for that there.");
+                        return;
+                    };
+                    // Landing back on the pile we came from would be a no-op
+                    // that still burned the quantity — treat it as "never mind".
+                    if world_drop_tile != tile_position
+                        && !add_to_ground_stack(
+                            &definition_id,
+                            actual_amount,
+                            world_drop_tile,
+                            space_resident.space_id,
+                            object_query,
+                            quantity_query,
+                            object_registry,
+                            definitions,
+                            commands,
+                        )
+                    {
+                        let new_id = object_registry
+                            .allocate_runtime_id_with_properties(definition_id.clone(), properties);
+                        spawn_overworld_object(
+                            commands,
+                            definitions,
+                            object_registry,
+                            new_id,
+                            &definition_id,
+                            None,
+                            space_resident.space_id,
+                            world_drop_tile,
+                            Some(actual_amount),
+                        );
+                    }
+                    if world_drop_tile != tile_position {
+                        let remaining = world_qty - actual_amount;
+                        if remaining == 0 {
+                            commands.entity(entity).despawn();
+                            pending_stack_settle.push(crate::world::stacks::SettleStackEvent {
+                                space_id: space_resident.space_id,
+                                x: tile_position.x,
+                                y: tile_position.y,
+                                removed_entity: Some(entity),
+                            });
+                        } else if remaining > 1 {
+                            commands.entity(entity).insert(Quantity(remaining));
+                        } else {
+                            commands.entity(entity).remove::<Quantity>();
+                        }
+                    }
+                    return;
+                }
             };
             if is_player_slot(destination_slot)
                 && would_overload_carry(&inventory_state, &new_stack, &max_carry, definitions)
@@ -5031,8 +5122,20 @@ fn place_stack_in_option_slot(
     stack: InventoryStack,
     definitions: &OverworldObjectDefinitions,
 ) -> bool {
+    let max_stack = definitions
+        .get(&stack.type_id)
+        .map(|d| d.max_stack_size)
+        .unwrap_or(1)
+        .max(1);
     match slot {
         None => {
+            // Even an empty slot has a ceiling. Callers that legitimately
+            // hold more than one stack's worth must split before placing;
+            // letting an over-cap stack through here is how a single bad
+            // quantity upstream becomes a permanent inventory anomaly.
+            if stack.quantity > max_stack {
+                return false;
+            }
             *slot = Some(stack);
             true
         }
@@ -5048,10 +5151,6 @@ fn place_stack_in_option_slot(
             if stack.properties != existing.properties {
                 return false;
             }
-            let max_stack = definitions
-                .get(&stack.type_id)
-                .map(|d| d.max_stack_size)
-                .unwrap_or(1);
             if existing.quantity >= max_stack {
                 return false;
             }

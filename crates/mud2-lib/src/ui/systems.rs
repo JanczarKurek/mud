@@ -23,15 +23,15 @@ use crate::ui::components::{
     EquipmentSlotImage, EquipmentSlotLabel, HealthFill, ItemSlotButton, ItemSlotImage,
     ItemSlotKind, ItemSlotQuantityLabel, ItemTooltipLabel, ItemTooltipRoot, JumpInfoBoxLabel,
     JumpInfoBoxRoot, JumpTileHighlight, ManaFill, NearbyNpcDot, NearbyNpcHpFill, NearbyNpcRow,
-    NearbyNpcsList, QuickbarSlotMarker, RightSidebarRoot, TakePartialAmountLabel,
-    TakePartialCancelButton, TakePartialConfirmButton, TakePartialDecButton, TakePartialIncButton,
-    TakePartialPopupRoot,
+    NearbyNpcsList, QuickbarSlotMarker, RightSidebarRoot, TakePartialAmountField,
+    TakePartialAmountLabel, TakePartialCancelButton, TakePartialConfirmButton,
+    TakePartialDecButton, TakePartialIncButton, TakePartialPopupRoot,
 };
 use crate::ui::resources::{
-    ContextMenuState, ContextMenuTarget, CursorMode, CursorState, DockedPanelDragState,
-    DockedPanelKind, DockedPanelResizeState, DockedPanelState, DragSource, DragState, HoveredTile,
-    ItemTargetingState, Quickbar, ShowCoordinates, SpellTargetingState, TakePartialState,
-    UseOnState,
+    CarriedStack, ClientNotices, ContextMenuState, ContextMenuTarget, CursorMode, CursorState,
+    DockedPanelDragState, DockedPanelKind, DockedPanelResizeState, DockedPanelState, DragSource,
+    DragState, HoveredTile, ItemTargetingState, Quickbar, ShowCoordinates, SpellTargetingState,
+    TakePartialState, UseOnState,
 };
 use crate::world::column::FloorGeometry;
 use crate::world::components::TilePosition;
@@ -218,6 +218,7 @@ pub fn toggle_cursor_mode(
     console_state: Option<Res<PythonConsoleState>>,
     use_on_state: Res<UseOnState>,
     spell_targeting_state: Res<SpellTargetingState>,
+    carried_stack: Res<CarriedStack>,
     mut cursor_state: ResMut<CursorState>,
 ) {
     if console_state.as_ref().is_some_and(|state| state.is_open) {
@@ -227,6 +228,11 @@ pub fn toggle_cursor_mode(
         return;
     }
     if spell_targeting_state.source.is_some() {
+        return;
+    }
+    // A carried stack owns the cursor until it is placed or cancelled;
+    // toggling into another mode would strand it.
+    if carried_stack.is_active() {
         return;
     }
 
@@ -240,6 +246,7 @@ pub fn toggle_cursor_mode(
             CursorMode::ItemTarget => CursorMode::ItemTarget,
             CursorMode::AttackTarget => CursorMode::AttackTarget,
             CursorMode::JumpTarget => CursorMode::JumpTarget,
+            CursorMode::CarryStack => CursorMode::CarryStack,
         };
     }
 
@@ -326,6 +333,9 @@ fn cursor_icon_for_state(
         CursorMode::ItemTarget => "cursors/spell_target_cursor.png".to_owned(),
         CursorMode::AttackTarget => "cursors/attack_cursor.png".to_owned(),
         CursorMode::JumpTarget => "cursors/spell_target_cursor.png".to_owned(),
+        // The carried stack's ghost (see `sync_drag_preview`) is the
+        // affordance here, so the pointer itself stays plain.
+        CursorMode::CarryStack => "cursors/default_cursor.png".to_owned(),
     };
 
     CursorIcon::Custom(CustomCursor::Image(CustomCursorImage {
@@ -1344,6 +1354,28 @@ pub fn sync_chat_log(
     *last_lines = client_state.chat_log_lines.clone();
 }
 
+/// Flush client-only lines ([`ClientNotices`]) into the chat widget. Runs
+/// after `sync_chat_log` so a same-frame server resync can't clobber them —
+/// they live in the widget only, never in `chat_log_lines`, which the server
+/// fold replaces wholesale.
+pub fn drain_client_notices(
+    mut notices: ResMut<ClientNotices>,
+    mut chat_query: Query<&mut bevy_terminal::Terminal, With<ChatTerminal>>,
+) {
+    if notices.0.is_empty() {
+        return;
+    }
+    let Ok(mut terminal) = chat_query.single_mut() else {
+        // No chat widget yet — drop them rather than growing unboundedly.
+        notices.0.clear();
+        return;
+    };
+    for line in notices.0.drain(..) {
+        let style = classify_chat_line(&line);
+        terminal.push(line, style);
+    }
+}
+
 fn classify_chat_line(line: &str) -> bevy_terminal::LineStyle {
     if line.starts_with("[System]") || line.starts_with("[System ") {
         bevy_terminal::LineStyle::ChatSystem
@@ -1678,16 +1710,20 @@ pub fn handle_context_menu_actions(
                         stack_in_slot_kind(&client_state, &docked_panel_state, slot_kind)
                     {
                         take_partial_state.source = Some(ItemReference::Slot(slot_ref));
+                        take_partial_state.source_slot_kind = Some(slot_kind);
                         take_partial_state.max_amount = stack.quantity;
                         take_partial_state.selected_amount = 1;
+                        take_partial_state.cancel_edit();
                     }
                 }
             }
             Some(ContextMenuTarget::World(object_id)) => {
                 if let Some(obj) = client_state.world_objects.get(&object_id) {
                     take_partial_state.source = Some(ItemReference::WorldObject(object_id));
+                    take_partial_state.source_slot_kind = None;
                     take_partial_state.max_amount = obj.quantity;
                     take_partial_state.selected_amount = 1;
+                    take_partial_state.cancel_edit();
                 }
             }
             None => {}
@@ -2999,11 +3035,15 @@ pub fn sync_docked_panel_titles(
 pub fn item_slot_inputs_changed(
     revisions: Res<crate::game::resources::ClientStateRevisions>,
     docked_panel_state: Res<DockedPanelState>,
+    carried_stack: Res<CarriedStack>,
     added: Query<(), Or<(Added<ItemSlotButton>, Added<ItemSlotImage>)>>,
     mut last_inventory: Local<Option<u64>>,
 ) -> bool {
+    // Picking up or placing a carried stack doesn't touch the inventory (the
+    // items haven't moved yet) but does change how the source slot renders.
     let changed = *last_inventory != Some(revisions.inventory)
         || docked_panel_state.is_changed()
+        || carried_stack.is_changed()
         || !added.is_empty();
     *last_inventory = Some(revisions.inventory);
     changed
@@ -3072,6 +3112,7 @@ pub fn sync_item_slot_button_visibility(
 pub fn sync_container_slot_images(
     client_state: Res<ClientGameState>,
     docked_panel_state: Res<DockedPanelState>,
+    carried_stack: Res<CarriedStack>,
     asset_server: Res<AssetServer>,
     definitions: Res<OverworldObjectDefinitions>,
     mut image_query: Query<
@@ -3120,6 +3161,16 @@ pub fn sync_container_slot_images(
             continue;
         };
 
+        // The carry leaves its items in place until they're dropped, so show
+        // what's left behind — dimmed, and gone entirely once the whole stack
+        // is in hand. Without this the slot and the cursor both advertise the
+        // same items, which reads as duplication.
+        let left_behind = carried_left_in_slot(&carried_stack, slot.kind, stack.quantity);
+        if left_behind == 0 {
+            *visibility = Visibility::Hidden;
+            continue;
+        }
+
         let Some(definition) = definitions.get(&stack.type_id) else {
             *visibility = Visibility::Hidden;
             continue;
@@ -3127,7 +3178,7 @@ pub fn sync_container_slot_images(
 
         let state = stack.properties.get("state").map(String::as_str);
         let Some(sprite_path) = definition
-            .sprite_path_for_state_count(state, stack.quantity)
+            .sprite_path_for_state_count(state, left_behind)
             .map(str::to_owned)
         else {
             *visibility = Visibility::Hidden;
@@ -3135,6 +3186,11 @@ pub fn sync_container_slot_images(
         };
 
         image_node.image = asset_server.load(sprite_path);
+        image_node.color = if left_behind < stack.quantity {
+            Color::WHITE.with_alpha(0.45)
+        } else {
+            Color::WHITE
+        };
         *visibility = Visibility::Visible;
     }
 
@@ -3176,9 +3232,12 @@ pub fn sync_container_slot_images(
             | ItemSlotKind::TradeThem { .. }
             | ItemSlotKind::MerchantWare { .. } => None,
         };
-        match stack {
-            Some(s) if s.quantity > 1 => {
-                text.0 = s.quantity.to_string();
+        let remaining = stack
+            .as_ref()
+            .map(|s| carried_left_in_slot(&carried_stack, label.kind, s.quantity));
+        match remaining {
+            Some(quantity) if quantity > 1 => {
+                text.0 = quantity.to_string();
                 *visibility = Visibility::Visible;
             }
             _ => {
@@ -3186,6 +3245,17 @@ pub fn sync_container_slot_images(
                 *visibility = Visibility::Hidden;
             }
         }
+    }
+}
+
+/// How much of `slot`'s stack is still visually in the slot: the full
+/// `quantity` normally, minus the carried amount while this slot is the source
+/// of a cursor-carried stack.
+fn carried_left_in_slot(carried: &CarriedStack, slot: ItemSlotKind, quantity: u32) -> u32 {
+    if carried.is_active() && carried.source_slot_kind == Some(slot) {
+        quantity.saturating_sub(carried.amount)
+    } else {
+        quantity
     }
 }
 
@@ -3259,7 +3329,10 @@ pub fn sync_take_partial_label(
         return;
     };
     if take_partial_state.source.is_some() {
-        let new_text = take_partial_state.selected_amount.to_string();
+        let new_text = match take_partial_state.edit_buffer.as_ref() {
+            Some(buffer) => format!("{buffer}_"),
+            None => take_partial_state.selected_amount.to_string(),
+        };
         if text.0 != new_text {
             text.0 = new_text;
         }
@@ -3272,11 +3345,13 @@ pub fn handle_take_partial_buttons(
     client_state: Res<ClientGameState>,
     docked_panel_state: Res<DockedPanelState>,
     mut take_partial_state: ResMut<TakePartialState>,
-    mut pending_commands: ResMut<ClientPendingCommands>,
+    mut carried_stack: ResMut<CarriedStack>,
+    mut cursor_state: ResMut<CursorState>,
     dec_query: Query<(&ComputedNode, &UiGlobalTransform), With<TakePartialDecButton>>,
     inc_query: Query<(&ComputedNode, &UiGlobalTransform), With<TakePartialIncButton>>,
     confirm_query: Query<(&ComputedNode, &UiGlobalTransform), With<TakePartialConfirmButton>>,
     cancel_query: Query<(&ComputedNode, &UiGlobalTransform), With<TakePartialCancelButton>>,
+    field_query: Query<(&ComputedNode, &UiGlobalTransform), With<TakePartialAmountField>>,
 ) {
     if take_partial_state.source.is_none() {
         return;
@@ -3290,6 +3365,15 @@ pub fn handle_take_partial_buttons(
     let Some(cursor_position) = window.cursor_position() else {
         return;
     };
+
+    if is_cursor_over_button(cursor_position, &field_query) {
+        take_partial_state.begin_edit();
+        return;
+    }
+
+    // Any other click ends a typed edit by applying it, so `<`/`>`/Take all
+    // act on the number the player just entered.
+    take_partial_state.commit_edit();
 
     if is_cursor_over_button(cursor_position, &dec_query) {
         take_partial_state.selected_amount =
@@ -3307,48 +3391,406 @@ pub fn handle_take_partial_buttons(
         let Some(source) = take_partial_state.source else {
             return;
         };
-        let amount = take_partial_state.selected_amount;
-        let destination = find_best_take_destination(source, &client_state, &docked_panel_state);
-        if let Some(destination) = destination {
-            pending_commands.push(GameCommand::TakeFromStack {
-                source,
-                amount,
-                destination,
-            });
+        // Confirming no longer *moves* anything — it sticks the chosen count
+        // to the cursor so the next click picks the destination. The items
+        // stay in `source` until then, which is what makes cancelling free.
+        let source_slot_kind = take_partial_state.source_slot_kind;
+        let type_id = match source_slot_kind {
+            Some(kind) => stack_in_slot_kind(&client_state, &docked_panel_state, kind)
+                .map(|stack| stack.type_id),
+            None => match source {
+                ItemReference::WorldObject(object_id) => client_state
+                    .world_objects
+                    .get(&object_id)
+                    .map(|object| object.definition_id.clone()),
+                ItemReference::Slot(_) => None,
+            },
+        };
+        if let Some(type_id) = type_id {
+            carried_stack.source = Some(source);
+            carried_stack.source_slot_kind = source_slot_kind;
+            carried_stack.type_id = type_id;
+            carried_stack.amount = take_partial_state.selected_amount;
+            cursor_state.mode = CursorMode::CarryStack;
         }
         take_partial_state.source = None;
+        take_partial_state.source_slot_kind = None;
+        take_partial_state.cancel_edit();
         return;
     }
 
     if is_cursor_over_button(cursor_position, &cancel_query) {
         take_partial_state.source = None;
+        take_partial_state.source_slot_kind = None;
+        take_partial_state.cancel_edit();
     }
 }
 
-fn find_best_take_destination(
-    source: ItemReference,
-    client_state: &ClientGameState,
-    _docked_panel_state: &DockedPanelState,
-) -> Option<ItemDestination> {
-    let visible = client_state
-        .player_storage_slots
-        .min(client_state.inventory.backpack_slots.len());
-    // Find first empty backpack slot that isn't the source slot itself
-    for i in 0..visible {
-        if matches!(source, ItemReference::Slot(ItemSlotRef::Backpack(s)) if s == i) {
+/// Digits into the amount field while it is being typed into. Enter applies
+/// the number (clamped to the stack), Escape drops the edit. Mirrors
+/// `drive_trade_quantity_edit`.
+pub fn drive_take_partial_amount_edit(
+    mut keyboard_events: bevy::ecs::message::MessageReader<bevy::input::keyboard::KeyboardInput>,
+    mut take_partial_state: ResMut<TakePartialState>,
+) {
+    if !take_partial_state.is_editing() {
+        keyboard_events.clear();
+        return;
+    }
+    for event in keyboard_events.read() {
+        if !event.state.is_pressed() {
             continue;
         }
-        if client_state
-            .inventory
-            .backpack_slots
-            .get(i)
-            .and_then(|s| s.as_ref())
-            .is_none()
-        {
-            return Some(ItemDestination::Slot(ItemSlotRef::Backpack(i)));
+        let Some(buffer) = take_partial_state.edit_buffer.as_mut() else {
+            return;
+        };
+        match crate::ui::theme::text_field::apply_text_edit(
+            buffer,
+            event,
+            crate::ui::theme::text_field::CharPolicy::digits(),
+        ) {
+            crate::ui::theme::text_field::TextEditOutcome::Cancel => {
+                take_partial_state.cancel_edit();
+                return;
+            }
+            crate::ui::theme::text_field::TextEditOutcome::Submit
+            | crate::ui::theme::text_field::TextEditOutcome::Next => {
+                take_partial_state.commit_edit();
+                return;
+            }
+            crate::ui::theme::text_field::TextEditOutcome::Edited
+            | crate::ui::theme::text_field::TextEditOutcome::Ignored => {}
         }
     }
-    None
+}
+
+/// Outcome of aiming a carried stack at one slot.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CarryDrop {
+    /// Send this many; anything left over stays on the cursor.
+    Place(u32),
+    /// Nothing moves and the stack keeps being carried. The message is shown
+    /// to the player so the click never reads as "swallowed".
+    Refused(&'static str),
+}
+
+/// How much of a carried stack may land in `dest`, applying the same rules the
+/// server enforces in `handle_take_from_stack` — so the amount we send is
+/// always one it will accept, and a partial merge leaves a remainder on the
+/// cursor rather than being rejected wholesale.
+///
+/// The refusal strings deliberately match the server's narrator lines so both
+/// paths read identically to the player.
+pub fn carry_drop_amount(
+    carried: u32,
+    dest: Option<&InventoryStack>,
+    carried_type_id: &str,
+    max_stack: u32,
+) -> CarryDrop {
+    // A definition with no explicit cap still holds one item.
+    let max_stack = max_stack.max(1);
+    match dest {
+        None => CarryDrop::Place(carried.min(max_stack)),
+        Some(existing) if existing.type_id != carried_type_id => {
+            CarryDrop::Refused("Can't mix different item types.")
+        }
+        Some(existing) => match max_stack.saturating_sub(existing.quantity) {
+            0 => CarryDrop::Refused("That stack is full."),
+            room => CarryDrop::Place(carried.min(room)),
+        },
+    }
+}
+
+/// Resolve a click while a stack rides the cursor (`CursorMode::CarryStack`).
+///
+/// Unlike a drag, the carry survives a click that lands nowhere useful — every
+/// refusal keeps the stack in hand and says why, so a mis-click never silently
+/// eats the items. A merge that only partly fits sends the part that fits and
+/// keeps the remainder carried.
+///
+/// Structurally this mirrors `handle_item_targeting`: same slot `ParamSet`,
+/// same Escape/right-click cancel, same "a click that misses keeps the mode
+/// alive" rule.
+#[allow(clippy::too_many_arguments)]
+pub fn handle_carried_stack_drop(
+    mut mouse_input: ResMut<ButtonInput<MouseButton>>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    world_config: Res<WorldConfig>,
+    floor_defs: Res<crate::world::floor_definitions::FloorTilesetDefinitions>,
+    client_state: Res<ClientGameState>,
+    definitions: Res<OverworldObjectDefinitions>,
+    panel_state: (
+        Res<ContextMenuState>,
+        Res<DockedPanelState>,
+        Res<crate::ui::resources::TradePopupState>,
+        Res<TakePartialState>,
+    ),
+    mut cursor_state: ResMut<CursorState>,
+    mut carried_stack: ResMut<CarriedStack>,
+    mut notices: ResMut<ClientNotices>,
+    mut pending_commands: ResMut<ClientPendingCommands>,
+    quickbar_slot_query: Query<
+        (
+            &QuickbarSlotMarker,
+            &ComputedNode,
+            &UiGlobalTransform,
+            Option<&Visibility>,
+        ),
+        With<Button>,
+    >,
+    mut slot_queries: ParamSet<(
+        Query<
+            (
+                &ItemSlotButton,
+                &ComputedNode,
+                &UiGlobalTransform,
+                Option<&Visibility>,
+            ),
+            (With<Button>, With<EquipmentSlotButton>),
+        >,
+        Query<
+            (
+                &ItemSlotButton,
+                &ComputedNode,
+                &UiGlobalTransform,
+                Option<&Visibility>,
+            ),
+            (With<Button>, With<ContainerSlotButton>),
+        >,
+        Query<
+            (
+                &ItemSlotImage,
+                &ComputedNode,
+                &UiGlobalTransform,
+                Option<&Visibility>,
+            ),
+            With<EquipmentSlotImage>,
+        >,
+        Query<
+            (
+                &ItemSlotImage,
+                &ComputedNode,
+                &UiGlobalTransform,
+                Option<&Visibility>,
+            ),
+            With<ContainerSlotImage>,
+        >,
+        Query<
+            (
+                &ItemSlotButton,
+                &ComputedNode,
+                &UiGlobalTransform,
+                Option<&Visibility>,
+            ),
+            (With<Button>, With<crate::ui::components::TradeSlotButton>),
+        >,
+    )>,
+) {
+    if cursor_state.mode != CursorMode::CarryStack {
+        return;
+    }
+    let (context_menu_state, docked_panel_state, trade_popup_state, take_partial_state) =
+        panel_state;
+    // The amount prompt is modal and owns its own clicks.
+    if take_partial_state.source.is_some() {
+        return;
+    }
+    if !carried_stack.is_active() {
+        // Mode set without a stack (or the last placement emptied it) —
+        // recover rather than trapping the cursor in a dead mode.
+        carried_stack.clear();
+        cursor_state.reset_to_default();
+        return;
+    }
+
+    // Right-click is the cancel gesture here, so swallow it before
+    // `handle_context_menu_opening` sees it and pops a menu behind the drop.
+    if keyboard_input.just_pressed(KeyCode::Escape) || mouse_input.just_pressed(MouseButton::Right)
+    {
+        mouse_input.clear_just_pressed(MouseButton::Right);
+        carried_stack.clear();
+        cursor_state.reset_to_default();
+        return;
+    }
+
+    if context_menu_state.is_visible() || !mouse_input.just_pressed(MouseButton::Left) {
+        return;
+    }
+    // Whatever this click resolves to, it belongs to the carry — otherwise
+    // placing the last of a stack would immediately start a drag out of the
+    // slot it just landed in.
+    mouse_input.clear_just_pressed(MouseButton::Left);
+
+    let Ok(window) = window_query.single() else {
+        return;
+    };
+    let Some(cursor_position) = window.cursor_position() else {
+        return;
+    };
+
+    // The items still live in the source, so confirm it can still back the
+    // carry before committing to anything.
+    if !carry_source_is_valid(&carried_stack, &client_state, &docked_panel_state) {
+        notices.push("The items are no longer there.");
+        carried_stack.clear();
+        cursor_state.reset_to_default();
+        return;
+    }
+    let Some(source) = carried_stack.source else {
+        return;
+    };
+
+    // A quickbar slot binds an item *type*, which a partial stack can't
+    // express — refuse rather than silently rebinding.
+    if hovered_quickbar_slot(cursor_position, &quickbar_slot_query).is_some() {
+        notices.push("Can't put a stack there.");
+        return;
+    }
+
+    if let Some(slot_kind) = hovered_slot_kind_from_ui(cursor_position, &mut slot_queries) {
+        // Dropping back where it came from is "never mind".
+        if carried_stack.source_slot_kind == Some(slot_kind) {
+            carried_stack.clear();
+            cursor_state.reset_to_default();
+            return;
+        }
+
+        // Offering into a trade takes the carried count, so a partial offer
+        // is expressible for the first time (a drag always offers the whole
+        // stack). The items are still in the source slot, which is exactly
+        // what `OfferTradeItem` wants as its source.
+        if let (Some(session_id), ItemSlotKind::TradeUs { .. }) =
+            (trade_popup_state.session_id, slot_kind)
+        {
+            match source {
+                ItemReference::Slot(source_slot) => {
+                    pending_commands.push(GameCommand::OfferTradeItem {
+                        session_id,
+                        source: source_slot,
+                        quantity: carried_stack.amount,
+                    });
+                    carried_stack.clear();
+                    cursor_state.reset_to_default();
+                }
+                ItemReference::WorldObject(_) => {
+                    notices.push("Pick that up before offering it.");
+                }
+            }
+            return;
+        }
+
+        let Some(destination) = item_slot_kind_to_ref(slot_kind, &docked_panel_state) else {
+            // Trade partner column / merchant wares — not somewhere the
+            // player's own items can go.
+            notices.push("Can't put a stack there.");
+            return;
+        };
+
+        let max_stack = definitions
+            .get(&carried_stack.type_id)
+            .map(|definition| definition.max_stack_size)
+            .unwrap_or(1);
+        let existing = stack_in_slot_kind(&client_state, &docked_panel_state, slot_kind);
+        match carry_drop_amount(
+            carried_stack.amount,
+            existing.as_ref(),
+            &carried_stack.type_id,
+            max_stack,
+        ) {
+            CarryDrop::Refused(reason) => {
+                notices.push(reason);
+            }
+            CarryDrop::Place(amount) => {
+                pending_commands.push(GameCommand::TakeFromStack {
+                    source,
+                    amount,
+                    destination: ItemDestination::Slot(destination),
+                });
+                // Whatever didn't fit stays in hand for the next click.
+                carried_stack.amount = carried_stack.amount.saturating_sub(amount);
+                if !carried_stack.is_active() {
+                    carried_stack.clear();
+                    cursor_state.reset_to_default();
+                }
+            }
+        }
+        return;
+    }
+
+    // No slot under the cursor — drop on the ground, same as releasing a drag
+    // over the world.
+    let Some(player_position) = client_state.player_tile_position else {
+        return;
+    };
+    let Some(space) = client_state.current_space.as_ref() else {
+        return;
+    };
+    let target_tile =
+        cursor_to_floor_tile(window, cursor_position, &player_position, &world_config);
+    if !FloorGeometry::client(&client_state.floor_maps, &floor_defs).reachable(
+        &player_position,
+        &target_tile,
+        space.space_id,
+    ) {
+        notices.push("You can't reach there.");
+        return;
+    }
+    pending_commands.push(GameCommand::TakeFromStack {
+        source,
+        amount: carried_stack.amount,
+        destination: ItemDestination::WorldTile(target_tile),
+    });
+    carried_stack.clear();
+    cursor_state.reset_to_default();
+}
+
+/// Does the source still hold enough of the carried type to back the carry?
+///
+/// The carry is client-side intent over items that never moved, so a
+/// concurrent change (another player emptying the same chest, a script) can
+/// invalidate it. Checking before each drop turns that race into a clean
+/// cancel instead of a rejected command.
+fn carry_source_is_valid(
+    carried: &CarriedStack,
+    client_state: &ClientGameState,
+    docked_panel_state: &DockedPanelState,
+) -> bool {
+    match (carried.source, carried.source_slot_kind) {
+        (Some(ItemReference::Slot(_)), Some(slot_kind)) => {
+            stack_in_slot_kind(client_state, docked_panel_state, slot_kind).is_some_and(|stack| {
+                stack.type_id == carried.type_id && stack.quantity >= carried.amount
+            })
+        }
+        (Some(ItemReference::WorldObject(object_id)), _) => client_state
+            .world_objects
+            .get(&object_id)
+            .is_some_and(|object| {
+                object.definition_id == carried.type_id && object.quantity >= carried.amount
+            }),
+        _ => false,
+    }
+}
+
+/// Cancel a carry whose source stopped backing it, even without a click — the
+/// ghost must not keep advertising items the player no longer has.
+pub fn invalidate_stale_carry(
+    client_state: Res<ClientGameState>,
+    docked_panel_state: Res<DockedPanelState>,
+    mut carried_stack: ResMut<CarriedStack>,
+    mut cursor_state: ResMut<CursorState>,
+    mut notices: ResMut<ClientNotices>,
+) {
+    if !carried_stack.is_active()
+        || carry_source_is_valid(&carried_stack, &client_state, &docked_panel_state)
+    {
+        return;
+    }
+    notices.push("The items are no longer there.");
+    carried_stack.clear();
+    if cursor_state.mode == CursorMode::CarryStack {
+        cursor_state.reset_to_default();
+    }
 }
 
 pub fn handle_movable_dragging(
@@ -3359,6 +3801,7 @@ pub fn handle_movable_dragging(
         Res<ContextMenuState>,
         Res<UseOnState>,
         Res<ItemTargetingState>,
+        Res<CarriedStack>,
     ),
     client_state: Res<ClientGameState>,
     visible_floors: Res<VisibleFloorRange>,
@@ -3426,7 +3869,7 @@ pub fn handle_movable_dragging(
         >,
     )>,
 ) {
-    let (context_menu_state, use_on_state, item_targeting_state) = interaction_state;
+    let (context_menu_state, use_on_state, item_targeting_state, carried_stack) = interaction_state;
     let Ok(window) = window_query.single() else {
         return;
     };
@@ -3468,6 +3911,12 @@ pub fn handle_movable_dragging(
     // While the player is picking an item to enchant, a left-click on a slot
     // is a target selection (handled by `handle_item_targeting`), not a drag.
     if item_targeting_state.source.is_some() {
+        return;
+    }
+
+    // A stack on the cursor owns the click — `handle_carried_stack_drop`
+    // already placed it this frame.
+    if carried_stack.is_active() {
         return;
     }
 
@@ -3674,6 +4123,7 @@ pub fn handle_movable_dragging(
 
 pub fn sync_drag_preview(
     drag_state: Res<DragState>,
+    carried_stack: Res<CarriedStack>,
     client_state: Res<ClientGameState>,
     docked_panel_state: Res<DockedPanelState>,
     object_registry: Res<ObjectRegistry>,
@@ -3757,6 +4207,33 @@ pub fn sync_drag_preview(
                     .map(str::to_owned);
                 (name, sprite_path, stack.quantity)
             })
+        }
+        // Not dragging — a carried stack rides the cursor with the same
+        // ghost, but shows the *carried* count rather than the source
+        // stack's total.
+        None if carried_stack.is_active() => {
+            // Read the source stack where we can, so per-instance properties
+            // (state, charges) pick the same art the slot is showing rather
+            // than the type's default.
+            let source_stack = carried_stack
+                .source_slot_kind
+                .and_then(|kind| stack_in_slot_kind(&client_state, &docked_panel_state, kind));
+            let properties = source_stack.as_ref().map(|stack| &stack.properties);
+            let name = ObjectRegistry::display_name_for_type(
+                &carried_stack.type_id,
+                properties,
+                &definitions,
+                &spell_definitions,
+            )
+            .unwrap_or_else(|| carried_stack.type_id.clone());
+            let state = properties
+                .and_then(|props| props.get("state"))
+                .map(String::as_str);
+            let sprite_path = definitions
+                .get(&carried_stack.type_id)
+                .and_then(|def| def.sprite_path_for_state_count(state, carried_stack.amount))
+                .map(str::to_owned);
+            Some((name, sprite_path, carried_stack.amount))
         }
         None => None,
     };
@@ -5071,6 +5548,250 @@ mod tests {
 
     fn test_window() -> Window {
         Window::default()
+    }
+
+    fn stack(type_id: &str, quantity: u32) -> InventoryStack {
+        InventoryStack::item(type_id.to_owned(), Default::default(), quantity)
+    }
+
+    #[test]
+    fn a_carried_stack_fills_an_empty_slot_up_to_the_cap() {
+        assert_eq!(
+            carry_drop_amount(5, None, "gold_coin", 100),
+            CarryDrop::Place(5),
+        );
+        // More carried than one slot holds — the rest stays on the cursor.
+        assert_eq!(
+            carry_drop_amount(150, None, "gold_coin", 100),
+            CarryDrop::Place(100),
+        );
+        // Unstackable items still accept exactly one.
+        assert_eq!(
+            carry_drop_amount(3, None, "sword", 1),
+            CarryDrop::Place(1),
+            "a max_stack of 1 still takes a single item"
+        );
+        assert_eq!(
+            carry_drop_amount(3, None, "sword", 0),
+            CarryDrop::Place(1),
+            "a missing cap is treated as 1, never as 0"
+        );
+    }
+
+    #[test]
+    fn merging_tops_up_the_destination_and_keeps_the_remainder() {
+        let dest = stack("gold_coin", 90);
+        assert_eq!(
+            carry_drop_amount(5, Some(&dest), "gold_coin", 100),
+            CarryDrop::Place(5),
+            "it all fits"
+        );
+        assert_eq!(
+            carry_drop_amount(30, Some(&dest), "gold_coin", 100),
+            CarryDrop::Place(10),
+            "only the room left goes across; 20 stay carried"
+        );
+    }
+
+    #[test]
+    fn a_full_or_mismatched_slot_refuses_without_moving_anything() {
+        let full = stack("gold_coin", 100);
+        assert_eq!(
+            carry_drop_amount(5, Some(&full), "gold_coin", 100),
+            CarryDrop::Refused("That stack is full."),
+        );
+        // Over-full (shouldn't happen, but must not underflow into a huge room).
+        let overfull = stack("gold_coin", 120);
+        assert_eq!(
+            carry_drop_amount(5, Some(&overfull), "gold_coin", 100),
+            CarryDrop::Refused("That stack is full."),
+        );
+
+        let other = stack("silver_coin", 1);
+        assert_eq!(
+            carry_drop_amount(5, Some(&other), "gold_coin", 100),
+            CarryDrop::Refused("Can't mix different item types."),
+        );
+    }
+
+    /// Drive the real `handle_carried_stack_drop` with a real slot entity and
+    /// a real cursor position. Returns the commands it queued plus the carry
+    /// state afterwards, so a click can be asserted end to end rather than
+    /// only through the pure decision helper.
+    fn run_carry_click(
+        carried: CarriedStack,
+        client_state: ClientGameState,
+        slot: ItemSlotKind,
+        cursor: Vec2,
+        slot_rect_center: Vec2,
+    ) -> (Vec<GameCommand>, CarriedStack, Vec<String>) {
+        use bevy::input::ButtonInput;
+
+        let mut app = App::new();
+
+        let mut mouse = ButtonInput::<MouseButton>::default();
+        mouse.press(MouseButton::Left);
+        app.insert_resource(mouse);
+        app.insert_resource(ButtonInput::<KeyCode>::default());
+        app.insert_resource(WorldConfig {
+            current_space_id: SpaceId(1),
+            map_width: 64,
+            map_height: 64,
+            tile_size: 32.0,
+            fill_floor_type: String::new(),
+        });
+        app.insert_resource(crate::world::floor_definitions::FloorTilesetDefinitions::default());
+        app.insert_resource(client_state);
+        app.insert_resource(OverworldObjectDefinitions::load_from_disk());
+        app.insert_resource(ContextMenuState::default());
+        app.insert_resource(DockedPanelState::default());
+        app.insert_resource(crate::ui::resources::TradePopupState::default());
+        app.insert_resource(TakePartialState::default());
+        app.insert_resource(CursorState {
+            mode: CursorMode::CarryStack,
+            ..default()
+        });
+        app.insert_resource(carried);
+        app.insert_resource(ClientNotices::default());
+        app.insert_resource(ClientPendingCommands::default());
+
+        let mut window = Window::default();
+        window.set_physical_cursor_position(Some(cursor.as_dvec2()));
+        app.world_mut().spawn((window, PrimaryWindow));
+
+        // A backpack slot lives in the "container" family (see
+        // `spawn_backpack_slot`), which is what the drop handler hit-tests.
+        let mut computed = ComputedNode::default();
+        computed.size = Vec2::splat(38.0);
+        app.world_mut().spawn((
+            Button,
+            ItemSlotButton { kind: slot },
+            ContainerSlotButton,
+            computed,
+            UiGlobalTransform::from(bevy::math::Affine2::from_translation(slot_rect_center)),
+            Visibility::Visible,
+        ));
+
+        app.add_systems(Update, handle_carried_stack_drop);
+        app.update();
+
+        let commands = app
+            .world()
+            .resource::<ClientPendingCommands>()
+            .commands
+            .clone();
+        let carried = std::mem::take(&mut *app.world_mut().resource_mut::<CarriedStack>());
+        let notices = app
+            .world()
+            .resource::<ClientNotices>()
+            .0
+            .iter()
+            .cloned()
+            .collect();
+        (commands, carried, notices)
+    }
+
+    fn client_state_with_ground_pile(
+        object_id: u64,
+        type_id: &str,
+        quantity: u32,
+    ) -> ClientGameState {
+        let mut state = ClientGameState::default();
+        let tile = TilePosition::new(5, 5, 0);
+        state.player_tile_position = Some(tile);
+        let mut object = object_at(object_id, SpaceId(1), tile);
+        object.definition_id = type_id.to_owned();
+        object.quantity = quantity;
+        state.world_objects.insert(object_id, object);
+        state
+    }
+
+    #[test]
+    fn clicking_a_backpack_slot_places_the_carried_stack() {
+        // The regression this guards: the click resolved to nothing, the
+        // carry was dropped, and the items never left the source pile.
+        let carried = CarriedStack {
+            source: Some(ItemReference::WorldObject(7)),
+            source_slot_kind: None,
+            type_id: "gold_coin".to_owned(),
+            amount: 5,
+        };
+        let state = client_state_with_ground_pile(7, "gold_coin", 20);
+
+        let (commands, carried_after, notices) = run_carry_click(
+            carried,
+            state,
+            ItemSlotKind::Backpack(3),
+            Vec2::new(100.0, 100.0),
+            Vec2::new(100.0, 100.0),
+        );
+
+        assert_eq!(
+            commands.len(),
+            1,
+            "expected one TakeFromStack, got {commands:?} (notices: {notices:?})"
+        );
+        assert!(
+            matches!(
+                &commands[0],
+                GameCommand::TakeFromStack {
+                    source: ItemReference::WorldObject(7),
+                    amount: 5,
+                    destination: ItemDestination::Slot(ItemSlotRef::Backpack(3)),
+                }
+            ),
+            "wrong command: {:?}",
+            commands[0]
+        );
+        assert!(!carried_after.is_active(), "the whole carry was placed");
+    }
+
+    /// The invariant behind the whole feature: a click never makes items
+    /// vanish. It either issues a command, says why it refused, or leaves the
+    /// stack in hand — never clears the carry having done nothing, which is
+    /// exactly how the ground-drop path failed (the client cleared the carry,
+    /// the server ignored the command, the items stayed in the pile).
+    #[test]
+    fn a_click_that_misses_every_slot_never_loses_the_stack() {
+        let carried = CarriedStack {
+            source: Some(ItemReference::WorldObject(7)),
+            source_slot_kind: None,
+            type_id: "gold_coin".to_owned(),
+            amount: 5,
+        };
+        let state = client_state_with_ground_pile(7, "gold_coin", 20);
+
+        let (commands, carried_after, notices) = run_carry_click(
+            carried,
+            state,
+            ItemSlotKind::Backpack(3),
+            Vec2::new(600.0, 400.0),
+            Vec2::new(100.0, 100.0),
+        );
+        assert!(
+            !commands.is_empty() || !notices.is_empty() || carried_after.is_active(),
+            "the carry was dropped without issuing a command or explaining why"
+        );
+    }
+
+    #[test]
+    fn a_carry_is_only_active_while_it_holds_something() {
+        let mut carried = CarriedStack {
+            source: Some(ItemReference::WorldObject(1)),
+            source_slot_kind: None,
+            type_id: "gold_coin".to_owned(),
+            amount: 3,
+        };
+        assert!(carried.is_active());
+
+        // The last placement empties it; the mode must not linger.
+        carried.amount = 0;
+        assert!(!carried.is_active());
+
+        carried.amount = 3;
+        carried.clear();
+        assert!(!carried.is_active());
+        assert!(carried.source.is_none());
     }
 
     fn object_at(object_id: u64, space: SpaceId, tile: TilePosition) -> ClientWorldObjectState {

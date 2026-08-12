@@ -758,6 +758,11 @@ pub struct TakePartialCancelButton;
 #[derive(Component)]
 pub struct TakePartialAmountLabel;
 
+/// The clickable box around [`TakePartialAmountLabel`]: clicking it starts a
+/// typed edit, so an exact count can be entered instead of clicked up.
+#[derive(Component)]
+pub struct TakePartialAmountField;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MinimapMode {
     HudSmall,

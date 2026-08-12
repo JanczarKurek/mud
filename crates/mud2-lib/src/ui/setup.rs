@@ -621,29 +621,45 @@ fn spawn_take_partial_popup(commands: &mut Commands, theme: &UiThemeAssets, pale
                                 theme,
                                 palette,
                                 ButtonStyle::Secondary,
-                                "-",
+                                "<",
                                 TakePartialDecButton,
                             );
+                            // Click-to-type box, mirroring the trade panel's
+                            // `< n >` quantity stepper.
+                            let (bg, border, _) = idle_colors(palette, ButtonStyle::Slot, false);
                             row.spawn((
-                                Text::new("1"),
-                                TakePartialAmountLabel,
-                                TextFont {
-                                    font_size: 18.0,
-                                    ..default()
-                                },
-                                TextColor(palette.text_quantity),
+                                Button,
+                                ThemedButton::new(ButtonStyle::Slot),
+                                crate::ui::components::TakePartialAmountField,
                                 Node {
-                                    min_width: px(48.0),
+                                    min_width: px(56.0),
+                                    min_height: px(28.0),
+                                    padding: UiRect::axes(px(6.0), px(2.0)),
+                                    align_items: AlignItems::Center,
                                     justify_content: JustifyContent::Center,
+                                    border: UiRect::all(px(1.0)),
                                     ..default()
                                 },
-                            ));
+                                BackgroundColor(bg),
+                                BorderColor::all(border),
+                            ))
+                            .with_children(|field| {
+                                field.spawn((
+                                    Text::new("1"),
+                                    TakePartialAmountLabel,
+                                    TextFont {
+                                        font_size: 18.0,
+                                        ..default()
+                                    },
+                                    TextColor(palette.text_quantity),
+                                ));
+                            });
                             spawn_small_button(
                                 row,
                                 theme,
                                 palette,
                                 ButtonStyle::Secondary,
-                                "+",
+                                ">",
                                 TakePartialIncButton,
                             );
                         });

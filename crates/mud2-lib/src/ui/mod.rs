@@ -159,6 +159,8 @@ impl Plugin for UiPlugin {
         .insert_resource(SpellTargetingState::default())
         .insert_resource(ItemTargetingState::default())
         .insert_resource(TakePartialState::default())
+        .insert_resource(resources::CarriedStack::default())
+        .insert_resource(resources::ClientNotices::default())
         .insert_resource(HudMinimapSettings::default())
         .insert_resource(FloatingMinimapZoom::default())
         .insert_resource(FloatingMinimapPan::default())
@@ -207,6 +209,7 @@ impl Plugin for UiPlugin {
                 ),
                 sync_carry_weight_label,
                 sync_chat_log,
+                systems::drain_client_notices.after(sync_chat_log),
                 (sync_context_menu_root, sync_context_menu_entries)
                     .run_if(systems::context_menu_inputs_changed),
                 sync_nearby_npcs_panel.run_if(systems::nearby_npcs_inputs_changed),
@@ -256,6 +259,7 @@ impl Plugin for UiPlugin {
                 update_take_partial_popup_visibility,
                 sync_take_partial_label,
                 handle_take_partial_buttons,
+                systems::drive_take_partial_amount_edit.after(handle_take_partial_buttons),
             )
                 .run_if(in_state(ClientAppState::InGame)),
         )
@@ -304,6 +308,29 @@ impl Plugin for UiPlugin {
         )
         .add_systems(
             Update,
+            // Runs before the context menu so its right-click cancel isn't
+            // also read as "open a menu", and before dragging so a click that
+            // places a carried stack never starts a drag as well.
+            //
+            // Crucially also *before* `handle_take_partial_buttons`: that
+            // system starts the carry on a left-click, and without this edge
+            // the very same click would come straight back round as the drop,
+            // dumping the stack the instant it was picked up.
+            systems::handle_carried_stack_drop
+                .before(handle_context_menu_opening)
+                .before(handle_movable_dragging)
+                .before(handle_take_partial_buttons)
+                .run_if(in_state(ClientAppState::InGame)),
+        )
+        .add_systems(
+            Update,
+            systems::invalidate_stale_carry
+                .after(systems::handle_carried_stack_drop)
+                .run_if(in_state(ClientAppState::InGame))
+                .run_if(systems::item_slot_inputs_changed),
+        )
+        .add_systems(
+            Update,
             handle_use_on_targeting.run_if(in_state(ClientAppState::InGame)),
         )
         .add_systems(
@@ -340,6 +367,8 @@ impl Plugin for UiPlugin {
                 .after(handle_spell_targeting)
                 .after(handle_attack_targeting)
                 .after(handle_jump_targeting)
+                .after(systems::handle_carried_stack_drop)
+                .after(handle_take_partial_buttons)
                 .run_if(in_state(ClientAppState::InGame)),
         )
         .add_systems(

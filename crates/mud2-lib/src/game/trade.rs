@@ -1492,21 +1492,31 @@ fn commit_player_to_shop_trade(
     // dropped item lives in the world.
     if let Some((space_id, tile)) = drop_placement {
         for offer in &overflow {
-            let object_id = object_registry.allocate_runtime_id_with_properties(
-                offer.type_id.clone(),
-                offer.properties.clone(),
-            );
-            crate::world::setup::spawn_overworld_object(
-                commands,
-                definitions,
-                object_registry,
-                object_id,
-                &offer.type_id,
-                None,
-                space_id,
-                tile,
-                (offer.quantity > 1).then_some(offer.quantity),
-            );
+            // One pile per stack's worth. Spawning the whole quantity as a
+            // single object would mint an over-cap pile, which then walks
+            // straight back into a single inventory slot on pickup and
+            // becomes a stack no legitimate path could ever build.
+            let max_stack = definitions
+                .get(&offer.type_id)
+                .map(|def| def.max_stack_size.max(1))
+                .unwrap_or(1);
+            for pile in split_into_piles(offer.quantity, max_stack) {
+                let object_id = object_registry.allocate_runtime_id_with_properties(
+                    offer.type_id.clone(),
+                    offer.properties.clone(),
+                );
+                crate::world::setup::spawn_overworld_object(
+                    commands,
+                    definitions,
+                    object_registry,
+                    object_id,
+                    &offer.type_id,
+                    None,
+                    space_id,
+                    tile,
+                    (pile > 1).then_some(pile),
+                );
+            }
         }
     }
 
@@ -1854,6 +1864,22 @@ fn insert_offers_into(
     true
 }
 
+/// Break `quantity` into stack-sized piles. Used when goods have to be put
+/// somewhere that stores one stack per slot/object — a single oversized pile
+/// would otherwise become an inventory stack no legitimate path could build.
+#[cfg_attr(not(feature = "server-sim"), allow(dead_code))]
+fn split_into_piles(quantity: u32, max_stack: u32) -> Vec<u32> {
+    let max_stack = max_stack.max(1);
+    let mut piles = Vec::new();
+    let mut remaining = quantity;
+    while remaining > 0 {
+        let pile = remaining.min(max_stack);
+        piles.push(pile);
+        remaining -= pile;
+    }
+    piles
+}
+
 #[cfg(feature = "server-sim")]
 fn insert_one_offer(
     offer: &TradeOfferEntry,
@@ -2009,6 +2035,38 @@ mod tests {
         ));
         let stack = inventory.backpack_slots[0].as_ref().unwrap();
         assert_eq!(stack.charges_remaining(), Some(7));
+    }
+
+    #[test]
+    fn overflow_is_dropped_as_stack_sized_piles() {
+        // The bug this guards: a 250-arrow purchase that wouldn't fit used to
+        // land as ONE ground object of 250, which then walked back into a
+        // single inventory slot on pickup.
+        assert_eq!(split_into_piles(250, 100), vec![100, 100, 50]);
+        assert_eq!(
+            split_into_piles(100, 100),
+            vec![100],
+            "exact fit is one pile"
+        );
+        assert_eq!(
+            split_into_piles(3, 1),
+            vec![1, 1, 1],
+            "unstackables split fully"
+        );
+        assert_eq!(
+            split_into_piles(5, 0),
+            vec![1, 1, 1, 1, 1],
+            "a zero cap means one"
+        );
+        assert!(split_into_piles(0, 100).is_empty(), "nothing to drop");
+        for pile in split_into_piles(999, 40) {
+            assert!(pile <= 40, "no pile may exceed the cap");
+        }
+        assert_eq!(
+            split_into_piles(999, 40).iter().sum::<u32>(),
+            999,
+            "splitting must not create or destroy items"
+        );
     }
 
     #[test]

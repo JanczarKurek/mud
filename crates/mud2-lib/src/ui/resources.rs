@@ -311,6 +311,38 @@ pub struct TakePartialState {
     pub source: Option<ItemReference>,
     pub max_amount: u32,
     pub selected_amount: u32,
+    /// Digits typed into the amount field, `Some` only while it is being
+    /// edited (click the number to start). Enter applies, Escape drops it —
+    /// same contract as the trade panel's `< n >` stepper.
+    pub edit_buffer: Option<String>,
+    /// UI-level source, stashed when the popup opens so Confirm can hand it to
+    /// [`CarriedStack`] without re-hit-testing the cursor. `None` when the
+    /// source is a world object rather than a slot.
+    pub source_slot_kind: Option<ItemSlotKind>,
+}
+
+impl TakePartialState {
+    pub fn is_editing(&self) -> bool {
+        self.source.is_some() && self.edit_buffer.is_some()
+    }
+
+    pub fn begin_edit(&mut self) {
+        self.edit_buffer = Some(self.selected_amount.to_string());
+    }
+
+    /// Apply the typed number, clamped to `1..=max_amount`. An empty buffer
+    /// leaves the amount alone.
+    pub fn commit_edit(&mut self) {
+        if let Some(buffer) = self.edit_buffer.take() {
+            if let Ok(amount) = buffer.parse::<u32>() {
+                self.selected_amount = amount.clamp(1, self.max_amount.max(1));
+            }
+        }
+    }
+
+    pub fn cancel_edit(&mut self) {
+        self.edit_buffer = None;
+    }
 }
 
 pub enum DragSource {
@@ -781,6 +813,48 @@ pub struct UseOnState {
     pub source: Option<ContextMenuTarget>,
 }
 
+/// A stack stuck to the cursor (`CursorMode::CarryStack`), picked up through
+/// the "Take..." amount prompt and placed with a plain click — no button held.
+///
+/// The carry is *intent only*: the items never leave `source` until a
+/// destination is clicked, so cancelling is a no-op rather than a move back,
+/// and no server-side "hand slot" has to exist. The client picks the amount to
+/// send using the same rules the server enforces (see `carry_drop_amount`), so
+/// a partial merge can leave a remainder here to be placed somewhere else.
+#[derive(Resource, Default)]
+pub struct CarriedStack {
+    /// Where the items still physically live. `None` = not carrying.
+    pub source: Option<ItemReference>,
+    /// UI-level source, kept so the source slot can render the reduced count
+    /// and so dropping back onto it reads as "put it back".
+    pub source_slot_kind: Option<ItemSlotKind>,
+    pub type_id: String,
+    pub amount: u32,
+}
+
+impl CarriedStack {
+    pub fn is_active(&self) -> bool {
+        self.source.is_some() && self.amount > 0
+    }
+
+    pub fn clear(&mut self) {
+        *self = Self::default();
+    }
+}
+
+/// Client-only chat lines. `ClientGameState::chat_log_lines` is wholesale
+/// replaced by the server fold, so presentation code that needs to tell the
+/// player something (a refused drop, a stale carry) queues it here instead;
+/// `drain_client_notices` appends it straight into the chat widget.
+#[derive(Resource, Default)]
+pub struct ClientNotices(pub std::collections::VecDeque<String>);
+
+impl ClientNotices {
+    pub fn push(&mut self, line: impl Into<String>) {
+        self.0.push_back(line.into());
+    }
+}
+
 #[derive(Resource, Default)]
 pub struct SpellTargetingState {
     pub source: Option<ContextMenuTarget>,
@@ -816,6 +890,10 @@ pub enum CursorMode {
     /// Athletic jump target selection (Shift+J). The next left-click resolves
     /// to a tile within `JUMP_MAX_RANGE` and submits `GameCommand::JumpTo`.
     JumpTarget,
+    /// A stack is stuck to the cursor (see [`CarriedStack`]). The next
+    /// left-click picks its destination — a slot, the ground, or a trade
+    /// offer — and a partial merge can leave the remainder still carried.
+    CarryStack,
 }
 
 impl CursorMode {}
@@ -1126,5 +1204,63 @@ impl PartyInvitePopupState {
 
     pub fn close(&mut self) {
         self.invite = None;
+    }
+}
+
+#[cfg(test)]
+mod take_partial_edit_tests {
+    use super::*;
+
+    fn state(max: u32) -> TakePartialState {
+        TakePartialState {
+            source: Some(crate::game::commands::ItemReference::WorldObject(1)),
+            max_amount: max,
+            selected_amount: 1,
+            edit_buffer: None,
+            source_slot_kind: None,
+        }
+    }
+
+    #[test]
+    fn a_typed_amount_is_clamped_to_the_stack() {
+        let mut state = state(40);
+        state.begin_edit();
+        state.edit_buffer = Some("100".to_owned());
+        state.commit_edit();
+        assert_eq!(state.selected_amount, 40, "can't take more than there is");
+        assert!(!state.is_editing(), "committing ends the edit");
+
+        state.begin_edit();
+        state.edit_buffer = Some("0".to_owned());
+        state.commit_edit();
+        assert_eq!(state.selected_amount, 1, "zero is not a useful take");
+    }
+
+    #[test]
+    fn an_empty_or_cancelled_edit_leaves_the_amount_alone() {
+        let mut state = state(40);
+        state.selected_amount = 7;
+
+        state.begin_edit();
+        state.edit_buffer = Some(String::new());
+        state.commit_edit();
+        assert_eq!(state.selected_amount, 7);
+
+        state.begin_edit();
+        state.edit_buffer = Some("12".to_owned());
+        state.cancel_edit();
+        assert_eq!(state.selected_amount, 7);
+        assert!(!state.is_editing());
+    }
+
+    #[test]
+    fn editing_requires_an_open_popup() {
+        let mut state = state(40);
+        state.begin_edit();
+        state.source = None;
+        assert!(
+            !state.is_editing(),
+            "a closed popup must not swallow the keyboard"
+        );
     }
 }

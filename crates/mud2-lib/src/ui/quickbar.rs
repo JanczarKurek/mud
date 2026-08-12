@@ -276,6 +276,8 @@ pub fn handle_quickbar_keybinds(
     console_state: Option<Res<PythonConsoleState>>,
     context_menu_state: Res<ContextMenuState>,
     trade_quantity_edit: Res<crate::ui::resources::TradeQuantityEdit>,
+    take_partial_state: Res<crate::ui::resources::TakePartialState>,
+    carried_stack: Res<crate::ui::resources::CarriedStack>,
     definitions: Res<OverworldObjectDefinitions>,
     spell_definitions: Res<SpellDefinitions>,
     quickbar: Res<Quickbar>,
@@ -291,11 +293,15 @@ pub fn handle_quickbar_keybinds(
     if context_menu_state.is_visible() {
         return;
     }
-    // Digits belong to the trade panel while a quantity is being typed.
-    if trade_quantity_edit.is_active() {
+    // Digits belong to whichever quantity field is being typed into.
+    if trade_quantity_edit.is_active() || take_partial_state.is_editing() {
         return;
     }
     if use_on_state.source.is_some() || spell_targeting_state.source.is_some() {
+        return;
+    }
+    // A carried stack owns the cursor; a hotkey use would strand it.
+    if carried_stack.is_active() {
         return;
     }
 

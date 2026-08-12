@@ -241,13 +241,17 @@ pub fn move_player_on_grid(
     keybindings: Res<Keybindings>,
     console_state: Option<Res<PythonConsoleState>>,
     trade_quantity_edit: Option<Res<crate::ui::resources::TradeQuantityEdit>>,
+    take_partial_state: Option<Res<crate::ui::resources::TakePartialState>>,
     mut pending_commands: ResMut<ClientPendingCommands>,
 ) {
     if console_state.as_ref().is_some_and(|state| state.is_open) {
         return;
     }
-    // Typing a trade quantity owns the keyboard.
-    if trade_quantity_edit.is_some_and(|edit| edit.is_active()) {
+    // Typing a quantity (trade basket or the take-partial prompt) owns the
+    // keyboard.
+    if trade_quantity_edit.is_some_and(|edit| edit.is_active())
+        || take_partial_state.is_some_and(|state| state.is_editing())
+    {
         return;
     }
 
